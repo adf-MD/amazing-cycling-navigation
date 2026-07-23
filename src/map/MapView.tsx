@@ -81,7 +81,17 @@ export function MapView({
       setTilesUnavailable(true);
     });
 
+    // The container's on-screen size can settle after first paint (iOS
+    // Safari address bar / PWA standalone-mode chrome), which would
+    // otherwise leave the map computing fitBounds/camera maths against
+    // stale dimensions from creation time.
+    const resizeObserver = new ResizeObserver(() => {
+      mapRef.current?.resize();
+    });
+    resizeObserver.observe(container);
+
     return () => {
+      resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
     };
@@ -105,6 +115,7 @@ export function MapView({
     if (!ready) return;
     const bounds = computeBoundingBox(points.map((point) => point.coordinate));
     if (bounds) {
+      mapRef.current?.resize();
       mapRef.current?.fitBounds(bounds);
     }
   }, [points, ready]);

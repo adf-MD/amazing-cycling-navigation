@@ -9,3 +9,19 @@ import { cleanup } from "@testing-library/react";
 afterEach(() => {
   cleanup();
 });
+
+// jsdom doesn't implement ResizeObserver. Components only need the
+// constructor to exist and observe()/disconnect() to be callable; no test
+// currently depends on it actually firing a callback.
+class NoopResizeObserver implements ResizeObserver {
+  observe(): void {
+    // no-op: jsdom has no layout engine to observe.
+  }
+  unobserve(): void {
+    // no-op: jsdom has no layout engine to observe.
+  }
+  disconnect(): void {
+    // no-op: jsdom has no layout engine to observe.
+  }
+}
+globalThis.ResizeObserver = NoopResizeObserver;

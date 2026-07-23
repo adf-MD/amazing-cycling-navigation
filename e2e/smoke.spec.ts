@@ -26,6 +26,18 @@ test("imports a GPX file, opens Riding mode, and shows the map or an explicit ti
   page,
   context,
 }) => {
+  // A real MapLibre fitBounds/resize call against real WebGL is never
+  // exercised by unit tests (jsdom has no WebGL), so this is the only
+  // layer of testing that would catch a silent runtime exception in the
+  // map camera path.
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
   await context.grantPermissions(["geolocation"]);
   await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
 
@@ -42,4 +54,6 @@ test("imports a GPX file, opens Riding mode, and shows the map or an explicit ti
   const mapCanvas = page.locator('[data-testid="map-container"] canvas');
   const tilesUnavailableBanner = page.getByTestId("tiles-unavailable-banner");
   await expect(mapCanvas.or(tilesUnavailableBanner)).toBeVisible({ timeout: 15_000 });
+
+  expect(consoleErrors).toEqual([]);
 });

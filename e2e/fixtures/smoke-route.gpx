@@ -3,10 +3,31 @@
   <trk>
     <name>Smoke test route</name>
     <trkseg>
-      <trkpt lat="51.5000" lon="-0.1000"><ele>20.0</ele></trkpt>
-      <trkpt lat="51.5010" lon="-0.0990"><ele>22.0</ele></trkpt>
-      <trkpt lat="51.5020" lon="-0.0980"><ele>24.0</ele></trkpt>
-      <trkpt lat="51.5030" lon="-0.0970"><ele>21.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.100000"><ele>18.0</ele></trkpt>
+      <trkpt lat="51.500600" lon="-0.100000"><ele>19.5</ele></trkpt>
+      <trkpt lat="51.501200" lon="-0.100000"><ele>18.5</ele></trkpt>
+      <trkpt lat="51.501800" lon="-0.100000"><ele>20.0</ele></trkpt>
+      <trkpt lat="51.502400" lon="-0.100000"><ele>19.0</ele></trkpt>
+      <trkpt lat="51.503000" lon="-0.100000"><ele>20.5</ele></trkpt>
+      <trkpt lat="51.503600" lon="-0.100000"><ele>19.5</ele></trkpt>
+      <trkpt lat="51.503600" lon="-0.099100"><ele>21.0</ele></trkpt>
+      <trkpt lat="51.503600" lon="-0.098200"><ele>20.0</ele></trkpt>
+      <trkpt lat="51.503600" lon="-0.097300"><ele>21.5</ele></trkpt>
+      <trkpt lat="51.503600" lon="-0.096400"><ele>20.5</ele></trkpt>
+      <trkpt lat="51.503600" lon="-0.095500"><ele>22.0</ele></trkpt>
+      <trkpt lat="51.503600" lon="-0.094600"><ele>21.0</ele></trkpt>
+      <trkpt lat="51.503000" lon="-0.094600"><ele>22.5</ele></trkpt>
+      <trkpt lat="51.502400" lon="-0.094600"><ele>21.5</ele></trkpt>
+      <trkpt lat="51.501800" lon="-0.094600"><ele>23.0</ele></trkpt>
+      <trkpt lat="51.501200" lon="-0.094600"><ele>22.0</ele></trkpt>
+      <trkpt lat="51.500600" lon="-0.094600"><ele>23.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.094600"><ele>22.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.095500"><ele>24.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.096400"><ele>23.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.097300"><ele>24.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.098200"><ele>23.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.099100"><ele>25.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.100000"><ele>24.0</ele></trkpt>
     </trkseg>
   </trk>
 </gpx>

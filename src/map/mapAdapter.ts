@@ -44,6 +44,10 @@ export interface MapLibreLike {
   hasLayer(id: string): boolean;
   /** Instantly frames the given bounds (no animation), padded so route edges aren't flush against the viewport. */
   fitBounds(bounds: BoundingBox, paddingPixels?: number): void;
+  /** Recomputes the map's size from its container. Needed after the container's
+   * on-screen size changes post-creation (e.g. iOS Safari/PWA chrome settling
+   * after first paint) — otherwise fitBounds/camera maths use stale dimensions. */
+  resize(): void;
   remove(): void;
 }
 
@@ -137,6 +141,10 @@ class MapLibreAdapter implements MapLibreLike {
       ],
       { padding: paddingPixels, animate: false, maxZoom: 16 },
     );
+  }
+
+  resize(): void {
+    this.map.resize();
   }
 
   remove(): void {

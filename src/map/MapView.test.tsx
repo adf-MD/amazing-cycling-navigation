@@ -18,6 +18,7 @@ interface MockMapHandle {
   layers: Set<string>;
   removeSpy: ReturnType<typeof vi.fn>;
   fitBoundsSpy: ReturnType<typeof vi.fn>;
+  resizeSpy: ReturnType<typeof vi.fn>;
 }
 
 function createMockMapFactory(): MockMapHandle {
@@ -27,6 +28,7 @@ function createMockMapFactory(): MockMapHandle {
   const layers = new Set<string>();
   const removeSpy = vi.fn();
   const fitBoundsSpy = vi.fn();
+  const resizeSpy = vi.fn();
 
   const factory: MapFactory = () => {
     const map: MapLibreLike = {
@@ -54,6 +56,7 @@ function createMockMapFactory(): MockMapHandle {
       },
       hasLayer: (id) => layers.has(id),
       fitBounds: fitBoundsSpy,
+      resize: resizeSpy,
       remove: removeSpy,
     };
     return map;
@@ -62,6 +65,7 @@ function createMockMapFactory(): MockMapHandle {
   return {
     factory,
     fitBoundsSpy,
+    resizeSpy,
     triggerLoad: () => {
       act(() => {
         loadListener?.();
@@ -76,6 +80,14 @@ function createMockMapFactory(): MockMapHandle {
     layers,
     removeSpy,
   };
+}
+
+function firstCallOrder(spy: ReturnType<typeof vi.fn>): number {
+  const [order] = spy.mock.invocationCallOrder;
+  if (order === undefined) {
+    throw new Error("expected spy to have been called");
+  }
+  return order;
 }
 
 describe("MapView", () => {
@@ -114,6 +126,17 @@ describe("MapView", () => {
       southWest: [0, 51],
       northEast: [0.001, 51],
     });
+  });
+
+  it("resizes the map before fitting bounds, so stale container dimensions don't skew the fit", () => {
+    const mock = createMockMapFactory();
+    render(<MapView points={points} mapFactory={mock.factory} />);
+
+    mock.triggerLoad();
+
+    expect(firstCallOrder(mock.resizeSpy)).toBeLessThan(
+      firstCallOrder(mock.fitBoundsSpy),
+    );
   });
 
   it("does not re-fit bounds on a position-only update", () => {
