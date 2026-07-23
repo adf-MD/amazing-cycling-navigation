@@ -56,3 +56,11 @@ button {
   min-height: var(--touch-target-min);
   min-width: var(--touch-target-min);
 }
+
+/* Sized to reliably fit "Amazing Cycling Navigation" on one line at
+ * narrow phone viewports (e.g. iPhone 13, 390px CSS width) — the
+ * default h1 size (2em) wraps there — while still scaling up sensibly
+ * on wider screens. */
+header h1 {
+  font-size: clamp(1.1rem, 5.5vw, 1.6rem);
+}
