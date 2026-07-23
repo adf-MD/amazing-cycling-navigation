@@ -1,4 +1,5 @@
 import { GeoJSONSource, Map as MapLibreGlMap } from "maplibre-gl";
+import type { StyleSpecification } from "maplibre-gl";
 import type { BoundingBox } from "./routeLayer.ts";
 
 export interface MapErrorInfo {
@@ -53,7 +54,7 @@ export interface MapLibreLike {
 
 export interface CreateMapOptions {
   container: HTMLElement;
-  styleUrl: string;
+  style: string | StyleSpecification;
 }
 
 export type MapFactory = (options: CreateMapOptions) => MapLibreLike;
@@ -152,10 +153,10 @@ class MapLibreAdapter implements MapLibreLike {
   }
 }
 
-export const createMapLibreMap: MapFactory = ({ container, styleUrl }) => {
+export const createMapLibreMap: MapFactory = ({ container, style }) => {
   const map = new MapLibreGlMap({
     container,
-    style: styleUrl,
+    style,
     attributionControl: false,
   });
   return new MapLibreAdapter(map);

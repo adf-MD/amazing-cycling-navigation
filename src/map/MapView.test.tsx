@@ -2,7 +2,12 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MapView } from "./MapView.tsx";
-import type { MapErrorInfo, MapFactory, MapLibreLike } from "./mapAdapter.ts";
+import type {
+  CreateMapOptions,
+  MapErrorInfo,
+  MapFactory,
+  MapLibreLike,
+} from "./mapAdapter.ts";
 import type { RoutePoint } from "../domain/types.ts";
 
 const points: RoutePoint[] = [
@@ -12,6 +17,8 @@ const points: RoutePoint[] = [
 
 interface MockMapHandle {
   factory: MapFactory;
+  /** Targets whichever map instance was constructed most recently — matches
+   * MapView's own behaviour of falling back to a freshly-constructed map. */
   triggerLoad: () => void;
   triggerError: (info: MapErrorInfo) => void;
   sources: Map<string, GeoJSON.FeatureCollection>;
@@ -19,6 +26,7 @@ interface MockMapHandle {
   removeSpy: ReturnType<typeof vi.fn>;
   fitBoundsSpy: ReturnType<typeof vi.fn>;
   resizeSpy: ReturnType<typeof vi.fn>;
+  constructedStyles: CreateMapOptions["style"][];
 }
 
 function createMockMapFactory(): MockMapHandle {
@@ -29,8 +37,10 @@ function createMockMapFactory(): MockMapHandle {
   const removeSpy = vi.fn();
   const fitBoundsSpy = vi.fn();
   const resizeSpy = vi.fn();
+  const constructedStyles: CreateMapOptions["style"][] = [];
 
-  const factory: MapFactory = () => {
+  const factory: MapFactory = ({ style }) => {
+    constructedStyles.push(style);
     const map: MapLibreLike = {
       onLoad: (listener) => {
         loadListener = listener;
@@ -66,6 +76,7 @@ function createMockMapFactory(): MockMapHandle {
     factory,
     fitBoundsSpy,
     resizeSpy,
+    constructedStyles,
     triggerLoad: () => {
       act(() => {
         loadListener?.();
@@ -113,14 +124,33 @@ describe("MapView", () => {
     expect(screen.queryByTestId("map-loading")).toBeNull();
   });
 
-  it("shows a distinct load-error state, including the underlying message, if the map errors before ever loading", () => {
+  it("falls back to the local neutral style immediately on a pre-ready error, and still shows the route", () => {
     const mock = createMockMapFactory();
     render(<MapView points={points} mapFactory={mock.factory} />);
 
     mock.triggerError({ message: "style fetch failed" });
 
+    expect(screen.queryByTestId("map-load-error")).toBeNull();
+    expect(mock.constructedStyles).toHaveLength(2);
+    expect(mock.constructedStyles[1]).not.toBe(mock.constructedStyles[0]);
+
+    mock.triggerLoad();
+
+    expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+    expect(mock.sources.has("acn-route-remaining")).toBe(true);
+  });
+
+  it("shows a terminal load-error state, including the underlying message, if the fallback style also fails to load", () => {
+    const mock = createMockMapFactory();
+    render(<MapView points={points} mapFactory={mock.factory} />);
+
+    mock.triggerError({ message: "primary style fetch failed" });
+    mock.triggerError({ message: "fallback also failed" });
+
     expect(screen.queryByTestId("map-loading")).toBeNull();
-    expect(screen.getByTestId("map-load-error")).toHaveTextContent("style fetch failed");
+    expect(screen.getByTestId("map-load-error")).toHaveTextContent(
+      "fallback also failed",
+    );
   });
 
   it("says the map is taking longer than expected if it hasn't loaded after the timeout", () => {
@@ -136,6 +166,31 @@ describe("MapView", () => {
       expect(screen.getByTestId("map-loading")).toHaveTextContent(
         "taking longer than expected",
       );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("falls back to the local neutral style if the primary style hasn't loaded within the timeout, and still shows the route", () => {
+    vi.useFakeTimers();
+    try {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      expect(mock.constructedStyles).toHaveLength(1);
+
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+
+      expect(mock.constructedStyles).toHaveLength(2);
+      expect(mock.constructedStyles[1]).not.toBe(mock.constructedStyles[0]);
+
+      mock.triggerLoad();
+
+      expect(screen.queryByTestId("map-loading")).toBeNull();
+      expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+      expect(mock.sources.has("acn-route-remaining")).toBe(true);
+      expect(mock.fitBoundsSpy).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

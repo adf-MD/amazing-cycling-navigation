@@ -22,7 +22,7 @@ test("app shell loads with no console errors", async ({ page }) => {
   expect(consoleErrors).toEqual([]);
 });
 
-test("imports a GPX file, opens Riding mode, and shows the map or an explicit tile-unavailable state", async ({
+test("imports a GPX file, opens Riding mode, and the map reaches a usable state", async ({
   page,
   context,
 }) => {
@@ -51,9 +51,12 @@ test("imports a GPX file, opens Riding mode, and shows the map or an explicit ti
 
   await page.getByRole("button", { name: "Start riding" }).click();
 
-  const mapCanvas = page.locator('[data-testid="map-container"] canvas');
-  const tilesUnavailableBanner = page.getByTestId("tiles-unavailable-banner");
-  await expect(mapCanvas.or(tilesUnavailableBanner)).toBeVisible({ timeout: 15_000 });
+  // A <canvas> exists the instant MapLibre is constructed, regardless of
+  // whether it ever finishes loading — waiting for the loading indicator
+  // to clear is what actually proves the map reached a usable state
+  // (real tiles or the local fallback), not just that a canvas exists.
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+  await expect(page.locator('[data-testid="map-container"] canvas')).toBeVisible();
 
   expect(consoleErrors).toEqual([]);
 });

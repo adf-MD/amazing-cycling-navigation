@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
+import type { StyleSpecification } from "maplibre-gl";
 import type { Coordinate, RoutePoint } from "../domain/types.ts";
+import { logError } from "../platform/errorLog.ts";
 import { createMapLibreMap, type MapFactory, type MapLibreLike } from "./mapAdapter.ts";
 import {
   buildPositionFeatureCollection,
@@ -17,10 +19,25 @@ const COMPLETED_LAYER_ID = "acn-route-completed-line";
 const REMAINING_LAYER_ID = "acn-route-remaining-line";
 const POSITION_LAYER_ID = "acn-position-marker";
 
-/** How long to wait for the map's first `load` before telling the rider it's
- * taking longer than expected, rather than leaving them looking at a default
- * view with no indication anything is happening. */
+/** How long to wait for the map's first `load` before falling back to the
+ * local neutral background — the tile provider is external and unreliable
+ * (see CLAUDE.md: the ride display must degrade usefully without it). */
 const LOAD_TIMEOUT_MS = 10_000;
+
+/** Fully local style with no external references (no sprite, glyphs, or
+ * tile sources), so it's guaranteed to load even with no network access at
+ * all. Used when the configured tile source doesn't load in time. */
+const FALLBACK_STYLE: StyleSpecification = {
+  version: 8,
+  sources: {},
+  layers: [
+    {
+      id: "acn-fallback-background",
+      type: "background",
+      paint: { "background-color": "#dcdad4" },
+    },
+  ],
+};
 
 type MapLoadState = "loading" | "ready" | "load-error";
 
@@ -39,7 +56,10 @@ export interface MapViewProps {
  * Route and position are added as GeoJSON sources/layers independent of
  * the base style's own tile source, so a tile-loading failure never
  * removes them — only the base map imagery is affected, and an explicit
- * banner tells the rider that's happened.
+ * banner tells the rider that's happened. If the configured tile source
+ * doesn't load at all within LOAD_TIMEOUT_MS (or errors immediately), the
+ * map falls back to a fully local, network-free style so the route and
+ * position always render regardless of tile-provider reachability.
  */
 export function MapView({
   points,
@@ -54,22 +74,28 @@ export function MapView({
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
   const [tileErrorMessage, setTileErrorMessage] = useState<string | null>(null);
+  const [usingFallbackStyle, setUsingFallbackStyle] = useState(false);
   const ready = loadState === "ready";
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    const containerElement = containerRef.current;
+    if (!containerElement) return;
+    // Narrowed to a new binding: TS doesn't carry the null-check narrowing
+    // of `containerRef.current` through into the nested closures below.
+    const container: HTMLElement = containerElement;
 
     let hasLoaded = false;
+    let usedFallback = false;
+    let currentMap: MapLibreLike | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+
     setLoadState("loading");
     setLoadTimedOut(false);
     setLoadErrorMessage(null);
     setTileErrorMessage(null);
-    const map = mapFactory({ container, styleUrl: tileSource.styleUrl });
-    mapRef.current = map;
+    setUsingFallbackStyle(false);
 
-    map.onLoad(() => {
-      hasLoaded = true;
+    function addRouteAndPositionLayers(map: MapLibreLike): void {
       map.addGeoJsonSource(REMAINING_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
       map.addLineLayer(REMAINING_LAYER_ID, REMAINING_SOURCE_ID, {
         lineColor: "#0a5f38",
@@ -88,41 +114,73 @@ export function MapView({
         circleStrokeColor: "#ffffff",
         circleStrokeWidth: 2,
       });
-      setLoadState("ready");
-    });
+    }
 
-    // A map error before the first `load` means the map never became
-    // usable at all — distinct from (and shown instead of) the post-ready
-    // "tiles unavailable" banner, which keeps the already-loaded route and
-    // position visible.
-    map.onError((info) => {
-      if (hasLoaded) {
-        setTileErrorMessage(info.message);
-      } else {
-        setLoadState("load-error");
-        setLoadErrorMessage(info.message);
-      }
-    });
+    function attachMap(style: string | StyleSpecification): void {
+      const map = mapFactory({ container, style });
+      currentMap = map;
+      mapRef.current = map;
 
+      map.onLoad(() => {
+        hasLoaded = true;
+        addRouteAndPositionLayers(map);
+        setLoadState("ready");
+      });
+
+      // A map error before the first `load` means this style never became
+      // usable — fall back to the local neutral style rather than leaving
+      // the rider with a permanently broken map. An error after `ready`
+      // (the existing tiles-unavailable banner) keeps the already-loaded
+      // route and position visible instead.
+      map.onError((info) => {
+        logError("map", info.message);
+        if (hasLoaded) {
+          setTileErrorMessage(info.message);
+          return;
+        }
+        if (usedFallback) {
+          setLoadState("load-error");
+          setLoadErrorMessage(info.message);
+          return;
+        }
+        switchToFallback();
+      });
+
+      resizeObserver?.disconnect();
+      // The container's on-screen size can settle after first paint (iOS
+      // Safari address bar / PWA standalone-mode chrome), which would
+      // otherwise leave the map computing fitBounds/camera maths against
+      // stale dimensions from creation time.
+      resizeObserver = new ResizeObserver(() => {
+        mapRef.current?.resize();
+      });
+      resizeObserver.observe(container);
+    }
+
+    function switchToFallback(): void {
+      if (hasLoaded || usedFallback) return;
+      usedFallback = true;
+      setUsingFallbackStyle(true);
+      currentMap?.remove();
+      attachMap(FALLBACK_STYLE);
+    }
+
+    attachMap(tileSource.styleUrl);
+
+    // hasLoaded/usedFallback guard the callback, so it's a harmless no-op
+    // if the map already resolved by the time this fires — no need to
+    // explicitly cancel it on success.
     const timeoutId = window.setTimeout(() => {
       if (!hasLoaded) {
         setLoadTimedOut(true);
+        switchToFallback();
       }
     }, LOAD_TIMEOUT_MS);
 
-    // The container's on-screen size can settle after first paint (iOS
-    // Safari address bar / PWA standalone-mode chrome), which would
-    // otherwise leave the map computing fitBounds/camera maths against
-    // stale dimensions from creation time.
-    const resizeObserver = new ResizeObserver(() => {
-      mapRef.current?.resize();
-    });
-    resizeObserver.observe(container);
-
     return () => {
       window.clearTimeout(timeoutId);
-      resizeObserver.disconnect();
-      map.remove();
+      resizeObserver?.disconnect();
+      currentMap?.remove();
       mapRef.current = null;
     };
   }, [mapFactory, tileSource.styleUrl]);
@@ -181,6 +239,11 @@ export function MapView({
         <div role="status" data-testid="tiles-unavailable-banner">
           Map tiles unavailable. The route and your position are still shown.
           {` (${tileErrorMessage})`}
+        </div>
+      ) : null}
+      {usingFallbackStyle && ready ? (
+        <div role="status" data-testid="map-fallback-banner">
+          Map imagery unavailable — showing your route on a plain background.
         </div>
       ) : null}
       <div data-testid="map-attribution">
