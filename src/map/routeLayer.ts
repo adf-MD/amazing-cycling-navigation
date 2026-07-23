@@ -9,6 +9,34 @@ function toGeoJsonCoordinate(coordinate: Coordinate): [number, number] {
   return [coordinate[0], coordinate[1]];
 }
 
+export interface BoundingBox {
+  southWest: Coordinate;
+  northEast: Coordinate;
+}
+
+/** The bounding box of a set of coordinates, or null for an empty route. */
+export function computeBoundingBox(
+  coordinates: readonly Coordinate[],
+): BoundingBox | null {
+  if (coordinates.length === 0) {
+    return null;
+  }
+
+  let minLon = Infinity;
+  let minLat = Infinity;
+  let maxLon = -Infinity;
+  let maxLat = -Infinity;
+
+  for (const [lon, lat] of coordinates) {
+    if (lon < minLon) minLon = lon;
+    if (lon > maxLon) maxLon = lon;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+
+  return { southWest: [minLon, minLat], northEast: [maxLon, maxLat] };
+}
+
 /** A GeoJSON LineString needs at least 2 positions; fewer than that renders as no line rather than invalid geometry. */
 function lineFeatureCollection(
   coordinates: readonly [number, number][],

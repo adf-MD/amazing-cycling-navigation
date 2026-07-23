@@ -4,6 +4,7 @@ import type { Coordinate, RoutePoint } from "../domain/types.ts";
 import { createMapLibreMap, type MapFactory, type MapLibreLike } from "./mapAdapter.ts";
 import {
   buildPositionFeatureCollection,
+  computeBoundingBox,
   EMPTY_FEATURE_COLLECTION,
   splitRouteAtDistance,
 } from "./routeLayer.ts";
@@ -95,6 +96,18 @@ export function MapView({
     mapRef.current?.setGeoJsonSourceData(COMPLETED_SOURCE_ID, completed);
     mapRef.current?.setGeoJsonSourceData(REMAINING_SOURCE_ID, remaining);
   }, [points, matchedDistanceFromStartMetres, ready]);
+
+  // Frames the whole route once it's available. Keyed on `points`
+  // (referentially stable for a given route — only a genuinely different
+  // route or a map reload changes it), not on every position/progress
+  // update, so the view doesn't jump around mid-ride.
+  useEffect(() => {
+    if (!ready) return;
+    const bounds = computeBoundingBox(points.map((point) => point.coordinate));
+    if (bounds) {
+      mapRef.current?.fitBounds(bounds);
+    }
+  }, [points, ready]);
 
   useEffect(() => {
     if (!ready) return;

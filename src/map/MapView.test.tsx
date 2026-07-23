@@ -17,6 +17,7 @@ interface MockMapHandle {
   sources: Map<string, GeoJSON.FeatureCollection>;
   layers: Set<string>;
   removeSpy: ReturnType<typeof vi.fn>;
+  fitBoundsSpy: ReturnType<typeof vi.fn>;
 }
 
 function createMockMapFactory(): MockMapHandle {
@@ -25,6 +26,7 @@ function createMockMapFactory(): MockMapHandle {
   const sources = new Map<string, GeoJSON.FeatureCollection>();
   const layers = new Set<string>();
   const removeSpy = vi.fn();
+  const fitBoundsSpy = vi.fn();
 
   const factory: MapFactory = () => {
     const map: MapLibreLike = {
@@ -51,6 +53,7 @@ function createMockMapFactory(): MockMapHandle {
         layers.add(id);
       },
       hasLayer: (id) => layers.has(id),
+      fitBounds: fitBoundsSpy,
       remove: removeSpy,
     };
     return map;
@@ -58,6 +61,7 @@ function createMockMapFactory(): MockMapHandle {
 
   return {
     factory,
+    fitBoundsSpy,
     triggerLoad: () => {
       act(() => {
         loadListener?.();
@@ -98,6 +102,35 @@ describe("MapView", () => {
     expect(mock.layers.has("acn-route-remaining-line")).toBe(true);
     expect(mock.layers.has("acn-route-completed-line")).toBe(true);
     expect(mock.layers.has("acn-position-marker")).toBe(true);
+  });
+
+  it("frames the map to the route's bounding box once loaded", () => {
+    const mock = createMockMapFactory();
+    render(<MapView points={points} mapFactory={mock.factory} />);
+
+    mock.triggerLoad();
+
+    expect(mock.fitBoundsSpy).toHaveBeenCalledWith({
+      southWest: [0, 51],
+      northEast: [0.001, 51],
+    });
+  });
+
+  it("does not re-fit bounds on a position-only update", () => {
+    const mock = createMockMapFactory();
+    const { rerender } = render(<MapView points={points} mapFactory={mock.factory} />);
+    mock.triggerLoad();
+    expect(mock.fitBoundsSpy).toHaveBeenCalledOnce();
+
+    rerender(
+      <MapView
+        points={points}
+        currentPosition={[0.0005, 51]}
+        mapFactory={mock.factory}
+      />,
+    );
+
+    expect(mock.fitBoundsSpy).toHaveBeenCalledOnce();
   });
 
   it("shows an explicit tiles-unavailable banner on a map error, keeping the route layer", () => {

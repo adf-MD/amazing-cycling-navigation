@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildPositionFeatureCollection,
   buildRouteLineFeatureCollection,
+  computeBoundingBox,
   EMPTY_FEATURE_COLLECTION,
   splitRouteAtDistance,
 } from "./routeLayer.ts";
-import type { RoutePoint } from "../domain/types.ts";
+import type { Coordinate, RoutePoint } from "../domain/types.ts";
 
 const firstPoint: RoutePoint = {
   coordinate: [0, 51],
@@ -55,6 +56,33 @@ describe("buildPositionFeatureCollection", () => {
 describe("EMPTY_FEATURE_COLLECTION", () => {
   it("has no features", () => {
     expect(EMPTY_FEATURE_COLLECTION.features).toEqual([]);
+  });
+});
+
+describe("computeBoundingBox", () => {
+  it("returns null for no coordinates", () => {
+    expect(computeBoundingBox([])).toBeNull();
+  });
+
+  it("returns the single point as both corners for one coordinate", () => {
+    const coordinate: Coordinate = [-1.5, 53.8];
+    expect(computeBoundingBox([coordinate])).toEqual({
+      southWest: coordinate,
+      northEast: coordinate,
+    });
+  });
+
+  it("computes the min/max envelope across many coordinates", () => {
+    const coordinates: Coordinate[] = [
+      [0, 51],
+      [0.002, 51.001],
+      [-0.001, 50.999],
+      [0.001, 51.0005],
+    ];
+    expect(computeBoundingBox(coordinates)).toEqual({
+      southWest: [-0.001, 50.999],
+      northEast: [0.002, 51.001],
+    });
   });
 });
 

@@ -1,4 +1,5 @@
 import { GeoJSONSource, Map as MapLibreGlMap } from "maplibre-gl";
+import type { BoundingBox } from "./routeLayer.ts";
 
 export interface MapErrorInfo {
   message: string;
@@ -41,6 +42,8 @@ export interface MapLibreLike {
   addLineLayer(id: string, sourceId: string, paint: LineLayerPaint): void;
   addCircleLayer(id: string, sourceId: string, paint: CircleLayerPaint): void;
   hasLayer(id: string): boolean;
+  /** Instantly frames the given bounds (no animation), padded so route edges aren't flush against the viewport. */
+  fitBounds(bounds: BoundingBox, paddingPixels?: number): void;
   remove(): void;
 }
 
@@ -124,6 +127,16 @@ class MapLibreAdapter implements MapLibreLike {
 
   hasLayer(id: string): boolean {
     return this.map.getLayer(id) !== undefined;
+  }
+
+  fitBounds(bounds: BoundingBox, paddingPixels = 48): void {
+    this.map.fitBounds(
+      [
+        [bounds.southWest[0], bounds.southWest[1]],
+        [bounds.northEast[0], bounds.northEast[1]],
+      ],
+      { padding: paddingPixels, animate: false, maxZoom: 16 },
+    );
   }
 
   remove(): void {

@@ -85,6 +85,7 @@ function buildStubMapFactory(): { factory: MapFactory; triggerTileError: () => v
       addLineLayer: () => undefined,
       addCircleLayer: () => undefined,
       hasLayer: () => false,
+      fitBounds: () => undefined,
       remove: () => undefined,
     };
     return map;
