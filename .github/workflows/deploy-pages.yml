@@ -45,6 +45,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end smoke test
+        run: npm run e2e
+
       - name: Setup Pages
         uses: actions/configure-pages@v6
 

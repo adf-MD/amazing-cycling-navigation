@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="acn-e2e-fixtures" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Smoke test route</name>
+    <trkseg>
+      <trkpt lat="51.5000" lon="-0.1000"><ele>20.0</ele></trkpt>
+      <trkpt lat="51.5010" lon="-0.0990"><ele>22.0</ele></trkpt>
+      <trkpt lat="51.5020" lon="-0.0980"><ele>24.0</ele></trkpt>
+      <trkpt lat="51.5030" lon="-0.0970"><ele>21.0</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>
