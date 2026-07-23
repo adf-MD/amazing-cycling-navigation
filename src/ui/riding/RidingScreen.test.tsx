@@ -130,6 +130,62 @@ describe("RidingScreen", () => {
     expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
   });
 
+  it("shows the route map before Start riding is tapped, without the elevation window selector", () => {
+    const stub = buildStubGeolocationSource();
+    render(
+      <RidingScreen
+        route={route}
+        geolocationSource={stub.source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+
+    expect(screen.getByTestId("map-container")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Upcoming elevation window" })).toBeNull();
+  });
+
+  it("shows the entire elevation profile before riding starts, then switches to the windowed view once riding", async () => {
+    const user = userEvent.setup();
+    const stub = buildStubGeolocationSource();
+    // A peak past the default 5 km window, so the full pre-ride profile
+    // (10-90 m) and the windowed in-ride profile (10-20 m) are provably
+    // different, not just "some chart rendered".
+    const elevationRoute: PlannedRoute = {
+      ...route,
+      points: [
+        { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
+        { coordinate: [0.01, 51], elevationMetres: 20, distanceFromStartMetres: 2000 },
+        { coordinate: [0.02, 51], elevationMetres: 15, distanceFromStartMetres: 4000 },
+        { coordinate: [0.03, 51], elevationMetres: 90, distanceFromStartMetres: 7000 },
+        { coordinate: [0.04, 51], elevationMetres: 80, distanceFromStartMetres: 8000 },
+      ],
+      distanceMetres: 8000,
+    };
+    render(
+      <RidingScreen
+        route={elevationRoute}
+        geolocationSource={stub.source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+
+    expect(await screen.findByText(/10–90 m/)).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Upcoming elevation window" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+    stub.emitFix({
+      coordinate: [0, 51],
+      accuracyMetres: 5,
+      timestampMs: 1000,
+      speedMetresPerSecond: null,
+    });
+
+    expect(
+      await screen.findByRole("group", { name: "Upcoming elevation window" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText(/10–20 m/)).toBeInTheDocument();
+  });
+
   it("starts watching only after the explicit tap, and shows a waiting state before a fix arrives", async () => {
     const user = userEvent.setup();
     const stub = buildStubGeolocationSource();

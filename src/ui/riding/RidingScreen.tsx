@@ -109,33 +109,43 @@ export function RidingScreen({
           {nav.distanceRemainingMetres !== null ? (
             <p>Remaining: {formatDistanceKm(nav.distanceRemainingMetres)}</p>
           ) : null}
-
-          <div style={{ height: 320 }}>
-            <MapView
-              points={route.points}
-              matchedDistanceFromStartMetres={nav.matchedDistanceFromStartMetres ?? 0}
-              currentPosition={nav.currentFix.coordinate}
-              mapFactory={mapFactory}
-            />
-          </div>
-
-          <div role="group" aria-label="Upcoming elevation window">
-            {ELEVATION_WINDOW_OPTIONS_METRES.map((windowMetres) => (
-              <button
-                key={windowMetres}
-                type="button"
-                aria-pressed={nav.elevationWindowMetres === windowMetres}
-                onClick={() => {
-                  nav.setElevationWindowMetres(windowMetres);
-                }}
-              >
-                {windowMetres / 1000} km
-              </button>
-            ))}
-          </div>
-          <ElevationChart points={nav.upcomingElevation.points} />
         </div>
       ) : null}
+
+      {/* Shown before Start riding is tapped, too — the whole route is
+       * already known and privacy-safe (no live location involved), so
+       * there's no reason to wait for a GPS fix to preview it. MapView
+       * always frames the entire route regardless of ride progress. */}
+      <div style={{ height: 320 }}>
+        <MapView
+          points={route.points}
+          matchedDistanceFromStartMetres={nav.matchedDistanceFromStartMetres ?? 0}
+          currentPosition={nav.currentFix?.coordinate}
+          mapFactory={mapFactory}
+        />
+      </div>
+
+      {nav.currentFix ? (
+        <div role="group" aria-label="Upcoming elevation window">
+          {ELEVATION_WINDOW_OPTIONS_METRES.map((windowMetres) => (
+            <button
+              key={windowMetres}
+              type="button"
+              aria-pressed={nav.elevationWindowMetres === windowMetres}
+              onClick={() => {
+                nav.setElevationWindowMetres(windowMetres);
+              }}
+            >
+              {windowMetres / 1000} km
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {/* Before riding starts, show the whole route's profile; once
+       * riding, switch to the windowed upcoming view above. */}
+      <ElevationChart
+        points={nav.currentFix ? nav.upcomingElevation.points : route.points}
+      />
     </section>
   );
 }
