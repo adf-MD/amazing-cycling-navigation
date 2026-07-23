@@ -102,6 +102,62 @@ describe("MapView", () => {
     expect(link?.textContent).toBe("OpenStreetMap contributors");
   });
 
+  it("shows a loading indicator until the map's first load fires", () => {
+    const mock = createMockMapFactory();
+    render(<MapView points={points} mapFactory={mock.factory} />);
+
+    expect(screen.getByTestId("map-loading")).toHaveTextContent("Loading map");
+
+    mock.triggerLoad();
+
+    expect(screen.queryByTestId("map-loading")).toBeNull();
+  });
+
+  it("shows a distinct load-error state, including the underlying message, if the map errors before ever loading", () => {
+    const mock = createMockMapFactory();
+    render(<MapView points={points} mapFactory={mock.factory} />);
+
+    mock.triggerError({ message: "style fetch failed" });
+
+    expect(screen.queryByTestId("map-loading")).toBeNull();
+    expect(screen.getByTestId("map-load-error")).toHaveTextContent("style fetch failed");
+  });
+
+  it("says the map is taking longer than expected if it hasn't loaded after the timeout", () => {
+    vi.useFakeTimers();
+    try {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+
+      expect(screen.getByTestId("map-loading")).toHaveTextContent(
+        "taking longer than expected",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not show the timeout message once the map has already loaded", () => {
+    vi.useFakeTimers();
+    try {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+
+      expect(screen.queryByTestId("map-loading")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("adds route and position layers independent of the base style once loaded", () => {
     const mock = createMockMapFactory();
     render(<MapView points={points} mapFactory={mock.factory} />);
@@ -165,7 +221,9 @@ describe("MapView", () => {
 
     mock.triggerError({ message: "tile fetch failed" });
 
-    expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+    const banner = screen.getByTestId("tiles-unavailable-banner");
+    expect(banner).toBeInTheDocument();
+    expect(banner).toHaveTextContent("tile fetch failed");
     expect(mock.sources.has("acn-route-remaining")).toBe(true);
   });
 

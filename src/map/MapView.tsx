@@ -17,6 +17,13 @@ const COMPLETED_LAYER_ID = "acn-route-completed-line";
 const REMAINING_LAYER_ID = "acn-route-remaining-line";
 const POSITION_LAYER_ID = "acn-position-marker";
 
+/** How long to wait for the map's first `load` before telling the rider it's
+ * taking longer than expected, rather than leaving them looking at a default
+ * view with no indication anything is happening. */
+const LOAD_TIMEOUT_MS = 10_000;
+
+type MapLoadState = "loading" | "ready" | "load-error";
+
 export interface MapViewProps {
   points: readonly RoutePoint[];
   /** Distance already ridden; the route line before this point is shown
@@ -43,19 +50,26 @@ export function MapView({
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreLike | null>(null);
-  const [ready, setReady] = useState(false);
-  const [tilesUnavailable, setTilesUnavailable] = useState(false);
+  const [loadState, setLoadState] = useState<MapLoadState>("loading");
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
+  const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
+  const [tileErrorMessage, setTileErrorMessage] = useState<string | null>(null);
+  const ready = loadState === "ready";
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    setReady(false);
-    setTilesUnavailable(false);
+    let hasLoaded = false;
+    setLoadState("loading");
+    setLoadTimedOut(false);
+    setLoadErrorMessage(null);
+    setTileErrorMessage(null);
     const map = mapFactory({ container, styleUrl: tileSource.styleUrl });
     mapRef.current = map;
 
     map.onLoad(() => {
+      hasLoaded = true;
       map.addGeoJsonSource(REMAINING_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
       map.addLineLayer(REMAINING_LAYER_ID, REMAINING_SOURCE_ID, {
         lineColor: "#0a5f38",
@@ -74,12 +88,27 @@ export function MapView({
         circleStrokeColor: "#ffffff",
         circleStrokeWidth: 2,
       });
-      setReady(true);
+      setLoadState("ready");
     });
 
-    map.onError(() => {
-      setTilesUnavailable(true);
+    // A map error before the first `load` means the map never became
+    // usable at all — distinct from (and shown instead of) the post-ready
+    // "tiles unavailable" banner, which keeps the already-loaded route and
+    // position visible.
+    map.onError((info) => {
+      if (hasLoaded) {
+        setTileErrorMessage(info.message);
+      } else {
+        setLoadState("load-error");
+        setLoadErrorMessage(info.message);
+      }
     });
+
+    const timeoutId = window.setTimeout(() => {
+      if (!hasLoaded) {
+        setLoadTimedOut(true);
+      }
+    }, LOAD_TIMEOUT_MS);
 
     // The container's on-screen size can settle after first paint (iOS
     // Safari address bar / PWA standalone-mode chrome), which would
@@ -91,6 +120,7 @@ export function MapView({
     resizeObserver.observe(container);
 
     return () => {
+      window.clearTimeout(timeoutId);
       resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
@@ -137,9 +167,20 @@ export function MapView({
         data-testid="map-container"
         style={{ width: "100%", height: "100%" }}
       />
-      {tilesUnavailable ? (
+      {loadState === "loading" ? (
+        <div role="status" data-testid="map-loading">
+          {loadTimedOut ? "Map is taking longer than expected to load." : "Loading map…"}
+        </div>
+      ) : null}
+      {loadState === "load-error" ? (
+        <div role="alert" data-testid="map-load-error">
+          Map failed to load.{loadErrorMessage ? ` (${loadErrorMessage})` : ""}
+        </div>
+      ) : null}
+      {tileErrorMessage !== null ? (
         <div role="status" data-testid="tiles-unavailable-banner">
           Map tiles unavailable. The route and your position are still shown.
+          {` (${tileErrorMessage})`}
         </div>
       ) : null}
       <div data-testid="map-attribution">

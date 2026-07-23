@@ -68,11 +68,18 @@ function buildStubGeolocationSource(): {
   };
 }
 
-function buildStubMapFactory(): { factory: MapFactory; triggerTileError: () => void } {
+function buildStubMapFactory(): {
+  factory: MapFactory;
+  triggerLoad: () => void;
+  triggerTileError: () => void;
+} {
+  let loadListener: (() => void) | undefined;
   let errorListener: (() => void) | undefined;
   const factory: MapFactory = () => {
     const map: MapLibreLike = {
-      onLoad: () => undefined,
+      onLoad: (listener) => {
+        loadListener = listener;
+      },
       onError: (listener) => {
         errorListener = () => {
           listener({ message: "tile fetch failed" });
@@ -91,7 +98,11 @@ function buildStubMapFactory(): { factory: MapFactory; triggerTileError: () => v
     };
     return map;
   };
-  return { factory, triggerTileError: () => errorListener?.() };
+  return {
+    factory,
+    triggerLoad: () => loadListener?.(),
+    triggerTileError: () => errorListener?.(),
+  };
 }
 
 function buildFixedClock(startMs: number): Clock {
@@ -400,6 +411,7 @@ describe("RidingScreen", () => {
       });
       await screen.findByText("On route");
 
+      map.triggerLoad();
       map.triggerTileError();
 
       expect(await screen.findByTestId("tiles-unavailable-banner")).toBeInTheDocument();
