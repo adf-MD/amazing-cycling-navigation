@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="acn-test-fixtures" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Track with two segments</name>
+    <trkseg>
+      <trkpt lat="51.8000" lon="0.3000"><ele>20.0</ele></trkpt>
+      <trkpt lat="51.8010" lon="0.3010"><ele>21.0</ele></trkpt>
+    </trkseg>
+    <trkseg>
+      <trkpt lat="51.8020" lon="0.3020"><ele>22.0</ele></trkpt>
+      <trkpt lat="51.8030" lon="0.3030"><ele>23.0</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

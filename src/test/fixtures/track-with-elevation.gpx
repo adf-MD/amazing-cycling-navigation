@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="acn-test-fixtures" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Test track with elevation</name>
+    <trkseg>
+      <trkpt lat="51.5000" lon="0.0000"><ele>10.0</ele></trkpt>
+      <trkpt lat="51.5010" lon="0.0010"><ele>12.5</ele></trkpt>
+      <trkpt lat="51.5020" lon="0.0020"><ele>15.0</ele></trkpt>
+      <trkpt lat="51.5030" lon="0.0030"><ele>11.0</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>
