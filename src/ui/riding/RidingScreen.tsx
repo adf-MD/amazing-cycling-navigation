@@ -7,6 +7,7 @@ import { useOnlineStatus } from "../../platform/onlineStatus.ts";
 import type { OffRouteLevel } from "../../navigation/types.ts";
 import { ELEVATION_WINDOW_OPTIONS_METRES } from "../../navigation/upcomingElevation.ts";
 import { ElevationChart } from "../shared/ElevationChart.tsx";
+import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 import { useRideNavigation } from "./useRideNavigation.ts";
 
 export interface RidingScreenProps {
@@ -36,10 +37,6 @@ const OFF_ROUTE_LABEL: Record<OffRouteLevel, string> = {
   "off-route": "Off route",
 };
 
-function formatDistanceKm(metres: number): string {
-  return `${(metres / 1000).toFixed(1)} km`;
-}
-
 function formatFixAge(ageMs: number): string {
   const seconds = Math.max(0, Math.round(ageMs / 1000));
   if (seconds < 60) return `${String(seconds)}s ago`;
@@ -60,6 +57,9 @@ export function RidingScreen({
   return (
     <section aria-label="Riding">
       <h2>{route.name}</h2>
+      <p>
+        {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
+      </p>
 
       {!online ? (
         <p role="status">

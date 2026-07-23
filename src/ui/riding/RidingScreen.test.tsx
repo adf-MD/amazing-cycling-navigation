@@ -130,6 +130,34 @@ describe("RidingScreen", () => {
     expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
   });
 
+  it("shows total distance and ascent from the very start, even before Start riding is tapped", () => {
+    const stub = buildStubGeolocationSource();
+    render(
+      <RidingScreen
+        route={route}
+        geolocationSource={stub.source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+
+    const expectedKm = (route.distanceMetres / 1000).toFixed(1);
+    expect(screen.getByText(`${expectedKm} km · 2 m ascent`)).toBeInTheDocument();
+  });
+
+  it("shows 'ascent not available' when the route has no elevation data", () => {
+    const stub = buildStubGeolocationSource();
+    const routeWithoutElevation: PlannedRoute = { ...route, ascentMetres: null };
+    render(
+      <RidingScreen
+        route={routeWithoutElevation}
+        geolocationSource={stub.source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+
+    expect(screen.getByText(/ascent not available/)).toBeInTheDocument();
+  });
+
   it("shows the route map before Start riding is tapped, without the elevation window selector", () => {
     const stub = buildStubGeolocationSource();
     render(

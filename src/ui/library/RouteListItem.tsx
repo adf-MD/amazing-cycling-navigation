@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { SubmitEvent } from "react";
 import type { PlannedRoute } from "../../domain/types.ts";
+import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 
 export interface RouteListItemProps {
   route: PlannedRoute;
@@ -59,39 +60,45 @@ export function RouteListItem({
 
   return (
     <li>
-      <button
-        type="button"
-        onClick={() => {
-          onOpen(route);
-        }}
-      >
-        {route.name}
-      </button>
-      <span>{(route.distanceMetres / 1000).toFixed(1)} km</span>
-      <button
-        type="button"
-        onClick={() => {
-          setIsRenaming(true);
-        }}
-      >
-        Rename
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          onExport(route);
-        }}
-      >
-        Export
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          onDeleteRequest(route.id);
-        }}
-      >
-        Delete
-      </button>
+      <div>
+        <button
+          type="button"
+          onClick={() => {
+            onOpen(route);
+          }}
+        >
+          {route.name}
+        </button>
+      </div>
+      <div>
+        {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
+      </div>
+      <div>
+        <button
+          type="button"
+          onClick={() => {
+            setIsRenaming(true);
+          }}
+        >
+          Rename
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onExport(route);
+          }}
+        >
+          Export
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onDeleteRequest(route.id);
+          }}
+        >
+          Delete
+        </button>
+      </div>
     </li>
   );
 }

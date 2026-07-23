@@ -21,7 +21,7 @@ function buildRoute(overrides: Partial<PlannedRoute> = {}): PlannedRoute {
 }
 
 describe("RouteListItem", () => {
-  it("shows the route name and distance in km", () => {
+  it("shows the route name, distance and ascent not available when there's no elevation data", () => {
     render(
       <RouteListItem
         route={buildRoute()}
@@ -33,7 +33,21 @@ describe("RouteListItem", () => {
     );
 
     expect(screen.getByRole("button", { name: "Evening loop" })).toBeInTheDocument();
-    expect(screen.getByText("12.3 km")).toBeInTheDocument();
+    expect(screen.getByText("12.3 km · ascent not available")).toBeInTheDocument();
+  });
+
+  it("shows the ascent in metres when available", () => {
+    render(
+      <RouteListItem
+        route={buildRoute({ ascentMetres: 144.6 })}
+        onOpen={vi.fn()}
+        onRename={vi.fn()}
+        onExport={vi.fn()}
+        onDeleteRequest={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("12.3 km · 145 m ascent")).toBeInTheDocument();
   });
 
   it("opens the route when its name is clicked", async () => {
