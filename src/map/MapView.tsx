@@ -24,6 +24,12 @@ const POSITION_LAYER_ID = "acn-position-marker";
  * (see CLAUDE.md: the ride display must degrade usefully without it). */
 const LOAD_TIMEOUT_MS = 10_000;
 
+/** How long to wait, after the map is ready, for the route's GeoJSON
+ * source to finish processing before logging it as a diagnostic — this is
+ * the signal that was missing every time the route silently failed to
+ * render despite the map itself reaching "ready". */
+const ROUTE_DATA_TIMEOUT_MS = 5_000;
+
 /** Fully local style with no external references (no sprite, glyphs, or
  * tile sources), so it's guaranteed to load even with no network access at
  * all. Used when the configured tile source doesn't load in time. */
@@ -75,6 +81,8 @@ export function MapView({
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
   const [tileErrorMessage, setTileErrorMessage] = useState<string | null>(null);
   const [usingFallbackStyle, setUsingFallbackStyle] = useState(false);
+  const [routeSourceLoaded, setRouteSourceLoaded] = useState(false);
+  const [cameraCenter, setCameraCenter] = useState<Coordinate | null>(null);
   const ready = loadState === "ready";
 
   useEffect(() => {
@@ -88,12 +96,16 @@ export function MapView({
     let usedFallback = false;
     let currentMap: MapLibreLike | null = null;
     let resizeObserver: ResizeObserver | null = null;
+    let routeSourceLoaded = false;
+    let routeDataTimeoutId: number | undefined;
 
     setLoadState("loading");
     setLoadTimedOut(false);
     setLoadErrorMessage(null);
     setTileErrorMessage(null);
     setUsingFallbackStyle(false);
+    setRouteSourceLoaded(false);
+    setCameraCenter(null);
 
     function addRouteAndPositionLayers(map: MapLibreLike): void {
       map.addGeoJsonSource(REMAINING_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
@@ -120,11 +132,30 @@ export function MapView({
       const map = mapFactory({ container, style });
       currentMap = map;
       mapRef.current = map;
+      routeSourceLoaded = false;
+      setRouteSourceLoaded(false);
+      if (routeDataTimeoutId !== undefined) window.clearTimeout(routeDataTimeoutId);
 
       map.onLoad(() => {
         hasLoaded = true;
         addRouteAndPositionLayers(map);
         setLoadState("ready");
+        // The map reaching "ready" only proves the style loaded — it says
+        // nothing about whether the route's GeoJSON source ever actually
+        // finishes processing (which needs a working worker). Surface a
+        // stuck source as a diagnostic instead of silently doing nothing.
+        routeDataTimeoutId = window.setTimeout(() => {
+          if (!routeSourceLoaded) {
+            logError("map", "Route data did not finish loading in time");
+          }
+        }, ROUTE_DATA_TIMEOUT_MS);
+      });
+
+      map.onSourceData((info) => {
+        if (info.sourceId === REMAINING_SOURCE_ID && info.isSourceLoaded) {
+          routeSourceLoaded = true;
+          setRouteSourceLoaded(true);
+        }
       });
 
       // A map error before the first `load` means this style never became
@@ -179,6 +210,7 @@ export function MapView({
 
     return () => {
       window.clearTimeout(timeoutId);
+      if (routeDataTimeoutId !== undefined) window.clearTimeout(routeDataTimeoutId);
       resizeObserver?.disconnect();
       currentMap?.remove();
       mapRef.current = null;
@@ -195,6 +227,17 @@ export function MapView({
     mapRef.current?.setGeoJsonSourceData(REMAINING_SOURCE_ID, remaining);
   }, [points, matchedDistanceFromStartMetres, ready]);
 
+  // Purely derived from already-available inputs (no external-system
+  // round-trip needed, unlike routeSourceLoaded/cameraCenter above), so
+  // it's computed directly during render rather than via an effect+state.
+  // Independent of whether the source ever finishes rendering — this
+  // proves real, non-empty geometry was actually submitted, catching a
+  // regression in the data flow itself.
+  const routeCoordinateCount = ready
+    ? (splitRouteAtDistance(points, matchedDistanceFromStartMetres).remaining.features[0]
+        ?.geometry.coordinates.length ?? 0)
+    : 0;
+
   // Frames the whole route once it's available. Keyed on `points`
   // (referentially stable for a given route — only a genuinely different
   // route or a map reload changes it), not on every position/progress
@@ -205,6 +248,8 @@ export function MapView({
     if (bounds) {
       mapRef.current?.resize();
       mapRef.current?.fitBounds(bounds);
+      const center = mapRef.current?.getCenter();
+      if (center) setCameraCenter(center);
     }
   }, [points, ready]);
 
@@ -223,6 +268,11 @@ export function MapView({
       <div
         ref={containerRef}
         data-testid="map-container"
+        data-route-coordinate-count={routeCoordinateCount}
+        data-route-loaded={routeSourceLoaded ? "true" : "false"}
+        data-camera-center={
+          cameraCenter ? `${String(cameraCenter[0])},${String(cameraCenter[1])}` : ""
+        }
         style={{ width: "100%", height: "100%" }}
       />
       {loadState === "loading" ? (

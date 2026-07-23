@@ -93,6 +93,7 @@ function buildStubMapFactory(): {
       addCircleLayer: () => undefined,
       hasLayer: () => false,
       fitBounds: () => undefined,
+      getCenter: () => [0, 0],
       resize: () => undefined,
       remove: () => undefined,
     };

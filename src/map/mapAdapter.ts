@@ -1,6 +1,16 @@
-import { GeoJSONSource, Map as MapLibreGlMap } from "maplibre-gl";
+import { GeoJSONSource, Map as MapLibreGlMap, setWorkerUrl } from "maplibre-gl";
 import type { StyleSpecification } from "maplibre-gl";
+// maplibre-gl computes its worker script's URL relative to its own
+// import.meta.url at runtime, expecting a sibling file — a pattern that
+// doesn't survive bundling (Vite inlines the library into one chunk, so
+// that computed URL 404s). `?worker&url` makes Vite bundle the worker's
+// own module graph into a real, standalone chunk and gives back its
+// correct built URL, which we then tell maplibre-gl to use instead.
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+import type { Coordinate } from "../domain/types.ts";
 import type { BoundingBox } from "./routeLayer.ts";
+
+setWorkerUrl(maplibreWorkerUrl);
 
 export interface MapErrorInfo {
   message: string;
@@ -45,6 +55,9 @@ export interface MapLibreLike {
   hasLayer(id: string): boolean;
   /** Instantly frames the given bounds (no animation), padded so route edges aren't flush against the viewport. */
   fitBounds(bounds: BoundingBox, paddingPixels?: number): void;
+  /** The map's current centre. Used to verify the camera actually moved
+   * (e.g. after fitBounds), not just that a fit was requested. */
+  getCenter(): Coordinate;
   /** Recomputes the map's size from its container. Needed after the container's
    * on-screen size changes post-creation (e.g. iOS Safari/PWA chrome settling
    * after first paint) — otherwise fitBounds/camera maths use stale dimensions. */
@@ -142,6 +155,11 @@ class MapLibreAdapter implements MapLibreLike {
       ],
       { padding: paddingPixels, animate: false, maxZoom: 16 },
     );
+  }
+
+  getCenter(): Coordinate {
+    const center = this.map.getCenter();
+    return [center.lng, center.lat];
   }
 
   resize(): void {

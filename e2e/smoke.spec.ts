@@ -53,10 +53,36 @@ test("imports a GPX file, opens Riding mode, and the map reaches a usable state"
 
   // A <canvas> exists the instant MapLibre is constructed, regardless of
   // whether it ever finishes loading — waiting for the loading indicator
-  // to clear is what actually proves the map reached a usable state
-  // (real tiles or the local fallback), not just that a canvas exists.
+  // to clear only proves the style loaded, not that the route itself
+  // rendered (a real bug that slipped past this exact check previously:
+  // MapLibre's Web Worker script failed to load in the production
+  // bundle, so the map reached "ready" via a plain background while the
+  // route's GeoJSON source silently never processed). The assertions
+  // below check the actual rendered output instead.
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
-  await expect(page.locator('[data-testid="map-container"] canvas')).toBeVisible();
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await expect(mapContainer.locator("canvas")).toBeVisible();
+
+  // Proves the worker actually finished processing the route's GeoJSON
+  // source (not just that setGeoJsonSourceData was called).
+  await expect(mapContainer).toHaveAttribute("data-route-loaded", "true", {
+    timeout: 15_000,
+  });
+
+  // Proves real, non-empty geometry was submitted in the first place.
+  const coordinateCount = await mapContainer.getAttribute("data-route-coordinate-count");
+  expect(Number(coordinateCount)).toBeGreaterThan(0);
+
+  // Proves the camera actually moved to the route's location — the
+  // fixture route sits within roughly (51.5000,-0.1000)-(51.5036,-0.0946);
+  // the style's own default view is nowhere near this (typically far
+  // zoomed out, centred elsewhere or at [0,0]).
+  const cameraCenterAttr = await mapContainer.getAttribute("data-camera-center");
+  const [cameraLon, cameraLat] = (cameraCenterAttr ?? "").split(",").map(Number);
+  expect(cameraLon).toBeGreaterThan(-0.101);
+  expect(cameraLon).toBeLessThan(-0.094);
+  expect(cameraLat).toBeGreaterThan(51.499);
+  expect(cameraLat).toBeLessThan(51.504);
 
   expect(consoleErrors).toEqual([]);
 });

@@ -5,10 +5,12 @@ import { MapView } from "./MapView.tsx";
 import type {
   CreateMapOptions,
   MapErrorInfo,
-  MapFactory,
   MapLibreLike,
+  MapFactory,
+  MapSourceDataInfo,
 } from "./mapAdapter.ts";
-import type { RoutePoint } from "../domain/types.ts";
+import { clearErrorLog, getRecentErrors } from "../platform/errorLog.ts";
+import type { Coordinate, RoutePoint } from "../domain/types.ts";
 
 const points: RoutePoint[] = [
   { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
@@ -21,22 +23,26 @@ interface MockMapHandle {
    * MapView's own behaviour of falling back to a freshly-constructed map. */
   triggerLoad: () => void;
   triggerError: (info: MapErrorInfo) => void;
+  triggerSourceData: (info: MapSourceDataInfo) => void;
   sources: Map<string, GeoJSON.FeatureCollection>;
   layers: Set<string>;
   removeSpy: ReturnType<typeof vi.fn>;
   fitBoundsSpy: ReturnType<typeof vi.fn>;
   resizeSpy: ReturnType<typeof vi.fn>;
+  getCenterSpy: ReturnType<typeof vi.fn>;
   constructedStyles: CreateMapOptions["style"][];
 }
 
-function createMockMapFactory(): MockMapHandle {
+function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle {
   let loadListener: (() => void) | undefined;
   let errorListener: ((info: MapErrorInfo) => void) | undefined;
+  let sourceDataListener: ((info: MapSourceDataInfo) => void) | undefined;
   const sources = new Map<string, GeoJSON.FeatureCollection>();
   const layers = new Set<string>();
   const removeSpy = vi.fn();
   const fitBoundsSpy = vi.fn();
   const resizeSpy = vi.fn();
+  const getCenterSpy = vi.fn(() => center);
   const constructedStyles: CreateMapOptions["style"][] = [];
 
   const factory: MapFactory = ({ style }) => {
@@ -48,8 +54,8 @@ function createMockMapFactory(): MockMapHandle {
       onError: (listener) => {
         errorListener = listener;
       },
-      onSourceData: () => {
-        // not exercised by these component tests
+      onSourceData: (listener) => {
+        sourceDataListener = listener;
       },
       addGeoJsonSource: (id, data) => {
         sources.set(id, data);
@@ -66,6 +72,7 @@ function createMockMapFactory(): MockMapHandle {
       },
       hasLayer: (id) => layers.has(id),
       fitBounds: fitBoundsSpy,
+      getCenter: getCenterSpy,
       resize: resizeSpy,
       remove: removeSpy,
     };
@@ -76,6 +83,7 @@ function createMockMapFactory(): MockMapHandle {
     factory,
     fitBoundsSpy,
     resizeSpy,
+    getCenterSpy,
     constructedStyles,
     triggerLoad: () => {
       act(() => {
@@ -85,6 +93,11 @@ function createMockMapFactory(): MockMapHandle {
     triggerError: (info) => {
       act(() => {
         errorListener?.(info);
+      });
+    },
+    triggerSourceData: (info) => {
+      act(() => {
+        sourceDataListener?.(info);
       });
     },
     sources,
@@ -237,6 +250,90 @@ describe("MapView", () => {
       southWest: [0, 51],
       northEast: [0.001, 51],
     });
+  });
+
+  it("records the camera centre once fitBounds has actually been applied", () => {
+    const mock = createMockMapFactory([-1.5, 53.8]);
+    render(<MapView points={points} mapFactory={mock.factory} />);
+
+    mock.triggerLoad();
+
+    expect(mock.getCenterSpy).toHaveBeenCalled();
+    expect(screen.getByTestId("map-container")).toHaveAttribute(
+      "data-camera-center",
+      "-1.5,53.8",
+    );
+  });
+
+  it("sets the route coordinate-count once real, non-empty route data is submitted", () => {
+    const mock = createMockMapFactory();
+    render(<MapView points={points} mapFactory={mock.factory} />);
+
+    mock.triggerLoad();
+
+    expect(screen.getByTestId("map-container")).toHaveAttribute(
+      "data-route-coordinate-count",
+      "2",
+    );
+  });
+
+  it("only marks the route as loaded once the source itself reports isSourceLoaded", () => {
+    const mock = createMockMapFactory();
+    render(<MapView points={points} mapFactory={mock.factory} />);
+    mock.triggerLoad();
+
+    const container = screen.getByTestId("map-container");
+    expect(container).toHaveAttribute("data-route-loaded", "false");
+
+    // A different source finishing doesn't count.
+    mock.triggerSourceData({ sourceId: "acn-position", isSourceLoaded: true });
+    expect(container).toHaveAttribute("data-route-loaded", "false");
+
+    // Not-yet-loaded events for the right source don't count either.
+    mock.triggerSourceData({ sourceId: "acn-route-remaining", isSourceLoaded: false });
+    expect(container).toHaveAttribute("data-route-loaded", "false");
+
+    mock.triggerSourceData({ sourceId: "acn-route-remaining", isSourceLoaded: true });
+    expect(container).toHaveAttribute("data-route-loaded", "true");
+  });
+
+  it("logs a diagnostic error if the route source never reports finishing loading", () => {
+    vi.useFakeTimers();
+    try {
+      clearErrorLog();
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      act(() => {
+        vi.advanceTimersByTime(5_000);
+      });
+
+      const [latest] = getRecentErrors();
+      expect(latest?.context).toBe("map");
+      expect(latest?.message).toContain("Route data did not finish loading");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not log a diagnostic error once the route source reports loaded before the timeout", () => {
+    vi.useFakeTimers();
+    try {
+      clearErrorLog();
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+      mock.triggerSourceData({ sourceId: "acn-route-remaining", isSourceLoaded: true });
+
+      act(() => {
+        vi.advanceTimersByTime(5_000);
+      });
+
+      expect(getRecentErrors()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("resizes the map before fitting bounds, so stale container dimensions don't skew the fit", () => {
