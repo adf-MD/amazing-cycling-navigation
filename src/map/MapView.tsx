@@ -8,6 +8,7 @@ import {
   buildPositionFeatureCollection,
   computeBoundingBox,
   EMPTY_FEATURE_COLLECTION,
+  isLoopRoute,
   splitRouteAtDistance,
 } from "./routeLayer.ts";
 import { DEFAULT_TILE_SOURCE, type TileSourceConfig } from "./tileSource.ts";
@@ -15,9 +16,13 @@ import { DEFAULT_TILE_SOURCE, type TileSourceConfig } from "./tileSource.ts";
 const COMPLETED_SOURCE_ID = "acn-route-completed";
 const REMAINING_SOURCE_ID = "acn-route-remaining";
 const POSITION_SOURCE_ID = "acn-position";
+const START_SOURCE_ID = "acn-route-start";
+const FINISH_SOURCE_ID = "acn-route-finish";
 const COMPLETED_LAYER_ID = "acn-route-completed-line";
 const REMAINING_LAYER_ID = "acn-route-remaining-line";
 const POSITION_LAYER_ID = "acn-position-marker";
+const START_LAYER_ID = "acn-start-marker";
+const FINISH_LAYER_ID = "acn-finish-marker";
 
 /** How long to wait for the map's first `load` before falling back to the
  * local neutral background — the tile provider is external and unreliable
@@ -125,6 +130,24 @@ export function MapView({
         circleColor: "#1a73e8",
         circleStrokeColor: "#ffffff",
         circleStrokeWidth: 2,
+      });
+      // Start: filled disc. Finish: hollow ring (circle-opacity 0 plus a
+      // stroke) — a different shape, not just a different colour, so the
+      // two remain distinguishable without relying on hue alone.
+      map.addGeoJsonSource(START_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
+      map.addCircleLayer(START_LAYER_ID, START_SOURCE_ID, {
+        circleRadius: 8,
+        circleColor: "#0a5f38",
+        circleStrokeColor: "#ffffff",
+        circleStrokeWidth: 2,
+      });
+      map.addGeoJsonSource(FINISH_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
+      map.addCircleLayer(FINISH_LAYER_ID, FINISH_SOURCE_ID, {
+        circleRadius: 9,
+        circleColor: "#101010",
+        circleOpacity: 0,
+        circleStrokeColor: "#101010",
+        circleStrokeWidth: 3,
       });
     }
 
@@ -238,10 +261,12 @@ export function MapView({
         ?.geometry.coordinates.length ?? 0)
     : 0;
 
-  // Frames the whole route once it's available. Keyed on `points`
-  // (referentially stable for a given route — only a genuinely different
-  // route or a map reload changes it), not on every position/progress
-  // update, so the view doesn't jump around mid-ride.
+  // Frames the whole route once it's available, and marks the start
+  // (always) and finish (only if it's not effectively the same point as
+  // the start — see isLoopRoute). Keyed on `points` (referentially stable
+  // for a given route — only a genuinely different route or a map reload
+  // changes it), not on every position/progress update, so the view
+  // doesn't jump around mid-ride.
   useEffect(() => {
     if (!ready) return;
     const bounds = computeBoundingBox(points.map((point) => point.coordinate));
@@ -251,6 +276,21 @@ export function MapView({
       const center = mapRef.current?.getCenter();
       if (center) setCameraCenter(center);
     }
+
+    const first = points[0];
+    const last = points.at(-1);
+    if (first) {
+      mapRef.current?.setGeoJsonSourceData(
+        START_SOURCE_ID,
+        buildPositionFeatureCollection(first.coordinate),
+      );
+    }
+    mapRef.current?.setGeoJsonSourceData(
+      FINISH_SOURCE_ID,
+      last && !isLoopRoute(points)
+        ? buildPositionFeatureCollection(last.coordinate)
+        : EMPTY_FEATURE_COLLECTION,
+    );
   }, [points, ready]);
 
   useEffect(() => {

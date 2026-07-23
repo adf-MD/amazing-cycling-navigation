@@ -4,6 +4,7 @@ import {
   buildRouteLineFeatureCollection,
   computeBoundingBox,
   EMPTY_FEATURE_COLLECTION,
+  isLoopRoute,
   splitRouteAtDistance,
 } from "./routeLayer.ts";
 import type { Coordinate, RoutePoint } from "../domain/types.ts";
@@ -83,6 +84,45 @@ describe("computeBoundingBox", () => {
       southWest: [-0.001, 50.999],
       northEast: [0.002, 51.001],
     });
+  });
+});
+
+describe("isLoopRoute", () => {
+  it("returns false for a clear point-to-point route", () => {
+    expect(isLoopRoute(points)).toBe(false);
+  });
+
+  it("returns true when the first and last points coincide exactly", () => {
+    const loop: RoutePoint[] = [
+      firstPoint,
+      { coordinate: [0.001, 51], elevationMetres: 12, distanceFromStartMetres: 100 },
+      { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 200 },
+    ];
+    expect(isLoopRoute(loop)).toBe(true);
+  });
+
+  it("returns true when the first and last points are within the threshold (GPS drift)", () => {
+    const nearLoop: RoutePoint[] = [
+      { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
+      { coordinate: [0.001, 51], elevationMetres: 12, distanceFromStartMetres: 100 },
+      // ~30m east of the start at this latitude — within the 50m default.
+      { coordinate: [0.0004, 51], elevationMetres: 10, distanceFromStartMetres: 200 },
+    ];
+    expect(isLoopRoute(nearLoop)).toBe(true);
+  });
+
+  it("returns false when the first and last points are further apart than the threshold", () => {
+    const nearLoop: RoutePoint[] = [
+      { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
+      { coordinate: [0.001, 51], elevationMetres: 12, distanceFromStartMetres: 100 },
+      { coordinate: [0.0004, 51], elevationMetres: 10, distanceFromStartMetres: 200 },
+    ];
+    expect(isLoopRoute(nearLoop, 10)).toBe(false);
+  });
+
+  it("returns false for degenerate 0- or 1-point input", () => {
+    expect(isLoopRoute([])).toBe(false);
+    expect(isLoopRoute([firstPoint])).toBe(false);
   });
 });
 

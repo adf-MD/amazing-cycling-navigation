@@ -1,4 +1,5 @@
 import type { Coordinate, RoutePoint } from "../domain/types.ts";
+import { haversineDistanceMetres } from "../navigation/distance.ts";
 
 export const EMPTY_FEATURE_COLLECTION: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",
@@ -35,6 +36,23 @@ export function computeBoundingBox(
   }
 
   return { southWest: [minLon, minLat], northEast: [maxLon, maxLat] };
+}
+
+/**
+ * Whether a route's first and last points are close enough to treat as a
+ * closed loop, rather than genuinely distinct start/finish points. Real
+ * GPX loops rarely have byte-identical first/last coordinates — GPS drift
+ * when starting/stopping a recording "at the same spot" is normal — so
+ * this uses a distance threshold rather than exact equality.
+ */
+export function isLoopRoute(
+  points: readonly RoutePoint[],
+  thresholdMetres = 50,
+): boolean {
+  const first = points[0];
+  const last = points.at(-1);
+  if (!first || !last || first === last) return false;
+  return haversineDistanceMetres(first.coordinate, last.coordinate) <= thresholdMetres;
 }
 
 /** A GeoJSON LineString needs at least 2 positions; fewer than that renders as no line rather than invalid geometry. */

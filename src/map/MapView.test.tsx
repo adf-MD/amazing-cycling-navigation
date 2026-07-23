@@ -240,6 +240,40 @@ describe("MapView", () => {
     expect(mock.layers.has("acn-position-marker")).toBe(true);
   });
 
+  it("marks the start and finish for a point-to-point route", () => {
+    const mock = createMockMapFactory();
+    render(<MapView points={points} mapFactory={mock.factory} />);
+
+    mock.triggerLoad();
+
+    expect(mock.sources.get("acn-route-start")?.features[0]?.geometry).toEqual({
+      type: "Point",
+      coordinates: [0, 51],
+    });
+    expect(mock.sources.get("acn-route-finish")?.features[0]?.geometry).toEqual({
+      type: "Point",
+      coordinates: [0.001, 51],
+    });
+  });
+
+  it("marks only the start (not a separate finish) for a closed-loop route", () => {
+    const loopPoints: RoutePoint[] = [
+      { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
+      { coordinate: [0.001, 51], elevationMetres: 12, distanceFromStartMetres: 100 },
+      { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 200 },
+    ];
+    const mock = createMockMapFactory();
+    render(<MapView points={loopPoints} mapFactory={mock.factory} />);
+
+    mock.triggerLoad();
+
+    expect(mock.sources.get("acn-route-start")?.features[0]?.geometry).toEqual({
+      type: "Point",
+      coordinates: [0, 51],
+    });
+    expect(mock.sources.get("acn-route-finish")?.features).toEqual([]);
+  });
+
   it("frames the map to the route's bounding box once loaded", () => {
     const mock = createMockMapFactory();
     render(<MapView points={points} mapFactory={mock.factory} />);
