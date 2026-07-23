@@ -52,6 +52,30 @@ body {
   color: var(--colour-text);
 }
 
+/* index.html sets viewport-fit=cover and a translucent iOS status bar so
+ * the app can draw under it, but that means content isn't automatically
+ * kept clear of the notch/status bar/home indicator — this shell must do
+ * that itself via the safe-area insets, on all four sides so it also
+ * holds up in landscape (where the notch sits left or right). box-sizing
+ * is already border-box globally, so this padding doesn't add to the
+ * shell's own height. */
+.app-shell {
+  min-height: 100vh;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+
+/* A duplicate `min-height` declaration (100vh then 100dvh) is the usual
+ * way to write a fallback, but this project's production CSS minifier
+ * collapses same-property duplicates and drops the fallback — verified
+ * against the actual built output. @supports isn't collapsed the same
+ * way, so it survives the build. */
+@supports (min-height: 100dvh) {
+  .app-shell {
+    min-height: 100dvh;
+  }
+}
+
 button {
   min-height: var(--touch-target-min);
   min-width: var(--touch-target-min);

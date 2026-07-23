@@ -18,7 +18,7 @@ function App() {
   };
 
   return (
-    <div>
+    <div className="app-shell">
       <header>
         <h1>Amazing Cycling Navigation</h1>
         <nav aria-label="Main">
