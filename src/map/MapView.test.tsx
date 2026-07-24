@@ -28,7 +28,12 @@ interface MockMapHandle {
    * adapter only calls its listener when movestart's originalEvent is
    * set, so this is the "user" case; programmatic moves never call it. */
   triggerUserCameraInteraction: () => void;
-  triggerCameraSettled: (camera: { coordinate: Coordinate; zoom: number }) => void;
+  triggerCameraSettled: (camera: {
+    coordinate: Coordinate;
+    zoom: number;
+    bearingDegrees: number;
+    pitchDegrees: number;
+  }) => void;
   sources: Map<string, GeoJSON.FeatureCollection>;
   layers: Set<string>;
   removeSpy: ReturnType<typeof vi.fn>;
@@ -46,7 +51,13 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
   let sourceDataListener: ((info: MapSourceDataInfo) => void) | undefined;
   let userCameraInteractionListener: (() => void) | undefined;
   let cameraSettledListener:
-    ((camera: { coordinate: Coordinate; zoom: number }) => void) | undefined;
+    | ((camera: {
+        coordinate: Coordinate;
+        zoom: number;
+        bearingDegrees: number;
+        pitchDegrees: number;
+      }) => void)
+    | undefined;
   const sources = new Map<string, GeoJSON.FeatureCollection>();
   const layers = new Set<string>();
   const removeSpy = vi.fn();
@@ -376,9 +387,19 @@ describe("MapView", () => {
     );
     mock.triggerLoad();
 
-    mock.triggerCameraSettled({ coordinate: [-1.1, 52.2], zoom: 12 });
+    mock.triggerCameraSettled({
+      coordinate: [-1.1, 52.2],
+      zoom: 12,
+      bearingDegrees: 90,
+      pitchDegrees: 35,
+    });
 
-    expect(onCameraSettled).toHaveBeenCalledWith({ coordinate: [-1.1, 52.2], zoom: 12 });
+    expect(onCameraSettled).toHaveBeenCalledWith({
+      coordinate: [-1.1, 52.2],
+      zoom: 12,
+      bearingDegrees: 90,
+      pitchDegrees: 35,
+    });
   });
 
   it("updates the camera-centre diagnostic attribute whenever the camera settles, not just after the initial fit", () => {
@@ -393,7 +414,12 @@ describe("MapView", () => {
     // attribute would stay empty forever even though the camera moved.
     expect(screen.getByTestId("map-container")).toHaveAttribute("data-camera-center", "");
 
-    mock.triggerCameraSettled({ coordinate: [-1.1, 52.2], zoom: 12 });
+    mock.triggerCameraSettled({
+      coordinate: [-1.1, 52.2],
+      zoom: 12,
+      bearingDegrees: 0,
+      pitchDegrees: 0,
+    });
 
     expect(screen.getByTestId("map-container")).toHaveAttribute(
       "data-camera-center",
@@ -401,19 +427,29 @@ describe("MapView", () => {
     );
   });
 
-  it("applies an animated cameraTarget via setCamera once ready", () => {
+  it("applies an animated following cameraTarget via setCamera once ready, carrying centre/zoom/bearing/pitch/offset together", () => {
     const mock = createMockMapFactory();
     render(
       <MapView
         points={points}
         mapFactory={mock.factory}
-        cameraTarget={{ coordinate: [0, 51], zoom: 16, animate: true }}
+        cameraTarget={{
+          coordinate: [0, 51],
+          zoom: 16,
+          bearingDegrees: 90,
+          pitchDegrees: 35,
+          animate: true,
+          followOffset: true,
+        }}
       />,
     );
 
     mock.triggerLoad();
 
-    expect(mock.setCameraSpy).toHaveBeenCalledWith([0, 51], 16, { animate: true });
+    expect(mock.setCameraSpy).toHaveBeenCalledWith([0, 51], 16, 90, 35, {
+      animate: true,
+      followOffset: true,
+    });
   });
 
   it("applies a non-animated (restore) cameraTarget via setCamera", () => {
@@ -422,48 +458,85 @@ describe("MapView", () => {
       <MapView
         points={points}
         mapFactory={mock.factory}
-        cameraTarget={{ coordinate: [0.002, 51.002], zoom: 14, animate: false }}
+        cameraTarget={{
+          coordinate: [0.002, 51.002],
+          zoom: 14,
+          bearingDegrees: 200,
+          pitchDegrees: 10,
+          animate: false,
+          followOffset: false,
+        }}
       />,
     );
 
     mock.triggerLoad();
 
-    expect(mock.setCameraSpy).toHaveBeenCalledWith([0.002, 51.002], 14, {
+    expect(mock.setCameraSpy).toHaveBeenCalledWith([0.002, 51.002], 14, 200, 10, {
       animate: false,
+      followOffset: false,
+    });
+  });
+
+  it("applies an orientation-only (north-up) cameraTarget with a null centre/zoom", () => {
+    const mock = createMockMapFactory();
+    render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        cameraTarget={{
+          coordinate: null,
+          zoom: null,
+          bearingDegrees: 0,
+          pitchDegrees: 0,
+          animate: true,
+          followOffset: false,
+        }}
+      />,
+    );
+
+    mock.triggerLoad();
+
+    expect(mock.setCameraSpy).toHaveBeenCalledWith(null, null, 0, 0, {
+      animate: true,
+      followOffset: false,
     });
   });
 
   it("does not re-apply a cameraTarget whose values are unchanged, even as a new object", () => {
     const mock = createMockMapFactory();
+    const target = {
+      coordinate: [0, 51] as Coordinate,
+      zoom: 16,
+      bearingDegrees: 90,
+      pitchDegrees: 35,
+      animate: true,
+      followOffset: true,
+    };
     const { rerender } = render(
-      <MapView
-        points={points}
-        mapFactory={mock.factory}
-        cameraTarget={{ coordinate: [0, 51], zoom: 16, animate: true }}
-      />,
+      <MapView points={points} mapFactory={mock.factory} cameraTarget={target} />,
     );
     mock.triggerLoad();
     expect(mock.setCameraSpy).toHaveBeenCalledOnce();
 
     rerender(
-      <MapView
-        points={points}
-        mapFactory={mock.factory}
-        cameraTarget={{ coordinate: [0, 51], zoom: 16, animate: true }}
-      />,
+      <MapView points={points} mapFactory={mock.factory} cameraTarget={{ ...target }} />,
     );
 
     expect(mock.setCameraSpy).toHaveBeenCalledOnce();
   });
 
-  it("applies a new cameraTarget again once its values genuinely change", () => {
+  it("applies a new cameraTarget again once only the bearing genuinely changes", () => {
     const mock = createMockMapFactory();
+    const target = {
+      coordinate: [0, 51] as Coordinate,
+      zoom: 16,
+      bearingDegrees: 90,
+      pitchDegrees: 35,
+      animate: true,
+      followOffset: true,
+    };
     const { rerender } = render(
-      <MapView
-        points={points}
-        mapFactory={mock.factory}
-        cameraTarget={{ coordinate: [0, 51], zoom: 16, animate: true }}
-      />,
+      <MapView points={points} mapFactory={mock.factory} cameraTarget={target} />,
     );
     mock.triggerLoad();
     expect(mock.setCameraSpy).toHaveBeenCalledOnce();
@@ -472,7 +545,34 @@ describe("MapView", () => {
       <MapView
         points={points}
         mapFactory={mock.factory}
-        cameraTarget={{ coordinate: [0.001, 51.001], zoom: 16, animate: true }}
+        cameraTarget={{ ...target, bearingDegrees: 95 }}
+      />,
+    );
+
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies a new cameraTarget again once its position genuinely changes", () => {
+    const mock = createMockMapFactory();
+    const target = {
+      coordinate: [0, 51] as Coordinate,
+      zoom: 16,
+      bearingDegrees: 90,
+      pitchDegrees: 35,
+      animate: true,
+      followOffset: true,
+    };
+    const { rerender } = render(
+      <MapView points={points} mapFactory={mock.factory} cameraTarget={target} />,
+    );
+    mock.triggerLoad();
+    expect(mock.setCameraSpy).toHaveBeenCalledOnce();
+
+    rerender(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        cameraTarget={{ ...target, coordinate: [0.001, 51.001] }}
       />,
     );
 
@@ -485,7 +585,14 @@ describe("MapView", () => {
       <MapView
         points={points}
         mapFactory={mock.factory}
-        cameraTarget={{ coordinate: [0, 51], zoom: 16, animate: true }}
+        cameraTarget={{
+          coordinate: [0, 51],
+          zoom: 16,
+          bearingDegrees: 90,
+          pitchDegrees: 35,
+          animate: true,
+          followOffset: true,
+        }}
       />,
     );
 
@@ -496,7 +603,10 @@ describe("MapView", () => {
     mock.triggerLoad();
 
     expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
-    expect(mock.setCameraSpy).toHaveBeenCalledWith([0, 51], 16, { animate: true });
+    expect(mock.setCameraSpy).toHaveBeenCalledWith([0, 51], 16, 90, 35, {
+      animate: true,
+      followOffset: true,
+    });
   });
 
   it("sets the route coordinate-count once real, non-empty route data is submitted", () => {

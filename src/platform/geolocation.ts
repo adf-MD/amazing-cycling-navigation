@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Coordinate } from "../domain/types.ts";
+import { normaliseBearingDegrees } from "../navigation/bearing.ts";
 
 export interface GeolocationFix {
   coordinate: Coordinate;
@@ -7,6 +8,11 @@ export interface GeolocationFix {
   timestampMs: number;
   /** Transient; never persisted or accumulated into a speed/ride history. */
   speedMetresPerSecond: number | null;
+  /** The browser's course-over-ground heading, normalised into [0, 360),
+   * or null when unavailable/non-finite (commonly NaN while stationary or
+   * on devices that don't report it) — see GeolocationCoordinates.heading.
+   * Transient; never persisted or accumulated into a heading history. */
+  headingDegrees: number | null;
 }
 
 export type GeolocationErrorReason =
@@ -57,6 +63,10 @@ export const browserGeolocationSource: GeolocationSource = {
           accuracyMetres: position.coords.accuracy,
           timestampMs: position.timestamp,
           speedMetresPerSecond: position.coords.speed,
+          headingDegrees:
+            position.coords.heading !== null && Number.isFinite(position.coords.heading)
+              ? normaliseBearingDegrees(position.coords.heading)
+              : null,
         });
       },
       (error) => {

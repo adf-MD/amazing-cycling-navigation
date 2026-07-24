@@ -39,7 +39,7 @@ describe("browserGeolocationSource", () => {
     const clear = browserGeolocationSource.watchPosition(onFix, vi.fn());
 
     successCallback?.({
-      coords: { longitude: -1.5, latitude: 53.8, accuracy: 8, speed: 3.2 },
+      coords: { longitude: -1.5, latitude: 53.8, accuracy: 8, speed: 3.2, heading: 87 },
       timestamp: 123456,
     } as GeolocationPosition);
 
@@ -48,10 +48,44 @@ describe("browserGeolocationSource", () => {
       accuracyMetres: 8,
       timestampMs: 123456,
       speedMetresPerSecond: 3.2,
+      headingDegrees: 87,
     } satisfies GeolocationFix);
 
     clear();
     expect(clearWatch).toHaveBeenCalledWith(42);
+  });
+
+  it.each([
+    [null, null],
+    [Number.NaN, null],
+    [-10, 350],
+    [370, 10],
+  ])("normalises heading %p to %p", (rawHeading, expectedHeadingDegrees) => {
+    let successCallback: ((position: GeolocationPosition) => void) | undefined;
+    const watchPosition = vi.fn((success: (position: GeolocationPosition) => void) => {
+      successCallback = success;
+      return 1;
+    });
+    vi.stubGlobal("navigator", {
+      geolocation: { watchPosition, clearWatch: vi.fn() },
+    });
+
+    const onFix = vi.fn();
+    browserGeolocationSource.watchPosition(onFix, vi.fn());
+
+    successCallback?.({
+      coords: {
+        longitude: -1.5,
+        latitude: 53.8,
+        accuracy: 8,
+        speed: null,
+        heading: rawHeading,
+      },
+      timestamp: 123456,
+    } as GeolocationPosition);
+
+    const [receivedFix] = onFix.mock.calls[0] as [GeolocationFix];
+    expect(receivedFix.headingDegrees).toBe(expectedHeadingDegrees);
   });
 
   it.each([
@@ -124,6 +158,7 @@ const SAMPLE_FIX: GeolocationFix = {
   accuracyMetres: 10,
   timestampMs: 1000,
   speedMetresPerSecond: null,
+  headingDegrees: null,
 };
 
 describe("useGeolocationWatch", () => {

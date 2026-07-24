@@ -14,7 +14,8 @@ import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
 import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry.ts";
 import { OFF_ROUTE_BASE_METRES } from "../../navigation/offRoute.ts";
-import { NAVIGATION_ZOOM } from "./rideCamera.ts";
+import { routeTangentBearingDegrees } from "../../navigation/bearing.ts";
+import { FOLLOW_PITCH_DEGREES, NAVIGATION_ZOOM } from "./rideCamera.ts";
 
 const routePoints = buildRoutePointsFromWaypoints(
   [
@@ -39,6 +40,16 @@ const route: PlannedRoute = {
 
 function pointAt(index: number): Coordinate {
   return routePoints[index]?.coordinate ?? [0, 51];
+}
+
+// The route isn't due-north, so its own tangent bearing isn't a clean
+// round number — computed here via the same production function rather
+// than a hand-derived magic float, since these tests are about camera
+// behaviour, not bearing precision (see bearing.test.ts/rideCamera.test.ts
+// for that).
+function expectedBearingAt(index: number): number {
+  const distance = routePoints[index]?.distanceFromStartMetres ?? 0;
+  return routeTangentBearingDegrees(routePoints, distance) ?? 0;
 }
 
 function buildStubGeolocationSource(): {
@@ -74,7 +85,12 @@ function buildStubMapFactory(): {
   triggerLoad: () => void;
   triggerTileError: () => void;
   triggerUserCameraInteraction: () => void;
-  triggerCameraSettled: (camera: { coordinate: Coordinate; zoom: number }) => void;
+  triggerCameraSettled: (camera: {
+    coordinate: Coordinate;
+    zoom: number;
+    bearingDegrees: number;
+    pitchDegrees: number;
+  }) => void;
   setCameraSpy: ReturnType<typeof vi.fn>;
   getZoomSpy: ReturnType<typeof vi.fn>;
 } {
@@ -82,7 +98,13 @@ function buildStubMapFactory(): {
   let errorListener: (() => void) | undefined;
   let userCameraInteractionListener: (() => void) | undefined;
   let cameraSettledListener:
-    ((camera: { coordinate: Coordinate; zoom: number }) => void) | undefined;
+    | ((camera: {
+        coordinate: Coordinate;
+        zoom: number;
+        bearingDegrees: number;
+        pitchDegrees: number;
+      }) => void)
+    | undefined;
   const setCameraSpy = vi.fn();
   const getZoomSpy = vi.fn(() => 14);
   const factory: MapFactory = () => {
@@ -228,6 +250,7 @@ describe("RidingScreen", () => {
       accuracyMetres: 5,
       timestampMs: 1000,
       speedMetresPerSecond: null,
+      headingDegrees: null,
     });
 
     expect(
@@ -272,6 +295,7 @@ describe("RidingScreen", () => {
       accuracyMetres: 7.4,
       timestampMs: 10_000,
       speedMetresPerSecond: null,
+      headingDegrees: null,
     });
 
     expect(await screen.findByText(/±7 m/)).toBeInTheDocument();
@@ -319,6 +343,7 @@ describe("RidingScreen", () => {
       accuracyMetres: 5,
       timestampMs: 1000,
       speedMetresPerSecond: null,
+      headingDegrees: null,
     });
     await screen.findByText("On route");
 
@@ -332,6 +357,7 @@ describe("RidingScreen", () => {
         accuracyMetres: 5,
         timestampMs: 2000 + i * 1000,
         speedMetresPerSecond: null,
+        headingDegrees: null,
       });
     }
 
@@ -355,6 +381,7 @@ describe("RidingScreen", () => {
       accuracyMetres: 5,
       timestampMs: 1000,
       speedMetresPerSecond: null,
+      headingDegrees: null,
     });
 
     const fiveKmButton = await screen.findByRole("button", { name: "5 km" });
@@ -428,6 +455,7 @@ describe("RidingScreen", () => {
         accuracyMetres: 5,
         timestampMs: 2000,
         speedMetresPerSecond: null,
+        headingDegrees: null,
       });
 
       await waitFor(() => {
@@ -488,6 +516,7 @@ describe("RidingScreen", () => {
         accuracyMetres: 6,
         timestampMs: 1000,
         speedMetresPerSecond: null,
+        headingDegrees: null,
       });
 
       expect(await screen.findByText("On route")).toBeInTheDocument();
@@ -515,6 +544,7 @@ describe("RidingScreen", () => {
         accuracyMetres: 6,
         timestampMs: 1000,
         speedMetresPerSecond: null,
+        headingDegrees: null,
       });
       await screen.findByText("On route");
 
@@ -573,12 +603,17 @@ describe("RidingScreen", () => {
         accuracyMetres: 5,
         timestampMs: 1000,
         speedMetresPerSecond: null,
+        headingDegrees: null,
       });
 
       await waitFor(() => {
-        expect(map.setCameraSpy).toHaveBeenCalledWith(pointAt(0), NAVIGATION_ZOOM, {
-          animate: true,
-        });
+        expect(map.setCameraSpy).toHaveBeenCalledWith(
+          pointAt(0),
+          NAVIGATION_ZOOM,
+          expectedBearingAt(0),
+          FOLLOW_PITCH_DEGREES,
+          { animate: true, followOffset: true },
+        );
       });
       const followButton = screen.getByRole("button", { name: "Follow my location" });
       expect(followButton).toHaveTextContent("⌖");
@@ -604,6 +639,7 @@ describe("RidingScreen", () => {
         accuracyMetres: 5,
         timestampMs: 1000,
         speedMetresPerSecond: null,
+        headingDegrees: null,
       });
       await waitFor(() => {
         expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
@@ -618,6 +654,7 @@ describe("RidingScreen", () => {
         accuracyMetres: 5,
         timestampMs: 2000,
         speedMetresPerSecond: null,
+        headingDegrees: null,
       });
 
       await waitFor(() => {
@@ -648,6 +685,7 @@ describe("RidingScreen", () => {
         accuracyMetres: 5,
         timestampMs: 1000,
         speedMetresPerSecond: null,
+        headingDegrees: null,
       });
       await waitFor(() => {
         expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
@@ -667,6 +705,7 @@ describe("RidingScreen", () => {
         accuracyMetres: 5,
         timestampMs: 2000,
         speedMetresPerSecond: null,
+        headingDegrees: null,
       });
       await user.click(followButton);
 
@@ -674,9 +713,13 @@ describe("RidingScreen", () => {
       await waitFor(() => {
         expect(map.setCameraSpy).toHaveBeenCalledTimes(2);
       });
-      expect(map.setCameraSpy).toHaveBeenLastCalledWith(pointAt(5), NAVIGATION_ZOOM, {
-        animate: true,
-      });
+      expect(map.setCameraSpy).toHaveBeenLastCalledWith(
+        pointAt(5),
+        NAVIGATION_ZOOM,
+        expectedBearingAt(5),
+        FOLLOW_PITCH_DEGREES,
+        { animate: true, followOffset: true },
+      );
     });
 
     it("never moves the camera for a stale restored fix, even when the persisted camera mode was following", async () => {
@@ -717,7 +760,7 @@ describe("RidingScreen", () => {
       expect(map.setCameraSpy).not.toHaveBeenCalled();
     });
 
-    it("restores a free-panned camera position instantly, without an animated following ease", async () => {
+    it("restores a free-panned camera position, bearing and pitch instantly, without an animated following ease", async () => {
       const freeCoordinate = pointAt(3);
       await setActiveRideState({
         id: "active",
@@ -731,6 +774,8 @@ describe("RidingScreen", () => {
         cameraMode: "free",
         cameraCoordinate: freeCoordinate,
         cameraZoom: 14,
+        cameraBearingDegrees: 231,
+        cameraPitchDegrees: 18,
       });
 
       const stub = buildStubGeolocationSource();
@@ -745,8 +790,9 @@ describe("RidingScreen", () => {
       map.triggerLoad();
 
       await waitFor(() => {
-        expect(map.setCameraSpy).toHaveBeenCalledWith(freeCoordinate, 14, {
+        expect(map.setCameraSpy).toHaveBeenCalledWith(freeCoordinate, 14, 231, 18, {
           animate: false,
+          followOffset: false,
         });
       });
       expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
@@ -771,6 +817,7 @@ describe("RidingScreen", () => {
         accuracyMetres: 5,
         timestampMs: 1000,
         speedMetresPerSecond: null,
+        headingDegrees: null,
       });
       await waitFor(() => {
         expect(
@@ -790,6 +837,325 @@ describe("RidingScreen", () => {
       expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
         "aria-pressed",
         "false",
+      );
+    });
+
+    it("keeps a stable follow pitch across multiple following fixes — never oscillating", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+
+      stub.emitFix({
+        coordinate: pointAt(6),
+        accuracyMetres: 5,
+        timestampMs: 2000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(2);
+      });
+
+      for (const call of map.setCameraSpy.mock.calls as unknown[][]) {
+        expect(call[3]).toBe(FOLLOW_PITCH_DEGREES);
+      }
+    });
+
+    it("north-up while following: exits to free, flattens and norths without moving centre/zoom, and pauses following", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+
+      await user.click(screen.getByRole("button", { name: "North-up, top-down view" }));
+
+      expect(map.setCameraSpy).toHaveBeenLastCalledWith(null, null, 0, 0, {
+        animate: true,
+        followOffset: false,
+      });
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      expect(await screen.findByText("Map follow paused.")).toBeInTheDocument();
+    });
+
+    it("the north-up control becomes pressed only once the camera has actually settled north-up", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+
+      const northUpButton = screen.getByRole("button", {
+        name: "North-up, top-down view",
+      });
+      await user.click(northUpButton);
+      expect(northUpButton).toHaveAttribute("aria-pressed", "false");
+
+      map.triggerCameraSettled({
+        coordinate: pointAt(0),
+        zoom: 16,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      await waitFor(() => {
+        expect(northUpButton).toHaveAttribute("aria-pressed", "true");
+      });
+    });
+
+    it("after north-up, later fixes update the position marker and navigation state but never move, rotate or tilt the camera", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+
+      await user.click(screen.getByRole("button", { name: "North-up, top-down view" }));
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(2);
+      });
+      const remainingBefore = screen.getByText(/Remaining:/).textContent;
+
+      stub.emitFix({
+        coordinate: pointAt(8),
+        accuracyMetres: 5,
+        timestampMs: 2000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Remaining:/).textContent).not.toBe(remainingBefore);
+      });
+      expect(map.setCameraSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("pressing Follow my location from the north-up free view recentres and resumes travel-up bearing and pitch in one tap", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+
+      await user.click(screen.getByRole("button", { name: "North-up, top-down view" }));
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(2);
+      });
+
+      stub.emitFix({
+        coordinate: pointAt(9),
+        accuracyMetres: 5,
+        timestampMs: 2000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      await user.click(screen.getByRole("button", { name: "Follow my location" }));
+
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(3);
+      });
+      expect(map.setCameraSpy).toHaveBeenLastCalledWith(
+        pointAt(9),
+        NAVIGATION_ZOOM,
+        expectedBearingAt(9),
+        FOLLOW_PITCH_DEGREES,
+        { animate: true, followOffset: true },
+      );
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    it("north-up while already free preserves centre and zoom, resets bearing and pitch, and remains free", async () => {
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      const user = userEvent.setup();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      map.triggerUserCameraInteraction();
+      expect(await screen.findByText("Map follow paused.")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "North-up, top-down view" }));
+
+      expect(map.setCameraSpy).toHaveBeenLastCalledWith(null, null, 0, 0, {
+        animate: true,
+        followOffset: false,
+      });
+      // Still free (not following) — a manual pan/rotate never becomes
+      // following again on its own, and neither does north-up.
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+
+    it("keeps both switching controls visible together, with the location control waiting when no fresh fix is usable", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+
+      const followButton = screen.getByRole("button", { name: "Follow my location" });
+      const northUpButton = screen.getByRole("button", {
+        name: "North-up, top-down view",
+      });
+      expect(followButton).toBeInTheDocument();
+      expect(northUpButton).toBeInTheDocument();
+      expect(followButton).toHaveTextContent("Waiting…");
+    });
+
+    it("preserves the camera mode and reapplies the same cameraTarget after a fallback map-instance swap", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      // No triggerLoad() yet — the primary style never resolves.
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
+
+      // Primary style errors before ever loading — MapView falls back to
+      // a fresh map instance (a new mapFactory() call), which then loads.
+      map.triggerTileError();
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledWith(
+          pointAt(0),
+          NAVIGATION_ZOOM,
+          expectedBearingAt(0),
+          FOLLOW_PITCH_DEGREES,
+          { animate: true, followOffset: true },
+        );
+      });
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
       );
     });
   });

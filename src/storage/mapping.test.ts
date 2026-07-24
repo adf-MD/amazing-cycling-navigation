@@ -22,12 +22,15 @@ const fix: GeolocationFix = {
   accuracyMetres: 8,
   timestampMs: 1_700_000,
   speedMetresPerSecond: 4.2,
+  headingDegrees: 87,
 };
 
 const overviewCamera: StoredCameraState = {
   mode: "overview",
   coordinate: null,
   zoom: null,
+  bearingDegrees: 0,
+  pitchDegrees: 0,
 };
 
 describe("toStoredRideState / fromStoredRideState", () => {
@@ -49,7 +52,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     expect(restored.lastFix?.timestampMs).toBe(fix.timestampMs);
   });
 
-  it("never persists speed, since it must not become ride history", () => {
+  it("never persists speed or heading, since neither must become ride history", () => {
     const stored = toStoredRideState(
       "route-1",
       "2026-01-01T00:00:00.000Z",
@@ -59,9 +62,10 @@ describe("toStoredRideState / fromStoredRideState", () => {
       overviewCamera,
     );
     expect(stored.lastFix).not.toHaveProperty("speedMetresPerSecond");
+    expect(stored.lastFix).not.toHaveProperty("headingDegrees");
   });
 
-  it("restores a null speed for a fix read back from storage", () => {
+  it("restores a null speed and heading for a fix read back from storage", () => {
     const stored = toStoredRideState(
       "route-1",
       "2026-01-01T00:00:00.000Z",
@@ -72,6 +76,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     );
     const restored = fromStoredRideState(stored);
     expect(restored.lastFix?.speedMetresPerSecond).toBeNull();
+    expect(restored.lastFix?.headingDegrees).toBeNull();
   });
 
   it("stores a null lastFix and null lastMatch when there is no fix yet", () => {
@@ -104,6 +109,8 @@ describe("toStoredRideState / fromStoredRideState", () => {
         mode: "following",
         coordinate: null,
         zoom: null,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
       },
     );
     const restored = fromStoredRideState(stored);
@@ -112,14 +119,18 @@ describe("toStoredRideState / fromStoredRideState", () => {
       mode: "following",
       coordinate: null,
       zoom: null,
+      bearingDegrees: 0,
+      pitchDegrees: 0,
     });
   });
 
-  it("round-trips a free camera state's saved position and zoom", () => {
+  it("round-trips a free camera state's saved position, zoom, bearing and pitch", () => {
     const freeCamera: StoredCameraState = {
       mode: "free",
       coordinate: [-1.2, 53.4],
       zoom: 13.5,
+      bearingDegrees: 128,
+      pitchDegrees: 22,
     };
     const stored = toStoredRideState(
       "route-1",
@@ -152,5 +163,34 @@ describe("toStoredRideState / fromStoredRideState", () => {
     const restored = fromStoredRideState(legacyRow);
 
     expect(restored.cameraState).toEqual(overviewCamera);
+  });
+
+  it("defaults bearing and pitch to north-up/top-down for a free-camera row written before those fields existed", () => {
+    // A row from between the free-camera-position feature and the
+    // bearing/pitch feature: has a saved position but genuinely lacks
+    // cameraBearingDegrees/cameraPitchDegrees.
+    const legacyFreeRow: StoredRideState = {
+      id: "active",
+      routeId: "route-1",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      lastFix: null,
+      lastMatchedPointIndex: 0,
+      matchedDistanceFromStartMetres: 0,
+      offRouteMachineState: coreState.offRouteMachineState,
+      elevationWindowMetres: 5000,
+      cameraMode: "free",
+      cameraCoordinate: [-1.2, 53.4],
+      cameraZoom: 13.5,
+    };
+
+    const restored = fromStoredRideState(legacyFreeRow);
+
+    expect(restored.cameraState).toEqual({
+      mode: "free",
+      coordinate: [-1.2, 53.4],
+      zoom: 13.5,
+      bearingDegrees: 0,
+      pitchDegrees: 0,
+    });
   });
 });

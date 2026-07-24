@@ -44,6 +44,13 @@ export interface StoredRideState {
    * suspended ride doesn't silently snap back to "following". */
   cameraCoordinate?: Coordinate | null;
   cameraZoom?: number | null;
+  /** Only meaningful when cameraMode is "free" — the rider's manually
+   * chosen bearing/pitch, restored on resume. Optional/non-indexed for
+   * the same reason as cameraCoordinate/cameraZoom above (rows written
+   * before this field existed won't have it; mapping.ts defaults a
+   * missing value to 0, i.e. north-up/top-down). */
+  cameraBearingDegrees?: number;
+  cameraPitchDegrees?: number;
 }
 
 export class AcnDatabase extends Dexie {
@@ -55,10 +62,11 @@ export class AcnDatabase extends Dexie {
     // v1: routes indexed by id (primary), name and createdAt for the
     // library list/sort; rideState has no secondary indexes, it only ever
     // holds the single "active" row. The cameraMode/cameraCoordinate/
-    // cameraZoom fields added later are plain (non-indexed) data fields —
-    // Dexie's version/stores() declaration only lists indexes, so adding
-    // them doesn't require a version bump; old rows simply lack them,
-    // handled by explicit defaulting in mapping.ts.
+    // cameraZoom/cameraBearingDegrees/cameraPitchDegrees fields added
+    // later are plain (non-indexed) data fields — Dexie's version/stores()
+    // declaration only lists indexes, so adding them doesn't require a
+    // version bump; old rows simply lack them, handled by explicit
+    // defaulting in mapping.ts.
     this.version(1).stores({
       routes: "id, name, createdAt",
       rideState: "id",

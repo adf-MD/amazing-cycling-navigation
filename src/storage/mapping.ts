@@ -9,6 +9,11 @@ export interface StoredCameraState {
   /** Only meaningful when mode is "free"; null otherwise. */
   coordinate: Coordinate | null;
   zoom: number | null;
+  /** Always concrete (unlike coordinate/zoom) — bearing/pitch have a
+   * sensible default (0/0, north-up/top-down) even when not "free", so
+   * there's no meaningful "absent" state worth representing with null. */
+  bearingDegrees: number;
+  pitchDegrees: number;
 }
 
 export function toStoredRideState(
@@ -37,6 +42,8 @@ export function toStoredRideState(
     cameraMode: cameraState.mode,
     cameraCoordinate: cameraState.coordinate,
     cameraZoom: cameraState.zoom,
+    cameraBearingDegrees: cameraState.bearingDegrees,
+    cameraPitchDegrees: cameraState.pitchDegrees,
   };
 }
 
@@ -55,6 +62,7 @@ export function fromStoredRideState(stored: StoredRideState): RestoredRideState 
           accuracyMetres: stored.lastFix.accuracyMetres,
           timestampMs: stored.lastFix.timestampMs,
           speedMetresPerSecond: null,
+          headingDegrees: null,
         }
       : null,
     core: {
@@ -67,12 +75,15 @@ export function fromStoredRideState(stored: StoredRideState): RestoredRideState 
       offRouteMachineState: stored.offRouteMachineState,
     },
     elevationWindowMetres: stored.elevationWindowMetres,
-    // Rows written before this field existed won't have it — default to
-    // "overview" rather than silently assuming the rider was following.
+    // Rows written before these fields existed won't have them — default
+    // to "overview"/north-up/top-down rather than silently assuming the
+    // rider was following or restoring an arbitrary orientation.
     cameraState: {
       mode: stored.cameraMode ?? "overview",
       coordinate: stored.cameraCoordinate ?? null,
       zoom: stored.cameraZoom ?? null,
+      bearingDegrees: stored.cameraBearingDegrees ?? 0,
+      pitchDegrees: stored.cameraPitchDegrees ?? 0,
     },
   };
 }

@@ -51,6 +51,8 @@ const DEFAULT_CAMERA_STATE: StoredCameraState = {
   mode: "overview",
   coordinate: null,
   zoom: null,
+  bearingDegrees: 0,
+  pitchDegrees: 0,
 };
 
 function defaultGetCameraState(): StoredCameraState {

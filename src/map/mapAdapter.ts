@@ -81,14 +81,29 @@ export interface MapLibreLike {
    * where it settled. Callers that only care about the free-panned
    * position filter by their own current mode; this always fires. */
   onCameraSettled(
-    listener: (camera: { coordinate: Coordinate; zoom: number }) => void,
+    listener: (camera: {
+      coordinate: Coordinate;
+      zoom: number;
+      bearingDegrees: number;
+      pitchDegrees: number;
+    }) => void,
   ): void;
-  /** Moves the camera to the given centre/zoom. `animate: true` eases
-   * (live "following", keeping the rider below vertical centre so more
-   * of the map is visible ahead); `animate: false` jumps instantly with
-   * no offset (restoring a previously free-panned position exactly as
-   * the rider left it, not biased toward a following layout). */
-  setCamera(coordinate: Coordinate, zoom: number, options: { animate: boolean }): void;
+  /** Moves the camera to the given centre/zoom/bearing/pitch. `coordinate`/
+   * `zoom` of `null` leave that value unchanged (used only by the
+   * north-up/top-down reset, which reorients without recentring).
+   * `animate: true` eases (live "following"); `animate: false` jumps
+   * instantly (restoring a previously free-panned position, or the
+   * north-up reset — see `followOffset`). `followOffset: true` biases the
+   * rider below vertical centre so more of the map is visible ahead —
+   * only appropriate for a live follow ease, never for a restore jump
+   * (which may carry its own manually-set pitch) or the north-up reset. */
+  setCamera(
+    coordinate: Coordinate | null,
+    zoom: number | null,
+    bearingDegrees: number,
+    pitchDegrees: number,
+    options: { animate: boolean; followOffset: boolean },
+  ): void;
   /** Recomputes the map's size from its container. Needed after the container's
    * on-screen size changes post-creation (e.g. iOS Safari/PWA chrome settling
    * after first paint) — otherwise fitBounds/camera maths use stale dimensions. */
@@ -103,7 +118,12 @@ export interface CreateMapOptions {
 
 export type MapFactory = (options: CreateMapOptions) => MapLibreLike;
 
-class MapLibreAdapter implements MapLibreLike {
+/** Exported only so mapAdapter.test.ts can verify the handful of
+ * behaviours (e.g. fitBounds resetting bearing/pitch, jumpTo never
+ * receiving an offset) that aren't observable through MapView.test.tsx's
+ * MapLibreLike-level mock — everything else about this class is exercised
+ * indirectly via that mock and the e2e smoke test. */
+export class MapLibreAdapter implements MapLibreLike {
   private readonly map: MapLibreGlMap;
 
   constructor(map: MapLibreGlMap) {
@@ -184,7 +204,12 @@ class MapLibreAdapter implements MapLibreLike {
         [bounds.southWest[0], bounds.southWest[1]],
         [bounds.northEast[0], bounds.northEast[1]],
       ],
-      { padding: paddingPixels, animate: false, maxZoom: 16 },
+      // bearing/pitch are explicitly reset here rather than left implicit:
+      // MapLibre's CameraOptions treat an omitted bearing/pitch as "leave
+      // the current value unchanged", so without this a genuinely new
+      // route opened while a rotated/tilted following camera was active
+      // would fit the new bounds but silently keep the old orientation.
+      { padding: paddingPixels, animate: false, maxZoom: 16, bearing: 0, pitch: 0 },
     );
   }
 
@@ -206,25 +231,52 @@ class MapLibreAdapter implements MapLibreLike {
   }
 
   onCameraSettled(
-    listener: (camera: { coordinate: Coordinate; zoom: number }) => void,
+    listener: (camera: {
+      coordinate: Coordinate;
+      zoom: number;
+      bearingDegrees: number;
+      pitchDegrees: number;
+    }) => void,
   ): void {
     this.map.on("moveend", () => {
-      listener({ coordinate: this.getCenter(), zoom: this.getZoom() });
+      listener({
+        coordinate: this.getCenter(),
+        zoom: this.getZoom(),
+        bearingDegrees: this.map.getBearing(),
+        pitchDegrees: this.map.getPitch(),
+      });
     });
   }
 
-  setCamera(coordinate: Coordinate, zoom: number, options: { animate: boolean }): void {
-    const center: [number, number] = [coordinate[0], coordinate[1]];
+  setCamera(
+    coordinate: Coordinate | null,
+    zoom: number | null,
+    bearingDegrees: number,
+    pitchDegrees: number,
+    options: { animate: boolean; followOffset: boolean },
+  ): void {
+    const center: [number, number] | undefined = coordinate
+      ? [coordinate[0], coordinate[1]]
+      : undefined;
     if (options.animate) {
       this.map.easeTo({
-        center,
-        zoom,
-        offset: [0, FOLLOW_VERTICAL_OFFSET_PX],
+        ...(center ? { center } : {}),
+        ...(zoom !== null ? { zoom } : {}),
+        bearing: bearingDegrees,
+        pitch: pitchDegrees,
+        offset: options.followOffset ? [0, FOLLOW_VERTICAL_OFFSET_PX] : [0, 0],
         duration: FOLLOW_EASE_DURATION_MS,
         essential: true,
       });
     } else {
-      this.map.jumpTo({ center, zoom });
+      // jumpTo's JumpToOptions doesn't mix in AnimationOptions, so it has
+      // no `offset` — must never be passed here.
+      this.map.jumpTo({
+        ...(center ? { center } : {}),
+        ...(zoom !== null ? { zoom } : {}),
+        bearing: bearingDegrees,
+        pitch: pitchDegrees,
+      });
     }
   }
 

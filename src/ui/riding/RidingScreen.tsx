@@ -24,6 +24,8 @@ const DEFAULT_CAMERA_STATE: StoredCameraState = {
   mode: "overview",
   coordinate: null,
   zoom: null,
+  bearingDegrees: 0,
+  pitchDegrees: 0,
 };
 
 function formatGeolocationError(error: GeolocationError): string {
@@ -70,8 +72,11 @@ export function RidingScreen({
   const nav = useRideNavigation(route, { geolocationSource, clock, getCameraState });
   const camera = useRideCamera({
     routeId: route.id,
+    routePoints: route.points,
     currentFix: nav.currentFix,
     isStale: nav.isStale,
+    matchedDistanceFromStartMetres: nav.matchedDistanceFromStartMetres,
+    offRouteLevel: nav.offRouteLevel,
     restoredCameraState: nav.restoredCameraState,
   });
 
@@ -162,9 +167,40 @@ export function RidingScreen({
           suppressInitialOverviewFit={camera.mode !== "overview"}
           onUserCameraInteraction={camera.reportUserInteraction}
           onCameraSettled={(settled) => {
-            camera.reportCameraSettled(settled.coordinate, settled.zoom);
+            camera.reportCameraSettled(
+              settled.coordinate,
+              settled.zoom,
+              settled.bearingDegrees,
+              settled.pitchDegrees,
+            );
           }}
         />
+        {nav.geolocationStatus === "watching" ? (
+          <button
+            type="button"
+            onClick={camera.requestNorthUp}
+            aria-label="North-up, top-down view"
+            aria-pressed={camera.isNorthUpTopDown}
+            style={{
+              position: "absolute",
+              bottom: 72,
+              right: 12,
+              minWidth: 48,
+              minHeight: 48,
+              borderRadius: "50%",
+              border: camera.isNorthUpTopDown ? "none" : "2px solid var(--colour-text)",
+              background: camera.isNorthUpTopDown
+                ? "var(--colour-accent)"
+                : "var(--colour-bg)",
+              color: camera.isNorthUpTopDown ? "#ffffff" : "var(--colour-text)",
+              fontSize: "1rem",
+              fontWeight: 700,
+              lineHeight: 1.1,
+            }}
+          >
+            N
+          </button>
+        ) : null}
         {nav.geolocationStatus === "watching" ? (
           <button
             type="button"

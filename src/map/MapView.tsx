@@ -53,11 +53,19 @@ const FALLBACK_STYLE: StyleSpecification = {
 type MapLoadState = "loading" | "ready" | "load-error";
 
 export interface CameraTarget {
-  coordinate: Coordinate;
-  zoom: number;
-  /** true: eases (live "following"). false: jumps instantly with no
-   * offset (restoring a previously free-panned position). */
+  /** null leaves the map's current centre unchanged — used only by the
+   * north-up/top-down reset, which reorients without recentring. */
+  coordinate: Coordinate | null;
+  /** null leaves the map's current zoom unchanged — see coordinate. */
+  zoom: number | null;
+  bearingDegrees: number;
+  pitchDegrees: number;
+  /** true: eases (live "following", or an orientation-only reset).
+   * false: jumps instantly (restoring a previously free-panned
+   * position). */
   animate: boolean;
+  /** true only for a live GPS-follow ease — see mapAdapter.ts's setCamera. */
+  followOffset: boolean;
 }
 
 export interface MapViewProps {
@@ -87,7 +95,12 @@ export interface MapViewProps {
   /** Fired whenever the camera finishes moving, for any reason — the
    * caller filters by its own current mode (only "free" cares, to persist
    * a manually-panned position); this fires for programmatic moves too. */
-  onCameraSettled?: (camera: { coordinate: Coordinate; zoom: number }) => void;
+  onCameraSettled?: (camera: {
+    coordinate: Coordinate;
+    zoom: number;
+    bearingDegrees: number;
+    pitchDegrees: number;
+  }) => void;
 }
 
 /**
@@ -124,10 +137,13 @@ export function MapView({
     onCameraSettledRef.current = onCameraSettled;
   }, [onCameraSettled]);
   const lastAppliedCameraTargetRef = useRef<{
-    lon: number;
-    lat: number;
-    zoom: number;
+    lon: number | null;
+    lat: number | null;
+    zoom: number | null;
+    bearingDegrees: number;
+    pitchDegrees: number;
     animate: boolean;
+    followOffset: boolean;
   } | null>(null);
   const [loadState, setLoadState] = useState<MapLoadState>("loading");
   const [loadTimedOut, setLoadTimedOut] = useState(false);
@@ -367,13 +383,17 @@ export function MapView({
   // cameraTarget object doesn't re-trigger setCamera.
   useEffect(() => {
     if (!ready || !cameraTarget) return;
-    const [lon, lat] = cameraTarget.coordinate;
+    const lon = cameraTarget.coordinate ? cameraTarget.coordinate[0] : null;
+    const lat = cameraTarget.coordinate ? cameraTarget.coordinate[1] : null;
     const last = lastAppliedCameraTargetRef.current;
     if (
       last?.lon === lon &&
       last.lat === lat &&
       last.zoom === cameraTarget.zoom &&
-      last.animate === cameraTarget.animate
+      last.bearingDegrees === cameraTarget.bearingDegrees &&
+      last.pitchDegrees === cameraTarget.pitchDegrees &&
+      last.animate === cameraTarget.animate &&
+      last.followOffset === cameraTarget.followOffset
     ) {
       return;
     }
@@ -381,11 +401,18 @@ export function MapView({
       lon,
       lat,
       zoom: cameraTarget.zoom,
+      bearingDegrees: cameraTarget.bearingDegrees,
+      pitchDegrees: cameraTarget.pitchDegrees,
       animate: cameraTarget.animate,
+      followOffset: cameraTarget.followOffset,
     };
-    mapRef.current?.setCamera(cameraTarget.coordinate, cameraTarget.zoom, {
-      animate: cameraTarget.animate,
-    });
+    mapRef.current?.setCamera(
+      cameraTarget.coordinate,
+      cameraTarget.zoom,
+      cameraTarget.bearingDegrees,
+      cameraTarget.pitchDegrees,
+      { animate: cameraTarget.animate, followOffset: cameraTarget.followOffset },
+    );
   }, [cameraTarget, ready]);
 
   useEffect(() => {
