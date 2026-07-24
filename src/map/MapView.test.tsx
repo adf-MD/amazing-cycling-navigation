@@ -24,12 +24,19 @@ interface MockMapHandle {
   triggerLoad: () => void;
   triggerError: (info: MapErrorInfo) => void;
   triggerSourceData: (info: MapSourceDataInfo) => void;
+  /** Simulates a genuine user gesture (drag/pinch/rotate/pitch) — the real
+   * adapter only calls its listener when movestart's originalEvent is
+   * set, so this is the "user" case; programmatic moves never call it. */
+  triggerUserCameraInteraction: () => void;
+  triggerCameraSettled: (camera: { coordinate: Coordinate; zoom: number }) => void;
   sources: Map<string, GeoJSON.FeatureCollection>;
   layers: Set<string>;
   removeSpy: ReturnType<typeof vi.fn>;
   fitBoundsSpy: ReturnType<typeof vi.fn>;
   resizeSpy: ReturnType<typeof vi.fn>;
   getCenterSpy: ReturnType<typeof vi.fn>;
+  getZoomSpy: ReturnType<typeof vi.fn>;
+  setCameraSpy: ReturnType<typeof vi.fn>;
   constructedStyles: CreateMapOptions["style"][];
 }
 
@@ -37,12 +44,17 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
   let loadListener: (() => void) | undefined;
   let errorListener: ((info: MapErrorInfo) => void) | undefined;
   let sourceDataListener: ((info: MapSourceDataInfo) => void) | undefined;
+  let userCameraInteractionListener: (() => void) | undefined;
+  let cameraSettledListener:
+    ((camera: { coordinate: Coordinate; zoom: number }) => void) | undefined;
   const sources = new Map<string, GeoJSON.FeatureCollection>();
   const layers = new Set<string>();
   const removeSpy = vi.fn();
   const fitBoundsSpy = vi.fn();
   const resizeSpy = vi.fn();
   const getCenterSpy = vi.fn(() => center);
+  const getZoomSpy = vi.fn(() => 14);
+  const setCameraSpy = vi.fn();
   const constructedStyles: CreateMapOptions["style"][] = [];
 
   const factory: MapFactory = ({ style }) => {
@@ -73,6 +85,14 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
       hasLayer: (id) => layers.has(id),
       fitBounds: fitBoundsSpy,
       getCenter: getCenterSpy,
+      getZoom: getZoomSpy,
+      onUserCameraInteraction: (listener) => {
+        userCameraInteractionListener = listener;
+      },
+      onCameraSettled: (listener) => {
+        cameraSettledListener = listener;
+      },
+      setCamera: setCameraSpy,
       resize: resizeSpy,
       remove: removeSpy,
     };
@@ -84,6 +104,8 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
     fitBoundsSpy,
     resizeSpy,
     getCenterSpy,
+    getZoomSpy,
+    setCameraSpy,
     constructedStyles,
     triggerLoad: () => {
       act(() => {
@@ -98,6 +120,16 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
     triggerSourceData: (info) => {
       act(() => {
         sourceDataListener?.(info);
+      });
+    },
+    triggerUserCameraInteraction: () => {
+      act(() => {
+        userCameraInteractionListener?.();
+      });
+    },
+    triggerCameraSettled: (camera) => {
+      act(() => {
+        cameraSettledListener?.(camera);
       });
     },
     sources,
@@ -297,6 +329,154 @@ describe("MapView", () => {
       "data-camera-center",
       "-1.5,53.8",
     );
+  });
+
+  it("skips the automatic overview fit when suppressInitialOverviewFit is set, but still marks start/finish", () => {
+    const mock = createMockMapFactory();
+    render(
+      <MapView points={points} mapFactory={mock.factory} suppressInitialOverviewFit />,
+    );
+
+    mock.triggerLoad();
+
+    expect(mock.fitBoundsSpy).not.toHaveBeenCalled();
+    expect(mock.sources.get("acn-route-start")?.features[0]?.geometry).toEqual({
+      type: "Point",
+      coordinates: [0, 51],
+    });
+  });
+
+  it("reports a genuine user camera interaction, but not for its own load/fit/resize calls", () => {
+    const onUserCameraInteraction = vi.fn();
+    const mock = createMockMapFactory();
+    render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        onUserCameraInteraction={onUserCameraInteraction}
+      />,
+    );
+
+    mock.triggerLoad();
+    expect(onUserCameraInteraction).not.toHaveBeenCalled();
+
+    mock.triggerUserCameraInteraction();
+    expect(onUserCameraInteraction).toHaveBeenCalledOnce();
+  });
+
+  it("reports where the camera settles via onCameraSettled", () => {
+    const onCameraSettled = vi.fn();
+    const mock = createMockMapFactory();
+    render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        onCameraSettled={onCameraSettled}
+      />,
+    );
+    mock.triggerLoad();
+
+    mock.triggerCameraSettled({ coordinate: [-1.1, 52.2], zoom: 12 });
+
+    expect(onCameraSettled).toHaveBeenCalledWith({ coordinate: [-1.1, 52.2], zoom: 12 });
+  });
+
+  it("applies an animated cameraTarget via setCamera once ready", () => {
+    const mock = createMockMapFactory();
+    render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        cameraTarget={{ coordinate: [0, 51], zoom: 16, animate: true }}
+      />,
+    );
+
+    mock.triggerLoad();
+
+    expect(mock.setCameraSpy).toHaveBeenCalledWith([0, 51], 16, { animate: true });
+  });
+
+  it("applies a non-animated (restore) cameraTarget via setCamera", () => {
+    const mock = createMockMapFactory();
+    render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        cameraTarget={{ coordinate: [0.002, 51.002], zoom: 14, animate: false }}
+      />,
+    );
+
+    mock.triggerLoad();
+
+    expect(mock.setCameraSpy).toHaveBeenCalledWith([0.002, 51.002], 14, {
+      animate: false,
+    });
+  });
+
+  it("does not re-apply a cameraTarget whose values are unchanged, even as a new object", () => {
+    const mock = createMockMapFactory();
+    const { rerender } = render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        cameraTarget={{ coordinate: [0, 51], zoom: 16, animate: true }}
+      />,
+    );
+    mock.triggerLoad();
+    expect(mock.setCameraSpy).toHaveBeenCalledOnce();
+
+    rerender(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        cameraTarget={{ coordinate: [0, 51], zoom: 16, animate: true }}
+      />,
+    );
+
+    expect(mock.setCameraSpy).toHaveBeenCalledOnce();
+  });
+
+  it("applies a new cameraTarget again once its values genuinely change", () => {
+    const mock = createMockMapFactory();
+    const { rerender } = render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        cameraTarget={{ coordinate: [0, 51], zoom: 16, animate: true }}
+      />,
+    );
+    mock.triggerLoad();
+    expect(mock.setCameraSpy).toHaveBeenCalledOnce();
+
+    rerender(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        cameraTarget={{ coordinate: [0.001, 51.001], zoom: 16, animate: true }}
+      />,
+    );
+
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("still applies a live cameraTarget once the fallback style becomes ready", () => {
+    const mock = createMockMapFactory();
+    render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        cameraTarget={{ coordinate: [0, 51], zoom: 16, animate: true }}
+      />,
+    );
+
+    // Primary style never loads — falls back before ever reaching ready.
+    mock.triggerError({ message: "style fetch failed" });
+    expect(mock.setCameraSpy).not.toHaveBeenCalled();
+
+    mock.triggerLoad();
+
+    expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+    expect(mock.setCameraSpy).toHaveBeenCalledWith([0, 51], 16, { animate: true });
   });
 
   it("sets the route coordinate-count once real, non-empty route data is submitted", () => {

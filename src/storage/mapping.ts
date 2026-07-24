@@ -1,7 +1,15 @@
+import type { Coordinate } from "../domain/types.ts";
 import type { GeolocationFix } from "../platform/geolocation.ts";
-import type { ElevationWindowMetres } from "../navigation/types.ts";
+import type { ElevationWindowMetres, RideCameraMode } from "../navigation/types.ts";
 import type { RideNavigationCoreState } from "../navigation/rideNavigationCore.ts";
 import { type StoredRideState } from "./db.ts";
+
+export interface StoredCameraState {
+  mode: RideCameraMode;
+  /** Only meaningful when mode is "free"; null otherwise. */
+  coordinate: Coordinate | null;
+  zoom: number | null;
+}
 
 export function toStoredRideState(
   routeId: string,
@@ -9,6 +17,7 @@ export function toStoredRideState(
   lastFix: GeolocationFix | null,
   core: RideNavigationCoreState,
   elevationWindowMetres: ElevationWindowMetres,
+  cameraState: StoredCameraState,
 ): StoredRideState {
   return {
     id: "active",
@@ -25,6 +34,9 @@ export function toStoredRideState(
     matchedDistanceFromStartMetres: core.lastMatch?.distanceFromStartMetres ?? 0,
     offRouteMachineState: core.offRouteMachineState,
     elevationWindowMetres,
+    cameraMode: cameraState.mode,
+    cameraCoordinate: cameraState.coordinate,
+    cameraZoom: cameraState.zoom,
   };
 }
 
@@ -32,6 +44,7 @@ export interface RestoredRideState {
   lastFix: GeolocationFix | null;
   core: RideNavigationCoreState;
   elevationWindowMetres: ElevationWindowMetres;
+  cameraState: StoredCameraState;
 }
 
 export function fromStoredRideState(stored: StoredRideState): RestoredRideState {
@@ -54,5 +67,12 @@ export function fromStoredRideState(stored: StoredRideState): RestoredRideState 
       offRouteMachineState: stored.offRouteMachineState,
     },
     elevationWindowMetres: stored.elevationWindowMetres,
+    // Rows written before this field existed won't have it — default to
+    // "overview" rather than silently assuming the rider was following.
+    cameraState: {
+      mode: stored.cameraMode ?? "overview",
+      coordinate: stored.cameraCoordinate ?? null,
+      zoom: stored.cameraZoom ?? null,
+    },
   };
 }

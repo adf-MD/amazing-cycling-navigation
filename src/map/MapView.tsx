@@ -52,6 +52,14 @@ const FALLBACK_STYLE: StyleSpecification = {
 
 type MapLoadState = "loading" | "ready" | "load-error";
 
+export interface CameraTarget {
+  coordinate: Coordinate;
+  zoom: number;
+  /** true: eases (live "following"). false: jumps instantly with no
+   * offset (restoring a previously free-panned position). */
+  animate: boolean;
+}
+
 export interface MapViewProps {
   points: readonly RoutePoint[];
   /** Distance already ridden; the route line before this point is shown
@@ -61,6 +69,25 @@ export interface MapViewProps {
   currentPosition?: Coordinate;
   tileSource?: TileSourceConfig;
   mapFactory?: MapFactory;
+  /** The camera MapView should be showing right now, or null/undefined to
+   * leave the camera under the default overview fit / user control. Set
+   * by the riding camera controller (useRideCamera) to drive "following"
+   * or a one-time restore of a previously free-panned position. */
+  cameraTarget?: CameraTarget | null;
+  /** Skips the automatic "fit to route" once the map is ready — used when
+   * resuming a ride that wasn't in overview mode before suspension, so
+   * the restored following/free camera isn't briefly overridden by a
+   * flash of the full route. Defaults to fitting, matching every other
+   * MapView usage (previews, a fresh ride). */
+  suppressInitialOverviewFit?: boolean;
+  /** Fired the instant the rider manually drags/pinches/rotates/pitches
+   * the map — never fired for MapView's own programmatic camera moves
+   * (fitBounds, cameraTarget-driven setCamera). */
+  onUserCameraInteraction?: () => void;
+  /** Fired whenever the camera finishes moving, for any reason — the
+   * caller filters by its own current mode (only "free" cares, to persist
+   * a manually-panned position); this fires for programmatic moves too. */
+  onCameraSettled?: (camera: { coordinate: Coordinate; zoom: number }) => void;
 }
 
 /**
@@ -78,9 +105,30 @@ export function MapView({
   currentPosition,
   tileSource = DEFAULT_TILE_SOURCE,
   mapFactory = createMapLibreMap,
+  cameraTarget = null,
+  suppressInitialOverviewFit = false,
+  onUserCameraInteraction,
+  onCameraSettled,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreLike | null>(null);
+  // Always call the latest callback without needing it in the map-creation
+  // effect's dependency array (which would tear down and recreate the map
+  // whenever the parent passes a new function identity).
+  const onUserCameraInteractionRef = useRef(onUserCameraInteraction);
+  useEffect(() => {
+    onUserCameraInteractionRef.current = onUserCameraInteraction;
+  }, [onUserCameraInteraction]);
+  const onCameraSettledRef = useRef(onCameraSettled);
+  useEffect(() => {
+    onCameraSettledRef.current = onCameraSettled;
+  }, [onCameraSettled]);
+  const lastAppliedCameraTargetRef = useRef<{
+    lon: number;
+    lat: number;
+    zoom: number;
+    animate: boolean;
+  } | null>(null);
   const [loadState, setLoadState] = useState<MapLoadState>("loading");
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
@@ -111,6 +159,7 @@ export function MapView({
     setUsingFallbackStyle(false);
     setRouteSourceLoaded(false);
     setCameraCenter(null);
+    lastAppliedCameraTargetRef.current = null;
 
     function addRouteAndPositionLayers(map: MapLibreLike): void {
       map.addGeoJsonSource(REMAINING_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
@@ -179,6 +228,14 @@ export function MapView({
           routeSourceLoaded = true;
           setRouteSourceLoaded(true);
         }
+      });
+
+      map.onUserCameraInteraction(() => {
+        onUserCameraInteractionRef.current?.();
+      });
+
+      map.onCameraSettled((camera) => {
+        onCameraSettledRef.current?.(camera);
       });
 
       // A map error before the first `load` means this style never became
@@ -266,15 +323,21 @@ export function MapView({
   // the start — see isLoopRoute). Keyed on `points` (referentially stable
   // for a given route — only a genuinely different route or a map reload
   // changes it), not on every position/progress update, so the view
-  // doesn't jump around mid-ride.
+  // doesn't jump around mid-ride. The fit itself (not the start/finish
+  // markers) is skippable via suppressInitialOverviewFit, so resuming
+  // into a restored following/free camera doesn't flash the full route
+  // first.
   useEffect(() => {
     if (!ready) return;
-    const bounds = computeBoundingBox(points.map((point) => point.coordinate));
-    if (bounds) {
-      mapRef.current?.resize();
-      mapRef.current?.fitBounds(bounds);
-      const center = mapRef.current?.getCenter();
-      if (center) setCameraCenter(center);
+
+    if (!suppressInitialOverviewFit) {
+      const bounds = computeBoundingBox(points.map((point) => point.coordinate));
+      if (bounds) {
+        mapRef.current?.resize();
+        mapRef.current?.fitBounds(bounds);
+        const center = mapRef.current?.getCenter();
+        if (center) setCameraCenter(center);
+      }
     }
 
     const first = points[0];
@@ -291,7 +354,34 @@ export function MapView({
         ? buildPositionFeatureCollection(last.coordinate)
         : EMPTY_FEATURE_COLLECTION,
     );
-  }, [points, ready]);
+  }, [points, ready, suppressInitialOverviewFit]);
+
+  // Executes the camera controller's current command (live "following" or
+  // a one-time restore) — deduped by value via a ref rather than object
+  // identity, so a rerender that produces a new but logically-identical
+  // cameraTarget object doesn't re-trigger setCamera.
+  useEffect(() => {
+    if (!ready || !cameraTarget) return;
+    const [lon, lat] = cameraTarget.coordinate;
+    const last = lastAppliedCameraTargetRef.current;
+    if (
+      last?.lon === lon &&
+      last.lat === lat &&
+      last.zoom === cameraTarget.zoom &&
+      last.animate === cameraTarget.animate
+    ) {
+      return;
+    }
+    lastAppliedCameraTargetRef.current = {
+      lon,
+      lat,
+      zoom: cameraTarget.zoom,
+      animate: cameraTarget.animate,
+    };
+    mapRef.current?.setCamera(cameraTarget.coordinate, cameraTarget.zoom, {
+      animate: cameraTarget.animate,
+    });
+  }, [cameraTarget, ready]);
 
   useEffect(() => {
     if (!ready) return;

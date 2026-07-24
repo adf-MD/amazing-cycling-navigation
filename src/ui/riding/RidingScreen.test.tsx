@@ -14,6 +14,7 @@ import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
 import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry.ts";
 import { OFF_ROUTE_BASE_METRES } from "../../navigation/offRoute.ts";
+import { NAVIGATION_ZOOM } from "./rideCamera.ts";
 
 const routePoints = buildRoutePointsFromWaypoints(
   [
@@ -72,9 +73,18 @@ function buildStubMapFactory(): {
   factory: MapFactory;
   triggerLoad: () => void;
   triggerTileError: () => void;
+  triggerUserCameraInteraction: () => void;
+  triggerCameraSettled: (camera: { coordinate: Coordinate; zoom: number }) => void;
+  setCameraSpy: ReturnType<typeof vi.fn>;
+  getZoomSpy: ReturnType<typeof vi.fn>;
 } {
   let loadListener: (() => void) | undefined;
   let errorListener: (() => void) | undefined;
+  let userCameraInteractionListener: (() => void) | undefined;
+  let cameraSettledListener:
+    ((camera: { coordinate: Coordinate; zoom: number }) => void) | undefined;
+  const setCameraSpy = vi.fn();
+  const getZoomSpy = vi.fn(() => 14);
   const factory: MapFactory = () => {
     const map: MapLibreLike = {
       onLoad: (listener) => {
@@ -94,6 +104,14 @@ function buildStubMapFactory(): {
       hasLayer: () => false,
       fitBounds: () => undefined,
       getCenter: () => [0, 0],
+      getZoom: getZoomSpy,
+      onUserCameraInteraction: (listener) => {
+        userCameraInteractionListener = listener;
+      },
+      onCameraSettled: (listener) => {
+        cameraSettledListener = listener;
+      },
+      setCamera: setCameraSpy,
       resize: () => undefined,
       remove: () => undefined,
     };
@@ -103,6 +121,10 @@ function buildStubMapFactory(): {
     factory,
     triggerLoad: () => loadListener?.(),
     triggerTileError: () => errorListener?.(),
+    triggerUserCameraInteraction: () => userCameraInteractionListener?.(),
+    triggerCameraSettled: (camera) => cameraSettledListener?.(camera),
+    setCameraSpy,
+    getZoomSpy,
   };
 }
 
@@ -507,6 +529,268 @@ describe("RidingScreen", () => {
         screen.getByRole("group", { name: "Upcoming elevation window" }),
       ).toBeInTheDocument();
       expect(screen.getByTestId("map-container")).toBeInTheDocument();
+    });
+  });
+
+  describe("smart riding camera", () => {
+    it("requests following as soon as Start riding is tapped, showing a pending state until a fresh fix arrives", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+
+      const followButton = screen.getByRole("button", { name: "Follow my location" });
+      expect(followButton).toHaveAttribute("aria-pressed", "true");
+      expect(followButton).toHaveTextContent("Waiting…");
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
+    });
+
+    it("recentres the camera on the first fresh fix after starting", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+      });
+
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledWith(pointAt(0), NAVIGATION_ZOOM, {
+          animate: true,
+        });
+      });
+      const followButton = screen.getByRole("button", { name: "Follow my location" });
+      expect(followButton).toHaveTextContent("⌖");
+      expect(followButton).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("keeps GPS progress updating in free mode without moving the camera again", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+      const remainingBefore = screen.getByText(/Remaining:/).textContent;
+
+      map.triggerUserCameraInteraction();
+      expect(await screen.findByText("Map follow paused.")).toBeInTheDocument();
+
+      stub.emitFix({
+        coordinate: pointAt(8),
+        accuracyMetres: 5,
+        timestampMs: 2000,
+        speedMetresPerSecond: null,
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Remaining:/).textContent).not.toBe(remainingBefore);
+      });
+      // Progress kept moving (assertion above), but the camera itself
+      // never moved again once free — still exactly the one call from
+      // the earlier recentre.
+      expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("recentres and resumes following when the follow button is pressed from free mode", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+
+      map.triggerUserCameraInteraction();
+      const followButton = await screen.findByRole("button", {
+        name: "Follow my location",
+      });
+      expect(followButton).toHaveAttribute("aria-pressed", "false");
+
+      // Position keeps tracking while free (case 7/8), so the rider has
+      // moved on by the time they press follow again — proves the button
+      // recentres to the *latest* position, not a stale cached one.
+      stub.emitFix({
+        coordinate: pointAt(5),
+        accuracyMetres: 5,
+        timestampMs: 2000,
+        speedMetresPerSecond: null,
+      });
+      await user.click(followButton);
+
+      expect(followButton).toHaveAttribute("aria-pressed", "true");
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(2);
+      });
+      expect(map.setCameraSpy).toHaveBeenLastCalledWith(pointAt(5), NAVIGATION_ZOOM, {
+        animate: true,
+      });
+    });
+
+    it("never moves the camera for a stale restored fix, even when the persisted camera mode was following", async () => {
+      await setActiveRideState({
+        id: "active",
+        routeId: route.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: pointAt(5), accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 5,
+        matchedDistanceFromStartMetres: routePoints[5]?.distanceFromStartMetres ?? 0,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationWindowMetres: 5000,
+        cameraMode: "following",
+      });
+
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      expect(
+        await screen.findByRole("button", { name: "Resume riding" }),
+      ).toBeInTheDocument();
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: "Resume riding" }));
+
+      const followButton = screen.getByRole("button", { name: "Follow my location" });
+      expect(followButton).toHaveAttribute("aria-pressed", "true");
+      expect(followButton).toHaveTextContent("Waiting…");
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
+    });
+
+    it("restores a free-panned camera position instantly, without an animated following ease", async () => {
+      const freeCoordinate = pointAt(3);
+      await setActiveRideState({
+        id: "active",
+        routeId: route.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: pointAt(5), accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 5,
+        matchedDistanceFromStartMetres: routePoints[5]?.distanceFromStartMetres ?? 0,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationWindowMetres: 5000,
+        cameraMode: "free",
+        cameraCoordinate: freeCoordinate,
+        cameraZoom: 14,
+      });
+
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledWith(freeCoordinate, 14, {
+          animate: false,
+        });
+      });
+      expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("resets the camera to overview when a genuinely different route is opened", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      const { rerender } = render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+      });
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Follow my location" }),
+        ).toHaveAttribute("aria-pressed", "true");
+      });
+
+      const otherRoute: PlannedRoute = { ...route, id: "route-2" };
+      rerender(
+        <RidingScreen
+          route={otherRoute}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
     });
   });
 });

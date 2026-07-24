@@ -12,6 +12,17 @@ import type { BoundingBox } from "./routeLayer.ts";
 
 setWorkerUrl(maplibreWorkerUrl);
 
+/** Pixel offset applied when easing to a "following" position, so the
+ * rider sits below the map's true vertical centre and more of the
+ * surrounding route stays visible. A map-rendering concern, not a
+ * navigation decision, so it lives here rather than in the camera
+ * state machine (src/ui/riding/rideCamera.ts). */
+const FOLLOW_VERTICAL_OFFSET_PX = 60;
+
+/** Duration of a "following" camera ease — brief enough to feel
+ * responsive to a fresh fix, long enough to avoid a visible jump. */
+const FOLLOW_EASE_DURATION_MS = 600;
+
 export interface MapErrorInfo {
   message: string;
 }
@@ -58,6 +69,26 @@ export interface MapLibreLike {
   /** The map's current centre. Used to verify the camera actually moved
    * (e.g. after fitBounds), not just that a fit was requested. */
   getCenter(): Coordinate;
+  /** The map's current zoom level. */
+  getZoom(): number;
+  /** Fires only for a genuine user gesture (drag/pinch/rotate/pitch) —
+   * never for this adapter's own programmatic camera calls (fitBounds,
+   * setCamera), which don't carry a DOM originalEvent. This is the sole
+   * mechanism for detecting manual map interaction. */
+  onUserCameraInteraction(listener: () => void): void;
+  /** Fires whenever the camera finishes moving, for any reason (user
+   * gesture or this adapter's own fitBounds/setCamera calls) — reports
+   * where it settled. Callers that only care about the free-panned
+   * position filter by their own current mode; this always fires. */
+  onCameraSettled(
+    listener: (camera: { coordinate: Coordinate; zoom: number }) => void,
+  ): void;
+  /** Moves the camera to the given centre/zoom. `animate: true` eases
+   * (live "following", keeping the rider below vertical centre so more
+   * of the map is visible ahead); `animate: false` jumps instantly with
+   * no offset (restoring a previously free-panned position exactly as
+   * the rider left it, not biased toward a following layout). */
+  setCamera(coordinate: Coordinate, zoom: number, options: { animate: boolean }): void;
   /** Recomputes the map's size from its container. Needed after the container's
    * on-screen size changes post-creation (e.g. iOS Safari/PWA chrome settling
    * after first paint) — otherwise fitBounds/camera maths use stale dimensions. */
@@ -160,6 +191,41 @@ class MapLibreAdapter implements MapLibreLike {
   getCenter(): Coordinate {
     const center = this.map.getCenter();
     return [center.lng, center.lat];
+  }
+
+  getZoom(): number {
+    return this.map.getZoom();
+  }
+
+  onUserCameraInteraction(listener: () => void): void {
+    this.map.on("movestart", (event) => {
+      if (event.originalEvent) {
+        listener();
+      }
+    });
+  }
+
+  onCameraSettled(
+    listener: (camera: { coordinate: Coordinate; zoom: number }) => void,
+  ): void {
+    this.map.on("moveend", () => {
+      listener({ coordinate: this.getCenter(), zoom: this.getZoom() });
+    });
+  }
+
+  setCamera(coordinate: Coordinate, zoom: number, options: { animate: boolean }): void {
+    const center: [number, number] = [coordinate[0], coordinate[1]];
+    if (options.animate) {
+      this.map.easeTo({
+        center,
+        zoom,
+        offset: [0, FOLLOW_VERTICAL_OFFSET_PX],
+        duration: FOLLOW_EASE_DURATION_MS,
+        essential: true,
+      });
+    } else {
+      this.map.jumpTo({ center, zoom });
+    }
   }
 
   resize(): void {
