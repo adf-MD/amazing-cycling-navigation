@@ -381,6 +381,26 @@ describe("MapView", () => {
     expect(onCameraSettled).toHaveBeenCalledWith({ coordinate: [-1.1, 52.2], zoom: 12 });
   });
 
+  it("updates the camera-centre diagnostic attribute whenever the camera settles, not just after the initial fit", () => {
+    const mock = createMockMapFactory();
+    render(
+      <MapView points={points} mapFactory={mock.factory} suppressInitialOverviewFit />,
+    );
+    mock.triggerLoad();
+
+    // The initial fit is suppressed here (mirroring a resumed
+    // following/free ride), so without picking up onCameraSettled this
+    // attribute would stay empty forever even though the camera moved.
+    expect(screen.getByTestId("map-container")).toHaveAttribute("data-camera-center", "");
+
+    mock.triggerCameraSettled({ coordinate: [-1.1, 52.2], zoom: 12 });
+
+    expect(screen.getByTestId("map-container")).toHaveAttribute(
+      "data-camera-center",
+      "-1.1,52.2",
+    );
+  });
+
   it("applies an animated cameraTarget via setCamera once ready", () => {
     const mock = createMockMapFactory();
     render(

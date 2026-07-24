@@ -235,6 +235,11 @@ export function MapView({
       });
 
       map.onCameraSettled((camera) => {
+        // Keeps the data-camera-center diagnostic attribute correct for
+        // every way the camera can now move (following ease, restore
+        // jump, free-mode panning), not just the initial overview fit,
+        // which is the only thing that used to update it.
+        setCameraCenter(camera.coordinate);
         onCameraSettledRef.current?.(camera);
       });
 

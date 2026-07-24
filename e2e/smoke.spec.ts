@@ -76,7 +76,21 @@ test("imports a GPX file, opens Riding mode, and the map reaches a usable state"
   // Proves the camera actually moved to the route's location — the
   // fixture route sits within roughly (51.5000,-0.1000)-(51.5036,-0.0946);
   // the style's own default view is nowhere near this (typically far
-  // zoomed out, centred elsewhere or at [0,0]).
+  // zoomed out, centred elsewhere or at [0,0]). Starting the ride
+  // requests "following", which recentres on the mocked GPS fix via an
+  // animated ease — poll rather than reading once, since that ease takes
+  // a moment to settle.
+  await expect
+    .poll(
+      async () => {
+        const attr = await mapContainer.getAttribute("data-camera-center");
+        const [lon, lat] = (attr ?? "").split(",").map(Number);
+        return lon > -0.101 && lon < -0.094 && lat > 51.499 && lat < 51.504;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+
   const cameraCenterAttr = await mapContainer.getAttribute("data-camera-center");
   const [cameraLon, cameraLat] = (cameraCenterAttr ?? "").split(",").map(Number);
   expect(cameraLon).toBeGreaterThan(-0.101);
