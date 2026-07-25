@@ -41,6 +41,21 @@ const PLANNING_WAYPOINTS_LAYER_ID = "acn-planning-waypoints-marker";
 const PLANNING_SELECTED_WAYPOINT_SOURCE_ID = "acn-planning-waypoint-selected";
 const PLANNING_SELECTED_WAYPOINT_LAYER_ID = "acn-planning-waypoint-selected-marker";
 
+/** Every GeoJSON source this app itself creates — used to tell a genuine
+ * external-basemap tile event apart from our own local data sources, which
+ * report loaded almost immediately regardless of tile delivery (see the
+ * onSourceData handler in attachMap below). */
+const APP_OWNED_SOURCE_IDS: ReadonlySet<string> = new Set([
+  COMPLETED_SOURCE_ID,
+  REMAINING_SOURCE_ID,
+  POSITION_SOURCE_ID,
+  START_SOURCE_ID,
+  FINISH_SOURCE_ID,
+  PLANNING_PREVIEW_SOURCE_ID,
+  PLANNING_WAYPOINTS_SOURCE_ID,
+  PLANNING_SELECTED_WAYPOINT_SOURCE_ID,
+]);
+
 /** How long to wait for the style document itself to become structurally
  * ready (MapLibre's own "style.load", independent of tile loading) before
  * falling back to the local neutral background — the tile provider is
@@ -397,10 +412,12 @@ export function MapView({
           routeSourceLoaded = true;
           setRouteSourceLoaded(true);
         }
-        // A real, observed recovery signal — any source finishing a load
-        // while the tile-unavailable banner is showing is evidence tile
-        // delivery has resumed, not a timeout guess.
-        if (info.isSourceLoaded) {
+        // Only a source we didn't create ourselves can be evidence the
+        // external basemap's own tiles are flowing again — our own GeoJSON
+        // sources report loaded almost immediately regardless of tile
+        // delivery, so treating those as recovery would clear the banner
+        // on every route/position update instead of on genuine recovery.
+        if (info.isSourceLoaded && !APP_OWNED_SOURCE_IDS.has(info.sourceId)) {
           setTileErrorMessage(null);
         }
       });
@@ -549,14 +566,14 @@ export function MapView({
   }, [usingFallbackStyle, tileSource.id]);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!styleStructurallyReady) return;
     const { completed, remaining } = splitRouteAtDistance(
       points,
       matchedDistanceFromStartMetres,
     );
     mapRef.current?.setGeoJsonSourceData(COMPLETED_SOURCE_ID, completed);
     mapRef.current?.setGeoJsonSourceData(REMAINING_SOURCE_ID, remaining);
-  }, [points, matchedDistanceFromStartMetres, ready]);
+  }, [points, matchedDistanceFromStartMetres, styleStructurallyReady]);
 
   // Purely derived from already-available inputs (no external-system
   // round-trip needed, unlike routeSourceLoaded/cameraCenter above), so
@@ -564,7 +581,7 @@ export function MapView({
   // Independent of whether the source ever finishes rendering — this
   // proves real, non-empty geometry was actually submitted, catching a
   // regression in the data flow itself.
-  const routeCoordinateCount = ready
+  const routeCoordinateCount = styleStructurallyReady
     ? (splitRouteAtDistance(points, matchedDistanceFromStartMetres).remaining.features[0]
         ?.geometry.coordinates.length ?? 0)
     : 0;
@@ -579,7 +596,7 @@ export function MapView({
   // into a restored following/free camera doesn't flash the full route
   // first.
   useEffect(() => {
-    if (!ready) return;
+    if (!styleStructurallyReady) return;
 
     if (!suppressInitialOverviewFit) {
       const bounds = computeBoundingBox(points.map((point) => point.coordinate));
@@ -605,14 +622,14 @@ export function MapView({
         ? buildPositionFeatureCollection(last.coordinate)
         : EMPTY_FEATURE_COLLECTION,
     );
-  }, [points, ready, suppressInitialOverviewFit]);
+  }, [points, styleStructurallyReady, suppressInitialOverviewFit]);
 
   // Executes the camera controller's current command (live "following" or
   // a one-time restore) — deduped by value via a ref rather than object
   // identity, so a rerender that produces a new but logically-identical
   // cameraTarget object doesn't re-trigger setCamera.
   useEffect(() => {
-    if (!ready || !cameraTarget) return;
+    if (!styleStructurallyReady || !cameraTarget) return;
     const lon = cameraTarget.coordinate ? cameraTarget.coordinate[0] : null;
     const lat = cameraTarget.coordinate ? cameraTarget.coordinate[1] : null;
     const last = lastAppliedCameraTargetRef.current;
@@ -643,39 +660,39 @@ export function MapView({
       cameraTarget.pitchDegrees,
       { animate: cameraTarget.animate, followOffset: cameraTarget.followOffset },
     );
-  }, [cameraTarget, ready]);
+  }, [cameraTarget, styleStructurallyReady]);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!styleStructurallyReady) return;
     mapRef.current?.setGeoJsonSourceData(
       POSITION_SOURCE_ID,
       currentPosition
         ? buildPositionFeatureCollection(currentPosition)
         : EMPTY_FEATURE_COLLECTION,
     );
-  }, [currentPosition, ready]);
+  }, [currentPosition, styleStructurallyReady]);
 
   const planningWaypoints = planningOverlay?.waypoints;
   const planningSelectedIndex = planningOverlay?.selectedWaypointIndex ?? null;
   const planningPreviewCoordinates = planningOverlay?.previewCoordinates;
 
   useEffect(() => {
-    if (!ready) return;
+    if (!styleStructurallyReady) return;
     const { others, selected } = buildWaypointFeatureCollections(
       planningWaypoints ?? [],
       planningSelectedIndex,
     );
     mapRef.current?.setGeoJsonSourceData(PLANNING_WAYPOINTS_SOURCE_ID, others);
     mapRef.current?.setGeoJsonSourceData(PLANNING_SELECTED_WAYPOINT_SOURCE_ID, selected);
-  }, [planningWaypoints, planningSelectedIndex, ready]);
+  }, [planningWaypoints, planningSelectedIndex, styleStructurallyReady]);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!styleStructurallyReady) return;
     mapRef.current?.setGeoJsonSourceData(
       PLANNING_PREVIEW_SOURCE_ID,
       buildUnroutedPreviewFeatureCollection(planningPreviewCoordinates ?? []),
     );
-  }, [planningPreviewCoordinates, ready]);
+  }, [planningPreviewCoordinates, styleStructurallyReady]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>

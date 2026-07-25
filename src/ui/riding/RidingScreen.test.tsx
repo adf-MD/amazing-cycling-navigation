@@ -95,6 +95,7 @@ function buildStubMapFactory(): {
   getZoomSpy: ReturnType<typeof vi.fn>;
 } {
   let loadListener: (() => void) | undefined;
+  let styleLoadedListener: (() => void) | undefined;
   let errorListener: (() => void) | undefined;
   let userCameraInteractionListener: (() => void) | undefined;
   let cameraSettledListener:
@@ -112,7 +113,9 @@ function buildStubMapFactory(): {
       onLoad: (listener) => {
         loadListener = listener;
       },
-      onStyleLoaded: () => undefined,
+      onStyleLoaded: (listener) => {
+        styleLoadedListener = listener;
+      },
       onError: (listener) => {
         errorListener = () => {
           listener({ message: "tile fetch failed", category: "style-request-or-parse" });
@@ -143,7 +146,14 @@ function buildStubMapFactory(): {
   };
   return {
     factory,
-    triggerLoad: () => loadListener?.(),
+    triggerLoad: () => {
+      // Real MapLibre always fires "style.load" strictly before "load" —
+      // mirror that here so route/position data (now gated on style
+      // readiness, not full load) is populated before camera/position
+      // assertions run.
+      styleLoadedListener?.();
+      loadListener?.();
+    },
     triggerTileError: () => errorListener?.(),
     triggerUserCameraInteraction: () => userCameraInteractionListener?.(),
     triggerCameraSettled: (camera) => cameraSettledListener?.(camera),

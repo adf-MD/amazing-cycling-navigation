@@ -939,19 +939,99 @@ describe("MapView", () => {
       expect(latest?.category).toBe("imagery-recovered");
     });
 
-    it("populates route and position sources on style-ready alone, before full imagery loads", () => {
+    it("populates route, position and start/finish data on style-ready alone, before full imagery loads", () => {
       const mock = createMockMapFactory();
-      render(<MapView points={points} mapFactory={mock.factory} />);
+      render(
+        <MapView
+          points={points}
+          currentPosition={[0.0005, 51]}
+          mapFactory={mock.factory}
+        />,
+      );
 
       mock.triggerStyleLoaded();
 
-      expect(mock.sources.has("acn-route-remaining")).toBe(true);
-      expect(mock.sources.has("acn-position")).toBe(true);
+      expect(
+        mock.sources.get("acn-route-remaining")?.features[0]?.geometry,
+      ).toMatchObject({
+        coordinates: [
+          [0, 51],
+          [0.001, 51],
+        ],
+      });
+      expect(mock.sources.get("acn-route-start")?.features[0]?.geometry).toEqual({
+        type: "Point",
+        coordinates: [0, 51],
+      });
+      expect(mock.sources.get("acn-position")?.features[0]?.geometry).toEqual({
+        type: "Point",
+        coordinates: [0.0005, 51],
+      });
+      expect(mock.fitBoundsSpy).toHaveBeenCalled();
+      expect(screen.getByTestId("map-container")).toHaveAttribute(
+        "data-route-coordinate-count",
+        "2",
+      );
       expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
       expect(screen.queryByTestId("map-loading")).toBeNull();
     });
 
-    it("clears the tiles-unavailable banner once a subsequent source reports loaded", () => {
+    it("applies a live cameraTarget on style-ready alone, before full imagery loads", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          cameraTarget={{
+            coordinate: [0, 51],
+            zoom: 16,
+            bearingDegrees: 90,
+            pitchDegrees: 35,
+            animate: true,
+            followOffset: true,
+          }}
+        />,
+      );
+
+      mock.triggerStyleLoaded();
+
+      expect(mock.setCameraSpy).toHaveBeenCalledWith([0, 51], 16, 90, 35, {
+        animate: true,
+        followOffset: true,
+      });
+    });
+
+    it("populates Planning-overlay waypoints and preview data on style-ready alone", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          planningOverlay={{
+            waypoints: [
+              { id: "a", coordinate: [0, 51] },
+              { id: "b", coordinate: [0.001, 51] },
+            ],
+            previewCoordinates: [
+              [0, 51],
+              [0.001, 51],
+            ],
+            selectedWaypointIndex: 1,
+            onMapTap: vi.fn(),
+          }}
+        />,
+      );
+
+      mock.triggerStyleLoaded();
+
+      expect(mock.sources.get("acn-planning-waypoints")?.features).toHaveLength(1);
+      expect(mock.sources.get("acn-planning-waypoint-selected")?.features).toHaveLength(
+        1,
+      );
+      expect(mock.sources.get("acn-planning-preview")?.features).toHaveLength(1);
+    });
+
+    it("clears the tiles-unavailable banner once the external basemap's own source reports loaded", () => {
       const mock = createMockMapFactory();
       render(<MapView points={points} mapFactory={mock.factory} />);
       mock.triggerLoad();
@@ -959,8 +1039,30 @@ describe("MapView", () => {
       mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
       expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
 
-      mock.triggerSourceData({ sourceId: "acn-route-remaining", isSourceLoaded: true });
+      // "openmaptiles" represents the base style's own vector tile source —
+      // not one of this app's GeoJSON sources.
+      mock.triggerSourceData({ sourceId: "openmaptiles", isSourceLoaded: true });
 
+      expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+    });
+
+    it("does not clear the tiles-unavailable banner when only an app-owned source reports loaded", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+      expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+
+      // Our own route/position sources report loaded almost immediately —
+      // that must never be mistaken for the external basemap recovering.
+      mock.triggerSourceData({ sourceId: "acn-route-remaining", isSourceLoaded: true });
+      expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+
+      mock.triggerSourceData({ sourceId: "acn-position", isSourceLoaded: true });
+      expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+
+      mock.triggerSourceData({ sourceId: "openmaptiles", isSourceLoaded: true });
       expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
     });
 

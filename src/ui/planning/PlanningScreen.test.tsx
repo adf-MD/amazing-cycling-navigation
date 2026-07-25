@@ -22,6 +22,7 @@ interface MockMapHandle {
 
 function createMockMapFactory(): MockMapHandle {
   let loadListener: (() => void) | undefined;
+  let styleLoadedListener: (() => void) | undefined;
   let cameraSettledListener:
     | ((camera: {
         coordinate: Coordinate;
@@ -38,7 +39,9 @@ function createMockMapFactory(): MockMapHandle {
       onLoad: (listener) => {
         loadListener = listener;
       },
-      onStyleLoaded: () => undefined,
+      onStyleLoaded: (listener) => {
+        styleLoadedListener = listener;
+      },
       onError: () => undefined,
       onSourceData: () => undefined,
       addGeoJsonSource: () => undefined,
@@ -69,6 +72,8 @@ function createMockMapFactory(): MockMapHandle {
     setCameraSpy,
     triggerLoad: () => {
       act(() => {
+        // Real MapLibre always fires "style.load" strictly before "load".
+        styleLoadedListener?.();
         loadListener?.();
       });
     },
