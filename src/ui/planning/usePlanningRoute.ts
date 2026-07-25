@@ -63,9 +63,23 @@ function mapErrorReasonToOutcome(reason: RoutingErrorReason): ProviderKeyOutcome
     case "network-failure":
     case "timeout":
       return "unavailable";
+    case "no-route-found":
+    case "no-routable-point":
+      // A well-formed error response proves the key and connection both
+      // work — only the waypoints are the problem, not the provider.
+      return "verified";
     default:
       return null;
   }
+}
+
+/** Appended to a message when the provider supplied a numeric error code
+ * — a safe, concrete diagnostic detail (never the accompanying message
+ * text; see RoutingError's own doc comment). */
+function formatProviderCode(error: RoutingError): string {
+  return error.providerErrorCode !== undefined
+    ? ` (provider code ${String(error.providerErrorCode)})`
+    : "";
 }
 
 function describeRoutingError(error: RoutingError): string {
@@ -84,6 +98,12 @@ function describeRoutingError(error: RoutingError): string {
       return "The routing request failed. Check your connection and try again.";
     case "timeout":
       return "The routing request timed out. Try again.";
+    case "no-route-found":
+      return `No cycling route could be found between these waypoints — they may be separated by water, a barrier, or a gap in rideable roads. Your key and connection to OpenRouteService are working; try adjusting the route.${formatProviderCode(error)}`;
+    case "no-routable-point":
+      return `One of your waypoints is too far from a usable road for cycling. Try moving it closer to a street or cycle path. Your key and connection to OpenRouteService are working.${formatProviderCode(error)}`;
+    case "provider-error":
+      return `${error.message}${formatProviderCode(error)}`;
     case "malformed-response":
     case "no-geometry":
     case "unknown":

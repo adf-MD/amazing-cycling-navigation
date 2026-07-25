@@ -193,6 +193,60 @@ describe("OpenRouteServiceAdapter", () => {
     ).rejects.toMatchObject({ reason: "network-failure" });
   });
 
+  it("maps ORS error code 2009 (no route between locations) to no-route-found", async () => {
+    const fetchImpl = buildFetchMock({
+      ok: false,
+      status: 400,
+      json: () =>
+        Promise.resolve({
+          error: { code: 2009, message: "Route could not be found between locations" },
+        }),
+    });
+    const adapter = new OpenRouteServiceAdapter({
+      getApiKey: () => Promise.resolve(DUMMY_KEY),
+      fetchImpl,
+    });
+
+    await expect(
+      adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+    ).rejects.toMatchObject({ reason: "no-route-found", providerErrorCode: 2009 });
+  });
+
+  it.each([2010, 2011])(
+    "maps ORS error code %d (no routable point) to no-routable-point",
+    async (code) => {
+      const fetchImpl = buildFetchMock({
+        ok: false,
+        status: 400,
+        json: () => Promise.resolve({ error: { code, message: "not routable" } }),
+      });
+      const adapter = new OpenRouteServiceAdapter({
+        getApiKey: () => Promise.resolve(DUMMY_KEY),
+        fetchImpl,
+      });
+
+      await expect(
+        adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+      ).rejects.toMatchObject({ reason: "no-routable-point", providerErrorCode: code });
+    },
+  );
+
+  it("falls back to provider-error for an unrecognised status/body combination", async () => {
+    const fetchImpl = buildFetchMock({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ error: { code: 9999, message: "unknown" } }),
+    });
+    const adapter = new OpenRouteServiceAdapter({
+      getApiKey: () => Promise.resolve(DUMMY_KEY),
+      fetchImpl,
+    });
+
+    await expect(
+      adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+    ).rejects.toMatchObject({ reason: "provider-error", providerErrorCode: 9999 });
+  });
+
   it("re-throws a genuine caller cancellation unchanged, not as a RoutingError", async () => {
     const controller = new AbortController();
     const fetchImpl = vi.fn().mockImplementation(() => {
@@ -312,6 +366,38 @@ describe("OpenRouteServiceAdapter", () => {
         expect(message).not.toContain(DUMMY_KEY);
         expect(message).not.toContain("-1.5");
         expect(message).not.toContain("53.8");
+      }
+    });
+
+    it("never includes error.message from a realistic ORS no-route-found body, even though it echoes coordinates", async () => {
+      const fetchImpl = buildFetchMock({
+        ok: false,
+        status: 400,
+        json: () =>
+          Promise.resolve({
+            error: {
+              code: 2009,
+              message:
+                "Route could not be found between locations 53.335, -6.28 and 53.34, -6.27.",
+            },
+          }),
+      });
+      const adapter = new OpenRouteServiceAdapter({
+        getApiKey: () => Promise.resolve(DUMMY_KEY),
+        fetchImpl,
+      });
+
+      try {
+        await adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" });
+        expect.unreachable("expected calculateRoute to throw");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        expect(message).not.toContain("53.335");
+        expect(message).not.toContain("-6.28");
+        expect(error).toMatchObject({
+          reason: "no-route-found",
+          providerErrorCode: 2009,
+        });
       }
     });
   });

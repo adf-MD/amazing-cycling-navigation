@@ -5,9 +5,13 @@ import { MapView, type CameraTarget, type PlanningOverlay } from "../../map/MapV
 import type { MapFactory } from "../../map/mapAdapter.ts";
 import { getApproximateLocationOnce } from "../../platform/geolocation.ts";
 import { logError } from "../../platform/errorLog.ts";
+import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
 import { OpenRouteServiceAdapter } from "../../routing/openRouteServiceAdapter.ts";
 import type { RoutingProvider } from "../../routing/provider.ts";
-import { getProviderKey } from "../../storage/providerKeyRepository.ts";
+import {
+  getProviderKey,
+  getProviderKeyVerification,
+} from "../../storage/providerKeyRepository.ts";
 import {
   clearDraft,
   getDraft,
@@ -16,6 +20,7 @@ import {
 import { saveRoute } from "../../storage/routesRepository.ts";
 import { downloadTextFile } from "../shared/downloadTextFile.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
+import { describeProviderKeyStatus } from "../settings/providerKeyStatus.ts";
 import { canSaveOrExportPlan } from "./canSaveOrExportPlan.ts";
 import { NoApiKeyNotice } from "./NoApiKeyNotice.tsx";
 import { RouteSummaryPanel } from "./RouteSummaryPanel.tsx";
@@ -37,6 +42,7 @@ export interface PlanningScreenProps {
   /** Injectable for tests; defaults to a real one-shot, low-accuracy
    * location request (see getApproximateLocationOnce). */
   requestApproximateLocation?: () => Promise<Coordinate | null>;
+  clock?: Clock;
 }
 
 /** How long to wait, after a settled waypoint edit, before persisting the
@@ -68,6 +74,7 @@ export function PlanningScreen({
   mapFactory,
   routingProvider,
   requestApproximateLocation = getApproximateLocationOnce,
+  clock = systemClock,
 }: PlanningScreenProps) {
   // Created once, ignoring any later identity change of the routingProvider
   // prop — mirrors how mapFactory/clock are treated elsewhere in this
@@ -96,6 +103,14 @@ export function PlanningScreen({
   // by every other useLiveQuery consumer in this codebase (e.g.
   // SettingsScreen), rather than adding a second loading concept.
   const hasKey = key !== undefined;
+
+  // Reuses Settings' own key-verification status so the rider can see
+  // whether their key/connection to OpenRouteService actually works
+  // without having to leave Planning — updated automatically after every
+  // calculation attempt via recordProviderKeyVerification.
+  const verificationQuery = useCallback(() => getProviderKeyVerification(), []);
+  const verification = useLiveQuery(verificationQuery);
+  const now = useNow(clock);
 
   const routing = usePlanningRoute({
     waypoints: state.present,
@@ -381,6 +396,9 @@ export function PlanningScreen({
       >
         {routing.isCalculating ? "Calculating…" : "Calculate route"}
       </button>
+      {hasKey ? (
+        <p role="status">{describeProviderKeyStatus(key, verification, now).headline}</p>
+      ) : null}
       {routing.lastErrorMessage ? <p role="alert">{routing.lastErrorMessage}</p> : null}
 
       {routing.state.kind === "routed" ? (

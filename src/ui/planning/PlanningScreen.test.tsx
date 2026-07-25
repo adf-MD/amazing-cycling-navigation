@@ -262,6 +262,48 @@ describe("PlanningScreen", () => {
     },
   );
 
+  it("shows the key's verification status inline, updated after a successful calculation", async () => {
+    const user = userEvent.setup();
+    await saveProviderKey("dummy-test-key");
+    const map = createMockMapFactory();
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={buildResolvedAdapter(buildRoute(10))}
+      />,
+    );
+    map.triggerLoad();
+
+    await waitFor(() => {
+      expect(screen.getByText(/not yet verified/i)).toBeInTheDocument();
+    });
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+    const calculateButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /calculate route/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+    await user.click(calculateButton);
+
+    await waitFor(() => {
+      expect(screen.getByText(/key last verified/i)).toBeInTheDocument();
+    });
+  });
+
+  it("does not show a key status line when no key is configured", () => {
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    expect(
+      screen.getByText("Road routing requires your personal OpenRouteService key."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/not yet verified/i)).not.toBeInTheDocument();
+  });
+
   it("saving clears the draft, resets waypoints and notifies the caller", async () => {
     const user = userEvent.setup();
     await saveProviderKey("dummy-test-key");

@@ -68,7 +68,54 @@ function readRetryAfterSeconds(response: Response): number | undefined {
   return Number.isFinite(seconds) ? seconds : undefined;
 }
 
-function mapErrorResponse(response: Response): RoutingError {
+/** OpenRouteService error codes (from its public API documentation, not
+ * independently verified against a live response — the same honesty
+ * caveat this project already applies in surfaceCodes.ts) that mean "no
+ * route could be built between these locations", as distinct from any
+ * other provider-side error. Classification is based only on the
+ * response body's error.code, never on assuming a specific HTTP status
+ * for these cases, since that mapping isn't confidently known either. */
+const ORS_NO_ROUTE_CODES = new Set([2009]);
+/** "A waypoint isn't close enough to a road this profile can route on" —
+ * distinct from "no route exists between two otherwise-routable points". */
+const ORS_NO_ROUTABLE_POINT_CODES = new Set([2010, 2011]);
+
+function classifyOrsErrorCode(
+  code: number | undefined,
+): "no-route-found" | "no-routable-point" | null {
+  if (code === undefined) return null;
+  if (ORS_NO_ROUTE_CODES.has(code)) return "no-route-found";
+  if (ORS_NO_ROUTABLE_POINT_CODES.has(code)) return "no-routable-point";
+  return null;
+}
+
+function hasNumericErrorCode(body: unknown): body is { error: { code: number } } {
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    "error" in body &&
+    typeof body.error === "object" &&
+    body.error !== null &&
+    "code" in body.error &&
+    typeof body.error.code === "number"
+  );
+}
+
+/** Reads only the numeric error.code from a response body, if present —
+ * deliberately never reads or forwards error.message, which
+ * openrouteservice sometimes echoes the request's own coordinates into
+ * (see the adapter's redaction tests). Never throws: an unparseable or
+ * differently-shaped body just means "no code available". */
+async function readOrsErrorCode(response: Response): Promise<number | undefined> {
+  try {
+    const body: unknown = await response.json();
+    return hasNumericErrorCode(body) ? body.error.code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function mapErrorResponse(response: Response): Promise<RoutingError> {
   switch (response.status) {
     case 401:
       return new RoutingError("unauthorized", "The OpenRouteService key was rejected.");
@@ -84,14 +131,37 @@ function mapErrorResponse(response: Response): RoutingError {
         "The rate limit was reached.",
         readRetryAfterSeconds(response),
       );
-    default:
-      // Deliberately doesn't interpolate the response body — never risk
-      // echoing back request content (coordinates, key) the provider
-      // might reflect in an error message.
+    default: {
+      // Deliberately never interpolates the response body's message text
+      // — never risk echoing back request content (coordinates, key) the
+      // provider might reflect in it. Only a recognised numeric error
+      // code is read, which also proves the request reached and was
+      // authenticated by the provider (see mapErrorReasonToOutcome).
+      const code = await readOrsErrorCode(response);
+      const reason = classifyOrsErrorCode(code);
+      if (reason === "no-route-found") {
+        return new RoutingError(
+          reason,
+          "No cycling route could be found between these waypoints.",
+          undefined,
+          code,
+        );
+      }
+      if (reason === "no-routable-point") {
+        return new RoutingError(
+          reason,
+          "A waypoint is too far from a usable road for cycling.",
+          undefined,
+          code,
+        );
+      }
       return new RoutingError(
-        "network-failure",
+        "provider-error",
         `The routing provider returned an unexpected error (status ${String(response.status)}).`,
+        undefined,
+        code,
       );
+    }
   }
 }
 
@@ -173,7 +243,7 @@ export class OpenRouteServiceAdapter implements RoutingProvider {
     }
 
     if (!response.ok) {
-      throw mapErrorResponse(response);
+      throw await mapErrorResponse(response);
     }
 
     let payload: unknown;

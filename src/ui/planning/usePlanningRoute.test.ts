@@ -354,4 +354,104 @@ describe("usePlanningRoute", () => {
       );
     });
   });
+
+  it("records a verified outcome (not unavailable) when the provider reports no route found", async () => {
+    await saveProviderKey("dummy-test-key");
+    const { adapter, calls } = buildQueuedAdapter();
+    const { result } = renderHook(() =>
+      usePlanningRoute({
+        waypoints: WAYPOINTS,
+        profile: "cycling-road",
+        avoidFerries: false,
+        adapter,
+      }),
+    );
+
+    act(() => {
+      result.current.calculateNow();
+    });
+    await act(async () => {
+      calls[0]?.reject(
+        new RoutingError(
+          "no-route-found",
+          "No cycling route could be found between these waypoints.",
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    await waitFor(() => {
+      expect(result.current.lastErrorMessage).toContain(
+        "Your key and connection to OpenRouteService are working",
+      );
+    });
+    const verification = await getProviderKeyVerification();
+    expect(verification).toMatchObject({ outcome: "verified" });
+  });
+
+  it("records a verified outcome when a waypoint is too far from a routable road", async () => {
+    await saveProviderKey("dummy-test-key");
+    const { adapter, calls } = buildQueuedAdapter();
+    const { result } = renderHook(() =>
+      usePlanningRoute({
+        waypoints: WAYPOINTS,
+        profile: "cycling-road",
+        avoidFerries: false,
+        adapter,
+      }),
+    );
+
+    act(() => {
+      result.current.calculateNow();
+    });
+    await act(async () => {
+      calls[0]?.reject(
+        new RoutingError(
+          "no-routable-point",
+          "A waypoint is too far from a usable road for cycling.",
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    await waitFor(() => {
+      expect(result.current.lastErrorMessage).toContain(
+        "too far from a usable road for cycling",
+      );
+    });
+    const verification = await getProviderKeyVerification();
+    expect(verification).toMatchObject({ outcome: "verified" });
+  });
+
+  it("does not change the persisted verification outcome for an ambiguous provider-error", async () => {
+    await saveProviderKey("dummy-test-key");
+    const { adapter, calls } = buildQueuedAdapter();
+    const { result } = renderHook(() =>
+      usePlanningRoute({
+        waypoints: WAYPOINTS,
+        profile: "cycling-road",
+        avoidFerries: false,
+        adapter,
+      }),
+    );
+
+    act(() => {
+      result.current.calculateNow();
+    });
+    await act(async () => {
+      calls[0]?.reject(
+        new RoutingError(
+          "provider-error",
+          "The routing provider returned an unexpected error (status 500).",
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    await waitFor(() => {
+      expect(result.current.lastErrorMessage).not.toBeNull();
+    });
+    const verification = await getProviderKeyVerification();
+    expect(verification).toBeUndefined();
+  });
 });
