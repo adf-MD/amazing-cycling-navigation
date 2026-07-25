@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import App from "./App.tsx";
 
 describe("App", () => {
@@ -8,6 +9,16 @@ describe("App", () => {
     expect(
       screen.getByRole("heading", { name: /amazing cycling navigation/i }),
     ).toBeInTheDocument();
+  });
+
+  it("navigates to Settings", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "OpenRouteService" })).toBeInTheDocument();
   });
 
   it("applies the app-shell class, so the header/nav stay clear of the iOS status bar and notch via safe-area-inset padding", () => {

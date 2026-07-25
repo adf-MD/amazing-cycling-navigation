@@ -1,10 +1,61 @@
 import Dexie, { type EntityTable } from "dexie";
-import type { Coordinate, PlannedRoute } from "../domain/types.ts";
+import type { Coordinate, PlannedRoute, Waypoint } from "../domain/types.ts";
 import type {
   ElevationWindowMetres,
   OffRouteLevel,
   RideCameraMode,
 } from "../navigation/types.ts";
+
+/** Coarse, provider-independent outcome of the most recent attempt to use
+ * the stored OpenRouteService key — never the raw HTTP status or provider
+ * response, which could carry request/response detail we don't want to
+ * retain (see CLAUDE.md: redact provider errors before diagnostics). */
+export type ProviderKeyOutcome =
+  "verified" | "rejected" | "quota-limited" | "unavailable";
+
+/**
+ * Singleton row (id is always "openrouteservice"): the user's own
+ * OpenRouteService/HeiGIT API key, entered in Settings. Deliberately the
+ * ONLY field on this row — verification status lives in the separate
+ * StoredProviderKeyVerification row below, so code that records an
+ * outcome after a routing attempt never has write access to the key
+ * itself.
+ */
+export interface StoredProviderKey {
+  id: "openrouteservice";
+  apiKey: string;
+  savedAt: string;
+}
+
+/**
+ * Singleton row, same id convention as StoredProviderKey but a genuinely
+ * separate table. Describes only the outcome of the most recent routing
+ * attempt — never a currently-live assertion about the provider (a
+ * reload doesn't re-check anything; see providerKeyStatus.ts for how this
+ * is worded to readers as necessarily historical, e.g. "when last
+ * checked").
+ */
+export interface StoredProviderKeyVerification {
+  id: "openrouteservice";
+  outcome: ProviderKeyOutcome;
+  checkedAt: string;
+  /** Only meaningful when outcome is "quota-limited" — a 429's
+   * Retry-After or a provider quota-reset header, converted to an ISO
+   * timestamp. Null when the provider didn't return one. */
+  rateLimitResetAt: string | null;
+}
+
+/**
+ * Singleton row (id is always "draft"): the rider's in-progress Planning
+ * waypoints, so an unfinished plan survives a reload without needing a
+ * calculated route or an API key. Cleared once the plan is saved as a
+ * real PlannedRoute.
+ */
+export interface StoredPlanningDraft {
+  id: "draft";
+  waypoints: readonly Waypoint[];
+  updatedAt: string;
+}
 
 export interface StoredGpsFix {
   coordinate: Coordinate;
@@ -56,6 +107,9 @@ export interface StoredRideState {
 export class AcnDatabase extends Dexie {
   routes!: EntityTable<PlannedRoute, "id">;
   rideState!: EntityTable<StoredRideState, "id">;
+  providerKeys!: EntityTable<StoredProviderKey, "id">;
+  providerKeyVerifications!: EntityTable<StoredProviderKeyVerification, "id">;
+  planningDrafts!: EntityTable<StoredPlanningDraft, "id">;
 
   constructor(name = "amazing-cycling-navigation") {
     super(name);
@@ -70,6 +124,21 @@ export class AcnDatabase extends Dexie {
     this.version(1).stores({
       routes: "id, name, createdAt",
       rideState: "id",
+    });
+    // v2: adds three brand-new, empty singleton-row tables for Milestone
+    // 3A (the API key, its verification status, and an in-progress
+    // Planning draft) — no .upgrade() callback is needed because this is
+    // a purely additive structural change (new object stores only, no
+    // transformation of existing routes/rideState data). Every prior
+    // version's stores() must still be listed verbatim; Dexie compares
+    // consecutive version schemas to work out what changed, not a diff
+    // against only the latest one. See db.migration.test.ts.
+    this.version(2).stores({
+      routes: "id, name, createdAt",
+      rideState: "id",
+      providerKeys: "id",
+      providerKeyVerifications: "id",
+      planningDrafts: "id",
     });
   }
 }

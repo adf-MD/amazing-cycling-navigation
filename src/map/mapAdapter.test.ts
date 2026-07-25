@@ -20,9 +20,20 @@ function buildFakeMapLibreMap(
     getZoom: vi.fn(() => 12),
     getBearing: vi.fn(() => 45),
     getPitch: vi.fn(() => 20),
+    addLayer: vi.fn(),
     on: vi.fn(),
   };
   return fake;
+}
+
+function findHandler(
+  fake: ReturnType<typeof buildFakeMapLibreMap>,
+  type: string,
+): (event: unknown) => void {
+  const call = fake.on.mock.calls.find(([eventType]) => eventType === type) as
+    [string, (event: unknown) => void] | undefined;
+  if (!call) throw new Error(`no handler registered for "${type}"`);
+  return call[1];
 }
 
 function buildAdapter(fake: ReturnType<typeof buildFakeMapLibreMap>): MapLibreAdapter {
@@ -110,5 +121,36 @@ describe("MapLibreAdapter", () => {
       bearingDegrees: 45,
       pitchDegrees: 20,
     });
+  });
+
+  it("onMapTap reports the tapped coordinate from a real click event", () => {
+    const fake = buildFakeMapLibreMap();
+    const adapter = buildAdapter(fake);
+    const listener = vi.fn();
+
+    adapter.onMapTap(listener);
+    const clickHandler = findHandler(fake, "click");
+    clickHandler({ lngLat: { lng: 7, lat: 8 } });
+
+    expect(listener).toHaveBeenCalledWith([7, 8]);
+  });
+
+  it("addLineLayer passes line-dasharray through only when provided", () => {
+    const fake = buildFakeMapLibreMap();
+    const adapter = buildAdapter(fake);
+
+    adapter.addLineLayer("solid", "source-a", { lineColor: "#000", lineWidth: 2 });
+    adapter.addLineLayer("dashed", "source-b", {
+      lineColor: "#000",
+      lineWidth: 2,
+      lineDasharray: [2, 2],
+    });
+
+    const [solidCall, dashedCall] = fake.addLayer.mock.calls as [
+      [{ paint: Record<string, unknown> }],
+      [{ paint: Record<string, unknown> }],
+    ];
+    expect(solidCall[0].paint).not.toHaveProperty("line-dasharray");
+    expect(dashedCall[0].paint["line-dasharray"]).toEqual([2, 2]);
   });
 });

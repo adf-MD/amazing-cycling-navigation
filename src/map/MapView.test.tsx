@@ -34,6 +34,7 @@ interface MockMapHandle {
     bearingDegrees: number;
     pitchDegrees: number;
   }) => void;
+  triggerMapTap: (coordinate: Coordinate) => void;
   sources: Map<string, GeoJSON.FeatureCollection>;
   layers: Set<string>;
   removeSpy: ReturnType<typeof vi.fn>;
@@ -42,6 +43,7 @@ interface MockMapHandle {
   getCenterSpy: ReturnType<typeof vi.fn>;
   getZoomSpy: ReturnType<typeof vi.fn>;
   setCameraSpy: ReturnType<typeof vi.fn>;
+  addLineLayerSpy: ReturnType<typeof vi.fn>;
   constructedStyles: CreateMapOptions["style"][];
 }
 
@@ -58,6 +60,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
         pitchDegrees: number;
       }) => void)
     | undefined;
+  let mapTapListener: ((coordinate: Coordinate) => void) | undefined;
   const sources = new Map<string, GeoJSON.FeatureCollection>();
   const layers = new Set<string>();
   const removeSpy = vi.fn();
@@ -66,6 +69,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
   const getCenterSpy = vi.fn(() => center);
   const getZoomSpy = vi.fn(() => 14);
   const setCameraSpy = vi.fn();
+  const addLineLayerSpy = vi.fn();
   const constructedStyles: CreateMapOptions["style"][] = [];
 
   const factory: MapFactory = ({ style }) => {
@@ -87,8 +91,9 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
         sources.set(id, data);
       },
       hasSource: (id) => sources.has(id),
-      addLineLayer: (id: string) => {
+      addLineLayer: (id, sourceId, paint) => {
         layers.add(id);
+        addLineLayerSpy(id, sourceId, paint);
       },
       addCircleLayer: (id: string) => {
         layers.add(id);
@@ -105,6 +110,9 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
       },
       setCamera: setCameraSpy,
       resize: resizeSpy,
+      onMapTap: (listener) => {
+        mapTapListener = listener;
+      },
       remove: removeSpy,
     };
     return map;
@@ -117,6 +125,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
     getCenterSpy,
     getZoomSpy,
     setCameraSpy,
+    addLineLayerSpy,
     constructedStyles,
     triggerLoad: () => {
       act(() => {
@@ -141,6 +150,11 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
     triggerCameraSettled: (camera) => {
       act(() => {
         cameraSettledListener?.(camera);
+      });
+    },
+    triggerMapTap: (coordinate) => {
+      act(() => {
+        mapTapListener?.(coordinate);
       });
     },
     sources,
@@ -751,6 +765,107 @@ describe("MapView", () => {
         [0.001, 51],
         [0.002, 51.001],
       ],
+    });
+  });
+
+  describe("planningOverlay", () => {
+    it("leaves the planning sources empty when the prop is absent, exactly like Riding mode today", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      expect(mock.sources.get("acn-planning-waypoints")?.features).toEqual([]);
+      expect(mock.sources.get("acn-planning-waypoint-selected")?.features).toEqual([]);
+      expect(mock.sources.get("acn-planning-preview")?.features).toEqual([]);
+    });
+
+    it("renders waypoint markers, separating the selected one into its own source", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          planningOverlay={{
+            waypoints: [
+              { id: "a", coordinate: [0, 51] },
+              { id: "b", coordinate: [0.001, 51] },
+            ],
+            previewCoordinates: [],
+            selectedWaypointIndex: 1,
+            onMapTap: vi.fn(),
+          }}
+        />,
+      );
+      mock.triggerLoad();
+
+      expect(mock.sources.get("acn-planning-waypoints")?.features).toHaveLength(1);
+      expect(mock.sources.get("acn-planning-waypoint-selected")?.features).toHaveLength(
+        1,
+      );
+    });
+
+    it("renders the unrouted preview as a dashed line, distinct from the solid route layers", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          planningOverlay={{
+            waypoints: [],
+            previewCoordinates: [
+              [0, 51],
+              [0.001, 51],
+            ],
+            selectedWaypointIndex: null,
+            onMapTap: vi.fn(),
+          }}
+        />,
+      );
+      mock.triggerLoad();
+
+      expect(mock.sources.get("acn-planning-preview")?.features).toHaveLength(1);
+      const calls = mock.addLineLayerSpy.mock.calls as [
+        string,
+        string,
+        { lineDasharray?: number[] },
+      ][];
+      const previewCall = calls.find(([id]) => id === "acn-planning-preview-line");
+      expect(previewCall?.[2].lineDasharray).toBeDefined();
+      const routeCall = calls.find(([id]) => id === "acn-route-remaining-line");
+      expect(routeCall?.[2].lineDasharray).toBeUndefined();
+    });
+
+    it("forwards a map tap as a coordinate to planningOverlay.onMapTap", () => {
+      const mock = createMockMapFactory();
+      const onMapTap = vi.fn();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          planningOverlay={{
+            waypoints: [],
+            previewCoordinates: [],
+            selectedWaypointIndex: null,
+            onMapTap,
+          }}
+        />,
+      );
+      mock.triggerLoad();
+
+      mock.triggerMapTap([1.5, 52.5]);
+
+      expect(onMapTap).toHaveBeenCalledWith([1.5, 52.5]);
+    });
+
+    it("never forwards a map tap when planningOverlay is absent (Riding mode)", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      // Should not throw with no onMapTap configured.
+      expect(() => {
+        mock.triggerMapTap([1.5, 52.5]);
+      }).not.toThrow();
     });
   });
 });

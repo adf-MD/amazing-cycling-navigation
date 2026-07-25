@@ -36,6 +36,11 @@ export interface LineLayerPaint {
   lineColor: string;
   lineWidth: number;
   lineOpacity?: number;
+  /** Omit for a solid line (the existing route layers never pass this —
+   * their rendering is unaffected). Used for Planning's unrouted-preview
+   * line, which must always read as visually distinct from a real routed
+   * line, never just a colour difference. */
+  lineDasharray?: number[];
 }
 
 export interface CircleLayerPaint {
@@ -108,6 +113,12 @@ export interface MapLibreLike {
    * on-screen size changes post-creation (e.g. iOS Safari/PWA chrome settling
    * after first paint) — otherwise fitBounds/camera maths use stale dimensions. */
   resize(): void;
+  /** Fires with the tapped/clicked coordinate for a genuine tap or click —
+   * never for a drag-then-release (MapLibre's own click-tolerance already
+   * suppresses `click` after real pointer movement, verified against the
+   * installed package's source), so Planning can use this directly for
+   * "tap to place a waypoint" without extra drag-distance tracking here. */
+  onMapTap(listener: (coordinate: Coordinate) => void): void;
   remove(): void;
 }
 
@@ -175,6 +186,7 @@ export class MapLibreAdapter implements MapLibreLike {
         "line-color": paint.lineColor,
         "line-width": paint.lineWidth,
         "line-opacity": paint.lineOpacity ?? 1,
+        ...(paint.lineDasharray ? { "line-dasharray": paint.lineDasharray } : {}),
       },
     });
   }
@@ -282,6 +294,12 @@ export class MapLibreAdapter implements MapLibreLike {
 
   resize(): void {
     this.map.resize();
+  }
+
+  onMapTap(listener: (coordinate: Coordinate) => void): void {
+    this.map.on("click", (event) => {
+      listener([event.lngLat.lng, event.lngLat.lat]);
+    });
   }
 
   remove(): void {

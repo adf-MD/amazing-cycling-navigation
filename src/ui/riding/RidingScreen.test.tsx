@@ -135,6 +135,7 @@ function buildStubMapFactory(): {
       },
       setCamera: setCameraSpy,
       resize: () => undefined,
+      onMapTap: () => undefined,
       remove: () => undefined,
     };
     return map;

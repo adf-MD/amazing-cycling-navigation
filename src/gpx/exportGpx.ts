@@ -26,19 +26,44 @@ export function exportRouteToGpx(route: PlannedRoute): string {
   nameElement.textContent = route.name;
   trk.appendChild(nameElement);
 
-  if (route.manoeuvres.length > 0) {
+  // Manoeuvres and routing provenance share one <extensions> element
+  // rather than risking two sibling <extensions> blocks, which some
+  // readers tolerate poorly. Collected as plain child elements first, so
+  // the wrapping <extensions> element itself is only created (and only
+  // appended to the document) when there's genuinely something to hold.
+  const extensionChildren: Element[] = [];
+
+  for (const manoeuvre of route.manoeuvres) {
+    const manoeuvreElement = doc.createElementNS(ACN_NAMESPACE, "acn:manoeuvre");
+    manoeuvreElement.setAttribute(
+      "distanceFromStartMetres",
+      String(manoeuvre.distanceFromStartMetres),
+    );
+    manoeuvreElement.setAttribute("type", manoeuvre.type);
+    if (manoeuvre.instruction !== undefined) {
+      manoeuvreElement.setAttribute("instruction", manoeuvre.instruction);
+    }
+    extensionChildren.push(manoeuvreElement);
+  }
+
+  if (
+    route.source.kind === "planner" &&
+    (route.source.provider !== undefined || route.source.profile !== undefined)
+  ) {
+    const sourceElement = doc.createElementNS(ACN_NAMESPACE, "acn:source");
+    if (route.source.provider !== undefined) {
+      sourceElement.setAttribute("provider", route.source.provider);
+    }
+    if (route.source.profile !== undefined) {
+      sourceElement.setAttribute("profile", route.source.profile);
+    }
+    extensionChildren.push(sourceElement);
+  }
+
+  if (extensionChildren.length > 0) {
     const extensions = doc.createElementNS(GPX_NAMESPACE, "extensions");
-    for (const manoeuvre of route.manoeuvres) {
-      const manoeuvreElement = doc.createElementNS(ACN_NAMESPACE, "acn:manoeuvre");
-      manoeuvreElement.setAttribute(
-        "distanceFromStartMetres",
-        String(manoeuvre.distanceFromStartMetres),
-      );
-      manoeuvreElement.setAttribute("type", manoeuvre.type);
-      if (manoeuvre.instruction !== undefined) {
-        manoeuvreElement.setAttribute("instruction", manoeuvre.instruction);
-      }
-      extensions.appendChild(manoeuvreElement);
+    for (const child of extensionChildren) {
+      extensions.appendChild(child);
     }
     trk.appendChild(extensions);
   }

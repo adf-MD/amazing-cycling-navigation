@@ -3,9 +3,11 @@ import type { PlannedRoute } from "./domain/types.ts";
 import { usePwaUpdate } from "./pwa/registerSW.ts";
 import { DiagnosticsScreen } from "./ui/diagnostics/DiagnosticsScreen.tsx";
 import { RouteLibrary } from "./ui/library/RouteLibrary.tsx";
+import { PlanningScreen } from "./ui/planning/PlanningScreen.tsx";
 import { RidingScreen } from "./ui/riding/RidingScreen.tsx";
+import { SettingsScreen } from "./ui/settings/SettingsScreen.tsx";
 
-type Screen = "library" | "riding" | "diagnostics";
+type Screen = "library" | "riding" | "diagnostics" | "planning" | "settings";
 
 function App() {
   const [screen, setScreen] = useState<Screen>("library");
@@ -15,6 +17,15 @@ function App() {
   const handleOpenRoute = (route: PlannedRoute) => {
     setSelectedRoute(route);
     setScreen("riding");
+  };
+
+  const handleRouteSaved = (route: PlannedRoute) => {
+    setSelectedRoute(route);
+    setScreen("riding");
+  };
+
+  const handleNavigateToSettings = () => {
+    setScreen("settings");
   };
 
   return (
@@ -42,12 +53,30 @@ function App() {
           </button>
           <button
             type="button"
+            aria-current={screen === "planning" ? "page" : undefined}
+            onClick={() => {
+              setScreen("planning");
+            }}
+          >
+            Plan
+          </button>
+          <button
+            type="button"
             aria-current={screen === "diagnostics" ? "page" : undefined}
             onClick={() => {
               setScreen("diagnostics");
             }}
           >
             Diagnostics
+          </button>
+          <button
+            type="button"
+            aria-current={screen === "settings" ? "page" : undefined}
+            onClick={() => {
+              setScreen("settings");
+            }}
+          >
+            Settings
           </button>
         </nav>
       </header>
@@ -80,7 +109,14 @@ function App() {
           ) : (
             <p>Select a route from the library to start riding.</p>
           ))}
+        {screen === "planning" && (
+          <PlanningScreen
+            onNavigateToSettings={handleNavigateToSettings}
+            onRouteSaved={handleRouteSaved}
+          />
+        )}
         {screen === "diagnostics" && <DiagnosticsScreen />}
+        {screen === "settings" && <SettingsScreen />}
       </main>
     </div>
   );

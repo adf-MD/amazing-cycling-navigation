@@ -11,6 +11,11 @@ import {
   isLoopRoute,
   splitRouteAtDistance,
 } from "./routeLayer.ts";
+import {
+  buildUnroutedPreviewFeatureCollection,
+  buildWaypointFeatureCollections,
+  type PlanningOverlayWaypoint,
+} from "./planningLayer.ts";
 import { DEFAULT_TILE_SOURCE, type TileSourceConfig } from "./tileSource.ts";
 
 const COMPLETED_SOURCE_ID = "acn-route-completed";
@@ -23,6 +28,12 @@ const REMAINING_LAYER_ID = "acn-route-remaining-line";
 const POSITION_LAYER_ID = "acn-position-marker";
 const START_LAYER_ID = "acn-start-marker";
 const FINISH_LAYER_ID = "acn-finish-marker";
+const PLANNING_PREVIEW_SOURCE_ID = "acn-planning-preview";
+const PLANNING_PREVIEW_LAYER_ID = "acn-planning-preview-line";
+const PLANNING_WAYPOINTS_SOURCE_ID = "acn-planning-waypoints";
+const PLANNING_WAYPOINTS_LAYER_ID = "acn-planning-waypoints-marker";
+const PLANNING_SELECTED_WAYPOINT_SOURCE_ID = "acn-planning-waypoint-selected";
+const PLANNING_SELECTED_WAYPOINT_LAYER_ID = "acn-planning-waypoint-selected-marker";
 
 /** How long to wait for the map's first `load` before falling back to the
  * local neutral background — the tile provider is external and unreliable
@@ -68,6 +79,27 @@ export interface CameraTarget {
   followOffset: boolean;
 }
 
+/** Planning's map chrome (waypoint markers, dashed unrouted-preview line,
+ * tap-to-place), grouped into one prop rather than several unrelated
+ * ones. Never used by Riding mode — when absent, the underlying sources
+ * this drives stay empty and Riding's rendered output is unchanged. Kept
+ * entirely about presentation/data: Planning's own workflow state
+ * (waypoint history, selection, debounced recalculation) lives in
+ * src/ui/planning, never here. */
+export interface PlanningOverlay {
+  waypoints: readonly PlanningOverlayWaypoint[];
+  /** Raw coordinates for the dashed preview line — never RoutePoints, so
+   * this can never be mistaken for (or accidentally treated as) routed
+   * geometry. */
+  previewCoordinates: readonly Coordinate[];
+  /** Index into `waypoints`, or null if none is selected. Out-of-range
+   * values are treated the same as null. */
+  selectedWaypointIndex: number | null;
+  /** Fired for a genuine tap/click on the map (never a drag) — see
+   * mapAdapter.ts's onMapTap. */
+  onMapTap: (coordinate: Coordinate) => void;
+}
+
 export interface MapViewProps {
   points: readonly RoutePoint[];
   /** Distance already ridden; the route line before this point is shown
@@ -101,6 +133,10 @@ export interface MapViewProps {
     bearingDegrees: number;
     pitchDegrees: number;
   }) => void;
+  /** Planning's waypoint markers, unrouted-preview line, and tap-to-place
+   * — omitted (the default) for every existing caller, leaving the
+   * underlying sources empty and Riding mode's rendering unaffected. */
+  planningOverlay?: PlanningOverlay;
 }
 
 /**
@@ -122,6 +158,7 @@ export function MapView({
   suppressInitialOverviewFit = false,
   onUserCameraInteraction,
   onCameraSettled,
+  planningOverlay,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreLike | null>(null);
@@ -136,6 +173,10 @@ export function MapView({
   useEffect(() => {
     onCameraSettledRef.current = onCameraSettled;
   }, [onCameraSettled]);
+  const onMapTapRef = useRef(planningOverlay?.onMapTap);
+  useEffect(() => {
+    onMapTapRef.current = planningOverlay?.onMapTap;
+  }, [planningOverlay?.onMapTap]);
   const lastAppliedCameraTargetRef = useRef<{
     lon: number | null;
     lat: number | null;
@@ -214,6 +255,41 @@ export function MapView({
         circleStrokeColor: "#101010",
         circleStrokeWidth: 3,
       });
+      // Planning-only layers: always created (fed empty collections when
+      // planningOverlay is absent), matching the start/finish precedent
+      // above, so Riding mode's rendering/tests never need to know these
+      // exist. Dashed line (never a solid colour alone) so it can't be
+      // mistaken for a real calculated route.
+      map.addGeoJsonSource(PLANNING_PREVIEW_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
+      map.addLineLayer(PLANNING_PREVIEW_LAYER_ID, PLANNING_PREVIEW_SOURCE_ID, {
+        lineColor: "#1a73e8",
+        lineWidth: 4,
+        lineOpacity: 0.85,
+        lineDasharray: [2, 2],
+      });
+      map.addGeoJsonSource(PLANNING_WAYPOINTS_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
+      map.addCircleLayer(PLANNING_WAYPOINTS_LAYER_ID, PLANNING_WAYPOINTS_SOURCE_ID, {
+        circleRadius: 7,
+        circleColor: "#f2a900",
+        circleStrokeColor: "#ffffff",
+        circleStrokeWidth: 2,
+      });
+      // Selected waypoint: larger radius, not just a different colour, so
+      // it stays distinguishable without relying on hue alone.
+      map.addGeoJsonSource(
+        PLANNING_SELECTED_WAYPOINT_SOURCE_ID,
+        EMPTY_FEATURE_COLLECTION,
+      );
+      map.addCircleLayer(
+        PLANNING_SELECTED_WAYPOINT_LAYER_ID,
+        PLANNING_SELECTED_WAYPOINT_SOURCE_ID,
+        {
+          circleRadius: 11,
+          circleColor: "#d32f2f",
+          circleStrokeColor: "#ffffff",
+          circleStrokeWidth: 3,
+        },
+      );
     }
 
     function attachMap(style: string | StyleSpecification): void {
@@ -257,6 +333,10 @@ export function MapView({
         // which is the only thing that used to update it.
         setCameraCenter(camera.coordinate);
         onCameraSettledRef.current?.(camera);
+      });
+
+      map.onMapTap((coordinate) => {
+        onMapTapRef.current?.(coordinate);
       });
 
       // A map error before the first `load` means this style never became
@@ -424,6 +504,28 @@ export function MapView({
         : EMPTY_FEATURE_COLLECTION,
     );
   }, [currentPosition, ready]);
+
+  const planningWaypoints = planningOverlay?.waypoints;
+  const planningSelectedIndex = planningOverlay?.selectedWaypointIndex ?? null;
+  const planningPreviewCoordinates = planningOverlay?.previewCoordinates;
+
+  useEffect(() => {
+    if (!ready) return;
+    const { others, selected } = buildWaypointFeatureCollections(
+      planningWaypoints ?? [],
+      planningSelectedIndex,
+    );
+    mapRef.current?.setGeoJsonSourceData(PLANNING_WAYPOINTS_SOURCE_ID, others);
+    mapRef.current?.setGeoJsonSourceData(PLANNING_SELECTED_WAYPOINT_SOURCE_ID, selected);
+  }, [planningWaypoints, planningSelectedIndex, ready]);
+
+  useEffect(() => {
+    if (!ready) return;
+    mapRef.current?.setGeoJsonSourceData(
+      PLANNING_PREVIEW_SOURCE_ID,
+      buildUnroutedPreviewFeatureCollection(planningPreviewCoordinates ?? []),
+    );
+  }, [planningPreviewCoordinates, ready]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>

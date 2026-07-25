@@ -12,6 +12,14 @@ export interface RoutePoint {
   distanceFromStartMetres: number;
 }
 
+/** A single point placed during Planning, before any route has been
+ * calculated. Distinct from RoutePoint: a waypoint has no distance/
+ * elevation of its own, and must never be treated as routed geometry. */
+export interface Waypoint {
+  id: string;
+  coordinate: Coordinate;
+}
+
 export interface Manoeuvre {
   distanceFromStartMetres: number;
   type: string;

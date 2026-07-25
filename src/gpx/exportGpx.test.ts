@@ -84,6 +84,57 @@ describe("exportRouteToGpx", () => {
     const doc = new DOMParser().parseFromString(xml, "application/xml");
     expect(doc.getElementsByTagNameNS("*", "extensions")).toHaveLength(0);
   });
+
+  it("writes routing provenance as a namespaced extension for a planner-sourced route", () => {
+    const xml = exportRouteToGpx(
+      buildRoute({
+        source: {
+          kind: "planner",
+          provider: "openrouteservice",
+          profile: "cycling-road",
+        },
+      }),
+    );
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+
+    expect(doc.getElementsByTagName("parsererror")).toHaveLength(0);
+    const sourceElements = doc.getElementsByTagNameNS("*", "source");
+    expect(sourceElements).toHaveLength(1);
+    expect(sourceElements[0]?.getAttribute("provider")).toBe("openrouteservice");
+    expect(sourceElements[0]?.getAttribute("profile")).toBe("cycling-road");
+
+    // A plain-GPX reader ignoring unknown extensions still sees exactly
+    // the track points, nothing from the extension.
+    const { points } = extractRoutePoints(doc);
+    expect(points).toHaveLength(3);
+  });
+
+  it("never writes routing provenance for a gpx-import route", () => {
+    const xml = exportRouteToGpx(buildRoute({ source: { kind: "gpx-import" } }));
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    expect(doc.getElementsByTagNameNS("*", "source")).toHaveLength(0);
+  });
+
+  it("nests manoeuvres and provenance under one shared extensions element", () => {
+    const xml = exportRouteToGpx(
+      buildRoute({
+        manoeuvres: [{ distanceFromStartMetres: 50, type: "turn-left" }],
+        source: {
+          kind: "planner",
+          provider: "openrouteservice",
+          profile: "cycling-road",
+        },
+      }),
+    );
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+
+    const extensionsElements = doc.getElementsByTagNameNS("*", "extensions");
+    expect(extensionsElements).toHaveLength(1);
+    expect(extensionsElements[0]?.getElementsByTagNameNS("*", "manoeuvre")).toHaveLength(
+      1,
+    );
+    expect(extensionsElements[0]?.getElementsByTagNameNS("*", "source")).toHaveLength(1);
+  });
 });
 
 describe("GPX round-trip", () => {

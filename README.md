@@ -6,14 +6,21 @@ specification, which governs any future work on this repository.
 
 ## Status
 
-**Milestone 1 (Foundation)** and **Milestone 2 (GPX Riding core)** are implemented:
-importing a GPX file, viewing it on a map with an elevation profile, saving it
-locally, and riding it with live GPS projection, off-route detection, and
-suspend/resume recovery. Planning mode (waypoint editing, route calculation via an
-openrouteservice adapter) is **not** implemented yet — that's Milestone 3. The
-provider-independent `RoutingProvider` interface and surface/warning domain types
-already exist so Planning mode can slot in later without reworking the domain
-model.
+**Milestone 1 (Foundation)**, **Milestone 2 (GPX Riding core)** and the first
+slice of **Milestone 3 (Planning)** are implemented: importing a GPX file,
+viewing it on a map with an elevation profile, saving it locally, riding it
+with live GPS projection, off-route detection and suspend/resume recovery, and
+planning a new road-bike route by placing waypoints, routing them via a
+user-supplied OpenRouteService key, inspecting distance/ascent/surface
+warnings, saving the result locally, and exporting it as GPX. See
+[Planning a road-bike route](#planning-a-road-bike-route) below for how to set
+up your own key.
+
+Still deferred within Milestone 3: per-leg (rather than whole-route)
+recalculation, on-map warning-segment highlighting, `waytype`/`access`
+provider extras (so `access`/`steps`/`ford`/`ferry` warnings never occur yet —
+only surface-based warnings do), and the road-speed-appropriate next-manoeuvre
+display planned for Milestone 4.
 
 ## Requirements
 
@@ -74,18 +81,22 @@ architecture list:
 
 - `domain/` — provider-independent route, elevation, and waypoint types.
 - `gpx/` — parsing, validation, normalisation and export.
-- `routing/` — the `RoutingProvider` interface (no adapter yet — Milestone 3).
+- `routing/` — the `RoutingProvider` interface and the OpenRouteService/HeiGIT
+  `cycling-road` adapter, kept behind that interface so no other code depends
+  on the provider's response shape.
 - `navigation/` — distance, elevation smoothing, GPS-to-route projection,
   off-route classification, upcoming-elevation window selection.
-- `storage/` — the versioned Dexie schema, repositories, and the mapping
-  between persisted and in-memory ride-navigation state.
+- `storage/` — the versioned Dexie schema, repositories (routes, ride state,
+  the provider key and its verification status, and Planning drafts), and the
+  mapping between persisted and in-memory ride-navigation state.
 - `pwa/` — service-worker update lifecycle.
-- `map/` — MapLibre presentation (route, progress, position, tile source).
+- `map/` — MapLibre presentation (route, progress, position, tile source, and
+  Planning's waypoint/preview overlay).
 - `platform/` — small DI wrappers around geolocation, the clock, online
   status, service-worker status, geolocation permission, and the local
   redacted error log, so core logic is testable without a browser.
-- `ui/` — the three screens (route library, riding, diagnostics) and shared
-  components.
+- `ui/` — the five screens (route library, riding, planning, settings,
+  diagnostics) and shared components.
 
 The UI depends only on the domain model in `domain/types.ts`, never directly
 on a provider response shape.
@@ -159,9 +170,42 @@ Imported GPX files are capped at 20 MB (`src/gpx/constants.ts`).
 ### GPX export (`src/gpx/exportGpx.ts`)
 
 Built via the DOM and `XMLSerializer`, not string templating, so text and
-attribute escaping is always correct. A future Planning-mode route's
-manoeuvres, when present, are written as an optional namespaced
-`<acn:manoeuvre>` extension that other GPX readers can safely ignore.
+attribute escaping is always correct. A route's manoeuvres and, for a
+planner-calculated route, its provider/profile provenance are written as
+optional namespaced `<acn:manoeuvre>`/`<acn:source>` extensions, sharing one
+`<extensions>` element, that other GPX readers can safely ignore.
+
+## Planning a road-bike route
+
+Road-bike route calculation uses [OpenRouteService](https://openrouteservice.org)
+(hosted by [HeiGIT](https://heigit.org)) with the `cycling-road` profile. This
+needs your own free key — the app never ships or proxies one.
+
+1. Open **Plan → Settings** (or the Settings tab) in the app and follow the
+   link to [sign up for a HeiGIT account](https://account.heigit.org/signup).
+2. Copy the API key from your HeiGIT account dashboard.
+3. Paste it into the key field in Settings and save.
+
+What this means in practice:
+
+- The key is stored only in this browser's IndexedDB (`src/storage/db.ts`),
+  never bundled into the app's source or sent anywhere except directly to
+  HeiGIT when you calculate a route. It is **not encrypted** — that storage
+  only keeps it out of the repository and away from accidental publication,
+  not secret from other JavaScript running on the same site.
+- Clearing Safari's (or your browser's) site data for this app removes the
+  key, and you'll need to enter it again. Settings has "Replace key" and
+  "Delete key" actions for the same purpose.
+- When you calculate a route in Planning, your key and the waypoints you've
+  placed are sent directly to HeiGIT. Your live riding GPS location is never
+  sent to HeiGIT, or to any other server.
+- Planning (placing, moving, reordering and deleting waypoints, undo/redo,
+  and an unsaved draft) works fully without a key — only the "Calculate
+  route" step needs one.
+- A route you've already saved or exported needs no key to reopen, ride, or
+  re-export — the key is only used at calculation time.
+- The current endpoint is `https://api.heigit.org/openrouteservice/v2`; the
+  older `api.openrouteservice.org` host is deprecated and never used here.
 
 ## Known limitations
 
@@ -172,7 +216,14 @@ manoeuvres, when present, are written as an optional namespaced
 - The elevation chart plots raw imported points; a sparse `<rte>`-style import
   with few, far-apart points will look closer to straight-line interpolation
   than a smooth profile.
-- No Planning mode or routing-provider adapter yet (Milestone 3).
+- Planning recalculates the whole route on every edit rather than only the
+  changed leg, and moving a waypoint is select-then-relocate (tap/click, or
+  the crosshair "Move selected waypoint here" button) rather than a
+  draggable map marker.
+- Surface warnings only use the provider's `surface` extra; `waytype`/`access`
+  extras (which would add `access`/`steps`/`ford`/`ferry` warnings) aren't
+  requested yet, so those warning kinds never occur in this release.
+- Warnings are listed as text, not highlighted on the map.
 - The default map style is [OpenFreeMap](https://openfreemap.org) Liberty —
   no API key required, and explicitly intended for third-party app use
   (unlike `tile.openstreetmap.org`'s community endpoint). Swap it via
@@ -221,10 +272,12 @@ environment URL) — typically
 ## Privacy
 
 - No accounts, analytics, telemetry, or external error reporting.
-- Imported and planned routes, and active-ride state, stay in IndexedDB on
-  the device unless explicitly exported.
-- Riding-mode GPS coordinates are never sent to any server. (A future
-  Planning mode may send waypoint coordinates to a user-configured routing
-  provider; live riding locations never will.)
+- Imported and planned routes, active-ride state, and your OpenRouteService
+  key (if you add one) stay in IndexedDB on the device unless explicitly
+  exported.
+- Riding-mode GPS coordinates are never sent to any server. Planning
+  waypoint coordinates and your OpenRouteService key are sent directly to
+  HeiGIT only when you explicitly calculate a route — see
+  [Planning a road-bike route](#planning-a-road-bike-route).
 - No licence is included — this repository is intentionally unlicensed for
   now.
