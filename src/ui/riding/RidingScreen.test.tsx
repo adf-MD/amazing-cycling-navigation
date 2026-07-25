@@ -112,9 +112,10 @@ function buildStubMapFactory(): {
       onLoad: (listener) => {
         loadListener = listener;
       },
+      onStyleLoaded: () => undefined,
       onError: (listener) => {
         errorListener = () => {
-          listener({ message: "tile fetch failed" });
+          listener({ message: "tile fetch failed", category: "style-request-or-parse" });
         };
       },
       onSourceData: () => undefined,
@@ -1143,6 +1144,56 @@ describe("RidingScreen", () => {
       // Primary style errors before ever loading — MapView falls back to
       // a fresh map instance (a new mapFactory() call), which then loads.
       map.triggerTileError();
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledWith(
+          pointAt(0),
+          NAVIGATION_ZOOM,
+          expectedBearingAt(0),
+          FOLLOW_PITCH_DEGREES,
+          { animate: true, followOffset: true },
+        );
+      });
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    it("preserves the camera mode and reapplies the same cameraTarget after clicking Retry map imagery", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      // Primary style errors before ever loading — MapView falls back.
+      map.triggerTileError();
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalled();
+      });
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      map.setCameraSpy.mockClear();
+
+      await user.click(screen.getByTestId("retry-map-imagery-button"));
       map.triggerLoad();
 
       await waitFor(() => {

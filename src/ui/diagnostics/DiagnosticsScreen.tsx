@@ -12,6 +12,7 @@ import {
   describeRoutingAttempt,
   useRecentRoutingAttempts,
 } from "../../routing/routingDiagnostics.ts";
+import { describeMapAttempt, useRecentMapAttempts } from "../../map/mapDiagnostics.ts";
 import { useStorageHealth } from "../../storage/storageHealth.ts";
 import { getActiveRideState } from "../../storage/rideStateRepository.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
@@ -48,6 +49,7 @@ export function DiagnosticsScreen({ clock = systemClock }: DiagnosticsScreenProp
   const storageHealth = useStorageHealth();
   const recentErrors = useRecentErrors();
   const recentRoutingAttempts = useRecentRoutingAttempts();
+  const recentMapAttempts = useRecentMapAttempts();
   const geolocationPermission = useGeolocationPermissionStatus();
   const now = useNow(clock);
 
@@ -127,6 +129,17 @@ export function DiagnosticsScreen({ clock = systemClock }: DiagnosticsScreenProp
         <ul>
           {recentRoutingAttempts.map((entry) => (
             <li key={entry.timestampIso}>{describeRoutingAttempt(entry)}</li>
+          ))}
+        </ul>
+      )}
+
+      <h2>Recent map imagery attempts</h2>
+      {recentMapAttempts.length === 0 ? (
+        <p>No map imagery attempts recorded this session.</p>
+      ) : (
+        <ul>
+          {recentMapAttempts.map((entry) => (
+            <li key={entry.timestampIso}>{describeMapAttempt(entry)}</li>
           ))}
         </ul>
       )}

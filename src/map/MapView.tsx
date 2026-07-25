@@ -3,7 +3,13 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { StyleSpecification } from "maplibre-gl";
 import type { Coordinate, RoutePoint } from "../domain/types.ts";
 import { logError } from "../platform/errorLog.ts";
-import { createMapLibreMap, type MapFactory, type MapLibreLike } from "./mapAdapter.ts";
+import {
+  createMapLibreMap,
+  type MapErrorCategory,
+  type MapFactory,
+  type MapLibreLike,
+} from "./mapAdapter.ts";
+import { recordMapAttempt, type MapDiagnosticCategory } from "./mapDiagnostics.ts";
 import {
   buildPositionFeatureCollection,
   computeBoundingBox,
@@ -35,10 +41,17 @@ const PLANNING_WAYPOINTS_LAYER_ID = "acn-planning-waypoints-marker";
 const PLANNING_SELECTED_WAYPOINT_SOURCE_ID = "acn-planning-waypoint-selected";
 const PLANNING_SELECTED_WAYPOINT_LAYER_ID = "acn-planning-waypoint-selected-marker";
 
-/** How long to wait for the map's first `load` before falling back to the
- * local neutral background — the tile provider is external and unreliable
- * (see CLAUDE.md: the ride display must degrade usefully without it). */
-const LOAD_TIMEOUT_MS = 10_000;
+/** How long to wait for the style document itself to become structurally
+ * ready (MapLibre's own "style.load", independent of tile loading) before
+ * falling back to the local neutral background — the tile provider is
+ * external and unreliable (see CLAUDE.md: the ride display must degrade
+ * usefully without it). Deliberately gates only the style document now,
+ * not full tile loading (see the route/position layers, which are added
+ * on style-ready rather than the slower "load" event) — decoupling this
+ * from tile speed means a single slow/errored tile can never trigger
+ * this fallback. Bumped from an earlier 10s to give more headroom for a
+ * cellular/Wi-Fi handoff completing a cold TLS handshake on an iPhone. */
+const STYLE_READY_TIMEOUT_MS = 15_000;
 
 /** How long to wait, after the map is ready, for the route's GeoJSON
  * source to finish processing before logging it as a diagnostic — this is
@@ -143,10 +156,13 @@ export interface MapViewProps {
  * Route and position are added as GeoJSON sources/layers independent of
  * the base style's own tile source, so a tile-loading failure never
  * removes them — only the base map imagery is affected, and an explicit
- * banner tells the rider that's happened. If the configured tile source
- * doesn't load at all within LOAD_TIMEOUT_MS (or errors immediately), the
- * map falls back to a fully local, network-free style so the route and
- * position always render regardless of tile-provider reachability.
+ * banner tells the rider that's happened. The route/position overlays are
+ * added as soon as the style is structurally ready (MapLibre's own
+ * "style.load"), not once every tile has loaded, so they render even
+ * while imagery is still arriving. The map only falls back to a fully
+ * local, network-free style if the style itself never becomes ready
+ * within STYLE_READY_TIMEOUT_MS or suffers a fatal style/WebGL failure —
+ * a single recoverable tile/sprite error never destroys a working style.
  */
 export function MapView({
   points,
@@ -193,6 +209,26 @@ export function MapView({
   const [usingFallbackStyle, setUsingFallbackStyle] = useState(false);
   const [routeSourceLoaded, setRouteSourceLoaded] = useState(false);
   const [cameraCenter, setCameraCenter] = useState<Coordinate | null>(null);
+  // True once the style document itself is structurally ready (MapLibre's
+  // "style.load"), independent of whether any tile has finished loading —
+  // this is what lets the route/position render before/without full
+  // imagery ("imagery delayed" stage), rather than waiting for `ready`.
+  const [styleStructurallyReady, setStyleStructurallyReady] = useState(false);
+  // Bumped to force the map-creation effect below to tear down and
+  // recreate the map against the *original* configured style — used by
+  // both the manual "Retry map imagery" button and the one-shot
+  // auto-retry-on-resume effect further down.
+  const [retryToken, setRetryToken] = useState(0);
+  // Guards the auto-retry-on-resume effect so at most one automatic retry
+  // happens per fallback episode, regardless of how many visibility/online
+  // events fire — reset whenever fallback is freshly (re-)activated.
+  const hasAutoRetriedRef = useRef(false);
+  // Set whenever this attach hits any trouble (a recoverable error, the
+  // style-ready timeout, or entering fallback) and cleared once `load`
+  // fires for a genuinely non-fallback style — the signal for recording
+  // "imagery-recovered" (a slow-but-successful load, or a successful
+  // retry), never fired for an ordinary trouble-free load.
+  const hadTroubleRef = useRef(false);
   const ready = loadState === "ready";
 
   useEffect(() => {
@@ -203,6 +239,8 @@ export function MapView({
     const container: HTMLElement = containerElement;
 
     let hasLoaded = false;
+    let styleReady = false;
+    let layersAdded = false;
     let usedFallback = false;
     let currentMap: MapLibreLike | null = null;
     let resizeObserver: ResizeObserver | null = null;
@@ -216,7 +254,33 @@ export function MapView({
     setUsingFallbackStyle(false);
     setRouteSourceLoaded(false);
     setCameraCenter(null);
+    setStyleStructurallyReady(false);
     lastAppliedCameraTargetRef.current = null;
+
+    function recordAttempt(category: MapDiagnosticCategory, justResumed = false): void {
+      recordMapAttempt({
+        timestampIso: new Date().toISOString(),
+        tileProviderId: tileSource.id,
+        category,
+        wasOnline: typeof navigator === "undefined" ? true : navigator.onLine,
+        justResumed,
+      });
+    }
+
+    function mapErrorCategoryToDiagnostic(
+      category: MapErrorCategory,
+    ): MapDiagnosticCategory {
+      switch (category) {
+        case "style-request-or-parse":
+          return "style-request-or-parse-failure";
+        case "source-or-tile":
+          return "tile-request-failure";
+        case "sprite":
+          return "sprite-failure";
+        case "webgl-init":
+          return "webgl-init-failure";
+      }
+    }
 
     function addRouteAndPositionLayers(map: MapLibreLike): void {
       map.addGeoJsonSource(REMAINING_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
@@ -300,25 +364,44 @@ export function MapView({
       setRouteSourceLoaded(false);
       if (routeDataTimeoutId !== undefined) window.clearTimeout(routeDataTimeoutId);
 
-      map.onLoad(() => {
-        hasLoaded = true;
+      map.onStyleLoaded(() => {
+        if (layersAdded) return;
+        layersAdded = true;
+        styleReady = true;
         addRouteAndPositionLayers(map);
-        setLoadState("ready");
-        // The map reaching "ready" only proves the style loaded — it says
-        // nothing about whether the route's GeoJSON source ever actually
-        // finishes processing (which needs a working worker). Surface a
-        // stuck source as a diagnostic instead of silently doing nothing.
+        setStyleStructurallyReady(true);
+        // The style becoming structurally ready only proves the style
+        // document itself loaded — it says nothing about whether the
+        // route's GeoJSON source ever actually finishes processing (which
+        // needs a working worker). Surface a stuck source as a diagnostic
+        // instead of silently doing nothing.
         routeDataTimeoutId = window.setTimeout(() => {
           if (!routeSourceLoaded) {
             logError("map", "Route data did not finish loading in time");
+            recordAttempt("worker-failure");
           }
         }, ROUTE_DATA_TIMEOUT_MS);
+      });
+
+      map.onLoad(() => {
+        hasLoaded = true;
+        setLoadState("ready");
+        if (hadTroubleRef.current && !usedFallback) {
+          recordAttempt("imagery-recovered");
+          hadTroubleRef.current = false;
+        }
       });
 
       map.onSourceData((info) => {
         if (info.sourceId === REMAINING_SOURCE_ID && info.isSourceLoaded) {
           routeSourceLoaded = true;
           setRouteSourceLoaded(true);
+        }
+        // A real, observed recovery signal — any source finishing a load
+        // while the tile-unavailable banner is showing is evidence tile
+        // delivery has resumed, not a timeout guess.
+        if (info.isSourceLoaded) {
+          setTileErrorMessage(null);
         }
       });
 
@@ -339,23 +422,35 @@ export function MapView({
         onMapTapRef.current?.(coordinate);
       });
 
-      // A map error before the first `load` means this style never became
-      // usable — fall back to the local neutral style rather than leaving
-      // the rider with a permanently broken map. An error after `ready`
-      // (the existing tiles-unavailable banner) keeps the already-loaded
-      // route and position visible instead.
+      // Only a fatal style/WebGL failure destroys the style — a
+      // recoverable source/tile/sprite error (only ever reachable once
+      // the style is already structurally ready, verified against
+      // MapLibre's own source) leaves it alone; the "imagery delayed"
+      // banner (driven by styleStructurallyReady) already reflects this.
+      // An error after `ready` (the tiles-unavailable banner) keeps the
+      // already-loaded route and position visible instead.
       map.onError((info) => {
         logError("map", info.message);
+        recordAttempt(mapErrorCategoryToDiagnostic(info.category));
+
         if (hasLoaded) {
           setTileErrorMessage(info.message);
           return;
         }
-        if (usedFallback) {
-          setLoadState("load-error");
-          setLoadErrorMessage(info.message);
-          return;
+
+        hadTroubleRef.current = true;
+
+        if (
+          info.category === "style-request-or-parse" ||
+          info.category === "webgl-init"
+        ) {
+          if (usedFallback) {
+            setLoadState("load-error");
+            setLoadErrorMessage(info.message);
+            return;
+          }
+          switchToFallback();
         }
-        switchToFallback();
       });
 
       resizeObserver?.disconnect();
@@ -370,8 +465,10 @@ export function MapView({
     }
 
     function switchToFallback(): void {
-      if (hasLoaded || usedFallback) return;
+      if (styleReady || usedFallback) return;
       usedFallback = true;
+      hasAutoRetriedRef.current = false;
+      recordAttempt("fallback-activated");
       setUsingFallbackStyle(true);
       currentMap?.remove();
       attachMap(FALLBACK_STYLE);
@@ -379,15 +476,18 @@ export function MapView({
 
     attachMap(tileSource.styleUrl);
 
-    // hasLoaded/usedFallback guard the callback, so it's a harmless no-op
-    // if the map already resolved by the time this fires — no need to
-    // explicitly cancel it on success.
+    // styleReady/usedFallback guard the callback, so it's a harmless
+    // no-op if the style already resolved by the time this fires — no
+    // need to explicitly cancel it on success. Gates on style-readiness,
+    // not full imagery — see STYLE_READY_TIMEOUT_MS's own doc comment.
     const timeoutId = window.setTimeout(() => {
-      if (!hasLoaded) {
+      if (!styleReady) {
         setLoadTimedOut(true);
+        hadTroubleRef.current = true;
+        recordAttempt("initial-load-timeout");
         switchToFallback();
       }
-    }, LOAD_TIMEOUT_MS);
+    }, STYLE_READY_TIMEOUT_MS);
 
     return () => {
       window.clearTimeout(timeoutId);
@@ -396,7 +496,57 @@ export function MapView({
       currentMap?.remove();
       mapRef.current = null;
     };
-  }, [mapFactory, tileSource.styleUrl]);
+  }, [mapFactory, tileSource.styleUrl, tileSource.id, retryToken]);
+
+  // Tears down whatever map currently exists and re-runs the whole attach
+  // effect above against the *original* configured style (never the
+  // fallback) — the same "recreate against tileSource.styleUrl" path a
+  // fresh mount takes. Route/position/camera are untouched by this: they
+  // live in the caller's own state (see RidingScreen's useRideCamera) and
+  // are simply re-applied once the retried style becomes ready again.
+  function handleRetryImagery(): void {
+    recordMapAttempt({
+      timestampIso: new Date().toISOString(),
+      tileProviderId: tileSource.id,
+      category: "manual-retry",
+      wasOnline: typeof navigator === "undefined" ? true : navigator.onLine,
+      justResumed: false,
+    });
+    setRetryToken((token) => token + 1);
+  }
+
+  // At most one automatic retry per fallback episode: guarded by
+  // hasAutoRetriedRef (reset only when fallback is freshly (re-)entered),
+  // regardless of how many of these events fire or in what combination —
+  // never a polling loop.
+  useEffect(() => {
+    function handleResume(): void {
+      if (!usingFallbackStyle || hasAutoRetriedRef.current) return;
+      hasAutoRetriedRef.current = true;
+      recordMapAttempt({
+        timestampIso: new Date().toISOString(),
+        tileProviderId: tileSource.id,
+        category: "auto-retry",
+        wasOnline: typeof navigator === "undefined" ? true : navigator.onLine,
+        justResumed: true,
+      });
+      setRetryToken((token) => token + 1);
+    }
+    function handleVisibilityChange(): void {
+      if (document.visibilityState === "visible") handleResume();
+    }
+    function handlePageShow(event: PageTransitionEvent): void {
+      if (event.persisted) handleResume();
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("online", handleResume);
+    window.addEventListener("pageshow", handlePageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("online", handleResume);
+      window.removeEventListener("pageshow", handlePageShow);
+    };
+  }, [usingFallbackStyle, tileSource.id]);
 
   useEffect(() => {
     if (!ready) return;
@@ -539,9 +689,15 @@ export function MapView({
         }
         style={{ width: "100%", height: "100%" }}
       />
-      {loadState === "loading" ? (
+      {loadState === "loading" && !styleStructurallyReady ? (
         <div role="status" data-testid="map-loading">
           {loadTimedOut ? "Map is taking longer than expected to load." : "Loading map…"}
+        </div>
+      ) : null}
+      {styleStructurallyReady && !ready && !usingFallbackStyle ? (
+        <div role="status" data-testid="map-imagery-delayed-banner">
+          Map imagery is taking longer than usual to load. Your route and position are
+          still shown.
         </div>
       ) : null}
       {loadState === "load-error" ? (
@@ -558,6 +714,14 @@ export function MapView({
       {usingFallbackStyle && ready ? (
         <div role="status" data-testid="map-fallback-banner">
           Map imagery unavailable — showing your route on a plain background.
+          <button
+            type="button"
+            onClick={handleRetryImagery}
+            data-testid="retry-map-imagery-button"
+            style={{ display: "block", minHeight: 56, minWidth: 200, marginTop: 8 }}
+          >
+            Retry map imagery
+          </button>
         </div>
       ) : null}
       <div data-testid="map-attribution">

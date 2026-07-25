@@ -11,6 +11,10 @@ import { MapLibreAdapter } from "./mapAdapter.ts";
  */
 function buildFakeMapLibreMap(
   center: { lng: number; lat: number } = { lng: 0, lat: 51 },
+  // A truthy `painter` by default simulates a successful WebGL context
+  // creation (see MapLibreAdapter's constructor) — only the dedicated
+  // webgl-init test below passes `painter: undefined`.
+  options: { painter?: unknown } = {},
 ) {
   const fake = {
     fitBounds: vi.fn(),
@@ -22,6 +26,7 @@ function buildFakeMapLibreMap(
     getPitch: vi.fn(() => 20),
     addLayer: vi.fn(),
     on: vi.fn(),
+    painter: "painter" in options ? options.painter : {},
   };
   return fake;
 }
@@ -152,5 +157,84 @@ describe("MapLibreAdapter", () => {
     ];
     expect(solidCall[0].paint).not.toHaveProperty("line-dasharray");
     expect(dashedCall[0].paint["line-dasharray"]).toEqual([2, 2]);
+  });
+
+  describe("onError classification", () => {
+    it("classifies an error carrying a sourceId as source-or-tile", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+      const listener = vi.fn();
+
+      adapter.onError(listener);
+      const errorHandler = findHandler(fake, "error");
+      errorHandler({ error: new Error("tile failed"), sourceId: "openmaptiles" });
+
+      expect(listener).toHaveBeenCalledWith({
+        message: "tile failed",
+        category: "source-or-tile",
+      });
+    });
+
+    it("classifies a no-sourceId error before style.load as style-request-or-parse", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+      const listener = vi.fn();
+
+      adapter.onError(listener);
+      const errorHandler = findHandler(fake, "error");
+      errorHandler({ error: new Error("style fetch failed") });
+
+      expect(listener).toHaveBeenCalledWith({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+    });
+
+    it("classifies a no-sourceId error after style.load as sprite", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+      const listener = vi.fn();
+
+      const styleLoadHandler = findHandler(fake, "style.load");
+      styleLoadHandler(undefined);
+
+      adapter.onError(listener);
+      const errorHandler = findHandler(fake, "error");
+      errorHandler({ error: new Error("sprite fetch failed") });
+
+      expect(listener).toHaveBeenCalledWith({
+        message: "sprite fetch failed",
+        category: "sprite",
+      });
+    });
+
+    it("synthesises a webgl-init error once, asynchronously, when the map never created a painter", async () => {
+      const fake = buildFakeMapLibreMap(undefined, { painter: undefined });
+      const adapter = buildAdapter(fake);
+      const listener = vi.fn();
+
+      adapter.onError(listener);
+      expect(listener).not.toHaveBeenCalled();
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(listener).toHaveBeenCalledOnce();
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({ category: "webgl-init" }),
+      );
+    });
+
+    it("never synthesises a webgl-init error when the map did create a painter", async () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+      const listener = vi.fn();
+
+      adapter.onError(listener);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(listener).not.toHaveBeenCalled();
+    });
   });
 });

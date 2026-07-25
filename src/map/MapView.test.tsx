@@ -1,5 +1,5 @@
 import { act } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MapView } from "./MapView.tsx";
 import type {
@@ -10,6 +10,7 @@ import type {
   MapSourceDataInfo,
 } from "./mapAdapter.ts";
 import { clearErrorLog, getRecentErrors } from "../platform/errorLog.ts";
+import { clearMapDiagnostics, getRecentMapAttempts } from "./mapDiagnostics.ts";
 import type { Coordinate, RoutePoint } from "../domain/types.ts";
 
 const points: RoutePoint[] = [
@@ -22,6 +23,9 @@ interface MockMapHandle {
   /** Targets whichever map instance was constructed most recently — matches
    * MapView's own behaviour of falling back to a freshly-constructed map. */
   triggerLoad: () => void;
+  /** Fires only "style.load" — never the full "load" — for testing the
+   * intermediate "style structurally ready" stage on its own. */
+  triggerStyleLoaded: () => void;
   triggerError: (info: MapErrorInfo) => void;
   triggerSourceData: (info: MapSourceDataInfo) => void;
   /** Simulates a genuine user gesture (drag/pinch/rotate/pitch) — the real
@@ -49,6 +53,8 @@ interface MockMapHandle {
 
 function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle {
   let loadListener: (() => void) | undefined;
+  let styleLoadedListener: (() => void) | undefined;
+  let styleLoadedFired = false;
   let errorListener: ((info: MapErrorInfo) => void) | undefined;
   let sourceDataListener: ((info: MapSourceDataInfo) => void) | undefined;
   let userCameraInteractionListener: (() => void) | undefined;
@@ -74,9 +80,13 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
 
   const factory: MapFactory = ({ style }) => {
     constructedStyles.push(style);
+    styleLoadedFired = false;
     const map: MapLibreLike = {
       onLoad: (listener) => {
         loadListener = listener;
+      },
+      onStyleLoaded: (listener) => {
+        styleLoadedListener = listener;
       },
       onError: (listener) => {
         errorListener = listener;
@@ -129,7 +139,21 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
     constructedStyles,
     triggerLoad: () => {
       act(() => {
+        // Real MapLibre always fires "style.load" strictly before "load"
+        // — mirror that guarantee here so every existing test calling
+        // only triggerLoad() keeps working unchanged.
+        if (!styleLoadedFired) {
+          styleLoadedFired = true;
+          styleLoadedListener?.();
+        }
         loadListener?.();
+      });
+    },
+    triggerStyleLoaded: () => {
+      act(() => {
+        if (styleLoadedFired) return;
+        styleLoadedFired = true;
+        styleLoadedListener?.();
       });
     },
     triggerError: (info) => {
@@ -171,6 +195,14 @@ function firstCallOrder(spy: ReturnType<typeof vi.fn>): number {
   return order;
 }
 
+beforeEach(() => {
+  clearMapDiagnostics();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe("MapView", () => {
   it("renders visible attribution linking to the configured tile source", () => {
     const { factory } = createMockMapFactory();
@@ -194,11 +226,14 @@ describe("MapView", () => {
     expect(screen.queryByTestId("map-loading")).toBeNull();
   });
 
-  it("falls back to the local neutral style immediately on a pre-ready error, and still shows the route", () => {
+  it("falls back to the local neutral style immediately on a fatal pre-ready style error, and still shows the route", () => {
     const mock = createMockMapFactory();
     render(<MapView points={points} mapFactory={mock.factory} />);
 
-    mock.triggerError({ message: "style fetch failed" });
+    mock.triggerError({
+      message: "style fetch failed",
+      category: "style-request-or-parse",
+    });
 
     expect(screen.queryByTestId("map-load-error")).toBeNull();
     expect(mock.constructedStyles).toHaveLength(2);
@@ -210,12 +245,18 @@ describe("MapView", () => {
     expect(mock.sources.has("acn-route-remaining")).toBe(true);
   });
 
-  it("shows a terminal load-error state, including the underlying message, if the fallback style also fails to load", () => {
+  it("shows a terminal load-error state, including the underlying message, if the fallback style also fails fatally", () => {
     const mock = createMockMapFactory();
     render(<MapView points={points} mapFactory={mock.factory} />);
 
-    mock.triggerError({ message: "primary style fetch failed" });
-    mock.triggerError({ message: "fallback also failed" });
+    mock.triggerError({
+      message: "primary style fetch failed",
+      category: "style-request-or-parse",
+    });
+    mock.triggerError({
+      message: "fallback also failed",
+      category: "style-request-or-parse",
+    });
 
     expect(screen.queryByTestId("map-loading")).toBeNull();
     expect(screen.getByTestId("map-load-error")).toHaveTextContent(
@@ -223,14 +264,14 @@ describe("MapView", () => {
     );
   });
 
-  it("says the map is taking longer than expected if it hasn't loaded after the timeout", () => {
+  it("says the map is taking longer than expected if the style isn't ready after the timeout", () => {
     vi.useFakeTimers();
     try {
       const mock = createMockMapFactory();
       render(<MapView points={points} mapFactory={mock.factory} />);
 
       act(() => {
-        vi.advanceTimersByTime(10_000);
+        vi.advanceTimersByTime(15_000);
       });
 
       expect(screen.getByTestId("map-loading")).toHaveTextContent(
@@ -241,7 +282,7 @@ describe("MapView", () => {
     }
   });
 
-  it("falls back to the local neutral style if the primary style hasn't loaded within the timeout, and still shows the route", () => {
+  it("falls back to the local neutral style if the style isn't ready within the timeout, and still shows the route", () => {
     vi.useFakeTimers();
     try {
       const mock = createMockMapFactory();
@@ -249,7 +290,7 @@ describe("MapView", () => {
       expect(mock.constructedStyles).toHaveLength(1);
 
       act(() => {
-        vi.advanceTimersByTime(10_000);
+        vi.advanceTimersByTime(15_000);
       });
 
       expect(mock.constructedStyles).toHaveLength(2);
@@ -266,7 +307,7 @@ describe("MapView", () => {
     }
   });
 
-  it("does not show the timeout message once the map has already loaded", () => {
+  it("does not show the timeout message once the style has already become ready", () => {
     vi.useFakeTimers();
     try {
       const mock = createMockMapFactory();
@@ -274,7 +315,7 @@ describe("MapView", () => {
       mock.triggerLoad();
 
       act(() => {
-        vi.advanceTimersByTime(10_000);
+        vi.advanceTimersByTime(15_000);
       });
 
       expect(screen.queryByTestId("map-loading")).toBeNull();
@@ -611,7 +652,10 @@ describe("MapView", () => {
     );
 
     // Primary style never loads — falls back before ever reaching ready.
-    mock.triggerError({ message: "style fetch failed" });
+    mock.triggerError({
+      message: "style fetch failed",
+      category: "style-request-or-parse",
+    });
     expect(mock.setCameraSpy).not.toHaveBeenCalled();
 
     mock.triggerLoad();
@@ -729,7 +773,7 @@ describe("MapView", () => {
 
     expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
 
-    mock.triggerError({ message: "tile fetch failed" });
+    mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
 
     const banner = screen.getByTestId("tiles-unavailable-banner");
     expect(banner).toBeInTheDocument();
@@ -866,6 +910,161 @@ describe("MapView", () => {
       expect(() => {
         mock.triggerMapTap([1.5, 52.5]);
       }).not.toThrow();
+    });
+  });
+
+  describe("recoverable errors, staged readiness, and retry", () => {
+    it("does not activate fallback for a single recoverable resource error once the style is ready", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+
+      mock.triggerStyleLoaded();
+      mock.triggerError({ message: "a tile failed", category: "source-or-tile" });
+
+      expect(mock.constructedStyles).toHaveLength(1);
+      expect(screen.queryByTestId("map-fallback-banner")).toBeNull();
+    });
+
+    it("keeps real imagery after a later successful load, following a recoverable error", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+
+      mock.triggerStyleLoaded();
+      mock.triggerError({ message: "a tile failed", category: "source-or-tile" });
+      mock.triggerLoad();
+
+      expect(mock.constructedStyles).toHaveLength(1);
+      expect(screen.queryByTestId("map-fallback-banner")).toBeNull();
+      const [latest] = getRecentMapAttempts();
+      expect(latest?.category).toBe("imagery-recovered");
+    });
+
+    it("populates route and position sources on style-ready alone, before full imagery loads", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+
+      mock.triggerStyleLoaded();
+
+      expect(mock.sources.has("acn-route-remaining")).toBe(true);
+      expect(mock.sources.has("acn-position")).toBe(true);
+      expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+      expect(screen.queryByTestId("map-loading")).toBeNull();
+    });
+
+    it("clears the tiles-unavailable banner once a subsequent source reports loaded", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+      expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+
+      mock.triggerSourceData({ sourceId: "acn-route-remaining", isSourceLoaded: true });
+
+      expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+    });
+
+    it('clicking "Retry map imagery" recreates the originally configured style, not the fallback', () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+      expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+      expect(mock.constructedStyles).toHaveLength(2);
+
+      act(() => {
+        screen.getByTestId("retry-map-imagery-button").click();
+      });
+
+      expect(mock.constructedStyles).toHaveLength(3);
+      expect(mock.constructedStyles[2]).toBe(mock.constructedStyles[0]);
+    });
+
+    it("retry preserves and re-applies a live cameraTarget", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          cameraTarget={{
+            coordinate: [0, 51],
+            zoom: 16,
+            bearingDegrees: 90,
+            pitchDegrees: 35,
+            animate: true,
+            followOffset: true,
+          }}
+        />,
+      );
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+      expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+      mock.setCameraSpy.mockClear();
+
+      act(() => {
+        screen.getByTestId("retry-map-imagery-button").click();
+      });
+      mock.triggerLoad();
+
+      expect(mock.setCameraSpy).toHaveBeenCalledWith([0, 51], 16, 90, 35, {
+        animate: true,
+        followOffset: true,
+      });
+    });
+
+    it("retries at most once automatically when the browser goes online while fallback is active", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+      expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+      expect(mock.constructedStyles).toHaveLength(2);
+
+      act(() => {
+        window.dispatchEvent(new Event("online"));
+      });
+      act(() => {
+        window.dispatchEvent(new Event("online"));
+      });
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+
+      expect(mock.constructedStyles).toHaveLength(3);
+    });
+
+    it("does not create a retry loop from repeated errors on the fallback map itself", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+      expect(mock.constructedStyles).toHaveLength(2);
+
+      mock.triggerError({ message: "another tile failed", category: "source-or-tile" });
+      mock.triggerError({
+        message: "yet another tile failed",
+        category: "source-or-tile",
+      });
+      mock.triggerError({ message: "a sprite failed", category: "sprite" });
+
+      expect(mock.constructedStyles).toHaveLength(2);
+      expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
     });
   });
 });

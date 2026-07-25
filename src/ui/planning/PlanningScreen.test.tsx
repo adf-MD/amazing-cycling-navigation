@@ -38,6 +38,7 @@ function createMockMapFactory(): MockMapHandle {
       onLoad: (listener) => {
         loadListener = listener;
       },
+      onStyleLoaded: () => undefined,
       onError: () => undefined,
       onSourceData: () => undefined,
       addGeoJsonSource: () => undefined,

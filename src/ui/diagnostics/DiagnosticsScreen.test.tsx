@@ -7,6 +7,7 @@ import {
   clearRoutingDiagnostics,
   recordRoutingAttempt,
 } from "../../routing/routingDiagnostics.ts";
+import { clearMapDiagnostics, recordMapAttempt } from "../../map/mapDiagnostics.ts";
 import type { Clock } from "../../platform/clock.ts";
 
 function getDetailValue(termText: string): HTMLElement {
@@ -20,6 +21,7 @@ beforeEach(async () => {
   await db.routes.clear();
   await db.rideState.clear();
   clearRoutingDiagnostics();
+  clearMapDiagnostics();
 });
 
 afterEach(() => {
@@ -152,5 +154,35 @@ describe("DiagnosticsScreen", () => {
       screen.getByText("Fetch failed before an HTTP response was exposed to the browser"),
     ).toBeInTheDocument();
     expect(screen.getByText(/missing CORS headers/i)).toBeInTheDocument();
+  });
+
+  it("shows no map imagery attempts recorded this session by default", () => {
+    render(<DiagnosticsScreen />);
+
+    expect(
+      screen.getByText(/no map imagery attempts recorded this session/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows recorded map imagery attempts in plain language", () => {
+    recordMapAttempt({
+      timestampIso: "2026-01-01T00:00:00.000Z",
+      tileProviderId: "openfreemap-liberty",
+      category: "fallback-activated",
+      wasOnline: true,
+      justResumed: false,
+    });
+    recordMapAttempt({
+      timestampIso: "2026-01-01T00:01:00.000Z",
+      tileProviderId: "openfreemap-liberty",
+      category: "auto-retry",
+      wasOnline: true,
+      justResumed: true,
+    });
+
+    render(<DiagnosticsScreen />);
+
+    expect(screen.getByText(/switched to the plain background/i)).toBeInTheDocument();
+    expect(screen.getByText(/automatically/i)).toBeInTheDocument();
   });
 });

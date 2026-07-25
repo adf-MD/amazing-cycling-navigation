@@ -23,8 +23,29 @@ const FOLLOW_VERTICAL_OFFSET_PX = 60;
  * responsive to a fresh fix, long enough to avoid a visible jump. */
 const FOLLOW_EASE_DURATION_MS = 600;
 
+/**
+ * Distinguishes a fatal style-document failure from a recoverable
+ * resource failure, verified directly against the installed maplibre-gl
+ * source (see MapView.tsx's fallback logic, which depends on this):
+ * - "style-request-or-parse": the style JSON itself failed to fetch,
+ *   parse, or validate — MapLibre's own `load` event will never fire
+ *   after this (Style._load never reaches `this._loaded = true`).
+ * - "source-or-tile": a specific source/tile failed — MapLibre bubbles
+ *   this with a `sourceId`, and a single tile error does not itself
+ *   block `Map.loaded()`/`load` from eventually firing.
+ * - "sprite": the style's sprite sheet failed — fired only after the
+ *   style itself already loaded successfully.
+ * - "webgl-init": synthesised proactively (see MapLibreAdapter's
+ *   constructor) — the real WebGL-context-creation failure event fires
+ *   synchronously inside the Map constructor, before any listener can
+ *   possibly be attached, and is otherwise silently dropped.
+ */
+export type MapErrorCategory =
+  "style-request-or-parse" | "source-or-tile" | "sprite" | "webgl-init";
+
 export interface MapErrorInfo {
   message: string;
+  category: MapErrorCategory;
 }
 
 export interface MapSourceDataInfo {
@@ -61,6 +82,13 @@ export interface CircleLayerPaint {
  */
 export interface MapLibreLike {
   onLoad(listener: () => void): void;
+  /** Fires once the style document itself is parsed/validated and its
+   * sources/layers are registered — independent of whether any tile,
+   * sprite or glyph has loaded (MapLibre's own "style.load" event,
+   * fired well before the public "load" event, which additionally waits
+   * for every source's initial tiles). The signal MapView uses to add
+   * the route/position overlays without waiting for external tiles. */
+  onStyleLoaded(listener: () => void): void;
   onError(listener: (info: MapErrorInfo) => void): void;
   onSourceData(listener: (info: MapSourceDataInfo) => void): void;
   addGeoJsonSource(id: string, data: GeoJSON.FeatureCollection): void;
@@ -136,9 +164,27 @@ export type MapFactory = (options: CreateMapOptions) => MapLibreLike;
  * indirectly via that mock and the e2e smoke test. */
 export class MapLibreAdapter implements MapLibreLike {
   private readonly map: MapLibreGlMap;
+  /** Set once MapLibre's own "style.load" fires — used to tell a
+   * post-style-load sprite failure apart from a pre-load style-document
+   * failure, both of which arrive with no `sourceId`. */
+  private styleReady = false;
+  /** Best-effort, proactive detection of a WebGL-context-creation
+   * failure. MapLibre fires this as a real error event (wrapping
+   * GPUInitializationError), but synchronously inside the Map
+   * constructor — before this adapter (or any listener) exists — so the
+   * real event is always silently dropped. Checking the internal
+   * `painter` field immediately after construction is the only way to
+   * observe this at all; verified against the installed maplibre-gl
+   * version. If a future version renames this field, the check simply
+   * stops detecting this one category — it never throws. */
+  private readonly webglInitFailed: boolean;
 
   constructor(map: MapLibreGlMap) {
     this.map = map;
+    this.map.on("style.load", () => {
+      this.styleReady = true;
+    });
+    this.webglInitFailed = !(map as unknown as { painter?: unknown }).painter;
   }
 
   onLoad(listener: () => void): void {
@@ -147,11 +193,33 @@ export class MapLibreAdapter implements MapLibreLike {
     });
   }
 
+  onStyleLoaded(listener: () => void): void {
+    this.map.on("style.load", listener);
+  }
+
   onError(listener: (info: MapErrorInfo) => void): void {
+    if (this.webglInitFailed) {
+      // Deferred to a microtask so it fires after the caller's own
+      // synchronous listener-registration sequence finishes, avoiding
+      // reentrancy if the listener itself tears down/recreates the map.
+      queueMicrotask(() => {
+        listener({
+          message: "WebGL context could not be created.",
+          category: "webgl-init",
+        });
+      });
+    }
     this.map.on("error", (event) => {
       const message =
         event.error instanceof Error ? event.error.message : String(event.error);
-      listener({ message });
+      const sourceId = (event as { sourceId?: unknown }).sourceId;
+      const category: MapErrorCategory =
+        typeof sourceId === "string"
+          ? "source-or-tile"
+          : this.styleReady
+            ? "sprite"
+            : "style-request-or-parse";
+      listener({ message, category });
     });
   }
 
