@@ -7,7 +7,7 @@ import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import type { RoutingProvider } from "../../routing/provider.ts";
 import { db } from "../../storage/db.ts";
-import { getDraft } from "../../storage/planningDraftRepository.ts";
+import { getDraft, saveDraft } from "../../storage/planningDraftRepository.ts";
 import { listRoutes } from "../../storage/routesRepository.ts";
 import { saveProviderKey } from "../../storage/providerKeyRepository.ts";
 
@@ -16,6 +16,7 @@ interface MockMapHandle {
   triggerLoad: () => void;
   triggerCameraSettled: (coordinate: Coordinate) => void;
   triggerMapTap: (coordinate: Coordinate) => void;
+  setCameraSpy: ReturnType<typeof vi.fn>;
 }
 
 function createMockMapFactory(): MockMapHandle {
@@ -29,6 +30,7 @@ function createMockMapFactory(): MockMapHandle {
       }) => void)
     | undefined;
   let mapTapListener: ((coordinate: Coordinate) => void) | undefined;
+  const setCameraSpy = vi.fn();
 
   const factory: MapFactory = () => {
     const map: MapLibreLike = {
@@ -50,7 +52,7 @@ function createMockMapFactory(): MockMapHandle {
       onCameraSettled: (listener) => {
         cameraSettledListener = listener;
       },
-      setCamera: () => undefined,
+      setCamera: setCameraSpy,
       resize: () => undefined,
       onMapTap: (listener) => {
         mapTapListener = listener;
@@ -62,6 +64,7 @@ function createMockMapFactory(): MockMapHandle {
 
   return {
     factory,
+    setCameraSpy,
     triggerLoad: () => {
       act(() => {
         loadListener?.();
@@ -301,5 +304,65 @@ describe("PlanningScreen", () => {
     const draft = await getDraft();
     expect(draft).toBeUndefined();
     expect(screen.getByText("No waypoints placed yet.")).toBeInTheDocument();
+  });
+
+  it("centres a fresh session on an approximate location, at a regional zoom", async () => {
+    const map = createMockMapFactory();
+    const requestApproximateLocation = vi.fn().mockResolvedValue([-1.5, 53.8]);
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        requestApproximateLocation={requestApproximateLocation}
+      />,
+    );
+    map.triggerLoad();
+
+    await waitFor(() => {
+      expect(map.setCameraSpy).toHaveBeenCalledWith([-1.5, 53.8], 6, 0, 0, {
+        animate: false,
+        followOffset: false,
+      });
+    });
+  });
+
+  it("does not move the camera when the location request resolves to null", async () => {
+    const map = createMockMapFactory();
+    const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        requestApproximateLocation={requestApproximateLocation}
+      />,
+    );
+    map.triggerLoad();
+
+    await waitFor(() => {
+      expect(requestApproximateLocation).toHaveBeenCalled();
+    });
+    expect(map.setCameraSpy).not.toHaveBeenCalled();
+  });
+
+  it("never requests a location for a session restored from an existing draft", async () => {
+    await saveDraft([
+      { id: "a", coordinate: [0, 51] },
+      { id: "b", coordinate: [0.01, 51] },
+    ]);
+    const map = createMockMapFactory();
+    const requestApproximateLocation = vi.fn().mockResolvedValue([-1.5, 53.8]);
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        requestApproximateLocation={requestApproximateLocation}
+      />,
+    );
+    map.triggerLoad();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+    });
+    expect(requestApproximateLocation).not.toHaveBeenCalled();
   });
 });

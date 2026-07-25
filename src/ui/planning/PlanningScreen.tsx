@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
 import { exportRouteToGpx } from "../../gpx/exportGpx.ts";
-import { MapView, type PlanningOverlay } from "../../map/MapView.tsx";
+import { MapView, type CameraTarget, type PlanningOverlay } from "../../map/MapView.tsx";
 import type { MapFactory } from "../../map/mapAdapter.ts";
+import { getApproximateLocationOnce } from "../../platform/geolocation.ts";
 import { logError } from "../../platform/errorLog.ts";
 import { OpenRouteServiceAdapter } from "../../routing/openRouteServiceAdapter.ts";
 import type { RoutingProvider } from "../../routing/provider.ts";
@@ -33,12 +34,21 @@ export interface PlanningScreenProps {
   /** Injectable for tests; defaults to a real OpenRouteServiceAdapter
    * reading the user's stored key fresh on every request. */
   routingProvider?: RoutingProvider;
+  /** Injectable for tests; defaults to a real one-shot, low-accuracy
+   * location request (see getApproximateLocationOnce). */
+  requestApproximateLocation?: () => Promise<Coordinate | null>;
 }
 
 /** How long to wait, after a settled waypoint edit, before persisting the
  * draft — the same debounce boundary usePlanningRoute applies to
  * recalculation, so a rapid burst of edits writes once, not per edit. */
 const DRAFT_DEBOUNCE_MS = 900;
+
+/** Regional/country scale — deliberately not a street-level zoom. Used only
+ * to frame a genuinely fresh Planning session around the rider's
+ * approximate location; a calculated route reframes the view itself once
+ * it exists. */
+const INITIAL_LOCATION_ZOOM = 6;
 
 function buildDefaultAdapter(): RoutingProvider {
   return new OpenRouteServiceAdapter({
@@ -57,6 +67,7 @@ export function PlanningScreen({
   onRouteSaved,
   mapFactory,
   routingProvider,
+  requestApproximateLocation = getApproximateLocationOnce,
 }: PlanningScreenProps) {
   // Created once, ignoring any later identity change of the routingProvider
   // prop — mirrors how mapFactory/clock are treated elsewhere in this
@@ -74,6 +85,9 @@ export function PlanningScreen({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [crosshairCoordinate, setCrosshairCoordinate] = useState<Coordinate | null>(null);
   const [isDraftHydrated, setIsDraftHydrated] = useState(false);
+  const [initialCameraTarget, setInitialCameraTarget] = useState<CameraTarget | null>(
+    null,
+  );
 
   const keyQuery = useCallback(() => getProviderKey(), []);
   const key = useLiveQuery(keyQuery);
@@ -125,6 +139,41 @@ export function PlanningScreen({
       window.clearTimeout(timeoutId);
     };
   }, [state.present, isDraftHydrated]);
+
+  // Read fresh inside the location effect below rather than depending on
+  // state.present directly, so a waypoint added while the location request
+  // is still pending is seen without re-triggering the request itself.
+  const waypointsRef = useRef(state.present);
+  useEffect(() => {
+    waypointsRef.current = state.present;
+  }, [state.present]);
+
+  // Frames a genuinely fresh Planning session (no restored draft, no
+  // waypoints yet) around the rider's approximate location, once — never
+  // re-requested for this component instance, and skipped entirely once
+  // there's already something to show, so it can never fight a restored
+  // draft or waypoints placed before the fix resolves.
+  const hasRequestedInitialLocationRef = useRef(false);
+  useEffect(() => {
+    if (!isDraftHydrated || hasRequestedInitialLocationRef.current) return;
+    hasRequestedInitialLocationRef.current = true;
+    if (waypointsRef.current.length > 0) return;
+    requestApproximateLocation()
+      .then((coordinate) => {
+        if (!coordinate || waypointsRef.current.length > 0) return;
+        setInitialCameraTarget({
+          coordinate,
+          zoom: INITIAL_LOCATION_ZOOM,
+          bearingDegrees: 0,
+          pitchDegrees: 0,
+          animate: false,
+          followOffset: false,
+        });
+      })
+      .catch((error: unknown) => {
+        logError("planning-initial-location", error);
+      });
+  }, [isDraftHydrated, requestApproximateLocation]);
 
   // Add-or-move: with a waypoint selected, a tap/click relocates it;
   // otherwise it appends (or inserts after the selected waypoint — see
@@ -216,6 +265,7 @@ export function PlanningScreen({
           points={mapPoints}
           mapFactory={mapFactory}
           planningOverlay={planningOverlay}
+          cameraTarget={initialCameraTarget}
           onCameraSettled={(camera) => {
             setCrosshairCoordinate(camera.coordinate);
           }}

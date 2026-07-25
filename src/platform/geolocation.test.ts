@@ -1,6 +1,10 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { browserGeolocationSource, useGeolocationWatch } from "./geolocation.ts";
+import {
+  browserGeolocationSource,
+  getApproximateLocationOnce,
+  useGeolocationWatch,
+} from "./geolocation.ts";
 import type {
   GeolocationError,
   GeolocationFix,
@@ -242,5 +246,51 @@ describe("useGeolocationWatch", () => {
     unmount();
 
     expect(stub.clearSpy).toHaveBeenCalledOnce();
+  });
+});
+
+type GetCurrentPosition = (
+  success: (position: GeolocationPosition) => void,
+  error: (error: GeolocationPositionError) => void,
+  options?: PositionOptions,
+) => void;
+
+describe("getApproximateLocationOnce", () => {
+  it("resolves null when navigator.geolocation is absent", async () => {
+    vi.stubGlobal("navigator", {});
+
+    await expect(getApproximateLocationOnce()).resolves.toBeNull();
+  });
+
+  it("resolves the coordinate from a successful fix", async () => {
+    const getCurrentPosition = vi.fn<GetCurrentPosition>((success) => {
+      success({
+        coords: { longitude: -1.5, latitude: 53.8 },
+      } as GeolocationPosition);
+    });
+    vi.stubGlobal("navigator", { geolocation: { getCurrentPosition } });
+
+    await expect(getApproximateLocationOnce()).resolves.toEqual([-1.5, 53.8]);
+  });
+
+  it("resolves null, not a rejection, on a geolocation error", async () => {
+    const getCurrentPosition = vi.fn<GetCurrentPosition>((_success, error) => {
+      error({} as GeolocationPositionError);
+    });
+    vi.stubGlobal("navigator", { geolocation: { getCurrentPosition } });
+
+    await expect(getApproximateLocationOnce()).resolves.toBeNull();
+  });
+
+  it("requests a low-accuracy fix, not Riding's high-accuracy watch", async () => {
+    const getCurrentPosition = vi.fn<GetCurrentPosition>((success) => {
+      success({ coords: { longitude: 0, latitude: 0 } } as GeolocationPosition);
+    });
+    vi.stubGlobal("navigator", { geolocation: { getCurrentPosition } });
+
+    await getApproximateLocationOnce();
+
+    const options = getCurrentPosition.mock.calls[0]?.[2];
+    expect(options?.enableHighAccuracy).toBe(false);
   });
 });

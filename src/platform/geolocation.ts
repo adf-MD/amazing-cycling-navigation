@@ -134,3 +134,29 @@ export function useGeolocationWatch(
 
   return { status, fix, error, start, stop };
 }
+
+/**
+ * One-shot, low-accuracy location request used only to give Planning's map
+ * a sensible starting view (see PlanningScreen). Deliberately never
+ * high-accuracy (CLAUDE.md reserves that for active Riding mode) and never
+ * watched or retried — resolves to null on any error, denied permission, or
+ * unsupported browser, since this is a framing convenience, not something
+ * the rest of Planning depends on.
+ */
+export function getApproximateLocationOnce(): Promise<Coordinate | null> {
+  return new Promise((resolve) => {
+    if (!("geolocation" in navigator)) {
+      resolve(null);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve([position.coords.longitude, position.coords.latitude]);
+      },
+      () => {
+        resolve(null);
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 },
+    );
+  });
+}
