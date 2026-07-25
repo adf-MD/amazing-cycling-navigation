@@ -394,7 +394,11 @@ export function PlanningScreen({
         onClick={routing.calculateNow}
         disabled={state.present.length < 2 || !hasKey || routing.isCalculating}
       >
-        {routing.isCalculating ? "Calculating…" : "Calculate route"}
+        {routing.isCalculating
+          ? "Calculating…"
+          : routing.lastErrorMessage
+            ? "Try again"
+            : "Calculate route"}
       </button>
       {hasKey ? (
         <p role="status">{describeProviderKeyStatus(key, verification, now).headline}</p>

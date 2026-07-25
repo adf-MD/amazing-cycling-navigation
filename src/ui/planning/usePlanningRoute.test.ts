@@ -234,7 +234,7 @@ describe("usePlanningRoute", () => {
       expect(calls).toHaveLength(2);
     });
     await act(async () => {
-      calls[1]?.reject(new RoutingError("network-failure", "boom"));
+      calls[1]?.reject(new RoutingError("transport-failure", "boom"));
       await flushMicrotasks();
     });
 
@@ -453,5 +453,128 @@ describe("usePlanningRoute", () => {
     });
     const verification = await getProviderKeyVerification();
     expect(verification).toBeUndefined();
+  });
+
+  it("records an unavailable outcome (never rejected/quota-limited/verified) when the provider itself is down", async () => {
+    await saveProviderKey("dummy-test-key");
+    const { adapter, calls } = buildQueuedAdapter();
+    const { result } = renderHook(() =>
+      usePlanningRoute({
+        waypoints: WAYPOINTS,
+        profile: "cycling-road",
+        avoidFerries: false,
+        adapter,
+      }),
+    );
+
+    act(() => {
+      result.current.calculateNow();
+    });
+    await act(async () => {
+      calls[0]?.reject(
+        new RoutingError(
+          "provider-unavailable",
+          "OpenRouteService returned a server error.",
+          undefined,
+          undefined,
+          502,
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    await waitFor(() => {
+      expect(result.current.lastErrorMessage).toContain(
+        "OpenRouteService is temporarily unavailable (HTTP 502)",
+      );
+    });
+    expect(result.current.lastErrorMessage).toContain("waypoints have been retained");
+    const verification = await getProviderKeyVerification();
+    expect(verification).toMatchObject({ outcome: "unavailable" });
+  });
+
+  it("shows a cautious, non-blaming message for a transport failure", async () => {
+    const { adapter, calls } = buildQueuedAdapter();
+    const { result } = renderHook(() =>
+      usePlanningRoute({
+        waypoints: WAYPOINTS,
+        profile: "cycling-road",
+        avoidFerries: false,
+        adapter,
+      }),
+    );
+
+    act(() => {
+      result.current.calculateNow();
+    });
+    await act(async () => {
+      calls[0]?.reject(
+        new RoutingError("transport-failure", "The routing request failed."),
+      );
+      await flushMicrotasks();
+    });
+
+    await waitFor(() => {
+      expect(result.current.lastErrorMessage).toBe(
+        "The routing provider could not be reached. OpenRouteService may be temporarily unavailable, or the browser or network may have blocked the request. Try again later.",
+      );
+    });
+  });
+
+  it("retains the last successful route, unchanged, after a provider-unavailable recalculation failure", async () => {
+    const { adapter, calls } = buildQueuedAdapter();
+    const { result, rerender } = renderHook(
+      (props: { waypoints: readonly Waypoint[] }) =>
+        usePlanningRoute({
+          waypoints: props.waypoints,
+          profile: "cycling-road",
+          avoidFerries: false,
+          adapter,
+        }),
+      { initialProps: { waypoints: WAYPOINTS } },
+    );
+
+    act(() => {
+      result.current.calculateNow();
+    });
+    const firstRoute = buildRoute("first");
+    await act(async () => {
+      calls[0]?.resolve(firstRoute);
+      await flushMicrotasks();
+    });
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("routed");
+    });
+
+    const editedWaypoints: Waypoint[] = [
+      ...WAYPOINTS,
+      { id: "c", coordinate: [0.02, 51] },
+    ];
+    rerender({ waypoints: editedWaypoints });
+
+    await waitFor(() => {
+      expect(calls).toHaveLength(2);
+    });
+    await act(async () => {
+      calls[1]?.reject(
+        new RoutingError(
+          "provider-unavailable",
+          "OpenRouteService returned a server error.",
+          undefined,
+          undefined,
+          503,
+        ),
+      );
+      await flushMicrotasks();
+    });
+
+    await waitFor(() => {
+      expect(result.current.lastErrorMessage).not.toBeNull();
+    });
+    expect(result.current.state).toEqual({
+      kind: "routed",
+      route: firstRoute,
+      waypoints: WAYPOINTS,
+    });
   });
 });

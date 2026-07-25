@@ -1,6 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OpenRouteServiceAdapter } from "./openRouteServiceAdapter.ts";
 import { RoutingError } from "./openRouteServiceErrors.ts";
+import {
+  clearRoutingDiagnostics,
+  getRecentRoutingAttempts,
+} from "./routingDiagnostics.ts";
 import type { Coordinate } from "../domain/types.ts";
 import type { OrsFeatureCollectionResponse } from "./openRouteServiceTypes.ts";
 
@@ -46,6 +50,10 @@ function buildFetchMock(response: {
   } as Response);
   return mock;
 }
+
+beforeEach(() => {
+  clearRoutingDiagnostics();
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -148,7 +156,7 @@ describe("OpenRouteServiceAdapter", () => {
 
     await expect(
       adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
-    ).rejects.toMatchObject({ reason });
+    ).rejects.toMatchObject({ reason, httpStatus: status });
   });
 
   it("surfaces a 429's Retry-After as retryAfterSeconds", async () => {
@@ -181,7 +189,7 @@ describe("OpenRouteServiceAdapter", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("maps a network-throwing fetch to network-failure", async () => {
+  it("maps a network-throwing fetch (no response received) to transport-failure", async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
     const adapter = new OpenRouteServiceAdapter({
       getApiKey: () => Promise.resolve(DUMMY_KEY),
@@ -190,7 +198,7 @@ describe("OpenRouteServiceAdapter", () => {
 
     await expect(
       adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
-    ).rejects.toMatchObject({ reason: "network-failure" });
+    ).rejects.toMatchObject({ reason: "transport-failure" });
   });
 
   it("maps ORS error code 2009 (no route between locations) to no-route-found", async () => {
@@ -231,10 +239,29 @@ describe("OpenRouteServiceAdapter", () => {
     },
   );
 
+  it.each([500, 502, 503, 504])(
+    "maps HTTP %d to provider-unavailable without reading the response body",
+    async (status) => {
+      const fetchImpl = buildFetchMock({
+        ok: false,
+        status,
+        json: () => Promise.reject(new Error("must not be read for a 5xx")),
+      });
+      const adapter = new OpenRouteServiceAdapter({
+        getApiKey: () => Promise.resolve(DUMMY_KEY),
+        fetchImpl,
+      });
+
+      await expect(
+        adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+      ).rejects.toMatchObject({ reason: "provider-unavailable", httpStatus: status });
+    },
+  );
+
   it("falls back to provider-error for an unrecognised status/body combination", async () => {
     const fetchImpl = buildFetchMock({
       ok: false,
-      status: 500,
+      status: 404,
       json: () => Promise.resolve({ error: { code: 9999, message: "unknown" } }),
     });
     const adapter = new OpenRouteServiceAdapter({
@@ -244,7 +271,11 @@ describe("OpenRouteServiceAdapter", () => {
 
     await expect(
       adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
-    ).rejects.toMatchObject({ reason: "provider-error", providerErrorCode: 9999 });
+    ).rejects.toMatchObject({
+      reason: "provider-error",
+      providerErrorCode: 9999,
+      httpStatus: 404,
+    });
   });
 
   it("re-throws a genuine caller cancellation unchanged, not as a RoutingError", async () => {
@@ -345,9 +376,12 @@ describe("OpenRouteServiceAdapter", () => {
 
   describe("diagnostics redaction", () => {
     it("never includes the dummy key or waypoint coordinates in a thrown error's message, even against an echoing response", async () => {
+      // A non-5xx status, so the adapter actually attempts to read the
+      // body (a 5xx skips that entirely — see the provider-unavailable
+      // tests) — this exercises the real redaction-while-reading path.
       const fetchImpl = buildFetchMock({
         ok: false,
-        status: 500,
+        status: 404,
         json: () =>
           Promise.resolve({
             error: `request from key ${DUMMY_KEY} at ${JSON.stringify(WAYPOINTS)} failed`,
@@ -399,6 +433,107 @@ describe("OpenRouteServiceAdapter", () => {
           providerErrorCode: 2009,
         });
       }
+    });
+  });
+
+  describe("routing attempt diagnostics", () => {
+    it("records a received-response entry for a 502", async () => {
+      const fetchImpl = buildFetchMock({ ok: false, status: 502 });
+      const adapter = new OpenRouteServiceAdapter({
+        getApiKey: () => Promise.resolve(DUMMY_KEY),
+        fetchImpl,
+      });
+
+      await expect(
+        adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+      ).rejects.toMatchObject({ reason: "provider-unavailable" });
+
+      const [latest] = getRecentRoutingAttempts();
+      expect(latest).toMatchObject({
+        providerId: "openrouteservice",
+        wasOnline: true,
+        responseReceived: true,
+        httpStatus: 502,
+        category: "provider-unavailable",
+      });
+    });
+
+    it("records an offline entry without ever calling fetch", async () => {
+      vi.stubGlobal("navigator", { onLine: false });
+      const fetchImpl = buildFetchMock({ ok: true });
+      const adapter = new OpenRouteServiceAdapter({
+        getApiKey: () => Promise.resolve(DUMMY_KEY),
+        fetchImpl,
+      });
+
+      await expect(
+        adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+      ).rejects.toMatchObject({ reason: "offline" });
+
+      const [latest] = getRecentRoutingAttempts();
+      expect(latest).toMatchObject({
+        wasOnline: false,
+        responseReceived: false,
+        category: "offline",
+      });
+    });
+
+    it("records a no-response entry for a transport failure", async () => {
+      const fetchImpl = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+      const adapter = new OpenRouteServiceAdapter({
+        getApiKey: () => Promise.resolve(DUMMY_KEY),
+        fetchImpl,
+      });
+
+      await expect(
+        adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+      ).rejects.toMatchObject({ reason: "transport-failure" });
+
+      const [latest] = getRecentRoutingAttempts();
+      expect(latest).toMatchObject({
+        wasOnline: true,
+        responseReceived: false,
+        category: "transport-failure",
+      });
+    });
+
+    it("never includes the dummy key or waypoint coordinates in a recorded diagnostic", async () => {
+      const fetchImpl = buildFetchMock({
+        ok: false,
+        status: 502,
+        json: () =>
+          Promise.resolve({
+            error: `request from key ${DUMMY_KEY} at ${JSON.stringify(WAYPOINTS)} failed`,
+          }),
+      });
+      const adapter = new OpenRouteServiceAdapter({
+        getApiKey: () => Promise.resolve(DUMMY_KEY),
+        fetchImpl,
+      });
+
+      await expect(
+        adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+      ).rejects.toBeInstanceOf(RoutingError);
+
+      const [latest] = getRecentRoutingAttempts();
+      const serialised = JSON.stringify(latest);
+      expect(serialised).not.toContain(DUMMY_KEY);
+      expect(serialised).not.toContain("-1.5");
+      expect(serialised).not.toContain("53.8");
+      expect(Object.keys(latest ?? {}).sort()).toEqual(
+        [
+          "timestampIso",
+          "providerId",
+          "endpointHost",
+          "endpointPath",
+          "wasOnline",
+          "elapsedMs",
+          "responseReceived",
+          "httpStatus",
+          "providerErrorCode",
+          "category",
+        ].sort(),
+      );
     });
   });
 });

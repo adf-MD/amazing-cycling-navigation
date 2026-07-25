@@ -6,6 +6,10 @@ import {
   type OrsDirectionsRequestBody,
 } from "./openRouteServiceTypes.ts";
 import { normalizeOpenRouteServiceRoute } from "./normalizeOpenRouteServiceRoute.ts";
+import {
+  recordRoutingAttempt,
+  type RoutingAttemptDiagnostic,
+} from "./routingDiagnostics.ts";
 
 /** The current HeiGIT-hosted endpoint — the deprecated api.openrouteservice.org
  * host must never be used. */
@@ -118,18 +122,45 @@ async function readOrsErrorCode(response: Response): Promise<number | undefined>
 async function mapErrorResponse(response: Response): Promise<RoutingError> {
   switch (response.status) {
     case 401:
-      return new RoutingError("unauthorized", "The OpenRouteService key was rejected.");
+      return new RoutingError(
+        "unauthorized",
+        "The OpenRouteService key was rejected.",
+        undefined,
+        undefined,
+        response.status,
+      );
     case 403:
       return new RoutingError(
         "forbidden",
         "Access was denied — check the account, permissions or daily quota.",
         readRetryAfterSeconds(response),
+        undefined,
+        response.status,
       );
     case 429:
       return new RoutingError(
         "rate-limited",
         "The rate limit was reached.",
         readRetryAfterSeconds(response),
+        undefined,
+        response.status,
+      );
+    // The provider itself returned a server error — a proxy or backend
+    // problem on its side, not the browser's connection. Classified
+    // directly from the status, without attempting to read a body: an
+    // infrastructure-level 502 (e.g. a proxy that couldn't resolve its
+    // own routing backend) won't carry OpenRouteService's own JSON error
+    // shape at all.
+    case 500:
+    case 502:
+    case 503:
+    case 504:
+      return new RoutingError(
+        "provider-unavailable",
+        "OpenRouteService returned a server error.",
+        undefined,
+        undefined,
+        response.status,
       );
     default: {
       // Deliberately never interpolates the response body's message text
@@ -145,6 +176,7 @@ async function mapErrorResponse(response: Response): Promise<RoutingError> {
           "No cycling route could be found between these waypoints.",
           undefined,
           code,
+          response.status,
         );
       }
       if (reason === "no-routable-point") {
@@ -153,13 +185,15 @@ async function mapErrorResponse(response: Response): Promise<RoutingError> {
           "A waypoint is too far from a usable road for cycling.",
           undefined,
           code,
+          response.status,
         );
       }
       return new RoutingError(
         "provider-error",
-        `The routing provider returned an unexpected error (status ${String(response.status)}).`,
+        "The routing provider returned an unexpected error.",
         undefined,
         code,
+        response.status,
       );
     }
   }
@@ -191,10 +225,35 @@ export class OpenRouteServiceAdapter implements RoutingProvider {
   ): Promise<PlannedRoute> {
     const apiKey = await this.getApiKey();
     if (!apiKey) {
+      // A local configuration gate, not a routing attempt — never
+      // recorded as a diagnostic (see routingDiagnostics.ts).
       throw new RoutingError("no-api-key", "No OpenRouteService key is configured.");
     }
 
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
+    const startedAt = Date.now();
+    const endpointHost = new URL(this.baseUrl).host;
+    const endpointPath = `/directions/${options.profile}/geojson`;
+    const wasOnline = typeof navigator === "undefined" || navigator.onLine;
+
+    const recordAttempt = (
+      fields: Pick<
+        RoutingAttemptDiagnostic,
+        "responseReceived" | "category" | "httpStatus" | "providerErrorCode"
+      >,
+    ): void => {
+      recordRoutingAttempt({
+        timestampIso: new Date().toISOString(),
+        providerId: OPENROUTESERVICE_PROVIDER_ID,
+        endpointHost,
+        endpointPath,
+        wasOnline,
+        elapsedMs: Date.now() - startedAt,
+        ...fields,
+      });
+    };
+
+    if (!wasOnline) {
+      recordAttempt({ responseReceived: false, category: "offline" });
       throw new RoutingError("offline", "The device is currently offline.");
     }
 
@@ -214,42 +273,58 @@ export class OpenRouteServiceAdapter implements RoutingProvider {
 
     let response: Response;
     try {
-      response = await this.fetchImpl(
-        `${this.baseUrl}/directions/${options.profile}/geojson`,
-        {
-          method: "POST",
-          headers: {
-            // Raw key, never a "Bearer " prefix, and never appended to
-            // the URL — see the redaction/URL tests.
-            Authorization: apiKey,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(body),
-          signal: combinedSignal,
+      response = await this.fetchImpl(`${this.baseUrl}${endpointPath}`, {
+        method: "POST",
+        headers: {
+          // Raw key, never a "Bearer " prefix, and never appended to
+          // the URL — see the redaction/URL tests.
+          Authorization: apiKey,
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify(body),
+        signal: combinedSignal,
+      });
     } catch (error) {
       if (isAbortError(error)) {
         if (signal?.aborted) {
-          // A genuine caller cancellation — re-thrown unchanged so
-          // callers can recognise it as "not an error" via error.name.
+          // A genuine caller cancellation — never a real error, and never
+          // recorded as a diagnostic; re-thrown unchanged so callers can
+          // recognise it via error.name.
           throw error;
         }
+        recordAttempt({ responseReceived: false, category: "timeout" });
         throw new RoutingError("timeout", "The routing request timed out.");
       }
-      throw new RoutingError("network-failure", "The routing request failed.");
+      // Cannot reliably distinguish a provider outage, a DNS/TLS failure,
+      // a local network restriction, or a real HTTP error response whose
+      // CORS headers were missing (see RoutingErrorReason's doc comment)
+      // — the diagnostic and the message both say so honestly.
+      recordAttempt({ responseReceived: false, category: "transport-failure" });
+      throw new RoutingError("transport-failure", "The routing request failed.");
     } finally {
       clearTimeout(timeoutId);
     }
 
     if (!response.ok) {
-      throw await mapErrorResponse(response);
+      const routingError = await mapErrorResponse(response);
+      recordAttempt({
+        responseReceived: true,
+        httpStatus: response.status,
+        providerErrorCode: routingError.providerErrorCode,
+        category: routingError.reason,
+      });
+      throw routingError;
     }
 
     let payload: unknown;
     try {
       payload = await response.json();
     } catch {
+      recordAttempt({
+        responseReceived: true,
+        httpStatus: response.status,
+        category: "malformed-response",
+      });
       throw new RoutingError(
         "malformed-response",
         "The routing response could not be parsed.",
@@ -257,17 +332,37 @@ export class OpenRouteServiceAdapter implements RoutingProvider {
     }
 
     if (!isOrsFeatureCollection(payload)) {
+      recordAttempt({
+        responseReceived: true,
+        httpStatus: response.status,
+        category: "malformed-response",
+      });
       throw new RoutingError(
         "malformed-response",
         "The routing response had an unexpected shape.",
       );
     }
 
-    return normalizeOpenRouteServiceRoute(payload, {
-      name: "Planned route",
-      createdAt: new Date().toISOString(),
-      profile: options.profile,
-      providerId: OPENROUTESERVICE_PROVIDER_ID,
-    });
+    try {
+      const route = normalizeOpenRouteServiceRoute(payload, {
+        name: "Planned route",
+        createdAt: new Date().toISOString(),
+        profile: options.profile,
+        providerId: OPENROUTESERVICE_PROVIDER_ID,
+      });
+      recordAttempt({
+        responseReceived: true,
+        httpStatus: response.status,
+        category: "success",
+      });
+      return route;
+    } catch (error) {
+      recordAttempt({
+        responseReceived: true,
+        httpStatus: response.status,
+        category: error instanceof RoutingError ? error.reason : "unknown",
+      });
+      throw error;
+    }
   }
 }

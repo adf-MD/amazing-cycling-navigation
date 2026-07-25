@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { PlanningScreen } from "./PlanningScreen.tsx";
 import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
+import { RoutingError } from "../../routing/openRouteServiceErrors.ts";
 import type { RoutingProvider } from "../../routing/provider.ts";
 import { db } from "../../storage/db.ts";
 import { getDraft, saveDraft } from "../../storage/planningDraftRepository.ts";
@@ -117,6 +118,18 @@ function buildResolvedAdapter(route: PlannedRoute): RoutingProvider {
   return {
     calculateRoute: () => Promise.resolve(route),
   };
+}
+
+function buildFailThenSucceedAdapter(
+  error: RoutingError,
+  route: PlannedRoute,
+): { adapter: RoutingProvider; calculateRouteSpy: ReturnType<typeof vi.fn> } {
+  let callCount = 0;
+  const calculateRouteSpy = vi.fn(() => {
+    callCount += 1;
+    return callCount === 1 ? Promise.reject(error) : Promise.resolve(route);
+  });
+  return { adapter: { calculateRoute: calculateRouteSpy }, calculateRouteSpy };
 }
 
 async function addWaypointViaCrosshair(
@@ -406,5 +419,111 @@ describe("PlanningScreen", () => {
       expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
     });
     expect(requestApproximateLocation).not.toHaveBeenCalled();
+  });
+
+  it("relabels Calculate to Try again after a provider failure, and retry issues exactly one new request", async () => {
+    const user = userEvent.setup();
+    await saveProviderKey("dummy-test-key");
+    const map = createMockMapFactory();
+    const route = buildRoute(10);
+    const { adapter, calculateRouteSpy } = buildFailThenSucceedAdapter(
+      new RoutingError(
+        "provider-unavailable",
+        "OpenRouteService returned a server error.",
+        undefined,
+        undefined,
+        502,
+      ),
+      route,
+    );
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={adapter}
+      />,
+    );
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+    const calculateButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /calculate route/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+    await user.click(calculateButton);
+
+    const retryButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: "Try again" });
+      expect(button).toBeInTheDocument();
+      return button;
+    });
+    expect(calculateRouteSpy).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByText(/OpenRouteService is temporarily unavailable \(HTTP 502\)/),
+    ).toBeInTheDocument();
+
+    await user.click(retryButton);
+
+    await waitFor(() => {
+      expect(calculateRouteSpy).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: "Route summary" })).toBeInTheDocument();
+    });
+  });
+
+  it("retains waypoints, the draft and the unrouted preview after a provider-unavailable failure", async () => {
+    const user = userEvent.setup();
+    await saveProviderKey("dummy-test-key");
+    const map = createMockMapFactory();
+    const adapter: RoutingProvider = {
+      calculateRoute: () =>
+        Promise.reject(
+          new RoutingError(
+            "provider-unavailable",
+            "OpenRouteService returned a server error.",
+            undefined,
+            undefined,
+            502,
+          ),
+        ),
+    };
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={adapter}
+      />,
+    );
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+    const calculateButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /calculate route/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+    await user.click(calculateButton);
+
+    await waitFor(() => {
+      expect(screen.getByText(/temporarily unavailable/i)).toBeInTheDocument();
+    });
+
+    // Waypoints remain, so the dashed unrouted preview (fed directly from
+    // them whenever the state isn't "routed") is still available too.
+    expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Waypoint 2" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Calculate a complete routed result before saving or exporting."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save route/i })).toBeDisabled();
+
+    await waitFor(async () => {
+      const draft = await getDraft();
+      expect(draft?.waypoints).toHaveLength(2);
+    });
   });
 });

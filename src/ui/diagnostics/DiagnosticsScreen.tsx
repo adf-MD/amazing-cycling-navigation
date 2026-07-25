@@ -8,6 +8,10 @@ import {
 import { useGeolocationPermissionStatus } from "../../platform/geolocationPermission.ts";
 import { isMapRenderingSupported } from "../../platform/mapSupport.ts";
 import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
+import {
+  describeRoutingAttempt,
+  useRecentRoutingAttempts,
+} from "../../routing/routingDiagnostics.ts";
 import { useStorageHealth } from "../../storage/storageHealth.ts";
 import { getActiveRideState } from "../../storage/rideStateRepository.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
@@ -43,6 +47,7 @@ export function DiagnosticsScreen({ clock = systemClock }: DiagnosticsScreenProp
   const serviceWorkerStatus = useServiceWorkerStatus();
   const storageHealth = useStorageHealth();
   const recentErrors = useRecentErrors();
+  const recentRoutingAttempts = useRecentRoutingAttempts();
   const geolocationPermission = useGeolocationPermissionStatus();
   const now = useNow(clock);
 
@@ -103,6 +108,25 @@ export function DiagnosticsScreen({ clock = systemClock }: DiagnosticsScreenProp
             <li key={`${String(entry.timestampMs)}-${entry.context}`}>
               <strong>{entry.context}</strong>: {entry.message}
             </li>
+          ))}
+        </ul>
+      )}
+
+      <h2>Recent routing attempts</h2>
+      <p>
+        Browsers may report a generic fetch failure instead of the real HTTP status (for
+        example 502) when the provider&apos;s error response is missing CORS headers — an
+        entry reading &quot;Fetch failed before an HTTP response was exposed to the
+        browser&quot; can mean a provider outage, a missing CORS header, a DNS or TLS
+        failure, or a local network restriction, and cannot be told apart from this
+        information alone.
+      </p>
+      {recentRoutingAttempts.length === 0 ? (
+        <p>No routing attempts recorded this session.</p>
+      ) : (
+        <ul>
+          {recentRoutingAttempts.map((entry) => (
+            <li key={entry.timestampIso}>{describeRoutingAttempt(entry)}</li>
           ))}
         </ul>
       )}

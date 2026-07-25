@@ -3,6 +3,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { DiagnosticsScreen } from "./DiagnosticsScreen.tsx";
 import { db } from "../../storage/db.ts";
 import { setActiveRideState } from "../../storage/rideStateRepository.ts";
+import {
+  clearRoutingDiagnostics,
+  recordRoutingAttempt,
+} from "../../routing/routingDiagnostics.ts";
 import type { Clock } from "../../platform/clock.ts";
 
 function getDetailValue(termText: string): HTMLElement {
@@ -15,6 +19,7 @@ function getDetailValue(termText: string): HTMLElement {
 beforeEach(async () => {
   await db.routes.clear();
   await db.rideState.clear();
+  clearRoutingDiagnostics();
 });
 
 afterEach(() => {
@@ -83,5 +88,69 @@ describe("DiagnosticsScreen", () => {
     });
     expect(getDetailValue("Last known fix age")).toHaveTextContent("30s ago");
     expect(getDetailValue("Active route")).toHaveTextContent("route-42");
+  });
+
+  it("shows no routing attempts recorded this session by default", () => {
+    render(<DiagnosticsScreen />);
+
+    expect(
+      screen.getByText(/no routing attempts recorded this session/i),
+    ).toBeInTheDocument();
+  });
+
+  it("distinguishes a received HTTP response, offline, timeout and an unexposed fetch failure, and explains the CORS/502 ambiguity", () => {
+    recordRoutingAttempt({
+      timestampIso: "2026-01-01T00:00:00.000Z",
+      providerId: "openrouteservice",
+      endpointHost: "api.heigit.org",
+      endpointPath: "/directions/cycling-road/geojson",
+      wasOnline: true,
+      elapsedMs: 200,
+      responseReceived: true,
+      httpStatus: 502,
+      category: "provider-unavailable",
+    });
+    recordRoutingAttempt({
+      timestampIso: "2026-01-01T00:01:00.000Z",
+      providerId: "openrouteservice",
+      endpointHost: "api.heigit.org",
+      endpointPath: "/directions/cycling-road/geojson",
+      wasOnline: false,
+      elapsedMs: 0,
+      responseReceived: false,
+      category: "offline",
+    });
+    recordRoutingAttempt({
+      timestampIso: "2026-01-01T00:02:00.000Z",
+      providerId: "openrouteservice",
+      endpointHost: "api.heigit.org",
+      endpointPath: "/directions/cycling-road/geojson",
+      wasOnline: true,
+      elapsedMs: 15_000,
+      responseReceived: false,
+      category: "timeout",
+    });
+    recordRoutingAttempt({
+      timestampIso: "2026-01-01T00:03:00.000Z",
+      providerId: "openrouteservice",
+      endpointHost: "api.heigit.org",
+      endpointPath: "/directions/cycling-road/geojson",
+      wasOnline: true,
+      elapsedMs: 50,
+      responseReceived: false,
+      category: "transport-failure",
+    });
+
+    render(<DiagnosticsScreen />);
+
+    expect(
+      screen.getByText("HTTP response received: 502 (provider-unavailable)"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Device reported offline")).toBeInTheDocument();
+    expect(screen.getByText("Request timed out")).toBeInTheDocument();
+    expect(
+      screen.getByText("Fetch failed before an HTTP response was exposed to the browser"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/missing CORS headers/i)).toBeInTheDocument();
   });
 });

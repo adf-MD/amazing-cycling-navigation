@@ -4,7 +4,13 @@ export type RoutingErrorReason =
   | "forbidden"
   | "rate-limited"
   | "offline"
-  | "network-failure"
+  // fetch() itself rejected while the browser reported online. This
+  // cannot reliably distinguish a provider outage, a DNS/TLS failure, a
+  // local network restriction, or — notably — a real HTTP error response
+  // (e.g. a 502) whose CORS headers were missing, which browsers expose
+  // to page JavaScript only as a generic TypeError. Never claim more
+  // certainty than that in user-facing text.
+  | "transport-failure"
   | "timeout"
   // The provider was reached and responded, but said no route/point is
   // possible — never confused with a genuine connectivity failure (see
@@ -13,6 +19,10 @@ export type RoutingErrorReason =
   // connection work).
   | "no-route-found"
   | "no-routable-point"
+  // An HTTP 500/502/503/504 was actually received — the provider itself
+  // is unavailable, as distinct from transport-failure (no response was
+  // ever received at all).
+  | "provider-unavailable"
   | "provider-error"
   | "malformed-response"
   | "no-geometry"
@@ -39,17 +49,23 @@ export class RoutingError extends Error {
    * openrouteservice sometimes echoes the request's own coordinates into
    * (see the adapter's redaction tests). */
   readonly providerErrorCode?: number;
+  /** The raw HTTP status, when a response was received at all — distinct
+   * from providerErrorCode, which is OpenRouteService's own body-level
+   * numbering (e.g. 2009), not the transport-level status (e.g. 502). */
+  readonly httpStatus?: number;
 
   constructor(
     reason: RoutingErrorReason,
     message: string,
     retryAfterSeconds?: number,
     providerErrorCode?: number,
+    httpStatus?: number,
   ) {
     super(message);
     this.name = "RoutingError";
     this.reason = reason;
     this.retryAfterSeconds = retryAfterSeconds;
     this.providerErrorCode = providerErrorCode;
+    this.httpStatus = httpStatus;
   }
 }

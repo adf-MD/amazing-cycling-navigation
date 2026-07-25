@@ -60,8 +60,9 @@ function mapErrorReasonToOutcome(reason: RoutingErrorReason): ProviderKeyOutcome
     case "rate-limited":
       return "quota-limited";
     case "offline":
-    case "network-failure":
+    case "transport-failure":
     case "timeout":
+    case "provider-unavailable":
       return "unavailable";
     case "no-route-found":
     case "no-routable-point":
@@ -82,6 +83,10 @@ function formatProviderCode(error: RoutingError): string {
     : "";
 }
 
+function formatHttpStatus(error: RoutingError): string {
+  return error.httpStatus !== undefined ? String(error.httpStatus) : "error";
+}
+
 function describeRoutingError(error: RoutingError): string {
   switch (error.reason) {
     case "no-api-key":
@@ -94,16 +99,18 @@ function describeRoutingError(error: RoutingError): string {
       return "The routing rate limit was reached. Try again shortly.";
     case "offline":
       return "You are offline. Connect to calculate a route.";
-    case "network-failure":
-      return "The routing request failed. Check your connection and try again.";
+    case "transport-failure":
+      return "The routing provider could not be reached. OpenRouteService may be temporarily unavailable, or the browser or network may have blocked the request. Try again later.";
     case "timeout":
       return "The routing request timed out. Try again.";
     case "no-route-found":
       return `No cycling route could be found between these waypoints — they may be separated by water, a barrier, or a gap in rideable roads. Your key and connection to OpenRouteService are working; try adjusting the route.${formatProviderCode(error)}`;
     case "no-routable-point":
       return `One of your waypoints is too far from a usable road for cycling. Try moving it closer to a street or cycle path. Your key and connection to OpenRouteService are working.${formatProviderCode(error)}`;
+    case "provider-unavailable":
+      return `OpenRouteService is temporarily unavailable (HTTP ${formatHttpStatus(error)}). Your waypoints have been retained. Try again later.`;
     case "provider-error":
-      return `${error.message}${formatProviderCode(error)}`;
+      return `The routing provider returned an unexpected error (HTTP ${formatHttpStatus(error)}).${formatProviderCode(error)}`;
     case "malformed-response":
     case "no-geometry":
     case "unknown":
