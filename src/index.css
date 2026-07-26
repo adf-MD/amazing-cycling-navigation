@@ -93,7 +93,12 @@ header h1 {
  * never depends on document flow beneath the map — the map canvas itself
  * fills 100% of its fixed-height parent, so anything rendered after it in
  * normal flow would overflow below the visible map area. max-width leaves
- * clear of Riding's two 48px, right:12 camera control buttons. */
+ * clear of Riding's two 48px, right:12 camera control buttons. Sits over
+ * variable map imagery rather than the app's own background, so it uses a
+ * fixed translucent-black/white pairing instead of --colour-bg/--colour-text
+ * — those swap for the app's light/dark scheme, not the map underneath.
+ * background-color (not opacity) keeps the text and link fully readable
+ * rather than fading them along with the backing box. */
 .map-attribution {
   position: absolute;
   left: 8px;
@@ -102,14 +107,14 @@ header h1 {
   max-width: calc(100% - 80px);
   padding: 2px 6px;
   border-radius: 4px;
-  background: var(--colour-bg);
-  color: var(--colour-text);
+  background-color: rgb(0 0 0 / 45%);
+  color: #ffffff;
   font-size: 0.7rem;
   line-height: 1.3;
 }
 
 .map-attribution a {
-  color: var(--colour-text);
+  color: inherit;
 }
 
 /* A deliberate gap below the map, replacing the accidental spacing the
