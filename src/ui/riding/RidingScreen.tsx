@@ -229,7 +229,11 @@ export function RidingScreen({
       </div>
 
       {nav.currentFix ? (
-        <div role="group" aria-label="Upcoming elevation window">
+        <div
+          role="group"
+          aria-label="Upcoming elevation window"
+          className="elevation-window-group"
+        >
           {ELEVATION_WINDOW_OPTIONS_METRES.map((windowMetres) => (
             <button
               key={windowMetres}

@@ -307,7 +307,10 @@ export function PlanningScreen({
           disabled={!crosshairCoordinate}
           style={{
             position: "absolute",
-            bottom: 12,
+            // Clears the map-attribution overlay's bottom-left corner
+            // (src/index.css's .map-attribution) on narrow phone widths,
+            // where this centred button would otherwise sit underneath it.
+            bottom: 44,
             left: "50%",
             transform: "translateX(-50%)",
             minHeight: 44,

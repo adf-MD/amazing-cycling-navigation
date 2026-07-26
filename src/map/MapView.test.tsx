@@ -209,6 +209,7 @@ describe("MapView", () => {
     render(<MapView points={points} mapFactory={factory} />);
 
     const attribution = screen.getByTestId("map-attribution");
+    expect(attribution).toHaveClass("map-attribution");
     const link = attribution.querySelector("a");
     expect(link).not.toBeNull();
     expect(link?.getAttribute("href")).toBe("https://www.openstreetmap.org/copyright");

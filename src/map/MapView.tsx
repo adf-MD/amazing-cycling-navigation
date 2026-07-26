@@ -741,7 +741,7 @@ export function MapView({
           </button>
         </div>
       ) : null}
-      <div data-testid="map-attribution">
+      <div className="map-attribution" data-testid="map-attribution">
         ©{" "}
         <a href={tileSource.attribution.url} target="_blank" rel="noreferrer">
           {tileSource.attribution.text}

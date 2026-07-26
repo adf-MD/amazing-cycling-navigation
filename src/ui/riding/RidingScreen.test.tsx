@@ -265,9 +265,11 @@ describe("RidingScreen", () => {
       headingDegrees: null,
     });
 
-    expect(
-      await screen.findByRole("group", { name: "Upcoming elevation window" }),
-    ).toBeInTheDocument();
+    const elevationWindowGroup = await screen.findByRole("group", {
+      name: "Upcoming elevation window",
+    });
+    expect(elevationWindowGroup).toBeInTheDocument();
+    expect(elevationWindowGroup).toHaveClass("elevation-window-group");
     expect(await screen.findByText(/10–20 m/)).toBeInTheDocument();
   });
 
