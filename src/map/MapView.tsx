@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { StyleSpecification } from "maplibre-gl";
-import type { Coordinate, RoutePoint } from "../domain/types.ts";
+import type { Coordinate, RoutePoint, RouteWarning } from "../domain/types.ts";
 import { logError } from "../platform/errorLog.ts";
 import {
   createMapLibreMap,
+  type LineLayerPaint,
   type MapErrorCategory,
   type MapFactory,
   type MapLibreLike,
@@ -22,6 +23,13 @@ import {
   buildWaypointFeatureCollections,
   type PlanningOverlayWaypoint,
 } from "./planningLayer.ts";
+import {
+  buildSelectedWarningFeatureCollection,
+  buildWarningFeatureCollectionsByCategory,
+  computeSelectedWarningBounds,
+  WARNING_CATEGORIES_IN_PAINT_ORDER,
+  type WarningCategory,
+} from "./warningLayer.ts";
 import { DEFAULT_TILE_SOURCE, type TileSourceConfig } from "./tileSource.ts";
 
 const COMPLETED_SOURCE_ID = "acn-route-completed";
@@ -41,6 +49,43 @@ const PLANNING_WAYPOINTS_LAYER_ID = "acn-planning-waypoints-marker";
 const PLANNING_SELECTED_WAYPOINT_SOURCE_ID = "acn-planning-waypoint-selected";
 const PLANNING_SELECTED_WAYPOINT_LAYER_ID = "acn-planning-waypoint-selected-marker";
 
+const WARNING_SOURCE_ID_BY_CATEGORY: Readonly<Record<WarningCategory, string>> = {
+  "unknown-surface": "acn-warning-unknown-surface",
+  "questionable-surface": "acn-warning-questionable-surface",
+  "unsuitable-surface": "acn-warning-unsuitable-surface",
+  obstacle: "acn-warning-obstacle",
+  ferry: "acn-warning-ferry",
+  other: "acn-warning-other",
+};
+const WARNING_LAYER_ID_BY_CATEGORY: Readonly<Record<WarningCategory, string>> = {
+  "unknown-surface": "acn-warning-unknown-surface-line",
+  "questionable-surface": "acn-warning-questionable-surface-line",
+  "unsuitable-surface": "acn-warning-unsuitable-surface-line",
+  obstacle: "acn-warning-obstacle-line",
+  ferry: "acn-warning-ferry-line",
+  other: "acn-warning-other-line",
+};
+const WARNING_SELECTED_SOURCE_ID = "acn-warning-selected";
+const WARNING_SELECTED_LAYER_ID = "acn-warning-selected-line";
+
+/** Distinctness is carried primarily by dash-pattern shape, not colour
+ * alone. Obstacle (access/steps/ford) is the most saturated/thickest of
+ * the non-selected categories, matching its topmost paint order — see
+ * WARNING_CATEGORIES_IN_PAINT_ORDER. Colours are fixed (not
+ * --colour-bg/--colour-text) since these sit over variable map imagery,
+ * not the app's own light/dark-scheme background. */
+const WARNING_CATEGORY_PAINT: Readonly<Record<WarningCategory, LineLayerPaint>> = {
+  "unknown-surface": { lineColor: "#5f6368", lineWidth: 4, lineDasharray: [1, 3] },
+  other: { lineColor: "#455a64", lineWidth: 5, lineDasharray: [2, 2, 6, 2] },
+  ferry: { lineColor: "#0d47a1", lineWidth: 5, lineDasharray: [8, 4] },
+  "questionable-surface": { lineColor: "#f2a900", lineWidth: 5, lineDasharray: [4, 2] },
+  "unsuitable-surface": { lineColor: "#d32f2f", lineWidth: 6, lineDasharray: [6, 2] },
+  obstacle: { lineColor: "#7b1fa2", lineWidth: 6, lineDasharray: [1, 1, 5, 1] },
+};
+/** Solid (no dash) and wider than any category above — contrasts with
+ * every dashed category rather than just repeating one of their colours. */
+const WARNING_SELECTED_PAINT: LineLayerPaint = { lineColor: "#000000", lineWidth: 8 };
+
 /** Every GeoJSON source this app itself creates — used to tell a genuine
  * external-basemap tile event apart from our own local data sources, which
  * report loaded almost immediately regardless of tile delivery (see the
@@ -54,6 +99,8 @@ const APP_OWNED_SOURCE_IDS: ReadonlySet<string> = new Set([
   PLANNING_PREVIEW_SOURCE_ID,
   PLANNING_WAYPOINTS_SOURCE_ID,
   PLANNING_SELECTED_WAYPOINT_SOURCE_ID,
+  ...Object.values(WARNING_SOURCE_ID_BY_CATEGORY),
+  WARNING_SELECTED_SOURCE_ID,
 ]);
 
 /** How long to wait for the style document itself to become structurally
@@ -128,6 +175,20 @@ export interface PlanningOverlay {
   onMapTap: (coordinate: Coordinate) => void;
 }
 
+/** Grouped, optional warning highlighting for Planning's route summary.
+ * Never used by Riding mode — when absent, the underlying warning sources
+ * stay empty and Riding's rendered output is unchanged. Sliced against
+ * MapView's own `points` prop, never a separately-supplied geometry, so
+ * the overlay can never disagree with the route line itself. */
+export interface WarningOverlay {
+  /** Already coalesced by the caller (see PlanningScreen) — MapView never
+   * re-coalesces, so list index and map-overlay index always agree. */
+  warnings: readonly RouteWarning[];
+  /** Index into `warnings` currently selected for highlighting/framing,
+   * or null for none. Out-of-range values are treated the same as null. */
+  selectedWarningIndex: number | null;
+}
+
 export interface MapViewProps {
   points: readonly RoutePoint[];
   /** Distance already ridden; the route line before this point is shown
@@ -165,6 +226,10 @@ export interface MapViewProps {
    * — omitted (the default) for every existing caller, leaving the
    * underlying sources empty and Riding mode's rendering unaffected. */
   planningOverlay?: PlanningOverlay;
+  /** Planning's inspectable route-warning highlighting — omitted (the
+   * default) for every existing caller, leaving the underlying warning
+   * sources empty and Riding mode's rendering unaffected. */
+  warningOverlay?: WarningOverlay;
 }
 
 /**
@@ -190,6 +255,7 @@ export function MapView({
   onUserCameraInteraction,
   onCameraSettled,
   planningOverlay,
+  warningOverlay,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreLike | null>(null);
@@ -309,6 +375,34 @@ export function MapView({
         lineWidth: 5,
         lineOpacity: 0.7,
       });
+      // Warning overlay: always created (fed empty collections when
+      // warningOverlay is absent), matching the planning-layer precedent
+      // below. Added right above the base route lines but before every
+      // marker layer, so warnings never obscure the current-position,
+      // start/finish or planning-waypoint markers. Added in
+      // WARNING_CATEGORIES_IN_PAINT_ORDER so a more severe category (e.g.
+      // obstacle) paints on top of a less severe one (e.g. unknown-surface)
+      // wherever their segments visually overlap. Distinct dash patterns,
+      // not colour alone, are what tells the categories apart. The
+      // selected-warning layer is added last of all six so it's never
+      // obscured by any category.
+      for (const category of WARNING_CATEGORIES_IN_PAINT_ORDER) {
+        map.addGeoJsonSource(
+          WARNING_SOURCE_ID_BY_CATEGORY[category],
+          EMPTY_FEATURE_COLLECTION,
+        );
+        map.addLineLayer(
+          WARNING_LAYER_ID_BY_CATEGORY[category],
+          WARNING_SOURCE_ID_BY_CATEGORY[category],
+          WARNING_CATEGORY_PAINT[category],
+        );
+      }
+      map.addGeoJsonSource(WARNING_SELECTED_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
+      map.addLineLayer(
+        WARNING_SELECTED_LAYER_ID,
+        WARNING_SELECTED_SOURCE_ID,
+        WARNING_SELECTED_PAINT,
+      );
       map.addGeoJsonSource(POSITION_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
       map.addCircleLayer(POSITION_LAYER_ID, POSITION_SOURCE_ID, {
         circleRadius: 8,
@@ -693,6 +787,70 @@ export function MapView({
       buildUnroutedPreviewFeatureCollection(planningPreviewCoordinates ?? []),
     );
   }, [planningPreviewCoordinates, styleStructurallyReady]);
+
+  const warningOverlayWarnings = warningOverlay?.warnings;
+  const warningOverlaySelectedIndex = warningOverlay?.selectedWarningIndex ?? null;
+
+  // Populates all 6 category sources. Deliberately depends on `points`
+  // too (unlike the planning-waypoint effect above) — warning geometry is
+  // sliced from the route's own points, so a route recalculation must
+  // re-slice it, not just re-run when the warnings list identity changes.
+  useEffect(() => {
+    if (!styleStructurallyReady) return;
+    const collectionsByCategory = buildWarningFeatureCollectionsByCategory(
+      points,
+      warningOverlayWarnings ?? [],
+    );
+    for (const category of WARNING_CATEGORIES_IN_PAINT_ORDER) {
+      mapRef.current?.setGeoJsonSourceData(
+        WARNING_SOURCE_ID_BY_CATEGORY[category],
+        collectionsByCategory[category],
+      );
+    }
+  }, [points, warningOverlayWarnings, styleStructurallyReady]);
+
+  // Populates the selected-warning source separately from the category
+  // sources above, so selecting/clearing a warning (a frequent action)
+  // never has to rebuild all 6 category collections.
+  useEffect(() => {
+    if (!styleStructurallyReady) return;
+    mapRef.current?.setGeoJsonSourceData(
+      WARNING_SELECTED_SOURCE_ID,
+      buildSelectedWarningFeatureCollection(
+        points,
+        warningOverlayWarnings ?? [],
+        warningOverlaySelectedIndex,
+      ),
+    );
+  }, [
+    points,
+    warningOverlayWarnings,
+    warningOverlaySelectedIndex,
+    styleStructurallyReady,
+  ]);
+
+  // Frames the selected warning's own segment — a Planning-only camera
+  // action, reusing the same fitBounds adapter method as the initial
+  // overview fit. Only fires on *selecting* (computeSelectedWarningBounds
+  // returns a bounds only for a valid selection); clearing a selection
+  // never moves the camera. This effect is unreachable unless a caller
+  // supplies warningOverlay — Riding never does — so it cannot leak into
+  // Riding's camera state.
+  useEffect(() => {
+    if (!styleStructurallyReady) return;
+    const bounds = computeSelectedWarningBounds(
+      points,
+      warningOverlayWarnings ?? [],
+      warningOverlaySelectedIndex,
+    );
+    if (!bounds) return;
+    mapRef.current?.fitBounds(bounds);
+  }, [
+    warningOverlaySelectedIndex,
+    warningOverlayWarnings,
+    points,
+    styleStructurallyReady,
+  ]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>

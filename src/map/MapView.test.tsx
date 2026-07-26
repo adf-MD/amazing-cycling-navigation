@@ -11,12 +11,18 @@ import type {
 } from "./mapAdapter.ts";
 import { clearErrorLog, getRecentErrors } from "../platform/errorLog.ts";
 import { clearMapDiagnostics, getRecentMapAttempts } from "./mapDiagnostics.ts";
-import type { Coordinate, RoutePoint } from "../domain/types.ts";
+import type { Coordinate, RoutePoint, RouteWarning } from "../domain/types.ts";
 
 const points: RoutePoint[] = [
   { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
   { coordinate: [0.001, 51], elevationMetres: 12, distanceFromStartMetres: 100 },
 ];
+
+const warningPoints: RoutePoint[] = Array.from({ length: 5 }, (_, index) => ({
+  coordinate: [index * 0.001, 51] as Coordinate,
+  elevationMetres: null,
+  distanceFromStartMetres: index * 100,
+}));
 
 interface MockMapHandle {
   factory: MapFactory;
@@ -1168,6 +1174,223 @@ describe("MapView", () => {
 
       expect(mock.constructedStyles).toHaveLength(2);
       expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+    });
+  });
+
+  describe("warningOverlay", () => {
+    const warnings: RouteWarning[] = [
+      {
+        kind: "questionable-surface",
+        startDistanceMetres: 50,
+        endDistanceMetres: 150,
+        message: "Questionable surface for a road bike.",
+      },
+      {
+        kind: "ford",
+        startDistanceMetres: 300,
+        endDistanceMetres: 350,
+        message: "Ford crossing.",
+      },
+    ];
+
+    it("leaves every warning source empty when the prop is absent, exactly like today", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={warningPoints} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      expect(mock.sources.get("acn-warning-questionable-surface")?.features).toEqual([]);
+      expect(mock.sources.get("acn-warning-unsuitable-surface")?.features).toEqual([]);
+      expect(mock.sources.get("acn-warning-unknown-surface")?.features).toEqual([]);
+      expect(mock.sources.get("acn-warning-obstacle")?.features).toEqual([]);
+      expect(mock.sources.get("acn-warning-ferry")?.features).toEqual([]);
+      expect(mock.sources.get("acn-warning-other")?.features).toEqual([]);
+      expect(mock.sources.get("acn-warning-selected")?.features).toEqual([]);
+    });
+
+    it("adds all 7 warning source/layer pairs, each with distinct, documented paint", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={warningPoints} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      const layerIds = [
+        "acn-warning-unknown-surface-line",
+        "acn-warning-other-line",
+        "acn-warning-ferry-line",
+        "acn-warning-questionable-surface-line",
+        "acn-warning-unsuitable-surface-line",
+        "acn-warning-obstacle-line",
+        "acn-warning-selected-line",
+      ];
+      for (const layerId of layerIds) {
+        expect(mock.layers.has(layerId)).toBe(true);
+      }
+
+      const calls = mock.addLineLayerSpy.mock.calls as [
+        string,
+        string,
+        { lineColor: string; lineWidth: number; lineDasharray?: number[] },
+      ][];
+      const paintFor = (layerId: string) => calls.find(([id]) => id === layerId)?.[2];
+
+      // Every category (and selected) has its own colour, and dash pattern
+      // distinguishes categories from each other rather than colour alone.
+      const dasharrays = layerIds.map((id) =>
+        JSON.stringify(paintFor(id)?.lineDasharray),
+      );
+      expect(new Set(dasharrays).size).toBe(layerIds.length);
+      // Selected is solid (no dasharray) and wider than every category.
+      const selectedPaint = paintFor("acn-warning-selected-line");
+      expect(selectedPaint?.lineDasharray).toBeUndefined();
+      for (const categoryLayerId of layerIds.slice(0, -1)) {
+        expect(selectedPaint?.lineWidth).toBeGreaterThan(
+          paintFor(categoryLayerId)?.lineWidth ?? 0,
+        );
+      }
+    });
+
+    it("populates the category source with the warning's sliced geometry", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          warningOverlay={{ warnings, selectedWarningIndex: null }}
+        />,
+      );
+      mock.triggerLoad();
+
+      const questionable = mock.sources.get("acn-warning-questionable-surface");
+      expect(questionable?.features).toHaveLength(1);
+      expect(questionable?.features[0]?.geometry).toMatchObject({
+        type: "LineString",
+        coordinates: [
+          [0.0005, 51],
+          [0.001, 51],
+          [0.0015, 51],
+        ],
+      });
+
+      const obstacle = mock.sources.get("acn-warning-obstacle");
+      expect(obstacle?.features).toHaveLength(1);
+    });
+
+    it("populates the selected source only for the selected index, and clears it when deselected", () => {
+      const mock = createMockMapFactory();
+      const { rerender } = render(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          warningOverlay={{ warnings, selectedWarningIndex: 1 }}
+        />,
+      );
+      mock.triggerLoad();
+
+      expect(mock.sources.get("acn-warning-selected")?.features).toHaveLength(1);
+      expect(
+        mock.sources.get("acn-warning-selected")?.features[0]?.geometry,
+      ).toMatchObject({
+        coordinates: [
+          [0.003, 51],
+          [0.0035, 51],
+        ],
+      });
+
+      rerender(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          warningOverlay={{ warnings, selectedWarningIndex: null }}
+        />,
+      );
+
+      expect(mock.sources.get("acn-warning-selected")?.features).toEqual([]);
+    });
+
+    it("frames the selected warning's own bounds via fitBounds, but never on deselect", () => {
+      const mock = createMockMapFactory();
+      const { rerender } = render(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          warningOverlay={{ warnings, selectedWarningIndex: null }}
+        />,
+      );
+      mock.triggerLoad();
+      mock.fitBoundsSpy.mockClear();
+
+      rerender(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          warningOverlay={{ warnings, selectedWarningIndex: 0 }}
+        />,
+      );
+
+      expect(mock.fitBoundsSpy).toHaveBeenCalledWith({
+        southWest: [0.0005, 51],
+        northEast: [0.0015, 51],
+      });
+
+      mock.fitBoundsSpy.mockClear();
+      rerender(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          warningOverlay={{ warnings, selectedWarningIndex: null }}
+        />,
+      );
+
+      expect(mock.fitBoundsSpy).not.toHaveBeenCalled();
+    });
+
+    it("populates warning sources on style-ready alone, before full imagery loads", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          warningOverlay={{ warnings, selectedWarningIndex: null }}
+        />,
+      );
+
+      mock.triggerStyleLoaded();
+
+      expect(mock.sources.get("acn-warning-questionable-surface")?.features).toHaveLength(
+        1,
+      );
+    });
+
+    it("re-slices warning geometry when points change, even with the same warnings array", () => {
+      const mock = createMockMapFactory();
+      const { rerender } = render(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          warningOverlay={{ warnings, selectedWarningIndex: null }}
+        />,
+      );
+      mock.triggerLoad();
+
+      const shiftedPoints: RoutePoint[] = warningPoints.map((point) => ({
+        ...point,
+        coordinate: [point.coordinate[0] + 1, point.coordinate[1]],
+      }));
+      rerender(
+        <MapView
+          points={shiftedPoints}
+          mapFactory={mock.factory}
+          warningOverlay={{ warnings, selectedWarningIndex: null }}
+        />,
+      );
+
+      const questionable = mock.sources.get("acn-warning-questionable-surface");
+      expect(questionable?.features[0]?.geometry).toMatchObject({
+        coordinates: [
+          [1.0005, 51],
+          [1.001, 51],
+          [1.0015, 51],
+        ],
+      });
     });
   });
 });

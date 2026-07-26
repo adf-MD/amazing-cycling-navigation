@@ -187,4 +187,138 @@ describe("normalizeOpenRouteServiceRoute", () => {
 
     expect(() => normalizeOpenRouteServiceRoute(response, OPTIONS)).toThrow(RoutingError);
   });
+
+  describe("overlapping and noisy surface ranges", () => {
+    it("does not double-count an overlap between differently-classified ranges (earlier-sorted range wins)", () => {
+      // Points 0-3 (paved) and 2-5 (unsuitable) genuinely overlap at
+      // points 2-3. The earlier-sorted (paved) range keeps that distance;
+      // the unsuitable range only counts from where the paved range left
+      // off, so the two buckets never sum to more than the route total.
+      const response = buildResponse({
+        extras: {
+          surface: {
+            values: [
+              [0, 3, 1],
+              [2, 5, 15],
+            ],
+          },
+        },
+      });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+      const summary = route.surfaceSummary;
+      expect(summary).toBeDefined();
+      if (!summary) return;
+
+      const sum =
+        summary.pavedMetres +
+        summary.questionableMetres +
+        summary.unsuitableMetres +
+        summary.unknownMetres;
+      expect(sum).toBeCloseTo(route.distanceMetres, 6);
+
+      expect(route.warnings).toHaveLength(1);
+      expect(route.warnings[0]?.kind).toBe("unsuitable-surface");
+      // The unsuitable warning starts where the paved range's own end
+      // is, not at its own raw (overlapping) start.
+      expect(route.warnings[0]?.startDistanceMetres).toBeCloseTo(
+        route.points[3]?.distanceFromStartMetres ?? -1,
+        6,
+      );
+    });
+
+    it("coalesces two same-classification ranges separated only by a sub-metre gap", () => {
+      // p2 sits a fraction of a metre past p1 — the two "gravel"
+      // (questionable) triples are logically continuous, and the gap
+      // between them is floating-point/GPS noise, not a real unknown
+      // stretch.
+      const response: OrsFeatureCollectionResponse = {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {
+              summary: { distance: 0, duration: 0 },
+              extras: {
+                surface: {
+                  values: [
+                    [0, 1, 10],
+                    [2, 4, 10],
+                  ],
+                },
+              },
+            },
+            geometry: {
+              type: "LineString",
+              coordinates: [
+                [0, 51],
+                [0.001, 51],
+                [0.0010001, 51],
+                [0.002, 51],
+                [0.003, 51],
+              ],
+            },
+          },
+        ],
+      };
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toHaveLength(1);
+      expect(route.warnings[0]?.kind).toBe("questionable-surface");
+      expect(route.warnings[0]?.startDistanceMetres).toBeCloseTo(0, 6);
+      expect(route.warnings[0]?.endDistanceMetres).toBeCloseTo(route.distanceMetres, 6);
+      expect(route.surfaceSummary?.unknownMetres ?? -1).toBeCloseTo(0, 6);
+    });
+
+    it("safely ignores a surface triple whose point indices are entirely out of range", () => {
+      const response = buildResponse({
+        extras: {
+          surface: {
+            values: [
+              [0, 2, 1],
+              [3, 5, 15],
+              [10, 12, 1], // out of range for a 6-point route
+            ],
+          },
+        },
+      });
+
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+      const summary = route.surfaceSummary;
+      expect(summary).toBeDefined();
+      if (!summary) return;
+      const sum =
+        summary.pavedMetres +
+        summary.questionableMetres +
+        summary.unsuitableMetres +
+        summary.unknownMetres;
+      expect(sum).toBeCloseTo(route.distanceMetres, 6);
+      expect(route.warnings).toHaveLength(1);
+    });
+
+    it("keeps buckets summing to the total distance for out-of-order triples", () => {
+      const response = buildResponse({
+        extras: {
+          surface: {
+            values: [
+              [3, 5, 15],
+              [0, 2, 1],
+            ],
+          },
+        },
+      });
+
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+      const summary = route.surfaceSummary;
+      expect(summary).toBeDefined();
+      if (!summary) return;
+      const sum =
+        summary.pavedMetres +
+        summary.questionableMetres +
+        summary.unsuitableMetres +
+        summary.unknownMetres;
+      expect(sum).toBeCloseTo(route.distanceMetres, 6);
+      expect(summary.pavedMetres).toBeGreaterThan(0);
+      expect(summary.unsuitableMetres).toBeGreaterThan(0);
+    });
+  });
 });

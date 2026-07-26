@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
 import { exportRouteToGpx } from "../../gpx/exportGpx.ts";
-import { MapView, type CameraTarget, type PlanningOverlay } from "../../map/MapView.tsx";
+import {
+  MapView,
+  type CameraTarget,
+  type PlanningOverlay,
+  type WarningOverlay,
+} from "../../map/MapView.tsx";
 import type { MapFactory } from "../../map/mapAdapter.ts";
+import { coalesceAdjacentWarnings } from "../../navigation/warningGeometry.ts";
 import { getApproximateLocationOnce } from "../../platform/geolocation.ts";
 import { logError } from "../../platform/errorLog.ts";
 import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
@@ -95,6 +101,7 @@ export function PlanningScreen({
   const [initialCameraTarget, setInitialCameraTarget] = useState<CameraTarget | null>(
     null,
   );
+  const [selectedWarningIndex, setSelectedWarningIndex] = useState<number | null>(null);
 
   const keyQuery = useCallback(() => getProviderKey(), []);
   const key = useLiveQuery(keyQuery);
@@ -118,6 +125,38 @@ export function PlanningScreen({
     avoidFerries,
     adapter,
   });
+
+  // Extracted before memoizing: usePlanningRoute's returned state object is
+  // reconstructed every render even when nothing changed, so memoizing
+  // displayWarnings directly off `routing.state` would re-slice warning
+  // geometry on every unrelated render (e.g. every keystroke in the route
+  // name field).
+  const routedRoute = routing.state.kind === "routed" ? routing.state.route : null;
+  const displayWarnings = useMemo(
+    () => (routedRoute ? coalesceAdjacentWarnings(routedRoute.warnings) : []),
+    [routedRoute],
+  );
+
+  // A new calculation invalidates the previous selection — the warnings
+  // array is rebuilt wholesale each time (see RouteSummaryPanel), so a
+  // stale index could otherwise point at an unrelated warning. Adjusted
+  // directly during render (React's documented pattern for resetting
+  // state when a derived value changes) rather than in an effect, which
+  // would cause an avoidable extra render.
+  const lastRoutedRouteForSelectionRef = useRef<PlannedRoute | null>(null);
+  if (lastRoutedRouteForSelectionRef.current !== routedRoute) {
+    lastRoutedRouteForSelectionRef.current = routedRoute;
+    if (selectedWarningIndex !== null) {
+      setSelectedWarningIndex(null);
+    }
+  }
+
+  const handleSelectWarning = useCallback((index: number) => {
+    setSelectedWarningIndex(index);
+  }, []);
+  const handleClearWarningSelection = useCallback(() => {
+    setSelectedWarningIndex(null);
+  }, []);
 
   // Loads any previously saved draft exactly once, before draft-persisting
   // starts below — otherwise the persist effect's first run (an empty
@@ -269,6 +308,11 @@ export function PlanningScreen({
 
   const mapPoints = routing.state.kind === "routed" ? routing.state.route.points : [];
 
+  const warningOverlay: WarningOverlay = {
+    warnings: displayWarnings,
+    selectedWarningIndex,
+  };
+
   return (
     <section aria-label="Planning">
       <h2>Plan a route</h2>
@@ -280,6 +324,7 @@ export function PlanningScreen({
           points={mapPoints}
           mapFactory={mapFactory}
           planningOverlay={planningOverlay}
+          warningOverlay={warningOverlay}
           cameraTarget={initialCameraTarget}
           onCameraSettled={(camera) => {
             setCrosshairCoordinate(camera.coordinate);
@@ -412,6 +457,10 @@ export function PlanningScreen({
         <RouteSummaryPanel
           route={routing.state.route}
           waypointCount={routing.state.waypoints.length}
+          warnings={displayWarnings}
+          selectedWarningIndex={selectedWarningIndex}
+          onSelectWarning={handleSelectWarning}
+          onClearWarningSelection={handleClearWarningSelection}
         />
       ) : null}
 

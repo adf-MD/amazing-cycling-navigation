@@ -18,6 +18,9 @@ interface MockMapHandle {
   triggerCameraSettled: (coordinate: Coordinate) => void;
   triggerMapTap: (coordinate: Coordinate) => void;
   setCameraSpy: ReturnType<typeof vi.fn>;
+  fitBoundsSpy: ReturnType<typeof vi.fn>;
+  addLineLayerSpy: ReturnType<typeof vi.fn>;
+  sources: Map<string, GeoJSON.FeatureCollection>;
 }
 
 function createMockMapFactory(): MockMapHandle {
@@ -33,6 +36,9 @@ function createMockMapFactory(): MockMapHandle {
     | undefined;
   let mapTapListener: ((coordinate: Coordinate) => void) | undefined;
   const setCameraSpy = vi.fn();
+  const fitBoundsSpy = vi.fn();
+  const addLineLayerSpy = vi.fn();
+  const sources = new Map<string, GeoJSON.FeatureCollection>();
 
   const factory: MapFactory = () => {
     const map: MapLibreLike = {
@@ -44,13 +50,19 @@ function createMockMapFactory(): MockMapHandle {
       },
       onError: () => undefined,
       onSourceData: () => undefined,
-      addGeoJsonSource: () => undefined,
-      setGeoJsonSourceData: () => undefined,
-      hasSource: () => false,
-      addLineLayer: () => undefined,
+      addGeoJsonSource: (id, data) => {
+        sources.set(id, data);
+      },
+      setGeoJsonSourceData: (id, data) => {
+        sources.set(id, data);
+      },
+      hasSource: (id) => sources.has(id),
+      addLineLayer: (id, sourceId, paint) => {
+        addLineLayerSpy(id, sourceId, paint);
+      },
       addCircleLayer: () => undefined,
       hasLayer: () => false,
-      fitBounds: () => undefined,
+      fitBounds: fitBoundsSpy,
       getCenter: () => [0, 51],
       getZoom: () => 14,
       onUserCameraInteraction: () => undefined,
@@ -70,6 +82,9 @@ function createMockMapFactory(): MockMapHandle {
   return {
     factory,
     setCameraSpy,
+    fitBoundsSpy,
+    addLineLayerSpy,
+    sources,
     triggerLoad: () => {
       act(() => {
         // Real MapLibre always fires "style.load" strictly before "load".
@@ -116,6 +131,45 @@ function buildRoute(pointCount = 10): PlannedRoute {
       unknownMetres: 0,
     },
     warnings: [],
+    source: { kind: "planner", provider: "openrouteservice", profile: "cycling-road" },
+  };
+}
+
+function buildRouteWithWarnings(): PlannedRoute {
+  const pointCount = 10;
+  return {
+    id: "route-warnings-1",
+    name: "Planned route",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    points: Array.from({ length: pointCount }, (_, i) => ({
+      coordinate: [i * 0.001, 51] as Coordinate,
+      elevationMetres: 10 + i,
+      distanceFromStartMetres: i * 100,
+    })),
+    manoeuvres: [],
+    distanceMetres: (pointCount - 1) * 100,
+    ascentMetres: 12,
+    descentMetres: 4,
+    surfaceSummary: {
+      pavedMetres: 600,
+      questionableMetres: 200,
+      unsuitableMetres: 100,
+      unknownMetres: 0,
+    },
+    warnings: [
+      {
+        kind: "questionable-surface",
+        startDistanceMetres: 100,
+        endDistanceMetres: 300,
+        message: "Questionable surface for a road bike.",
+      },
+      {
+        kind: "unsuitable-surface",
+        startDistanceMetres: 600,
+        endDistanceMetres: 700,
+        message: "Unsuitable surface for a road bike.",
+      },
+    ],
     source: { kind: "planner", provider: "openrouteservice", profile: "cycling-road" },
   };
 }
@@ -532,4 +586,88 @@ describe("PlanningScreen", () => {
       expect(draft?.waypoints).toHaveLength(2);
     });
   });
+
+  it(
+    "calculates a route with warnings, shows surface totals, submits warning geometry " +
+      "to the map, and lets selecting a warning highlight and frame it, without ever " +
+      "reaching the network",
+    async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      const user = userEvent.setup();
+      await saveProviderKey("dummy-test-key");
+      const map = createMockMapFactory();
+      const route = buildRouteWithWarnings();
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          routingProvider={buildResolvedAdapter(route)}
+        />,
+      );
+      map.triggerLoad();
+
+      await addWaypointViaCrosshair(map, user, [0, 51]);
+      await addWaypointViaCrosshair(map, user, [0.01, 51]);
+      const calculateButton = await waitFor(() => {
+        const button = screen.getByRole("button", { name: /calculate route/i });
+        expect(button).toBeEnabled();
+        return button;
+      });
+      await user.click(calculateButton);
+
+      const summaryRegion = await waitFor(() => {
+        const region = screen.getByRole("region", { name: "Route summary" });
+        expect(region).toBeInTheDocument();
+        return region;
+      });
+
+      // 1 & 2: a routed response was calculated and surface totals are shown.
+      expect(within(summaryRegion).getByText("Paved: 600 m")).toBeInTheDocument();
+      expect(within(summaryRegion).getByText("Questionable: 200 m")).toBeInTheDocument();
+      expect(within(summaryRegion).getByText("Unsuitable: 100 m")).toBeInTheDocument();
+
+      // 3: warning segments were submitted to the map's category sources.
+      await waitFor(() => {
+        expect(
+          map.sources.get("acn-warning-questionable-surface")?.features,
+        ).toHaveLength(1);
+        expect(map.sources.get("acn-warning-unsuitable-surface")?.features).toHaveLength(
+          1,
+        );
+      });
+
+      // 4: selecting a warning highlights (aria-pressed + selected map
+      // source) and frames it (a new fitBounds call beyond the initial
+      // overview fit).
+      const fitBoundsCallsBeforeSelect = map.fitBoundsSpy.mock.calls.length;
+      const warningButton = within(summaryRegion).getByRole("button", {
+        name: /questionable surface for a road bike/i,
+      });
+      expect(warningButton).toHaveAttribute("aria-pressed", "false");
+      await user.click(warningButton);
+
+      expect(warningButton).toHaveAttribute("aria-pressed", "true");
+      expect(map.fitBoundsSpy.mock.calls.length).toBeGreaterThan(
+        fitBoundsCallsBeforeSelect,
+      );
+      await waitFor(() => {
+        expect(map.sources.get("acn-warning-selected")?.features).toHaveLength(1);
+      });
+
+      // Selecting again clears the selection.
+      await user.click(warningButton);
+      expect(warningButton).toHaveAttribute("aria-pressed", "false");
+      await waitFor(() => {
+        expect(map.sources.get("acn-warning-selected")?.features).toEqual([]);
+      });
+
+      // 5: the route remains saveable and exportable throughout.
+      expect(screen.getByRole("button", { name: /save route/i })).toBeEnabled();
+      expect(screen.getByRole("button", { name: /export gpx/i })).toBeEnabled();
+
+      // 6: no live network request was ever required — the injected
+      // routingProvider fully replaced the real ORS adapter.
+      expect(fetchSpy).not.toHaveBeenCalled();
+    },
+  );
 });

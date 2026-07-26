@@ -60,13 +60,27 @@ interface ClassifiedRange {
   classification: SurfaceClassification | "unknown";
 }
 
+/** Sub-metre gaps/overlaps between provider ranges are floating-point or
+ * GPS-precision noise, not a genuine "unknown" stretch or a real double
+ * count — absorbed via the cursor clamp below rather than surfaced. */
+const GAP_TOLERANCE_METRES = 0.5;
+
 /**
  * Builds a SurfaceSummary + inspectable RouteWarning list from ORS's
- * surface extra_info triples. Triples are sorted, coalesced when adjacent
- * ranges share a classification, and any gap (including before the first
- * triple or after the last) is filled as "unknown" — so the four buckets
- * always sum to the route's total distance, and missing data is never
- * silently treated as paved or unsuitable.
+ * surface extra_info triples. Triples are sorted by start index, then
+ * walked with a monotonic `cursor` (the distance already accounted for):
+ * a genuine overlap between two differently-classified ranges is resolved
+ * by giving precedence to whichever range's distance was already claimed
+ * by an earlier-sorted range ("earlier-sorted range wins the overlap" — a
+ * range can never re-claim distance already attributed to one that
+ * sorted before it). A sub-metre gap between `cursor` and a new range's
+ * raw start is noise rather than a genuine "unknown" stretch, and is
+ * absorbed into the new range instead of spawning a spurious sliver.
+ * Both rules collapse to one clamp: a new range's start is never earlier
+ * than `cursor`. Any remaining gap (before the first triple, between
+ * ranges, or after the last) is filled as "unknown" — so the four
+ * buckets always sum to the route's total distance, and missing data is
+ * never silently treated as paved or unsuitable.
  */
 function buildSurfaceSummaryAndWarnings(
   extras: OrsExtras | undefined,
@@ -95,8 +109,14 @@ function buildSurfaceSummaryAndWarnings(
   let cursor = 0;
 
   for (const [startIndex, endIndex, valueCode] of sorted) {
-    const start = distanceAt(startIndex);
-    const end = Math.max(start, distanceAt(endIndex));
+    const rawStart = distanceAt(startIndex);
+    const rawEnd = Math.max(rawStart, distanceAt(endIndex));
+    const start = rawStart - cursor <= GAP_TOLERANCE_METRES ? cursor : rawStart;
+    const end = Math.max(start, rawEnd);
+    // Wholly covered by an earlier-sorted range (or a degenerate/
+    // out-of-range index pair) — skip safely, cursor unchanged.
+    if (end <= start) continue;
+
     if (start > cursor) {
       ranges.push({ start: cursor, end: start, classification: "unknown" });
     }
@@ -109,8 +129,17 @@ function buildSurfaceSummaryAndWarnings(
     }
     cursor = Math.max(cursor, end);
   }
-  if (cursor < totalDistanceMetres) {
+  if (totalDistanceMetres - cursor > GAP_TOLERANCE_METRES) {
     ranges.push({ start: cursor, end: totalDistanceMetres, classification: "unknown" });
+  } else if (cursor < totalDistanceMetres) {
+    // A trailing noise-level gap is absorbed into the last range rather
+    // than spawning its own spurious sliver.
+    const last = ranges.at(-1);
+    if (last) {
+      last.end = totalDistanceMetres;
+    } else {
+      ranges.push({ start: cursor, end: totalDistanceMetres, classification: "unknown" });
+    }
   }
 
   let pavedMetres = 0;
