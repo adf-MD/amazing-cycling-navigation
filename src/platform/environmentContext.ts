@@ -42,3 +42,15 @@ export function isStandaloneDisplayMode(): boolean {
   }
   return false;
 }
+
+/** Whether the user has requested reduced motion at the OS/browser level
+ * — used to keep the warning-list reveal scroll (see
+ * RouteSummaryPanel.tsx) restrained rather than an animated scroll, per
+ * CLAUDE.md's "restrained motion" rule. Same guarded-matchMedia pattern
+ * as isStandaloneDisplayMode above; false (motion allowed) when
+ * matchMedia itself isn't available, matching that function's own
+ * conservative fallback. */
+export function prefersReducedMotion(): boolean {
+  if (typeof window.matchMedia !== "function") return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}

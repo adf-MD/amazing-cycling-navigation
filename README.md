@@ -17,10 +17,9 @@ warnings, saving the result locally, and exporting it as GPX. See
 up your own key.
 
 Still deferred within Milestone 3: per-leg (rather than whole-route)
-recalculation, on-map warning-segment highlighting, `waytype`/`access`
-provider extras (so `access`/`steps`/`ford`/`ferry` warnings never occur yet —
-only surface-based warnings do), and the road-speed-appropriate next-manoeuvre
-display planned for Milestone 4.
+recalculation, `waytype`/`access` provider extras (so `access`/`steps`/
+`ford`/`ferry` warnings never occur yet — only surface-based warnings do), and
+the road-speed-appropriate next-manoeuvre display planned for Milestone 4.
 
 ## Requirements
 
@@ -223,7 +222,9 @@ What this means in practice:
 - Surface warnings only use the provider's `surface` extra; `waytype`/`access`
   extras (which would add `access`/`steps`/`ford`/`ferry` warnings) aren't
   requested yet, so those warning kinds never occur in this release.
-- Warnings are listed as text, not highlighted on the map.
+- Route warnings are highlighted and framed on the map, and selection is
+  two-way — selecting a warning in the list or tapping its rendered segment
+  on the map does the same thing.
 - The default map style is [OpenFreeMap](https://openfreemap.org) Liberty —
   no API key required, and explicitly intended for third-party app use
   (unlike `tile.openstreetmap.org`'s community endpoint). Swap it via

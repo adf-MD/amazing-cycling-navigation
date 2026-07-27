@@ -23,6 +23,13 @@ const FOLLOW_VERTICAL_OFFSET_PX = 60;
  * responsive to a fresh fix, long enough to avoid a visible jump. */
 const FOLLOW_EASE_DURATION_MS = 600;
 
+/** Half-width/height, in CSS pixels, of the small screen-space box used
+ * to hit-test a tapped warning segment — independent of geographic zoom,
+ * so a thin line stays comfortably tappable on a phone without needing
+ * the visible line itself to be drawn wider. 12-16px is the generally
+ * accepted minimum touch-slop radius; 14 sits in the middle of that. */
+const WARNING_TAP_HIT_TOLERANCE_PX = 14;
+
 /**
  * Distinguishes a fatal style-document failure from a recoverable
  * resource failure, verified directly against the installed maplibre-gl
@@ -51,6 +58,17 @@ export interface MapErrorInfo {
 export interface MapSourceDataInfo {
   sourceId: string;
   isSourceLoaded: boolean;
+}
+
+/** The one safe, project-owned piece of identity a warning hit-test can
+ * report — never a full MapLibre feature (no geometry, no raw
+ * style/provider properties leak out of this adapter). `warningIndex` is
+ * the raw value read off the topmost matching feature's own
+ * `warningIndex` property (see warningLayer.ts's WarningFeatureProperties)
+ * — untyped and NOT yet validated as genuinely in range; the caller must
+ * run it through warningLayer.ts's resolveWarningIndexHit before use. */
+export interface WarningFeatureHit {
+  warningIndex: unknown;
 }
 
 export interface LineLayerPaint {
@@ -146,12 +164,33 @@ export interface MapLibreLike {
    * suppresses `click` after real pointer movement, verified against the
    * installed package's source), so Planning can use this directly for
    * "tap to place a waypoint" without extra drag-distance tracking here.
-   * Single map-wide listener — deliberately not layer-scoped, never calls
-   * queryRenderedFeatures. A future map-to-list warning-tapping feature
-   * will need feature hit-testing here (or a layer-scoped replacement)
-   * and must respect the event-priority policy documented in
-   * PlanningScreen.tsx next to handlePlacementAt. */
+   * Single map-wide listener — deliberately not layer-scoped, and this
+   * method itself never calls queryRenderedFeatures. Warning-feature hit
+   * testing (map-to-list warning tapping) is a separate, additional
+   * method — see queryTopWarningFeatureAt below — which MapView.tsx calls
+   * with the same Coordinate this listener reports, before ever
+   * forwarding to a planningOverlay's own onMapTap; see the event-priority
+   * policy documented in PlanningScreen.tsx next to handlePlacementAt. */
   onMapTap(listener: (coordinate: Coordinate) => void): void;
+  /** Hit-tests only the given layer ids (never a layer the caller omits —
+   * e.g. MapView must omit the selected-warning highlight layer) in a
+   * small screen-space box of WARNING_TAP_HIT_TOLERANCE_PX around
+   * `coordinate`'s on-screen position, re-derived internally via the real
+   * Map's own `.project()` — deliberately takes the same `Coordinate`
+   * onMapTap's own listener already receives, so MapView can call this
+   * straight from that callback with zero changes to onMapTap's own
+   * contract or test call sites. When multiple queried layers' features
+   * overlap, MapLibre returns the topmost-rendered feature first — this
+   * method returns exactly that first result (verified against the
+   * installed package's own documented queryRenderedFeatures ordering
+   * guarantee). Returns null when nothing was hit, `layerIds` is empty, or
+   * the query itself is not currently possible (style/layers not
+   * structurally ready) — never throws, so a hit-test failure always
+   * safely degrades to "no hit" rather than surfacing an error. */
+  queryTopWarningFeatureAt(
+    coordinate: Coordinate,
+    layerIds: readonly string[],
+  ): WarningFeatureHit | null;
   remove(): void;
 }
 
@@ -373,6 +412,36 @@ export class MapLibreAdapter implements MapLibreLike {
     this.map.on("click", (event) => {
       listener([event.lngLat.lng, event.lngLat.lat]);
     });
+  }
+
+  queryTopWarningFeatureAt(
+    coordinate: Coordinate,
+    layerIds: readonly string[],
+  ): WarningFeatureHit | null {
+    if (layerIds.length === 0) return null;
+    try {
+      const point = this.map.project([coordinate[0], coordinate[1]]);
+      const features = this.map.queryRenderedFeatures(
+        [
+          [
+            point.x - WARNING_TAP_HIT_TOLERANCE_PX,
+            point.y - WARNING_TAP_HIT_TOLERANCE_PX,
+          ],
+          [
+            point.x + WARNING_TAP_HIT_TOLERANCE_PX,
+            point.y + WARNING_TAP_HIT_TOLERANCE_PX,
+          ],
+        ],
+        { layers: [...layerIds] },
+      );
+      const top = features[0];
+      if (!top) return null;
+      return {
+        warningIndex: (top.properties as { warningIndex?: unknown } | null)?.warningIndex,
+      };
+    } catch {
+      return null;
+    }
   }
 
   remove(): void {

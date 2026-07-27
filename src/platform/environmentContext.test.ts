@@ -4,6 +4,7 @@ import {
   isSecureContext,
   isServiceWorkerControlled,
   isStandaloneDisplayMode,
+  prefersReducedMotion,
 } from "./environmentContext.ts";
 
 afterEach(() => {
@@ -77,5 +78,26 @@ describe("isStandaloneDisplayMode", () => {
     vi.stubGlobal("navigator", {});
     vi.stubGlobal("window", {});
     expect(isStandaloneDisplayMode()).toBe(false);
+  });
+});
+
+describe("prefersReducedMotion", () => {
+  it("is true when the reduced-motion media query matches", () => {
+    vi.stubGlobal("window", {
+      matchMedia: (query: string) => ({
+        matches: query === "(prefers-reduced-motion: reduce)",
+      }),
+    });
+    expect(prefersReducedMotion()).toBe(true);
+  });
+
+  it("is false when the reduced-motion media query does not match", () => {
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: false }) });
+    expect(prefersReducedMotion()).toBe(false);
+  });
+
+  it("is false when window.matchMedia isn't a function", () => {
+    vi.stubGlobal("window", {});
+    expect(prefersReducedMotion()).toBe(false);
   });
 });

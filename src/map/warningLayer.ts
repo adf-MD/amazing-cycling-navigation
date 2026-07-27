@@ -54,12 +54,25 @@ function emptyLineFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.LineStr
   return { type: "FeatureCollection", features: [] };
 }
 
+/** The one safe, provider-independent identity fact stamped onto every
+ * hit-testable warning feature: its index into the flat `warnings` array
+ * MapView/PlanningScreen share. Stamped once, at build time, while
+ * iterating that array with its own index — never reconstructed later
+ * from a feature's position within its per-category bucket (not the same
+ * thing, since a category groups only a subset of warnings) and never
+ * derived from message text/coordinates/distance, none of which are
+ * guaranteed unique. */
+export interface WarningFeatureProperties {
+  warningIndex: number;
+}
+
 function warningLineFeature(
   coordinates: readonly [number, number][],
-): GeoJSON.Feature<GeoJSON.LineString> {
+  warningIndex: number,
+): GeoJSON.Feature<GeoJSON.LineString, WarningFeatureProperties> {
   return {
     type: "Feature",
-    properties: {},
+    properties: { warningIndex },
     geometry: { type: "LineString", coordinates: [...coordinates] },
   };
 }
@@ -77,10 +90,13 @@ function warningLineFeature(
 export function buildWarningFeatureCollectionsByCategory(
   points: readonly RoutePoint[],
   warnings: readonly RouteWarning[],
-): Record<WarningCategory, GeoJSON.FeatureCollection<GeoJSON.LineString>> {
+): Record<
+  WarningCategory,
+  GeoJSON.FeatureCollection<GeoJSON.LineString, WarningFeatureProperties>
+> {
   const featuresByCategory: Record<
     WarningCategory,
-    GeoJSON.Feature<GeoJSON.LineString>[]
+    GeoJSON.Feature<GeoJSON.LineString, WarningFeatureProperties>[]
   > = {
     "unknown-surface": [],
     "questionable-surface": [],
@@ -90,18 +106,21 @@ export function buildWarningFeatureCollectionsByCategory(
     other: [],
   };
 
-  for (const warning of warnings) {
+  warnings.forEach((warning, warningIndex) => {
     const segment = sliceRoutePointsForRange(
       points,
       warning.startDistanceMetres,
       warning.endDistanceMetres,
     );
-    if (segment.length < 2) continue;
+    if (segment.length < 2) return;
     const category = KIND_TO_CATEGORY[warning.kind];
     featuresByCategory[category].push(
-      warningLineFeature(segment.map((point) => toGeoJsonCoordinate(point.coordinate))),
+      warningLineFeature(
+        segment.map((point) => toGeoJsonCoordinate(point.coordinate)),
+        warningIndex,
+      ),
     );
-  }
+  });
 
   return {
     "unknown-surface": {
@@ -143,9 +162,30 @@ export function buildSelectedWarningFeatureCollection(
   return {
     type: "FeatureCollection",
     features: [
-      warningLineFeature(segment.map((point) => toGeoJsonCoordinate(point.coordinate))),
+      warningLineFeature(
+        segment.map((point) => toGeoJsonCoordinate(point.coordinate)),
+        selectedWarningIndex,
+      ),
     ],
   };
+}
+
+/** Validates a hit-tested feature's raw `warningIndex` property against
+ * the exact `warnings` array MapView currently holds — the map adapter
+ * has no visibility into that array, so it cannot do this itself.
+ * Returns the safe integer index, or null for anything else: a missing
+ * property, a non-number, a fractional or negative value, or an index
+ * at/beyond `warningsLength` (a stale hit — e.g. a recalculation shrank
+ * the warnings array between the feature being drawn and the tap
+ * landing). Never throws. */
+export function resolveWarningIndexHit(
+  rawWarningIndex: unknown,
+  warningsLength: number,
+): number | null {
+  if (typeof rawWarningIndex !== "number") return null;
+  if (!Number.isInteger(rawWarningIndex)) return null;
+  if (rawWarningIndex < 0 || rawWarningIndex >= warningsLength) return null;
+  return rawWarningIndex;
 }
 
 /** The bounding box of the selected warning's own sliced geometry (for

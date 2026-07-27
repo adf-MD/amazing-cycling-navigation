@@ -8,6 +8,7 @@ import type {
   MapLibreLike,
   MapFactory,
   MapSourceDataInfo,
+  WarningFeatureHit,
 } from "./mapAdapter.ts";
 import { clearErrorLog, getRecentErrors } from "../platform/errorLog.ts";
 import { clearMapDiagnostics, getRecentMapAttempts } from "./mapDiagnostics.ts";
@@ -54,6 +55,15 @@ interface MockMapHandle {
   getZoomSpy: ReturnType<typeof vi.fn>;
   setCameraSpy: ReturnType<typeof vi.fn>;
   addLineLayerSpy: ReturnType<typeof vi.fn>;
+  /** Default: never a hit (returns null). Tests override with
+   * .mockReturnValueOnce/.mockReturnValue to simulate a warning-feature
+   * hit; also lets tests assert exactly which coordinate/layerIds MapView
+   * queried. */
+  queryTopWarningFeatureAtSpy: ReturnType<
+    typeof vi.fn<
+      (coordinate: Coordinate, layerIds: readonly string[]) => WarningFeatureHit | null
+    >
+  >;
   constructedStyles: CreateMapOptions["style"][];
 }
 
@@ -82,6 +92,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
   const getZoomSpy = vi.fn(() => 14);
   const setCameraSpy = vi.fn();
   const addLineLayerSpy = vi.fn();
+  const queryTopWarningFeatureAtSpy = vi.fn((): WarningFeatureHit | null => null);
   const constructedStyles: CreateMapOptions["style"][] = [];
 
   const factory: MapFactory = ({ style }) => {
@@ -129,6 +140,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
       onMapTap: (listener) => {
         mapTapListener = listener;
       },
+      queryTopWarningFeatureAt: queryTopWarningFeatureAtSpy,
       remove: removeSpy,
     };
     return map;
@@ -142,6 +154,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
     getZoomSpy,
     setCameraSpy,
     addLineLayerSpy,
+    queryTopWarningFeatureAtSpy,
     constructedStyles,
     triggerLoad: () => {
       act(() => {
@@ -1254,7 +1267,11 @@ describe("MapView", () => {
         <MapView
           points={warningPoints}
           mapFactory={mock.factory}
-          warningOverlay={{ warnings, selectedWarningIndex: null }}
+          warningOverlay={{
+            warnings,
+            selectedWarningIndex: null,
+            onSelectWarning: vi.fn(),
+          }}
         />,
       );
       mock.triggerLoad();
@@ -1280,7 +1297,7 @@ describe("MapView", () => {
         <MapView
           points={warningPoints}
           mapFactory={mock.factory}
-          warningOverlay={{ warnings, selectedWarningIndex: 1 }}
+          warningOverlay={{ warnings, selectedWarningIndex: 1, onSelectWarning: vi.fn() }}
         />,
       );
       mock.triggerLoad();
@@ -1299,7 +1316,11 @@ describe("MapView", () => {
         <MapView
           points={warningPoints}
           mapFactory={mock.factory}
-          warningOverlay={{ warnings, selectedWarningIndex: null }}
+          warningOverlay={{
+            warnings,
+            selectedWarningIndex: null,
+            onSelectWarning: vi.fn(),
+          }}
         />,
       );
 
@@ -1312,7 +1333,11 @@ describe("MapView", () => {
         <MapView
           points={warningPoints}
           mapFactory={mock.factory}
-          warningOverlay={{ warnings, selectedWarningIndex: null }}
+          warningOverlay={{
+            warnings,
+            selectedWarningIndex: null,
+            onSelectWarning: vi.fn(),
+          }}
         />,
       );
       mock.triggerLoad();
@@ -1322,7 +1347,7 @@ describe("MapView", () => {
         <MapView
           points={warningPoints}
           mapFactory={mock.factory}
-          warningOverlay={{ warnings, selectedWarningIndex: 0 }}
+          warningOverlay={{ warnings, selectedWarningIndex: 0, onSelectWarning: vi.fn() }}
         />,
       );
 
@@ -1336,7 +1361,11 @@ describe("MapView", () => {
         <MapView
           points={warningPoints}
           mapFactory={mock.factory}
-          warningOverlay={{ warnings, selectedWarningIndex: null }}
+          warningOverlay={{
+            warnings,
+            selectedWarningIndex: null,
+            onSelectWarning: vi.fn(),
+          }}
         />,
       );
 
@@ -1349,7 +1378,11 @@ describe("MapView", () => {
         <MapView
           points={warningPoints}
           mapFactory={mock.factory}
-          warningOverlay={{ warnings, selectedWarningIndex: null }}
+          warningOverlay={{
+            warnings,
+            selectedWarningIndex: null,
+            onSelectWarning: vi.fn(),
+          }}
         />,
       );
 
@@ -1366,7 +1399,11 @@ describe("MapView", () => {
         <MapView
           points={warningPoints}
           mapFactory={mock.factory}
-          warningOverlay={{ warnings, selectedWarningIndex: null }}
+          warningOverlay={{
+            warnings,
+            selectedWarningIndex: null,
+            onSelectWarning: vi.fn(),
+          }}
         />,
       );
       mock.triggerLoad();
@@ -1379,7 +1416,11 @@ describe("MapView", () => {
         <MapView
           points={shiftedPoints}
           mapFactory={mock.factory}
-          warningOverlay={{ warnings, selectedWarningIndex: null }}
+          warningOverlay={{
+            warnings,
+            selectedWarningIndex: null,
+            onSelectWarning: vi.fn(),
+          }}
         />,
       );
 
@@ -1390,6 +1431,196 @@ describe("MapView", () => {
           [1.001, 51],
           [1.0015, 51],
         ],
+      });
+    });
+
+    describe("warning hit-testing on map tap", () => {
+      const CATEGORY_LAYER_IDS = [
+        "acn-warning-unknown-surface-line",
+        "acn-warning-other-line",
+        "acn-warning-ferry-line",
+        "acn-warning-questionable-surface-line",
+        "acn-warning-unsuitable-surface-line",
+        "acn-warning-obstacle-line",
+      ];
+
+      it("selects the hit warning and never forwards to planningOverlay.onMapTap", () => {
+        const mock = createMockMapFactory();
+        const onSelectWarning = vi.fn();
+        const onMapTap = vi.fn();
+        mock.queryTopWarningFeatureAtSpy.mockReturnValue({ warningIndex: 1 });
+        render(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            planningOverlay={{
+              waypoints: [],
+              previewCoordinates: [],
+              selectedWaypointIndex: null,
+              onMapTap,
+            }}
+            warningOverlay={{ warnings, selectedWarningIndex: null, onSelectWarning }}
+          />,
+        );
+        mock.triggerLoad();
+
+        mock.triggerMapTap([0.003, 51]);
+
+        expect(onSelectWarning).toHaveBeenCalledWith(1);
+        expect(onMapTap).not.toHaveBeenCalled();
+      });
+
+      it("falls through to placement for an out-of-range or malformed hit index", () => {
+        const mock = createMockMapFactory();
+        const onSelectWarning = vi.fn();
+        const onMapTap = vi.fn();
+        mock.queryTopWarningFeatureAtSpy.mockReturnValue({ warningIndex: 99 });
+        render(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            planningOverlay={{
+              waypoints: [],
+              previewCoordinates: [],
+              selectedWaypointIndex: null,
+              onMapTap,
+            }}
+            warningOverlay={{ warnings, selectedWarningIndex: null, onSelectWarning }}
+          />,
+        );
+        mock.triggerLoad();
+
+        mock.triggerMapTap([0.003, 51]);
+
+        expect(onSelectWarning).not.toHaveBeenCalled();
+        expect(onMapTap).toHaveBeenCalledWith([0.003, 51]);
+      });
+
+      it("never attempts hit-testing when no warningOverlay is configured (Riding mode)", () => {
+        const mock = createMockMapFactory();
+        const onMapTap = vi.fn();
+        render(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            planningOverlay={{
+              waypoints: [],
+              previewCoordinates: [],
+              selectedWaypointIndex: null,
+              onMapTap,
+            }}
+          />,
+        );
+        mock.triggerLoad();
+
+        mock.triggerMapTap([0.003, 51]);
+
+        expect(mock.queryTopWarningFeatureAtSpy).not.toHaveBeenCalled();
+        expect(onMapTap).toHaveBeenCalledWith([0.003, 51]);
+      });
+
+      it("never hit-tests before the style/warning layers are structurally ready, and forwards straight through", () => {
+        const mock = createMockMapFactory();
+        const onSelectWarning = vi.fn();
+        const onMapTap = vi.fn();
+        mock.queryTopWarningFeatureAtSpy.mockReturnValue({ warningIndex: 0 });
+        render(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            planningOverlay={{
+              waypoints: [],
+              previewCoordinates: [],
+              selectedWaypointIndex: null,
+              onMapTap,
+            }}
+            warningOverlay={{ warnings, selectedWarningIndex: null, onSelectWarning }}
+          />,
+        );
+        // No triggerLoad()/triggerStyleLoaded() yet — style is still loading.
+
+        mock.triggerMapTap([0.003, 51]);
+
+        expect(mock.queryTopWarningFeatureAtSpy).not.toHaveBeenCalled();
+        expect(onSelectWarning).not.toHaveBeenCalled();
+        expect(onMapTap).toHaveBeenCalledWith([0.003, 51]);
+      });
+
+      it("hit-testing still resolves correctly once the fallback style's own layers are ready", () => {
+        const mock = createMockMapFactory();
+        const onSelectWarning = vi.fn();
+        mock.queryTopWarningFeatureAtSpy.mockReturnValue({ warningIndex: 0 });
+        render(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            warningOverlay={{ warnings, selectedWarningIndex: null, onSelectWarning }}
+          />,
+        );
+
+        mock.triggerError({
+          message: "style fetch failed",
+          category: "style-request-or-parse",
+        });
+        mock.triggerLoad();
+
+        mock.triggerMapTap([0.003, 51]);
+
+        expect(onSelectWarning).toHaveBeenCalledWith(0);
+      });
+
+      it("selecting an already-selected warning again still calls onSelectWarning and never forwards to placement", () => {
+        const mock = createMockMapFactory();
+        const onSelectWarning = vi.fn();
+        const onMapTap = vi.fn();
+        mock.queryTopWarningFeatureAtSpy.mockReturnValue({ warningIndex: 0 });
+        render(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            planningOverlay={{
+              waypoints: [],
+              previewCoordinates: [],
+              selectedWaypointIndex: null,
+              onMapTap,
+            }}
+            warningOverlay={{ warnings, selectedWarningIndex: 0, onSelectWarning }}
+          />,
+        );
+        mock.triggerLoad();
+
+        mock.triggerMapTap([0.001, 51]);
+        mock.triggerMapTap([0.001, 51]);
+
+        expect(onSelectWarning).toHaveBeenCalledTimes(2);
+        expect(onSelectWarning).toHaveBeenNthCalledWith(1, 0);
+        expect(onSelectWarning).toHaveBeenNthCalledWith(2, 0);
+        expect(onMapTap).not.toHaveBeenCalled();
+      });
+
+      it("queries only the warning category layers, never the selected-warning highlight layer", () => {
+        const mock = createMockMapFactory();
+        render(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            warningOverlay={{
+              warnings,
+              selectedWarningIndex: null,
+              onSelectWarning: vi.fn(),
+            }}
+          />,
+        );
+        mock.triggerLoad();
+
+        mock.triggerMapTap([0.003, 51]);
+
+        expect(mock.queryTopWarningFeatureAtSpy).toHaveBeenCalledWith(
+          [0.003, 51],
+          CATEGORY_LAYER_IDS,
+        );
+        const [, layerIds] = mock.queryTopWarningFeatureAtSpy.mock.calls[0] ?? [];
+        expect(layerIds).not.toContain("acn-warning-selected-line");
       });
     });
   });

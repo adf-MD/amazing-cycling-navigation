@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouteSummaryPanel } from "./RouteSummaryPanel.tsx";
@@ -60,6 +60,7 @@ describe("RouteSummaryPanel", () => {
         selectedWarningIndex={null}
         onSelectWarning={vi.fn()}
         onClearWarningSelection={vi.fn()}
+        revealToken={0}
       />,
     );
 
@@ -80,6 +81,7 @@ describe("RouteSummaryPanel", () => {
         selectedWarningIndex={null}
         onSelectWarning={vi.fn()}
         onClearWarningSelection={vi.fn()}
+        revealToken={0}
       />,
     );
 
@@ -101,6 +103,7 @@ describe("RouteSummaryPanel", () => {
         selectedWarningIndex={1}
         onSelectWarning={vi.fn()}
         onClearWarningSelection={vi.fn()}
+        revealToken={0}
       />,
     );
 
@@ -120,6 +123,7 @@ describe("RouteSummaryPanel", () => {
         selectedWarningIndex={null}
         onSelectWarning={onSelectWarning}
         onClearWarningSelection={vi.fn()}
+        revealToken={0}
       />,
     );
 
@@ -139,6 +143,7 @@ describe("RouteSummaryPanel", () => {
         selectedWarningIndex={0}
         onSelectWarning={vi.fn()}
         onClearWarningSelection={onClearWarningSelection}
+        revealToken={0}
       />,
     );
 
@@ -158,6 +163,7 @@ describe("RouteSummaryPanel", () => {
         selectedWarningIndex={0}
         onSelectWarning={vi.fn()}
         onClearWarningSelection={onClearWarningSelection}
+        revealToken={0}
       />,
     );
 
@@ -175,10 +181,316 @@ describe("RouteSummaryPanel", () => {
         selectedWarningIndex={null}
         onSelectWarning={vi.fn()}
         onClearWarningSelection={vi.fn()}
+        revealToken={0}
       />,
     );
 
     expect(screen.queryByRole("list", { name: "Route warnings" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Clear warning selection" })).toBeNull();
+  });
+
+  describe("map-originated reveal", () => {
+    let scrollIntoViewSpy: ReturnType<
+      typeof vi.fn<(options?: boolean | ScrollIntoViewOptions) => void>
+    >;
+    // Saved only to restore afterwards, never called unbound.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalMatchMedia = window.matchMedia;
+
+    beforeEach(() => {
+      scrollIntoViewSpy = vi.fn();
+      // jsdom doesn't implement scrollIntoView at all.
+      Element.prototype.scrollIntoView = scrollIntoViewSpy;
+    });
+
+    afterEach(() => {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+      window.matchMedia = originalMatchMedia;
+      vi.unstubAllGlobals();
+    });
+
+    it("scrolls the selected button into view when revealToken increments", () => {
+      const { rerender } = render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={1}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+      expect(scrollIntoViewSpy).not.toHaveBeenCalled();
+
+      rerender(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={1}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={1}
+        />,
+      );
+
+      expect(scrollIntoViewSpy).toHaveBeenCalledOnce();
+      expect(scrollIntoViewSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ block: "nearest" }),
+      );
+    });
+
+    it("does not scroll when revealToken is unchanged across a rerender", () => {
+      const { rerender } = render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={1}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+
+      rerender(
+        <RouteSummaryPanel
+          route={buildRoute({ name: "Renamed route" })}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={1}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+
+      expect(scrollIntoViewSpy).not.toHaveBeenCalled();
+    });
+
+    it("does not scroll when selectedWarningIndex is null even if revealToken changed", () => {
+      const { rerender } = render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={null}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+
+      rerender(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={null}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={1}
+        />,
+      );
+
+      expect(scrollIntoViewSpy).not.toHaveBeenCalled();
+    });
+
+    it("scrolls again on a second revealToken increment even when selectedWarningIndex didn't change (repeat tap)", () => {
+      const { rerender } = render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={1}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+
+      rerender(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={1}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={1}
+        />,
+      );
+      rerender(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={1}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={2}
+        />,
+      );
+
+      expect(scrollIntoViewSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("uses non-animated scrolling when prefers-reduced-motion is set", () => {
+      // Assigned directly (not via vi.stubGlobal, which would require
+      // spreading — and losing the prototype of — the real Window
+      // instance) since this test renders real DOM, unlike
+      // environmentContext.test.ts's isolated unit tests.
+      window.matchMedia = ((query: string) => ({
+        matches: query === "(prefers-reduced-motion: reduce)",
+      })) as typeof window.matchMedia;
+      const { rerender } = render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={1}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+
+      rerender(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={1}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={1}
+        />,
+      );
+
+      expect(scrollIntoViewSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ behavior: "auto" }),
+      );
+    });
+
+    it("never moves keyboard focus when revealing", () => {
+      const { rerender } = render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={1}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+
+      rerender(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={1}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={1}
+        />,
+      );
+
+      expect(document.activeElement).toBe(document.body);
+    });
+
+    it("still identifies the selected button via aria-pressed under the reveal path", () => {
+      const { rerender } = render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={1}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+
+      rerender(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={1}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={1}
+        />,
+      );
+
+      const buttons = screen.getAllByRole("button", { name: /surface for a road bike/i });
+      expect(buttons[1]).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("renders a role=status live region with the selected warning's message and distance range on a reveal", () => {
+      const { rerender } = render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={1}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+      expect(screen.queryByRole("status")).toBeNull();
+
+      rerender(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={1}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={1}
+        />,
+      );
+
+      const status = screen.getByRole("status");
+      expect(status).toHaveTextContent("Unsuitable surface for a road bike.");
+      expect(status).toHaveTextContent("0.6 km");
+      expect(status).toHaveTextContent("0.7 km");
+    });
+
+    it("does not render the live region for a list-originated selection (selectedWarningIndex changes without revealToken bumping)", () => {
+      const { rerender } = render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={null}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+
+      rerender(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={0}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(scrollIntoViewSpy).not.toHaveBeenCalled();
+    });
   });
 });

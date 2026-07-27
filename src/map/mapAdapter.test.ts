@@ -26,6 +26,8 @@ function buildFakeMapLibreMap(
     getPitch: vi.fn(() => 20),
     addLayer: vi.fn(),
     on: vi.fn(),
+    project: vi.fn(() => ({ x: 100, y: 200 })),
+    queryRenderedFeatures: vi.fn(() => [] as { properties: Record<string, unknown> }[]),
     painter: "painter" in options ? options.painter : {},
   };
   return fake;
@@ -138,6 +140,89 @@ describe("MapLibreAdapter", () => {
     clickHandler({ lngLat: { lng: 7, lat: 8 } });
 
     expect(listener).toHaveBeenCalledWith([7, 8]);
+  });
+
+  describe("queryTopWarningFeatureAt", () => {
+    it("re-derives the screen point via project() and queries only the given layer ids in the tolerance box", () => {
+      const fake = buildFakeMapLibreMap();
+      fake.project.mockReturnValue({ x: 100, y: 200 });
+      const adapter = buildAdapter(fake);
+
+      adapter.queryTopWarningFeatureAt([1, 2], ["acn-warning-obstacle-line"]);
+
+      expect(fake.project).toHaveBeenCalledWith([1, 2]);
+      expect(fake.queryRenderedFeatures).toHaveBeenCalledWith(
+        [
+          [86, 186],
+          [114, 214],
+        ],
+        { layers: ["acn-warning-obstacle-line"] },
+      );
+    });
+
+    it("returns the topmost feature's raw warningIndex, unvalidated", () => {
+      const fake = buildFakeMapLibreMap();
+      fake.queryRenderedFeatures.mockReturnValue([
+        { properties: { warningIndex: 2 } },
+        { properties: { warningIndex: 0 } },
+      ]);
+      const adapter = buildAdapter(fake);
+
+      expect(adapter.queryTopWarningFeatureAt([1, 2], ["a"])).toEqual({
+        warningIndex: 2,
+      });
+    });
+
+    it("returns the raw (possibly malformed) warningIndex value as-is — validation is the caller's job", () => {
+      const fake = buildFakeMapLibreMap();
+      fake.queryRenderedFeatures.mockReturnValue([
+        { properties: { warningIndex: "oops" } },
+      ]);
+      const adapter = buildAdapter(fake);
+
+      expect(adapter.queryTopWarningFeatureAt([1, 2], ["a"])).toEqual({
+        warningIndex: "oops",
+      });
+    });
+
+    it("returns null when queryRenderedFeatures returns no features", () => {
+      const fake = buildFakeMapLibreMap();
+      fake.queryRenderedFeatures.mockReturnValue([]);
+      const adapter = buildAdapter(fake);
+
+      expect(adapter.queryTopWarningFeatureAt([1, 2], ["a"])).toBeNull();
+    });
+
+    it("returns null, never throws, when project() throws", () => {
+      const fake = buildFakeMapLibreMap();
+      fake.project.mockImplementation(() => {
+        throw new Error("style not ready");
+      });
+      const adapter = buildAdapter(fake);
+
+      expect(() => adapter.queryTopWarningFeatureAt([1, 2], ["a"])).not.toThrow();
+      expect(adapter.queryTopWarningFeatureAt([1, 2], ["a"])).toBeNull();
+    });
+
+    it("returns null, never throws, when queryRenderedFeatures() throws (e.g. an unready layer id)", () => {
+      const fake = buildFakeMapLibreMap();
+      fake.queryRenderedFeatures.mockImplementation(() => {
+        throw new Error("layer not found");
+      });
+      const adapter = buildAdapter(fake);
+
+      expect(() => adapter.queryTopWarningFeatureAt([1, 2], ["a"])).not.toThrow();
+      expect(adapter.queryTopWarningFeatureAt([1, 2], ["a"])).toBeNull();
+    });
+
+    it("returns null without calling project or queryRenderedFeatures when layerIds is empty", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+
+      expect(adapter.queryTopWarningFeatureAt([1, 2], [])).toBeNull();
+      expect(fake.project).not.toHaveBeenCalled();
+      expect(fake.queryRenderedFeatures).not.toHaveBeenCalled();
+    });
   });
 
   it("addLineLayer passes line-dasharray through only when provided", () => {

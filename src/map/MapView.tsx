@@ -27,6 +27,7 @@ import {
   buildSelectedWarningFeatureCollection,
   buildWarningFeatureCollectionsByCategory,
   computeSelectedWarningBounds,
+  resolveWarningIndexHit,
   WARNING_CATEGORIES_IN_PAINT_ORDER,
   type WarningCategory,
 } from "./warningLayer.ts";
@@ -67,6 +68,16 @@ const WARNING_LAYER_ID_BY_CATEGORY: Readonly<Record<WarningCategory, string>> = 
 };
 const WARNING_SELECTED_SOURCE_ID = "acn-warning-selected";
 const WARNING_SELECTED_LAYER_ID = "acn-warning-selected-line";
+
+/** Every warning-category layer id, in paint order — deliberately
+ * excludes WARNING_SELECTED_LAYER_ID. This list is the entire mechanism
+ * by which a map-tap hit-test never selects the highlight layer itself:
+ * it is the only set of layer ids ever passed to
+ * queryTopWarningFeatureAt. */
+const WARNING_CATEGORY_LAYER_IDS: readonly string[] =
+  WARNING_CATEGORIES_IN_PAINT_ORDER.map(
+    (category) => WARNING_LAYER_ID_BY_CATEGORY[category],
+  );
 
 /** Distinctness is carried primarily by dash-pattern shape, not colour
  * alone. Obstacle (access/steps/ford) is the most saturated/thickest of
@@ -187,6 +198,14 @@ export interface WarningOverlay {
   /** Index into `warnings` currently selected for highlighting/framing,
    * or null for none. Out-of-range values are treated the same as null. */
   selectedWarningIndex: number | null;
+  /** Fired when a genuine map tap resolves, via hit-testing, to a
+   * selectable warning feature — reports only the winning index into
+   * `warnings`. MapView performs no Planning-workflow logic itself (no
+   * mode-clearing, no waypoint-selection changes); the caller applies its
+   * own selection policy, exactly as it already does for list-originated
+   * selection. Never fired for a tap that misses every warning feature —
+   * that falls through to planningOverlay.onMapTap unchanged. */
+  onSelectWarning: (index: number) => void;
 }
 
 export interface MapViewProps {
@@ -274,6 +293,14 @@ export function MapView({
   useEffect(() => {
     onMapTapRef.current = planningOverlay?.onMapTap;
   }, [planningOverlay?.onMapTap]);
+  const warningsRef = useRef(warningOverlay?.warnings);
+  useEffect(() => {
+    warningsRef.current = warningOverlay?.warnings;
+  }, [warningOverlay?.warnings]);
+  const onSelectWarningRef = useRef(warningOverlay?.onSelectWarning);
+  useEffect(() => {
+    onSelectWarningRef.current = warningOverlay?.onSelectWarning;
+  }, [warningOverlay?.onSelectWarning]);
   const lastAppliedCameraTargetRef = useRef<{
     lon: number | null;
     lat: number | null;
@@ -530,6 +557,30 @@ export function MapView({
       });
 
       map.onMapTap((coordinate) => {
+        // A genuine tap resolves to exactly one action: if it hits a
+        // selectable warning feature, select that warning and stop —
+        // never also forward to Planning's placement callback. Gated on
+        // `layersAdded` (the warning category layers, added alongside
+        // everything else in addRouteAndPositionLayers, only exist once
+        // that's true) so a tap before the style is ready, or before the
+        // fallback style's own layers are up, safely degrades to "no
+        // hit" rather than querying a not-yet-existent layer id.
+        if (layersAdded) {
+          const warnings = warningsRef.current;
+          if (warnings && warnings.length > 0) {
+            const hit = map.queryTopWarningFeatureAt(
+              coordinate,
+              WARNING_CATEGORY_LAYER_IDS,
+            );
+            const index = hit
+              ? resolveWarningIndexHit(hit.warningIndex, warnings.length)
+              : null;
+            if (index !== null) {
+              onSelectWarningRef.current?.(index);
+              return;
+            }
+          }
+        }
         onMapTapRef.current?.(coordinate);
       });
 

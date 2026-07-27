@@ -108,6 +108,14 @@ export function PlanningScreen({
     null,
   );
   const [selectedWarningIndex, setSelectedWarningIndex] = useState<number | null>(null);
+  // Increments once per map-originated warning selection (including a
+  // repeat tap on an already-selected warning) — the one-shot signal
+  // RouteSummaryPanel uses to scroll the matching entry into view. Never
+  // itself a selection source; always updated alongside
+  // selectedWarningIndex in selectWarning below. A list-originated
+  // selection does not bump this, since the entry is already where the
+  // user is interacting.
+  const [warningRevealToken, setWarningRevealToken] = useState(0);
   // Tracks which waypoint a pending move/insert-after applies to,
   // alongside the action itself — so a selection change to a *different*
   // waypoint (or to none) automatically invalidates a stale pending
@@ -195,11 +203,34 @@ export function PlanningScreen({
     [selectedWarningIndex],
   );
 
-  const handleSelectWarning = useCallback((index: number) => {
-    // "Selecting a warning clears any waypoint movement/insertion mode."
+  // Central warning-selection path, shared by both origins — the *only*
+  // place selectedWarningIndex is ever set to a non-null value, so list-
+  // and map-originated selection can never diverge in policy. "Selecting
+  // a warning clears any waypoint movement/insertion mode."
+  const selectWarning = useCallback((index: number, origin: "map" | "list") => {
     setPendingWaypointAction(null);
     setSelectedWarningIndex(index);
+    if (origin === "map") {
+      setWarningRevealToken((token) => token + 1);
+    }
   }, []);
+  const handleSelectWarning = useCallback(
+    (index: number) => {
+      selectWarning(index, "list");
+    },
+    [selectWarning],
+  );
+  // Wired to MapView's warningOverlay.onSelectWarning — MapView itself
+  // does no Planning-workflow logic; this applies the exact same policy
+  // as handleSelectWarning, differing only in the recorded origin (drives
+  // RouteSummaryPanel's one-time scroll-into-view via warningRevealToken
+  // — never a second selection mechanism).
+  const handleSelectWarningFromMap = useCallback(
+    (index: number) => {
+      selectWarning(index, "map");
+    },
+    [selectWarning],
+  );
   // Deliberately does not restore pendingWaypointAction — clearing a
   // warning selection returns to a non-destructive state rather than
   // guessing the rider's previous placement intention.
@@ -312,23 +343,36 @@ export function PlanningScreen({
       });
   }, [isDraftHydrated, requestApproximateLocation]);
 
-  // --- Future event-priority policy (map-to-list warning tapping) ---
-  // Not implemented this slice — there is no warning-layer hit testing yet
-  // (mapAdapter.ts's onMapTap is a single map-wide click listener, not
-  // layer-scoped; nothing calls queryRenderedFeatures). When that lands, a
-  // single map tap must resolve to exactly ONE of the following, in order:
-  //   1. The tap hits a selectable warning or waypoint feature — select
-  //      that feature; it must never also append/move/insert a waypoint.
+  // --- Map-tap event-priority policy (implemented) ---
+  // A genuine map tap (never a drag-then-release — see mapAdapter.ts's
+  // onMapTap) resolves to exactly ONE of the following, in order:
+  //   1. The tap hits a selectable warning feature — MapView hit-tests
+  //      the warning category layers itself (see queryTopWarningFeatureAt/
+  //      resolveWarningIndexHit) and calls handleSelectWarningFromMap
+  //      directly, WITHOUT ever invoking planningOverlay.onMapTap /
+  //      handlePlacementAt below — so a warning hit can never also
+  //      append/move/insert a waypoint. (Waypoint markers are not
+  //      hit-tested from the map; selecting a waypoint remains a
+  //      WaypointList-only action, out of scope for this policy.)
   //   2. Otherwise, if there is an explicit active move/insert-after
   //      operation, the tap completes that operation.
   //   3. Otherwise, a bare tap only appends when append mode is visibly
   //      active — never just because nothing else matched ("selected"
   //      mode with no pending move/insert still does nothing on a bare
   //      tap, see below).
-  // Panning/zooming never go through onMapTap at all, so are unaffected.
+  //   4. Otherwise, the tap does nothing.
+  // Panning/zooming/dragging never go through onMapTap at all, so are
+  // unaffected.
   //
-  // Shared by both the map tap and the crosshair button, so both paths
-  // behave identically.
+  // Cases 2-4 are handlePlacementAt's own logic below, shared by both the
+  // map tap and the crosshair button (so both behave identically for
+  // them); case 1 is map-tap-only — the crosshair always places/moves
+  // relative to the centre crosshair, never a warning feature. The
+  // `if (selectedWarningIndex !== null) return;` guard immediately below
+  // stays as belt-and-suspenders for the crosshair path in particular
+  // (which has no hit-testing of its own): once a warning is selected via
+  // either origin, neither entry point can sneak in a placement until
+  // it's explicitly cleared.
   const handlePlacementAt = useCallback(
     (coordinate: Coordinate) => {
       // Warning inspection takes priority — "a bare map tap must not
@@ -429,6 +473,7 @@ export function PlanningScreen({
   const warningOverlay: WarningOverlay = {
     warnings: displayWarnings,
     selectedWarningIndex,
+    onSelectWarning: handleSelectWarningFromMap,
   };
 
   return (
@@ -588,6 +633,7 @@ export function PlanningScreen({
           selectedWarningIndex={selectedWarningIndex}
           onSelectWarning={handleSelectWarning}
           onClearWarningSelection={handleClearWarningSelection}
+          revealToken={warningRevealToken}
         />
       ) : null}
 

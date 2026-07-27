@@ -1,5 +1,5 @@
 import { act } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PlanningScreen } from "./PlanningScreen.tsx";
@@ -17,6 +17,10 @@ interface MockMapHandle {
   triggerLoad: () => void;
   triggerCameraSettled: (coordinate: Coordinate) => void;
   triggerMapTap: (coordinate: Coordinate) => void;
+  /** Configures what the next (and subsequent) queryTopWarningFeatureAt
+   * calls report as hit — null (the default) means every tap misses every
+   * warning feature and falls through to placement, exactly like today. */
+  setWarningHit: (warningIndex: number | null) => void;
   setCameraSpy: ReturnType<typeof vi.fn>;
   fitBoundsSpy: ReturnType<typeof vi.fn>;
   addLineLayerSpy: ReturnType<typeof vi.fn>;
@@ -35,6 +39,7 @@ function createMockMapFactory(): MockMapHandle {
       }) => void)
     | undefined;
   let mapTapListener: ((coordinate: Coordinate) => void) | undefined;
+  let warningHitIndex: number | null = null;
   const setCameraSpy = vi.fn();
   const fitBoundsSpy = vi.fn();
   const addLineLayerSpy = vi.fn();
@@ -74,6 +79,8 @@ function createMockMapFactory(): MockMapHandle {
       onMapTap: (listener) => {
         mapTapListener = listener;
       },
+      queryTopWarningFeatureAt: () =>
+        warningHitIndex === null ? null : { warningIndex: warningHitIndex },
       remove: () => undefined,
     };
     return map;
@@ -85,6 +92,9 @@ function createMockMapFactory(): MockMapHandle {
     fitBoundsSpy,
     addLineLayerSpy,
     sources,
+    setWarningHit: (warningIndex) => {
+      warningHitIndex = warningIndex;
+    },
     triggerLoad: () => {
       act(() => {
         // Real MapLibre always fires "style.load" strictly before "load".
@@ -843,6 +853,217 @@ describe("PlanningScreen", () => {
       "aria-pressed",
       "false",
     );
+  });
+
+  describe("map-to-list warning selection", () => {
+    // jsdom doesn't implement scrollIntoView at all, and RouteSummaryPanel
+    // now calls it whenever a warning is selected via the map.
+    let scrollIntoViewSpy: ReturnType<
+      typeof vi.fn<(options?: boolean | ScrollIntoViewOptions) => void>
+    >;
+    // Saved only to restore afterwards, never called unbound.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+
+    beforeEach(() => {
+      scrollIntoViewSpy = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoViewSpy;
+    });
+
+    afterEach(() => {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    });
+
+    async function renderWithCalculatedWarnings(
+      map: ReturnType<typeof createMockMapFactory>,
+      user: ReturnType<typeof userEvent.setup>,
+    ): Promise<HTMLElement> {
+      await saveProviderKey("dummy-test-key");
+      const route = buildRouteWithWarnings();
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          routingProvider={buildResolvedAdapter(route)}
+        />,
+      );
+      map.triggerLoad();
+
+      await addWaypointViaCrosshair(map, user, [0, 51]);
+      await addWaypointViaCrosshair(map, user, [0.01, 51]);
+      const calculateButton = await waitFor(() => {
+        const button = screen.getByRole("button", { name: /calculate route/i });
+        expect(button).toBeEnabled();
+        return button;
+      });
+      await user.click(calculateButton);
+
+      return waitFor(() => {
+        const region = screen.getByRole("region", { name: "Route summary" });
+        expect(region).toBeInTheDocument();
+        return region;
+      });
+    }
+
+    it("tapping a warning segment on the map selects it in the summary panel and frames/highlights it exactly like a list selection", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const summaryRegion = await renderWithCalculatedWarnings(map, user);
+      const warningButton = within(summaryRegion).getByRole("button", {
+        name: /questionable surface for a road bike/i,
+      });
+      expect(warningButton).toHaveAttribute("aria-pressed", "false");
+
+      const fitBoundsCallsBeforeSelect = map.fitBoundsSpy.mock.calls.length;
+      map.setWarningHit(0);
+      map.triggerMapTap([0.15, 51]);
+
+      expect(warningButton).toHaveAttribute("aria-pressed", "true");
+      expect(map.fitBoundsSpy.mock.calls.length).toBeGreaterThan(
+        fitBoundsCallsBeforeSelect,
+      );
+      await waitFor(() => {
+        expect(map.sources.get("acn-warning-selected")?.features).toHaveLength(1);
+      });
+    });
+
+    it("cancels a pending move, returning it to plain selected (matching the existing list-selection policy)", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const summaryRegion = await renderWithCalculatedWarnings(map, user);
+
+      await user.click(screen.getByRole("button", { name: "Start" }));
+      await user.click(screen.getByRole("button", { name: "Move" }));
+      expect(screen.getByRole("button", { name: "Move" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+
+      map.setWarningHit(0);
+      map.triggerMapTap([0.15, 51]);
+
+      const warningButton = within(summaryRegion).getByRole("button", {
+        name: /questionable surface for a road bike/i,
+      });
+      expect(warningButton).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByRole("button", { name: "Move" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      // The waypoint itself stays selected — only the pending move is
+      // cancelled, exactly as the existing list-selection policy already
+      // behaves (see "selecting a warning cancels a pending move/insert-
+      // after and returns to selected mode" above).
+      expect(screen.getByRole("button", { name: "Start" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    it("performs no waypoint mutation when a tap hits a warning while append mode is visibly active", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      await renderWithCalculatedWarnings(map, user);
+      // No waypoint is selected, so the crosshair is in "append" mode.
+      expect(
+        screen.getByRole("button", { name: "Add waypoint here" }),
+      ).toBeInTheDocument();
+
+      map.setWarningHit(0);
+      map.triggerMapTap([0.15, 51]);
+
+      expect(screen.getByRole("button", { name: "Waypoint 2" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Waypoint 3" })).toBeNull();
+    });
+
+    it("a subsequent bare map tap (no warning hit) still never places a waypoint after a map-originated selection", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      await renderWithCalculatedWarnings(map, user);
+
+      map.setWarningHit(0);
+      map.triggerMapTap([0.15, 51]);
+      map.setWarningHit(null);
+      map.triggerMapTap([0.5, 51]);
+
+      expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Waypoint 2" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Waypoint 3" })).toBeNull();
+    });
+
+    it("repeated taps on the same already-selected warning stay selected, mutate nothing, and each re-reveal the list entry", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const summaryRegion = await renderWithCalculatedWarnings(map, user);
+      const warningButton = within(summaryRegion).getByRole("button", {
+        name: /questionable surface for a road bike/i,
+      });
+
+      map.setWarningHit(0);
+      map.triggerMapTap([0.15, 51]);
+      expect(warningButton).toHaveAttribute("aria-pressed", "true");
+      expect(scrollIntoViewSpy).toHaveBeenCalledTimes(1);
+
+      map.triggerMapTap([0.15, 51]);
+      expect(warningButton).toHaveAttribute("aria-pressed", "true");
+      expect(scrollIntoViewSpy).toHaveBeenCalledTimes(2);
+
+      expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Waypoint 2" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Waypoint 3" })).toBeNull();
+    });
+
+    it("the explicit Clear warning selection button clears a map-originated selection", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const summaryRegion = await renderWithCalculatedWarnings(map, user);
+      const warningButton = within(summaryRegion).getByRole("button", {
+        name: /questionable surface for a road bike/i,
+      });
+
+      map.setWarningHit(0);
+      map.triggerMapTap([0.15, 51]);
+      expect(warningButton).toHaveAttribute("aria-pressed", "true");
+
+      await user.click(screen.getByRole("button", { name: "Clear warning selection" }));
+
+      expect(warningButton).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("a genuine route recalculation clears a map-originated selection", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const summaryRegion = await renderWithCalculatedWarnings(map, user);
+      const warningButton = within(summaryRegion).getByRole("button", {
+        name: /questionable surface for a road bike/i,
+      });
+
+      map.setWarningHit(0);
+      map.triggerMapTap([0.15, 51]);
+      expect(warningButton).toHaveAttribute("aria-pressed", "true");
+
+      // Undo dispatches directly (bypassing handlePlacementAt's own
+      // warning-selection guard, unlike a crosshair tap) and drops the
+      // waypoint count below 2, which invalidates the routed result
+      // entirely — the summary panel (and its warning list) disappears
+      // along with it, confirming no stale warning selection survives a
+      // genuine recalculation.
+      await user.click(screen.getByRole("button", { name: "Undo" }));
+
+      await waitFor(() => {
+        expect(screen.queryByRole("region", { name: "Route summary" })).toBeNull();
+      });
+    });
+
+    it("a bare map tap with no configured hit behaves exactly as today (regression guard)", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      await renderWithCalculatedWarnings(map, user);
+
+      map.triggerMapTap([0.5, 51]);
+
+      expect(screen.getByRole("button", { name: "Waypoint 3" })).toBeInTheDocument();
+    });
   });
 
   it("restores an old waypoint-only draft with routeName and avoidFerries defaulted", async () => {
