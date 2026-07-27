@@ -12,7 +12,8 @@ export interface WaypointHistoryState {
 }
 
 export type WaypointAction =
-  | { type: "add"; coordinate: Coordinate }
+  | { type: "append"; coordinate: Coordinate }
+  | { type: "insertAfter"; afterWaypointId: string; coordinate: Coordinate }
   | { type: "move"; waypointId: string; coordinate: Coordinate }
   | { type: "reorder"; waypointId: string; toIndex: number }
   | { type: "delete"; waypointId: string }
@@ -57,29 +58,46 @@ export function waypointHistoryReducer(
   action: WaypointAction,
 ): WaypointHistoryState {
   switch (action.type) {
-    case "add": {
-      // Nothing selected -> append at the end. A waypoint selected ->
-      // insert immediately after it — this is the entire "insert into an
-      // existing route" behaviour, with no separate "select a leg"
-      // concept needed.
+    case "append": {
+      // Always appends at the end, regardless of any existing selection —
+      // deliberately never reads state.selectedWaypointId, so "which
+      // behaviour happens" is never hidden inside the reducer. Callers
+      // (PlanningScreen's interaction mode) decide append vs insertAfter
+      // explicitly before dispatching.
       const newWaypoint: Waypoint = {
         id: createWaypointId(),
         coordinate: action.coordinate,
       };
-      const selectedIndex = state.present.findIndex(
-        (waypoint) => waypoint.id === state.selectedWaypointId,
+      return {
+        past: [...state.past, state.present],
+        present: [...state.present, newWaypoint],
+        future: [],
+        selectedWaypointId: null,
+      };
+    }
+
+    case "insertAfter": {
+      const anchorIndex = state.present.findIndex(
+        (waypoint) => waypoint.id === action.afterWaypointId,
       );
-      const insertAt = selectedIndex === -1 ? state.present.length : selectedIndex + 1;
+      if (anchorIndex === -1) return state;
+      const newWaypoint: Waypoint = {
+        id: createWaypointId(),
+        coordinate: action.coordinate,
+      };
       const present = [
-        ...state.present.slice(0, insertAt),
+        ...state.present.slice(0, anchorIndex + 1),
         newWaypoint,
-        ...state.present.slice(insertAt),
+        ...state.present.slice(anchorIndex + 1),
       ];
       return {
         past: [...state.past, state.present],
         present,
         future: [],
-        selectedWaypointId: null,
+        // The rider lands on the just-inserted point, not the anchor, so
+        // repeated "insert after" calls chain forward along the route
+        // being built rather than reversing order.
+        selectedWaypointId: newWaypoint.id,
       };
     }
 

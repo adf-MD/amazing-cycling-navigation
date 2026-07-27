@@ -145,7 +145,12 @@ export interface MapLibreLike {
    * never for a drag-then-release (MapLibre's own click-tolerance already
    * suppresses `click` after real pointer movement, verified against the
    * installed package's source), so Planning can use this directly for
-   * "tap to place a waypoint" without extra drag-distance tracking here. */
+   * "tap to place a waypoint" without extra drag-distance tracking here.
+   * Single map-wide listener — deliberately not layer-scoped, never calls
+   * queryRenderedFeatures. A future map-to-list warning-tapping feature
+   * will need feature hit-testing here (or a layer-scoped replacement)
+   * and must respect the event-priority policy documented in
+   * PlanningScreen.tsx next to handlePlacementAt. */
   onMapTap(listener: (coordinate: Coordinate) => void): void;
   remove(): void;
 }

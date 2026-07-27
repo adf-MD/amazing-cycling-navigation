@@ -1,16 +1,21 @@
-import { db, type StoredPlanningDraft } from "./db.ts";
-import type { Waypoint } from "../domain/types.ts";
+import { db } from "./db.ts";
+import {
+  fromStoredPlanningDraft,
+  toStoredPlanningDraft,
+  type PlanningDraftContent,
+} from "./mapping.ts";
 
 const DRAFT_ID = "draft";
 
-export async function getDraft(): Promise<StoredPlanningDraft | undefined> {
-  return db.planningDrafts.get(DRAFT_ID);
+export async function getDraft(): Promise<PlanningDraftContent | undefined> {
+  const stored = await db.planningDrafts.get(DRAFT_ID);
+  return stored ? fromStoredPlanningDraft(stored) : undefined;
 }
 
-export async function saveDraft(waypoints: readonly Waypoint[]): Promise<void> {
+export async function saveDraft(content: PlanningDraftContent): Promise<void> {
   await db.planningDrafts.put({
     id: DRAFT_ID,
-    waypoints,
+    ...toStoredPlanningDraft(content),
     updatedAt: new Date().toISOString(),
   });
 }

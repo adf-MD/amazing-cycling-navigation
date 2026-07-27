@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  fromStoredPlanningDraft,
   fromStoredRideState,
+  toStoredPlanningDraft,
   toStoredRideState,
   type StoredCameraState,
 } from "./mapping.ts";
 import type { RideNavigationCoreState } from "../navigation/rideNavigationCore.ts";
 import type { GeolocationFix } from "../platform/geolocation.ts";
-import type { StoredRideState } from "./db.ts";
+import type { Waypoint } from "../domain/types.ts";
+import type { StoredPlanningDraft, StoredRideState } from "./db.ts";
 
 const coreState: RideNavigationCoreState = {
   lastMatch: { pointIndex: 4, distanceFromStartMetres: 321.5 },
@@ -191,6 +194,52 @@ describe("toStoredRideState / fromStoredRideState", () => {
       zoom: 13.5,
       bearingDegrees: 0,
       pitchDegrees: 0,
+    });
+  });
+});
+
+describe("toStoredPlanningDraft / fromStoredPlanningDraft", () => {
+  const waypoints: Waypoint[] = [
+    { id: "a", coordinate: [-1.5, 53.8] },
+    { id: "b", coordinate: [-1.4, 53.8] },
+  ];
+
+  it("round-trips waypoints, route name and avoid-ferries preference", () => {
+    const stored = toStoredPlanningDraft({
+      waypoints,
+      routeName: "Coastal loop",
+      avoidFerries: false,
+    });
+    const restored = fromStoredPlanningDraft({
+      id: "draft",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...stored,
+    });
+
+    expect(restored).toEqual({
+      waypoints,
+      routeName: "Coastal loop",
+      avoidFerries: false,
+    });
+  });
+
+  it("defaults route name and avoid-ferries for a row written before those fields existed", () => {
+    // Simulates a real pre-existing row from before this feature shipped —
+    // built by hand, not via toStoredPlanningDraft, so it genuinely lacks
+    // routeName/avoidFerries (rather than having them set to undefined
+    // explicitly).
+    const legacyRow: StoredPlanningDraft = {
+      id: "draft",
+      waypoints,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    const restored = fromStoredPlanningDraft(legacyRow);
+
+    expect(restored).toEqual({
+      waypoints,
+      routeName: "Planned route",
+      avoidFerries: true,
     });
   });
 });

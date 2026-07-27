@@ -55,6 +55,18 @@ export interface StoredPlanningDraft {
   id: "draft";
   waypoints: readonly Waypoint[];
   updatedAt: string;
+  /** The rider's in-progress route name. Optional because rows written
+   * before this field existed won't have it — src/storage/mapping.ts's
+   * fromStoredPlanningDraft defaults a missing value to "Planned route",
+   * the same default PlanningScreen already used before any draft
+   * persisted a name at all. Not indexed, so adding it doesn't need a
+   * schema version bump (see the version(1)/(2) comments below — same
+   * convention as StoredRideState's camera fields). */
+  routeName?: string;
+  /** The rider's in-progress avoid-ferries preference. Optional/non-
+   * indexed for the same reason as routeName — mapping.ts defaults a
+   * missing value to true, the app's existing default. */
+  avoidFerries?: boolean;
 }
 
 export interface StoredGpsFix {
@@ -133,6 +145,9 @@ export class AcnDatabase extends Dexie {
     // version's stores() must still be listed verbatim; Dexie compares
     // consecutive version schemas to work out what changed, not a diff
     // against only the latest one. See db.migration.test.ts.
+    // planningDrafts' later routeName/avoidFerries fields (Milestone 3C)
+    // are plain, non-indexed data fields added the same way as
+    // rideState's camera fields above — no version(3) needed for them.
     this.version(2).stores({
       routes: "id, name, createdAt",
       rideState: "id",

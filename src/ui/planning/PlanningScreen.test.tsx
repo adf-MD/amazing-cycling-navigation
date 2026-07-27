@@ -1,6 +1,6 @@
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PlanningScreen } from "./PlanningScreen.tsx";
 import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
@@ -199,7 +199,7 @@ async function addWaypointViaCrosshair(
 ): Promise<void> {
   map.triggerCameraSettled(coordinate);
   await user.click(
-    screen.getByRole("button", { name: /add waypoint here|move selected/i }),
+    screen.getByRole("button", { name: /add waypoint here|move .+ here|insert after/i }),
   );
 }
 
@@ -460,10 +460,14 @@ describe("PlanningScreen", () => {
   });
 
   it("never requests a location for a session restored from an existing draft", async () => {
-    await saveDraft([
-      { id: "a", coordinate: [0, 51] },
-      { id: "b", coordinate: [0.01, 51] },
-    ]);
+    await saveDraft({
+      waypoints: [
+        { id: "a", coordinate: [0, 51] },
+        { id: "b", coordinate: [0.01, 51] },
+      ],
+      routeName: "Planned route",
+      avoidFerries: true,
+    });
     const map = createMockMapFactory();
     const requestApproximateLocation = vi.fn().mockResolvedValue([-1.5, 53.8]);
     render(
@@ -586,6 +590,421 @@ describe("PlanningScreen", () => {
       expect(draft?.waypoints).toHaveLength(2);
     });
   });
+
+  it("selecting a waypoint disables placement and a subsequent bare map tap changes nothing", async () => {
+    const user = userEvent.setup();
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+
+    await user.click(screen.getByRole("button", { name: "Start" }));
+
+    const crosshairButton = screen.getByRole("button", { name: "Add waypoint here" });
+    expect(crosshairButton).toBeDisabled();
+
+    map.triggerMapTap([0.5, 51]);
+
+    expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Waypoint 2" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Waypoint 3" })).toBeNull();
+  });
+
+  it("move is one-shot: completing it returns to selected mode, disabling further placement", async () => {
+    const user = userEvent.setup();
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    await user.click(screen.getByRole("button", { name: "Move" }));
+    expect(
+      screen.getByRole("button", { name: "Move the start here" }),
+    ).toBeInTheDocument();
+
+    map.triggerCameraSettled([0.5, 51]);
+    await user.click(screen.getByRole("button", { name: "Move the start here" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Add waypoint here" }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Move" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Add waypoint here" })).toBeDisabled();
+
+    // A second bare tap performs no further move.
+    map.triggerMapTap([0.9, 51]);
+    expect(screen.queryByRole("button", { name: "Waypoint 3" })).toBeNull();
+  });
+
+  it("insert-after is one-shot: the newly inserted waypoint is left selected, not the anchor", async () => {
+    const user = userEvent.setup();
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    await user.click(screen.getByRole("button", { name: "Insert after" }));
+    expect(
+      screen.getByRole("button", { name: "Insert after the start" }),
+    ).toBeInTheDocument();
+
+    map.triggerCameraSettled([0.005, 51]);
+    await user.click(screen.getByRole("button", { name: "Insert after the start" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Waypoint 3" })).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Start" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    // The newly inserted waypoint (now "Waypoint 2") is selected, not the anchor.
+    expect(screen.getByRole("button", { name: "Waypoint 2" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("selection, pending move/insert-after mode and route-name edits never trigger a provider request", async () => {
+    const user = userEvent.setup();
+    await saveProviderKey("dummy-test-key");
+    const map = createMockMapFactory();
+    const route = buildRoute(10);
+    const calculateRouteSpy = vi.fn(() => Promise.resolve(route));
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={{ calculateRoute: calculateRouteSpy }}
+      />,
+    );
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+    const calculateButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /calculate route/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+    await user.click(calculateButton);
+    await waitFor(() => {
+      expect(calculateRouteSpy).toHaveBeenCalledTimes(1);
+    });
+    calculateRouteSpy.mockClear();
+
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    await user.click(screen.getByRole("button", { name: "Move" }));
+    fireEvent.change(screen.getByLabelText("Route name"), {
+      target: { value: "Custom name" },
+    });
+
+    // Long enough to clear both the draft-save and recalculation debounces.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+
+    expect(calculateRouteSpy).not.toHaveBeenCalled();
+  });
+
+  it("warning selection prevents accidental waypoint placement, even in append mode", async () => {
+    const user = userEvent.setup();
+    await saveProviderKey("dummy-test-key");
+    const map = createMockMapFactory();
+    const route = buildRouteWithWarnings();
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={buildResolvedAdapter(route)}
+      />,
+    );
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+    const calculateButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /calculate route/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+    await user.click(calculateButton);
+
+    const summaryRegion = await waitFor(() => {
+      const region = screen.getByRole("region", { name: "Route summary" });
+      expect(region).toBeInTheDocument();
+      return region;
+    });
+    const warningButton = within(summaryRegion).getByRole("button", {
+      name: /questionable surface for a road bike/i,
+    });
+    await user.click(warningButton);
+
+    expect(screen.getByRole("button", { name: "Add waypoint here" })).toBeDisabled();
+    expect(
+      screen.getByText("Clear the selected warning to place or move a waypoint."),
+    ).toBeInTheDocument();
+
+    map.triggerMapTap([0.5, 51]);
+
+    expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Waypoint 2" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Waypoint 3" })).toBeNull();
+  });
+
+  it("selecting a waypoint clears an active warning selection", async () => {
+    const user = userEvent.setup();
+    await saveProviderKey("dummy-test-key");
+    const map = createMockMapFactory();
+    const route = buildRouteWithWarnings();
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={buildResolvedAdapter(route)}
+      />,
+    );
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+    const calculateButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /calculate route/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+    await user.click(calculateButton);
+
+    const summaryRegion = await waitFor(() => {
+      const region = screen.getByRole("region", { name: "Route summary" });
+      expect(region).toBeInTheDocument();
+      return region;
+    });
+    const warningButton = within(summaryRegion).getByRole("button", {
+      name: /questionable surface for a road bike/i,
+    });
+    await user.click(warningButton);
+    expect(warningButton).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: "Start" }));
+
+    expect(warningButton).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("selecting a warning cancels a pending move/insert-after and returns to selected mode", async () => {
+    const user = userEvent.setup();
+    await saveProviderKey("dummy-test-key");
+    const map = createMockMapFactory();
+    const route = buildRouteWithWarnings();
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={buildResolvedAdapter(route)}
+      />,
+    );
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+    const calculateButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /calculate route/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+    await user.click(calculateButton);
+
+    const summaryRegion = await waitFor(() => {
+      const region = screen.getByRole("region", { name: "Route summary" });
+      expect(region).toBeInTheDocument();
+      return region;
+    });
+
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    await user.click(screen.getByRole("button", { name: "Move" }));
+    expect(screen.getByRole("button", { name: "Move" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    const warningButton = within(summaryRegion).getByRole("button", {
+      name: /questionable surface for a road bike/i,
+    });
+    await user.click(warningButton);
+
+    expect(screen.getByRole("button", { name: "Move" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("restores an old waypoint-only draft with routeName and avoidFerries defaulted", async () => {
+    // A legacy draft row, written directly (not via saveDraft), which
+    // genuinely lacks routeName/avoidFerries.
+    await db.planningDrafts.put({
+      id: "draft",
+      waypoints: [
+        { id: "a", coordinate: [0, 51] },
+        { id: "b", coordinate: [0.01, 51] },
+      ],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Waypoint 2" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Route name")).toHaveValue("Planned route");
+    expect(screen.getByLabelText("Avoid ferries")).toBeChecked();
+  });
+
+  it("route name and avoid-ferries preference persist into the draft and survive a reload", async () => {
+    const map = createMockMapFactory();
+    const { unmount } = render(
+      <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+    );
+    map.triggerLoad();
+
+    map.triggerMapTap([0, 51]);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Route name"), {
+      target: { value: "Coastal loop" },
+    });
+    fireEvent.click(screen.getByLabelText("Avoid ferries"));
+
+    await waitFor(
+      async () => {
+        const draft = await getDraft();
+        expect(draft?.routeName).toBe("Coastal loop");
+        expect(draft?.avoidFerries).toBe(false);
+      },
+      { timeout: 3000 },
+    );
+
+    unmount();
+
+    const map2 = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map2.factory} />);
+    map2.triggerLoad();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Route name")).toHaveValue("Coastal loop");
+    });
+    expect(screen.getByLabelText("Avoid ferries")).not.toBeChecked();
+  });
+
+  it(
+    "restores a draft, edits waypoints via select/insert-after/move, undoes and redoes, " +
+      "calculates via the mocked provider, and recovers the full draft after a reload, " +
+      "without ever reaching the network",
+    async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      const user = userEvent.setup();
+      await saveProviderKey("dummy-test-key");
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Weekend loop",
+        avoidFerries: false,
+      });
+      const map = createMockMapFactory();
+      const route = buildRoute(10);
+      const { unmount } = render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          routingProvider={buildResolvedAdapter(route)}
+        />,
+      );
+      map.triggerLoad();
+
+      // 1. Restored draft, plus one more appended waypoint.
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+      });
+      await addWaypointViaCrosshair(map, user, [0.02, 51]);
+      expect(screen.getByRole("button", { name: "Waypoint 3" })).toBeInTheDocument();
+
+      // 2. Select the middle waypoint.
+      await user.click(screen.getByRole("button", { name: "Waypoint 2" }));
+
+      // 3. Insert a new waypoint after it.
+      await user.click(screen.getByRole("button", { name: "Insert after" }));
+      map.triggerCameraSettled([0.015, 51]);
+      await user.click(screen.getByRole("button", { name: "Insert after waypoint 2" }));
+      expect(screen.getByRole("button", { name: "Waypoint 4" })).toBeInTheDocument();
+
+      // 4. Move a (different) waypoint.
+      await user.click(screen.getByRole("button", { name: "Start" }));
+      await user.click(screen.getByRole("button", { name: "Move" }));
+      map.triggerCameraSettled([0.5, 51]);
+      await user.click(screen.getByRole("button", { name: "Move the start here" }));
+
+      // 5. Undo and redo.
+      await user.click(screen.getByRole("button", { name: "Undo" }));
+      await user.click(screen.getByRole("button", { name: "Redo" }));
+
+      // 6. Calculate through the mocked provider.
+      const calculateButton = await waitFor(() => {
+        const button = screen.getByRole("button", { name: /calculate route/i });
+        expect(button).toBeEnabled();
+        return button;
+      });
+      await user.click(calculateButton);
+      await waitFor(() => {
+        expect(screen.getByRole("region", { name: "Route summary" })).toBeInTheDocument();
+      });
+
+      // 7. Reload — unmount and render a fresh instance against the same
+      // fake-indexeddb-backed db, recovering waypoints/name/ferries.
+      await waitFor(
+        async () => {
+          const draft = await getDraft();
+          expect(draft?.waypoints).toHaveLength(4);
+        },
+        { timeout: 3000 },
+      );
+      unmount();
+
+      const map2 = createMockMapFactory();
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map2.factory}
+          routingProvider={buildResolvedAdapter(route)}
+        />,
+      );
+      map2.triggerLoad();
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Waypoint 4" })).toBeInTheDocument();
+      });
+      expect(screen.getByLabelText("Route name")).toHaveValue("Weekend loop");
+      expect(screen.getByLabelText("Avoid ferries")).not.toBeChecked();
+
+      // 8. No live network request was ever required.
+      expect(fetchSpy).not.toHaveBeenCalled();
+    },
+  );
 
   it(
     "calculates a route with warnings, shows surface totals, submits warning geometry " +

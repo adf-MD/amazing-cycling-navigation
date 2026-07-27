@@ -29,8 +29,14 @@ import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { describeProviderKeyStatus } from "../settings/providerKeyStatus.ts";
 import { canSaveOrExportPlan } from "./canSaveOrExportPlan.ts";
 import { NoApiKeyNotice } from "./NoApiKeyNotice.tsx";
+import {
+  deriveInteractionMode,
+  describeCrosshairAction,
+  type PendingWaypointAction,
+} from "./planningInteractionMode.ts";
 import { RouteSummaryPanel } from "./RouteSummaryPanel.tsx";
 import { usePlanningRoute } from "./usePlanningRoute.ts";
+import type { WaypointAction } from "./waypointHistory.ts";
 import {
   INITIAL_WAYPOINT_HISTORY_STATE,
   sameCoordinate,
@@ -102,6 +108,17 @@ export function PlanningScreen({
     null,
   );
   const [selectedWarningIndex, setSelectedWarningIndex] = useState<number | null>(null);
+  // Tracks which waypoint a pending move/insert-after applies to,
+  // alongside the action itself — so a selection change to a *different*
+  // waypoint (or to none) automatically invalidates a stale pending
+  // action just by no longer matching, with no separate reset effect/ref
+  // needed. "move" doesn't change selectedWaypointId (see
+  // waypointHistory.ts), so the one-shot completion in handlePlacementAt
+  // below still clears this explicitly rather than relying on that.
+  const [pendingWaypointAction, setPendingWaypointAction] = useState<{
+    waypointId: string;
+    kind: "move" | "insert-after";
+  } | null>(null);
 
   const keyQuery = useCallback(() => getProviderKey(), []);
   const key = useLiveQuery(keyQuery);
@@ -151,12 +168,70 @@ export function PlanningScreen({
     }
   }
 
+  // A pending action only counts while it still applies to the currently
+  // selected waypoint — a selection change to a different waypoint (or to
+  // none) invalidates it just by no longer matching, computed fresh each
+  // render rather than needing an explicit reset.
+  const effectivePendingAction: PendingWaypointAction =
+    pendingWaypointAction?.waypointId === state.selectedWaypointId
+      ? pendingWaypointAction.kind
+      : null;
+  const interactionMode = deriveInteractionMode(
+    state.selectedWaypointId,
+    effectivePendingAction,
+  );
+
+  // Every waypoint-history dispatch also clears any active warning
+  // selection ("selecting or editing a waypoint clears the warning
+  // selection") — centralised here so no call site (including undo/redo)
+  // can forget it. Without this, a stale warning selection could keep
+  // wrongly blocking placement for the ~900ms-plus-network gap until the
+  // next recalculation lands (see handlePlacementAt's own guard below).
+  const dispatchWaypointAction = useCallback(
+    (action: WaypointAction) => {
+      if (selectedWarningIndex !== null) setSelectedWarningIndex(null);
+      dispatch(action);
+    },
+    [selectedWarningIndex],
+  );
+
   const handleSelectWarning = useCallback((index: number) => {
+    // "Selecting a warning clears any waypoint movement/insertion mode."
+    setPendingWaypointAction(null);
     setSelectedWarningIndex(index);
   }, []);
+  // Deliberately does not restore pendingWaypointAction — clearing a
+  // warning selection returns to a non-destructive state rather than
+  // guessing the rider's previous placement intention.
   const handleClearWarningSelection = useCallback(() => {
     setSelectedWarningIndex(null);
   }, []);
+
+  // Both toggle: clicking an already-active Move/Insert-after button
+  // cancels it, returning to plain "selected" — the same aria-pressed
+  // affordance doubling as a cancel control.
+  const handleStartMove = useCallback(
+    (waypointId: string) => {
+      if (selectedWarningIndex !== null) setSelectedWarningIndex(null);
+      setPendingWaypointAction((current) =>
+        current?.waypointId === waypointId && current.kind === "move"
+          ? null
+          : { waypointId, kind: "move" },
+      );
+    },
+    [selectedWarningIndex],
+  );
+  const handleStartInsertAfter = useCallback(
+    (waypointId: string) => {
+      if (selectedWarningIndex !== null) setSelectedWarningIndex(null);
+      setPendingWaypointAction((current) =>
+        current?.waypointId === waypointId && current.kind === "insert-after"
+          ? null
+          : { waypointId, kind: "insert-after" },
+      );
+    },
+    [selectedWarningIndex],
+  );
 
   // Loads any previously saved draft exactly once, before draft-persisting
   // starts below — otherwise the persist effect's first run (an empty
@@ -168,6 +243,8 @@ export function PlanningScreen({
         if (cancelled) return;
         if (draft && draft.waypoints.length > 0) {
           dispatch({ type: "reset", waypoints: draft.waypoints });
+          setRouteName(draft.routeName);
+          setAvoidFerries(draft.avoidFerries);
         }
         setIsDraftHydrated(true);
       })
@@ -180,11 +257,17 @@ export function PlanningScreen({
     };
   }, []);
 
+  // A separate 900ms debounce from usePlanningRoute's own recalculation
+  // debounce below — this one persists the draft (waypoints, route name,
+  // avoid-ferries), so it deliberately DOES depend on routeName/
+  // avoidFerries, unlike the routing debounce, which never receives them.
   useEffect(() => {
     if (!isDraftHydrated) return;
     const timeoutId = window.setTimeout(() => {
       const persist =
-        state.present.length === 0 ? clearDraft() : saveDraft(state.present);
+        state.present.length === 0
+          ? clearDraft()
+          : saveDraft({ waypoints: state.present, routeName, avoidFerries });
       persist.catch((error: unknown) => {
         logError("planning-save-draft", error);
       });
@@ -192,7 +275,7 @@ export function PlanningScreen({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [state.present, isDraftHydrated]);
+  }, [state.present, routeName, avoidFerries, isDraftHydrated]);
 
   // Read fresh inside the location effect below rather than depending on
   // state.present directly, so a waypoint added while the location request
@@ -229,24 +312,59 @@ export function PlanningScreen({
       });
   }, [isDraftHydrated, requestApproximateLocation]);
 
-  // Add-or-move: with a waypoint selected, a tap/click relocates it;
-  // otherwise it appends (or inserts after the selected waypoint — see
-  // waypointHistoryReducer's "add"). Shared by the map tap and the
-  // crosshair button, so both paths behave identically.
-  const handleAddOrMoveAt = useCallback(
+  // --- Future event-priority policy (map-to-list warning tapping) ---
+  // Not implemented this slice — there is no warning-layer hit testing yet
+  // (mapAdapter.ts's onMapTap is a single map-wide click listener, not
+  // layer-scoped; nothing calls queryRenderedFeatures). When that lands, a
+  // single map tap must resolve to exactly ONE of the following, in order:
+  //   1. The tap hits a selectable warning or waypoint feature — select
+  //      that feature; it must never also append/move/insert a waypoint.
+  //   2. Otherwise, if there is an explicit active move/insert-after
+  //      operation, the tap completes that operation.
+  //   3. Otherwise, a bare tap only appends when append mode is visibly
+  //      active — never just because nothing else matched ("selected"
+  //      mode with no pending move/insert still does nothing on a bare
+  //      tap, see below).
+  // Panning/zooming never go through onMapTap at all, so are unaffected.
+  //
+  // Shared by both the map tap and the crosshair button, so both paths
+  // behave identically.
+  const handlePlacementAt = useCallback(
     (coordinate: Coordinate) => {
-      if (state.selectedWaypointId) {
-        dispatch({ type: "move", waypointId: state.selectedWaypointId, coordinate });
-      } else {
-        dispatch({ type: "add", coordinate });
+      // Warning inspection takes priority — "a bare map tap must not
+      // append or move a waypoint" while a warning is selected and framed.
+      if (selectedWarningIndex !== null) return;
+      switch (interactionMode.kind) {
+        case "append":
+          dispatchWaypointAction({ type: "append", coordinate });
+          break;
+        case "move":
+          dispatchWaypointAction({
+            type: "move",
+            waypointId: interactionMode.waypointId,
+            coordinate,
+          });
+          setPendingWaypointAction(null);
+          break;
+        case "insert-after":
+          dispatchWaypointAction({
+            type: "insertAfter",
+            afterWaypointId: interactionMode.waypointId,
+            coordinate,
+          });
+          setPendingWaypointAction(null);
+          break;
+        case "selected":
+          // Merely inspecting — no implicit geometry change from a tap.
+          break;
       }
     },
-    [state.selectedWaypointId],
+    [interactionMode, selectedWarningIndex, dispatchWaypointAction],
   );
 
-  const handleAddOrMoveHere = () => {
+  const handlePlacementHere = () => {
     if (!crosshairCoordinate) return;
-    handleAddOrMoveAt(crosshairCoordinate);
+    handlePlacementAt(crosshairCoordinate);
   };
 
   const selectedIndex = state.selectedWaypointId
@@ -274,7 +392,7 @@ export function PlanningScreen({
     saveRoute(routeToSave)
       .then(() => clearDraft())
       .then(() => {
-        dispatch({ type: "reset", waypoints: [] });
+        dispatchWaypointAction({ type: "reset", waypoints: [] });
         setRouteName("Planned route");
         onRouteSaved?.(routeToSave);
       })
@@ -303,7 +421,7 @@ export function PlanningScreen({
     previewCoordinates:
       routing.state.kind === "routed" ? [] : state.present.map((w) => w.coordinate),
     selectedWaypointIndex,
-    onMapTap: handleAddOrMoveAt,
+    onMapTap: handlePlacementAt,
   };
 
   const mapPoints = routing.state.kind === "routed" ? routing.state.route.points : [];
@@ -348,8 +466,12 @@ export function PlanningScreen({
         />
         <button
           type="button"
-          onClick={handleAddOrMoveHere}
-          disabled={!crosshairCoordinate}
+          onClick={handlePlacementHere}
+          disabled={
+            !crosshairCoordinate ||
+            interactionMode.kind === "selected" ||
+            selectedWarningIndex !== null
+          }
           style={{
             position: "absolute",
             // Clears the map-attribution overlay's bottom-left corner
@@ -361,15 +483,18 @@ export function PlanningScreen({
             minHeight: 44,
           }}
         >
-          {state.selectedWaypointId ? "Move selected waypoint here" : "Add waypoint here"}
+          {describeCrosshairAction(interactionMode, state.present)}
         </button>
+        {selectedWarningIndex !== null ? (
+          <p role="status">Clear the selected warning to place or move a waypoint.</p>
+        ) : null}
       </div>
 
       <div role="group" aria-label="Waypoint actions">
         <button
           type="button"
           onClick={() => {
-            dispatch({ type: "undo" });
+            dispatchWaypointAction({ type: "undo" });
           }}
           disabled={state.past.length === 0}
         >
@@ -378,7 +503,7 @@ export function PlanningScreen({
         <button
           type="button"
           onClick={() => {
-            dispatch({ type: "redo" });
+            dispatchWaypointAction({ type: "redo" });
           }}
           disabled={state.future.length === 0}
         >
@@ -387,7 +512,7 @@ export function PlanningScreen({
         <button
           type="button"
           onClick={() => {
-            dispatch({ type: "returnToStart" });
+            dispatchWaypointAction({ type: "returnToStart" });
           }}
           disabled={!canReturnToStart}
         >
@@ -397,30 +522,32 @@ export function PlanningScreen({
           <button
             type="button"
             onClick={() => {
-              dispatch({ type: "select", waypointId: null });
+              dispatchWaypointAction({ type: "select", waypointId: null });
             }}
           >
-            Clear selection
+            Add to end
           </button>
         ) : null}
       </div>
 
       <WaypointList
         waypoints={state.present}
-        selectedWaypointId={state.selectedWaypointId}
+        interactionMode={interactionMode}
         onSelect={(waypointId) => {
-          dispatch({ type: "select", waypointId });
+          dispatchWaypointAction({ type: "select", waypointId });
         }}
+        onStartMove={handleStartMove}
+        onStartInsertAfter={handleStartInsertAfter}
         onMoveUp={(waypointId) => {
           const index = state.present.findIndex((w) => w.id === waypointId);
-          dispatch({ type: "reorder", waypointId, toIndex: index - 1 });
+          dispatchWaypointAction({ type: "reorder", waypointId, toIndex: index - 1 });
         }}
         onMoveDown={(waypointId) => {
           const index = state.present.findIndex((w) => w.id === waypointId);
-          dispatch({ type: "reorder", waypointId, toIndex: index + 1 });
+          dispatchWaypointAction({ type: "reorder", waypointId, toIndex: index + 1 });
         }}
         onDelete={(waypointId) => {
-          dispatch({ type: "delete", waypointId });
+          dispatchWaypointAction({ type: "delete", waypointId });
         }}
       />
 

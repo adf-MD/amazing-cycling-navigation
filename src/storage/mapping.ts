@@ -1,8 +1,8 @@
-import type { Coordinate } from "../domain/types.ts";
+import type { Coordinate, Waypoint } from "../domain/types.ts";
 import type { GeolocationFix } from "../platform/geolocation.ts";
 import type { ElevationWindowMetres, RideCameraMode } from "../navigation/types.ts";
 import type { RideNavigationCoreState } from "../navigation/rideNavigationCore.ts";
-import { type StoredRideState } from "./db.ts";
+import { type StoredPlanningDraft, type StoredRideState } from "./db.ts";
 
 export interface StoredCameraState {
   mode: RideCameraMode;
@@ -85,5 +85,38 @@ export function fromStoredRideState(stored: StoredRideState): RestoredRideState 
       bearingDegrees: stored.cameraBearingDegrees ?? 0,
       pitchDegrees: stored.cameraPitchDegrees ?? 0,
     },
+  };
+}
+
+/** A Planning draft's provider-independent content — deliberately one
+ * shared shape for both directions (unlike ride state's asymmetric
+ * to/Restored pair), since a draft's shape is identical whether it's
+ * about to be stored or was just read back. */
+export interface PlanningDraftContent {
+  waypoints: readonly Waypoint[];
+  routeName: string;
+  avoidFerries: boolean;
+}
+
+export function toStoredPlanningDraft(
+  content: PlanningDraftContent,
+): Omit<StoredPlanningDraft, "id" | "updatedAt"> {
+  return {
+    waypoints: content.waypoints,
+    routeName: content.routeName,
+    avoidFerries: content.avoidFerries,
+  };
+}
+
+export function fromStoredPlanningDraft(
+  stored: StoredPlanningDraft,
+): PlanningDraftContent {
+  return {
+    waypoints: stored.waypoints,
+    // Rows written before these fields existed won't have them — default
+    // to the app's own existing defaults (PlanningScreen's initial
+    // routeName/avoidFerries state), never an arbitrary blank/false.
+    routeName: stored.routeName ?? "Planned route",
+    avoidFerries: stored.avoidFerries ?? true,
   };
 }
