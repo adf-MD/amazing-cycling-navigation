@@ -6,6 +6,7 @@
   --colour-accent: #0a5f38;
   --colour-warning: #8a5600;
   --colour-danger: #9b1c1c;
+  --colour-border: #767676;
   --touch-target-min: 44px;
   font-family:
     system-ui,
@@ -23,6 +24,7 @@
     --colour-accent: #4ade91;
     --colour-warning: #f0b429;
     --colour-danger: #ff6b6b;
+    --colour-border: #8a8a8a;
   }
 }
 
@@ -121,4 +123,28 @@ header h1 {
  * previously flow-positioned attribution used to leave behind. */
 .elevation-window-group {
   margin-top: 10px;
+}
+
+/* The Route warnings list has no other way to show which entry is
+ * selected once aria-pressed is set — colour alone would fail
+ * CLAUDE.md's "never colour alone" rule for anyone with reduced colour
+ * perception, so selection also gets a darker neutral fill and a grey
+ * ring. box-shadow (not border) draws the ring so it never changes the
+ * button's box model — unselected buttons need no reservation and stay
+ * exactly as they render today. */
+.route-warning-button.is-selected {
+  background-color: var(--colour-bg-elevated);
+  box-shadow: 0 0 0 2px var(--colour-border);
+}
+
+/* Reserves its own width regardless of content so the checkmark
+ * appearing/disappearing on selection never reflows the warning text
+ * or shifts neighbouring list entries. Always aria-hidden: aria-pressed
+ * on the button already tells assistive technology the selection
+ * state, so this glyph is a redundant, sighted-only cue. */
+.route-warning-selected-indicator {
+  display: inline-block;
+  width: 1.2em;
+  text-align: center;
+  font-weight: 700;
 }

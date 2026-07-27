@@ -919,6 +919,8 @@ describe("PlanningScreen", () => {
       map.triggerMapTap([0.15, 51]);
 
       expect(warningButton).toHaveAttribute("aria-pressed", "true");
+      expect(warningButton).toHaveClass("is-selected");
+      expect(warningButton).toHaveTextContent("✓");
       expect(map.fitBoundsSpy.mock.calls.length).toBeGreaterThan(
         fitBoundsCallsBeforeSelect,
       );

@@ -92,6 +92,9 @@ describe("RouteSummaryPanel", () => {
     expect(buttons[0]).toHaveTextContent("0.1 km");
     expect(buttons[0]).toHaveTextContent("0.3 km");
     expect(buttons[0]).toHaveAttribute("aria-pressed", "false");
+    expect(buttons[0]).toHaveClass("route-warning-button");
+    expect(buttons[0]).not.toHaveClass("is-selected");
+    expect(buttons[0]).not.toHaveTextContent("✓");
   });
 
   it("marks the selected warning's button as pressed", () => {
@@ -110,6 +113,65 @@ describe("RouteSummaryPanel", () => {
     const buttons = screen.getAllByRole("button", { name: /surface for a road bike/i });
     expect(buttons[0]).toHaveAttribute("aria-pressed", "false");
     expect(buttons[1]).toHaveAttribute("aria-pressed", "true");
+    expect(buttons[1]).toHaveClass("route-warning-button", "is-selected");
+    expect(buttons[1]).toHaveTextContent("✓");
+    expect(buttons[0]).not.toHaveClass("is-selected");
+  });
+
+  it("moves the selected visual treatment when selectedWarningIndex changes, and clears it when the selection is cleared", () => {
+    const { rerender } = render(
+      <RouteSummaryPanel
+        route={buildRoute()}
+        waypointCount={2}
+        warnings={WARNINGS}
+        selectedWarningIndex={0}
+        onSelectWarning={vi.fn()}
+        onClearWarningSelection={vi.fn()}
+        revealToken={0}
+      />,
+    );
+
+    let buttons = screen.getAllByRole("button", { name: /surface for a road bike/i });
+    expect(buttons[0]).toHaveClass("is-selected");
+    expect(buttons[0]).toHaveTextContent("✓");
+    expect(buttons[1]).not.toHaveClass("is-selected");
+    expect(buttons[1]).not.toHaveTextContent("✓");
+
+    rerender(
+      <RouteSummaryPanel
+        route={buildRoute()}
+        waypointCount={2}
+        warnings={WARNINGS}
+        selectedWarningIndex={1}
+        onSelectWarning={vi.fn()}
+        onClearWarningSelection={vi.fn()}
+        revealToken={0}
+      />,
+    );
+
+    buttons = screen.getAllByRole("button", { name: /surface for a road bike/i });
+    expect(buttons[0]).not.toHaveClass("is-selected");
+    expect(buttons[0]).not.toHaveTextContent("✓");
+    expect(buttons[1]).toHaveClass("is-selected");
+    expect(buttons[1]).toHaveTextContent("✓");
+
+    rerender(
+      <RouteSummaryPanel
+        route={buildRoute()}
+        waypointCount={2}
+        warnings={WARNINGS}
+        selectedWarningIndex={null}
+        onSelectWarning={vi.fn()}
+        onClearWarningSelection={vi.fn()}
+        revealToken={0}
+      />,
+    );
+
+    buttons = screen.getAllByRole("button", { name: /surface for a road bike/i });
+    expect(buttons[0]).not.toHaveClass("is-selected");
+    expect(buttons[0]).not.toHaveTextContent("✓");
+    expect(buttons[1]).not.toHaveClass("is-selected");
+    expect(buttons[1]).not.toHaveTextContent("✓");
   });
 
   it("selects a warning when its button is clicked", async () => {

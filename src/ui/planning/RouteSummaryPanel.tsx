@@ -119,6 +119,11 @@ export function RouteSummaryPanel({
                   <button
                     ref={isSelected ? selectedButtonRef : undefined}
                     type="button"
+                    className={
+                      isSelected
+                        ? "route-warning-button is-selected"
+                        : "route-warning-button"
+                    }
                     aria-pressed={isSelected}
                     onClick={() => {
                       if (isSelected) {
@@ -128,6 +133,9 @@ export function RouteSummaryPanel({
                       }
                     }}
                   >
+                    <span className="route-warning-selected-indicator" aria-hidden="true">
+                      {isSelected ? "✓" : null}
+                    </span>
                     {warning.message} —{" "}
                     {formatMetres(
                       warning.endDistanceMetres - warning.startDistanceMetres,
