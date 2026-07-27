@@ -134,14 +134,100 @@ describe("normalizeOpenRouteServiceRoute", () => {
     expect(sum).toBeCloseTo(route.distanceMetres, 6);
   });
 
-  it("emits an inspectable warning for the unsuitable-surface range, but none for unknown", () => {
+  it("emits inspectable warnings for both the gap (unknown-surface) and the unsuitable-surface range", () => {
     const route = normalizeOpenRouteServiceRoute(buildResponse(), OPTIONS);
 
-    expect(route.warnings).toHaveLength(1);
-    expect(route.warnings[0]?.kind).toBe("unsuitable-surface");
+    expect(route.warnings).toHaveLength(2);
+    expect(route.warnings[0]?.kind).toBe("unknown-surface");
+    expect(route.warnings[0]?.message).toBe(
+      "Surface data is unavailable for this segment.",
+    );
+    expect(route.warnings[0]?.startDistanceMetres).toBeCloseTo(
+      route.points[2]?.distanceFromStartMetres ?? -1,
+      6,
+    );
+    expect(route.warnings[0]?.endDistanceMetres).toBeCloseTo(
+      route.points[3]?.distanceFromStartMetres ?? -1,
+      6,
+    );
+    expect(route.warnings[1]?.kind).toBe("unsuitable-surface");
+    expect(route.warnings[1]?.startDistanceMetres).toBeCloseTo(
+      route.points[3]?.distanceFromStartMetres ?? -1,
+      6,
+    );
   });
 
-  it("treats a fully absent surface extra as entirely unknown, with no warnings", () => {
+  it("emits a questionable-surface warning with the existing message for a recognised questionable code", () => {
+    const response: OrsFeatureCollectionResponse = {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: {
+            summary: { distance: 0, duration: 0 },
+            extras: { surface: { values: [[0, 4, 8]] } }, // compacted gravel
+          },
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [0, 51],
+              [0.001, 51],
+              [0.002, 51],
+              [0.003, 51],
+              [0.004, 51],
+            ],
+          },
+        },
+      ],
+    };
+    const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+    expect(route.warnings).toEqual([
+      {
+        kind: "questionable-surface",
+        startDistanceMetres: 0,
+        endDistanceMetres: route.distanceMetres,
+        message: "Questionable surface for a road bike.",
+      },
+    ]);
+  });
+
+  it("emits an unsuitable-surface warning with the existing message for a recognised unsuitable code", () => {
+    const response: OrsFeatureCollectionResponse = {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: {
+            summary: { distance: 0, duration: 0 },
+            extras: { surface: { values: [[0, 4, 15]] } }, // sand
+          },
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [0, 51],
+              [0.001, 51],
+              [0.002, 51],
+              [0.003, 51],
+              [0.004, 51],
+            ],
+          },
+        },
+      ],
+    };
+    const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+    expect(route.warnings).toEqual([
+      {
+        kind: "unsuitable-surface",
+        startDistanceMetres: 0,
+        endDistanceMetres: route.distanceMetres,
+        message: "Unsuitable surface for a road bike.",
+      },
+    ]);
+  });
+
+  it("treats a fully absent surface extra as entirely unknown, with one whole-route warning", () => {
     const response = buildResponse({ extras: undefined });
     const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
 
@@ -150,6 +236,36 @@ describe("normalizeOpenRouteServiceRoute", () => {
       questionableMetres: 0,
       unsuitableMetres: 0,
       unknownMetres: route.distanceMetres,
+    });
+    expect(route.warnings).toEqual([
+      {
+        kind: "unknown-surface",
+        startDistanceMetres: 0,
+        endDistanceMetres: route.distanceMetres,
+        message: "Surface data is unavailable for this segment.",
+      },
+    ]);
+  });
+
+  it("produces no warning for a zero-length route (single-coordinate geometry)", () => {
+    const response: OrsFeatureCollectionResponse = {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: { summary: { distance: 0, duration: 0 } },
+          geometry: { type: "LineString", coordinates: [[0, 51]] },
+        },
+      ],
+    };
+    const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+    expect(route.distanceMetres).toBe(0);
+    expect(route.surfaceSummary).toEqual({
+      pavedMetres: 0,
+      questionableMetres: 0,
+      unsuitableMetres: 0,
+      unknownMetres: 0,
     });
     expect(route.warnings).toEqual([]);
   });
@@ -292,7 +408,11 @@ describe("normalizeOpenRouteServiceRoute", () => {
         summary.unsuitableMetres +
         summary.unknownMetres;
       expect(sum).toBeCloseTo(route.distanceMetres, 6);
-      expect(route.warnings).toHaveLength(1);
+      expect(route.warnings).toHaveLength(2);
+      expect(route.warnings.map((w) => w.kind)).toEqual([
+        "unknown-surface",
+        "unsuitable-surface",
+      ]);
     });
 
     it("keeps buckets summing to the total distance for out-of-order triples", () => {
@@ -319,6 +439,81 @@ describe("normalizeOpenRouteServiceRoute", () => {
       expect(sum).toBeCloseTo(route.distanceMetres, 6);
       expect(summary.pavedMetres).toBeGreaterThan(0);
       expect(summary.unsuitableMetres).toBeGreaterThan(0);
+    });
+
+    it("treats an unrecognised surface code as unknown, with an inspectable warning", () => {
+      const response = buildResponse({
+        extras: {
+          surface: {
+            values: [[0, 5, 9999]], // unrecognised ORS surface code
+          },
+        },
+      });
+
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.surfaceSummary).toEqual({
+        pavedMetres: 0,
+        questionableMetres: 0,
+        unsuitableMetres: 0,
+        unknownMetres: route.distanceMetres,
+      });
+      expect(route.warnings).toEqual([
+        {
+          kind: "unknown-surface",
+          startDistanceMetres: 0,
+          endDistanceMetres: route.distanceMetres,
+          message: "Surface data is unavailable for this segment.",
+        },
+      ]);
+    });
+
+    it("produces two distinct, correctly ordered unknown-surface warnings for two separate gaps", () => {
+      const response: OrsFeatureCollectionResponse = {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {
+              summary: { distance: 0, duration: 0 },
+              // Only points 2-4 are classified (paved); points 0-2 and
+              // 4-6 are each a separate, non-adjacent unknown gap either
+              // side of it.
+              extras: { surface: { values: [[2, 4, 1]] } },
+            },
+            geometry: {
+              type: "LineString",
+              coordinates: [
+                [0, 51],
+                [0.001, 51],
+                [0.002, 51],
+                [0.003, 51],
+                [0.004, 51],
+                [0.005, 51],
+                [0.006, 51],
+              ],
+            },
+          },
+        ],
+      };
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toHaveLength(2);
+      expect(route.warnings[0]?.kind).toBe("unknown-surface");
+      expect(route.warnings[0]?.startDistanceMetres).toBeCloseTo(0, 6);
+      expect(route.warnings[0]?.endDistanceMetres).toBeCloseTo(
+        route.points[2]?.distanceFromStartMetres ?? -1,
+        6,
+      );
+      expect(route.warnings[1]?.kind).toBe("unknown-surface");
+      expect(route.warnings[1]?.startDistanceMetres).toBeCloseTo(
+        route.points[4]?.distanceFromStartMetres ?? -1,
+        6,
+      );
+      expect(route.warnings[1]?.endDistanceMetres).toBeCloseTo(route.distanceMetres, 6);
+      expect(route.warnings[0]?.endDistanceMetres).toBeLessThanOrEqual(
+        route.warnings[1]?.startDistanceMetres ?? -1,
+      );
     });
   });
 });

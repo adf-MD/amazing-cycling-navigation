@@ -1,13 +1,17 @@
 import type { RouteWarning } from "../../domain/types.ts";
 
 /**
- * Synthetic RouteWarning fixtures for the kinds no producer currently
- * emits (only questionable-surface/unsuitable-surface come from a real
- * calculated route today, via normalizeOpenRouteServiceRoute.ts). These
- * are hand-constructed for tests only — not derived from, or verified
- * against, any live provider response — used solely to prove the
- * map/Planning presentation layers correctly handle every
- * RouteWarningKind ahead of any provider actually producing them.
+ * Synthetic RouteWarning fixtures for map/Planning presentation tests
+ * that don't want to run the full ORS normalisation pipeline. All three
+ * surface-related kinds (questionable-surface, unsuitable-surface and,
+ * since normalizeOpenRouteServiceRoute.ts's unknown-surface fix,
+ * unknown-surface too) now come from a real calculated route; access,
+ * steps, ford, ferry and other are not produced by any provider adapter
+ * yet. These are hand-constructed for tests only — not derived from, or
+ * verified against, any live provider response — used solely to prove
+ * the map/Planning presentation layers correctly handle every
+ * RouteWarningKind ahead of (or independent of) any provider actually
+ * producing them.
  */
 
 export const SYNTHETIC_UNKNOWN_SURFACE_WARNING: RouteWarning = {

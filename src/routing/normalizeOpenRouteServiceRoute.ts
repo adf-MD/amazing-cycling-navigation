@@ -47,12 +47,31 @@ function buildManoeuvres(
 }
 
 const SURFACE_WARNING_MESSAGES: Record<
-  "questionable-surface" | "unsuitable-surface",
+  "unknown-surface" | "questionable-surface" | "unsuitable-surface",
   string
 > = {
+  "unknown-surface": "Surface data is unavailable for this segment.",
   "questionable-surface": "Questionable surface for a road bike.",
   "unsuitable-surface": "Unsuitable surface for a road bike.",
 };
+
+type SurfaceWarningKind = keyof typeof SURFACE_WARNING_MESSAGES;
+
+/** Appends a RouteWarning for a classified surface range, using the fixed
+ * message for `kind` — the one shared shape behind all three surface
+ * warning kinds, so each call site states only what varies. */
+function pushSurfaceWarning(
+  warnings: RouteWarning[],
+  kind: SurfaceWarningKind,
+  range: { start: number; end: number },
+): void {
+  warnings.push({
+    kind,
+    startDistanceMetres: range.start,
+    endDistanceMetres: range.end,
+    message: SURFACE_WARNING_MESSAGES[kind],
+  });
+}
 
 interface ClassifiedRange {
   start: number;
@@ -90,6 +109,13 @@ function buildSurfaceSummaryAndWarnings(
   const values = extras?.surface?.values;
 
   if (!values || values.length === 0) {
+    const warnings: RouteWarning[] = [];
+    if (totalDistanceMetres > 0) {
+      pushSurfaceWarning(warnings, "unknown-surface", {
+        start: 0,
+        end: totalDistanceMetres,
+      });
+    }
     return {
       surfaceSummary: {
         pavedMetres: 0,
@@ -97,7 +123,7 @@ function buildSurfaceSummaryAndWarnings(
         unsuitableMetres: 0,
         unknownMetres: totalDistanceMetres,
       },
-      warnings: [],
+      warnings,
     };
   }
 
@@ -157,24 +183,15 @@ function buildSurfaceSummaryAndWarnings(
         break;
       case "questionable-surface":
         questionableMetres += length;
-        warnings.push({
-          kind: "questionable-surface",
-          startDistanceMetres: range.start,
-          endDistanceMetres: range.end,
-          message: SURFACE_WARNING_MESSAGES["questionable-surface"],
-        });
+        pushSurfaceWarning(warnings, "questionable-surface", range);
         break;
       case "unsuitable-surface":
         unsuitableMetres += length;
-        warnings.push({
-          kind: "unsuitable-surface",
-          startDistanceMetres: range.start,
-          endDistanceMetres: range.end,
-          message: SURFACE_WARNING_MESSAGES["unsuitable-surface"],
-        });
+        pushSurfaceWarning(warnings, "unsuitable-surface", range);
         break;
       case "unknown":
         unknownMetres += length;
+        pushSurfaceWarning(warnings, "unknown-surface", range);
         break;
     }
   }
