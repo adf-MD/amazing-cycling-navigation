@@ -6,6 +6,7 @@ import {
   deleteProviderKey,
   getProviderKey,
   getProviderKeyVerification,
+  InvalidApiKeyError,
   saveProviderKey,
 } from "../../storage/providerKeyRepository.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
@@ -44,7 +45,11 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
       })
       .catch((error: unknown) => {
         logError("settings-save-key", error);
-        setSaveError("The key could not be saved on this device. Try again.");
+        setSaveError(
+          error instanceof InvalidApiKeyError
+            ? "This key contains a character that cannot be sent in a request header. Check for an accidental line break introduced while copying it."
+            : "The key could not be saved on this device. Try again.",
+        );
       });
   };
 

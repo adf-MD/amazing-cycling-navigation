@@ -234,7 +234,9 @@ describe("usePlanningRoute", () => {
       expect(calls).toHaveLength(2);
     });
     await act(async () => {
-      calls[1]?.reject(new RoutingError("transport-failure", "boom"));
+      calls[1]?.reject(
+        new RoutingError({ reason: "transport-failure", message: "boom" }),
+      );
       await flushMicrotasks();
     });
 
@@ -319,7 +321,9 @@ describe("usePlanningRoute", () => {
       result.current.calculateNow();
     });
     await act(async () => {
-      calls[0]?.reject(new RoutingError("unauthorized", "The key was rejected."));
+      calls[0]?.reject(
+        new RoutingError({ reason: "unauthorized", message: "The key was rejected." }),
+      );
       await flushMicrotasks();
     });
 
@@ -344,7 +348,7 @@ describe("usePlanningRoute", () => {
       result.current.calculateNow();
     });
     await act(async () => {
-      calls[0]?.reject(new RoutingError("no-api-key", "no key"));
+      calls[0]?.reject(new RoutingError({ reason: "no-api-key", message: "no key" }));
       await flushMicrotasks();
     });
 
@@ -372,10 +376,10 @@ describe("usePlanningRoute", () => {
     });
     await act(async () => {
       calls[0]?.reject(
-        new RoutingError(
-          "no-route-found",
-          "No cycling route could be found between these waypoints.",
-        ),
+        new RoutingError({
+          reason: "no-route-found",
+          message: "No cycling route could be found between these waypoints.",
+        }),
       );
       await flushMicrotasks();
     });
@@ -406,10 +410,10 @@ describe("usePlanningRoute", () => {
     });
     await act(async () => {
       calls[0]?.reject(
-        new RoutingError(
-          "no-routable-point",
-          "A waypoint is too far from a usable road for cycling.",
-        ),
+        new RoutingError({
+          reason: "no-routable-point",
+          message: "A waypoint is too far from a usable road for cycling.",
+        }),
       );
       await flushMicrotasks();
     });
@@ -440,10 +444,10 @@ describe("usePlanningRoute", () => {
     });
     await act(async () => {
       calls[0]?.reject(
-        new RoutingError(
-          "provider-error",
-          "The routing provider returned an unexpected error (status 500).",
-        ),
+        new RoutingError({
+          reason: "provider-error",
+          message: "The routing provider returned an unexpected error (status 500).",
+        }),
       );
       await flushMicrotasks();
     });
@@ -472,13 +476,11 @@ describe("usePlanningRoute", () => {
     });
     await act(async () => {
       calls[0]?.reject(
-        new RoutingError(
-          "provider-unavailable",
-          "OpenRouteService returned a server error.",
-          undefined,
-          undefined,
-          502,
-        ),
+        new RoutingError({
+          reason: "provider-unavailable",
+          message: "OpenRouteService returned a server error.",
+          httpStatus: 502,
+        }),
       );
       await flushMicrotasks();
     });
@@ -509,7 +511,10 @@ describe("usePlanningRoute", () => {
     });
     await act(async () => {
       calls[0]?.reject(
-        new RoutingError("transport-failure", "The routing request failed."),
+        new RoutingError({
+          reason: "transport-failure",
+          message: "The routing request failed.",
+        }),
       );
       await flushMicrotasks();
     });
@@ -557,13 +562,11 @@ describe("usePlanningRoute", () => {
     });
     await act(async () => {
       calls[1]?.reject(
-        new RoutingError(
-          "provider-unavailable",
-          "OpenRouteService returned a server error.",
-          undefined,
-          undefined,
-          503,
-        ),
+        new RoutingError({
+          reason: "provider-unavailable",
+          message: "OpenRouteService returned a server error.",
+          httpStatus: 503,
+        }),
       );
       await flushMicrotasks();
     });

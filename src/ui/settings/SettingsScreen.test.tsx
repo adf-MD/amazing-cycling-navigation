@@ -152,6 +152,44 @@ describe("SettingsScreen", () => {
     });
   });
 
+  it("shows a specific, key-free message for a key with an embedded control character, and does not save it", async () => {
+    const user = userEvent.setup();
+    render(<SettingsScreen />);
+    await waitFor(() => screen.getByText("No key configured"));
+
+    // A plain <input> silently strips CR/LF from pasted/typed content per
+    // the HTML value-sanitisation algorithm (confirmed against jsdom too),
+    // so an embedded newline can never actually reach this field — a NUL
+    // byte is not stripped the same way, and does reach saveProviderKey.
+    const input = screen.getByLabelText("OpenRouteService API key");
+    await user.click(input);
+    await user.paste("abc\0def");
+    await user.click(screen.getByRole("button", { name: "Save on this device" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/cannot be sent in a request header/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText("No key configured")).toBeInTheDocument();
+  });
+
+  it("saves a key with only a trailing newline without showing an error", async () => {
+    const user = userEvent.setup();
+    render(<SettingsScreen />);
+    await waitFor(() => screen.getByText("No key configured"));
+
+    const input = screen.getByLabelText("OpenRouteService API key");
+    await user.click(input);
+    await user.paste(`${DUMMY_KEY}\n`);
+    await user.click(screen.getByRole("button", { name: "Save on this device" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Key saved on this device, not yet verified"),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/cannot be sent in a request header/i)).toBeNull();
+  });
+
   it("shows an offline indicator without hiding the form", async () => {
     vi.stubGlobal("navigator", { onLine: false });
 

@@ -7,6 +7,10 @@ import {
 
 const ALL_REASONS: RoutingErrorReason[] = [
   "no-api-key",
+  "invalid-header-value",
+  "header-construction-failure",
+  "invalid-request-construction",
+  "fetch-invocation-failure",
   "unauthorized",
   "forbidden",
   "rate-limited",
@@ -25,24 +29,43 @@ const ALL_REASONS: RoutingErrorReason[] = [
 describe("describeRoutingError", () => {
   it("produces a non-empty, generic message for every reason", () => {
     for (const reason of ALL_REASONS) {
-      const message = describeRoutingError(new RoutingError(reason, "generic"));
+      const message = describeRoutingError(
+        new RoutingError({ reason, message: "generic" }),
+      );
       expect(message.length).toBeGreaterThan(0);
     }
   });
 
   it("never echoes a raw HTTP status/provider code text the caller didn't supply structurally", () => {
-    const error = new RoutingError("provider-error", "generic", undefined, 9999, 404);
+    const error = new RoutingError({
+      reason: "provider-error",
+      message: "generic",
+      providerErrorCode: 9999,
+      httpStatus: 404,
+    });
     expect(describeRoutingError(error)).toContain("404");
     expect(describeRoutingError(error)).toContain("9999");
   });
 
   it("reassures that the key and connection work for no-route-found/no-routable-point", () => {
-    expect(describeRoutingError(new RoutingError("no-route-found", "generic"))).toContain(
-      "working",
-    );
     expect(
-      describeRoutingError(new RoutingError("no-routable-point", "generic")),
+      describeRoutingError(
+        new RoutingError({ reason: "no-route-found", message: "generic" }),
+      ),
     ).toContain("working");
+    expect(
+      describeRoutingError(
+        new RoutingError({ reason: "no-routable-point", message: "generic" }),
+      ),
+    ).toContain("working");
+  });
+
+  it("distinguishes a local key-format problem from an unreachable provider", () => {
+    const message = describeRoutingError(
+      new RoutingError({ reason: "invalid-header-value", message: "generic" }),
+    );
+    expect(message).toContain("key");
+    expect(message).not.toMatch(/unavailable|could not be reached/i);
   });
 });
 
@@ -78,6 +101,17 @@ describe("mapErrorReasonToOutcome", () => {
       "malformed-response",
       "no-geometry",
       "unknown",
+    ] as const) {
+      expect(mapErrorReasonToOutcome(reason)).toBeNull();
+    }
+  });
+
+  it("never maps a local syntax/construction error to provider unavailability", () => {
+    for (const reason of [
+      "invalid-header-value",
+      "header-construction-failure",
+      "invalid-request-construction",
+      "fetch-invocation-failure",
     ] as const) {
       expect(mapErrorReasonToOutcome(reason)).toBeNull();
     }

@@ -1,6 +1,11 @@
 import type { Coordinate } from "../domain/types.ts";
 import type { RoutingProvider } from "./provider.ts";
-import { RoutingError, type RoutingErrorReason } from "./openRouteServiceErrors.ts";
+import {
+  RoutingError,
+  type DispatchMarkers,
+  type RoutingErrorReason,
+  type TransportFailureReasonCode,
+} from "./openRouteServiceErrors.ts";
 import {
   describeRoutingError,
   mapErrorReasonToOutcome,
@@ -34,6 +39,10 @@ const CONNECTION_TEST_WAYPOINTS: readonly Coordinate[] = [
 
 export type RoutingConnectionTestStage =
   | "not-attempted-no-key"
+  | "invalid-key-syntax"
+  | "header-construction"
+  | "request-construction"
+  | "fetch-invocation"
   | "offline"
   | "timeout"
   | "transport-response-unavailable"
@@ -42,7 +51,8 @@ export type RoutingConnectionTestStage =
   | "route-processing"
   | "success";
 
-/** Fixed, generic per-stage explanations — deliberately hedged for
+/** Fixed, generic per-stage explanations, describing observed facts
+ * rather than an assumed root cause — deliberately hedged for
  * "transport-response-unavailable": page JavaScript cannot establish
  * *why* the browser withheld a response (CORS/preflight rejection is only
  * one of several indistinguishable possibilities), so this must never
@@ -53,6 +63,12 @@ export const CONNECTION_TEST_STAGE_DESCRIPTIONS: Record<
 > = {
   "not-attempted-no-key":
     "No OpenRouteService key is configured, so no request was sent.",
+  "invalid-key-syntax":
+    "The stored key itself contains a character that cannot be sent in a request header — checked before any request was constructed.",
+  "header-construction": "The request's headers could not be constructed.",
+  "request-construction": "The request object itself could not be constructed.",
+  "fetch-invocation":
+    "Calling the fetch implementation failed synchronously, before any promise existed.",
   offline: "The device reported itself offline before any request was sent.",
   timeout: "The request did not receive a response within the routing timeout.",
   "transport-response-unavailable":
@@ -71,6 +87,16 @@ export function classifyConnectionTestStage(
   switch (reason) {
     case "success":
       return "success";
+    case "no-api-key":
+      return "not-attempted-no-key";
+    case "invalid-header-value":
+      return "invalid-key-syntax";
+    case "header-construction-failure":
+      return "header-construction";
+    case "invalid-request-construction":
+      return "request-construction";
+    case "fetch-invocation-failure":
+      return "fetch-invocation";
     case "offline":
       return "offline";
     case "timeout":
@@ -90,16 +116,35 @@ export function classifyConnectionTestStage(
     case "no-geometry":
     case "unknown":
       return "route-processing";
-    case "no-api-key":
-      return "not-attempted-no-key";
   }
 }
 
+/** Every marker true — the only possible state for a genuinely successful
+ * calculateRoute call, since every pipeline stage necessarily succeeded on
+ * the way there. Not a derived guess: a deterministic fact about what
+ * "success" means, unlike a stage→marker lookup table for failures, which
+ * this module deliberately does not use (see runRoutingConnectionTest). */
+const SUCCESS_DISPATCH_MARKERS: DispatchMarkers = {
+  headersConstructed: true,
+  requestConstructed: true,
+  fetchInvoked: true,
+  fetchReturnedPromise: true,
+  responseReceived: true,
+};
+
+/** All markers false — the only possible state before any request was
+ * attempted at all (no key configured, or an unexpected non-RoutingError
+ * thrown before the adapter itself could record anything). */
+const NOT_ATTEMPTED_DISPATCH_MARKERS: DispatchMarkers = {
+  headersConstructed: false,
+  requestConstructed: false,
+  fetchInvoked: false,
+  fetchReturnedPromise: false,
+  responseReceived: false,
+};
+
 export interface RoutingConnectionTestResult {
-  /** Identifies this specific test run — generated fresh each call, never
-   * read back from the shared routing-attempt log, so the report this
-   * result feeds can never be confused with a concurrent attempt from
-   * elsewhere (e.g. another tab, or a Planning recalculation). */
+  /** Identifies this specific test run — generated fresh each call. */
   attemptId: string;
   outcome: "success" | "failure";
   stage: RoutingConnectionTestStage;
@@ -108,6 +153,19 @@ export interface RoutingConnectionTestResult {
   elapsedMs: number;
   message: string;
   waypointCount: number;
+  /** The adapter's own recorded values for this exact attempt — carried
+   * directly through the thrown RoutingError (see
+   * openRouteServiceErrors.ts's DispatchMarkers), never re-derived from
+   * `stage` afterwards, so this can never drift from what the adapter
+   * itself observed. */
+  headersConstructed: boolean;
+  requestConstructed: boolean;
+  fetchInvoked: boolean;
+  fetchReturnedPromise: boolean;
+  responseReceived: boolean;
+  errorName?: string;
+  errorMessage?: string;
+  transportFailureReasonCode?: TransportFailureReasonCode;
   isSecureContext: boolean;
   isServiceWorkerControlled: boolean;
   isStandalone: boolean;
@@ -133,10 +191,13 @@ export function buildConnectionTestWaypoints(): Coordinate[] {
  * Runs one deliberate, real request through the exact same adapter code
  * path Planning uses (so it exercises identical request construction,
  * error classification and diagnostic recording), and returns a fully
- * self-contained result — every field the caller needs for a copyable
- * report is captured directly here, never read back from the shared
- * routing-attempt log, which could otherwise race a concurrent attempt
- * from elsewhere. Never throws.
+ * self-contained result. Dispatch markers come directly from the
+ * RoutingError this specific attempt threw (openRouteServiceAdapter.ts
+ * attaches its own real values to every error it constructs) — never
+ * looked up from the shared routing-attempt log and never re-derived from
+ * `stage`, so they can never disagree with what the adapter itself
+ * observed and can never be confused with a concurrent attempt from
+ * elsewhere. Never throws.
  */
 export async function runRoutingConnectionTest(
   adapter: RoutingProvider,
@@ -166,6 +227,7 @@ export async function runRoutingConnectionTest(
       elapsedMs: Date.now() - startedAt,
       message: "Connected successfully and received a valid cycling route.",
       waypointCount: waypoints.length,
+      ...SUCCESS_DISPATCH_MARKERS,
       ...environment,
     };
   } catch (error) {
@@ -180,6 +242,7 @@ export async function runRoutingConnectionTest(
         elapsedMs,
         message: "An unexpected error occurred while testing the connection.",
         waypointCount: waypoints.length,
+        ...NOT_ATTEMPTED_DISPATCH_MARKERS,
         ...environment,
       };
     }
@@ -197,6 +260,8 @@ export async function runRoutingConnectionTest(
       }
     }
 
+    const markers = error.dispatchMarkers ?? NOT_ATTEMPTED_DISPATCH_MARKERS;
+
     return {
       attemptId,
       outcome: "failure",
@@ -206,6 +271,14 @@ export async function runRoutingConnectionTest(
       elapsedMs,
       message: describeRoutingError(error),
       waypointCount: waypoints.length,
+      headersConstructed: markers.headersConstructed,
+      requestConstructed: markers.requestConstructed,
+      fetchInvoked: markers.fetchInvoked,
+      fetchReturnedPromise: markers.fetchReturnedPromise,
+      responseReceived: markers.responseReceived,
+      errorName: error.transportErrorName,
+      errorMessage: error.transportErrorMessage,
+      transportFailureReasonCode: error.transportFailureReasonCode,
       ...environment,
     };
   }
@@ -215,19 +288,31 @@ export async function runRoutingConnectionTest(
  * (see RoutingConnectionTestResult's own field-level guarantees): no API
  * key, no Authorization header, and no coordinates (only a count). */
 export function formatConnectionTestReport(result: RoutingConnectionTestResult): string {
+  const yesNo = (value: boolean): string => (value ? "yes" : "no");
   const lines = [
     "OpenRouteService connection test report",
     `Attempt ID: ${result.attemptId}`,
     `Outcome: ${result.outcome}`,
     `Stage: ${result.stage} — ${CONNECTION_TEST_STAGE_DESCRIPTIONS[result.stage]}`,
     `Detail: ${result.message}`,
+    result.errorName
+      ? `Error: ${result.errorName}${result.errorMessage ? `: ${result.errorMessage}` : ""}`
+      : null,
+    result.transportFailureReasonCode
+      ? `Safe reason code: ${result.transportFailureReasonCode}`
+      : null,
     result.httpStatus !== undefined ? `HTTP status: ${String(result.httpStatus)}` : null,
     `Elapsed: ${String(result.elapsedMs)} ms`,
     `Waypoints used: ${String(result.waypointCount)} (fixed test coordinates, not the rider's own route)`,
-    `Secure context: ${String(result.isSecureContext)}`,
-    `Service worker controlling this page: ${String(result.isServiceWorkerControlled)}`,
+    `Headers constructed: ${yesNo(result.headersConstructed)}`,
+    `Request constructed: ${yesNo(result.requestConstructed)}`,
+    `Fetch invoked: ${yesNo(result.fetchInvoked)}`,
+    `Fetch returned a promise: ${yesNo(result.fetchReturnedPromise)}`,
+    `HTTP response received: ${yesNo(result.responseReceived)}`,
+    `Secure context: ${yesNo(result.isSecureContext)}`,
+    `Service worker controlling this page: ${yesNo(result.isServiceWorkerControlled)}`,
     `Active service worker script: ${result.activeServiceWorkerScriptUrl ?? "none"}`,
-    `Installed/standalone display: ${String(result.isStandalone)}`,
+    `Installed/standalone display: ${yesNo(result.isStandalone)}`,
   ];
   return lines.filter((line): line is string => line !== null).join("\n");
 }

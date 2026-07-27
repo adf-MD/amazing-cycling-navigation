@@ -45,10 +45,19 @@ function buildFetchMock(response: {
   mock.mockResolvedValue({
     ok: response.ok,
     status: response.status ?? (response.ok ? 200 : 500),
+    statusText: "",
     headers: new Headers(response.headers ?? {}),
     json: response.json ?? (() => Promise.resolve(buildValidResponse())),
   } as Response);
   return mock;
+}
+
+/** The adapter calls its fetch implementation with a single native
+ * `Request` object (see openRouteServiceAdapter.ts's Stage D) — this reads
+ * back the fields tests need from it. */
+function firstRequest(fetchImpl: ReturnType<typeof vi.fn>): Request {
+  const [request] = fetchImpl.mock.calls[0] as [Request];
+  return request;
 }
 
 beforeEach(() => {
@@ -82,9 +91,7 @@ describe("OpenRouteServiceAdapter", () => {
 
     await adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" });
 
-    const [, requestInit] = fetchImpl.mock.calls[0] as [string, RequestInit];
-    const headers = new Headers(requestInit.headers);
-    expect(headers.get("Authorization")).toBe(DUMMY_KEY);
+    expect(firstRequest(fetchImpl).headers.get("Authorization")).toBe(DUMMY_KEY);
   });
 
   it("never puts the key in the request URL, and posts to the exact production endpoint", async () => {
@@ -96,7 +103,7 @@ describe("OpenRouteServiceAdapter", () => {
 
     await adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" });
 
-    const [url] = fetchImpl.mock.calls[0] as [string];
+    const url = firstRequest(fetchImpl).url;
     expect(url).not.toContain(DUMMY_KEY);
     expect(url).toBe(
       "https://api.heigit.org/openrouteservice/v2/directions/cycling-road/geojson",
@@ -112,9 +119,9 @@ describe("OpenRouteServiceAdapter", () => {
 
     await adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" });
 
-    const [, requestInit] = fetchImpl.mock.calls[0] as [string, RequestInit];
-    const headers = new Headers(requestInit.headers);
-    expect(headers.get("Accept")).toBe("application/geo+json, application/json");
+    expect(firstRequest(fetchImpl).headers.get("Accept")).toBe(
+      "application/geo+json, application/json",
+    );
   });
 
   it("posts the cycling-road profile and requests elevation/surface/instructions", async () => {
@@ -126,9 +133,9 @@ describe("OpenRouteServiceAdapter", () => {
 
     await adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" });
 
-    const [url, requestInit] = fetchImpl.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/directions/cycling-road/geojson");
-    const body = JSON.parse(requestInit.body as string) as Record<string, unknown>;
+    const request = firstRequest(fetchImpl);
+    expect(request.url).toContain("/directions/cycling-road/geojson");
+    const body = (await request.json()) as Record<string, unknown>;
     expect(body).toMatchObject({
       coordinates: [
         [-1.5, 53.8],
@@ -152,8 +159,7 @@ describe("OpenRouteServiceAdapter", () => {
       avoidFerries: true,
     });
 
-    const [, requestInit] = fetchImpl.mock.calls[0] as [string, RequestInit];
-    const body = JSON.parse(requestInit.body as string) as Record<string, unknown>;
+    const body = (await firstRequest(fetchImpl).json()) as Record<string, unknown>;
     expect(body.options).toEqual({ avoid_features: ["ferries"] });
   });
 
@@ -216,6 +222,14 @@ describe("OpenRouteServiceAdapter", () => {
       reason: "transport-failure",
       transportErrorName: "TypeError",
       transportErrorMessage: "Failed to fetch",
+      transportFailureReasonCode: "generic-fetch-rejection",
+      dispatchMarkers: {
+        headersConstructed: true,
+        requestConstructed: true,
+        fetchInvoked: true,
+        fetchReturnedPromise: true,
+        responseReceived: false,
+      },
     });
 
     const [latest] = getRecentRoutingAttempts();
@@ -224,7 +238,12 @@ describe("OpenRouteServiceAdapter", () => {
       category: "transport-failure",
       errorName: "TypeError",
       errorMessage: "Failed to fetch",
+      transportFailureReasonCode: "generic-fetch-rejection",
       waypointCount: WAYPOINTS.length,
+      headersConstructed: true,
+      requestConstructed: true,
+      fetchInvoked: true,
+      fetchReturnedPromise: true,
     });
   });
 
@@ -254,9 +273,9 @@ describe("OpenRouteServiceAdapter", () => {
     vi.useFakeTimers();
     try {
       const fetchImpl = vi.fn().mockImplementation(
-        (_url: string, init: RequestInit) =>
+        (request: Request) =>
           new Promise<Response>((_resolve, reject) => {
-            init.signal?.addEventListener("abort", () => {
+            request.signal.addEventListener("abort", () => {
               reject(new DOMException("Aborted", "AbortError"));
             });
           }),
@@ -272,7 +291,14 @@ describe("OpenRouteServiceAdapter", () => {
       await assertion;
 
       const [latest] = getRecentRoutingAttempts();
-      expect(latest).toMatchObject({ responseReceived: false, category: "timeout" });
+      expect(latest).toMatchObject({
+        responseReceived: false,
+        category: "timeout",
+        headersConstructed: true,
+        requestConstructed: true,
+        fetchInvoked: true,
+        fetchReturnedPromise: true,
+      });
     } finally {
       vi.useRealTimers();
     }
@@ -434,7 +460,7 @@ describe("OpenRouteServiceAdapter", () => {
     ).rejects.toMatchObject({ reason: "no-geometry" });
   });
 
-  it("returns a normalised PlannedRoute on success", async () => {
+  it("returns a normalised PlannedRoute on success, with every dispatch marker true", async () => {
     const fetchImpl = buildFetchMock({ ok: true });
     const adapter = new OpenRouteServiceAdapter({
       getApiKey: () => Promise.resolve(DUMMY_KEY),
@@ -451,7 +477,15 @@ describe("OpenRouteServiceAdapter", () => {
     expect(route.points.length).toBeGreaterThan(0);
 
     const [latest] = getRecentRoutingAttempts();
-    expect(latest).toMatchObject({ bodyWasJson: true, category: "success" });
+    expect(latest).toMatchObject({
+      bodyWasJson: true,
+      category: "success",
+      headersConstructed: true,
+      requestConstructed: true,
+      fetchInvoked: true,
+      fetchReturnedPromise: true,
+      responseReceived: true,
+    });
   });
 
   it("records bodyWasJson: false only when a parse was actually attempted and failed", async () => {
@@ -524,6 +558,202 @@ describe("OpenRouteServiceAdapter", () => {
     const [latest] = getRecentRoutingAttempts();
     expect(latest?.rateLimitRemaining).toBeUndefined();
     expect(latest?.rateLimitLimit).toBeUndefined();
+  });
+
+  describe("explicit request stages", () => {
+    it("Stage A: rejects an invalid stored key before ever constructing headers or invoking fetch", async () => {
+      const fetchImpl = buildFetchMock({ ok: true });
+      const adapter = new OpenRouteServiceAdapter({
+        getApiKey: () => Promise.resolve("abc\ndef"),
+        fetchImpl,
+      });
+
+      await expect(
+        adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+      ).rejects.toMatchObject({
+        reason: "invalid-header-value",
+        dispatchMarkers: {
+          headersConstructed: false,
+          requestConstructed: false,
+          fetchInvoked: false,
+          fetchReturnedPromise: false,
+          responseReceived: false,
+        },
+      });
+      expect(fetchImpl).not.toHaveBeenCalled();
+
+      const [latest] = getRecentRoutingAttempts();
+      expect(latest).toMatchObject({
+        category: "invalid-header-value",
+        headersConstructed: false,
+        requestConstructed: false,
+        fetchInvoked: false,
+      });
+    });
+
+    it("Stage A: never includes the key in the thrown message or the diagnostic", async () => {
+      const badKey = "abc\ndef-secret";
+      const fetchImpl = buildFetchMock({ ok: true });
+      const adapter = new OpenRouteServiceAdapter({
+        getApiKey: () => Promise.resolve(badKey),
+        fetchImpl,
+      });
+
+      try {
+        await adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" });
+        expect.unreachable("expected calculateRoute to throw");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        expect(message).not.toContain(badKey);
+        expect(message).not.toContain("secret");
+      }
+      const [latest] = getRecentRoutingAttempts();
+      expect(JSON.stringify(latest)).not.toContain("secret");
+    });
+
+    it("Stage B: classifies an unexpected native Headers-construction failure as header-construction-failure, without claiming the key is invalid", async () => {
+      // Built before stubbing Headers — buildFetchMock's own Response
+      // stand-in also constructs a Headers object internally.
+      const fetchImpl = buildFetchMock({ ok: true });
+      const originalHeaders = globalThis.Headers;
+      function ThrowingHeaders(): never {
+        throw new TypeError("Headers construction exploded");
+      }
+      vi.stubGlobal("Headers", ThrowingHeaders);
+      try {
+        const adapter = new OpenRouteServiceAdapter({
+          getApiKey: () => Promise.resolve(DUMMY_KEY),
+          fetchImpl,
+        });
+
+        await expect(
+          adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+        ).rejects.toMatchObject({
+          reason: "header-construction-failure",
+          transportErrorName: "TypeError",
+          dispatchMarkers: { headersConstructed: false, requestConstructed: false },
+        });
+        expect(fetchImpl).not.toHaveBeenCalled();
+      } finally {
+        vi.stubGlobal("Headers", originalHeaders);
+      }
+    });
+
+    it("Stage B: never attempts to sanitise or surface the native Headers error's own message (it can embed the raw value)", async () => {
+      const fetchImpl = buildFetchMock({ ok: true });
+      const originalHeaders = globalThis.Headers;
+      function ThrowingHeaders(): never {
+        throw new TypeError(`Headers.append: "${DUMMY_KEY}" is an invalid header value.`);
+      }
+      vi.stubGlobal("Headers", ThrowingHeaders);
+      try {
+        const adapter = new OpenRouteServiceAdapter({
+          getApiKey: () => Promise.resolve(DUMMY_KEY),
+          fetchImpl,
+        });
+
+        await expect(
+          adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+        ).rejects.toMatchObject({ transportErrorMessage: undefined });
+
+        const [latest] = getRecentRoutingAttempts();
+        expect(latest?.errorMessage).toBeUndefined();
+        expect(JSON.stringify(latest)).not.toContain(DUMMY_KEY);
+      } finally {
+        vi.stubGlobal("Headers", originalHeaders);
+      }
+    });
+
+    it("Stage C: classifies a Request-construction failure distinctly, after headers succeeded, without invoking fetch", async () => {
+      const originalRequest = globalThis.Request;
+      function ThrowingRequest(): never {
+        throw new TypeError("Request construction exploded");
+      }
+      vi.stubGlobal("Request", ThrowingRequest);
+      try {
+        const fetchImpl = buildFetchMock({ ok: true });
+        const adapter = new OpenRouteServiceAdapter({
+          getApiKey: () => Promise.resolve(DUMMY_KEY),
+          fetchImpl,
+        });
+
+        await expect(
+          adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+        ).rejects.toMatchObject({
+          reason: "invalid-request-construction",
+          transportErrorName: "TypeError",
+          dispatchMarkers: { headersConstructed: true, requestConstructed: false },
+        });
+        expect(fetchImpl).not.toHaveBeenCalled();
+      } finally {
+        vi.stubGlobal("Request", originalRequest);
+      }
+    });
+
+    it("Stage D: classifies a synchronous fetch-invocation throw distinctly from an async rejection", async () => {
+      const fetchImpl = vi.fn().mockImplementation(() => {
+        throw new TypeError("Failed to execute 'fetch': Illegal invocation");
+      });
+      const adapter = new OpenRouteServiceAdapter({
+        getApiKey: () => Promise.resolve(DUMMY_KEY),
+        fetchImpl,
+      });
+
+      await expect(
+        adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+      ).rejects.toMatchObject({
+        reason: "fetch-invocation-failure",
+        transportFailureReasonCode: "fetch-illegal-invocation",
+        dispatchMarkers: {
+          headersConstructed: true,
+          requestConstructed: true,
+          fetchInvoked: true,
+          fetchReturnedPromise: false,
+          responseReceived: false,
+        },
+      });
+
+      const [latest] = getRecentRoutingAttempts();
+      expect(latest).toMatchObject({
+        category: "fetch-invocation-failure",
+        fetchInvoked: true,
+        fetchReturnedPromise: false,
+        transportFailureReasonCode: "fetch-illegal-invocation",
+      });
+    });
+
+    it("Stage D: classifies a fetchImpl that returns a non-promise value explicitly, not as a misleading transport failure", async () => {
+      const fetchImpl = vi.fn().mockReturnValue(undefined);
+      const adapter = new OpenRouteServiceAdapter({
+        getApiKey: () => Promise.resolve(DUMMY_KEY),
+        fetchImpl,
+      });
+
+      await expect(
+        adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+      ).rejects.toMatchObject({
+        reason: "fetch-invocation-failure",
+        transportFailureReasonCode: "fetch-returned-non-promise",
+        dispatchMarkers: {
+          fetchInvoked: true,
+          fetchReturnedPromise: false,
+          responseReceived: false,
+        },
+      });
+    });
+
+    it("an injected mock fetchImpl returning a real Response continues to work end-to-end", async () => {
+      const fetchImpl = buildFetchMock({ ok: true });
+      const adapter = new OpenRouteServiceAdapter({
+        getApiKey: () => Promise.resolve(DUMMY_KEY),
+        fetchImpl,
+      });
+
+      const route = await adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" });
+
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(route.points.length).toBeGreaterThan(0);
+    });
   });
 
   describe("diagnostics redaction", () => {
@@ -627,6 +857,9 @@ describe("OpenRouteServiceAdapter", () => {
         wasOnline: false,
         responseReceived: false,
         category: "offline",
+        headersConstructed: false,
+        requestConstructed: false,
+        fetchInvoked: false,
       });
     });
 
@@ -686,6 +919,10 @@ describe("OpenRouteServiceAdapter", () => {
           "isStandalone",
           "waypointCount",
           "elapsedMs",
+          "headersConstructed",
+          "requestConstructed",
+          "fetchInvoked",
+          "fetchReturnedPromise",
           "responseReceived",
           "httpStatus",
           "statusText",

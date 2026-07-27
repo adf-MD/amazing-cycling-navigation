@@ -1,5 +1,8 @@
 import { useSyncExternalStore } from "react";
-import type { RoutingErrorReason } from "./openRouteServiceErrors.ts";
+import type {
+  RoutingErrorReason,
+  TransportFailureReasonCode,
+} from "./openRouteServiceErrors.ts";
 
 /**
  * A sanitised record of one routing attempt, for the Diagnostics screen.
@@ -40,6 +43,14 @@ export interface RoutingAttemptDiagnostic {
   /** Never the coordinates themselves. */
   waypointCount: number;
   elapsedMs: number;
+  /** Factual markers recording exactly how far this specific attempt got
+   * through the request pipeline — each set once, in order, by the
+   * adapter itself (see openRouteServiceAdapter.ts), never reconstructed
+   * afterwards from `category`. */
+  headersConstructed: boolean;
+  requestConstructed: boolean;
+  fetchInvoked: boolean;
+  fetchReturnedPromise: boolean;
   responseReceived: boolean;
   httpStatus?: number;
   /** Best-effort only — some browsers/HTTP versions (notably HTTP/2)
@@ -60,8 +71,17 @@ export interface RoutingAttemptDiagnostic {
    * false and the failure wasn't a recognised offline/timeout condition. */
   errorName?: string;
   /** An already-sanitised message — see sanitiseTransportErrorMessage.ts.
-   * Only set when responseReceived is false. */
+   * Only set when responseReceived is false. Deliberately never populated
+   * for header-construction-failure/invalid-request-construction: native
+   * Headers/Request construction error messages were confirmed (by this
+   * project's own testing) to embed the raw invalid value verbatim, so no
+   * message from those stages can ever be safely shown — only errorName. */
   errorMessage?: string;
+  /** A narrower, safe hint about *why* a fetch-invocation/transport
+   * failure occurred, from a small curated pattern match — never used to
+   * decide whether a failure was synchronous or asynchronous (`category`
+   * itself already carries that distinction). */
+  transportFailureReasonCode?: TransportFailureReasonCode;
   category: RoutingErrorReason | "success";
 }
 
@@ -101,13 +121,31 @@ export function useRecentRoutingAttempts(): readonly RoutingAttemptDiagnostic[] 
   return useSyncExternalStore(subscribeRoutingDiagnostics, getRecentRoutingAttempts);
 }
 
+/** Appends the safe error name/message and reason code, when present, in
+ * parentheses — e.g. "(TypeError: Failed to fetch; reason:
+ * generic-fetch-rejection)". Kept as a separate step from the base
+ * description so the "Recent routing attempts" list stays concise; full
+ * marker-level detail belongs in the connection-test report instead. */
+function appendSafeErrorDetail(base: string, entry: RoutingAttemptDiagnostic): string {
+  const parts: string[] = [];
+  if (entry.errorName) {
+    parts.push(
+      entry.errorMessage ? `${entry.errorName}: ${entry.errorMessage}` : entry.errorName,
+    );
+  }
+  if (entry.transportFailureReasonCode) {
+    parts.push(`reason: ${entry.transportFailureReasonCode}`);
+  }
+  return parts.length > 0 ? `${base} (${parts.join("; ")})` : base;
+}
+
 /**
- * The four outcomes a rider can distinguish from a routing attempt alone.
  * Deliberately does not attempt to guess further when no response was
- * received and the category isn't offline/timeout — a browser can hide a
- * real HTTP error (e.g. 502) behind a generic fetch failure when that
- * response lacks CORS headers, so this is reported honestly as
- * indistinguishable from a DNS/TLS failure or a local network restriction.
+ * received and the category isn't offline/timeout/one of the explicit
+ * local pipeline stages below — a browser can hide a real HTTP error
+ * (e.g. 502) behind a generic fetch failure when that response lacks CORS
+ * headers, so this is reported honestly as indistinguishable from a
+ * DNS/TLS failure or a local network restriction.
  */
 export function describeRoutingAttempt(entry: RoutingAttemptDiagnostic): string {
   if (entry.responseReceived) {
@@ -115,12 +153,29 @@ export function describeRoutingAttempt(entry: RoutingAttemptDiagnostic): string 
     const suffix = entry.category === "success" ? "" : ` (${entry.category})`;
     return `HTTP response received: ${status}${suffix}`;
   }
+  let base: string;
   switch (entry.category) {
     case "offline":
-      return "Device reported offline";
+      base = "Device reported offline";
+      break;
     case "timeout":
-      return "Request timed out";
+      base = "Request timed out";
+      break;
+    case "invalid-header-value":
+      base = "The stored key could not be used in a request header";
+      break;
+    case "header-construction-failure":
+      base = "Request headers could not be constructed";
+      break;
+    case "invalid-request-construction":
+      base = "Request could not be constructed";
+      break;
+    case "fetch-invocation-failure":
+      base = "Fetch could not be invoked";
+      break;
     default:
-      return "Fetch failed before an HTTP response was exposed to the browser";
+      base = "Fetch promise rejected before an HTTP response was exposed";
+      break;
   }
+  return appendSafeErrorDetail(base, entry);
 }

@@ -15,6 +15,7 @@ import {
 import { OpenRouteServiceAdapter } from "../../routing/openRouteServiceAdapter.ts";
 import type { RoutingProvider } from "../../routing/provider.ts";
 import {
+  CONNECTION_TEST_STAGE_DESCRIPTIONS,
   formatConnectionTestReport,
   runRoutingConnectionTest,
   type RoutingConnectionTestResult,
@@ -214,6 +215,66 @@ export function DiagnosticsScreen({
             {connectionTestResult.outcome === "success" ? "Succeeded" : "Failed"} —{" "}
             {connectionTestResult.message} ({String(connectionTestResult.elapsedMs)} ms)
           </p>
+          <dl>
+            <dt>Stage</dt>
+            <dd>
+              {connectionTestResult.stage} —{" "}
+              {CONNECTION_TEST_STAGE_DESCRIPTIONS[connectionTestResult.stage]}
+            </dd>
+
+            {connectionTestResult.errorName ? (
+              <>
+                <dt>Error</dt>
+                <dd>
+                  {connectionTestResult.errorName}
+                  {connectionTestResult.errorMessage
+                    ? `: ${connectionTestResult.errorMessage}`
+                    : ""}
+                </dd>
+              </>
+            ) : null}
+
+            {connectionTestResult.transportFailureReasonCode ? (
+              <>
+                <dt>Safe reason code</dt>
+                <dd>{connectionTestResult.transportFailureReasonCode}</dd>
+              </>
+            ) : null}
+
+            {connectionTestResult.httpStatus !== undefined ? (
+              <>
+                <dt>HTTP status</dt>
+                <dd>{connectionTestResult.httpStatus}</dd>
+              </>
+            ) : null}
+
+            <dt>Headers constructed</dt>
+            <dd>{connectionTestResult.headersConstructed ? "Yes" : "No"}</dd>
+
+            <dt>Request constructed</dt>
+            <dd>{connectionTestResult.requestConstructed ? "Yes" : "No"}</dd>
+
+            <dt>Fetch invoked</dt>
+            <dd>{connectionTestResult.fetchInvoked ? "Yes" : "No"}</dd>
+
+            <dt>Fetch returned a promise</dt>
+            <dd>{connectionTestResult.fetchReturnedPromise ? "Yes" : "No"}</dd>
+
+            <dt>HTTP response received</dt>
+            <dd>{connectionTestResult.responseReceived ? "Yes" : "No"}</dd>
+
+            <dt>Secure context</dt>
+            <dd>{connectionTestResult.isSecureContext ? "Yes" : "No"}</dd>
+
+            <dt>Service worker controlling this page</dt>
+            <dd>{connectionTestResult.isServiceWorkerControlled ? "Yes" : "No"}</dd>
+
+            <dt>Active service worker script</dt>
+            <dd>{connectionTestResult.activeServiceWorkerScriptUrl ?? "None"}</dd>
+
+            <dt>Installed/standalone display</dt>
+            <dd>{connectionTestResult.isStandalone ? "Yes" : "No"}</dd>
+          </dl>
           <button type="button" onClick={copyConnectionTestReport}>
             Copy diagnostic report
           </button>

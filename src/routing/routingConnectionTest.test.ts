@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { PlannedRoute } from "../domain/types.ts";
 import type { RoutingProvider } from "./provider.ts";
-import { RoutingError, type RoutingErrorReason } from "./openRouteServiceErrors.ts";
+import {
+  RoutingError,
+  type DispatchMarkers,
+  type RoutingErrorReason,
+} from "./openRouteServiceErrors.ts";
 import {
   buildConnectionTestWaypoints,
   classifyConnectionTestStage,
@@ -17,6 +21,10 @@ import {
 
 const ALL_REASONS: RoutingErrorReason[] = [
   "no-api-key",
+  "invalid-header-value",
+  "header-construction-failure",
+  "invalid-request-construction",
+  "fetch-invocation-failure",
   "unauthorized",
   "forbidden",
   "rate-limited",
@@ -31,6 +39,22 @@ const ALL_REASONS: RoutingErrorReason[] = [
   "no-geometry",
   "unknown",
 ];
+
+const NO_DISPATCH: DispatchMarkers = {
+  headersConstructed: false,
+  requestConstructed: false,
+  fetchInvoked: false,
+  fetchReturnedPromise: false,
+  responseReceived: false,
+};
+
+const FULL_DISPATCH: DispatchMarkers = {
+  headersConstructed: true,
+  requestConstructed: true,
+  fetchInvoked: true,
+  fetchReturnedPromise: true,
+  responseReceived: false,
+};
 
 function buildRoute(): PlannedRoute {
   return {
@@ -71,13 +95,17 @@ describe("classifyConnectionTestStage", () => {
     );
   });
 
-  it("gives offline and timeout their own confident stages, distinct from the ambiguous one", () => {
+  it("gives the local pipeline stages their own distinct classification, never folded into transport-response-unavailable", () => {
     const stages: RoutingConnectionTestStage[] = [
+      classifyConnectionTestStage("invalid-header-value"),
+      classifyConnectionTestStage("header-construction-failure"),
+      classifyConnectionTestStage("invalid-request-construction"),
+      classifyConnectionTestStage("fetch-invocation-failure"),
       classifyConnectionTestStage("offline"),
       classifyConnectionTestStage("timeout"),
       classifyConnectionTestStage("transport-failure"),
     ];
-    expect(new Set(stages).size).toBe(3);
+    expect(new Set(stages).size).toBe(stages.length);
   });
 });
 
@@ -92,7 +120,7 @@ describe("buildConnectionTestWaypoints", () => {
 });
 
 describe("runRoutingConnectionTest", () => {
-  it("reports success and a fresh attemptId on a valid route", async () => {
+  it("reports success and a fresh attemptId on a valid route, with every dispatch marker true", async () => {
     const adapter = fakeAdapter(() => Promise.resolve(buildRoute()));
 
     const result = await runRoutingConnectionTest(
@@ -104,6 +132,11 @@ describe("runRoutingConnectionTest", () => {
     expect(result.stage).toBe("success");
     expect(result.attemptId.length).toBeGreaterThan(0);
     expect(result.waypointCount).toBe(2);
+    expect(result.headersConstructed).toBe(true);
+    expect(result.requestConstructed).toBe(true);
+    expect(result.fetchInvoked).toBe(true);
+    expect(result.fetchReturnedPromise).toBe(true);
+    expect(result.responseReceived).toBe(true);
   });
 
   it("generates a different attemptId on each run", async () => {
@@ -131,7 +164,11 @@ describe("runRoutingConnectionTest", () => {
   it("maps a transport failure to the hedged stage and message, never confirming CORS", async () => {
     const adapter = fakeAdapter(() =>
       Promise.reject(
-        new RoutingError("transport-failure", "The routing request failed."),
+        new RoutingError({
+          reason: "transport-failure",
+          message: "The routing request failed.",
+          dispatchMarkers: FULL_DISPATCH,
+        }),
       ),
     );
 
@@ -147,11 +184,63 @@ describe("runRoutingConnectionTest", () => {
     );
   });
 
+  it("carries the exact dispatch markers the adapter attached to this specific error, not a re-derived guess", async () => {
+    const adapter = fakeAdapter(() =>
+      Promise.reject(
+        new RoutingError({
+          reason: "header-construction-failure",
+          message: "The routing request's headers could not be constructed.",
+          transportErrorName: "TypeError",
+          dispatchMarkers: NO_DISPATCH,
+        }),
+      ),
+    );
+
+    const result = await runRoutingConnectionTest(
+      adapter,
+      buildConnectionTestWaypoints(),
+    );
+
+    expect(result.stage).toBe("header-construction");
+    expect(result.headersConstructed).toBe(false);
+    expect(result.requestConstructed).toBe(false);
+    expect(result.fetchInvoked).toBe(false);
+    expect(result.errorName).toBe("TypeError");
+  });
+
+  it("surfaces the safe reason code when the adapter attached one", async () => {
+    const adapter = fakeAdapter(() =>
+      Promise.reject(
+        new RoutingError({
+          reason: "fetch-invocation-failure",
+          message: "The routing request could not be sent.",
+          transportErrorName: "TypeError",
+          transportFailureReasonCode: "fetch-illegal-invocation",
+          dispatchMarkers: { ...NO_DISPATCH, fetchInvoked: true },
+        }),
+      ),
+    );
+
+    const result = await runRoutingConnectionTest(
+      adapter,
+      buildConnectionTestWaypoints(),
+    );
+
+    expect(result.stage).toBe("fetch-invocation");
+    expect(result.transportFailureReasonCode).toBe("fetch-illegal-invocation");
+    expect(result.fetchInvoked).toBe(true);
+    expect(result.fetchReturnedPromise).toBe(false);
+  });
+
   it("does not mark the key as rejected for a transport failure", async () => {
     await saveProviderKey("dummy-test-key");
     const adapter = fakeAdapter(() =>
       Promise.reject(
-        new RoutingError("transport-failure", "The routing request failed."),
+        new RoutingError({
+          reason: "transport-failure",
+          message: "The routing request failed.",
+          dispatchMarkers: FULL_DISPATCH,
+        }),
       ),
     );
 
@@ -162,10 +251,34 @@ describe("runRoutingConnectionTest", () => {
     expect(verification?.outcome).not.toBe("rejected");
   });
 
+  it("does not mark the key as rejected for a local syntax/construction error", async () => {
+    await saveProviderKey("dummy-test-key");
+    const adapter = fakeAdapter(() =>
+      Promise.reject(
+        new RoutingError({
+          reason: "invalid-header-value",
+          message: "The stored key contains a character that cannot be sent in a header.",
+          dispatchMarkers: NO_DISPATCH,
+        }),
+      ),
+    );
+
+    await runRoutingConnectionTest(adapter, buildConnectionTestWaypoints());
+
+    const verification = await getProviderKeyVerification();
+    expect(verification).toBeUndefined();
+  });
+
   it("does not mark the key as rejected for a timeout", async () => {
     await saveProviderKey("dummy-test-key");
     const adapter = fakeAdapter(() =>
-      Promise.reject(new RoutingError("timeout", "The routing request timed out.")),
+      Promise.reject(
+        new RoutingError({
+          reason: "timeout",
+          message: "The routing request timed out.",
+          dispatchMarkers: FULL_DISPATCH,
+        }),
+      ),
     );
 
     await runRoutingConnectionTest(adapter, buildConnectionTestWaypoints());
@@ -178,13 +291,12 @@ describe("runRoutingConnectionTest", () => {
     await saveProviderKey("dummy-test-key");
     const adapter = fakeAdapter(() =>
       Promise.reject(
-        new RoutingError(
-          "unauthorized",
-          "The OpenRouteService key was rejected.",
-          undefined,
-          undefined,
-          401,
-        ),
+        new RoutingError({
+          reason: "unauthorized",
+          message: "The OpenRouteService key was rejected.",
+          httpStatus: 401,
+          dispatchMarkers: { ...FULL_DISPATCH, responseReceived: true },
+        }),
       ),
     );
 
@@ -201,12 +313,12 @@ describe("runRoutingConnectionTest", () => {
   it("treats no-route-found as proof the connection and key work (route-processing stage)", async () => {
     const adapter = fakeAdapter(() =>
       Promise.reject(
-        new RoutingError(
-          "no-route-found",
-          "No cycling route could be found between these waypoints.",
-          undefined,
-          2009,
-        ),
+        new RoutingError({
+          reason: "no-route-found",
+          message: "No cycling route could be found between these waypoints.",
+          providerErrorCode: 2009,
+          dispatchMarkers: { ...FULL_DISPATCH, responseReceived: true },
+        }),
       ),
     );
 
@@ -222,7 +334,11 @@ describe("runRoutingConnectionTest", () => {
   it("never includes coordinates or a key in the result's own fields", async () => {
     const adapter = fakeAdapter(() =>
       Promise.reject(
-        new RoutingError("transport-failure", "The routing request failed."),
+        new RoutingError({
+          reason: "transport-failure",
+          message: "The routing request failed.",
+          dispatchMarkers: FULL_DISPATCH,
+        }),
       ),
     );
 
@@ -254,7 +370,11 @@ describe("formatConnectionTestReport", () => {
   it("includes the stage's cautious explanation for the ambiguous transport case", async () => {
     const adapter = fakeAdapter(() =>
       Promise.reject(
-        new RoutingError("transport-failure", "The routing request failed."),
+        new RoutingError({
+          reason: "transport-failure",
+          message: "The routing request failed.",
+          dispatchMarkers: FULL_DISPATCH,
+        }),
       ),
     );
     const result = await runRoutingConnectionTest(
@@ -265,5 +385,21 @@ describe("formatConnectionTestReport", () => {
     const report = formatConnectionTestReport(result);
 
     expect(report).toContain("Possible causes include CORS/preflight rejection");
+  });
+
+  it("shows every dispatch marker explicitly", async () => {
+    const adapter = fakeAdapter(() => Promise.resolve(buildRoute()));
+    const result = await runRoutingConnectionTest(
+      adapter,
+      buildConnectionTestWaypoints(),
+    );
+
+    const report = formatConnectionTestReport(result);
+
+    expect(report).toContain("Headers constructed: yes");
+    expect(report).toContain("Request constructed: yes");
+    expect(report).toContain("Fetch invoked: yes");
+    expect(report).toContain("Fetch returned a promise: yes");
+    expect(report).toContain("HTTP response received: yes");
   });
 });

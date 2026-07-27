@@ -1,6 +1,10 @@
 import type { Coordinate, PlannedRoute } from "../domain/types.ts";
 import type { RoutingOptions, RoutingProvider } from "./provider.ts";
-import { RoutingError } from "./openRouteServiceErrors.ts";
+import {
+  RoutingError,
+  type DispatchMarkers,
+  type TransportFailureReasonCode,
+} from "./openRouteServiceErrors.ts";
 import {
   isOrsFeatureCollection,
   type OrsDirectionsRequestBody,
@@ -12,6 +16,7 @@ import {
 } from "./routingDiagnostics.ts";
 import { sanitiseTransportErrorMessage } from "./sanitiseErrorMessage.ts";
 import { generateId } from "../platform/idGenerator.ts";
+import { isValidHttpHeaderValue } from "../platform/apiKeyValidation.ts";
 import {
   isSecureContext,
   isServiceWorkerControlled,
@@ -153,39 +158,52 @@ async function readOrsErrorInfo(
   }
 }
 
+/** Only ever applied to a fetch-dispatch-stage failure message — a
+ * narrower, safe *hint* about why the promise rejected, derived purely
+ * from a small pattern match. Never used to decide whether a failure was
+ * synchronous or asynchronous (the calling code's try/catch boundary
+ * alone decides that). */
+function classifyTransportFailureReasonCode(
+  rawMessage: string,
+): TransportFailureReasonCode {
+  return /illegal invocation/i.test(rawMessage)
+    ? "fetch-illegal-invocation"
+    : "generic-fetch-rejection";
+}
+
 async function mapErrorResponse(
   response: Response,
+  dispatchMarkers: DispatchMarkers,
 ): Promise<{ routingError: RoutingError; bodyWasJson?: boolean }> {
   switch (response.status) {
     case 401:
       return {
-        routingError: new RoutingError(
-          "unauthorized",
-          "The OpenRouteService key was rejected.",
-          undefined,
-          undefined,
-          response.status,
-        ),
+        routingError: new RoutingError({
+          reason: "unauthorized",
+          message: "The OpenRouteService key was rejected.",
+          httpStatus: response.status,
+          dispatchMarkers,
+        }),
       };
     case 403:
       return {
-        routingError: new RoutingError(
-          "forbidden",
-          "Access was denied — check the account, permissions or daily quota.",
-          readRetryAfterSeconds(response),
-          undefined,
-          response.status,
-        ),
+        routingError: new RoutingError({
+          reason: "forbidden",
+          message: "Access was denied — check the account, permissions or daily quota.",
+          retryAfterSeconds: readRetryAfterSeconds(response),
+          httpStatus: response.status,
+          dispatchMarkers,
+        }),
       };
     case 429:
       return {
-        routingError: new RoutingError(
-          "rate-limited",
-          "The rate limit was reached.",
-          readRetryAfterSeconds(response),
-          undefined,
-          response.status,
-        ),
+        routingError: new RoutingError({
+          reason: "rate-limited",
+          message: "The rate limit was reached.",
+          retryAfterSeconds: readRetryAfterSeconds(response),
+          httpStatus: response.status,
+          dispatchMarkers,
+        }),
       };
     // The provider itself returned a server error — a proxy or backend
     // problem on its side, not the browser's connection. Classified
@@ -198,13 +216,12 @@ async function mapErrorResponse(
     case 503:
     case 504:
       return {
-        routingError: new RoutingError(
-          "provider-unavailable",
-          "OpenRouteService returned a server error.",
-          undefined,
-          undefined,
-          response.status,
-        ),
+        routingError: new RoutingError({
+          reason: "provider-unavailable",
+          message: "OpenRouteService returned a server error.",
+          httpStatus: response.status,
+          dispatchMarkers,
+        }),
       };
     default: {
       // Deliberately never interpolates the response body's message text
@@ -216,36 +233,36 @@ async function mapErrorResponse(
       const reason = classifyOrsErrorCode(code);
       if (reason === "no-route-found") {
         return {
-          routingError: new RoutingError(
+          routingError: new RoutingError({
             reason,
-            "No cycling route could be found between these waypoints.",
-            undefined,
-            code,
-            response.status,
-          ),
+            message: "No cycling route could be found between these waypoints.",
+            providerErrorCode: code,
+            httpStatus: response.status,
+            dispatchMarkers,
+          }),
           bodyWasJson,
         };
       }
       if (reason === "no-routable-point") {
         return {
-          routingError: new RoutingError(
+          routingError: new RoutingError({
             reason,
-            "A waypoint is too far from a usable road for cycling.",
-            undefined,
-            code,
-            response.status,
-          ),
+            message: "A waypoint is too far from a usable road for cycling.",
+            providerErrorCode: code,
+            httpStatus: response.status,
+            dispatchMarkers,
+          }),
           bodyWasJson,
         };
       }
       return {
-        routingError: new RoutingError(
-          "provider-error",
-          "The routing provider returned an unexpected error.",
-          undefined,
-          code,
-          response.status,
-        ),
+        routingError: new RoutingError({
+          reason: "provider-error",
+          message: "The routing provider returned an unexpected error.",
+          providerErrorCode: code,
+          httpStatus: response.status,
+          dispatchMarkers,
+        }),
         bodyWasJson,
       };
     }
@@ -267,7 +284,16 @@ export class OpenRouteServiceAdapter implements RoutingProvider {
 
   constructor(options: OpenRouteServiceAdapterOptions) {
     this.getApiKey = options.getApiKey;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    // Bound explicitly — calling fetch later as `this.fetchImpl(request)`
+    // (a property access, not `window.fetch(request)`) throws a real,
+    // confirmed "Illegal invocation" TypeError in Chromium: proven by a
+    // real-browser Playwright regression test (e2e/fetchInvocation.spec.ts)
+    // before this binding was added, per this project's own policy against
+    // speculative fixes. Never applied to an injected fetchImpl — a
+    // caller-supplied function is the caller's own responsibility, and
+    // wrapping it here would be surprising for tests that assert on call
+    // identity/arguments.
+    this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
   }
 
@@ -280,13 +306,29 @@ export class OpenRouteServiceAdapter implements RoutingProvider {
     if (!apiKey) {
       // A local configuration gate, not a routing attempt — never
       // recorded as a diagnostic (see routingDiagnostics.ts).
-      throw new RoutingError("no-api-key", "No OpenRouteService key is configured.");
+      throw new RoutingError({
+        reason: "no-api-key",
+        message: "No OpenRouteService key is configured.",
+      });
     }
 
     const startedAt = Date.now();
     const endpointHost = new URL(this.baseUrl).host;
     const endpointPath = `/directions/${options.profile}/geojson`;
     const wasOnline = typeof navigator === "undefined" || navigator.onLine;
+
+    // A single, mutable record of how far *this* attempt actually got —
+    // updated in place as each stage below succeeds, then read (never
+    // separately re-derived) both by recordAttempt and by any RoutingError
+    // this method throws, so the diagnostic log and the thrown error can
+    // never disagree about these facts.
+    const markers: DispatchMarkers = {
+      headersConstructed: false,
+      requestConstructed: false,
+      fetchInvoked: false,
+      fetchReturnedPromise: false,
+      responseReceived: false,
+    };
 
     const recordAttempt = (
       fields: Pick<
@@ -301,6 +343,7 @@ export class OpenRouteServiceAdapter implements RoutingProvider {
         | "rateLimitLimit"
         | "errorName"
         | "errorMessage"
+        | "transportFailureReasonCode"
       >,
     ): void => {
       recordRoutingAttempt({
@@ -316,13 +359,37 @@ export class OpenRouteServiceAdapter implements RoutingProvider {
         isStandalone: isStandaloneDisplayMode(),
         waypointCount: waypoints.length,
         elapsedMs: Date.now() - startedAt,
+        headersConstructed: markers.headersConstructed,
+        requestConstructed: markers.requestConstructed,
+        fetchInvoked: markers.fetchInvoked,
+        fetchReturnedPromise: markers.fetchReturnedPromise,
         ...fields,
       });
     };
 
     if (!wasOnline) {
       recordAttempt({ responseReceived: false, category: "offline" });
-      throw new RoutingError("offline", "The device is currently offline.");
+      throw new RoutingError({
+        reason: "offline",
+        message: "The device is currently offline.",
+        dispatchMarkers: { ...markers },
+      });
+    }
+
+    // Stage A: explicit key-format validation. Deterministic and safe
+    // regardless of how strictly a given engine's native Headers
+    // constructor validates values — this is also what makes the path
+    // reliably unit-testable at all (see the adapter's own tests). A
+    // syntactically valid key that the provider later rejects is a
+    // completely separate path ("unauthorized", from mapErrorResponse).
+    if (!isValidHttpHeaderValue(apiKey)) {
+      recordAttempt({ responseReceived: false, category: "invalid-header-value" });
+      throw new RoutingError({
+        reason: "invalid-header-value",
+        message:
+          "The stored key contains a character that cannot be sent in a request header.",
+        dispatchMarkers: { ...markers },
+      });
     }
 
     const body: OrsDirectionsRequestBody = {
@@ -339,20 +406,137 @@ export class OpenRouteServiceAdapter implements RoutingProvider {
     }, REQUEST_TIMEOUT_MS);
     const combinedSignal = mergeAbortSignals(signal, timeoutController.signal);
 
-    let response: Response;
+    // Stage B: Headers construction, in its own try/catch — explicit key
+    // validation above already covers the one failure mode this project
+    // can anticipate, but this still guards against any other
+    // construction failure, classified distinctly rather than folded into
+    // a later, vaguer category.
+    let headers: Headers;
     try {
-      response = await this.fetchImpl(`${this.baseUrl}${endpointPath}`, {
+      headers = new Headers({
+        // Raw key, never a "Bearer " prefix, and never appended to the
+        // URL — see the redaction/URL tests.
+        Authorization: apiKey,
+        "Content-Type": "application/json",
+        Accept: "application/geo+json, application/json",
+      });
+      markers.headersConstructed = true;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      const errorName = error instanceof Error ? error.name : "unknown";
+      // Deliberately never attempts to read or sanitise error.message
+      // here: this project's own testing confirmed native Headers
+      // construction errors embed the raw invalid value verbatim (e.g.
+      // `Headers.append: "<the value>" is an invalid header value.`), so
+      // no message from this stage can ever be safely shown.
+      recordAttempt({
+        responseReceived: false,
+        category: "header-construction-failure",
+        errorName,
+      });
+      throw new RoutingError({
+        reason: "header-construction-failure",
+        message: "The routing request's headers could not be constructed.",
+        transportErrorName: errorName,
+        dispatchMarkers: { ...markers },
+      });
+    }
+
+    // Stage C: Request construction, in its own try/catch.
+    let request: Request;
+    try {
+      request = new Request(`${this.baseUrl}${endpointPath}`, {
         method: "POST",
-        headers: {
-          // Raw key, never a "Bearer " prefix, and never appended to
-          // the URL — see the redaction/URL tests.
-          Authorization: apiKey,
-          "Content-Type": "application/json",
-          Accept: "application/geo+json, application/json",
-        },
+        headers,
         body: JSON.stringify(body),
         signal: combinedSignal,
       });
+      markers.requestConstructed = true;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      const errorName = error instanceof Error ? error.name : "unknown";
+      recordAttempt({
+        responseReceived: false,
+        category: "invalid-request-construction",
+        errorName,
+      });
+      throw new RoutingError({
+        reason: "invalid-request-construction",
+        message: "The routing request could not be constructed.",
+        transportErrorName: errorName,
+        dispatchMarkers: { ...markers },
+      });
+    }
+
+    // Stage D: invoke fetch synchronously, without awaiting yet — a
+    // synchronous invocation-time throw (e.g. an "Illegal invocation"-
+    // shaped error from an engine that binds fetch to its receiver) is
+    // caught right here, structurally distinct from an asynchronous
+    // rejection of the returned promise (Stage E below). The try/catch
+    // boundary itself is the source of truth for that distinction, never
+    // inferred from the caught error's message.
+    let responsePromise: Promise<Response>;
+    try {
+      // Set before the call, not after — "invoked" means "we attempted
+      // the call", not "the call succeeded"; a synchronous throw below
+      // still means fetch was genuinely invoked.
+      markers.fetchInvoked = true;
+      responsePromise = this.fetchImpl(request);
+    } catch (error) {
+      clearTimeout(timeoutId);
+      const errorName = error instanceof Error ? error.name : "unknown";
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      const sanitisedMessage = sanitiseTransportErrorMessage(rawMessage, apiKey);
+      const reasonCode = classifyTransportFailureReasonCode(rawMessage);
+      recordAttempt({
+        responseReceived: false,
+        category: "fetch-invocation-failure",
+        errorName,
+        errorMessage: sanitisedMessage,
+        transportFailureReasonCode: reasonCode,
+      });
+      throw new RoutingError({
+        reason: "fetch-invocation-failure",
+        message: "The routing request could not be sent.",
+        transportErrorName: errorName,
+        transportErrorMessage: sanitisedMessage,
+        transportFailureReasonCode: reasonCode,
+        dispatchMarkers: { ...markers },
+      });
+    }
+
+    if (
+      !(responsePromise instanceof Promise) &&
+      typeof (responsePromise as { then?: unknown } | null | undefined)?.then !==
+        "function"
+    ) {
+      // Only reachable with a badly-behaved injected fetchImpl — the
+      // native fetch always returns a real Promise. Classified explicitly
+      // rather than falling through to a misleading transport-failure.
+      clearTimeout(timeoutId);
+      recordAttempt({
+        responseReceived: false,
+        category: "fetch-invocation-failure",
+        errorName: "TypeError",
+        transportFailureReasonCode: "fetch-returned-non-promise",
+      });
+      throw new RoutingError({
+        reason: "fetch-invocation-failure",
+        message:
+          "The routing request implementation returned an invalid value instead of a promise.",
+        transportErrorName: "TypeError",
+        transportFailureReasonCode: "fetch-returned-non-promise",
+        dispatchMarkers: { ...markers },
+      });
+    }
+    markers.fetchReturnedPromise = true;
+
+    // Stage E: await the fetch promise — genuine asynchronous rejection
+    // (network/DNS/TLS/a CORS-hidden response/offline mid-flight/timeout),
+    // never a construction or invocation-time problem.
+    let response: Response;
+    try {
+      response = await responsePromise;
     } catch (error) {
       if (isAbortError(error)) {
         if (signal?.aborted) {
@@ -362,7 +546,11 @@ export class OpenRouteServiceAdapter implements RoutingProvider {
           throw error;
         }
         recordAttempt({ responseReceived: false, category: "timeout" });
-        throw new RoutingError("timeout", "The routing request timed out.");
+        throw new RoutingError({
+          reason: "timeout",
+          message: "The routing request timed out.",
+          dispatchMarkers: { ...markers },
+        });
       }
       // Cannot reliably distinguish a provider outage, a DNS/TLS failure,
       // a local network restriction, or a real HTTP error response whose
@@ -375,26 +563,33 @@ export class OpenRouteServiceAdapter implements RoutingProvider {
       const errorName = error instanceof Error ? error.name : "unknown";
       const rawMessage = error instanceof Error ? error.message : String(error);
       const sanitisedMessage = sanitiseTransportErrorMessage(rawMessage, apiKey);
+      const reasonCode = classifyTransportFailureReasonCode(rawMessage);
       recordAttempt({
         responseReceived: false,
         category: "transport-failure",
         errorName,
         errorMessage: sanitisedMessage,
+        transportFailureReasonCode: reasonCode,
       });
-      throw new RoutingError(
-        "transport-failure",
-        "The routing request failed.",
-        undefined,
-        undefined,
-        undefined,
-        { name: errorName, sanitisedMessage },
-      );
+      throw new RoutingError({
+        reason: "transport-failure",
+        message: "The routing request failed.",
+        transportErrorName: errorName,
+        transportErrorMessage: sanitisedMessage,
+        transportFailureReasonCode: reasonCode,
+        dispatchMarkers: { ...markers },
+      });
     } finally {
       clearTimeout(timeoutId);
     }
 
+    // Stage F: a response was received.
+    markers.responseReceived = true;
+
     if (!response.ok) {
-      const { routingError, bodyWasJson } = await mapErrorResponse(response);
+      const { routingError, bodyWasJson } = await mapErrorResponse(response, {
+        ...markers,
+      });
       const rateLimits = readRateLimitHeaders(response);
       recordAttempt({
         responseReceived: true,
@@ -420,10 +615,11 @@ export class OpenRouteServiceAdapter implements RoutingProvider {
         bodyWasJson: false,
         category: "malformed-response",
       });
-      throw new RoutingError(
-        "malformed-response",
-        "The routing response could not be parsed.",
-      );
+      throw new RoutingError({
+        reason: "malformed-response",
+        message: "The routing response could not be parsed.",
+        dispatchMarkers: { ...markers },
+      });
     }
 
     if (!isOrsFeatureCollection(payload)) {
@@ -434,10 +630,11 @@ export class OpenRouteServiceAdapter implements RoutingProvider {
         bodyWasJson: true,
         category: "malformed-response",
       });
-      throw new RoutingError(
-        "malformed-response",
-        "The routing response had an unexpected shape.",
-      );
+      throw new RoutingError({
+        reason: "malformed-response",
+        message: "The routing response had an unexpected shape.",
+        dispatchMarkers: { ...markers },
+      });
     }
 
     try {

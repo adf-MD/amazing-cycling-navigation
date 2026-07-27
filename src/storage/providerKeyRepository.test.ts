@@ -4,6 +4,7 @@ import {
   deleteProviderKey,
   getProviderKey,
   getProviderKeyVerification,
+  InvalidApiKeyError,
   recordProviderKeyVerification,
   saveProviderKey,
 } from "./providerKeyRepository.ts";
@@ -72,5 +73,53 @@ describe("providerKeyRepository", () => {
   it("recording an outcome with no key saved is a no-op, not an error", async () => {
     await expect(recordProviderKeyVerification("verified")).resolves.toBeUndefined();
     await expect(getProviderKeyVerification()).resolves.toBeUndefined();
+  });
+
+  describe("key normalisation and validation", () => {
+    it("trims a trailing newline before persisting", async () => {
+      await saveProviderKey(`${DUMMY_KEY}\n`);
+
+      const stored = await getProviderKey();
+      expect(stored?.apiKey).toBe(DUMMY_KEY);
+    });
+
+    it("trims ordinary surrounding whitespace before persisting", async () => {
+      await saveProviderKey(`  ${DUMMY_KEY}  `);
+
+      const stored = await getProviderKey();
+      expect(stored?.apiKey).toBe(DUMMY_KEY);
+    });
+
+    it("rejects a key with an embedded control character, writing nothing", async () => {
+      await expect(saveProviderKey(`abc\ndef`)).rejects.toBeInstanceOf(
+        InvalidApiKeyError,
+      );
+
+      await expect(getProviderKey()).resolves.toBeUndefined();
+    });
+
+    it("the thrown error never includes the rejected key", async () => {
+      try {
+        await saveProviderKey(`abc\ndef`);
+        expect.unreachable("expected saveProviderKey to throw");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        expect(message).not.toContain("abc");
+        expect(message).not.toContain("def");
+      }
+    });
+
+    it("normalises a legacy untrimmed key on read, without requiring a re-save", async () => {
+      // Bypasses saveProviderKey's own validation entirely, to simulate a
+      // row written by a build that predates this normalisation.
+      await db.providerKeys.put({
+        id: "openrouteservice",
+        apiKey: `  ${DUMMY_KEY}\n`,
+        savedAt: "2026-01-01T00:00:00.000Z",
+      });
+
+      const stored = await getProviderKey();
+      expect(stored?.apiKey).toBe(DUMMY_KEY);
+    });
   });
 });

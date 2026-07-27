@@ -491,13 +491,11 @@ describe("PlanningScreen", () => {
     const map = createMockMapFactory();
     const route = buildRoute(10);
     const { adapter, calculateRouteSpy } = buildFailThenSucceedAdapter(
-      new RoutingError(
-        "provider-unavailable",
-        "OpenRouteService returned a server error.",
-        undefined,
-        undefined,
-        502,
-      ),
+      new RoutingError({
+        reason: "provider-unavailable",
+        message: "OpenRouteService returned a server error.",
+        httpStatus: 502,
+      }),
       route,
     );
     render(
@@ -545,13 +543,11 @@ describe("PlanningScreen", () => {
     const adapter: RoutingProvider = {
       calculateRoute: () =>
         Promise.reject(
-          new RoutingError(
-            "provider-unavailable",
-            "OpenRouteService returned a server error.",
-            undefined,
-            undefined,
-            502,
-          ),
+          new RoutingError({
+            reason: "provider-unavailable",
+            message: "OpenRouteService returned a server error.",
+            httpStatus: 502,
+          }),
         ),
     };
     render(

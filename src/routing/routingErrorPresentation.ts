@@ -40,6 +40,15 @@ export function mapErrorReasonToOutcome(
       // A well-formed error response proves the key and connection both
       // work — only the waypoints are the problem, not the provider.
       return "verified";
+    // Local syntax or request-construction problems — the provider was
+    // never reached, so none of these say anything about whether the key
+    // itself would be accepted. Explicitly uninformative, never folded
+    // into "unavailable" (which implies a genuine connectivity attempt).
+    case "invalid-header-value":
+    case "header-construction-failure":
+    case "invalid-request-construction":
+    case "fetch-invocation-failure":
+      return null;
     default:
       return null;
   }
@@ -62,6 +71,12 @@ export function describeRoutingError(error: RoutingError): string {
   switch (error.reason) {
     case "no-api-key":
       return "Road routing requires your personal OpenRouteService key.";
+    case "invalid-header-value":
+      return "Your OpenRouteService key contains a character that cannot be sent in a request header. Check it in Settings.";
+    case "header-construction-failure":
+    case "invalid-request-construction":
+    case "fetch-invocation-failure":
+      return "The routing request could not be prepared or sent. Try again.";
     case "unauthorized":
       return "Your OpenRouteService key was rejected. Check it in Settings.";
     case "forbidden":

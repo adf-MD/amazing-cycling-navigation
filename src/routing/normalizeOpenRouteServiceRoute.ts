@@ -200,10 +200,10 @@ export function normalizeOpenRouteServiceRoute(
 ): PlannedRoute {
   const feature = response.features[0];
   if (!feature || feature.geometry.coordinates.length === 0) {
-    throw new RoutingError(
-      "no-geometry",
-      "The routing response contained no usable route geometry.",
-    );
+    throw new RoutingError({
+      reason: "no-geometry",
+      message: "The routing response contained no usable route geometry.",
+    });
   }
 
   const rawPoints: RawGpxPoint[] = feature.geometry.coordinates.map((coordinate) => ({

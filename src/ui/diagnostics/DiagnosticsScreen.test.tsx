@@ -51,6 +51,10 @@ function buildAttempt(
     isStandalone: false,
     waypointCount: 2,
     elapsedMs: 0,
+    headersConstructed: true,
+    requestConstructed: true,
+    fetchInvoked: true,
+    fetchReturnedPromise: true,
     ...overrides,
   };
 }
@@ -190,7 +194,7 @@ describe("DiagnosticsScreen", () => {
     expect(screen.getByText("Device reported offline")).toBeInTheDocument();
     expect(screen.getByText("Request timed out")).toBeInTheDocument();
     expect(
-      screen.getByText("Fetch failed before an HTTP response was exposed to the browser"),
+      screen.getByText("Fetch promise rejected before an HTTP response was exposed"),
     ).toBeInTheDocument();
     expect(screen.getByText(/missing CORS headers/i)).toBeInTheDocument();
   });
@@ -271,7 +275,20 @@ describe("DiagnosticsScreen", () => {
       const user = userEvent.setup();
       const routingProvider = fakeRoutingProvider(() =>
         Promise.reject(
-          new RoutingError("transport-failure", "The routing request failed."),
+          new RoutingError({
+            reason: "transport-failure",
+            message: "The routing request failed.",
+            transportErrorName: "TypeError",
+            transportErrorMessage: "Failed to fetch",
+            transportFailureReasonCode: "generic-fetch-rejection",
+            dispatchMarkers: {
+              headersConstructed: true,
+              requestConstructed: true,
+              fetchInvoked: true,
+              fetchReturnedPromise: true,
+              responseReceived: false,
+            },
+          }),
         ),
       );
 
@@ -291,6 +308,36 @@ describe("DiagnosticsScreen", () => {
       expect(
         screen.getByText(/browser or network may have blocked the request/i),
       ).toBeInTheDocument();
+      expect(screen.getByText(/transport-response-unavailable/)).toBeInTheDocument();
+      expect(screen.getByText("TypeError: Failed to fetch")).toBeInTheDocument();
+      expect(screen.getByText("generic-fetch-rejection")).toBeInTheDocument();
+    });
+
+    it("shows every dispatch marker in the visible result, not just the copied report", async () => {
+      await saveProviderKey("dummy-test-key");
+      const user = userEvent.setup();
+      const routingProvider = fakeRoutingProvider(() =>
+        Promise.resolve(buildFakeRoute()),
+      );
+
+      render(<DiagnosticsScreen routingProvider={routingProvider} />);
+
+      const testButton = await screen.findByRole("button", {
+        name: "Test routing connection",
+      });
+      await waitFor(() => {
+        expect(testButton).toBeEnabled();
+      });
+      await user.click(testButton);
+
+      await waitFor(() => {
+        expect(screen.getByRole("status")).toHaveTextContent(/Succeeded/);
+      });
+      expect(screen.getByText("Headers constructed")).toBeInTheDocument();
+      expect(screen.getByText("Request constructed")).toBeInTheDocument();
+      expect(screen.getByText("Fetch invoked")).toBeInTheDocument();
+      expect(screen.getByText("Fetch returned a promise")).toBeInTheDocument();
+      expect(screen.getByText("HTTP response received")).toBeInTheDocument();
     });
 
     it("copies a report that never contains the coordinates or a key", async () => {

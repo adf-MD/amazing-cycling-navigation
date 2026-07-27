@@ -23,6 +23,10 @@ function buildDiagnostic(
     isStandalone: false,
     waypointCount: 2,
     elapsedMs: 120,
+    headersConstructed: true,
+    requestConstructed: true,
+    fetchInvoked: true,
+    fetchReturnedPromise: true,
     responseReceived: true,
     category: "success",
     ...overrides,
@@ -100,7 +104,59 @@ describe("describeRoutingAttempt", () => {
       describeRoutingAttempt(
         buildDiagnostic({ responseReceived: false, category: "transport-failure" }),
       ),
-    ).toBe("Fetch failed before an HTTP response was exposed to the browser");
+    ).toBe("Fetch promise rejected before an HTTP response was exposed");
+  });
+
+  it("appends a safe error name/message and reason code when present", () => {
+    expect(
+      describeRoutingAttempt(
+        buildDiagnostic({
+          responseReceived: false,
+          category: "transport-failure",
+          errorName: "TypeError",
+          errorMessage: "Failed to fetch",
+          transportFailureReasonCode: "generic-fetch-rejection",
+        }),
+      ),
+    ).toBe(
+      "Fetch promise rejected before an HTTP response was exposed (TypeError: Failed to fetch; reason: generic-fetch-rejection)",
+    );
+  });
+
+  it("appends only the error name when no sanitised message is available", () => {
+    expect(
+      describeRoutingAttempt(
+        buildDiagnostic({
+          responseReceived: false,
+          category: "header-construction-failure",
+          errorName: "TypeError",
+        }),
+      ),
+    ).toBe("Request headers could not be constructed (TypeError)");
+  });
+
+  it("distinguishes each explicit local pipeline stage", () => {
+    expect(
+      describeRoutingAttempt(
+        buildDiagnostic({ responseReceived: false, category: "invalid-header-value" }),
+      ),
+    ).toBe("The stored key could not be used in a request header");
+    expect(
+      describeRoutingAttempt(
+        buildDiagnostic({
+          responseReceived: false,
+          category: "invalid-request-construction",
+        }),
+      ),
+    ).toBe("Request could not be constructed");
+    expect(
+      describeRoutingAttempt(
+        buildDiagnostic({
+          responseReceived: false,
+          category: "fetch-invocation-failure",
+        }),
+      ),
+    ).toBe("Fetch could not be invoked");
   });
 });
 
@@ -125,6 +181,10 @@ describe("diagnostic content", () => {
         "isStandalone",
         "waypointCount",
         "elapsedMs",
+        "headersConstructed",
+        "requestConstructed",
+        "fetchInvoked",
+        "fetchReturnedPromise",
         "responseReceived",
         "httpStatus",
         "category",
@@ -139,6 +199,7 @@ describe("diagnostic content", () => {
         category: "transport-failure",
         errorName: "TypeError",
         errorMessage: "Failed to fetch",
+        transportFailureReasonCode: "generic-fetch-rejection",
       }),
     );
 
@@ -159,10 +220,15 @@ describe("diagnostic content", () => {
         "isStandalone",
         "waypointCount",
         "elapsedMs",
+        "headersConstructed",
+        "requestConstructed",
+        "fetchInvoked",
+        "fetchReturnedPromise",
         "responseReceived",
         "category",
         "errorName",
         "errorMessage",
+        "transportFailureReasonCode",
       ].sort(),
     );
   });
