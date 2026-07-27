@@ -1,14 +1,59 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { DiagnosticsScreen } from "./DiagnosticsScreen.tsx";
 import { db } from "../../storage/db.ts";
 import { setActiveRideState } from "../../storage/rideStateRepository.ts";
 import {
   clearRoutingDiagnostics,
   recordRoutingAttempt,
+  type RoutingAttemptDiagnostic,
 } from "../../routing/routingDiagnostics.ts";
 import { clearMapDiagnostics, recordMapAttempt } from "../../map/mapDiagnostics.ts";
 import type { Clock } from "../../platform/clock.ts";
+import { saveProviderKey } from "../../storage/providerKeyRepository.ts";
+import type { RoutingProvider } from "../../routing/provider.ts";
+import { RoutingError } from "../../routing/openRouteServiceErrors.ts";
+import type { PlannedRoute } from "../../domain/types.ts";
+
+function fakeRoutingProvider(behaviour: () => Promise<PlannedRoute>): RoutingProvider {
+  return { calculateRoute: () => behaviour() };
+}
+
+function buildFakeRoute(): PlannedRoute {
+  return {
+    id: "route-1",
+    name: "Test route",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    points: [],
+    manoeuvres: [],
+    distanceMetres: 0,
+    ascentMetres: null,
+    descentMetres: null,
+    warnings: [],
+    source: { kind: "planner", provider: "openrouteservice", profile: "cycling-road" },
+  };
+}
+
+function buildAttempt(
+  overrides: Partial<RoutingAttemptDiagnostic> &
+    Pick<RoutingAttemptDiagnostic, "timestampIso" | "responseReceived" | "category">,
+): RoutingAttemptDiagnostic {
+  return {
+    attemptId: overrides.timestampIso,
+    providerId: "openrouteservice",
+    endpointHost: "api.heigit.org",
+    endpointPath: "/directions/cycling-road/geojson",
+    httpMethod: "POST",
+    wasOnline: true,
+    isSecureContext: true,
+    isServiceWorkerControlled: false,
+    isStandalone: false,
+    waypointCount: 2,
+    elapsedMs: 0,
+    ...overrides,
+  };
+}
 
 function getDetailValue(termText: string): HTMLElement {
   const term = screen.getByText(termText);
@@ -20,6 +65,8 @@ function getDetailValue(termText: string): HTMLElement {
 beforeEach(async () => {
   await db.routes.clear();
   await db.rideState.clear();
+  await db.providerKeys.clear();
+  await db.providerKeyVerifications.clear();
   clearRoutingDiagnostics();
   clearMapDiagnostics();
 });
@@ -101,47 +148,39 @@ describe("DiagnosticsScreen", () => {
   });
 
   it("distinguishes a received HTTP response, offline, timeout and an unexposed fetch failure, and explains the CORS/502 ambiguity", () => {
-    recordRoutingAttempt({
-      timestampIso: "2026-01-01T00:00:00.000Z",
-      providerId: "openrouteservice",
-      endpointHost: "api.heigit.org",
-      endpointPath: "/directions/cycling-road/geojson",
-      wasOnline: true,
-      elapsedMs: 200,
-      responseReceived: true,
-      httpStatus: 502,
-      category: "provider-unavailable",
-    });
-    recordRoutingAttempt({
-      timestampIso: "2026-01-01T00:01:00.000Z",
-      providerId: "openrouteservice",
-      endpointHost: "api.heigit.org",
-      endpointPath: "/directions/cycling-road/geojson",
-      wasOnline: false,
-      elapsedMs: 0,
-      responseReceived: false,
-      category: "offline",
-    });
-    recordRoutingAttempt({
-      timestampIso: "2026-01-01T00:02:00.000Z",
-      providerId: "openrouteservice",
-      endpointHost: "api.heigit.org",
-      endpointPath: "/directions/cycling-road/geojson",
-      wasOnline: true,
-      elapsedMs: 15_000,
-      responseReceived: false,
-      category: "timeout",
-    });
-    recordRoutingAttempt({
-      timestampIso: "2026-01-01T00:03:00.000Z",
-      providerId: "openrouteservice",
-      endpointHost: "api.heigit.org",
-      endpointPath: "/directions/cycling-road/geojson",
-      wasOnline: true,
-      elapsedMs: 50,
-      responseReceived: false,
-      category: "transport-failure",
-    });
+    recordRoutingAttempt(
+      buildAttempt({
+        timestampIso: "2026-01-01T00:00:00.000Z",
+        elapsedMs: 200,
+        responseReceived: true,
+        httpStatus: 502,
+        category: "provider-unavailable",
+      }),
+    );
+    recordRoutingAttempt(
+      buildAttempt({
+        timestampIso: "2026-01-01T00:01:00.000Z",
+        wasOnline: false,
+        responseReceived: false,
+        category: "offline",
+      }),
+    );
+    recordRoutingAttempt(
+      buildAttempt({
+        timestampIso: "2026-01-01T00:02:00.000Z",
+        elapsedMs: 15_000,
+        responseReceived: false,
+        category: "timeout",
+      }),
+    );
+    recordRoutingAttempt(
+      buildAttempt({
+        timestampIso: "2026-01-01T00:03:00.000Z",
+        elapsedMs: 50,
+        responseReceived: false,
+        category: "transport-failure",
+      }),
+    );
 
     render(<DiagnosticsScreen />);
 
@@ -184,5 +223,109 @@ describe("DiagnosticsScreen", () => {
 
     expect(screen.getByText(/switched to the plain background/i)).toBeInTheDocument();
     expect(screen.getByText(/automatically/i)).toBeInTheDocument();
+  });
+
+  describe("Test routing connection", () => {
+    it("states the one-request cost up front and disables the button with no key configured", () => {
+      render(<DiagnosticsScreen />);
+
+      expect(screen.getByText(/uses one API request/i)).toBeInTheDocument();
+      expect(screen.getByText(/no openrouteservice key configured/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Test routing connection" }),
+      ).toBeDisabled();
+    });
+
+    it("never runs automatically on mount", () => {
+      const calculateRoute = vi.fn(() => Promise.resolve(buildFakeRoute()));
+
+      render(<DiagnosticsScreen routingProvider={{ calculateRoute }} />);
+
+      expect(calculateRoute).not.toHaveBeenCalled();
+    });
+
+    it("runs one request on click and shows a success result, never the coordinates", async () => {
+      await saveProviderKey("dummy-test-key");
+      const user = userEvent.setup();
+      const calculateRoute = vi.fn(() => Promise.resolve(buildFakeRoute()));
+
+      render(<DiagnosticsScreen routingProvider={{ calculateRoute }} />);
+
+      const testButton = await screen.findByRole("button", {
+        name: "Test routing connection",
+      });
+      await waitFor(() => {
+        expect(testButton).toBeEnabled();
+      });
+      await user.click(testButton);
+
+      await waitFor(() => {
+        expect(screen.getByRole("status")).toHaveTextContent(/Succeeded/);
+      });
+      expect(calculateRoute).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText(/8\.681495/)).not.toBeInTheDocument();
+    });
+
+    it("shows the hedged, non-CORS-confirming explanation on a transport failure", async () => {
+      await saveProviderKey("dummy-test-key");
+      const user = userEvent.setup();
+      const routingProvider = fakeRoutingProvider(() =>
+        Promise.reject(
+          new RoutingError("transport-failure", "The routing request failed."),
+        ),
+      );
+
+      render(<DiagnosticsScreen routingProvider={routingProvider} />);
+
+      const testButton = await screen.findByRole("button", {
+        name: "Test routing connection",
+      });
+      await waitFor(() => {
+        expect(testButton).toBeEnabled();
+      });
+      await user.click(testButton);
+
+      await waitFor(() => {
+        expect(screen.getByRole("status")).toHaveTextContent(/Failed/);
+      });
+      expect(
+        screen.getByText(/browser or network may have blocked the request/i),
+      ).toBeInTheDocument();
+    });
+
+    it("copies a report that never contains the coordinates or a key", async () => {
+      await saveProviderKey("dummy-test-key");
+      const user = userEvent.setup();
+      const routingProvider = fakeRoutingProvider(() =>
+        Promise.resolve(buildFakeRoute()),
+      );
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal("navigator", {
+        onLine: true,
+        clipboard: { writeText },
+      });
+
+      render(<DiagnosticsScreen routingProvider={routingProvider} />);
+
+      const testButton = await screen.findByRole("button", {
+        name: "Test routing connection",
+      });
+      await waitFor(() => {
+        expect(testButton).toBeEnabled();
+      });
+      await user.click(testButton);
+      await waitFor(() => {
+        expect(screen.getByRole("status")).toHaveTextContent(/Succeeded/);
+      });
+      await user.click(screen.getByRole("button", { name: "Copy diagnostic report" }));
+
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledTimes(1);
+      });
+      const [report] = writeText.mock.calls[0] as [string];
+      expect(report).not.toContain("8.681495");
+      expect(report).not.toContain("dummy-test-key");
+      expect(report).toContain("App version:");
+    });
   });
 });

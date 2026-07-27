@@ -3,6 +3,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import pkg from "./package.json" with { type: "json" };
+import { workboxOptions } from "./vite.pwa.workbox.ts";
 
 // GitHub Pages project site: https://<user>.github.io/amazing-cycling-navigation/
 // Kept as a single literal so dev, build, manifest and service-worker scope
@@ -42,11 +43,7 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
-        // Application shell only: no personal data, no routed API/tile
-        // responses are ever precached.
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-      },
+      workbox: workboxOptions,
     }),
   ],
   test: {

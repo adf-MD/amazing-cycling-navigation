@@ -53,6 +53,15 @@ export class RoutingError extends Error {
    * from providerErrorCode, which is OpenRouteService's own body-level
    * numbering (e.g. 2009), not the transport-level status (e.g. 502). */
   readonly httpStatus?: number;
+  /** The underlying pre-response fetch rejection's `Error.name` (e.g.
+   * "TypeError") — only set for "transport-failure". Always safe: a fixed,
+   * small vocabulary of browser-defined class names, never provider text. */
+  readonly transportErrorName?: string;
+  /** An already-sanitised form of the underlying error's `message`, via
+   * sanitiseTransportErrorMessage.ts — only set for "transport-failure",
+   * and only when the raw message matched a known-safe browser string.
+   * Never the raw message itself. */
+  readonly transportErrorMessage?: string;
 
   constructor(
     reason: RoutingErrorReason,
@@ -60,6 +69,7 @@ export class RoutingError extends Error {
     retryAfterSeconds?: number,
     providerErrorCode?: number,
     httpStatus?: number,
+    transportError?: { name: string; sanitisedMessage: string | undefined },
   ) {
     super(message);
     this.name = "RoutingError";
@@ -67,5 +77,7 @@ export class RoutingError extends Error {
     this.retryAfterSeconds = retryAfterSeconds;
     this.providerErrorCode = providerErrorCode;
     this.httpStatus = httpStatus;
+    this.transportErrorName = transportError?.name;
+    this.transportErrorMessage = transportError?.sanitisedMessage;
   }
 }

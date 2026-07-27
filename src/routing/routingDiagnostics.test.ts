@@ -11,11 +11,17 @@ function buildDiagnostic(
   overrides: Partial<RoutingAttemptDiagnostic> = {},
 ): RoutingAttemptDiagnostic {
   return {
+    attemptId: "attempt-1",
     timestampIso: "2026-01-01T00:00:00.000Z",
     providerId: "openrouteservice",
     endpointHost: "api.heigit.org",
     endpointPath: "/directions/cycling-road/geojson",
+    httpMethod: "POST",
     wasOnline: true,
+    isSecureContext: true,
+    isServiceWorkerControlled: false,
+    isStandalone: false,
+    waypointCount: 2,
     elapsedMs: 120,
     responseReceived: true,
     category: "success",
@@ -107,15 +113,56 @@ describe("diagnostic content", () => {
     const [entry] = getRecentRoutingAttempts();
     expect(Object.keys(entry ?? {}).sort()).toEqual(
       [
+        "attemptId",
         "timestampIso",
         "providerId",
         "endpointHost",
         "endpointPath",
+        "httpMethod",
         "wasOnline",
+        "isSecureContext",
+        "isServiceWorkerControlled",
+        "isStandalone",
+        "waypointCount",
         "elapsedMs",
         "responseReceived",
         "httpStatus",
         "category",
+      ].sort(),
+    );
+  });
+
+  it("never carries a raw (unsanitised) error message, even when errorName/errorMessage are set", () => {
+    recordRoutingAttempt(
+      buildDiagnostic({
+        responseReceived: false,
+        category: "transport-failure",
+        errorName: "TypeError",
+        errorMessage: "Failed to fetch",
+      }),
+    );
+
+    const [entry] = getRecentRoutingAttempts();
+    expect(entry?.errorName).toBe("TypeError");
+    expect(entry?.errorMessage).toBe("Failed to fetch");
+    expect(Object.keys(entry ?? {}).sort()).toEqual(
+      [
+        "attemptId",
+        "timestampIso",
+        "providerId",
+        "endpointHost",
+        "endpointPath",
+        "httpMethod",
+        "wasOnline",
+        "isSecureContext",
+        "isServiceWorkerControlled",
+        "isStandalone",
+        "waypointCount",
+        "elapsedMs",
+        "responseReceived",
+        "category",
+        "errorName",
+        "errorMessage",
       ].sort(),
     );
   });

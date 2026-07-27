@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useOnlineStatus } from "../../platform/onlineStatus.ts";
 import { useRecentErrors } from "../../platform/errorLog.ts";
 import {
@@ -12,9 +12,17 @@ import {
   describeRoutingAttempt,
   useRecentRoutingAttempts,
 } from "../../routing/routingDiagnostics.ts";
+import { OpenRouteServiceAdapter } from "../../routing/openRouteServiceAdapter.ts";
+import type { RoutingProvider } from "../../routing/provider.ts";
+import {
+  formatConnectionTestReport,
+  runRoutingConnectionTest,
+  type RoutingConnectionTestResult,
+} from "../../routing/routingConnectionTest.ts";
 import { describeMapAttempt, useRecentMapAttempts } from "../../map/mapDiagnostics.ts";
 import { useStorageHealth } from "../../storage/storageHealth.ts";
 import { getActiveRideState } from "../../storage/rideStateRepository.ts";
+import { getProviderKey } from "../../storage/providerKeyRepository.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 
 const SERVICE_WORKER_LABEL: Record<ServiceWorkerStatus, string> = {
@@ -39,11 +47,25 @@ function formatFixAge(ageMs: number): string {
   return `${String(Math.round(seconds / 60))} min ago`;
 }
 
-export interface DiagnosticsScreenProps {
-  clock?: Clock;
+function buildDefaultAdapter(): RoutingProvider {
+  return new OpenRouteServiceAdapter({
+    getApiKey: () => getProviderKey().then((key) => key?.apiKey),
+  });
 }
 
-export function DiagnosticsScreen({ clock = systemClock }: DiagnosticsScreenProps) {
+export interface DiagnosticsScreenProps {
+  clock?: Clock;
+  /** Injectable for tests; defaults to a real OpenRouteServiceAdapter
+   * reading the user's stored key fresh on every request — the same
+   * construction PlanningScreen uses, so "Test routing connection" below
+   * exercises identical request code to a real Planning calculation. */
+  routingProvider?: RoutingProvider;
+}
+
+export function DiagnosticsScreen({
+  clock = systemClock,
+  routingProvider,
+}: DiagnosticsScreenProps) {
   const online = useOnlineStatus();
   const serviceWorkerStatus = useServiceWorkerStatus();
   const storageHealth = useStorageHealth();
@@ -55,6 +77,46 @@ export function DiagnosticsScreen({ clock = systemClock }: DiagnosticsScreenProp
 
   const rideStateQuery = useCallback(() => getActiveRideState(), []);
   const rideState = useLiveQuery(rideStateQuery);
+
+  const keyQuery = useCallback(() => getProviderKey(), []);
+  const key = useLiveQuery(keyQuery);
+  const hasKey = key !== undefined;
+
+  // Created once, mirroring PlanningScreen's own treatment of an
+  // injectable-but-effectively-stable routingProvider prop.
+  const [adapter] = useState<RoutingProvider>(
+    () => routingProvider ?? buildDefaultAdapter(),
+  );
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [connectionTestResult, setConnectionTestResult] =
+    useState<RoutingConnectionTestResult | null>(null);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
+
+  const runConnectionTest = useCallback(() => {
+    if (isTestingConnection) return;
+    setIsTestingConnection(true);
+    setCopyStatus("idle");
+    void runRoutingConnectionTest(adapter)
+      .then((result) => {
+        setConnectionTestResult(result);
+      })
+      .finally(() => {
+        setIsTestingConnection(false);
+      });
+  }, [adapter, isTestingConnection]);
+
+  const copyConnectionTestReport = useCallback(() => {
+    if (!connectionTestResult) return;
+    const report = `App version: ${__APP_VERSION__}\n${formatConnectionTestReport(connectionTestResult)}`;
+    void (async () => {
+      try {
+        await navigator.clipboard.writeText(report);
+        setCopyStatus("copied");
+      } catch {
+        setCopyStatus("failed");
+      }
+    })();
+  }, [connectionTestResult]);
 
   const fixAgeMs = rideState?.lastFix ? now - rideState.lastFix.timestampMs : null;
 
@@ -128,10 +190,46 @@ export function DiagnosticsScreen({ clock = systemClock }: DiagnosticsScreenProp
       ) : (
         <ul>
           {recentRoutingAttempts.map((entry) => (
-            <li key={entry.timestampIso}>{describeRoutingAttempt(entry)}</li>
+            <li key={entry.attemptId}>{describeRoutingAttempt(entry)}</li>
           ))}
         </ul>
       )}
+
+      <h3>Test routing connection</h3>
+      <p>
+        This sends one real request to OpenRouteService, using fixed test coordinates
+        rather than any route you&apos;ve planned, and uses one API request.
+      </p>
+      {!hasKey ? <p>No OpenRouteService key configured.</p> : null}
+      <button
+        type="button"
+        onClick={runConnectionTest}
+        disabled={!hasKey || isTestingConnection}
+      >
+        {isTestingConnection ? "Testing…" : "Test routing connection"}
+      </button>
+      {connectionTestResult ? (
+        <>
+          <p role="status">
+            {connectionTestResult.outcome === "success" ? "Succeeded" : "Failed"} —{" "}
+            {connectionTestResult.message} ({String(connectionTestResult.elapsedMs)} ms)
+          </p>
+          <button type="button" onClick={copyConnectionTestReport}>
+            Copy diagnostic report
+          </button>
+          {copyStatus === "copied" ? <p>Copied to clipboard.</p> : null}
+          {copyStatus === "failed" ? (
+            <p>
+              Could not copy automatically — select and copy the report text manually:
+              <br />
+              <textarea
+                readOnly
+                value={`App version: ${__APP_VERSION__}\n${formatConnectionTestReport(connectionTestResult)}`}
+              />
+            </p>
+          ) : null}
+        </>
+      ) : null}
 
       <h2>Recent map imagery attempts</h2>
       {recentMapAttempts.length === 0 ? (

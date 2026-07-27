@@ -4,13 +4,17 @@ import type { RoutingErrorReason } from "./openRouteServiceErrors.ts";
 /**
  * A sanitised record of one routing attempt, for the Diagnostics screen.
  * Deliberately limited to values that are safe to show or export as-is:
- * booleans, numbers, a closed reason/"success" string union, and a fixed
- * (coordinate-free, key-free) endpoint host/path. Never the API key,
- * Authorization header, request body, waypoint coordinates, raw provider
- * response body, or raw provider error message — those can all echo
- * sensitive or identifying content back (see the adapter's redaction
- * tests), so only OpenRouteService's own numeric error code and the HTTP
- * status are kept.
+ * booleans, numbers, a closed reason/"success" string union, a fixed
+ * (coordinate-free, key-free) endpoint host/path, and a waypoint *count*
+ * rather than the waypoints themselves. Never the API key, Authorization
+ * header, request body, waypoint coordinates, or raw provider response
+ * body/message — those can all echo sensitive or identifying content back
+ * (see the adapter's redaction tests), so only OpenRouteService's own
+ * numeric error code and the HTTP status are kept from the provider side.
+ * `errorName`/`errorMessage` (a pre-response fetch rejection's own
+ * details) are populated only via sanitiseTransportErrorMessage.ts's
+ * allowlist-and-redact gate, never the raw `Error.message` — see that
+ * module's own doc comment.
  *
  * `responseReceived: false` cannot, by itself, distinguish a provider
  * outage, a DNS/TLS failure, a local network restriction, or a real HTTP
@@ -20,15 +24,44 @@ import type { RoutingErrorReason } from "./openRouteServiceErrors.ts";
  * guessing.
  */
 export interface RoutingAttemptDiagnostic {
+  /** Generated fresh per attempt — lets a specific attempt be correlated
+   * unambiguously (e.g. by a deliberate connection test) even if another
+   * attempt is recorded around the same time. */
+  attemptId: string;
   timestampIso: string;
   providerId: string;
   endpointHost: string;
   endpointPath: string;
+  httpMethod: string;
   wasOnline: boolean;
+  isSecureContext: boolean;
+  isServiceWorkerControlled: boolean;
+  isStandalone: boolean;
+  /** Never the coordinates themselves. */
+  waypointCount: number;
   elapsedMs: number;
   responseReceived: boolean;
   httpStatus?: number;
+  /** Best-effort only — some browsers/HTTP versions (notably HTTP/2)
+   * legitimately leave this empty, so it must never be relied on for
+   * classification, only shown alongside httpStatus/category. */
+  statusText?: string;
+  /** Whether a response body parse was attempted and succeeded as JSON.
+   * Left undefined when no parse was attempted at all (e.g. a 401/403/429/
+   * 5xx response, whose body is deliberately never read). */
+  bodyWasJson?: boolean;
   providerErrorCode?: number;
+  /** Best-effort — only present when the provider's rate-limit headers
+   * are exposed to page JavaScript by CORS. */
+  rateLimitRemaining?: string;
+  rateLimitLimit?: string;
+  /** Safe: a fixed, small vocabulary of browser-defined class names (e.g.
+   * "TypeError"), never provider text. Only set when responseReceived is
+   * false and the failure wasn't a recognised offline/timeout condition. */
+  errorName?: string;
+  /** An already-sanitised message — see sanitiseTransportErrorMessage.ts.
+   * Only set when responseReceived is false. */
+  errorMessage?: string;
   category: RoutingErrorReason | "success";
 }
 

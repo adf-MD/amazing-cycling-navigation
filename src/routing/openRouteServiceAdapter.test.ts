@@ -87,7 +87,7 @@ describe("OpenRouteServiceAdapter", () => {
     expect(headers.get("Authorization")).toBe(DUMMY_KEY);
   });
 
-  it("never puts the key in the request URL", async () => {
+  it("never puts the key in the request URL, and posts to the exact production endpoint", async () => {
     const fetchImpl = buildFetchMock({ ok: true });
     const adapter = new OpenRouteServiceAdapter({
       getApiKey: () => Promise.resolve(DUMMY_KEY),
@@ -98,9 +98,23 @@ describe("OpenRouteServiceAdapter", () => {
 
     const [url] = fetchImpl.mock.calls[0] as [string];
     expect(url).not.toContain(DUMMY_KEY);
-    expect(url).toContain(
+    expect(url).toBe(
       "https://api.heigit.org/openrouteservice/v2/directions/cycling-road/geojson",
     );
+  });
+
+  it("sends an Accept header matching the two shapes the endpoint can return", async () => {
+    const fetchImpl = buildFetchMock({ ok: true });
+    const adapter = new OpenRouteServiceAdapter({
+      getApiKey: () => Promise.resolve(DUMMY_KEY),
+      fetchImpl,
+    });
+
+    await adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" });
+
+    const [, requestInit] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(requestInit.headers);
+    expect(headers.get("Accept")).toBe("application/geo+json, application/json");
   });
 
   it("posts the cycling-road profile and requests elevation/surface/instructions", async () => {
@@ -189,7 +203,7 @@ describe("OpenRouteServiceAdapter", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("maps a network-throwing fetch (no response received) to transport-failure", async () => {
+  it("maps a network-throwing fetch (no response received) to transport-failure, with a safe sanitised message", async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
     const adapter = new OpenRouteServiceAdapter({
       getApiKey: () => Promise.resolve(DUMMY_KEY),
@@ -198,7 +212,70 @@ describe("OpenRouteServiceAdapter", () => {
 
     await expect(
       adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
-    ).rejects.toMatchObject({ reason: "transport-failure" });
+    ).rejects.toMatchObject({
+      reason: "transport-failure",
+      transportErrorName: "TypeError",
+      transportErrorMessage: "Failed to fetch",
+    });
+
+    const [latest] = getRecentRoutingAttempts();
+    expect(latest).toMatchObject({
+      responseReceived: false,
+      category: "transport-failure",
+      errorName: "TypeError",
+      errorMessage: "Failed to fetch",
+      waypointCount: WAYPOINTS.length,
+    });
+  });
+
+  it("withholds an unrecognised transport error's message from both the error and the diagnostic", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockRejectedValue(new TypeError(`blocked while fetching key ${DUMMY_KEY}`));
+    const adapter = new OpenRouteServiceAdapter({
+      getApiKey: () => Promise.resolve(DUMMY_KEY),
+      fetchImpl,
+    });
+
+    await expect(
+      adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+    ).rejects.toMatchObject({
+      reason: "transport-failure",
+      transportErrorName: "TypeError",
+      transportErrorMessage: undefined,
+    });
+
+    const [latest] = getRecentRoutingAttempts();
+    expect(latest?.errorMessage).toBeUndefined();
+    expect(JSON.stringify(latest)).not.toContain(DUMMY_KEY);
+  });
+
+  it("distinguishes the adapter's own AbortController timeout from a caller cancellation", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn().mockImplementation(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () => {
+              reject(new DOMException("Aborted", "AbortError"));
+            });
+          }),
+      );
+      const adapter = new OpenRouteServiceAdapter({
+        getApiKey: () => Promise.resolve(DUMMY_KEY),
+        fetchImpl,
+      });
+
+      const promise = adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" });
+      const assertion = expect(promise).rejects.toMatchObject({ reason: "timeout" });
+      await vi.advanceTimersByTimeAsync(15_000);
+      await assertion;
+
+      const [latest] = getRecentRoutingAttempts();
+      expect(latest).toMatchObject({ responseReceived: false, category: "timeout" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("maps ORS error code 2009 (no route between locations) to no-route-found", async () => {
@@ -372,6 +449,81 @@ describe("OpenRouteServiceAdapter", () => {
       profile: "cycling-road",
     });
     expect(route.points.length).toBeGreaterThan(0);
+
+    const [latest] = getRecentRoutingAttempts();
+    expect(latest).toMatchObject({ bodyWasJson: true, category: "success" });
+  });
+
+  it("records bodyWasJson: false only when a parse was actually attempted and failed", async () => {
+    const fetchImpl = buildFetchMock({
+      ok: true,
+      json: () => Promise.reject(new Error("not json")),
+    });
+    const adapter = new OpenRouteServiceAdapter({
+      getApiKey: () => Promise.resolve(DUMMY_KEY),
+      fetchImpl,
+    });
+
+    await expect(
+      adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+    ).rejects.toMatchObject({ reason: "malformed-response" });
+
+    const [latest] = getRecentRoutingAttempts();
+    expect(latest).toMatchObject({ bodyWasJson: false, category: "malformed-response" });
+  });
+
+  it("leaves bodyWasJson unset for a 5xx, which never attempts a body parse", async () => {
+    const fetchImpl = buildFetchMock({
+      ok: false,
+      status: 502,
+      json: () => Promise.reject(new Error("must not be read for a 5xx")),
+    });
+    const adapter = new OpenRouteServiceAdapter({
+      getApiKey: () => Promise.resolve(DUMMY_KEY),
+      fetchImpl,
+    });
+
+    await expect(
+      adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+    ).rejects.toMatchObject({ reason: "provider-unavailable" });
+
+    const [latest] = getRecentRoutingAttempts();
+    expect(latest?.bodyWasJson).toBeUndefined();
+  });
+
+  it("captures best-effort rate-limit headers when the provider exposes them via CORS", async () => {
+    const fetchImpl = buildFetchMock({
+      ok: false,
+      status: 429,
+      headers: { "RateLimit-Remaining": "3", "RateLimit-Limit": "40" },
+    });
+    const adapter = new OpenRouteServiceAdapter({
+      getApiKey: () => Promise.resolve(DUMMY_KEY),
+      fetchImpl,
+    });
+
+    await expect(
+      adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+    ).rejects.toMatchObject({ reason: "rate-limited" });
+
+    const [latest] = getRecentRoutingAttempts();
+    expect(latest).toMatchObject({ rateLimitRemaining: "3", rateLimitLimit: "40" });
+  });
+
+  it("leaves rate-limit fields unset when the provider doesn't expose them", async () => {
+    const fetchImpl = buildFetchMock({ ok: false, status: 429 });
+    const adapter = new OpenRouteServiceAdapter({
+      getApiKey: () => Promise.resolve(DUMMY_KEY),
+      fetchImpl,
+    });
+
+    await expect(
+      adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+    ).rejects.toMatchObject({ reason: "rate-limited" });
+
+    const [latest] = getRecentRoutingAttempts();
+    expect(latest?.rateLimitRemaining).toBeUndefined();
+    expect(latest?.rateLimitLimit).toBeUndefined();
   });
 
   describe("diagnostics redaction", () => {
@@ -522,15 +674,25 @@ describe("OpenRouteServiceAdapter", () => {
       expect(serialised).not.toContain("53.8");
       expect(Object.keys(latest ?? {}).sort()).toEqual(
         [
+          "attemptId",
           "timestampIso",
           "providerId",
           "endpointHost",
           "endpointPath",
+          "httpMethod",
           "wasOnline",
+          "isSecureContext",
+          "isServiceWorkerControlled",
+          "isStandalone",
+          "waypointCount",
           "elapsedMs",
           "responseReceived",
           "httpStatus",
+          "statusText",
+          "bodyWasJson",
           "providerErrorCode",
+          "rateLimitRemaining",
+          "rateLimitLimit",
           "category",
         ].sort(),
       );
