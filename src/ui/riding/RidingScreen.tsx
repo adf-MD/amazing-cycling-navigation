@@ -5,8 +5,8 @@ import type { MapFactory } from "../../map/mapAdapter.ts";
 import type { GeolocationError, GeolocationSource } from "../../platform/geolocation.ts";
 import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
 import { useOnlineStatus } from "../../platform/onlineStatus.ts";
-import type { OffRouteLevel } from "../../navigation/types.ts";
-import { ELEVATION_WINDOW_OPTIONS_METRES } from "../../navigation/upcomingElevation.ts";
+import type { ElevationViewMode, OffRouteLevel } from "../../navigation/types.ts";
+import { ELEVATION_VIEW_MODE_OPTIONS } from "../../navigation/upcomingElevation.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
 import { ElevationChart } from "../shared/ElevationChart.tsx";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
@@ -52,6 +52,21 @@ function formatFixAge(ageMs: number): string {
   const seconds = Math.max(0, Math.round(ageMs / 1000));
   if (seconds < 60) return `${String(seconds)}s ago`;
   return `${String(Math.round(seconds / 60))} min ago`;
+}
+
+function isSameElevationViewMode(a: ElevationViewMode, b: ElevationViewMode): boolean {
+  if (a.kind !== b.kind) return false;
+  return a.kind === "upcoming" && b.kind === "upcoming"
+    ? a.windowMetres === b.windowMetres
+    : true;
+}
+
+function elevationViewModeLabel(mode: ElevationViewMode): string {
+  return mode.kind === "full" ? "Full" : `${String(mode.windowMetres / 1000)} km`;
+}
+
+function elevationViewModeKey(mode: ElevationViewMode): string {
+  return mode.kind === "full" ? "full" : `upcoming-${String(mode.windowMetres)}`;
 }
 
 export function RidingScreen({
@@ -228,31 +243,56 @@ export function RidingScreen({
         ) : null}
       </div>
 
-      {nav.currentFix ? (
+      {nav.matchedDistanceFromStartMetres !== null ? (
         <div
           role="group"
-          aria-label="Upcoming elevation window"
+          aria-label="Elevation profile view"
           className="elevation-window-group"
         >
-          {ELEVATION_WINDOW_OPTIONS_METRES.map((windowMetres) => (
+          {ELEVATION_VIEW_MODE_OPTIONS.map((mode) => (
             <button
-              key={windowMetres}
+              key={elevationViewModeKey(mode)}
               type="button"
-              aria-pressed={nav.elevationWindowMetres === windowMetres}
+              aria-pressed={isSameElevationViewMode(nav.elevationViewMode, mode)}
               onClick={() => {
-                nav.setElevationWindowMetres(windowMetres);
+                nav.setElevationViewMode(mode);
               }}
             >
-              {windowMetres / 1000} km
+              {elevationViewModeLabel(mode)}
             </button>
           ))}
         </div>
       ) : null}
-      {/* Before riding starts, show the whole route's profile; once
-       * riding, switch to the windowed upcoming view above. */}
-      <ElevationChart
-        points={nav.currentFix ? nav.upcomingElevation.points : route.points}
-      />
+      {/* Before any matched progress (live or restored), show the whole
+       * route with no marker. Once there's matched progress, Full mode
+       * shows the whole route with a progress marker and Upcoming mode
+       * shows a rebased rolling window. */}
+      {nav.matchedDistanceFromStartMetres === null ? (
+        <ElevationChart points={route.points} />
+      ) : nav.elevationProfileDisplay.kind === "full" ? (
+        <ElevationChart
+          points={route.points}
+          marker={
+            nav.elevationProfileDisplay.marker
+              ? {
+                  distanceFromStartMetres:
+                    nav.elevationProfileDisplay.marker.markerDistanceFromStartMetres,
+                  elevationMetres:
+                    nav.elevationProfileDisplay.marker.point.elevationMetres,
+                  stale: nav.isStale,
+                }
+              : null
+          }
+        />
+      ) : (
+        <ElevationChart
+          points={nav.elevationProfileDisplay.window.points}
+          domain={{
+            startDistanceMetres: nav.elevationProfileDisplay.window.startDistanceMetres,
+            endDistanceMetres: nav.elevationProfileDisplay.window.endDistanceMetres,
+          }}
+        />
+      )}
     </section>
   );
 }

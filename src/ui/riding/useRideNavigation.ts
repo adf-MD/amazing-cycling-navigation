@@ -7,10 +7,12 @@ import {
   type GeolocationSource,
   type GeolocationWatchStatus,
 } from "../../platform/geolocation.ts";
-import type { OffRouteLevel, ElevationWindowMetres } from "../../navigation/types.ts";
+import type { OffRouteLevel, ElevationViewMode } from "../../navigation/types.ts";
 import {
-  DEFAULT_ELEVATION_WINDOW_METRES,
+  DEFAULT_ELEVATION_VIEW_MODE,
+  buildFullProfileMarker,
   selectUpcomingElevationWindow,
+  type FullProfileMarker,
   type UpcomingElevationWindow,
 } from "../../navigation/upcomingElevation.ts";
 import {
@@ -28,17 +30,33 @@ import {
   processFix,
 } from "../../navigation/rideNavigationCore.ts";
 
+/** What the elevation chart should show for the current view mode. `full`'s
+ * `marker` is `null` only when there's no matched progress to place it at
+ * (an empty route, handled defensively — RidingScreen itself gates on
+ * `matchedDistanceFromStartMetres !== null` before rendering a marker at
+ * all). */
+export type ElevationProfileDisplay =
+  | { kind: "full"; marker: FullProfileMarker | null }
+  | { kind: "upcoming"; window: UpcomingElevationWindow };
+
 export interface RideNavigationState {
   geolocationStatus: GeolocationWatchStatus;
   geolocationError: GeolocationError | null;
   currentFix: GeolocationFix | null;
   isStale: boolean;
   matchedDistanceFromStartMetres: number | null;
+  /** The presentation-only route distance used for the elevation view:
+   * tracks `matchedDistanceFromStartMetres` while on-route, and freezes at
+   * the last reliable position while strongly off-route (see
+   * `RideNavigationCoreState.lastReliableMatch`). Never used for the map's
+   * live position marker, camera, or off-route warning — those use
+   * `matchedDistanceFromStartMetres` directly. */
+  presentationDistanceFromStartMetres: number | null;
   distanceRemainingMetres: number | null;
   offRouteLevel: OffRouteLevel;
-  elevationWindowMetres: ElevationWindowMetres;
-  upcomingElevation: UpcomingElevationWindow;
-  setElevationWindowMetres: (metres: ElevationWindowMetres) => void;
+  elevationViewMode: ElevationViewMode;
+  elevationProfileDisplay: ElevationProfileDisplay;
+  setElevationViewMode: (mode: ElevationViewMode) => void;
   start: () => void;
   /** Non-null only once a persisted camera state for this exact route has
    * actually been restored — a genuinely new ride has nothing to
@@ -90,8 +108,9 @@ export function useRideNavigation(
   const [coreState, setCoreState] = useState(INITIAL_RIDE_NAVIGATION_CORE_STATE);
   const [currentFix, setCurrentFix] = useState<GeolocationFix | null>(null);
   const [isStale, setIsStale] = useState(false);
-  const [elevationWindowMetres, setElevationWindowMetres] =
-    useState<ElevationWindowMetres>(DEFAULT_ELEVATION_WINDOW_METRES);
+  const [elevationViewMode, setElevationViewMode] = useState<ElevationViewMode>(
+    DEFAULT_ELEVATION_VIEW_MODE,
+  );
   const [restoredCameraState, setRestoredCameraState] =
     useState<StoredCameraState | null>(null);
 
@@ -153,7 +172,7 @@ export function useRideNavigation(
         setCoreState(restored.core);
         setCurrentFix(restored.lastFix);
         setIsStale(restored.lastFix !== null);
-        setElevationWindowMetres(restored.elevationWindowMetres);
+        setElevationViewMode(restored.elevationViewMode);
         setRestoredCameraState(restored.cameraState);
       })
       .catch(() => {
@@ -164,7 +183,7 @@ export function useRideNavigation(
     };
   }, [route.id]);
 
-  // Persist after every accepted fix or elevation-window change — each
+  // Persist after every accepted fix or elevation-view-mode change — each
   // write is a cheap single-row upsert, so no extra throttling is
   // needed. Reads the camera state fresh via getCameraState() rather
   // than depending on it directly (see the option's doc comment).
@@ -176,14 +195,14 @@ export function useRideNavigation(
         startedAtRef.current,
         currentFix,
         coreState,
-        elevationWindowMetres,
+        elevationViewMode,
         getCameraState(),
       ),
     ).catch(() => {
       // Persistence failure isn't fatal to an in-progress ride; the next
       // successful write will catch the state up.
     });
-  }, [route.id, currentFix, coreState, elevationWindowMetres, getCameraState]);
+  }, [route.id, currentFix, coreState, elevationViewMode, getCameraState]);
 
   // On visibilitychange/pageshow, mark the current fix stale and restart
   // the watch — but only if it was already running: a genuine reload
@@ -219,10 +238,30 @@ export function useRideNavigation(
 
   const matchedDistanceFromStartMetres =
     coreState.lastMatch?.distanceFromStartMetres ?? null;
+  const presentationDistanceFromStartMetres =
+    coreState.lastReliableMatch?.distanceFromStartMetres ?? null;
   const distanceRemainingMetres =
     matchedDistanceFromStartMetres === null
       ? null
       : Math.max(0, route.distanceMetres - matchedDistanceFromStartMetres);
+
+  const elevationProfileDisplay: ElevationProfileDisplay =
+    elevationViewMode.kind === "full"
+      ? {
+          kind: "full",
+          marker:
+            presentationDistanceFromStartMetres === null
+              ? null
+              : buildFullProfileMarker(route.points, presentationDistanceFromStartMetres),
+        }
+      : {
+          kind: "upcoming",
+          window: selectUpcomingElevationWindow(
+            route.points,
+            presentationDistanceFromStartMetres ?? 0,
+            elevationViewMode.windowMetres,
+          ),
+        };
 
   return {
     geolocationStatus,
@@ -230,15 +269,12 @@ export function useRideNavigation(
     currentFix,
     isStale,
     matchedDistanceFromStartMetres,
+    presentationDistanceFromStartMetres,
     distanceRemainingMetres,
     offRouteLevel: coreState.offRouteMachineState.level,
-    elevationWindowMetres,
-    upcomingElevation: selectUpcomingElevationWindow(
-      route.points,
-      matchedDistanceFromStartMetres ?? 0,
-      elevationWindowMetres,
-    ),
-    setElevationWindowMetres,
+    elevationViewMode,
+    elevationProfileDisplay,
+    setElevationViewMode,
     start,
     restoredCameraState,
   };

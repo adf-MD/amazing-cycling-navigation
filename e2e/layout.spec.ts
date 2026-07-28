@@ -55,7 +55,7 @@ test("map attribution stays inside the map and clear of the elevation controls a
   // the richest simultaneous-controls scenario for this layout check.
   const followButton = page.getByRole("button", { name: "Follow my location" });
   const northUpButton = page.getByRole("button", { name: "North-up, top-down view" });
-  const elevationGroup = page.getByRole("group", { name: "Upcoming elevation window" });
+  const elevationGroup = page.getByRole("group", { name: "Elevation profile view" });
   await expect(followButton).toBeVisible();
   await expect(northUpButton).toBeVisible();
   await expect(elevationGroup).toBeVisible();

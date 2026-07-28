@@ -6,6 +6,13 @@ import type {
   RideCameraMode,
 } from "../navigation/types.ts";
 
+/** Mirrors `ElevationViewMode` (`src/navigation/types.ts`) for persistence.
+ * Kept as a separate type (rather than reusing `ElevationViewMode`
+ * directly) so a future change to the in-app type's shape doesn't silently
+ * change what's already on disk. */
+export type StoredElevationViewMode =
+  { kind: "full" } | { kind: "upcoming"; windowMetres: ElevationWindowMetres };
+
 /** Coarse, provider-independent outcome of the most recent attempt to use
  * the stored OpenRouteService key — never the raw HTTP status or provider
  * response, which could carry request/response detail we don't want to
@@ -94,7 +101,27 @@ export interface StoredRideState {
   lastMatchedPointIndex: number;
   matchedDistanceFromStartMetres: number;
   offRouteMachineState: StoredOffRouteMachineState;
-  elevationWindowMetres: ElevationWindowMetres;
+  /** Legacy field: rows written before `elevationViewMode` existed store
+   * only this. New rows write `elevationViewMode` instead and leave this
+   * undefined; src/storage/mapping.ts's fromStoredRideState reads whichever
+   * is present, preferring `elevationViewMode`. Optional/non-indexed, so
+   * widening it from required to optional needs no schema version bump. */
+  elevationWindowMetres?: ElevationWindowMetres;
+  /** The rider's selected elevation-profile view (Full, or a rolling
+   * window). Optional because rows written before this field existed only
+   * have the legacy `elevationWindowMetres` above. Not indexed, so adding
+   * it doesn't need a schema version bump — same convention as the camera
+   * fields below. */
+  elevationViewMode?: StoredElevationViewMode;
+  /** The presentation-only "last reliable" route position (see
+   * `RideNavigationCoreState.lastReliableMatch`), frozen while strongly
+   * off-route so the elevation view doesn't jump to an unrelated nearby
+   * route section. Optional/non-indexed for the same reason as
+   * `elevationViewMode`; a legacy row without these simply has no freeze
+   * history to restore, so mapping.ts falls back to the ordinary matched
+   * position. */
+  lastReliableMatchedPointIndex?: number;
+  lastReliableMatchedDistanceFromStartMetres?: number;
   /** The riding camera mode at the time this was written. Optional
    * because rows written before this field existed won't have it —
    * src/storage/mapping.ts's fromStoredRideState defaults a missing
@@ -132,7 +159,10 @@ export class AcnDatabase extends Dexie {
     // later are plain (non-indexed) data fields — Dexie's version/stores()
     // declaration only lists indexes, so adding them doesn't require a
     // version bump; old rows simply lack them, handled by explicit
-    // defaulting in mapping.ts.
+    // defaulting in mapping.ts. elevationViewMode/lastReliableMatchedPointIndex/
+    // lastReliableMatchedDistanceFromStartMetres (added after
+    // elevationWindowMetres was widened to optional) are plain, non-indexed
+    // fields added the same way.
     this.version(1).stores({
       routes: "id, name, createdAt",
       rideState: "id",

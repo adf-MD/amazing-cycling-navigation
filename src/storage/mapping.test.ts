@@ -8,6 +8,7 @@ import {
 } from "./mapping.ts";
 import type { RideNavigationCoreState } from "../navigation/rideNavigationCore.ts";
 import type { GeolocationFix } from "../platform/geolocation.ts";
+import type { ElevationViewMode } from "../navigation/types.ts";
 import type { Waypoint } from "../domain/types.ts";
 import type { StoredPlanningDraft, StoredRideState } from "./db.ts";
 
@@ -18,6 +19,7 @@ const coreState: RideNavigationCoreState = {
     candidateLevel: "off-route",
     streak: 1,
   },
+  lastReliableMatch: { pointIndex: 4, distanceFromStartMetres: 321.5 },
 };
 
 const fix: GeolocationFix = {
@@ -36,20 +38,22 @@ const overviewCamera: StoredCameraState = {
   pitchDegrees: 0,
 };
 
+const upcoming5km: ElevationViewMode = { kind: "upcoming", windowMetres: 5000 };
+
 describe("toStoredRideState / fromStoredRideState", () => {
-  it("round-trips matched distance, off-route state and elevation window", () => {
+  it("round-trips matched distance, off-route state and elevation view mode", () => {
     const stored = toStoredRideState(
       "route-1",
       "2026-01-01T00:00:00.000Z",
       fix,
       coreState,
-      5000,
+      upcoming5km,
       overviewCamera,
     );
     const restored = fromStoredRideState(stored);
 
     expect(restored.core).toEqual(coreState);
-    expect(restored.elevationWindowMetres).toBe(5000);
+    expect(restored.elevationViewMode).toEqual(upcoming5km);
     expect(restored.lastFix?.coordinate).toEqual(fix.coordinate);
     expect(restored.lastFix?.accuracyMetres).toBe(fix.accuracyMetres);
     expect(restored.lastFix?.timestampMs).toBe(fix.timestampMs);
@@ -61,7 +65,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       "2026-01-01T00:00:00.000Z",
       fix,
       coreState,
-      5000,
+      upcoming5km,
       overviewCamera,
     );
     expect(stored.lastFix).not.toHaveProperty("speedMetresPerSecond");
@@ -74,7 +78,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       "2026-01-01T00:00:00.000Z",
       fix,
       coreState,
-      5000,
+      upcoming5km,
       overviewCamera,
     );
     const restored = fromStoredRideState(stored);
@@ -87,8 +91,12 @@ describe("toStoredRideState / fromStoredRideState", () => {
       "route-1",
       "2026-01-01T00:00:00.000Z",
       null,
-      { lastMatch: null, offRouteMachineState: coreState.offRouteMachineState },
-      2000,
+      {
+        lastMatch: null,
+        offRouteMachineState: coreState.offRouteMachineState,
+        lastReliableMatch: null,
+      },
+      { kind: "upcoming", windowMetres: 2000 },
       overviewCamera,
     );
 
@@ -107,7 +115,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       "2026-01-01T00:00:00.000Z",
       fix,
       coreState,
-      5000,
+      upcoming5km,
       {
         mode: "following",
         coordinate: null,
@@ -140,7 +148,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       "2026-01-01T00:00:00.000Z",
       fix,
       coreState,
-      5000,
+      upcoming5km,
       freeCamera,
     );
     const restored = fromStoredRideState(stored);
@@ -194,6 +202,147 @@ describe("toStoredRideState / fromStoredRideState", () => {
       zoom: 13.5,
       bearingDegrees: 0,
       pitchDegrees: 0,
+    });
+  });
+
+  describe("elevation view mode", () => {
+    it("round-trips Full mode", () => {
+      const stored = toStoredRideState(
+        "route-1",
+        "2026-01-01T00:00:00.000Z",
+        fix,
+        coreState,
+        { kind: "full" },
+        overviewCamera,
+      );
+      expect(fromStoredRideState(stored).elevationViewMode).toEqual({ kind: "full" });
+    });
+
+    it.each([2000, 5000, 10000] as const)(
+      "round-trips a %d m upcoming window",
+      (windowMetres) => {
+        const stored = toStoredRideState(
+          "route-1",
+          "2026-01-01T00:00:00.000Z",
+          fix,
+          coreState,
+          { kind: "upcoming", windowMetres },
+          overviewCamera,
+        );
+        expect(fromStoredRideState(stored).elevationViewMode).toEqual({
+          kind: "upcoming",
+          windowMetres,
+        });
+      },
+    );
+
+    it("restores a legacy row with only the old numeric elevationWindowMetres field to the matching upcoming mode", () => {
+      const legacyRow: StoredRideState = {
+        id: "active",
+        routeId: "route-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        lastFix: null,
+        lastMatchedPointIndex: 0,
+        matchedDistanceFromStartMetres: 0,
+        offRouteMachineState: coreState.offRouteMachineState,
+        elevationWindowMetres: 2000,
+      };
+
+      expect(fromStoredRideState(legacyRow).elevationViewMode).toEqual({
+        kind: "upcoming",
+        windowMetres: 2000,
+      });
+    });
+
+    it("defaults to the 5 km upcoming view when neither elevation field is present", () => {
+      const rowWithNeitherField: StoredRideState = {
+        id: "active",
+        routeId: "route-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        lastFix: null,
+        lastMatchedPointIndex: 0,
+        matchedDistanceFromStartMetres: 0,
+        offRouteMachineState: coreState.offRouteMachineState,
+      };
+
+      expect(fromStoredRideState(rowWithNeitherField).elevationViewMode).toEqual({
+        kind: "upcoming",
+        windowMetres: 5000,
+      });
+    });
+
+    it("falls back to the 5 km upcoming view for a malformed windowMetres value", () => {
+      const malformedRow: StoredRideState = {
+        id: "active",
+        routeId: "route-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        lastFix: null,
+        lastMatchedPointIndex: 0,
+        matchedDistanceFromStartMetres: 0,
+        offRouteMachineState: coreState.offRouteMachineState,
+        // Cast bypasses the compile-time union to simulate a genuinely
+        // malformed/stale on-disk value, e.g. from a since-removed option.
+        elevationViewMode: { kind: "upcoming", windowMetres: 7500 as 5000 },
+      };
+
+      expect(fromStoredRideState(malformedRow).elevationViewMode).toEqual({
+        kind: "upcoming",
+        windowMetres: 5000,
+      });
+    });
+  });
+
+  describe("lastReliableMatch", () => {
+    it("round-trips a lastReliableMatch distinct from lastMatch (frozen while off-route)", () => {
+      const coreWithFrozenProgress: RideNavigationCoreState = {
+        lastMatch: { pointIndex: 10, distanceFromStartMetres: 900 },
+        offRouteMachineState: { level: "off-route", candidateLevel: null, streak: 0 },
+        lastReliableMatch: { pointIndex: 5, distanceFromStartMetres: 400 },
+      };
+
+      const stored = toStoredRideState(
+        "route-1",
+        "2026-01-01T00:00:00.000Z",
+        fix,
+        coreWithFrozenProgress,
+        upcoming5km,
+        overviewCamera,
+      );
+      const restored = fromStoredRideState(stored);
+
+      expect(restored.core.lastMatch).toEqual({
+        pointIndex: 10,
+        distanceFromStartMetres: 900,
+      });
+      expect(restored.core.lastReliableMatch).toEqual({
+        pointIndex: 5,
+        distanceFromStartMetres: 400,
+      });
+    });
+
+    it("defaults lastReliableMatch to lastMatch for a legacy row with no freeze history", () => {
+      const legacyRow: StoredRideState = {
+        id: "active",
+        routeId: "route-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        lastFix: {
+          coordinate: [-1.5, 53.8],
+          accuracyMetres: 8,
+          timestampMs: 1_700_000,
+        },
+        lastMatchedPointIndex: 7,
+        matchedDistanceFromStartMetres: 650,
+        offRouteMachineState: coreState.offRouteMachineState,
+        elevationWindowMetres: 5000,
+      };
+
+      const restored = fromStoredRideState(legacyRow);
+
+      expect(restored.core.lastReliableMatch).toEqual(restored.core.lastMatch);
+      expect(restored.core.lastReliableMatch).toEqual({
+        pointIndex: 7,
+        distanceFromStartMetres: 650,
+      });
     });
   });
 });

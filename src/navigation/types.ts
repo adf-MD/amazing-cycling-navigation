@@ -9,6 +9,11 @@ export type RideCameraMode = "overview" | "following" | "free";
 
 export type ElevationWindowMetres = 2000 | 5000 | 10000;
 
+/** The rider's selected elevation-profile view: the whole route with a
+ * progress marker, or a rolling forward-looking window of a fixed size. */
+export type ElevationViewMode =
+  { kind: "full" } | { kind: "upcoming"; windowMetres: ElevationWindowMetres };
+
 export interface ProjectionMatch {
   pointIndex: number;
   distanceFromStartMetres: number;

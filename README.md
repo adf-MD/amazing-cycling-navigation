@@ -38,6 +38,22 @@ classification" under
 below. Still deferred within Milestone 3: the road-speed-appropriate
 next-manoeuvre display planned for Milestone 4.
 
+A first slice of **Milestone 4 (Riding enhancements)** is also implemented:
+Riding's elevation chart now offers a **Full / 2 km / 5 km / 10 km** selector.
+The rolling 2/5/10 km windows are rebased so the rider's matched position is
+always the exact left edge of the chart, with the window's actual end
+(clamped near the finish) filling the rest of the width — previously a
+rolling window late in a route was compressed into a sliver near the right
+edge. Full mode shows the whole route with a vertical progress marker
+(dashed and labelled "Last known position" when restored/stale, solid and
+labelled "Current route position" once fresh), splitting the profile into a
+dashed completed portion and a solid remaining portion. The marker freezes
+at the last reliable position while strongly off-route rather than jumping
+to an unrelated nearby section, and the selected view persists across
+suspension and reload. Still deferred: trusted next-manoeuvre display,
+gradient colouring, elevation/climb segments and the optional wake-lock —
+see "Future backlog" in [`CLAUDE.md`](./CLAUDE.md).
+
 ## Requirements
 
 - Node.js 24.x (pinned in [`.nvmrc`](./.nvmrc)) and npm.

@@ -1,8 +1,44 @@
 import type { Coordinate, Waypoint } from "../domain/types.ts";
 import type { GeolocationFix } from "../platform/geolocation.ts";
-import type { ElevationWindowMetres, RideCameraMode } from "../navigation/types.ts";
+import type {
+  ElevationViewMode,
+  ElevationWindowMetres,
+  RideCameraMode,
+} from "../navigation/types.ts";
 import type { RideNavigationCoreState } from "../navigation/rideNavigationCore.ts";
+import {
+  DEFAULT_ELEVATION_VIEW_MODE,
+  ELEVATION_WINDOW_OPTIONS_METRES,
+} from "../navigation/upcomingElevation.ts";
 import { type StoredPlanningDraft, type StoredRideState } from "./db.ts";
+
+function isElevationWindowMetres(value: number): value is ElevationWindowMetres {
+  return (ELEVATION_WINDOW_OPTIONS_METRES as readonly number[]).includes(value);
+}
+
+/**
+ * Resolves the stored elevation view, preferring the new tagged
+ * `elevationViewMode` field. Falls back to the legacy numeric
+ * `elevationWindowMetres` for rows written before `elevationViewMode`
+ * existed, and to the 5 km default for anything malformed or absent —
+ * never rejects a row outright.
+ */
+function resolveElevationViewMode(stored: StoredRideState): ElevationViewMode {
+  const mode = stored.elevationViewMode;
+  if (mode?.kind === "full") {
+    return mode;
+  }
+  if (mode?.kind === "upcoming" && isElevationWindowMetres(mode.windowMetres)) {
+    return mode;
+  }
+  if (
+    stored.elevationWindowMetres !== undefined &&
+    isElevationWindowMetres(stored.elevationWindowMetres)
+  ) {
+    return { kind: "upcoming", windowMetres: stored.elevationWindowMetres };
+  }
+  return DEFAULT_ELEVATION_VIEW_MODE;
+}
 
 export interface StoredCameraState {
   mode: RideCameraMode;
@@ -21,7 +57,7 @@ export function toStoredRideState(
   startedAt: string,
   lastFix: GeolocationFix | null,
   core: RideNavigationCoreState,
-  elevationWindowMetres: ElevationWindowMetres,
+  elevationViewMode: ElevationViewMode,
   cameraState: StoredCameraState,
 ): StoredRideState {
   return {
@@ -38,7 +74,10 @@ export function toStoredRideState(
     lastMatchedPointIndex: core.lastMatch?.pointIndex ?? 0,
     matchedDistanceFromStartMetres: core.lastMatch?.distanceFromStartMetres ?? 0,
     offRouteMachineState: core.offRouteMachineState,
-    elevationWindowMetres,
+    elevationViewMode,
+    lastReliableMatchedPointIndex: core.lastReliableMatch?.pointIndex ?? 0,
+    lastReliableMatchedDistanceFromStartMetres:
+      core.lastReliableMatch?.distanceFromStartMetres ?? 0,
     cameraMode: cameraState.mode,
     cameraCoordinate: cameraState.coordinate,
     cameraZoom: cameraState.zoom,
@@ -50,11 +89,18 @@ export function toStoredRideState(
 export interface RestoredRideState {
   lastFix: GeolocationFix | null;
   core: RideNavigationCoreState;
-  elevationWindowMetres: ElevationWindowMetres;
+  elevationViewMode: ElevationViewMode;
   cameraState: StoredCameraState;
 }
 
 export function fromStoredRideState(stored: StoredRideState): RestoredRideState {
+  const lastMatch = stored.lastFix
+    ? {
+        pointIndex: stored.lastMatchedPointIndex,
+        distanceFromStartMetres: stored.matchedDistanceFromStartMetres,
+      }
+    : null;
+
   return {
     lastFix: stored.lastFix
       ? {
@@ -66,15 +112,20 @@ export function fromStoredRideState(stored: StoredRideState): RestoredRideState 
         }
       : null,
     core: {
-      lastMatch: stored.lastFix
-        ? {
-            pointIndex: stored.lastMatchedPointIndex,
-            distanceFromStartMetres: stored.matchedDistanceFromStartMetres,
-          }
-        : null,
+      lastMatch,
       offRouteMachineState: stored.offRouteMachineState,
+      // A row written before lastReliableMatched* existed has no freeze
+      // history to recover — the closest honest substitute is wherever the
+      // ride's ordinary matched position already restores to.
+      lastReliableMatch:
+        stored.lastReliableMatchedDistanceFromStartMetres !== undefined
+          ? {
+              pointIndex: stored.lastReliableMatchedPointIndex ?? 0,
+              distanceFromStartMetres: stored.lastReliableMatchedDistanceFromStartMetres,
+            }
+          : lastMatch,
     },
-    elevationWindowMetres: stored.elevationWindowMetres,
+    elevationViewMode: resolveElevationViewMode(stored),
     // Rows written before these fields existed won't have them — default
     // to "overview"/north-up/top-down rather than silently assuming the
     // rider was following or restoring an arbitrary orientation.

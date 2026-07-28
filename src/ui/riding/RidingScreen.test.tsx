@@ -226,7 +226,7 @@ describe("RidingScreen", () => {
     );
 
     expect(screen.getByTestId("map-container")).toBeInTheDocument();
-    expect(screen.queryByRole("group", { name: "Upcoming elevation window" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Elevation profile view" })).toBeNull();
   });
 
   it("shows the entire elevation profile before riding starts, then switches to the windowed view once riding", async () => {
@@ -255,7 +255,7 @@ describe("RidingScreen", () => {
     );
 
     expect(await screen.findByText(/10–90 m/)).toBeInTheDocument();
-    expect(screen.queryByRole("group", { name: "Upcoming elevation window" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Elevation profile view" })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Start riding" }));
     stub.emitFix({
@@ -267,11 +267,17 @@ describe("RidingScreen", () => {
     });
 
     const elevationWindowGroup = await screen.findByRole("group", {
-      name: "Upcoming elevation window",
+      name: "Elevation profile view",
     });
     expect(elevationWindowGroup).toBeInTheDocument();
     expect(elevationWindowGroup).toHaveClass("elevation-window-group");
-    expect(await screen.findByText(/10–20 m/)).toBeInTheDocument();
+    // Default 5 km window from distance 0 runs [0, 5000], which includes an
+    // interpolated boundary sample at 5000 m (between the 4000 m/15 m and
+    // 7000 m/90 m points) rather than stopping at the last raw point
+    // before the window edge — the literal fix for the rebasing bug: the
+    // old behaviour would have shown 10–20 m here, clipping the boundary
+    // instead of interpolating it.
+    expect(await screen.findByText(/10–40 m/)).toBeInTheDocument();
   });
 
   it("starts watching only after the explicit tap, and shows a waiting state before a fix arrives", async () => {
@@ -411,6 +417,187 @@ describe("RidingScreen", () => {
     expect(fiveKmButton).toHaveAttribute("aria-pressed", "false");
   });
 
+  it("shows a Full-mode marker and accessible position text for the current route position when Full is selected", async () => {
+    const user = userEvent.setup();
+    const stub = buildStubGeolocationSource();
+    const elevationRoute: PlannedRoute = {
+      ...route,
+      points: [
+        { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
+        { coordinate: [0.01, 51], elevationMetres: 20, distanceFromStartMetres: 2000 },
+        { coordinate: [0.02, 51], elevationMetres: 15, distanceFromStartMetres: 4000 },
+      ],
+      distanceMetres: 4000,
+    };
+    render(
+      <RidingScreen
+        route={elevationRoute}
+        geolocationSource={stub.source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+    stub.emitFix({
+      coordinate: [0.005, 51],
+      accuracyMetres: 5,
+      timestampMs: 1000,
+      speedMetresPerSecond: null,
+      headingDegrees: null,
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Full" }));
+
+    expect(screen.getByRole("button", { name: "Full" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(await screen.findByText(/Current route position:/)).toBeInTheDocument();
+    // Full mode shows the whole route's elevation range, not a windowed slice.
+    expect(screen.getByText(/10–20 m/)).toBeInTheDocument();
+  });
+
+  it("restores a previously selected Full view as stale, then marks the position fresh once a new fix arrives", async () => {
+    const elevationRoute: PlannedRoute = {
+      ...route,
+      points: [
+        { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
+        { coordinate: [0.01, 51], elevationMetres: 20, distanceFromStartMetres: 2000 },
+        { coordinate: [0.02, 51], elevationMetres: 15, distanceFromStartMetres: 4000 },
+      ],
+      distanceMetres: 4000,
+    };
+
+    await setActiveRideState({
+      id: "active",
+      routeId: elevationRoute.id,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: { coordinate: [0.005, 51], accuracyMetres: 6, timestampMs: 1000 },
+      lastMatchedPointIndex: 1,
+      matchedDistanceFromStartMetres: 2000,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+      elevationViewMode: { kind: "full" },
+      lastReliableMatchedPointIndex: 1,
+      lastReliableMatchedDistanceFromStartMetres: 2000,
+    });
+
+    const user = userEvent.setup();
+    const stub = buildStubGeolocationSource();
+    render(
+      <RidingScreen
+        route={elevationRoute}
+        geolocationSource={stub.source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+
+    expect(await screen.findByText(/Last known position:/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Full" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+    stub.emitFix({
+      coordinate: [0.005, 51],
+      accuracyMetres: 5,
+      timestampMs: 2000,
+      speedMetresPerSecond: null,
+      headingDegrees: null,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Current route position:/)).toBeInTheDocument();
+    });
+  });
+
+  it("keeps the Full-mode elevation marker pinned at the last reliable position once strongly off-route", async () => {
+    const user = userEvent.setup();
+    const stub = buildStubGeolocationSource();
+    const elevationRoute: PlannedRoute = {
+      ...route,
+      points: routePoints.map((point, index) => ({ ...point, elevationMetres: index })),
+    };
+
+    render(
+      <RidingScreen
+        route={elevationRoute}
+        geolocationSource={stub.source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+    // Prime a match on the route first (see the off-route alert test above
+    // for why): a fix with no prior match always does a whole-route
+    // reacquire, which is itself untrusted.
+    stub.emitFix({
+      coordinate: pointAt(5),
+      accuracyMetres: 5,
+      timestampMs: 1000,
+      speedMetresPerSecond: null,
+      headingDegrees: null,
+    });
+    await screen.findByText("On route");
+
+    await user.click(await screen.findByRole("button", { name: "Full" }));
+    const positionTextBeforeOffRoute = (
+      await screen.findByText(/Current route position:/)
+    ).textContent;
+
+    const farCoordinate: Coordinate = [
+      0.005,
+      51 + (OFF_ROUTE_BASE_METRES + 50) / 111_000,
+    ];
+    for (let i = 0; i < 3; i += 1) {
+      stub.emitFix({
+        coordinate: farCoordinate,
+        accuracyMetres: 5,
+        timestampMs: 2000 + i * 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+    }
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Off route");
+    expect(screen.getByText(/Current route position:/).textContent).toBe(
+      positionTextBeforeOffRoute,
+    );
+  });
+
+  it("does not affect map camera/follow or north-up state when switching the elevation view mode", async () => {
+    const user = userEvent.setup();
+    const stub = buildStubGeolocationSource();
+    render(
+      <RidingScreen
+        route={route}
+        geolocationSource={stub.source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+    stub.emitFix({
+      coordinate: pointAt(0),
+      accuracyMetres: 5,
+      timestampMs: 1000,
+      speedMetresPerSecond: null,
+      headingDegrees: null,
+    });
+
+    const followButton = await screen.findByRole("button", {
+      name: "Follow my location",
+    });
+    expect(followButton).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(await screen.findByRole("button", { name: "Full" }));
+
+    expect(followButton).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: "North-up, top-down view" }),
+    ).toBeInTheDocument();
+  });
+
   describe("restoration", () => {
     it("restores a stale fix and prior progress, requiring an explicit Resume riding tap", async () => {
       await setActiveRideState({
@@ -537,7 +724,7 @@ describe("RidingScreen", () => {
       expect(await screen.findByText("On route")).toBeInTheDocument();
       expect(screen.getByText(/Remaining:/)).toBeInTheDocument();
       expect(
-        screen.getByRole("group", { name: "Upcoming elevation window" }),
+        screen.getByRole("group", { name: "Elevation profile view" }),
       ).toBeInTheDocument();
     });
 
@@ -571,7 +758,7 @@ describe("RidingScreen", () => {
       expect(screen.getByText("On route")).toBeInTheDocument();
       expect(screen.getByText(/Remaining:/)).toBeInTheDocument();
       expect(
-        screen.getByRole("group", { name: "Upcoming elevation window" }),
+        screen.getByRole("group", { name: "Elevation profile view" }),
       ).toBeInTheDocument();
       expect(screen.getByTestId("map-container")).toBeInTheDocument();
     });
