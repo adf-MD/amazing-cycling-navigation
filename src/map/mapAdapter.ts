@@ -94,6 +94,36 @@ export interface CircleLayerPaint {
   circleOpacity?: number;
 }
 
+/** Plain (non-SDF) RGBA pixel data for a project-owned map icon — the
+ * shape addImage accepts with zero DOM/canvas dependency, so an icon
+ * generator can be a pure, Vitest-testable function (see
+ * routeArrowIcon.ts). */
+export interface StyleImagePixelData {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+}
+
+export interface AddImageOptions {
+  /** MapLibre's own addImage default is 1, which renders a small icon
+   * soft on a retina screen. Omit only for an icon genuinely authored
+   * at 1x. */
+  pixelRatio?: number;
+}
+
+export interface SymbolLayerOptions {
+  /** symbol-spacing, in screen pixels — the only property this method
+   * exposes; placement/rotation-alignment/pitch-alignment/keep-upright
+   * are hardcoded inside addSymbolLayer (see MapLibreAdapter), the same
+   * "only expose what genuinely varies" convention addLineLayer already
+   * follows for line-join/line-cap. icon-allow-overlap is deliberately
+   * left at MapLibre's own default (false) and never exposed here, so
+   * MapLibre's built-in collision engine thins symbols in dense or
+   * overlapping situations rather than forcing every spacing interval
+   * to render regardless of collision. */
+  spacingPixels: number;
+}
+
 /** A Planning waypoint marker's role in the route — distinguishes visual
  * treatment (shape/border, never colour alone) and drives its accessible
  * label. "start-finish" is the single combined marker for a closed loop
@@ -142,6 +172,29 @@ export interface MapLibreLike {
   addLineLayer(id: string, sourceId: string, paint: LineLayerPaint): void;
   addCircleLayer(id: string, sourceId: string, paint: CircleLayerPaint): void;
   hasLayer(id: string): boolean;
+  /** Whether a project-owned image is already registered under `id` —
+   * used to register an icon at most once per map instance (a fresh
+   * instance is created on every style load/fallback/retry, so this is
+   * an explicit "register if absent" guard rather than load-bearing
+   * cross-instance idempotency). */
+  hasImage(id: string): boolean;
+  /** Registers a project-owned, locally-generated RGBA icon for use by
+   * addSymbolLayer's icon-image. Never fetches from a URL or a style's
+   * own sprite sheet. */
+  addImage(id: string, image: StyleImagePixelData, options?: AddImageOptions): void;
+  /** Adds a symbol layer that repeats `iconId` along `sourceId`'s line
+   * geometry (symbol-placement: "line"), rotated to track the line's
+   * own direction (icon-rotation-alignment/icon-pitch-alignment: "map")
+   * with icon-keep-upright explicitly disabled so a directional icon is
+   * never flipped 180° to stay "upright" — see routeArrowIcon.ts for
+   * why the icon must be authored pointing along its x-axis rather than
+   * "up" for this to render correctly. */
+  addSymbolLayer(
+    id: string,
+    sourceId: string,
+    iconId: string,
+    options: SymbolLayerOptions,
+  ): void;
   /** Instantly frames the given bounds (no animation), padded so route edges aren't flush against the viewport. */
   fitBounds(bounds: BoundingBox, paddingPixels?: number): void;
   /** The map's current centre. Used to verify the camera actually moved
@@ -358,6 +411,39 @@ export class MapLibreAdapter implements MapLibreLike {
 
   hasLayer(id: string): boolean {
     return this.map.getLayer(id) !== undefined;
+  }
+
+  hasImage(id: string): boolean {
+    return this.map.hasImage(id);
+  }
+
+  addImage(id: string, image: StyleImagePixelData, options?: AddImageOptions): void {
+    this.map.addImage(
+      id,
+      { width: image.width, height: image.height, data: image.data },
+      { pixelRatio: options?.pixelRatio ?? 1, sdf: false },
+    );
+  }
+
+  addSymbolLayer(
+    id: string,
+    sourceId: string,
+    iconId: string,
+    options: SymbolLayerOptions,
+  ): void {
+    this.map.addLayer({
+      id,
+      type: "symbol",
+      source: sourceId,
+      layout: {
+        "icon-image": iconId,
+        "symbol-placement": "line",
+        "symbol-spacing": options.spacingPixels,
+        "icon-rotation-alignment": "map",
+        "icon-pitch-alignment": "map",
+        "icon-keep-upright": false,
+      },
+    });
   }
 
   fitBounds(bounds: BoundingBox, paddingPixels = 48): void {

@@ -25,6 +25,8 @@ function buildFakeMapLibreMap(
     getBearing: vi.fn(() => 45),
     getPitch: vi.fn(() => 20),
     addLayer: vi.fn(),
+    addImage: vi.fn(),
+    hasImage: vi.fn(() => false),
     on: vi.fn(),
     project: vi.fn(() => ({ x: 100, y: 200 })),
     queryRenderedFeatures: vi.fn(() => [] as { properties: Record<string, unknown> }[]),
@@ -242,6 +244,84 @@ describe("MapLibreAdapter", () => {
     ];
     expect(solidCall[0].paint).not.toHaveProperty("line-dasharray");
     expect(dashedCall[0].paint["line-dasharray"]).toEqual([2, 2]);
+  });
+
+  describe("addImage", () => {
+    it("passes the image through unchanged with a default pixelRatio of 1 and sdf false", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+      const data = new Uint8ClampedArray(4);
+
+      adapter.addImage("icon-a", { width: 1, height: 1, data });
+
+      expect(fake.addImage).toHaveBeenCalledWith(
+        "icon-a",
+        { width: 1, height: 1, data },
+        { pixelRatio: 1, sdf: false },
+      );
+    });
+
+    it("passes a supplied pixelRatio through, still with sdf false", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+      const data = new Uint8ClampedArray(4);
+
+      adapter.addImage("icon-a", { width: 1, height: 1, data }, { pixelRatio: 2 });
+
+      expect(fake.addImage).toHaveBeenCalledWith(
+        "icon-a",
+        { width: 1, height: 1, data },
+        { pixelRatio: 2, sdf: false },
+      );
+    });
+  });
+
+  it("hasImage delegates to the underlying map", () => {
+    const fake = buildFakeMapLibreMap();
+    fake.hasImage.mockReturnValue(true);
+    const adapter = buildAdapter(fake);
+
+    expect(adapter.hasImage("icon-a")).toBe(true);
+    expect(fake.hasImage).toHaveBeenCalledWith("icon-a");
+  });
+
+  describe("addSymbolLayer", () => {
+    it("adds a line-placed symbol layer with rotation/pitch tracking the line and keep-upright disabled", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+
+      adapter.addSymbolLayer("arrows", "route-source", "arrow-icon", {
+        spacingPixels: 140,
+      });
+
+      expect(fake.addLayer).toHaveBeenCalledWith({
+        id: "arrows",
+        type: "symbol",
+        source: "route-source",
+        layout: {
+          "icon-image": "arrow-icon",
+          "symbol-placement": "line",
+          "symbol-spacing": 140,
+          "icon-rotation-alignment": "map",
+          "icon-pitch-alignment": "map",
+          "icon-keep-upright": false,
+        },
+      });
+    });
+
+    it("never sets icon-allow-overlap, leaving MapLibre's own collision behaviour at its default", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+
+      adapter.addSymbolLayer("arrows", "route-source", "arrow-icon", {
+        spacingPixels: 140,
+      });
+
+      const [[call]] = fake.addLayer.mock.calls as [
+        [{ layout: Record<string, unknown> }],
+      ];
+      expect(call.layout).not.toHaveProperty("icon-allow-overlap");
+    });
   });
 
   describe("onError classification", () => {

@@ -12,6 +12,11 @@ import {
 } from "./mapAdapter.ts";
 import { recordMapAttempt, type MapDiagnosticCategory } from "./mapDiagnostics.ts";
 import {
+  buildRouteArrowIconBitmap,
+  ROUTE_ARROW_ICON_ID,
+  ROUTE_ARROW_ICON_PIXEL_RATIO,
+} from "./routeArrowIcon.ts";
+import {
   buildPositionFeatureCollection,
   computeBoundingBox,
   EMPTY_FEATURE_COLLECTION,
@@ -46,6 +51,13 @@ const START_LAYER_ID = "acn-start-marker";
 const FINISH_LAYER_ID = "acn-finish-marker";
 const PLANNING_PREVIEW_SOURCE_ID = "acn-planning-preview";
 const PLANNING_PREVIEW_LAYER_ID = "acn-planning-preview-line";
+const ROUTE_ARROW_LAYER_ID = "acn-route-arrows";
+/** symbol-spacing, in screen pixels (already zoom-adaptive — a fixed
+ * on-screen spacing yields more arrows per geographic distance as the
+ * map zooms in, needing no zoom expression). Picked from the 100-180px
+ * "restrained but legible" range as a starting point for manual
+ * iPhone-viewport verification, not a value to treat as final. */
+const ROUTE_ARROW_SPACING_PX = 140;
 
 const WARNING_SOURCE_ID_BY_CATEGORY: Readonly<Record<WarningCategory, string>> = {
   "unknown-surface": "acn-warning-unknown-surface",
@@ -420,6 +432,36 @@ export function MapView({
         lineWidth: 5,
         lineOpacity: 0.7,
       });
+      // Direction-arrow overlay: a single symbol layer reusing the
+      // REMAINING_SOURCE_ID GeoJSON source, not a dedicated source of its
+      // own. Planning never sets matchedDistanceFromStartMetres, so its
+      // whole routed line already lives in "remaining"; Riding's own
+      // remaining/completed split (see the points/matchedDistanceFromStartMetres
+      // effect below) already excludes the completed portion and updates
+      // this same source on every progress tick — so arrow coverage
+      // follows both screens' existing policies for free, with no new
+      // effect, and never touches the Planning dashed-preview source.
+      // Placed above both route lines but below every warning/selected/
+      // marker layer that follows. A setup failure here must never break
+      // the rest of this function (route/warning/marker layers) or force
+      // fallback — a missing decorative arrow is never worth that.
+      try {
+        if (!map.hasImage(ROUTE_ARROW_ICON_ID)) {
+          map.addImage(ROUTE_ARROW_ICON_ID, buildRouteArrowIconBitmap(), {
+            pixelRatio: ROUTE_ARROW_ICON_PIXEL_RATIO,
+          });
+        }
+        map.addSymbolLayer(
+          ROUTE_ARROW_LAYER_ID,
+          REMAINING_SOURCE_ID,
+          ROUTE_ARROW_ICON_ID,
+          {
+            spacingPixels: ROUTE_ARROW_SPACING_PX,
+          },
+        );
+      } catch (error) {
+        logError("map", error);
+      }
       // Warning overlay: always created (fed empty collections when
       // warningOverlay is absent), matching the planning-layer precedent
       // below. Added right above the base route lines but before every

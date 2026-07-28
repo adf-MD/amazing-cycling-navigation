@@ -49,6 +49,11 @@ interface MockMapHandle {
   triggerMapTap: (coordinate: Coordinate) => void;
   sources: Map<string, GeoJSON.FeatureCollection>;
   layers: Set<string>;
+  /** Registered images on whichever map instance was constructed most
+   * recently — cleared on every new instance (see factory below), unlike
+   * `sources`/`layers`, since a genuinely fresh MapLibre Map always
+   * starts with zero registered images. */
+  images: Set<string>;
   removeSpy: ReturnType<typeof vi.fn>;
   fitBoundsSpy: ReturnType<typeof vi.fn>;
   resizeSpy: ReturnType<typeof vi.fn>;
@@ -56,6 +61,8 @@ interface MockMapHandle {
   getZoomSpy: ReturnType<typeof vi.fn>;
   setCameraSpy: ReturnType<typeof vi.fn>;
   addLineLayerSpy: ReturnType<typeof vi.fn>;
+  addImageSpy: ReturnType<typeof vi.fn>;
+  addSymbolLayerSpy: ReturnType<typeof vi.fn>;
   /** Default: never a hit (returns null). Tests override with
    * .mockReturnValueOnce/.mockReturnValue to simulate a warning-feature
    * hit; also lets tests assert exactly which coordinate/layerIds MapView
@@ -87,6 +94,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
   let mapTapListener: ((coordinate: Coordinate) => void) | undefined;
   const sources = new Map<string, GeoJSON.FeatureCollection>();
   const layers = new Set<string>();
+  const images = new Set<string>();
   const removeSpy = vi.fn();
   const fitBoundsSpy = vi.fn();
   const resizeSpy = vi.fn();
@@ -94,6 +102,8 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
   const getZoomSpy = vi.fn(() => 14);
   const setCameraSpy = vi.fn();
   const addLineLayerSpy = vi.fn();
+  const addImageSpy = vi.fn();
+  const addSymbolLayerSpy = vi.fn();
   const queryTopWarningFeatureAtSpy = vi.fn((): WarningFeatureHit | null => null);
   const setMarkersSpy: ReturnType<
     typeof vi.fn<(markers: readonly MapMarkerSpec[]) => void>
@@ -103,6 +113,12 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
   const factory: MapFactory = ({ style }) => {
     constructedStyles.push(style);
     styleLoadedFired = false;
+    // A genuinely fresh MapLibre Map instance always starts with zero
+    // registered images — clear in place (not reassign) so the handle's
+    // `images` reference stays valid across a fallback/retry's new
+    // instance, matching how triggerLoad already always targets
+    // "whichever instance was constructed most recently".
+    images.clear();
     const map: MapLibreLike = {
       onLoad: (listener) => {
         loadListener = listener;
@@ -131,6 +147,15 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
         layers.add(id);
       },
       hasLayer: (id) => layers.has(id),
+      hasImage: (id) => images.has(id),
+      addImage: (id, image, options) => {
+        images.add(id);
+        addImageSpy(id, image, options);
+      },
+      addSymbolLayer: (id, sourceId, iconId, options) => {
+        layers.add(id);
+        addSymbolLayerSpy(id, sourceId, iconId, options);
+      },
       fitBounds: fitBoundsSpy,
       getCenter: getCenterSpy,
       getZoom: getZoomSpy,
@@ -160,6 +185,8 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
     getZoomSpy,
     setCameraSpy,
     addLineLayerSpy,
+    addImageSpy,
+    addSymbolLayerSpy,
     queryTopWarningFeatureAtSpy,
     setMarkersSpy,
     constructedStyles,
@@ -209,6 +236,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
     },
     sources,
     layers,
+    images,
     removeSpy,
   };
 }
@@ -1384,6 +1412,162 @@ describe("MapView", () => {
 
       expect(mock.constructedStyles).toHaveLength(2);
       expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+    });
+  });
+
+  describe("direction arrow overlay", () => {
+    it("registers the arrow icon and a symbol layer above both route lines and below every warning/selected/position/marker layer", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      expect(mock.images.has("acn-route-arrow")).toBe(true);
+      expect(mock.layers.has("acn-route-arrows")).toBe(true);
+
+      const order = Array.from(mock.layers);
+      const arrowIndex = order.indexOf("acn-route-arrows");
+      expect(arrowIndex).toBeGreaterThan(order.indexOf("acn-route-remaining-line"));
+      expect(arrowIndex).toBeGreaterThan(order.indexOf("acn-route-completed-line"));
+      expect(arrowIndex).toBeLessThan(order.indexOf("acn-warning-unknown-surface-line"));
+      expect(arrowIndex).toBeLessThan(order.indexOf("acn-warning-selected-line"));
+      expect(arrowIndex).toBeLessThan(order.indexOf("acn-position-marker"));
+      expect(arrowIndex).toBeLessThan(order.indexOf("acn-start-marker"));
+      expect(arrowIndex).toBeLessThan(order.indexOf("acn-finish-marker"));
+    });
+
+    it("sources the arrow layer from the remaining-route source with the chosen spacing", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      expect(mock.addSymbolLayerSpy).toHaveBeenCalledWith(
+        "acn-route-arrows",
+        "acn-route-remaining",
+        "acn-route-arrow",
+        { spacingPixels: 140 },
+      );
+    });
+
+    it("never sources arrows from the Planning dashed unrouted preview", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={[]}
+          mapFactory={mock.factory}
+          planningOverlay={{
+            waypoints: [],
+            previewCoordinates: [
+              [0, 51],
+              [0.001, 51],
+            ],
+            selectedWaypointIndex: null,
+            onMapTap: vi.fn(),
+          }}
+        />,
+      );
+      mock.triggerLoad();
+
+      const [, sourceId] = mock.addSymbolLayerSpy.mock.calls[0] as [string, string];
+      expect(sourceId).toBe("acn-route-remaining");
+      expect(mock.sources.get("acn-route-remaining")?.features).toEqual([]);
+      expect(mock.sources.get("acn-planning-preview")?.features).not.toEqual([]);
+    });
+
+    it("never re-adds the arrow layer on a Riding progress update — coverage follows the existing remaining-source update path", () => {
+      const mock = createMockMapFactory();
+      const { rerender } = render(
+        <MapView
+          points={points}
+          matchedDistanceFromStartMetres={0}
+          mapFactory={mock.factory}
+        />,
+      );
+      mock.triggerLoad();
+      expect(mock.addSymbolLayerSpy).toHaveBeenCalledTimes(1);
+
+      rerender(
+        <MapView
+          points={points}
+          matchedDistanceFromStartMetres={100}
+          mapFactory={mock.factory}
+        />,
+      );
+
+      expect(mock.addSymbolLayerSpy).toHaveBeenCalledTimes(1);
+      expect(mock.sources.get("acn-route-remaining")?.features).toEqual([]);
+    });
+
+    it("registers the icon and layer on the fallback style too", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+
+      expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+      expect(mock.images.has("acn-route-arrow")).toBe(true);
+      expect(mock.addSymbolLayerSpy).toHaveBeenCalled();
+    });
+
+    it("registers exactly once per constructed instance across fail, fallback and manual retry — never duplicated, never skipped", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+      expect(mock.addImageSpy).toHaveBeenCalledTimes(1);
+      expect(mock.addSymbolLayerSpy).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        screen.getByTestId("retry-map-imagery-button").click();
+      });
+      mock.triggerLoad();
+
+      expect(mock.addImageSpy).toHaveBeenCalledTimes(2);
+      expect(mock.addSymbolLayerSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("an arrow-layer setup failure leaves every other layer intact, is logged, and never forces fallback", () => {
+      clearErrorLog();
+      const mock = createMockMapFactory();
+      mock.addSymbolLayerSpy.mockImplementationOnce(() => {
+        throw new Error("simulated arrow-layer failure");
+      });
+      render(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          warningOverlay={{
+            warnings: [
+              {
+                kind: "unknown-surface",
+                startDistanceMetres: 0,
+                endDistanceMetres: 100,
+                message: "Unknown surface.",
+              },
+            ],
+            selectedWarningIndex: null,
+            onSelectWarning: vi.fn(),
+          }}
+        />,
+      );
+      mock.triggerLoad();
+
+      expect(mock.layers.has("acn-route-remaining-line")).toBe(true);
+      expect(mock.layers.has("acn-route-completed-line")).toBe(true);
+      expect(mock.layers.has("acn-position-marker")).toBe(true);
+      expect(mock.layers.has("acn-start-marker")).toBe(true);
+      expect(mock.layers.has("acn-finish-marker")).toBe(true);
+      expect(mock.layers.has("acn-warning-unknown-surface-line")).toBe(true);
+      expect(mock.layers.has("acn-planning-preview-line")).toBe(true);
+      expect(screen.queryByTestId("map-fallback-banner")).toBeNull();
+      expect(getRecentErrors().some((entry) => entry.context === "map")).toBe(true);
     });
   });
 
