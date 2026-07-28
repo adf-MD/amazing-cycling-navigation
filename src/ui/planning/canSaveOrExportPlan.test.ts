@@ -48,12 +48,18 @@ describe("canSaveOrExportPlan", () => {
       kind: "routed",
       route: buildRoute(20),
       waypoints,
+      isFirstRouteForDraft: true,
     };
     expect(canSaveOrExportPlan(state)).toBe(true);
   });
 
   it("is false when routed but the geometry is no denser than the raw waypoints", () => {
-    const state: PlanningRouteState = { kind: "routed", route: buildRoute(2), waypoints };
+    const state: PlanningRouteState = {
+      kind: "routed",
+      route: buildRoute(2),
+      waypoints,
+      isFirstRouteForDraft: true,
+    };
     expect(canSaveOrExportPlan(state)).toBe(false);
   });
 });

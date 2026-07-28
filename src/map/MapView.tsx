@@ -21,7 +21,7 @@ import {
 } from "./routeLayer.ts";
 import {
   buildUnroutedPreviewFeatureCollection,
-  buildWaypointFeatureCollections,
+  buildWaypointMarkerSpecs,
   type PlanningOverlayWaypoint,
 } from "./planningLayer.ts";
 import {
@@ -46,10 +46,6 @@ const START_LAYER_ID = "acn-start-marker";
 const FINISH_LAYER_ID = "acn-finish-marker";
 const PLANNING_PREVIEW_SOURCE_ID = "acn-planning-preview";
 const PLANNING_PREVIEW_LAYER_ID = "acn-planning-preview-line";
-const PLANNING_WAYPOINTS_SOURCE_ID = "acn-planning-waypoints";
-const PLANNING_WAYPOINTS_LAYER_ID = "acn-planning-waypoints-marker";
-const PLANNING_SELECTED_WAYPOINT_SOURCE_ID = "acn-planning-waypoint-selected";
-const PLANNING_SELECTED_WAYPOINT_LAYER_ID = "acn-planning-waypoint-selected-marker";
 
 const WARNING_SOURCE_ID_BY_CATEGORY: Readonly<Record<WarningCategory, string>> = {
   "unknown-surface": "acn-warning-unknown-surface",
@@ -109,8 +105,6 @@ const APP_OWNED_SOURCE_IDS: ReadonlySet<string> = new Set([
   START_SOURCE_ID,
   FINISH_SOURCE_ID,
   PLANNING_PREVIEW_SOURCE_ID,
-  PLANNING_WAYPOINTS_SOURCE_ID,
-  PLANNING_SELECTED_WAYPOINT_SOURCE_ID,
   ...Object.values(WARNING_SOURCE_ID_BY_CATEGORY),
   WARNING_SELECTED_SOURCE_ID,
 ]);
@@ -491,29 +485,11 @@ export function MapView({
         lineOpacity: 0.85,
         lineDasharray: [2, 2],
       });
-      map.addGeoJsonSource(PLANNING_WAYPOINTS_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
-      map.addCircleLayer(PLANNING_WAYPOINTS_LAYER_ID, PLANNING_WAYPOINTS_SOURCE_ID, {
-        circleRadius: 7,
-        circleColor: "#f2a900",
-        circleStrokeColor: "#ffffff",
-        circleStrokeWidth: 2,
-      });
-      // Selected waypoint: larger radius, not just a different colour, so
-      // it stays distinguishable without relying on hue alone.
-      map.addGeoJsonSource(
-        PLANNING_SELECTED_WAYPOINT_SOURCE_ID,
-        EMPTY_FEATURE_COLLECTION,
-      );
-      map.addCircleLayer(
-        PLANNING_SELECTED_WAYPOINT_LAYER_ID,
-        PLANNING_SELECTED_WAYPOINT_SOURCE_ID,
-        {
-          circleRadius: 11,
-          circleColor: "#d32f2f",
-          circleStrokeColor: "#ffffff",
-          circleStrokeWidth: 3,
-        },
-      );
+      // Planning's numbered waypoint markers are plain DOM markers (see
+      // mapAdapter.ts's setMarkers/waypointMarkerElement.ts), not a
+      // GeoJSON source/layer — no glyph-independent way to render ordinal
+      // text through a MapLibre layer, and DOM markers already have zero
+      // sprite/glyph dependency for free.
     }
 
     function attachMap(style: string | StyleSpecification): void {
@@ -764,6 +740,15 @@ export function MapView({
   // markers) is skippable via suppressInitialOverviewFit, so resuming
   // into a restored following/free camera doesn't flash the full route
   // first.
+  // Planning supplies its own identified start/finish/loop waypoint
+  // markers (see the setMarkers effect below) — the generic route
+  // start/finish circles below would otherwise draw a second,
+  // indistinguishable marker at the same coordinates. A derived primitive,
+  // not the planningOverlay object itself (PlanningScreen reconstructs
+  // that object every render), so this doesn't spuriously re-run the
+  // whole effect below on an unrelated rerender.
+  const hasPlanningOverlay = planningOverlay != null;
+
   useEffect(() => {
     if (!styleStructurallyReady) return;
 
@@ -777,21 +762,23 @@ export function MapView({
       }
     }
 
-    const first = points[0];
-    const last = points.at(-1);
-    if (first) {
+    if (!hasPlanningOverlay) {
+      const first = points[0];
+      const last = points.at(-1);
+      if (first) {
+        mapRef.current?.setGeoJsonSourceData(
+          START_SOURCE_ID,
+          buildPositionFeatureCollection(first.coordinate),
+        );
+      }
       mapRef.current?.setGeoJsonSourceData(
-        START_SOURCE_ID,
-        buildPositionFeatureCollection(first.coordinate),
+        FINISH_SOURCE_ID,
+        last && !isLoopRoute(points)
+          ? buildPositionFeatureCollection(last.coordinate)
+          : EMPTY_FEATURE_COLLECTION,
       );
     }
-    mapRef.current?.setGeoJsonSourceData(
-      FINISH_SOURCE_ID,
-      last && !isLoopRoute(points)
-        ? buildPositionFeatureCollection(last.coordinate)
-        : EMPTY_FEATURE_COLLECTION,
-    );
-  }, [points, styleStructurallyReady, suppressInitialOverviewFit]);
+  }, [points, styleStructurallyReady, suppressInitialOverviewFit, hasPlanningOverlay]);
 
   // Executes the camera controller's current command (live "following" or
   // a one-time restore) — deduped by value via a ref rather than object
@@ -864,12 +851,9 @@ export function MapView({
 
   useEffect(() => {
     if (!styleStructurallyReady) return;
-    const { others, selected } = buildWaypointFeatureCollections(
-      planningWaypoints ?? [],
-      planningSelectedIndex,
+    mapRef.current?.setMarkers(
+      buildWaypointMarkerSpecs(planningWaypoints ?? [], planningSelectedIndex),
     );
-    mapRef.current?.setGeoJsonSourceData(PLANNING_WAYPOINTS_SOURCE_ID, others);
-    mapRef.current?.setGeoJsonSourceData(PLANNING_SELECTED_WAYPOINT_SOURCE_ID, selected);
   }, [planningWaypoints, planningSelectedIndex, styleStructurallyReady]);
 
   useEffect(() => {

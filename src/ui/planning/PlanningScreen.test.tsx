@@ -92,6 +92,7 @@ function createMockMapFactory(): MockMapHandle {
       },
       queryTopWarningFeatureAt: () =>
         warningHitIndex === null ? null : { warningIndex: warningHitIndex },
+      setMarkers: () => undefined,
       remove: () => undefined,
     };
     return map;
@@ -1182,6 +1183,25 @@ describe("PlanningScreen", () => {
     expect(screen.queryByRole("button", { name: "Waypoint 3" })).toBeNull();
   });
 
+  it("disables placement while a genuine camera gesture is in flight, and re-enables once it settles", () => {
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    map.triggerCameraSettled([0, 51]);
+    const crosshairButton = screen.getByRole("button", { name: "Add waypoint here" });
+    expect(crosshairButton).toBeEnabled();
+
+    // A real drag/pinch/rotate (or momentum after the finger lifts) leaves
+    // crosshairCoordinate holding a stale pre-gesture value until the next
+    // settle — placement must not use it in the meantime.
+    map.triggerUserCameraInteraction();
+    expect(crosshairButton).toBeDisabled();
+
+    map.triggerCameraSettled([0.2, 51]);
+    expect(crosshairButton).toBeEnabled();
+  });
+
   it("move is one-shot: completing it returns to selected mode, disabling further placement", async () => {
     const user = userEvent.setup();
     const map = createMockMapFactory();
@@ -1286,6 +1306,58 @@ describe("PlanningScreen", () => {
     await new Promise((resolve) => setTimeout(resolve, 1100));
 
     expect(calculateRouteSpy).not.toHaveBeenCalled();
+  });
+
+  it("preserves the camera across an edit-triggered recalculation instead of re-fitting the whole route", async () => {
+    const user = userEvent.setup();
+    await saveProviderKey("dummy-test-key");
+    const map = createMockMapFactory();
+    const route = buildRoute();
+    const legAwareAdapter = buildLegAwareResolvedAdapter(route);
+    const calculateRouteSpy = vi.fn(
+      (waypoints: Coordinate[]): Promise<PlannedRoute> =>
+        legAwareAdapter.calculateRoute(waypoints, { profile: "cycling-road" }),
+    );
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={{ calculateRoute: calculateRouteSpy }}
+      />,
+    );
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+    const calculateButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /calculate route/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+    await user.click(calculateButton);
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: "Route summary" })).toBeInTheDocument();
+    });
+
+    // The first-ever calculated route for this draft fits the camera once
+    // — confirming that case still works before proving the *next* one
+    // (an edit-triggered recalculation) does not fit again.
+    const fitBoundsCallsAfterFirstRoute = map.fitBoundsSpy.mock.calls.length;
+    expect(fitBoundsCallsAfterFirstRoute).toBeGreaterThanOrEqual(1);
+    calculateRouteSpy.mockClear();
+
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    await user.click(screen.getByRole("button", { name: "Move" }));
+    map.triggerCameraSettled([0.002, 51]);
+    await user.click(screen.getByRole("button", { name: "Move the start here" }));
+
+    // Long enough to clear both the draft-save and recalculation debounces.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+
+    // Proves the recalculation genuinely happened, not merely that nothing
+    // did — otherwise the fitBounds assertion below would pass vacuously.
+    expect(calculateRouteSpy).toHaveBeenCalled();
+    expect(map.fitBoundsSpy.mock.calls.length).toBe(fitBoundsCallsAfterFirstRoute);
   });
 
   it("warning selection prevents accidental waypoint placement, even in append mode", async () => {

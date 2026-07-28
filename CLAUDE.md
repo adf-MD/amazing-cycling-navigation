@@ -261,7 +261,7 @@ Implement in milestones and keep each milestone deployable:
 
 1. **Foundation**: static GitHub Pages deployment, installable PWA shell, IndexedDB, route domain model, diagnostics.
 2. **GPX Riding core**: import, validation, map route, elevation profile, live visible-page location, projection, progress, off-route state, persistence, suspension recovery.
-3. **Planning**: waypoint editing, `cycling-road` provider adapter, paved/unknown-surface analysis, route statistics, elevation, local save, GPX export. A first slice of Planning-map usability is implemented: a genuinely fresh session frames an approximately 50 × 50 km area around the rider's approximate location instead of the earlier fixed zoom-6 point jump, an explicit "Locate me" control re-centres on demand with its own loading/failure/retry state, and a north-up/top-down control mirrors Riding's own semantics. Still outstanding within this area: numbered waypoint markers and moving the "Add waypoint here" callout away from the crosshair — see "Future backlog" below.
+3. **Planning**: waypoint editing, `cycling-road` provider adapter, paved/unknown-surface analysis, route statistics, elevation, local save, GPX export. A first slice of Planning-map usability is implemented: a genuinely fresh session frames an approximately 50 × 50 km area around the rider's approximate location instead of the earlier fixed zoom-6 point jump, an explicit "Locate me" control re-centres on demand with its own loading/failure/retry state, and a north-up/top-down control mirrors Riding's own semantics. A second slice fixes the crosshair placement point and adds identifiable waypoint markers: the visual crosshair ring now shares exactly one centring mechanism with the coordinate placement actually uses (a previous redundant CSS offset made the two disagree by a few pixels); the "Add waypoint here"/"Move waypoint here"/"Insert waypoint here" action is disabled while a genuine pan/pinch/rotate gesture (including momentum) is still in flight, rather than risking a stale pre-gesture centre; completing a debounced route recalculation after an edit (append/move/insert/delete/reorder/undo/redo) no longer re-fits the camera to the whole route — a route is only fitted once per draft, on the first successful calculation (tracked explicitly via `usePlanningRoute`'s `isFirstRouteForDraft`, not by comparing coordinate-array references), and every later recalculation preserves whatever camera the rider already has; the placement callout is now offset toward the crosshair's lower-right via CSS rather than pinned to the bottom of the map; and Planning waypoints render as numbered DOM markers (ordinal, start/finish/combined-loop-"`1/n`"/selected treatment, all shape/border-based, never colour alone) that have no glyph/sprite dependency and so remain visible under the local fallback style, with the generic routed-line start/finish markers suppressed whenever Planning's own waypoint markers are present. Still outstanding within this area: route-distance kilometre markers and direction arrows — see "Future backlog" below.
 4. **Riding enhancements**: trusted next manoeuvre with road-speed-appropriate advance display, distance to turn, gradient colouring, simple elevation/climb segments, optional wake-lock. A first slice of this milestone is implemented: a selectable Full/2 km/5 km/10 km elevation view, with the rolling 2/5/10 km windows correctly rebased so the rider's position is the exact left edge of the chart (previously compressed towards the right edge late in a route), a Full-profile view showing the whole route with a route-progress marker that distinguishes fresh from stale (restored) fixes and freezes at the last reliable position while strongly off-route, and persistence of the selected view across suspension/reload. A second slice fixes a location-watch lifecycle bug where, after an initial geolocation error, tapping Try again could leave the Follow-location and north-up controls permanently hidden even once a valid GPS fix arrived: the watch lifecycle now uses an explicit generation token, a retry reliably disposes any obsolete watch and creates a working one, a fresh accepted fix always restores geolocation status to watching and clears the error, and callbacks from a superseded watch are structurally ignored. Still outstanding: trusted next manoeuvre, distance to turn, gradient colouring, elevation/climb segments, and optional wake-lock — see "Future backlog" below.
 
 Do not start a later milestone by weakening or bypassing earlier reliability requirements.
@@ -270,27 +270,15 @@ Do not start a later milestone by weakening or bypassing earlier reliability req
 
 The following items are approved directions or confirmed bugs for future work. They are recorded here for continuity across sessions and must not be implemented until a future slice explicitly scopes them in.
 
-### Planning-map usability
-
-4. **Numbered waypoint markers**
-   - Correspond directly to list order.
-   - Distinguish start and finish.
-   - Handle a loop where start and finish overlap.
-   - Preserve selected-waypoint styling and accessibility.
-
-5. **Waypoint-placement callout**
-   - Move "Add waypoint here" away from the exact crosshair centre, visually attached near its lower-right.
-   - Keep the precise placement point unobscured and the control inside narrow-screen bounds.
-
 ### Route-orientation overlay
 
-6. **Distance markers from route start**
+4. **Distance markers from route start**
    - Absolute cumulative distance from the original start.
    - Adaptive intervals, such as 1/5/10/20 km, to avoid clutter.
    - Do not reset based on current rider position.
    - Use in route overview, Planning and Riding.
 
-7. **Direction arrows**
+5. **Direction arrows**
    - Small, restrained arrows following route direction.
    - Adaptive distance spacing.
    - Use in route overview, Planning and Riding.
@@ -298,37 +286,37 @@ The following items are approved directions or confirmed bugs for future work. T
 
 ### Navigation and library interface
 
-8. **Header hierarchy**
+6. **Header hierarchy**
    - The persistent product name currently consumes space while screen/route titles are more relevant.
    - Preferred direction: screen or route title becomes the single visible h1; product name remains in document title, manifest and Home Screen name.
    - Mark this as requiring a final design discussion before implementation, not as a settled UI requirement.
 
-9. **Inline route-deletion confirmation**
+7. **Inline route-deletion confirmation**
    - Show Cancel/Delete confirmation directly beneath the affected route.
    - Only one route pending deletion at a time.
    - Preserve keyboard/focus behaviour and explicit irreversible-action wording.
 
 ### Remaining Milestone 4 features
 
-10. **Trusted next manoeuvre and distance**
-    - Planner-generated trusted manoeuvres only.
-    - Road-bike-speed-appropriate advance display.
-    - Distance increasingly prominent inside 500 m.
-    - Never infer turns from ordinary imported GPX geometry.
+8. **Trusted next manoeuvre and distance**
+   - Planner-generated trusted manoeuvres only.
+   - Road-bike-speed-appropriate advance display.
+   - Distance increasingly prominent inside 500 m.
+   - Never infer turns from ordinary imported GPX geometry.
 
-11. **Gradient colouring and climb segments**
-    - Accessible non-colour cues.
-    - Noise-resistant elevation analysis.
-    - Upcoming climb distance, length, ascent and average gradient.
+9. **Gradient colouring and climb segments**
+   - Accessible non-colour cues.
+   - Noise-resistant elevation analysis.
+   - Upcoming climb distance, length, ascent and average gradient.
 
-12. **Optional wake lock**
+10. **Optional wake lock**
     - Off by default.
     - Riding mode only.
     - Safe visibility/suspension recovery and unsupported-browser behaviour.
 
 ### Optional external-data feature
 
-13. **Weather**
+11. **Weather**
     - Candidate provider: Open-Meteo free non-commercial API, no API key.
     - Current conditions plus approximately the next three hours.
     - Temperature, precipitation, wind speed, gusts and direction.
@@ -338,7 +326,7 @@ The following items are approved directions or confirmed bugs for future work. T
 
 ### Separate feasibility project
 
-14. **Offline map storage**
+12. **Offline map storage**
     - Do not implement until the active tile provider explicitly permits deliberate offline prefetching.
     - Investigate route-corridor/selected-area storage, style/sprite/glyph dependencies, iOS eviction, size estimates and available-storage checks.
     - Preferred eventual architecture: global tile cache keyed by URL, per-route references, deduplication across routes, deletion only when no route references a tile.

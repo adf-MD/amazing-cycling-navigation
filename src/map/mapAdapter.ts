@@ -1,4 +1,4 @@
-import { GeoJSONSource, Map as MapLibreGlMap, setWorkerUrl } from "maplibre-gl";
+import { GeoJSONSource, Map as MapLibreGlMap, Marker, setWorkerUrl } from "maplibre-gl";
 import type { StyleSpecification } from "maplibre-gl";
 // maplibre-gl computes its worker script's URL relative to its own
 // import.meta.url at runtime, expecting a sibling file — a pattern that
@@ -9,6 +9,10 @@ import type { StyleSpecification } from "maplibre-gl";
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import type { Coordinate } from "../domain/types.ts";
 import type { BoundingBox } from "./routeLayer.ts";
+import {
+  createWaypointMarkerElement,
+  renderWaypointMarkerElement,
+} from "./waypointMarkerElement.ts";
 
 setWorkerUrl(maplibreWorkerUrl);
 
@@ -88,6 +92,29 @@ export interface CircleLayerPaint {
   circleStrokeColor?: string;
   circleStrokeWidth?: number;
   circleOpacity?: number;
+}
+
+/** A Planning waypoint marker's role in the route — distinguishes visual
+ * treatment (shape/border, never colour alone) and drives its accessible
+ * label. "start-finish" is the single combined marker for a closed loop
+ * where the first and final waypoint coincide (see planningLayer.ts's
+ * buildWaypointMarkerSpecs) — the final waypoint gets no marker of its own
+ * in that case. */
+export type MapMarkerRole = "ordinary" | "start" | "finish" | "start-finish";
+
+/** A Planning waypoint marker to render — plain structured data, never
+ * raw HTML, so the adapter builds the DOM node itself (see
+ * waypointMarkerElement.ts) rather than trusting a caller-supplied
+ * string. `label` is the ordinal text ("3", or "1/6" for a combined
+ * start-finish marker); `ariaLabel` is the fuller accessible description
+ * ("Waypoint 3", "Start and finish waypoints 1 and 6"). */
+export interface MapMarkerSpec {
+  id: string;
+  coordinate: Coordinate;
+  label: string;
+  role: MapMarkerRole;
+  selected: boolean;
+  ariaLabel: string;
 }
 
 /**
@@ -191,6 +218,14 @@ export interface MapLibreLike {
     coordinate: Coordinate,
     layerIds: readonly string[],
   ): WarningFeatureHit | null;
+  /** Declares the complete set of Planning waypoint markers that should
+   * exist right now — the same "supply the full desired state, the
+   * adapter diffs it" convention setGeoJsonSourceData already follows,
+   * rather than exposing separate add/update/remove primitives. Markers
+   * are plain DOM elements (see waypointMarkerElement.ts), never a
+   * MapLibre symbol/text layer, so they have no glyph/sprite dependency
+   * and render under the local fallback style too. */
+  setMarkers(markers: readonly MapMarkerSpec[]): void;
   remove(): void;
 }
 
@@ -222,6 +257,9 @@ export class MapLibreAdapter implements MapLibreLike {
    * version. If a future version renames this field, the check simply
    * stops detecting this one category — it never throws. */
   private readonly webglInitFailed: boolean;
+  /** Planning waypoint markers currently on the map, keyed by
+   * MapMarkerSpec.id — diffed against on every setMarkers call. */
+  private readonly markersById = new Map<string, Marker>();
 
   constructor(map: MapLibreGlMap) {
     this.map = map;
@@ -444,7 +482,37 @@ export class MapLibreAdapter implements MapLibreLike {
     }
   }
 
+  setMarkers(markers: readonly MapMarkerSpec[]): void {
+    const seenIds = new Set<string>();
+    for (const spec of markers) {
+      seenIds.add(spec.id);
+      const existing = this.markersById.get(spec.id);
+      const lngLat: [number, number] = [spec.coordinate[0], spec.coordinate[1]];
+      if (existing) {
+        existing.setLngLat(lngLat);
+        renderWaypointMarkerElement(existing.getElement(), spec);
+      } else {
+        const element = createWaypointMarkerElement();
+        renderWaypointMarkerElement(element, spec);
+        const marker = new Marker({ element, anchor: "center" })
+          .setLngLat(lngLat)
+          .addTo(this.map);
+        this.markersById.set(spec.id, marker);
+      }
+    }
+    for (const [id, marker] of this.markersById) {
+      if (!seenIds.has(id)) {
+        marker.remove();
+        this.markersById.delete(id);
+      }
+    }
+  }
+
   remove(): void {
+    for (const marker of this.markersById.values()) {
+      marker.remove();
+    }
+    this.markersById.clear();
     this.map.remove();
   }
 }

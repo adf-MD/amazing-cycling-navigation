@@ -131,6 +131,13 @@ export function PlanningScreen({
   const [locateStatus, setLocateStatus] = useState<"idle" | "locating" | "failed">(
     "idle",
   );
+  // False while a genuine user gesture (drag/pinch/rotate, including
+  // momentum after the finger lifts) is still moving the camera —
+  // crosshairCoordinate only updates on settle, so placing here mid-gesture
+  // would silently use a stale centre. Never toggled by MapView's own
+  // programmatic moves (fitBounds/setCamera), since onUserCameraInteraction
+  // only ever fires for a real gesture (see MapView's own doc comment).
+  const [isCameraSettled, setIsCameraSettled] = useState(false);
   const [selectedWarningIndex, setSelectedWarningIndex] = useState<number | null>(null);
   // Increments once per map-originated warning selection (including a
   // repeat tap on an already-selected warning) — the one-shot signal
@@ -548,6 +555,15 @@ export function PlanningScreen({
   };
 
   const mapPoints = routing.state.kind === "routed" ? routing.state.route.points : [];
+  // Fits the map to the whole route exactly once per draft — the render
+  // where the first successful calculation commits — then stays true for
+  // every later recalculation (edit, undo/redo, retry), so an edit-
+  // triggered recalculation never yanks the camera away from a
+  // just-placed/just-moved waypoint. Pure per-render derivation, no ref or
+  // timeout: see usePlanningRoute's isFirstRouteForDraft for why this is
+  // race-free across retries after an earlier failure.
+  const suppressInitialOverviewFit =
+    routing.state.kind === "routed" ? !routing.state.isFirstRouteForDraft : true;
 
   const warningOverlay: WarningOverlay = {
     warnings: displayWarnings,
@@ -569,8 +585,10 @@ export function PlanningScreen({
           warningOverlay={warningOverlay}
           cameraTarget={northUpCameraTarget}
           boundsTarget={boundsTarget}
+          suppressInitialOverviewFit={suppressInitialOverviewFit}
           onUserCameraInteraction={() => {
             hasManualCameraActionRef.current = true;
+            setIsCameraSettled(false);
           }}
           onCameraSettled={(camera) => {
             setCrosshairCoordinate(camera.coordinate);
@@ -578,42 +596,24 @@ export function PlanningScreen({
               bearingDegrees: camera.bearingDegrees,
               pitchDegrees: camera.pitchDegrees,
             });
+            setIsCameraSettled(true);
           }}
         />
         <div
           aria-hidden="true"
-          style={{
-            position: "absolute",
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
-            width: 16,
-            height: 16,
-            marginTop: -8,
-            marginLeft: -8,
-            border: "2px solid #d32f2f",
-            borderRadius: "50%",
-            pointerEvents: "none",
-          }}
+          className="planning-crosshair"
+          data-testid="planning-crosshair"
         />
         <button
           type="button"
+          className="planning-crosshair-callout"
           onClick={handlePlacementHere}
           disabled={
             !crosshairCoordinate ||
+            !isCameraSettled ||
             interactionMode.kind === "selected" ||
             selectedWarningIndex !== null
           }
-          style={{
-            position: "absolute",
-            // Clears the map-attribution overlay's bottom-left corner
-            // (src/index.css's .map-attribution) on narrow phone widths,
-            // where this centred button would otherwise sit underneath it.
-            bottom: 44,
-            left: "50%",
-            transform: "translateX(-50%)",
-            minHeight: 44,
-          }}
         >
           {describeCrosshairAction(interactionMode, state.present)}
         </button>

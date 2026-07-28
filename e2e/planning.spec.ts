@@ -299,3 +299,54 @@ test("plans a route across three waypoints using exactly one routing request per
 
   expect(consoleErrors).toEqual([]);
 });
+
+test("aligns the crosshair exactly with the map's own visual centre, and renders a numbered waypoint marker", async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Plan" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  // jsdom can assert style strings but not real rendered geometry — this
+  // is the one assertion only a real browser can make, catching the
+  // previous double CSS offset (translate(-50%,-50%) plus a redundant
+  // negative margin) that a style-string check alone would miss.
+  const crosshair = page.getByTestId("planning-crosshair");
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await expect(crosshair).toBeVisible();
+  const crosshairBox = await crosshair.boundingBox();
+  const mapBox = await mapContainer.boundingBox();
+  if (!crosshairBox || !mapBox) {
+    throw new Error("expected both the crosshair and the map container to lay out");
+  }
+
+  const crosshairCentreX = crosshairBox.x + crosshairBox.width / 2;
+  const crosshairCentreY = crosshairBox.y + crosshairBox.height / 2;
+  const mapCentreX = mapBox.x + mapBox.width / 2;
+  const mapCentreY = mapBox.y + mapBox.height / 2;
+  expect(Math.abs(crosshairCentreX - mapCentreX)).toBeLessThanOrEqual(1);
+  expect(Math.abs(crosshairCentreY - mapCentreY)).toBeLessThanOrEqual(1);
+
+  // A waypoint placed exactly under the (now correctly centred) crosshair
+  // renders as a real, DOM-based maplibregl.Marker — proving the actual
+  // browser integration mounts, not merely that MapView called setMarkers
+  // (see MapView.test.tsx's mock-level assertions for that).
+  const addWaypointButton = page.getByRole("button", { name: "Add waypoint here" });
+  await expect(addWaypointButton).toBeEnabled();
+  await addWaypointButton.click();
+
+  const marker = page.locator(".planning-waypoint-marker");
+  await expect(marker).toHaveText("1");
+  await expect(marker).toHaveClass(/planning-waypoint-marker--start/);
+  await expect(page.getByRole("img", { name: "Start waypoint 1" })).toBeVisible();
+
+  expect(consoleErrors).toEqual([]);
+});

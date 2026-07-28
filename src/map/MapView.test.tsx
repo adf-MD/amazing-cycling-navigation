@@ -7,6 +7,7 @@ import type {
   MapErrorInfo,
   MapLibreLike,
   MapFactory,
+  MapMarkerSpec,
   MapSourceDataInfo,
   WarningFeatureHit,
 } from "./mapAdapter.ts";
@@ -64,6 +65,7 @@ interface MockMapHandle {
       (coordinate: Coordinate, layerIds: readonly string[]) => WarningFeatureHit | null
     >
   >;
+  setMarkersSpy: ReturnType<typeof vi.fn<(markers: readonly MapMarkerSpec[]) => void>>;
   constructedStyles: CreateMapOptions["style"][];
 }
 
@@ -93,6 +95,8 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
   const setCameraSpy = vi.fn();
   const addLineLayerSpy = vi.fn();
   const queryTopWarningFeatureAtSpy = vi.fn((): WarningFeatureHit | null => null);
+  const setMarkersSpy: ReturnType<typeof vi.fn<(markers: readonly MapMarkerSpec[]) => void>> =
+    vi.fn();
   const constructedStyles: CreateMapOptions["style"][] = [];
 
   const factory: MapFactory = ({ style }) => {
@@ -141,6 +145,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
         mapTapListener = listener;
       },
       queryTopWarningFeatureAt: queryTopWarningFeatureAtSpy,
+      setMarkers: setMarkersSpy,
       remove: removeSpy,
     };
     return map;
@@ -155,6 +160,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
     setCameraSpy,
     addLineLayerSpy,
     queryTopWarningFeatureAtSpy,
+    setMarkersSpy,
     constructedStyles,
     triggerLoad: () => {
       act(() => {
@@ -931,18 +937,40 @@ describe("MapView", () => {
     });
   });
 
+  it("does not re-fit bounds when points change while suppressInitialOverviewFit is true", () => {
+    const mock = createMockMapFactory();
+    const { rerender } = render(
+      <MapView points={points} mapFactory={mock.factory} suppressInitialOverviewFit />,
+    );
+    mock.triggerLoad();
+    expect(mock.fitBoundsSpy).not.toHaveBeenCalled();
+
+    const morePoints: RoutePoint[] = [
+      ...points,
+      { coordinate: [0.002, 51.001], elevationMetres: 14, distanceFromStartMetres: 200 },
+    ];
+    rerender(
+      <MapView
+        points={morePoints}
+        mapFactory={mock.factory}
+        suppressInitialOverviewFit
+      />,
+    );
+
+    expect(mock.fitBoundsSpy).not.toHaveBeenCalled();
+  });
+
   describe("planningOverlay", () => {
-    it("leaves the planning sources empty when the prop is absent, exactly like Riding mode today", () => {
+    it("calls setMarkers with no markers when the prop is absent, exactly like Riding mode today", () => {
       const mock = createMockMapFactory();
       render(<MapView points={points} mapFactory={mock.factory} />);
       mock.triggerLoad();
 
-      expect(mock.sources.get("acn-planning-waypoints")?.features).toEqual([]);
-      expect(mock.sources.get("acn-planning-waypoint-selected")?.features).toEqual([]);
+      expect(mock.setMarkersSpy).toHaveBeenCalledWith([]);
       expect(mock.sources.get("acn-planning-preview")?.features).toEqual([]);
     });
 
-    it("renders waypoint markers, separating the selected one into its own source", () => {
+    it("renders waypoint markers via setMarkers, marking the selected one", () => {
       const mock = createMockMapFactory();
       render(
         <MapView
@@ -961,10 +989,47 @@ describe("MapView", () => {
       );
       mock.triggerLoad();
 
-      expect(mock.sources.get("acn-planning-waypoints")?.features).toHaveLength(1);
-      expect(mock.sources.get("acn-planning-waypoint-selected")?.features).toHaveLength(
-        1,
+      expect(mock.setMarkersSpy).toHaveBeenCalledWith([
+        {
+          id: "a",
+          coordinate: [0, 51],
+          label: "1",
+          role: "start",
+          selected: false,
+          ariaLabel: "Start waypoint 1",
+        },
+        {
+          id: "b",
+          coordinate: [0.001, 51],
+          label: "2",
+          role: "finish",
+          selected: true,
+          ariaLabel: "Finish waypoint 2",
+        },
+      ]);
+    });
+
+    it("suppresses the generic route start/finish markers so they never duplicate Planning's own waypoint markers", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          planningOverlay={{
+            waypoints: [
+              { id: "a", coordinate: [0, 51] },
+              { id: "b", coordinate: [0.001, 51] },
+            ],
+            previewCoordinates: [],
+            selectedWaypointIndex: null,
+            onMapTap: vi.fn(),
+          }}
+        />,
       );
+      mock.triggerLoad();
+
+      expect(mock.sources.get("acn-route-start")?.features).toEqual([]);
+      expect(mock.sources.get("acn-route-finish")?.features).toEqual([]);
     });
 
     it("renders the unrouted preview as a dashed line, distinct from the solid route layers", () => {
@@ -1143,10 +1208,10 @@ describe("MapView", () => {
 
       mock.triggerStyleLoaded();
 
-      expect(mock.sources.get("acn-planning-waypoints")?.features).toHaveLength(1);
-      expect(mock.sources.get("acn-planning-waypoint-selected")?.features).toHaveLength(
-        1,
-      );
+      expect(mock.setMarkersSpy).toHaveBeenCalledWith([
+        expect.objectContaining({ id: "a", role: "start" }),
+        expect.objectContaining({ id: "b", role: "finish", selected: true }),
+      ]);
       expect(mock.sources.get("acn-planning-preview")?.features).toHaveLength(1);
     });
 

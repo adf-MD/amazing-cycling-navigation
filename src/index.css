@@ -166,12 +166,13 @@ header h1 {
 }
 
 /* Planning's own two map controls (Locate me, north-up) — top-right,
- * clear of the centred crosshair, the bottom-centre "Add waypoint here"
- * button, and .map-attribution's bottom-left corner. Riding's equivalent
- * controls (RidingScreen.tsx) stay inline/bottom-right and are
- * intentionally left untouched here — these two Planning buttons are the
- * only ones sharing this styling, so a small dedicated class replaces
- * duplicating Riding's inline pressed-state ternary a third time. */
+ * clear of the centred crosshair, the crosshair's own lower-right
+ * "Add waypoint here" callout, and .map-attribution's bottom-left corner.
+ * Riding's equivalent controls (RidingScreen.tsx) stay inline/bottom-right
+ * and are intentionally left untouched here — these two Planning buttons
+ * are the only ones sharing this styling, so a small dedicated class
+ * replaces duplicating Riding's inline pressed-state ternary a third
+ * time. */
 .planning-map-controls {
   position: absolute;
   top: 8px;
@@ -198,4 +199,96 @@ header h1 {
   border: none;
   background: var(--colour-accent);
   color: #ffffff;
+}
+
+/* Fixed at the exact visual/geographic centre of MapView's own container
+ * (50%/50% of this same (position: relative) map wrapper) — a single
+ * translate(-50%,-50%) is the entire centring mechanism. Never add a
+ * second offset (e.g. a negative margin) alongside it: that was the
+ * previous bug, where the ring rendered a few pixels away from the
+ * coordinate placement actually uses (see PlanningScreen.tsx's
+ * crosshairCoordinate, sourced from the map's own settled centre). */
+.planning-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 16px;
+  height: 16px;
+  border: 2px solid #d32f2f;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Offset from the crosshair's own centre toward its lower-right, rather
+ * than centred beneath it — the crosshair itself must stay untouched at
+ * the exact centre. max-width is derived purely from the container's own
+ * width (not a fixed pixel guess), so the callout can never overflow the
+ * right edge at any viewport size: left starts at 50% + the gap, and
+ * max-width leaves the same gap again before the container's right edge. */
+.planning-crosshair-callout {
+  position: absolute;
+  top: calc(50% + 14px);
+  left: calc(50% + 14px);
+  max-width: calc(50% - 26px);
+  white-space: normal;
+  text-align: left;
+}
+
+/* Planning's numbered waypoint markers — plain DOM elements (see
+ * src/map/waypointMarkerElement.ts), never a MapLibre symbol/text layer,
+ * so the ordinal text has no glyph/sprite dependency and still renders
+ * under the local fallback style. pointer-events: none throughout:
+ * waypoint selection stays a WaypointList-only action (see
+ * PlanningScreen.tsx's documented map-tap policy), so markers never need
+ * to intercept a tap. Shape/border, not colour alone, distinguishes
+ * start/finish/start-finish from an ordinary numbered waypoint. */
+.planning-waypoint-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0 4px;
+  border-radius: 50%;
+  background-color: #f2a900;
+  border: 2px solid #ffffff;
+  color: #101010;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 45%);
+}
+
+.planning-waypoint-marker--start {
+  background-color: #0a5f38;
+  color: #ffffff;
+}
+
+.planning-waypoint-marker--finish {
+  background-color: #ffffff;
+  color: #101010;
+  border: 3px solid #101010;
+}
+
+/* A closed loop's shared start/finish waypoint — labelled "1/n", not a
+ * plain ordinal, so it needs a shape distinct from every circular marker
+ * above rather than trying to fit that text inside a circle. */
+.planning-waypoint-marker--start-finish {
+  background-color: #0a5f38;
+  color: #ffffff;
+  border: 3px solid #101010;
+  border-radius: 40%;
+  padding: 0 6px;
+}
+
+/* Layered on top of any role above — an outer ring, not a colour change,
+ * so it stays visible regardless of the marker's own background/border
+ * colour. */
+.planning-waypoint-marker--selected {
+  box-shadow:
+    0 0 0 3px #d32f2f,
+    0 1px 3px rgb(0 0 0 / 45%);
 }

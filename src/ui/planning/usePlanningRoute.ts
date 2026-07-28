@@ -26,7 +26,19 @@ export type PlanningRouteState =
   | { kind: "no-waypoints" }
   | { kind: "insufficient-waypoints" }
   | { kind: "unrouted-preview"; waypoints: readonly Waypoint[] }
-  | { kind: "routed"; route: PlannedRoute; waypoints: readonly Waypoint[] };
+  | {
+      kind: "routed";
+      route: PlannedRoute;
+      waypoints: readonly Waypoint[];
+      /** True only for the first route ever successfully calculated for
+       * the current draft (including after any number of earlier failed
+       * attempts) — false for every recalculation after that, however it
+       * was triggered. Lets the caller fit the map's camera to the route
+       * exactly once per draft, never on a later edit-triggered
+       * recalculation. See hasRoutedResultRef below for how this is
+       * derived. */
+      isFirstRouteForDraft: boolean;
+    };
 
 export interface UsePlanningRouteOptions {
   waypoints: readonly Waypoint[];
@@ -88,6 +100,7 @@ export function usePlanningRoute({
   const [routedResult, setRoutedResult] = useState<{
     route: PlannedRoute;
     waypoints: readonly Waypoint[];
+    isFirstRouteForDraft: boolean;
   } | null>(null);
   const [lastErrorMessage, setLastErrorMessage] = useState<string | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
@@ -183,7 +196,12 @@ export function usePlanningRoute({
         if (requestSeq !== requestSeqRef.current) return;
         setIsCalculating(false);
         setUpdatingLegCount(null);
-        setRoutedResult({ route, waypoints: currentWaypoints });
+        // Read before setRoutedResult below (which the effect further down
+        // mirrors into hasRoutedResultRef) — captures whether this is the
+        // first success for this draft, correct across any number of
+        // earlier failed attempts, since a failure never reaches here.
+        const isFirstRouteForDraft = !hasRoutedResultRef.current;
+        setRoutedResult({ route, waypoints: currentWaypoints, isFirstRouteForDraft });
         recordProviderKeyVerification("verified").catch((error: unknown) => {
           logError("planning-record-verification", error);
         });
@@ -246,7 +264,12 @@ export function usePlanningRoute({
   }, []);
 
   const state: PlanningRouteState = routedResult
-    ? { kind: "routed", route: routedResult.route, waypoints: routedResult.waypoints }
+    ? {
+        kind: "routed",
+        route: routedResult.route,
+        waypoints: routedResult.waypoints,
+        isFirstRouteForDraft: routedResult.isFirstRouteForDraft,
+      }
     : deriveBaseState(waypoints);
 
   return { state, lastErrorMessage, isCalculating, updatingLegCount, calculateNow };
