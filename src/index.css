@@ -166,13 +166,12 @@ header h1 {
 }
 
 /* Planning's own two map controls (Locate me, north-up) — top-right,
- * clear of the centred crosshair, the crosshair's own lower-right
- * "Add waypoint here" callout, and .map-attribution's bottom-left corner.
- * Riding's equivalent controls (RidingScreen.tsx) stay inline/bottom-right
- * and are intentionally left untouched here — these two Planning buttons
- * are the only ones sharing this styling, so a small dedicated class
- * replaces duplicating Riding's inline pressed-state ternary a third
- * time. */
+ * clear of the centred crosshair, the bottom-centre "Add waypoint here"
+ * button, and .map-attribution's bottom-left corner. Riding's equivalent
+ * controls (RidingScreen.tsx) stay inline/bottom-right and are
+ * intentionally left untouched here — these two Planning buttons are the
+ * only ones sharing this styling, so a small dedicated class replaces
+ * duplicating Riding's inline pressed-state ternary a third time. */
 .planning-map-controls {
   position: absolute;
   top: 8px;
@@ -220,19 +219,16 @@ header h1 {
   pointer-events: none;
 }
 
-/* Offset from the crosshair's own centre toward its lower-right, rather
- * than centred beneath it — the crosshair itself must stay untouched at
- * the exact centre. max-width is derived purely from the container's own
- * width (not a fixed pixel guess), so the callout can never overflow the
- * right edge at any viewport size: left starts at 50% + the gap, and
- * max-width leaves the same gap again before the container's right edge. */
+/* Bottom-centre, clear of the crosshair itself — the crosshair stays
+ * untouched at the exact centre; this is purely the action control, never
+ * the placement point. bottom:44 clears .map-attribution's bottom-left
+ * corner on narrow phone widths, where a centred button would otherwise
+ * sit underneath it. */
 .planning-crosshair-callout {
   position: absolute;
-  top: calc(50% + 14px);
-  left: calc(50% + 14px);
-  max-width: calc(50% - 26px);
-  white-space: normal;
-  text-align: left;
+  bottom: 44px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 /* Planning's numbered waypoint markers — plain DOM elements (see

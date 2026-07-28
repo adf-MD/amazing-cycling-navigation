@@ -103,4 +103,26 @@ describe("renderWaypointMarkerElement", () => {
     expect(element.textContent).toBe("6");
     expect(element.getAttribute("aria-label")).toBe("Finish waypoint 6");
   });
+
+  // Regression test: maplibregl.Marker's own constructor adds classes
+  // (e.g. "maplibregl-marker", which supplies the position: absolute this
+  // element depends on to render as a small fixed-size marker rather than
+  // a full-width block) once via classList.add, before/around this
+  // module's own rendering. A re-render must never wipe those out via a
+  // wholesale `className =` assignment.
+  it("preserves classes it did not itself add across a re-render", () => {
+    const element = createWaypointMarkerElement();
+    renderWaypointMarkerElement(element, buildSpec({ role: "start", label: "1" }));
+    element.classList.add("maplibregl-marker", "maplibregl-marker-anchor-center");
+
+    renderWaypointMarkerElement(
+      element,
+      buildSpec({ role: "ordinary", label: "2", selected: true }),
+    );
+
+    expect(element.classList.contains("maplibregl-marker")).toBe(true);
+    expect(element.classList.contains("maplibregl-marker-anchor-center")).toBe(true);
+    expect(element.classList.contains("planning-waypoint-marker--start")).toBe(false);
+    expect(element.classList.contains("planning-waypoint-marker--selected")).toBe(true);
+  });
 });
