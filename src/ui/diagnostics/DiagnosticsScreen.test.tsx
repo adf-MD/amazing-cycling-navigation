@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import pkg from "../../../package.json" with { type: "json" };
 import { DiagnosticsScreen } from "./DiagnosticsScreen.tsx";
 import { db } from "../../storage/db.ts";
 import { setActiveRideState } from "../../storage/rideStateRepository.ts";
@@ -85,6 +86,12 @@ describe("DiagnosticsScreen", () => {
 
     expect(getDetailValue("App version")).toHaveTextContent(__APP_VERSION__);
     expect(getDetailValue("Build")).toHaveTextContent(__BUILD_ID__);
+    // __APP_VERSION__ is itself just a build-time copy of this value (see
+    // vite.config.ts's `define`) — asserting against package.json directly,
+    // rather than only against __APP_VERSION__, is what actually proves the
+    // displayed text traces back to the single authoritative version source
+    // rather than a hard-coded duplicate that happens to agree today.
+    expect(getDetailValue("App version")).toHaveTextContent(pkg.version);
     expect(getDetailValue("Network")).toHaveTextContent(/online|offline/i);
     expect(getDetailValue("Service worker")).not.toBeEmptyDOMElement();
     expect(getDetailValue("Map rendering support")).not.toBeEmptyDOMElement();

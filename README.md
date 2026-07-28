@@ -284,7 +284,7 @@ environment URL) — typically
 
 ### Confirming the deployed build
 
-The app's current version is `0.1.0` (`package.json`). Independently of that
+The app's current version is `0.2.0` (`package.json`). Independently of that
 version number, the **Diagnostics** screen also shows a **Build** field: the
 first 7 characters of the Git commit SHA the running app was built from
 (e.g. `4b825dc`). The deploy workflow sets this via `APP_BUILD_SHA:
