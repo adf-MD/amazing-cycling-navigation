@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeOpenRouteServiceRoute } from "./normalizeOpenRouteServiceRoute.ts";
 import { RoutingError } from "./openRouteServiceErrors.ts";
-import type { OrsFeatureCollectionResponse } from "./openRouteServiceTypes.ts";
+import type { OrsExtras, OrsFeatureCollectionResponse } from "./openRouteServiceTypes.ts";
 
 const OPTIONS = {
   name: "Test route",
@@ -513,6 +513,303 @@ describe("normalizeOpenRouteServiceRoute", () => {
       expect(route.warnings[1]?.endDistanceMetres).toBeCloseTo(route.distanceMetres, 6);
       expect(route.warnings[0]?.endDistanceMetres).toBeLessThanOrEqual(
         route.warnings[1]?.startDistanceMetres ?? -1,
+      );
+    });
+  });
+
+  describe("structural warnings (waytype/waycategory)", () => {
+    function buildStructuralResponse(
+      extras: Pick<OrsExtras, "waytype" | "waycategory">,
+    ): OrsFeatureCollectionResponse {
+      return buildResponse({
+        extras: {
+          // Whole route paved, so no surface warning competes with the
+          // structural warning under test.
+          surface: { values: [[0, 5, 1]] },
+          ...extras,
+        },
+      });
+    }
+
+    it("produces a steps warning for waycategory bit 4", () => {
+      const response = buildStructuralResponse({ waycategory: { values: [[1, 3, 4]] } });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toEqual([
+        {
+          kind: "steps",
+          startDistanceMetres: route.points[1]?.distanceFromStartMetres,
+          endDistanceMetres: route.points[3]?.distanceFromStartMetres,
+          message: "Route includes steps.",
+        },
+      ]);
+    });
+
+    it("produces a ferry warning for waycategory bit 8", () => {
+      const response = buildStructuralResponse({ waycategory: { values: [[1, 3, 8]] } });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toEqual([
+        {
+          kind: "ferry",
+          startDistanceMetres: route.points[1]?.distanceFromStartMetres,
+          endDistanceMetres: route.points[3]?.distanceFromStartMetres,
+          message: "Route includes a ferry.",
+        },
+      ]);
+    });
+
+    it("produces a ford warning for waycategory bit 16", () => {
+      const response = buildStructuralResponse({ waycategory: { values: [[1, 3, 16]] } });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toEqual([
+        {
+          kind: "ford",
+          startDistanceMetres: route.points[1]?.distanceFromStartMetres,
+          endDistanceMetres: route.points[3]?.distanceFromStartMetres,
+          message: "Route includes a ford.",
+        },
+      ]);
+    });
+
+    it("produces steps, ferry and ford warnings for a composite waycategory value", () => {
+      const response = buildStructuralResponse({ waycategory: { values: [[1, 3, 28]] } }); // 4+8+16
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings.map((w) => w.kind)).toEqual(["steps", "ferry", "ford"]);
+      for (const warning of route.warnings) {
+        expect(warning.startDistanceMetres).toBeCloseTo(
+          route.points[1]?.distanceFromStartMetres ?? -1,
+          6,
+        );
+        expect(warning.endDistanceMetres).toBeCloseTo(
+          route.points[3]?.distanceFromStartMetres ?? -1,
+          6,
+        );
+      }
+    });
+
+    it("produces a steps warning for waytype code 8", () => {
+      const response = buildStructuralResponse({ waytype: { values: [[1, 3, 8]] } });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toEqual([
+        {
+          kind: "steps",
+          startDistanceMetres: route.points[1]?.distanceFromStartMetres,
+          endDistanceMetres: route.points[3]?.distanceFromStartMetres,
+          message: "Route includes steps.",
+        },
+      ]);
+    });
+
+    it("produces a ferry warning for waytype code 9", () => {
+      const response = buildStructuralResponse({ waytype: { values: [[1, 3, 9]] } });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toEqual([
+        {
+          kind: "ferry",
+          startDistanceMetres: route.points[1]?.distanceFromStartMetres,
+          endDistanceMetres: route.points[3]?.distanceFromStartMetres,
+          message: "Route includes a ferry.",
+        },
+      ]);
+    });
+
+    it("produces an other (construction) warning for waytype code 10", () => {
+      const response = buildStructuralResponse({ waytype: { values: [[1, 3, 10]] } });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toEqual([
+        {
+          kind: "other",
+          startDistanceMetres: route.points[1]?.distanceFromStartMetres,
+          endDistanceMetres: route.points[3]?.distanceFromStartMetres,
+          message: "Route includes a construction-designated way.",
+        },
+      ]);
+    });
+
+    it("deduplicates the same hazard reported by both waytype and waycategory over an identical range", () => {
+      const response = buildStructuralResponse({
+        waytype: { values: [[1, 3, 8]] },
+        waycategory: { values: [[1, 3, 4]] },
+      });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toEqual([
+        {
+          kind: "steps",
+          startDistanceMetres: route.points[1]?.distanceFromStartMetres,
+          endDistanceMetres: route.points[3]?.distanceFromStartMetres,
+          message: "Route includes steps.",
+        },
+      ]);
+    });
+
+    it("coalesces partially overlapping duplicate observations of the same hazard into one range", () => {
+      const response = buildStructuralResponse({
+        waytype: { values: [[1, 3, 8]] },
+        waycategory: { values: [[2, 4, 4]] },
+      });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toEqual([
+        {
+          kind: "steps",
+          startDistanceMetres: route.points[1]?.distanceFromStartMetres,
+          endDistanceMetres: route.points[4]?.distanceFromStartMetres,
+          message: "Route includes steps.",
+        },
+      ]);
+    });
+
+    it("keeps separated occurrences of the same hazard kind as distinct warnings", () => {
+      const response = buildStructuralResponse({
+        waytype: {
+          values: [
+            [0, 1, 9],
+            [4, 5, 9],
+          ],
+        },
+      });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toHaveLength(2);
+      expect(route.warnings.every((w) => w.kind === "ferry")).toBe(true);
+      expect(route.warnings[0]?.endDistanceMetres).toBeLessThan(
+        route.warnings[1]?.startDistanceMetres ?? -1,
+      );
+    });
+
+    it("is safe when waytype is absent but waycategory is present", () => {
+      const response = buildStructuralResponse({ waycategory: { values: [[1, 3, 4]] } });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toEqual([
+        {
+          kind: "steps",
+          startDistanceMetres: route.points[1]?.distanceFromStartMetres,
+          endDistanceMetres: route.points[3]?.distanceFromStartMetres,
+          message: "Route includes steps.",
+        },
+      ]);
+    });
+
+    it("is safe when waycategory is absent but waytype is present", () => {
+      const response = buildStructuralResponse({ waytype: { values: [[1, 3, 9]] } });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toEqual([
+        {
+          kind: "ferry",
+          startDistanceMetres: route.points[1]?.distanceFromStartMetres,
+          endDistanceMetres: route.points[3]?.distanceFromStartMetres,
+          message: "Route includes a ferry.",
+        },
+      ]);
+    });
+
+    it("produces no structural warnings when neither waytype nor waycategory is present, leaving existing surface warnings unchanged", () => {
+      const route = normalizeOpenRouteServiceRoute(buildResponse(), OPTIONS);
+
+      expect(route.warnings.map((w) => w.kind)).toEqual([
+        "unknown-surface",
+        "unsuitable-surface",
+      ]);
+    });
+
+    it("produces no warning for unrecognised waytype codes or waycategory bits outside steps/ferry/ford", () => {
+      const response = buildStructuralResponse({
+        waytype: { values: [[1, 3, 3]] }, // state road — not acted on
+        waycategory: { values: [[1, 3, 3]] }, // highway(1) + tollway(2) bits only
+      });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toEqual([]);
+    });
+
+    it("produces no warning for waycategory value 0 (no category)", () => {
+      const response = buildStructuralResponse({ waycategory: { values: [[1, 3, 0]] } });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toEqual([]);
+    });
+
+    it("safely ignores non-finite, non-integer and out-of-range structural values", () => {
+      const response = buildStructuralResponse({
+        waytype: {
+          values: [
+            [1, 3, 8.5],
+            [1, 3, Number.NaN],
+            [20, 25, 8], // out of range for a 6-point route
+          ],
+        },
+        waycategory: {
+          values: [
+            [1, 3, Number.POSITIVE_INFINITY],
+            [1, 3, 4.5],
+          ],
+        },
+      });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toEqual([]);
+    });
+
+    it("produces no warning for a zero-length structural range", () => {
+      const response = buildStructuralResponse({ waytype: { values: [[2, 2, 8]] } });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toEqual([]);
+    });
+
+    it("orders warnings deterministically by start distance across mixed structural kinds", () => {
+      const response = buildStructuralResponse({
+        waytype: { values: [[4, 5, 9]] }, // ferry, later in the route
+        waycategory: { values: [[0, 1, 4]] }, // steps, earlier in the route
+      });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings.map((w) => w.kind)).toEqual(["steps", "ferry"]);
+      expect(route.warnings[0]?.startDistanceMetres).toBeLessThan(
+        route.warnings[1]?.startDistanceMetres ?? Infinity,
+      );
+    });
+
+    it("adds structural warnings without altering surface totals or existing surface warnings, and lets structural and surface warnings overlap", () => {
+      const baseline = normalizeOpenRouteServiceRoute(buildResponse(), OPTIONS);
+      const response = buildResponse({
+        extras: {
+          surface: {
+            values: [
+              [0, 2, 1],
+              [3, 5, 15],
+            ],
+          },
+          // Steps over the same range as the existing unsuitable-surface warning.
+          waytype: { values: [[3, 5, 8]] },
+        },
+      });
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.surfaceSummary).toEqual(baseline.surfaceSummary);
+      expect(route.warnings.filter((w) => w.kind !== "steps")).toEqual(baseline.warnings);
+
+      const stepsWarning = route.warnings.find((w) => w.kind === "steps");
+      expect(stepsWarning).toMatchObject({
+        kind: "steps",
+        message: "Route includes steps.",
+      });
+      expect(stepsWarning?.startDistanceMetres).toBeCloseTo(
+        route.points[3]?.distanceFromStartMetres ?? -1,
+        6,
+      );
+      expect(stepsWarning?.endDistanceMetres).toBeCloseTo(
+        route.points[5]?.distanceFromStartMetres ?? -1,
+        6,
       );
     });
   });

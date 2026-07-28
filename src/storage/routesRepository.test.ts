@@ -45,6 +45,40 @@ describe("routesRepository", () => {
     await expect(getRoute("does-not-exist")).resolves.toBeUndefined();
   });
 
+  it("round-trips a route with steps/ford/ferry/other warnings unchanged", async () => {
+    const route = buildRoute({
+      warnings: [
+        {
+          kind: "steps",
+          startDistanceMetres: 0,
+          endDistanceMetres: 100,
+          message: "Route includes steps.",
+        },
+        {
+          kind: "ford",
+          startDistanceMetres: 200,
+          endDistanceMetres: 300,
+          message: "Route includes a ford.",
+        },
+        {
+          kind: "ferry",
+          startDistanceMetres: 400,
+          endDistanceMetres: 500,
+          message: "Route includes a ferry.",
+        },
+        {
+          kind: "other",
+          startDistanceMetres: 600,
+          endDistanceMetres: 700,
+          message: "Route includes a construction-designated way.",
+        },
+      ],
+    });
+    await saveRoute(route);
+
+    await expect(getRoute(route.id)).resolves.toEqual(route);
+  });
+
   it("lists routes newest-first by createdAt", async () => {
     const older = buildRoute({
       id: "older",

@@ -395,7 +395,7 @@ export class OpenRouteServiceAdapter implements RoutingProvider {
     const body: OrsDirectionsRequestBody = {
       coordinates: waypoints.map(([longitude, latitude]) => [longitude, latitude]),
       elevation: true,
-      extra_info: ["surface"],
+      extra_info: ["surface", "waytype", "waycategory"],
       instructions: true,
       ...(options.avoidFerries ? { options: { avoid_features: ["ferries"] } } : {}),
     };

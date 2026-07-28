@@ -184,6 +184,57 @@ function buildRouteWithWarnings(): PlannedRoute {
   };
 }
 
+function buildRouteWithStructuralWarnings(): PlannedRoute {
+  const pointCount = 10;
+  return {
+    id: "route-structural-warnings-1",
+    name: "Planned route",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    points: Array.from({ length: pointCount }, (_, i) => ({
+      coordinate: [i * 0.001, 51] as Coordinate,
+      elevationMetres: 10 + i,
+      distanceFromStartMetres: i * 100,
+    })),
+    manoeuvres: [],
+    distanceMetres: (pointCount - 1) * 100,
+    ascentMetres: 12,
+    descentMetres: 4,
+    surfaceSummary: {
+      pavedMetres: (pointCount - 1) * 100,
+      questionableMetres: 0,
+      unsuitableMetres: 0,
+      unknownMetres: 0,
+    },
+    warnings: [
+      {
+        kind: "steps",
+        startDistanceMetres: 100,
+        endDistanceMetres: 200,
+        message: "Route includes steps.",
+      },
+      {
+        kind: "ford",
+        startDistanceMetres: 300,
+        endDistanceMetres: 400,
+        message: "Route includes a ford.",
+      },
+      {
+        kind: "ferry",
+        startDistanceMetres: 500,
+        endDistanceMetres: 600,
+        message: "Route includes a ferry.",
+      },
+      {
+        kind: "other",
+        startDistanceMetres: 700,
+        endDistanceMetres: 800,
+        message: "Route includes a construction-designated way.",
+      },
+    ],
+    source: { kind: "planner", provider: "openrouteservice", profile: "cycling-road" },
+  };
+}
+
 function buildResolvedAdapter(route: PlannedRoute): RoutingProvider {
   return {
     calculateRoute: () => Promise.resolve(route),
@@ -877,9 +928,9 @@ describe("PlanningScreen", () => {
     async function renderWithCalculatedWarnings(
       map: ReturnType<typeof createMockMapFactory>,
       user: ReturnType<typeof userEvent.setup>,
+      route: PlannedRoute = buildRouteWithWarnings(),
     ): Promise<HTMLElement> {
       await saveProviderKey("dummy-test-key");
-      const route = buildRouteWithWarnings();
       render(
         <PlanningScreen
           onNavigateToSettings={vi.fn()}
@@ -1065,6 +1116,29 @@ describe("PlanningScreen", () => {
       map.triggerMapTap([0.5, 51]);
 
       expect(screen.getByRole("button", { name: "Waypoint 3" })).toBeInTheDocument();
+    });
+
+    it("tapping a structural (ferry) warning segment on the map selects it in the summary panel", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const summaryRegion = await renderWithCalculatedWarnings(
+        map,
+        user,
+        buildRouteWithStructuralWarnings(),
+      );
+      const ferryButton = within(summaryRegion).getByRole("button", {
+        name: /route includes a ferry/i,
+      });
+      expect(ferryButton).toHaveAttribute("aria-pressed", "false");
+
+      // route.warnings[2] is the ferry warning in buildRouteWithStructuralWarnings.
+      map.setWarningHit(2);
+      map.triggerMapTap([0.55, 51]);
+
+      expect(ferryButton).toHaveAttribute("aria-pressed", "true");
+      await waitFor(() => {
+        expect(map.sources.get("acn-warning-selected")?.features).toHaveLength(1);
+      });
     });
   });
 
@@ -1308,4 +1382,119 @@ describe("PlanningScreen", () => {
       expect(fetchSpy).not.toHaveBeenCalled();
     },
   );
+
+  it(
+    "renders steps/ford/ferry/other warnings, groups them into the existing obstacle/ferry/other " +
+      "map categories, and lets selecting one from the list highlight and frame it",
+    async () => {
+      const user = userEvent.setup();
+      await saveProviderKey("dummy-test-key");
+      const map = createMockMapFactory();
+      const route = buildRouteWithStructuralWarnings();
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          routingProvider={buildResolvedAdapter(route)}
+        />,
+      );
+      map.triggerLoad();
+
+      await addWaypointViaCrosshair(map, user, [0, 51]);
+      await addWaypointViaCrosshair(map, user, [0.01, 51]);
+      const calculateButton = await waitFor(() => {
+        const button = screen.getByRole("button", { name: /calculate route/i });
+        expect(button).toBeEnabled();
+        return button;
+      });
+      await user.click(calculateButton);
+
+      const summaryRegion = await waitFor(() => {
+        const region = screen.getByRole("region", { name: "Route summary" });
+        expect(region).toBeInTheDocument();
+        return region;
+      });
+
+      expect(
+        within(summaryRegion).getByRole("button", { name: /route includes steps/i }),
+      ).toBeInTheDocument();
+      expect(
+        within(summaryRegion).getByRole("button", { name: /route includes a ford/i }),
+      ).toBeInTheDocument();
+      expect(
+        within(summaryRegion).getByRole("button", { name: /route includes a ferry/i }),
+      ).toBeInTheDocument();
+      expect(
+        within(summaryRegion).getByRole("button", {
+          name: /route includes a construction-designated way/i,
+        }),
+      ).toBeInTheDocument();
+
+      // steps + ford share the "obstacle" map category; ferry and other
+      // each have their own — the existing (unchanged) category grouping
+      // in src/map/warningLayer.ts.
+      await waitFor(() => {
+        expect(map.sources.get("acn-warning-obstacle")?.features).toHaveLength(2);
+        expect(map.sources.get("acn-warning-ferry")?.features).toHaveLength(1);
+        expect(map.sources.get("acn-warning-other")?.features).toHaveLength(1);
+      });
+
+      const fitBoundsCallsBeforeSelect = map.fitBoundsSpy.mock.calls.length;
+      const ferryButton = within(summaryRegion).getByRole("button", {
+        name: /route includes a ferry/i,
+      });
+      expect(ferryButton).toHaveAttribute("aria-pressed", "false");
+      await user.click(ferryButton);
+
+      expect(ferryButton).toHaveAttribute("aria-pressed", "true");
+      expect(map.fitBoundsSpy.mock.calls.length).toBeGreaterThan(
+        fitBoundsCallsBeforeSelect,
+      );
+      await waitFor(() => {
+        expect(map.sources.get("acn-warning-selected")?.features).toHaveLength(1);
+      });
+    },
+  );
+
+  it("selecting a structural warning still prevents accidental waypoint placement", async () => {
+    const user = userEvent.setup();
+    await saveProviderKey("dummy-test-key");
+    const map = createMockMapFactory();
+    const route = buildRouteWithStructuralWarnings();
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={buildResolvedAdapter(route)}
+      />,
+    );
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+    const calculateButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /calculate route/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+    await user.click(calculateButton);
+
+    const summaryRegion = await waitFor(() => {
+      const region = screen.getByRole("region", { name: "Route summary" });
+      expect(region).toBeInTheDocument();
+      return region;
+    });
+    const stepsButton = within(summaryRegion).getByRole("button", {
+      name: /route includes steps/i,
+    });
+    await user.click(stepsButton);
+
+    expect(screen.getByRole("button", { name: "Add waypoint here" })).toBeDisabled();
+
+    map.triggerMapTap([0.5, 51]);
+
+    expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Waypoint 2" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Waypoint 3" })).toBeNull();
+  });
 });

@@ -16,10 +16,15 @@ warnings, saving the result locally, and exporting it as GPX. See
 [Planning a road-bike route](#planning-a-road-bike-route) below for how to set
 up your own key.
 
-Still deferred within Milestone 3: per-leg (rather than whole-route)
-recalculation, `waytype`/`access` provider extras (so `access`/`steps`/
-`ford`/`ferry` warnings never occur yet — only surface-based warnings do), and
-the road-speed-appropriate next-manoeuvre display planned for Milestone 4.
+Route calculation requests OpenRouteService's `surface`, `waytype` and
+`waycategory` extras, so `steps`, `ford`, `ferry` and `other`
+(construction-designated way) warnings can now appear alongside the
+surface-based ones, whenever ORS actually returns matching metadata for a
+route. `access` warnings remain unavailable: ORS does not expose a
+`roadaccessrestrictions` extra for the `cycling-road` profile, so legal
+access restrictions are never represented. Still deferred within Milestone 3:
+per-leg (rather than whole-route) recalculation, and the road-speed-
+appropriate next-manoeuvre display planned for Milestone 4.
 
 ## Requirements
 
@@ -219,9 +224,12 @@ What this means in practice:
   changed leg, and moving a waypoint is select-then-relocate (tap/click, or
   the crosshair "Move selected waypoint here" button) rather than a
   draggable map marker.
-- Surface warnings only use the provider's `surface` extra; `waytype`/`access`
-  extras (which would add `access`/`steps`/`ford`/`ferry` warnings) aren't
-  requested yet, so those warning kinds never occur in this release.
+- Steps, ford, ferry and construction (`other`) warnings come from ORS's
+  `waytype`/`waycategory` extras and only appear when the provider actually
+  returns matching metadata for a route — their absence is not proof a
+  hazard doesn't exist. Legal access restrictions are not represented at
+  all: ORS does not expose a `roadaccessrestrictions` extra for the
+  `cycling-road` profile, so an `access` warning is never produced.
 - Route warnings are highlighted and framed on the map, and selection is
   two-way — selecting a warning in the list or tapping its rendered segment
   on the map does the same thing.

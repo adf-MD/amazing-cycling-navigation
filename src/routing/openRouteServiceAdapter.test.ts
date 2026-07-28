@@ -124,7 +124,7 @@ describe("OpenRouteServiceAdapter", () => {
     );
   });
 
-  it("posts the cycling-road profile and requests elevation/surface/instructions", async () => {
+  it("posts the cycling-road profile and requests elevation/surface/waytype/waycategory/instructions", async () => {
     const fetchImpl = buildFetchMock({ ok: true });
     const adapter = new OpenRouteServiceAdapter({
       getApiKey: () => Promise.resolve(DUMMY_KEY),
@@ -142,7 +142,7 @@ describe("OpenRouteServiceAdapter", () => {
         [-1.4, 53.8],
       ],
       elevation: true,
-      extra_info: ["surface"],
+      extra_info: ["surface", "waytype", "waycategory"],
       instructions: true,
     });
   });

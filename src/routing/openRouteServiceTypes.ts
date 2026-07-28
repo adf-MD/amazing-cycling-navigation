@@ -1,9 +1,7 @@
 /**
  * Raw OpenRouteService v2 directions (geojson) request/response shapes.
- * Deliberately kept extensible (e.g. OrsExtras is an open Record) rather
- * than an exhaustive schema, so a later slice can request additional
- * extra_info (waytype, access) without a breaking type change here. Never
- * imported outside routing/ — UI and domain code only ever see the
+ * Not an exhaustive schema — only the fields this project actually reads.
+ * Never imported outside routing/ — UI and domain code only ever see the
  * normalised PlannedRoute (see normalizeOpenRouteServiceRoute.ts).
  */
 
@@ -48,9 +46,14 @@ export interface OrsExtraInfoEntry {
   values: readonly OrsExtraInfoTriple[];
 }
 
-/** Open-ended: only "surface" is requested/read in this slice, but
- * "waytype"/"access" etc. can be added later without changing this type. */
-export type OrsExtras = Record<string, OrsExtraInfoEntry>;
+/** The three extra_info categories this project requests and reads.
+ * "roadaccessrestrictions" is deliberately absent: ORS does not document it
+ * as available for the cycling-road profile, so it is never requested. */
+export interface OrsExtras {
+  surface?: OrsExtraInfoEntry;
+  waytype?: OrsExtraInfoEntry;
+  waycategory?: OrsExtraInfoEntry;
+}
 
 export interface OrsRouteProperties {
   summary: OrsSummary;

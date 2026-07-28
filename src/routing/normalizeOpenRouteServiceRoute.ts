@@ -10,6 +10,7 @@ import type {
 import { normalizeGpxPoints } from "../gpx/normalizeGpx.ts";
 import type { RawGpxPoint } from "../gpx/parseGpx.ts";
 import { analyzeElevation } from "../navigation/elevation.ts";
+import { coalesceAdjacentWarnings } from "../navigation/warningGeometry.ts";
 import { RoutingError } from "./openRouteServiceErrors.ts";
 import type { RoutingProfile } from "./provider.ts";
 import { classifySurfaceCode, type SurfaceClassification } from "./surfaceCodes.ts";
@@ -73,6 +74,17 @@ function pushSurfaceWarning(
   });
 }
 
+/** A point index's route distance, falling back to totalDistanceMetres for
+ * a malformed or out-of-range index — the one safe conversion every
+ * extra_info range (surface, waytype, waycategory) is built from. */
+function distanceAtPointIndex(
+  points: readonly RoutePoint[],
+  totalDistanceMetres: number,
+  pointIndex: number,
+): number {
+  return points[pointIndex]?.distanceFromStartMetres ?? totalDistanceMetres;
+}
+
 interface ClassifiedRange {
   start: number;
   end: number;
@@ -127,16 +139,16 @@ function buildSurfaceSummaryAndWarnings(
     };
   }
 
-  const distanceAt = (pointIndex: number): number =>
-    points[pointIndex]?.distanceFromStartMetres ?? totalDistanceMetres;
-
   const sorted = [...values].sort((a, b) => a[0] - b[0]);
   const ranges: ClassifiedRange[] = [];
   let cursor = 0;
 
   for (const [startIndex, endIndex, valueCode] of sorted) {
-    const rawStart = distanceAt(startIndex);
-    const rawEnd = Math.max(rawStart, distanceAt(endIndex));
+    const rawStart = distanceAtPointIndex(points, totalDistanceMetres, startIndex);
+    const rawEnd = Math.max(
+      rawStart,
+      distanceAtPointIndex(points, totalDistanceMetres, endIndex),
+    );
     const start = rawStart - cursor <= GAP_TOLERANCE_METRES ? cursor : rawStart;
     const end = Math.max(start, rawEnd);
     // Wholly covered by an earlier-sorted range (or a degenerate/
@@ -202,6 +214,112 @@ function buildSurfaceSummaryAndWarnings(
   };
 }
 
+/** Raw (pre-cursor-clamp) distance range for an extra_info point-index
+ * triple, using the same safe out-of-range fallback as every other
+ * index→distance conversion in this file. Returns null for a degenerate
+ * (zero or negative length) range rather than a range whose end precedes
+ * its start. */
+function convertIndexRangeToDistanceRange(
+  points: readonly RoutePoint[],
+  totalDistanceMetres: number,
+  startIndex: number,
+  endIndex: number,
+): { start: number; end: number } | null {
+  const start = distanceAtPointIndex(points, totalDistanceMetres, startIndex);
+  const end = Math.max(
+    start,
+    distanceAtPointIndex(points, totalDistanceMetres, endIndex),
+  );
+  return end > start ? { start, end } : null;
+}
+
+// ORS waytype codes this project acts on — see
+// https://giscience.github.io/openrouteservice/api-reference/endpoints/directions/extra-info/waytype
+const WAYTYPE_STEPS = 8;
+const WAYTYPE_FERRY = 9;
+const WAYTYPE_CONSTRUCTION = 10;
+
+// ORS waycategory is a bit field — see
+// https://giscience.github.io/openrouteservice/api-reference/endpoints/directions/extra-info/waycategory
+const WAYCATEGORY_BIT_STEPS = 4;
+const WAYCATEGORY_BIT_FERRY = 8;
+const WAYCATEGORY_BIT_FORD = 16;
+
+const STRUCTURAL_WARNING_MESSAGES: Record<"steps" | "ferry" | "ford" | "other", string> =
+  {
+    steps: "Route includes steps.",
+    ferry: "Route includes a ferry.",
+    ford: "Route includes a ford.",
+    other: "Route includes a construction-designated way.",
+  };
+
+type StructuralWarningKind = keyof typeof STRUCTURAL_WARNING_MESSAGES;
+
+function pushStructuralWarning(
+  warnings: RouteWarning[],
+  kind: StructuralWarningKind,
+  range: { start: number; end: number },
+): void {
+  warnings.push({
+    kind,
+    startDistanceMetres: range.start,
+    endDistanceMetres: range.end,
+    message: STRUCTURAL_WARNING_MESSAGES[kind],
+  });
+}
+
+/**
+ * Normalises ORS's waytype/waycategory extra_info into steps/ferry/ford/
+ * other (construction) warnings. These describe evidence the provider
+ * returned for this route, not a live/current-conditions claim and not a
+ * legal-access claim — roadaccessrestrictions is not available for
+ * cycling-road, so no access warning is ever produced here. A composite
+ * waycategory bit field can legitimately yield more than one warning for
+ * the same range; duplicate observations of the same hazard from waytype
+ * and waycategory are merged via coalesceAdjacentWarnings.
+ */
+function buildStructuralWarnings(
+  extras: OrsExtras | undefined,
+  points: readonly RoutePoint[],
+): RouteWarning[] {
+  const totalDistanceMetres = points.at(-1)?.distanceFromStartMetres ?? 0;
+  const warnings: RouteWarning[] = [];
+
+  for (const [startIndex, endIndex, rawValue] of extras?.waytype?.values ?? []) {
+    if (!Number.isInteger(rawValue)) continue;
+    const range = convertIndexRangeToDistanceRange(
+      points,
+      totalDistanceMetres,
+      startIndex,
+      endIndex,
+    );
+    if (!range) continue;
+    if (rawValue === WAYTYPE_STEPS) pushStructuralWarning(warnings, "steps", range);
+    else if (rawValue === WAYTYPE_FERRY) pushStructuralWarning(warnings, "ferry", range);
+    else if (rawValue === WAYTYPE_CONSTRUCTION)
+      pushStructuralWarning(warnings, "other", range);
+  }
+
+  for (const [startIndex, endIndex, rawValue] of extras?.waycategory?.values ?? []) {
+    if (!Number.isInteger(rawValue) || rawValue === 0) continue;
+    const range = convertIndexRangeToDistanceRange(
+      points,
+      totalDistanceMetres,
+      startIndex,
+      endIndex,
+    );
+    if (!range) continue;
+    if ((rawValue & WAYCATEGORY_BIT_STEPS) !== 0)
+      pushStructuralWarning(warnings, "steps", range);
+    if ((rawValue & WAYCATEGORY_BIT_FERRY) !== 0)
+      pushStructuralWarning(warnings, "ferry", range);
+    if ((rawValue & WAYCATEGORY_BIT_FORD) !== 0)
+      pushStructuralWarning(warnings, "ford", range);
+  }
+
+  return coalesceAdjacentWarnings(warnings);
+}
+
 /**
  * Normalises a raw OpenRouteService directions (geojson) response into
  * this project's provider-independent PlannedRoute. Reuses the project's
@@ -231,9 +349,13 @@ export function normalizeOpenRouteServiceRoute(
   const { points, distanceMetres } = normalizeGpxPoints(rawPoints);
   const { ascentMetres, descentMetres } = analyzeElevation(points);
   const manoeuvres = buildManoeuvres(feature.properties.segments, points);
-  const { surfaceSummary, warnings } = buildSurfaceSummaryAndWarnings(
+  const { surfaceSummary, warnings: surfaceWarnings } = buildSurfaceSummaryAndWarnings(
     feature.properties.extras,
     points,
+  );
+  const structuralWarnings = buildStructuralWarnings(feature.properties.extras, points);
+  const warnings = [...surfaceWarnings, ...structuralWarnings].sort(
+    (a, b) => a.startDistanceMetres - b.startDistanceMetres,
   );
 
   return {
