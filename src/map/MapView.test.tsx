@@ -95,8 +95,9 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
   const setCameraSpy = vi.fn();
   const addLineLayerSpy = vi.fn();
   const queryTopWarningFeatureAtSpy = vi.fn((): WarningFeatureHit | null => null);
-  const setMarkersSpy: ReturnType<typeof vi.fn<(markers: readonly MapMarkerSpec[]) => void>> =
-    vi.fn();
+  const setMarkersSpy: ReturnType<
+    typeof vi.fn<(markers: readonly MapMarkerSpec[]) => void>
+  > = vi.fn();
   const constructedStyles: CreateMapOptions["style"][] = [];
 
   const factory: MapFactory = ({ style }) => {

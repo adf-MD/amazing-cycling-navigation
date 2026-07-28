@@ -1314,9 +1314,8 @@ describe("PlanningScreen", () => {
     const map = createMockMapFactory();
     const route = buildRoute();
     const legAwareAdapter = buildLegAwareResolvedAdapter(route);
-    const calculateRouteSpy = vi.fn(
-      (waypoints: Coordinate[]): Promise<PlannedRoute> =>
-        legAwareAdapter.calculateRoute(waypoints, { profile: "cycling-road" }),
+    const calculateRouteSpy = vi.fn((waypoints: Coordinate[]): Promise<PlannedRoute> =>
+      legAwareAdapter.calculateRoute(waypoints, { profile: "cycling-road" }),
     );
     render(
       <PlanningScreen
