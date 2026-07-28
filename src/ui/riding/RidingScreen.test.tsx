@@ -13,6 +13,7 @@ import type { Clock } from "../../platform/clock.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
 import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry.ts";
+import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
 import { OFF_ROUTE_BASE_METRES } from "../../navigation/offRoute.ts";
 import { routeTangentBearingDegrees } from "../../navigation/bearing.ts";
 import { FOLLOW_PITCH_DEGREES, NAVIGATION_ZOOM } from "./rideCamera.ts";
@@ -1409,6 +1410,364 @@ describe("RidingScreen", () => {
         "aria-pressed",
         "true",
       );
+    });
+  });
+
+  describe("geolocation retry and follow-location recovery", () => {
+    it("creates a new watch on Try again after an error, and a fresh fix clears the alert and shows live GPS", async () => {
+      const user = userEvent.setup();
+      const fake = buildFakeGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={fake.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      fake.watches[0]?.emitError({ reason: "permission-denied", message: "denied" });
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(/location permission was denied/i);
+
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      expect(fake.watchPositionSpy).toHaveBeenCalledTimes(2);
+
+      fake.watches[1]?.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 6,
+        timestampMs: 2000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(await screen.findByText(/±6 m/)).toBeInTheDocument();
+      expect(screen.getByText(/Live/)).toBeInTheDocument();
+    });
+
+    it("shows the Follow-location and North-up controls again after a fresh fix following Try again", async () => {
+      const user = userEvent.setup();
+      const fake = buildFakeGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={fake.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      fake.watches[0]?.emitError({ reason: "timeout", message: "timed out" });
+      await screen.findByRole("alert");
+      expect(screen.queryByRole("button", { name: "Follow my location" })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "North-up, top-down view" }),
+      ).toBeNull();
+
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      fake.watches[1]?.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 2000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      expect(
+        await screen.findByRole("button", { name: "Follow my location" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "North-up, top-down view" }),
+      ).toBeInTheDocument();
+    });
+
+    it("requests camera follow on Try again and animates to the recovered position only once the fix is genuinely fresh", async () => {
+      const user = userEvent.setup();
+      const fake = buildFakeGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={fake.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      fake.watches[0]?.emitError({
+        reason: "position-unavailable",
+        message: "unavailable",
+      });
+      await screen.findByRole("alert");
+
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      // Following was requested but no fresh fix has arrived yet — must
+      // not animate to a stale/absent position as though it were fresh.
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
+
+      fake.watches[1]?.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 2000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledWith(
+          pointAt(0),
+          NAVIGATION_ZOOM,
+          expectedBearingAt(0),
+          FOLLOW_PITCH_DEGREES,
+          { animate: true, followOffset: true },
+        );
+      });
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    it("a fix from the pre-retry watch after Try again produces no visible change", async () => {
+      const user = userEvent.setup();
+      const fake = buildFakeGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={fake.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      fake.watches[0]?.emitError({ reason: "timeout", message: "timed out" });
+      await screen.findByRole("alert");
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+
+      fake.watches[0]?.emitFix({
+        coordinate: pointAt(3),
+        accuracyMetres: 5,
+        timestampMs: 1500,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      // The obsolete watch's fix must not surface — the replacement watch
+      // is still waiting, and the error alert must not have been affected
+      // by it either.
+      expect(screen.getByText(/waiting for a gps fix/i)).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+
+    it("manual map interaction after retry-recovery pauses follow, and Follow resumes it", async () => {
+      const user = userEvent.setup();
+      const fake = buildFakeGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={fake.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      fake.watches[0]?.emitError({ reason: "timeout", message: "timed out" });
+      await screen.findByRole("alert");
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      fake.watches[1]?.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 2000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+
+      map.triggerUserCameraInteraction();
+      const followButton = await screen.findByRole("button", {
+        name: "Follow my location",
+      });
+      expect(followButton).toHaveAttribute("aria-pressed", "false");
+      expect(await screen.findByText("Map follow paused.")).toBeInTheDocument();
+
+      // Position keeps tracking while free, so the rider has moved on by
+      // the time they press follow again — proves the button recentres
+      // to the latest position, not a stale cached one (and a genuinely
+      // different target, since MapView deduplicates identical
+      // consecutive camera commands).
+      fake.watches[1]?.emitFix({
+        coordinate: pointAt(5),
+        accuracyMetres: 5,
+        timestampMs: 3000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await user.click(followButton);
+      expect(followButton).toHaveAttribute("aria-pressed", "true");
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    it("north-up works normally once recovered from a retry", async () => {
+      const user = userEvent.setup();
+      const fake = buildFakeGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={fake.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      fake.watches[0]?.emitError({ reason: "timeout", message: "timed out" });
+      await screen.findByRole("alert");
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      fake.watches[1]?.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 2000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+
+      await user.click(screen.getByRole("button", { name: "North-up, top-down view" }));
+
+      expect(map.setCameraSpy).toHaveBeenLastCalledWith(null, null, 0, 0, {
+        animate: true,
+        followOffset: false,
+      });
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+
+    it("the retained fix shows as Stale, not Live, between Try again and the fresh fix", async () => {
+      const user = userEvent.setup();
+      const fake = buildFakeGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={fake.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      fake.watches[0]?.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await screen.findByText(/Live/);
+
+      fake.watches[0]?.emitError({ reason: "timeout", message: "timed out" });
+      await screen.findByRole("alert");
+      expect(screen.getByText(/Stale/)).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      // Still the same retained fix, still stale — no fresh fix yet.
+      expect(screen.getByText(/Stale/)).toBeInTheDocument();
+
+      fake.watches[1]?.emitFix({
+        coordinate: pointAt(1),
+        accuracyMetres: 5,
+        timestampMs: 3000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      expect(await screen.findByText(/Live/)).toBeInTheDocument();
+    });
+
+    it("route progress, off-route status and elevation-view selection survive error, retry and recovery unchanged", async () => {
+      const user = userEvent.setup();
+      const fake = buildFakeGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={fake.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      fake.watches[0]?.emitFix({
+        coordinate: pointAt(5),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await screen.findByText("On route");
+      await user.click(screen.getByRole("button", { name: "2 km" }));
+      const remainingBefore = screen.getByText(/Remaining:/).textContent;
+
+      fake.watches[0]?.emitError({ reason: "timeout", message: "timed out" });
+      await screen.findByRole("alert");
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      fake.watches[1]?.emitFix({
+        coordinate: pointAt(5),
+        accuracyMetres: 5,
+        timestampMs: 3000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByRole("alert")).toBeNull();
+      });
+      expect(screen.getByText("On route")).toBeInTheDocument();
+      expect(screen.getByText(/Remaining:/).textContent).toBe(remainingBefore);
+      expect(screen.getByRole("button", { name: "2 km" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    it("a watch that errors then later succeeds on its own recovers end-to-end, without a Try again tap", async () => {
+      const user = userEvent.setup();
+      const fake = buildFakeGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={fake.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      fake.watches[0]?.emitError({ reason: "timeout", message: "timed out" });
+      await screen.findByRole("alert");
+      expect(screen.queryByRole("button", { name: "Follow my location" })).toBeNull();
+
+      fake.watches[0]?.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 2000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      expect(
+        await screen.findByRole("button", { name: "Follow my location" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(fake.watchPositionSpy).toHaveBeenCalledOnce();
     });
   });
 });

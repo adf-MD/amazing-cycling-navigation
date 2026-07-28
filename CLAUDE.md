@@ -168,6 +168,7 @@ Improve these types as implementation knowledge grows, but preserve provider ind
 - Design for road-bike speeds and brief glances: show a high-contrast route, current location, GPS accuracy, completed portion, remaining portion, distance remaining, off-route state, and upcoming elevation with minimal interaction.
 - Offer upcoming-elevation windows of 2 km, 5 km and 10 km, defaulting to 5 km.
 - Always distinguish a stale fix from a fresh one and show fix age when relevant.
+- After a location error, Try again must reactivate or replace the location watch and request camera follow. Once a fresh fix is accepted, the error clears, geolocation status returns to watching, and the Follow-location and north-up controls reappear automatically, without reopening or restarting the route. A location error preserves the last known fix as stale rather than discarding route progress or resetting the camera to overview.
 - Project each accepted GPS fix onto plausible route segments.
 - Preserve progress continuity at self-intersections and out-and-back sections. Do not simply choose the globally nearest segment when that would jump implausibly along the route.
 - Base off-route classification on both lateral distance and reported GPS accuracy. Require repeated evidence before showing a strong off-route warning.
@@ -260,19 +261,13 @@ Implement in milestones and keep each milestone deployable:
 1. **Foundation**: static GitHub Pages deployment, installable PWA shell, IndexedDB, route domain model, diagnostics.
 2. **GPX Riding core**: import, validation, map route, elevation profile, live visible-page location, projection, progress, off-route state, persistence, suspension recovery.
 3. **Planning**: waypoint editing, `cycling-road` provider adapter, paved/unknown-surface analysis, route statistics, elevation, local save, GPX export.
-4. **Riding enhancements**: trusted next manoeuvre with road-speed-appropriate advance display, distance to turn, gradient colouring, simple elevation/climb segments, optional wake-lock. A first slice of this milestone is implemented: a selectable Full/2 km/5 km/10 km elevation view, with the rolling 2/5/10 km windows correctly rebased so the rider's position is the exact left edge of the chart (previously compressed towards the right edge late in a route), a Full-profile view showing the whole route with a route-progress marker that distinguishes fresh from stale (restored) fixes and freezes at the last reliable position while strongly off-route, and persistence of the selected view across suspension/reload. Still outstanding: trusted next manoeuvre, distance to turn, gradient colouring, elevation/climb segments, and optional wake-lock — see "Future backlog" below.
+4. **Riding enhancements**: trusted next manoeuvre with road-speed-appropriate advance display, distance to turn, gradient colouring, simple elevation/climb segments, optional wake-lock. A first slice of this milestone is implemented: a selectable Full/2 km/5 km/10 km elevation view, with the rolling 2/5/10 km windows correctly rebased so the rider's position is the exact left edge of the chart (previously compressed towards the right edge late in a route), a Full-profile view showing the whole route with a route-progress marker that distinguishes fresh from stale (restored) fixes and freezes at the last reliable position while strongly off-route, and persistence of the selected view across suspension/reload. A second slice fixes a location-watch lifecycle bug where, after an initial geolocation error, tapping Try again could leave the Follow-location and north-up controls permanently hidden even once a valid GPS fix arrived: the watch lifecycle now uses an explicit generation token, a retry reliably disposes any obsolete watch and creates a working one, a fresh accepted fix always restores geolocation status to watching and clears the error, and callbacks from a superseded watch are structurally ignored. Still outstanding: trusted next manoeuvre, distance to turn, gradient colouring, elevation/climb segments, and optional wake-lock — see "Future backlog" below.
 
 Do not start a later milestone by weakening or bypassing earlier reliability requirements.
 
 ## Future backlog
 
 The following items are approved directions or confirmed bugs for future work. They are recorded here for continuity across sessions and must not be implemented until a future slice explicitly scopes them in.
-
-### Highest priority bug
-
-1. **Location retry/follow recovery**
-   - Reproduce the case where geolocation initially fails, Try again succeeds, but follow-location controls do not return.
-   - Required eventual acceptance: fresh fix, map follows, north-up and follow buttons present, manual pan pauses follow, Follow resumes.
 
 ### Planning-map usability
 

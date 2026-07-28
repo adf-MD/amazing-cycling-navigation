@@ -115,46 +115,122 @@ export function useRideNavigation(
     useState<StoredCameraState | null>(null);
 
   const clearWatchRef = useRef<(() => void) | null>(null);
+  // Bumped whenever a genuinely new native watch is created (start()) or
+  // the current one is explicitly torn down (stop(), unmount). Callbacks
+  // registered against a specific watch close over the generation they
+  // were created with and become permanent no-ops once it no longer
+  // matches — this rejects stale/superseded-watch callbacks structurally,
+  // regardless of timing, rather than relying on clearWatchRef alone.
+  const watchGenerationRef = useRef(0);
+  // Mirrors geolocationStatus synchronously. start()'s reentry guard and
+  // the visibilitychange/pageshow resume gate below must read this, not
+  // the reactive geolocationStatus closure value: stop() immediately
+  // followed by start() (see resumeIfWatching) would otherwise see a
+  // stale, not-yet-flushed status and silently no-op the restart, since
+  // React state updates aren't applied mid-callback.
+  const statusRef = useRef<GeolocationWatchStatus>("idle");
   const startedAtRef = useRef<string | null>(null);
   const routePoints = route.points;
+
+  const setStatus = useCallback((next: GeolocationWatchStatus) => {
+    statusRef.current = next;
+    setGeolocationStatus(next);
+  }, []);
 
   // Fix processing happens directly in the geolocation callback — an
   // external-system subscription calling setState when new data arrives
   // — rather than in a useEffect reacting to a fix value, which would
-  // cause an extra cascading render for every single fix.
+  // cause an extra cascading render for every single fix. Every accepted
+  // fix restores "watching" and clears any error, whether it's the very
+  // first fix, an ordinary in-progress one, or one that self-heals a
+  // still-live watch after a transient error (see handleError's policy).
   const handleFix = useCallback(
     (fix: GeolocationFix) => {
       startedAtRef.current ??= new Date(clock.now()).toISOString();
       setCurrentFix(fix);
       setIsStale(false);
+      setStatus("watching");
+      setGeolocationError(null);
       setCoreState(
         (previous) =>
           processFix(routePoints, fix.coordinate, fix.accuracyMetres, previous).coreState,
       );
     },
-    [clock, routePoints],
+    [clock, routePoints, setStatus],
   );
 
-  const handleError = useCallback((nextError: GeolocationError) => {
-    setGeolocationError(nextError);
-    setGeolocationStatus("error");
-  }, []);
+  // Chosen policy: an error does NOT tear down the underlying native
+  // watch. The same watchPosition registration can legitimately keep
+  // delivering fixes after an error (see GeolocationSource's contract),
+  // so leaving it live lets a transient failure self-heal automatically
+  // via handleFix above. start() (an explicit Try again) still gives the
+  // rider a reliable, explicit dispose-and-recreate path regardless of
+  // whether the old watch would have recovered on its own.
+  const handleError = useCallback(
+    (nextError: GeolocationError) => {
+      setGeolocationError(nextError);
+      setIsStale(true);
+      setStatus("error");
+    },
+    [setStatus],
+  );
 
   const start = useCallback(() => {
-    if (clearWatchRef.current) return;
-    setGeolocationStatus("watching");
+    // Reads the synchronously-updated ref, not the batched React state —
+    // this is what makes stop(); start() (resumeIfWatching) and rapid
+    // repeated taps both work correctly. Proceeds from "idle" (first
+    // start) and from "error" (Try again); no-ops only while already
+    // "watching", so duplicate taps never create a second concurrent
+    // watch.
+    if (statusRef.current === "watching") return;
+
+    // Dispose whatever watch is currently registered — a no-op when
+    // idle, and the explicit "dispose the obsolete/error-state watch"
+    // Try again needs when recovering from an error (see handleError's
+    // policy above, which leaves that watch alive until this point).
+    clearWatchRef.current?.();
+
+    const generation = watchGenerationRef.current + 1;
+    watchGenerationRef.current = generation;
+    setStatus("watching");
     setGeolocationError(null);
-    clearWatchRef.current = geolocationSource.watchPosition(handleFix, handleError);
-  }, [geolocationSource, handleFix, handleError]);
+
+    const clear = geolocationSource.watchPosition(
+      (fix) => {
+        if (watchGenerationRef.current !== generation) return;
+        handleFix(fix);
+      },
+      (error) => {
+        if (watchGenerationRef.current !== generation) return;
+        handleError(error);
+      },
+    );
+
+    // Defends the synchronous-callback race: if this generation was
+    // already superseded before watchPosition returned its cleanup (e.g.
+    // something else invalidated it reentrantly), don't resurrect it by
+    // storing the cleanup as if it were still current — dispose it
+    // immediately instead.
+    if (watchGenerationRef.current !== generation) {
+      clear();
+      return;
+    }
+    clearWatchRef.current = clear;
+  }, [geolocationSource, handleFix, handleError, setStatus]);
 
   const stop = useCallback(() => {
+    // Invalidate any in-flight callback from the watch being stopped
+    // before disposing it, so a queued callback that the source's own
+    // cleanup doesn't synchronously prevent is still rejected.
+    watchGenerationRef.current += 1;
     clearWatchRef.current?.();
     clearWatchRef.current = null;
-    setGeolocationStatus("idle");
-  }, []);
+    setStatus("idle");
+  }, [setStatus]);
 
   useEffect(() => {
     return () => {
+      watchGenerationRef.current += 1;
       clearWatchRef.current?.();
     };
   }, []);
@@ -210,7 +286,9 @@ export function useRideNavigation(
   // matching the rule that geolocation is never requested at page load.
   useEffect(() => {
     function resumeIfWatching() {
-      if (geolocationStatus !== "watching") return;
+      // Ref read, not the closed-over geolocationStatus state — see the
+      // refs' doc comment above for why this matters here.
+      if (statusRef.current !== "watching") return;
       setIsStale(true);
       stop();
       start();
@@ -234,7 +312,7 @@ export function useRideNavigation(
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pageshow", handlePageShow);
     };
-  }, [geolocationStatus, start, stop]);
+  }, [start, stop]);
 
   const matchedDistanceFromStartMetres =
     coreState.lastMatch?.distanceFromStartMetres ?? null;
