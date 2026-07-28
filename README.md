@@ -35,8 +35,12 @@ unsuitable surface warning now shows the specific ORS surface category
 only the broad paved/questionable/unsuitable bucket — see "Surface
 classification" under
 [Documented algorithms and thresholds](#documented-algorithms-and-thresholds)
-below. Still deferred within Milestone 3: the road-speed-appropriate
-next-manoeuvre display planned for Milestone 4.
+below. Planning's map now frames a genuinely fresh session in an
+approximately 50 × 50 km box around the rider's approximate location
+(replacing an earlier fixed zoom-6 point jump), offers an explicit
+"Locate me" control with loading/failure/retry states, and a north-up/top-down
+control mirroring Riding's own. Still deferred within Milestone 3: the
+road-speed-appropriate next-manoeuvre display planned for Milestone 4.
 
 A first slice of **Milestone 4 (Riding enhancements)** is also implemented:
 Riding's elevation chart now offers a **Full / 2 km / 5 km / 10 km** selector.

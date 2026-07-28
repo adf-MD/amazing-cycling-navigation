@@ -164,3 +164,38 @@ header h1 {
 .route-warning-detail p {
   margin: 0.15rem 0;
 }
+
+/* Planning's own two map controls (Locate me, north-up) — top-right,
+ * clear of the centred crosshair, the bottom-centre "Add waypoint here"
+ * button, and .map-attribution's bottom-left corner. Riding's equivalent
+ * controls (RidingScreen.tsx) stay inline/bottom-right and are
+ * intentionally left untouched here — these two Planning buttons are the
+ * only ones sharing this styling, so a small dedicated class replaces
+ * duplicating Riding's inline pressed-state ternary a third time. */
+.planning-map-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.planning-map-control {
+  min-width: 48px;
+  min-height: 48px;
+  border-radius: 50%;
+  border: 2px solid var(--colour-text);
+  background: var(--colour-bg);
+  color: var(--colour-text);
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.planning-map-control.is-pressed {
+  border: none;
+  background: var(--colour-accent);
+  color: #ffffff;
+}

@@ -194,6 +194,7 @@ Improve these types as implementation knowledge grows, but preserve provider ind
 - Show route distance, ascent, descent, paved distance or proportion, questionable distance, and unknown-surface distance before export. Estimated duration is secondary for exercise and leisure rides.
 - Make questionable, unsuitable and unknown segments inspectable on the map. Never present incomplete map data as a guarantee that a route is paved or legally accessible.
 - Keep ferry avoidance configurable instead of silently rejecting all ferries.
+- A genuinely fresh Planning session (no restored draft, no waypoints yet) frames an approximately 50 × 50 km area around the rider's approximate location. A restored draft or any existing waypoint always takes precedence, and this automatic framing is skipped entirely in that case. An explicit "Locate me" control re-centres the same way on demand, with its own visible locating/failure/retry state, and never overrides in-progress waypoint editing. A north-up/top-down control mirrors Riding's semantics (resets bearing and pitch to 0° without recentring, changing zoom, or introducing following mode or camera tilt).
 
 The first provider adapter should target openrouteservice with `cycling-road`, but provider-specific code must remain isolated. The API key is user-supplied and local. Handle `401`, `403`, `429`, network failures, cancellation, malformed responses, and quota headers where available. Do not call the provider continuously while a waypoint is being dragged.
 
@@ -260,7 +261,7 @@ Implement in milestones and keep each milestone deployable:
 
 1. **Foundation**: static GitHub Pages deployment, installable PWA shell, IndexedDB, route domain model, diagnostics.
 2. **GPX Riding core**: import, validation, map route, elevation profile, live visible-page location, projection, progress, off-route state, persistence, suspension recovery.
-3. **Planning**: waypoint editing, `cycling-road` provider adapter, paved/unknown-surface analysis, route statistics, elevation, local save, GPX export.
+3. **Planning**: waypoint editing, `cycling-road` provider adapter, paved/unknown-surface analysis, route statistics, elevation, local save, GPX export. A first slice of Planning-map usability is implemented: a genuinely fresh session frames an approximately 50 × 50 km area around the rider's approximate location instead of the earlier fixed zoom-6 point jump, an explicit "Locate me" control re-centres on demand with its own loading/failure/retry state, and a north-up/top-down control mirrors Riding's own semantics. Still outstanding within this area: numbered waypoint markers and moving the "Add waypoint here" callout away from the crosshair — see "Future backlog" below.
 4. **Riding enhancements**: trusted next manoeuvre with road-speed-appropriate advance display, distance to turn, gradient colouring, simple elevation/climb segments, optional wake-lock. A first slice of this milestone is implemented: a selectable Full/2 km/5 km/10 km elevation view, with the rolling 2/5/10 km windows correctly rebased so the rider's position is the exact left edge of the chart (previously compressed towards the right edge late in a route), a Full-profile view showing the whole route with a route-progress marker that distinguishes fresh from stale (restored) fixes and freezes at the last reliable position while strongly off-route, and persistence of the selected view across suspension/reload. A second slice fixes a location-watch lifecycle bug where, after an initial geolocation error, tapping Try again could leave the Follow-location and north-up controls permanently hidden even once a valid GPS fix arrived: the watch lifecycle now uses an explicit generation token, a retry reliably disposes any obsolete watch and creates a working one, a fresh accepted fix always restores geolocation status to watching and clears the error, and callbacks from a superseded watch are structurally ignored. Still outstanding: trusted next manoeuvre, distance to turn, gradient colouring, elevation/climb segments, and optional wake-lock — see "Future backlog" below.
 
 Do not start a later milestone by weakening or bypassing earlier reliability requirements.
@@ -270,16 +271,6 @@ Do not start a later milestone by weakening or bypassing earlier reliability req
 The following items are approved directions or confirmed bugs for future work. They are recorded here for continuity across sessions and must not be implemented until a future slice explicitly scopes them in.
 
 ### Planning-map usability
-
-2. **Initial Planning location framing**
-   - A fresh empty plan already requests approximate location at zoom 6.
-   - Refine this to fit an approximately 50 × 50 km area around GPS location.
-   - Never override a restored draft or existing waypoints.
-   - Add a manual Locate me action with explicit failure/retry state.
-
-3. **North-up Planning control**
-   - Reuse Riding's north-up/top-down semantics.
-   - Do not introduce follow mode or tilt in Planning.
 
 4. **Numbered waypoint markers**
    - Correspond directly to list order.

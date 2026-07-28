@@ -687,6 +687,105 @@ describe("MapView", () => {
     });
   });
 
+  it("applies a boundsTarget via fitBounds once ready", () => {
+    const mock = createMockMapFactory();
+    render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        boundsTarget={{
+          bounds: { southWest: [-1.7, 53.6], northEast: [-1.3, 54.0] },
+          requestId: "request-1",
+        }}
+      />,
+    );
+
+    mock.triggerLoad();
+
+    expect(mock.fitBoundsSpy).toHaveBeenCalledWith({
+      southWest: [-1.7, 53.6],
+      northEast: [-1.3, 54.0],
+    });
+  });
+
+  it("resizes the map before fitting a boundsTarget's bounds", () => {
+    const mock = createMockMapFactory();
+    // No route points: isolates resize/fitBounds calls to the boundsTarget
+    // effect alone, rather than also counting the route-overview fit's own
+    // resize-then-fitBounds pair.
+    render(
+      <MapView
+        points={[]}
+        mapFactory={mock.factory}
+        boundsTarget={{
+          bounds: { southWest: [-1.7, 53.6], northEast: [-1.3, 54.0] },
+          requestId: "request-1",
+        }}
+      />,
+    );
+
+    mock.triggerLoad();
+
+    expect(mock.resizeSpy).toHaveBeenCalledOnce();
+    expect(mock.fitBoundsSpy).toHaveBeenCalledOnce();
+    expect(firstCallOrder(mock.resizeSpy)).toBeLessThan(
+      firstCallOrder(mock.fitBoundsSpy),
+    );
+  });
+
+  it("does not re-apply a boundsTarget with the same requestId, even as a new object", () => {
+    const mock = createMockMapFactory();
+    const boundsTarget = {
+      bounds: {
+        southWest: [-1.7, 53.6] as Coordinate,
+        northEast: [-1.3, 54.0] as Coordinate,
+      },
+      requestId: "request-1",
+    };
+    const { rerender } = render(
+      <MapView points={[]} mapFactory={mock.factory} boundsTarget={boundsTarget} />,
+    );
+    mock.triggerLoad();
+    expect(mock.fitBoundsSpy).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <MapView
+        points={[]}
+        mapFactory={mock.factory}
+        boundsTarget={{ ...boundsTarget }}
+      />,
+    );
+
+    expect(mock.fitBoundsSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-applies a boundsTarget when only requestId changes, even with identical bounds values", () => {
+    const mock = createMockMapFactory();
+    const bounds = {
+      southWest: [-1.7, 53.6] as Coordinate,
+      northEast: [-1.3, 54.0] as Coordinate,
+    };
+    const { rerender } = render(
+      <MapView
+        points={[]}
+        mapFactory={mock.factory}
+        boundsTarget={{ bounds, requestId: "request-1" }}
+      />,
+    );
+    mock.triggerLoad();
+    expect(mock.fitBoundsSpy).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <MapView
+        points={[]}
+        mapFactory={mock.factory}
+        boundsTarget={{ bounds, requestId: "request-2" }}
+      />,
+    );
+
+    expect(mock.fitBoundsSpy).toHaveBeenCalledTimes(2);
+  });
+
   it("sets the route coordinate-count once real, non-empty route data is submitted", () => {
     const mock = createMockMapFactory();
     render(<MapView points={points} mapFactory={mock.factory} />);
@@ -1139,6 +1238,38 @@ describe("MapView", () => {
       expect(mock.setCameraSpy).toHaveBeenCalledWith([0, 51], 16, 90, 35, {
         animate: true,
         followOffset: true,
+      });
+    });
+
+    it("retry preserves and re-applies a still-current boundsTarget", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={[]}
+          mapFactory={mock.factory}
+          boundsTarget={{
+            bounds: { southWest: [-1.7, 53.6], northEast: [-1.3, 54.0] },
+            requestId: "request-1",
+          }}
+        />,
+      );
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+      expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+      mock.fitBoundsSpy.mockClear();
+
+      act(() => {
+        screen.getByTestId("retry-map-imagery-button").click();
+      });
+      mock.triggerLoad();
+
+      expect(mock.fitBoundsSpy).toHaveBeenCalledWith({
+        southWest: [-1.7, 53.6],
+        northEast: [-1.3, 54.0],
       });
     });
 

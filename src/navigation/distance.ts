@@ -1,7 +1,7 @@
 import type { Coordinate } from "../domain/types.ts";
 
 /** IUGG mean Earth radius, in metres. */
-const EARTH_RADIUS_METRES = 6_371_008.8;
+export const EARTH_RADIUS_METRES = 6_371_008.8;
 
 function toRadians(degrees: number): number {
   return (degrees * Math.PI) / 180;

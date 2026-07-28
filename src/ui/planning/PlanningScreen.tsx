@@ -3,14 +3,18 @@ import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
 import { exportRouteToGpx } from "../../gpx/exportGpx.ts";
 import {
   MapView,
+  type BoundsCameraTarget,
   type CameraTarget,
   type PlanningOverlay,
   type WarningOverlay,
 } from "../../map/MapView.tsx";
 import type { MapFactory } from "../../map/mapAdapter.ts";
+import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
+import { shortestAngularDifferenceDegrees } from "../../navigation/bearing.ts";
 import { coalesceAdjacentWarnings } from "../../navigation/warningGeometry.ts";
 import { getApproximateLocationOnce } from "../../platform/geolocation.ts";
 import { logError } from "../../platform/errorLog.ts";
+import { generateId } from "../../platform/idGenerator.ts";
 import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
 import { OpenRouteServiceAdapter } from "../../routing/openRouteServiceAdapter.ts";
 import type { RoutingProvider } from "../../routing/provider.ts";
@@ -62,11 +66,19 @@ export interface PlanningScreenProps {
  * recalculation, so a rapid burst of edits writes once, not per edit. */
 const DRAFT_DEBOUNCE_MS = 900;
 
-/** Regional/country scale — deliberately not a street-level zoom. Used only
- * to frame a genuinely fresh Planning session around the rider's
- * approximate location; a calculated route reframes the view itself once
- * it exists. */
-const INITIAL_LOCATION_ZOOM = 6;
+/** How close a settled bearing must be to 0° (via
+ * shortestAngularDifferenceDegrees, so the 0°/360° wrap is handled
+ * correctly — e.g. a settled 359.7° is genuinely only 0.3° from north) to
+ * still count as north-up for the control's pressed state. A small
+ * tolerance, not exact equality: Planning has no following mode, so a
+ * manual pinch/rotate gesture released a fraction of a degree off zero is
+ * a real, expected case here, not just a hypothetical one — unlike
+ * Riding's exact-equality isNorthUpTopDown (useRideCamera.ts), which only
+ * ever compares its own commanded value to itself one tick later. */
+const NORTH_UP_BEARING_TOLERANCE_DEGREES = 0.5;
+/** See NORTH_UP_BEARING_TOLERANCE_DEGREES. Pitch never wraps, so a plain
+ * absolute-value comparison is sufficient here. */
+const NORTH_UP_PITCH_TOLERANCE_DEGREES = 0.5;
 
 function buildDefaultAdapter(): RoutingProvider {
   return new OpenRouteServiceAdapter({
@@ -104,8 +116,20 @@ export function PlanningScreen({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [crosshairCoordinate, setCrosshairCoordinate] = useState<Coordinate | null>(null);
   const [isDraftHydrated, setIsDraftHydrated] = useState(false);
-  const [initialCameraTarget, setInitialCameraTarget] = useState<CameraTarget | null>(
+  const [boundsTarget, setBoundsTarget] = useState<BoundsCameraTarget | null>(null);
+  const [northUpCameraTarget, setNorthUpCameraTarget] = useState<CameraTarget | null>(
     null,
+  );
+  // Null until the map's camera has genuinely settled at least once —
+  // deliberately not defaulted to {bearingDegrees: 0, pitchDegrees: 0},
+  // which would make the north-up control report pressed before the map
+  // has ever actually settled.
+  const [settledOrientation, setSettledOrientation] = useState<{
+    bearingDegrees: number;
+    pitchDegrees: number;
+  } | null>(null);
+  const [locateStatus, setLocateStatus] = useState<"idle" | "locating" | "failed">(
+    "idle",
   );
   const [selectedWarningIndex, setSelectedWarningIndex] = useState<number | null>(null);
   // Increments once per map-originated warning selection (including a
@@ -316,11 +340,29 @@ export function PlanningScreen({
     waypointsRef.current = state.present;
   }, [state.present]);
 
+  // Set true the instant the rider manually pans/pinches/rotates/pitches
+  // the map, or explicitly taps Locate me — blocks a still-in-flight
+  // automatic fresh-session framing result from later overriding whatever
+  // the rider has since done themselves. Never reset back to false.
+  // North-up taps deliberately do NOT set this: orientation-only, no
+  // coordinate framing of its own, so it carries no "the rider already
+  // has a view they care about" signal the way a pan or Locate-me tap
+  // does.
+  const hasManualCameraActionRef = useRef(false);
+  // Synchronous double-tap guard for handleLocateMe (see below) — a plain
+  // locateStatus === "locating" check in the handler isn't enough on its
+  // own, since React state updates aren't synchronous.
+  const isLocatingRef = useRef(false);
+
   // Frames a genuinely fresh Planning session (no restored draft, no
-  // waypoints yet) around the rider's approximate location, once — never
-  // re-requested for this component instance, and skipped entirely once
-  // there's already something to show, so it can never fight a restored
-  // draft or waypoints placed before the fix resolves.
+  // waypoints yet) in an approximately 50 × 50 km box around the rider's
+  // approximate location, once — never re-requested for this component
+  // instance, and skipped entirely once there's already something to
+  // show, so it can never fight a restored draft or waypoints placed
+  // before the fix resolves. Silently no-ops on failure (matching this
+  // effect's pre-existing behaviour) — Locate me (see handleLocateMe
+  // below) is the always-available, discoverable explicit recovery path,
+  // and owns its own separate loading/failure UI.
   const hasRequestedInitialLocationRef = useRef(false);
   useEffect(() => {
     if (!isDraftHydrated || hasRequestedInitialLocationRef.current) return;
@@ -328,20 +370,57 @@ export function PlanningScreen({
     if (waypointsRef.current.length > 0) return;
     requestApproximateLocation()
       .then((coordinate) => {
-        if (!coordinate || waypointsRef.current.length > 0) return;
-        setInitialCameraTarget({
-          coordinate,
-          zoom: INITIAL_LOCATION_ZOOM,
-          bearingDegrees: 0,
-          pitchDegrees: 0,
-          animate: false,
-          followOffset: false,
-        });
+        if (!coordinate) return;
+        if (waypointsRef.current.length > 0 || hasManualCameraActionRef.current) return;
+        const bounds = computeLocalAreaBounds(coordinate);
+        if (!bounds) return;
+        setBoundsTarget({ bounds, requestId: generateId() });
       })
       .catch((error: unknown) => {
         logError("planning-initial-location", error);
       });
   }, [isDraftHydrated, requestApproximateLocation]);
+
+  const handleLocateMe = useCallback(() => {
+    if (isLocatingRef.current) return;
+    isLocatingRef.current = true;
+    hasManualCameraActionRef.current = true;
+    setLocateStatus("locating");
+    requestApproximateLocation()
+      .then((coordinate) => {
+        const bounds = coordinate ? computeLocalAreaBounds(coordinate) : null;
+        if (!bounds) {
+          setLocateStatus("failed");
+          return;
+        }
+        setBoundsTarget({ bounds, requestId: generateId() });
+        setLocateStatus("idle");
+      })
+      .catch((error: unknown) => {
+        logError("planning-locate-me", error);
+        setLocateStatus("failed");
+      })
+      .finally(() => {
+        isLocatingRef.current = false;
+      });
+  }, [requestApproximateLocation]);
+
+  const handleRequestNorthUp = useCallback(() => {
+    setNorthUpCameraTarget({
+      coordinate: null,
+      zoom: null,
+      bearingDegrees: 0,
+      pitchDegrees: 0,
+      animate: true,
+      followOffset: false,
+    });
+  }, []);
+
+  const isNorthUpTopDown =
+    settledOrientation !== null &&
+    Math.abs(shortestAngularDifferenceDegrees(0, settledOrientation.bearingDegrees)) <=
+      NORTH_UP_BEARING_TOLERANCE_DEGREES &&
+    Math.abs(settledOrientation.pitchDegrees) <= NORTH_UP_PITCH_TOLERANCE_DEGREES;
 
   // --- Map-tap event-priority policy (implemented) ---
   // A genuine map tap (never a drag-then-release — see mapAdapter.ts's
@@ -488,9 +567,17 @@ export function PlanningScreen({
           mapFactory={mapFactory}
           planningOverlay={planningOverlay}
           warningOverlay={warningOverlay}
-          cameraTarget={initialCameraTarget}
+          cameraTarget={northUpCameraTarget}
+          boundsTarget={boundsTarget}
+          onUserCameraInteraction={() => {
+            hasManualCameraActionRef.current = true;
+          }}
           onCameraSettled={(camera) => {
             setCrosshairCoordinate(camera.coordinate);
+            setSettledOrientation({
+              bearingDegrees: camera.bearingDegrees,
+              pitchDegrees: camera.pitchDegrees,
+            });
           }}
         />
         <div
@@ -530,6 +617,29 @@ export function PlanningScreen({
         >
           {describeCrosshairAction(interactionMode, state.present)}
         </button>
+        <div className="planning-map-controls">
+          <button
+            type="button"
+            className="planning-map-control"
+            onClick={handleLocateMe}
+            disabled={locateStatus === "locating"}
+            aria-label="Locate me"
+          >
+            {locateStatus === "locating" ? "Locating…" : "⌖"}
+          </button>
+          <button
+            type="button"
+            className={`planning-map-control${isNorthUpTopDown ? " is-pressed" : ""}`}
+            onClick={handleRequestNorthUp}
+            aria-label="North-up, top-down view"
+            aria-pressed={isNorthUpTopDown}
+          >
+            N
+          </button>
+        </div>
+        {locateStatus === "failed" ? (
+          <p role="status">Your location could not be determined.</p>
+        ) : null}
         {selectedWarningIndex !== null ? (
           <p role="status">Clear the selected warning to place or move a waypoint.</p>
         ) : null}

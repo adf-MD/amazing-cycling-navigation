@@ -17,6 +17,7 @@ import {
   EMPTY_FEATURE_COLLECTION,
   isLoopRoute,
   splitRouteAtDistance,
+  type BoundingBox,
 } from "./routeLayer.ts";
 import {
   buildUnroutedPreviewFeatureCollection,
@@ -165,6 +166,19 @@ export interface CameraTarget {
   followOffset: boolean;
 }
 
+/** An explicit "frame this area" camera command — Planning's fresh-session
+ * auto-framing and Locate-me. Distinct from CameraTarget: deduped by
+ * `requestId`, not by value (see the effect below), so an identical
+ * repeated request (e.g. Locate me tapped twice at an unchanged
+ * coordinate) still re-executes — each tap is an explicit user command to
+ * re-apply, not a value to reconcile against the last-applied one. */
+export interface BoundsCameraTarget {
+  bounds: BoundingBox;
+  /** Distinct per issuance — generate via src/platform/idGenerator.ts's
+   * generateId(). */
+  requestId: string;
+}
+
 /** Planning's map chrome (waypoint markers, dashed unrouted-preview line,
  * tap-to-place), grouped into one prop rather than several unrelated
  * ones. Never used by Riding mode — when absent, the underlying sources
@@ -222,6 +236,11 @@ export interface MapViewProps {
    * by the riding camera controller (useRideCamera) to drive "following"
    * or a one-time restore of a previously free-panned position. */
   cameraTarget?: CameraTarget | null;
+  /** An explicit "frame this area" request — see BoundsCameraTarget.
+   * Unlike cameraTarget, a repeated request with the same bounds still
+   * re-applies (deduped by requestId, not value). Planning-only; Riding
+   * never supplies this. */
+  boundsTarget?: BoundsCameraTarget | null;
   /** Skips the automatic "fit to route" once the map is ready — used when
    * resuming a ride that wasn't in overview mode before suspension, so
    * the restored following/free camera isn't briefly overridden by a
@@ -270,6 +289,7 @@ export function MapView({
   tileSource = DEFAULT_TILE_SOURCE,
   mapFactory = createMapLibreMap,
   cameraTarget = null,
+  boundsTarget = null,
   suppressInitialOverviewFit = false,
   onUserCameraInteraction,
   onCameraSettled,
@@ -310,6 +330,9 @@ export function MapView({
     animate: boolean;
     followOffset: boolean;
   } | null>(null);
+  // Deduped by requestId, not by value — see the BoundsCameraTarget
+  // effect below and its own doc comment.
+  const lastAppliedBoundsRequestIdRef = useRef<string | null>(null);
   const [loadState, setLoadState] = useState<MapLoadState>("loading");
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
@@ -364,6 +387,7 @@ export function MapView({
     setCameraCenter(null);
     setStyleStructurallyReady(false);
     lastAppliedCameraTargetRef.current = null;
+    lastAppliedBoundsRequestIdRef.current = null;
 
     function recordAttempt(category: MapDiagnosticCategory, justResumed = false): void {
       recordMapAttempt({
@@ -806,6 +830,23 @@ export function MapView({
       { animate: cameraTarget.animate, followOffset: cameraTarget.followOffset },
     );
   }, [cameraTarget, styleStructurallyReady]);
+
+  // Executes an explicit "frame this area" request (Planning's
+  // fresh-session auto-framing and Locate-me) — deduped by requestId, not
+  // by value, unlike cameraTarget above, so a repeated identical request
+  // still re-executes. Resizes first, matching the route-overview fit
+  // above, since the container's on-screen size can settle late (iOS
+  // Safari/PWA chrome). fitBounds always resets bearing/pitch to 0 (see
+  // mapAdapter.ts), so this satisfies north-up/top-down for free.
+  useEffect(() => {
+    if (!styleStructurallyReady || !boundsTarget) return;
+    if (lastAppliedBoundsRequestIdRef.current === boundsTarget.requestId) return;
+    lastAppliedBoundsRequestIdRef.current = boundsTarget.requestId;
+    mapRef.current?.resize();
+    mapRef.current?.fitBounds(boundsTarget.bounds);
+    const center = mapRef.current?.getCenter();
+    if (center) setCameraCenter(center);
+  }, [boundsTarget, styleStructurallyReady]);
 
   useEffect(() => {
     if (!styleStructurallyReady) return;

@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { PlanningScreen } from "./PlanningScreen.tsx";
 import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
+import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
 import { cumulativeDistancesMetres } from "../../navigation/distance.ts";
 import { RoutingError } from "../../routing/openRouteServiceErrors.ts";
 import type { RoutingProvider } from "../../routing/provider.ts";
@@ -16,7 +17,13 @@ import { saveProviderKey } from "../../storage/providerKeyRepository.ts";
 interface MockMapHandle {
   factory: MapFactory;
   triggerLoad: () => void;
-  triggerCameraSettled: (coordinate: Coordinate) => void;
+  triggerCameraSettled: (
+    coordinate: Coordinate,
+    options?: { zoom?: number; bearingDegrees?: number; pitchDegrees?: number },
+  ) => void;
+  /** Simulates a genuine user gesture (drag/pinch/rotate/pitch) — never
+   * fired for MapView's own programmatic camera moves. */
+  triggerUserCameraInteraction: () => void;
   triggerMapTap: (coordinate: Coordinate) => void;
   /** Configures what the next (and subsequent) queryTopWarningFeatureAt
    * calls report as hit — null (the default) means every tap misses every
@@ -40,6 +47,7 @@ function createMockMapFactory(): MockMapHandle {
       }) => void)
     | undefined;
   let mapTapListener: ((coordinate: Coordinate) => void) | undefined;
+  let userCameraInteractionListener: (() => void) | undefined;
   let warningHitIndex: number | null = null;
   const setCameraSpy = vi.fn();
   const fitBoundsSpy = vi.fn();
@@ -71,7 +79,9 @@ function createMockMapFactory(): MockMapHandle {
       fitBounds: fitBoundsSpy,
       getCenter: () => [0, 51],
       getZoom: () => 14,
-      onUserCameraInteraction: () => undefined,
+      onUserCameraInteraction: (listener) => {
+        userCameraInteractionListener = listener;
+      },
       onCameraSettled: (listener) => {
         cameraSettledListener = listener;
       },
@@ -103,14 +113,19 @@ function createMockMapFactory(): MockMapHandle {
         loadListener?.();
       });
     },
-    triggerCameraSettled: (coordinate) => {
+    triggerCameraSettled: (coordinate, options) => {
       act(() => {
         cameraSettledListener?.({
           coordinate,
-          zoom: 14,
-          bearingDegrees: 0,
-          pitchDegrees: 0,
+          zoom: options?.zoom ?? 14,
+          bearingDegrees: options?.bearingDegrees ?? 0,
+          pitchDegrees: options?.pitchDegrees ?? 0,
         });
+      });
+    },
+    triggerUserCameraInteraction: () => {
+      act(() => {
+        userCameraInteractionListener?.();
       });
     },
     triggerMapTap: (coordinate) => {
@@ -607,7 +622,7 @@ describe("PlanningScreen", () => {
     expect(screen.getByText("No waypoints placed yet.")).toBeInTheDocument();
   });
 
-  it("centres a fresh session on an approximate location, at a regional zoom", async () => {
+  it("frames a fresh session in an approximately 50 × 50 km box around the rider's approximate location", async () => {
     const map = createMockMapFactory();
     const requestApproximateLocation = vi.fn().mockResolvedValue([-1.5, 53.8]);
     render(
@@ -619,12 +634,11 @@ describe("PlanningScreen", () => {
     );
     map.triggerLoad();
 
+    const expectedBounds = computeLocalAreaBounds([-1.5, 53.8]);
     await waitFor(() => {
-      expect(map.setCameraSpy).toHaveBeenCalledWith([-1.5, 53.8], 6, 0, 0, {
-        animate: false,
-        followOffset: false,
-      });
+      expect(map.fitBoundsSpy).toHaveBeenCalledWith(expectedBounds);
     });
+    expect(map.setCameraSpy).not.toHaveBeenCalled();
   });
 
   it("does not move the camera when the location request resolves to null", async () => {
@@ -642,7 +656,7 @@ describe("PlanningScreen", () => {
     await waitFor(() => {
       expect(requestApproximateLocation).toHaveBeenCalled();
     });
-    expect(map.setCameraSpy).not.toHaveBeenCalled();
+    expect(map.fitBoundsSpy).not.toHaveBeenCalled();
   });
 
   it("never requests a location for a session restored from an existing draft", async () => {
@@ -669,6 +683,380 @@ describe("PlanningScreen", () => {
       expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
     });
     expect(requestApproximateLocation).not.toHaveBeenCalled();
+  });
+
+  describe("Locate me", () => {
+    it("renders an accessible, initially enabled control", async () => {
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+
+      const locateButton = await screen.findByRole("button", { name: "Locate me" });
+      expect(locateButton).toBeEnabled();
+      expect(locateButton).toHaveTextContent("⌖");
+    });
+
+    it("fits the same 50 × 50 km box even with existing waypoints present, unlike the automatic path", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await addWaypointViaCrosshair(map, user, [0, 51]);
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      });
+
+      requestApproximateLocation.mockResolvedValueOnce([-1.5, 53.8]);
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+
+      const expectedBounds = computeLocalAreaBounds([-1.5, 53.8]);
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledWith(expectedBounds);
+      });
+    });
+
+    it("shows a concise loading state and disables the control while locating", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      let resolveLocation: ((coordinate: Coordinate | null) => void) | undefined;
+      const requestApproximateLocation = vi.fn(
+        () =>
+          new Promise<Coordinate | null>((resolve) => {
+            resolveLocation = resolve;
+          }),
+      );
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      });
+      resolveLocation?.(null);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Locate me" })).toBeEnabled();
+      });
+
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+
+      const locateButton = screen.getByRole("button", { name: "Locate me" });
+      expect(locateButton).toBeDisabled();
+      expect(locateButton).toHaveTextContent("Locating…");
+
+      resolveLocation?.([-1.5, 53.8]);
+
+      await waitFor(() => {
+        expect(locateButton).toBeEnabled();
+      });
+      expect(locateButton).toHaveTextContent("⌖");
+    });
+
+    it("shows a failure message on a null result, with Locate me remaining as the retry path", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      });
+
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+
+      expect(
+        await screen.findByText("Your location could not be determined."),
+      ).toBeInTheDocument();
+      const locateButton = screen.getByRole("button", { name: "Locate me" });
+      expect(locateButton).toBeEnabled();
+
+      requestApproximateLocation.mockResolvedValueOnce([-1.5, 53.8]);
+      await user.click(locateButton);
+
+      await waitFor(() => {
+        expect(screen.queryByText("Your location could not be determined.")).toBeNull();
+      });
+      expect(map.fitBoundsSpy).toHaveBeenCalledWith(computeLocalAreaBounds([-1.5, 53.8]));
+    });
+
+    it("a rejected location request also shows the failure state", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      });
+
+      requestApproximateLocation.mockRejectedValueOnce(new Error("boom"));
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+
+      expect(
+        await screen.findByText("Your location could not be determined."),
+      ).toBeInTheDocument();
+    });
+
+    it("two rapid taps before either resolves only issue one request", async () => {
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn(
+        () =>
+          new Promise<Coordinate | null>(() => {
+            // Deliberately never resolves — only call counts matter here.
+          }),
+      );
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      });
+
+      const locateButton = screen.getByRole("button", { name: "Locate me" });
+      fireEvent.click(locateButton);
+      fireEvent.click(locateButton);
+
+      expect(requestApproximateLocation).toHaveBeenCalledTimes(2);
+    });
+
+    it("two separate, fully-resolved taps at the same coordinate both re-fit", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      });
+
+      const locateButton = screen.getByRole("button", { name: "Locate me" });
+      const expectedBounds = computeLocalAreaBounds([-1.5, 53.8]);
+
+      requestApproximateLocation.mockResolvedValueOnce([-1.5, 53.8]);
+      await user.click(locateButton);
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledWith(expectedBounds);
+      });
+      expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+
+      requestApproximateLocation.mockResolvedValueOnce([-1.5, 53.8]);
+      await user.click(locateButton);
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledTimes(2);
+      });
+    });
+  });
+
+  describe("north-up control", () => {
+    it("is not pressed before the camera has ever settled", async () => {
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      const northUpButton = await screen.findByRole("button", {
+        name: "North-up, top-down view",
+      });
+      expect(northUpButton).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("tapping it issues an orientation-only setCamera call, preserving centre and zoom", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "North-up, top-down view" }));
+
+      expect(map.setCameraSpy).toHaveBeenCalledWith(null, null, 0, 0, {
+        animate: true,
+        followOffset: false,
+      });
+    });
+
+    it("becomes pressed only once the camera has actually settled north-up", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      const northUpButton = screen.getByRole("button", {
+        name: "North-up, top-down view",
+      });
+      await user.click(northUpButton);
+      expect(northUpButton).toHaveAttribute("aria-pressed", "false");
+
+      map.triggerCameraSettled([0, 51]);
+
+      await waitFor(() => {
+        expect(northUpButton).toHaveAttribute("aria-pressed", "true");
+      });
+    });
+
+    it("counts a settled bearing within tolerance of the 0°/360° wrap as north-up", async () => {
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      map.triggerCameraSettled([0, 51], { bearingDegrees: 359.7, pitchDegrees: 0 });
+
+      const northUpButton = await screen.findByRole("button", {
+        name: "North-up, top-down view",
+      });
+      expect(northUpButton).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("does not count a settled bearing outside tolerance as north-up", async () => {
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      map.triggerCameraSettled([0, 51], { bearingDegrees: 358.9, pitchDegrees: 0 });
+
+      const northUpButton = await screen.findByRole("button", {
+        name: "North-up, top-down view",
+      });
+      expect(northUpButton).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("a manual rotation (nonzero bearing) unpresses the control", async () => {
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      map.triggerCameraSettled([0, 51], { bearingDegrees: 45, pitchDegrees: 0 });
+
+      const northUpButton = await screen.findByRole("button", {
+        name: "North-up, top-down view",
+      });
+      expect(northUpButton).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("a manual tilt (nonzero pitch) unpresses the control", async () => {
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      map.triggerCameraSettled([0, 51], { bearingDegrees: 0, pitchDegrees: 20 });
+
+      const northUpButton = await screen.findByRole("button", {
+        name: "North-up, top-down view",
+      });
+      expect(northUpButton).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("panning without changing orientation preserves the pressed state", async () => {
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      map.triggerCameraSettled([0, 51]);
+      const northUpButton = await screen.findByRole("button", {
+        name: "North-up, top-down view",
+      });
+      expect(northUpButton).toHaveAttribute("aria-pressed", "true");
+
+      map.triggerCameraSettled([0.02, 51.02]);
+
+      expect(northUpButton).toHaveAttribute("aria-pressed", "true");
+    });
+  });
+
+  describe("Locate me and north-up do not interfere with other workflows", () => {
+    it("using either control does not alter the waypoint list or undo history", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+      await addWaypointViaCrosshair(map, user, [0, 51]);
+      expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+      await user.click(screen.getByRole("button", { name: "North-up, top-down view" }));
+
+      expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
+      expect(screen.queryByText("No waypoints placed yet.")).toBeNull();
+    });
+
+    it("a selected warning survives either control being used", async () => {
+      const user = userEvent.setup();
+      await saveProviderKey("dummy-test-key");
+      const map = createMockMapFactory();
+      const route = buildRouteWithWarnings();
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          routingProvider={buildResolvedAdapter(route)}
+        />,
+      );
+      map.triggerLoad();
+
+      await addWaypointViaCrosshair(map, user, [0, 51]);
+      await addWaypointViaCrosshair(map, user, [0.01, 51]);
+      const calculateButton = await waitFor(() => {
+        const button = screen.getByRole("button", { name: /calculate route/i });
+        expect(button).toBeEnabled();
+        return button;
+      });
+      await user.click(calculateButton);
+
+      const summaryRegion = await waitFor(() => {
+        const region = screen.getByRole("region", { name: "Route summary" });
+        expect(region).toBeInTheDocument();
+        return region;
+      });
+      const warningButton = within(summaryRegion).getByRole("button", {
+        name: /questionable surface for a road bike/i,
+      });
+      await user.click(warningButton);
+      expect(warningButton).toHaveAttribute("aria-pressed", "true");
+
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+      await user.click(screen.getByRole("button", { name: "North-up, top-down view" }));
+
+      expect(warningButton).toHaveAttribute("aria-pressed", "true");
+    });
   });
 
   it("relabels Calculate to Try again after a provider failure, and retry issues exactly one new request", async () => {
