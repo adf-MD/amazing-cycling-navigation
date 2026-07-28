@@ -449,6 +449,90 @@ describe("stitchPlannedRouteLegs", () => {
       expect(warning?.startDistanceMetres).toBeGreaterThanOrEqual(0);
       expect(warning?.endDistanceMetres).toBeLessThanOrEqual(stitched.distanceMetres);
     });
+
+    it("keeps two different-surface-type warnings adjacent across a seam as two distinct warnings, each retaining its own surface detail", () => {
+      const pointsA = buildPoints([coord(0), coord(0.001), coord(0.002)]);
+      const pointsB = buildPoints([coord(0.002), coord(0.003), coord(0.004)]);
+      const legA = buildLeg({
+        points: pointsA,
+        warnings: [
+          {
+            kind: "questionable-surface",
+            startDistanceMetres: pointsA[1]?.distanceFromStartMetres ?? 0,
+            endDistanceMetres: pointsA[2]?.distanceFromStartMetres ?? 0,
+            message: "Questionable surface for a road bike: compacted gravel.",
+            surface: { type: "compacted-gravel", label: "Compacted gravel" },
+          },
+        ],
+      });
+      const legB = buildLeg({
+        points: pointsB,
+        warnings: [
+          {
+            kind: "questionable-surface",
+            startDistanceMetres: 0,
+            endDistanceMetres: pointsB[1]?.distanceFromStartMetres ?? 0,
+            message: "Questionable surface for a road bike: gravel / fine gravel.",
+            surface: { type: "gravel", label: "Gravel / fine gravel" },
+          },
+        ],
+      });
+
+      const stitched = stitchPlannedRouteLegs([legA, legB], METADATA);
+
+      expect(stitched.warnings).toHaveLength(2);
+      expect(stitched.warnings[0]?.surface).toEqual({
+        type: "compacted-gravel",
+        label: "Compacted gravel",
+      });
+      expect(stitched.warnings[1]?.surface).toEqual({
+        type: "gravel",
+        label: "Gravel / fine gravel",
+      });
+    });
+
+    it("merges the same surface-type warning reported by both legs at a shared seam, preserving the surface detail", () => {
+      const pointsA = buildPoints([coord(0), coord(0.001), coord(0.002)]);
+      const pointsB = buildPoints([coord(0.002), coord(0.003), coord(0.004)]);
+      const surface = { type: "sand" as const, label: "Sand" };
+      const legA = buildLeg({
+        points: pointsA,
+        warnings: [
+          {
+            kind: "unsuitable-surface",
+            startDistanceMetres: pointsA[1]?.distanceFromStartMetres ?? 0,
+            endDistanceMetres: pointsA[2]?.distanceFromStartMetres ?? 0,
+            message: "Unsuitable surface for a road bike: sand.",
+            surface,
+          },
+        ],
+      });
+      const legB = buildLeg({
+        points: pointsB,
+        warnings: [
+          {
+            kind: "unsuitable-surface",
+            startDistanceMetres: 0,
+            endDistanceMetres: pointsB[1]?.distanceFromStartMetres ?? 0,
+            message: "Unsuitable surface for a road bike: sand.",
+            surface,
+          },
+        ],
+      });
+
+      const stitched = stitchPlannedRouteLegs([legA, legB], METADATA);
+
+      expect(stitched.warnings).toHaveLength(1);
+      expect(stitched.warnings[0]?.surface).toEqual(surface);
+      expect(stitched.warnings[0]?.startDistanceMetres).toBeCloseTo(
+        stitched.points[1]?.distanceFromStartMetres ?? -1,
+        6,
+      );
+      expect(stitched.warnings[0]?.endDistanceMetres).toBeCloseTo(
+        stitched.points[3]?.distanceFromStartMetres ?? -1,
+        6,
+      );
+    });
   });
 
   describe("degenerate inputs", () => {

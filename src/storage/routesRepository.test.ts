@@ -79,6 +79,31 @@ describe("routesRepository", () => {
     await expect(getRoute(route.id)).resolves.toEqual(route);
   });
 
+  it("round-trips a route whose surface warnings carry the new surface detail field, alongside an old-shape warning without it", async () => {
+    const route = buildRoute({
+      warnings: [
+        {
+          kind: "questionable-surface",
+          startDistanceMetres: 0,
+          endDistanceMetres: 100,
+          message: "Questionable surface for a road bike: compacted gravel.",
+          surface: { type: "compacted-gravel", label: "Compacted gravel" },
+        },
+        // As it would have been saved before this field existed — no
+        // `surface` key at all, not `surface: undefined`.
+        {
+          kind: "unsuitable-surface",
+          startDistanceMetres: 200,
+          endDistanceMetres: 300,
+          message: "Unsuitable surface for a road bike.",
+        },
+      ],
+    });
+    await saveRoute(route);
+
+    await expect(getRoute(route.id)).resolves.toEqual(route);
+  });
+
   it("lists routes newest-first by createdAt", async () => {
     const older = buildRoute({
       id: "older",

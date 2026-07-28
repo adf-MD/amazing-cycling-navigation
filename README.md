@@ -29,8 +29,14 @@ and `other` (construction-designated way) warnings can now appear alongside
 the surface-based ones, whenever ORS actually returns matching metadata for
 a route. `access` warnings remain unavailable: ORS does not expose a
 `roadaccessrestrictions` extra for the `cycling-road` profile, so legal
-access restrictions are never represented. Still deferred within Milestone 3:
-the road-speed-appropriate next-manoeuvre display planned for Milestone 4.
+access restrictions are never represented. A selected questionable or
+unsuitable surface warning now shows the specific ORS surface category
+(e.g. "Gravel / fine gravel", "Paving stones / cobblestone") rather than
+only the broad paved/questionable/unsuitable bucket — see "Surface
+classification" under
+[Documented algorithms and thresholds](#documented-algorithms-and-thresholds)
+below. Still deferred within Milestone 3: the road-speed-appropriate
+next-manoeuvre display planned for Milestone 4.
 
 ## Requirements
 
@@ -183,7 +189,30 @@ Built via the DOM and `XMLSerializer`, not string templating, so text and
 attribute escaping is always correct. A route's manoeuvres and, for a
 planner-calculated route, its provider/profile provenance are written as
 optional namespaced `<acn:manoeuvre>`/`<acn:source>` extensions, sharing one
-`<extensions>` element, that other GPX readers can safely ignore.
+`<extensions>` element, that other GPX readers can safely ignore. Warnings
+(including the surface detail below) are not currently exported — only
+manoeuvres and route/provider provenance are.
+
+### Surface classification (`src/routing/surfaceCodes.ts`)
+
+OpenRouteService's numeric `surface` extra_info codes are decoded into a
+specific surface category (e.g. "Compacted gravel", "Gravel / fine gravel",
+"Paving stones / cobblestone") alongside this project's own paved/
+questionable/unsuitable/unknown road-bike classification. Verified against
+ORS's live documentation
+(<https://giscience.github.io/openrouteservice/api-reference/endpoints/directions/extra-info/surface>,
+page's own "Updated at" metadata: 2024-05-23). Codes 5 (Cobblestone), 9
+(Fine Gravel) and 16 (Woodchips), which ORS's documentation marks as
+recently removed, are deliberately not mapped to their old meanings — they
+resolve to "unknown" like any other unrecognised code, rather than risk
+mis-classifying a surface the provider no longer describes that way.
+
+A surface category is a grouped provider/OSM-data category, not a
+guarantee of the exact raw OSM `surface=*` tag, current condition,
+smoothness or maintenance — several OSM values can fold into one ORS
+category (e.g. ORS's "Gravel" covers both `gravel` and `fine_gravel`).
+ORS's way type (e.g. track/cycleway/footway) is a separate extra and is
+not displayed as part of this surface detail.
 
 ## Planning a road-bike route
 
@@ -284,7 +313,7 @@ environment URL) — typically
 
 ### Confirming the deployed build
 
-The app's current version is `0.2.0` (`package.json`). Independently of that
+The app's current version is `0.2.1` (`package.json`). Independently of that
 version number, the **Diagnostics** screen also shows a **Build** field: the
 first 7 characters of the Git commit SHA the running app was built from
 (e.g. `4b825dc`). The deploy workflow sets this via `APP_BUILD_SHA:

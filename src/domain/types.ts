@@ -36,11 +36,49 @@ export type RouteWarningKind =
   | "ferry"
   | "other";
 
+/** One variant per surface *category* ORS currently documents — not one
+ * per raw numeric code (several codes/OSM tags fold into one category,
+ * e.g. "gravel" also covers "fine_gravel"). "unknown" covers a missing,
+ * unrecognised or provider-removed code — never treated as paved or
+ * unsuitable, per CLAUDE.md's planning-surface policy. */
+export type SurfaceType =
+  | "paved"
+  | "asphalt"
+  | "concrete"
+  | "unpaved-unspecified"
+  | "metal"
+  | "wood"
+  | "compacted-gravel"
+  | "gravel"
+  | "paving-stones"
+  | "grass-paver"
+  | "dirt"
+  | "ground"
+  | "ice"
+  | "sand"
+  | "grass"
+  | "unknown";
+
+/** The rider-facing detail behind a surface RouteWarning — semantic type
+ * plus display label. The provider's raw numeric code never leaves
+ * routing/surfaceCodes.ts. */
+export interface RouteSurfaceDetail {
+  type: SurfaceType;
+  label: string;
+}
+
 export interface RouteWarning {
   kind: RouteWarningKind;
   startDistanceMetres: number;
   endDistanceMetres: number;
   message: string;
+  /** Present only for warnings produced by surface classification
+   * (never for structural steps/ford/ferry/other warnings); absent on a
+   * surface-kind warning saved before this field existed. UI and
+   * coalescing gate new behaviour on this field's *presence*, not on
+   * `kind`, so an old persisted warning keeps rendering exactly as it
+   * did before. */
+  surface?: RouteSurfaceDetail;
 }
 
 export interface SurfaceSummary {

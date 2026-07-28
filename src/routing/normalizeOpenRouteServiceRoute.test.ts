@@ -157,7 +157,7 @@ describe("normalizeOpenRouteServiceRoute", () => {
     );
   });
 
-  it("emits a questionable-surface warning with the existing message for a recognised questionable code", () => {
+  it("emits a questionable-surface warning naming the specific decoded surface for a recognised questionable code", () => {
     const response: OrsFeatureCollectionResponse = {
       type: "FeatureCollection",
       features: [
@@ -187,12 +187,13 @@ describe("normalizeOpenRouteServiceRoute", () => {
         kind: "questionable-surface",
         startDistanceMetres: 0,
         endDistanceMetres: route.distanceMetres,
-        message: "Questionable surface for a road bike.",
+        message: "Questionable surface for a road bike: compacted gravel.",
+        surface: { type: "compacted-gravel", label: "Compacted gravel" },
       },
     ]);
   });
 
-  it("emits an unsuitable-surface warning with the existing message for a recognised unsuitable code", () => {
+  it("emits an unsuitable-surface warning naming the specific decoded surface for a recognised unsuitable code", () => {
     const response: OrsFeatureCollectionResponse = {
       type: "FeatureCollection",
       features: [
@@ -222,7 +223,8 @@ describe("normalizeOpenRouteServiceRoute", () => {
         kind: "unsuitable-surface",
         startDistanceMetres: 0,
         endDistanceMetres: route.distanceMetres,
-        message: "Unsuitable surface for a road bike.",
+        message: "Unsuitable surface for a road bike: sand.",
+        surface: { type: "sand", label: "Sand" },
       },
     ]);
   });
@@ -243,6 +245,7 @@ describe("normalizeOpenRouteServiceRoute", () => {
         startDistanceMetres: 0,
         endDistanceMetres: route.distanceMetres,
         message: "Surface data is unavailable for this segment.",
+        surface: { type: "unknown", label: "No usable surface data" },
       },
     ]);
   });
@@ -464,8 +467,40 @@ describe("normalizeOpenRouteServiceRoute", () => {
           startDistanceMetres: 0,
           endDistanceMetres: route.distanceMetres,
           message: "Surface data is unavailable for this segment.",
+          surface: { type: "unknown", label: "No usable surface data" },
         },
       ]);
+    });
+
+    it("does not merge adjacent surface codes that share a classification but differ in specific type (compacted gravel, then gravel)", () => {
+      const response = buildResponse({
+        extras: {
+          surface: {
+            values: [
+              [0, 3, 8], // compacted gravel
+              [3, 5, 10], // gravel
+            ],
+          },
+        },
+      });
+
+      const route = normalizeOpenRouteServiceRoute(response, OPTIONS);
+
+      expect(route.warnings).toHaveLength(2);
+      expect(route.warnings[0]).toMatchObject({
+        kind: "questionable-surface",
+        message: "Questionable surface for a road bike: compacted gravel.",
+        surface: { type: "compacted-gravel", label: "Compacted gravel" },
+      });
+      expect(route.warnings[1]).toMatchObject({
+        kind: "questionable-surface",
+        message: "Questionable surface for a road bike: gravel / fine gravel.",
+        surface: { type: "gravel", label: "Gravel / fine gravel" },
+      });
+      expect(route.surfaceSummary?.questionableMetres).toBeCloseTo(
+        route.distanceMetres,
+        6,
+      );
     });
 
     it("produces two distinct, correctly ordered unknown-surface warnings for two separate gaps", () => {

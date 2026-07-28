@@ -35,8 +35,14 @@ const MOCK_ORS_RESPONSE = {
         ],
         extras: {
           surface: {
+            // Two adjacent, different questionable surface types (8
+            // "Compacted Gravel", 10 "Gravel"), followed by paved — proves
+            // they render as two distinct, separately selectable entries
+            // rather than silently merging just because they share a
+            // classification.
             values: [
-              [0, 4, 6],
+              [0, 2, 8],
+              [2, 4, 10],
               [4, 9, 1],
             ],
           },
@@ -166,6 +172,21 @@ test("configures a key, plans a route via a mocked ORS response, saves it, and r
   expect(summaryText).toMatch(/km/);
   // Proves the provider's own (deliberately wrong) ascent was discarded.
   expect(summaryText).not.toContain("999 m ascent");
+
+  // Two adjacent, different questionable surface types must render as two
+  // distinct, separately selectable entries — the collapsed label is
+  // generic ("Questionable surface"), so the specific category is only
+  // distinguishable once each is expanded.
+  const questionableButtons = page.getByRole("button", { name: /^Questionable surface/ });
+  await expect(questionableButtons).toHaveCount(2);
+
+  await questionableButtons.nth(0).click();
+  await expect(page.getByText("Surface: Compacted gravel")).toBeVisible();
+  await questionableButtons.nth(0).click(); // toggle closed
+
+  await questionableButtons.nth(1).click();
+  await expect(page.getByText("Surface: Gravel / fine gravel")).toBeVisible();
+  await questionableButtons.nth(1).click();
 
   const saveButton = page.getByRole("button", { name: /save route/i });
   const exportButton = page.getByRole("button", { name: /export gpx/i });

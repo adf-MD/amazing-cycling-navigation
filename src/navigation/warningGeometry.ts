@@ -118,9 +118,19 @@ export function coalesceAdjacentWarnings(
   const result: RouteWarning[] = [];
   for (const warning of sorted) {
     const previous = result.at(-1);
+    // Structured surface identity, not just message-string equality: two
+    // different surface types happen to always produce different message
+    // text today (the label is baked in), but this check is explicit and
+    // independent of that, so it stays correct even if message wording
+    // ever changes. Both undefined (any non-surface, or legacy
+    // pre-feature, warning) compares equal, so existing behaviour for
+    // every structural/legacy warning is unaffected.
+    const sameSurfaceType =
+      (previous?.surface?.type ?? null) === (warning.surface?.type ?? null);
     if (
       previous?.kind === warning.kind &&
       previous.message === warning.message &&
+      sameSurfaceType &&
       warning.startDistanceMetres - previous.endDistanceMetres <= toleranceMetres
     ) {
       result[result.length - 1] = {

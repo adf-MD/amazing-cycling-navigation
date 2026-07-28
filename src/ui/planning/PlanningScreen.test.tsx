@@ -236,6 +236,55 @@ function buildRouteWithStructuralWarnings(): PlannedRoute {
   };
 }
 
+// distanceFromStartMetres/distanceMetres/warning distances are derived
+// from the same cumulativeDistancesMetres primitive per-leg stitching
+// uses (see usePlanningRoute.ts) — the app always stitches a calculated
+// route, even a single-leg one, which recomputes distances from real
+// geometry. A hand-typed round number here would drift once stitched, so
+// the fixture (and any exact text asserted against it) must be
+// self-consistent with its own coordinates from the start.
+function buildRouteWithSurfaceDetailWarning(): PlannedRoute {
+  const pointCount = 10;
+  const coordinates: Coordinate[] = Array.from({ length: pointCount }, (_, i) => [
+    i * 0.001,
+    51,
+  ]);
+  const distances = cumulativeDistancesMetres(coordinates);
+  const warningStart = distances[1] ?? 0;
+  const warningEnd = distances[4] ?? 0;
+  const totalDistance = distances.at(-1) ?? 0;
+  return {
+    id: "route-surface-detail-1",
+    name: "Planned route",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    points: coordinates.map((coordinate, i) => ({
+      coordinate,
+      elevationMetres: 10 + i,
+      distanceFromStartMetres: distances[i] ?? 0,
+    })),
+    manoeuvres: [],
+    distanceMetres: totalDistance,
+    ascentMetres: 12,
+    descentMetres: 4,
+    surfaceSummary: {
+      pavedMetres: totalDistance - (warningEnd - warningStart),
+      questionableMetres: warningEnd - warningStart,
+      unsuitableMetres: 0,
+      unknownMetres: 0,
+    },
+    warnings: [
+      {
+        kind: "questionable-surface",
+        startDistanceMetres: warningStart,
+        endDistanceMetres: warningEnd,
+        message: "Questionable surface for a road bike: compacted gravel.",
+        surface: { type: "compacted-gravel", label: "Compacted gravel" },
+      },
+    ],
+    source: { kind: "planner", provider: "openrouteservice", profile: "cycling-road" },
+  };
+}
+
 function buildResolvedAdapter(route: PlannedRoute): RoutingProvider {
   return {
     calculateRoute: () => Promise.resolve(route),
@@ -1215,6 +1264,41 @@ describe("PlanningScreen", () => {
       await waitFor(() => {
         expect(map.sources.get("acn-warning-selected")?.features).toHaveLength(1);
       });
+    });
+
+    it("expands the specific surface detail from both a list click and a map-originated selection", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const summaryRegion = await renderWithCalculatedWarnings(
+        map,
+        user,
+        buildRouteWithSurfaceDetailWarning(),
+      );
+      const button = within(summaryRegion).getByRole("button", {
+        name: /^Questionable surface/,
+      });
+      expect(button).toHaveTextContent("Questionable surface · 210 m");
+
+      // List-originated selection.
+      await user.click(button);
+      expect(
+        within(summaryRegion).getByText("Surface: Compacted gravel"),
+      ).toBeInTheDocument();
+
+      // Toggle off, then reveal the same detail via a map-originated tap.
+      await user.click(button);
+      expect(screen.queryByText("Surface: Compacted gravel")).toBeNull();
+
+      map.setWarningHit(0);
+      map.triggerMapTap([0.15, 51]);
+
+      expect(button).toHaveAttribute("aria-pressed", "true");
+      expect(
+        within(summaryRegion).getByText("Surface: Compacted gravel"),
+      ).toBeInTheDocument();
+      expect(
+        within(summaryRegion).getByText("Route position: 0.1–0.3 km"),
+      ).toBeInTheDocument();
     });
   });
 

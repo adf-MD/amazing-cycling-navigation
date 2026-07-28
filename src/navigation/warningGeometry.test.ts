@@ -251,4 +251,65 @@ describe("coalesceAdjacentWarnings", () => {
 
     expect(input).toEqual(before);
   });
+
+  it("does not merge same-kind-and-message warnings that carry different surface.type", () => {
+    // Same kind AND same message deliberately, to isolate that the
+    // structured surface.type check alone is what prevents this merge —
+    // not incidental message-string difference.
+    const a = buildWarning({
+      endDistanceMetres: 100,
+      surface: { type: "compacted-gravel", label: "Compacted gravel" },
+    });
+    const b = buildWarning({
+      startDistanceMetres: 100.2,
+      endDistanceMetres: 200,
+      surface: { type: "gravel", label: "Gravel / fine gravel" },
+    });
+
+    const result = coalesceAdjacentWarnings([a, b], 1);
+
+    expect(result).toHaveLength(2);
+  });
+
+  it("merges same-kind/message/surface.type warnings and preserves the surface detail", () => {
+    const surface = { type: "sand" as const, label: "Sand" };
+    const a = buildWarning({
+      kind: "unsuitable-surface",
+      endDistanceMetres: 100,
+      message: UNSUITABLE_MESSAGE,
+      surface,
+    });
+    const b = buildWarning({
+      kind: "unsuitable-surface",
+      startDistanceMetres: 100.5,
+      endDistanceMetres: 200,
+      message: UNSUITABLE_MESSAGE,
+      surface,
+    });
+
+    const result = coalesceAdjacentWarnings([a, b], 1);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.surface).toEqual(surface);
+    expect(result[0]).toMatchObject({ startDistanceMetres: 0, endDistanceMetres: 200 });
+  });
+
+  it("still merges two warnings with no surface field at all (structural warnings unaffected)", () => {
+    const a = buildWarning({
+      kind: "steps",
+      endDistanceMetres: 10,
+      message: "Route includes steps.",
+    });
+    const b = buildWarning({
+      kind: "steps",
+      startDistanceMetres: 10.5,
+      endDistanceMetres: 20,
+      message: "Route includes steps.",
+    });
+
+    const result = coalesceAdjacentWarnings([a, b], 1);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.surface).toBeUndefined();
+  });
 });

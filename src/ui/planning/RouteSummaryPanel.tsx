@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { PlannedRoute, RouteWarning } from "../../domain/types.ts";
+import type { PlannedRoute, RouteWarning, RouteWarningKind } from "../../domain/types.ts";
 import { prefersReducedMotion } from "../../platform/environmentContext.ts";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 
@@ -24,6 +24,33 @@ export interface RouteSummaryPanelProps {
 
 function formatMetres(metres: number): string {
   return `${String(Math.round(metres))} m`;
+}
+
+/** Just the numeric km value, no unit — for a "start–end km" range with
+ * one trailing unit, unlike formatDistanceKm's own "X.X km" (used where
+ * each figure stands alone). */
+function formatDistanceKmValue(metres: number): string {
+  return (metres / 1000).toFixed(1);
+}
+
+/** Short display name for a surface-classification warning kind — only
+ * ever used for a warning that carries surface detail, so the three
+ * surface kinds are the only cases that matter in practice. */
+function surfaceKindLabel(kind: RouteWarningKind): string {
+  switch (kind) {
+    case "unknown-surface":
+      return "Unknown surface";
+    case "questionable-surface":
+      return "Questionable surface";
+    case "unsuitable-surface":
+      return "Unsuitable surface";
+    default:
+      // Unreachable in practice — warning.surface is only ever set for
+      // the three kinds above (see normalizeOpenRouteServiceRoute.ts) —
+      // but kept total rather than throwing, matching this file's own
+      // defensive style elsewhere.
+      return "Surface";
+  }
 }
 
 /**
@@ -112,6 +139,10 @@ export function RouteSummaryPanel({
           <ul aria-label="Route warnings">
             {warnings.map((warning, index) => {
               const isSelected = index === selectedWarningIndex;
+              const hasSurfaceDetail = warning.surface !== undefined;
+              const detailId = `route-warning-detail-${String(index)}`;
+              const lengthMetres =
+                warning.endDistanceMetres - warning.startDistanceMetres;
               return (
                 // Warnings have no stable id of their own; the array is
                 // rebuilt wholesale on every calculation, so index is safe.
@@ -125,6 +156,8 @@ export function RouteSummaryPanel({
                         : "route-warning-button"
                     }
                     aria-pressed={isSelected}
+                    aria-expanded={hasSurfaceDetail ? isSelected : undefined}
+                    aria-controls={isSelected && hasSurfaceDetail ? detailId : undefined}
                     onClick={() => {
                       if (isSelected) {
                         onClearWarningSelection();
@@ -136,15 +169,30 @@ export function RouteSummaryPanel({
                     <span className="route-warning-selected-indicator" aria-hidden="true">
                       {isSelected ? "✓" : null}
                     </span>
-                    {warning.message} —{" "}
-                    {formatMetres(
-                      warning.endDistanceMetres - warning.startDistanceMetres,
+                    {hasSurfaceDetail ? (
+                      <>
+                        {surfaceKindLabel(warning.kind)} · {formatMetres(lengthMetres)}
+                      </>
+                    ) : (
+                      <>
+                        {warning.message} — {formatMetres(lengthMetres)}
+                        {" ("}
+                        {formatDistanceKm(warning.startDistanceMetres)}–
+                        {formatDistanceKm(warning.endDistanceMetres)}
+                        {")"}
+                      </>
                     )}
-                    {" ("}
-                    {formatDistanceKm(warning.startDistanceMetres)}–
-                    {formatDistanceKm(warning.endDistanceMetres)}
-                    {")"}
                   </button>
+                  {isSelected && warning.surface ? (
+                    <div id={detailId} className="route-warning-detail">
+                      <p>Surface: {warning.surface.label}</p>
+                      <p>
+                        Route position:{" "}
+                        {formatDistanceKmValue(warning.startDistanceMetres)}–
+                        {formatDistanceKmValue(warning.endDistanceMetres)} km
+                      </p>
+                    </div>
+                  ) : null}
                 </li>
               );
             })}

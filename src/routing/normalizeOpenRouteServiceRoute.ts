@@ -13,7 +13,11 @@ import { analyzeElevation } from "../navigation/elevation.ts";
 import { coalesceAdjacentWarnings } from "../navigation/warningGeometry.ts";
 import { RoutingError } from "./openRouteServiceErrors.ts";
 import type { RoutingProfile } from "./provider.ts";
-import { classifySurfaceCode, type SurfaceClassification } from "./surfaceCodes.ts";
+import {
+  decodeSurfaceCode,
+  UNKNOWN_SURFACE,
+  type DecodedSurface,
+} from "./surfaceCodes.ts";
 import type {
   OrsExtras,
   OrsFeatureCollectionResponse,
@@ -47,30 +51,52 @@ function buildManoeuvres(
   return manoeuvres;
 }
 
-const SURFACE_WARNING_MESSAGES: Record<
-  "unknown-surface" | "questionable-surface" | "unsuitable-surface",
+const UNKNOWN_SURFACE_MESSAGE = "Surface data is unavailable for this segment.";
+
+const SURFACE_BASE_MESSAGES: Record<
+  "questionable-surface" | "unsuitable-surface",
   string
 > = {
-  "unknown-surface": "Surface data is unavailable for this segment.",
-  "questionable-surface": "Questionable surface for a road bike.",
-  "unsuitable-surface": "Unsuitable surface for a road bike.",
+  "questionable-surface": "Questionable surface for a road bike",
+  "unsuitable-surface": "Unsuitable surface for a road bike",
 };
 
-type SurfaceWarningKind = keyof typeof SURFACE_WARNING_MESSAGES;
+type SurfaceWarningKind =
+  "unknown-surface" | "questionable-surface" | "unsuitable-surface";
 
-/** Appends a RouteWarning for a classified surface range, using the fixed
- * message for `kind` — the one shared shape behind all three surface
- * warning kinds, so each call site states only what varies. */
+function lowercaseFirst(text: string): string {
+  return text.length === 0 ? text : text.charAt(0).toLowerCase() + text.slice(1);
+}
+
+/** Builds the message for a classified surface range. unknown-surface
+ * keeps the exact pre-existing generic sentence — there is no specific
+ * detail to add. questionable/unsuitable append the decoded surface's
+ * own label, e.g. "Questionable surface for a road bike: compacted
+ * gravel." */
+function buildSurfaceWarningMessage(
+  kind: SurfaceWarningKind,
+  surface: DecodedSurface,
+): string {
+  if (kind === "unknown-surface") return UNKNOWN_SURFACE_MESSAGE;
+  return `${SURFACE_BASE_MESSAGES[kind]}: ${lowercaseFirst(surface.label)}.`;
+}
+
+/** Appends a RouteWarning for a classified surface range, stamping the
+ * decoded surface's type/label onto it (never its routing-internal
+ * classification) so the rider-facing detail survives sorting,
+ * coalescing and per-leg stitching downstream. */
 function pushSurfaceWarning(
   warnings: RouteWarning[],
   kind: SurfaceWarningKind,
   range: { start: number; end: number },
+  surface: DecodedSurface,
 ): void {
   warnings.push({
     kind,
     startDistanceMetres: range.start,
     endDistanceMetres: range.end,
-    message: SURFACE_WARNING_MESSAGES[kind],
+    message: buildSurfaceWarningMessage(kind, surface),
+    surface: { type: surface.type, label: surface.label },
   });
 }
 
@@ -88,7 +114,7 @@ function distanceAtPointIndex(
 interface ClassifiedRange {
   start: number;
   end: number;
-  classification: SurfaceClassification | "unknown";
+  surface: DecodedSurface;
 }
 
 /** Sub-metre gaps/overlaps between provider ranges are floating-point or
@@ -123,10 +149,12 @@ function buildSurfaceSummaryAndWarnings(
   if (!values || values.length === 0) {
     const warnings: RouteWarning[] = [];
     if (totalDistanceMetres > 0) {
-      pushSurfaceWarning(warnings, "unknown-surface", {
-        start: 0,
-        end: totalDistanceMetres,
-      });
+      pushSurfaceWarning(
+        warnings,
+        "unknown-surface",
+        { start: 0, end: totalDistanceMetres },
+        UNKNOWN_SURFACE,
+      );
     }
     return {
       surfaceSummary: {
@@ -156,19 +184,19 @@ function buildSurfaceSummaryAndWarnings(
     if (end <= start) continue;
 
     if (start > cursor) {
-      ranges.push({ start: cursor, end: start, classification: "unknown" });
+      ranges.push({ start: cursor, end: start, surface: UNKNOWN_SURFACE });
     }
-    const classification = classifySurfaceCode(valueCode);
+    const surface = decodeSurfaceCode(valueCode);
     const previous = ranges.at(-1);
-    if (previous?.classification === classification && previous.end >= start) {
+    if (previous?.surface.type === surface.type && previous.end >= start) {
       previous.end = Math.max(previous.end, end);
     } else {
-      ranges.push({ start, end, classification });
+      ranges.push({ start, end, surface });
     }
     cursor = Math.max(cursor, end);
   }
   if (totalDistanceMetres - cursor > GAP_TOLERANCE_METRES) {
-    ranges.push({ start: cursor, end: totalDistanceMetres, classification: "unknown" });
+    ranges.push({ start: cursor, end: totalDistanceMetres, surface: UNKNOWN_SURFACE });
   } else if (cursor < totalDistanceMetres) {
     // A trailing noise-level gap is absorbed into the last range rather
     // than spawning its own spurious sliver.
@@ -176,7 +204,7 @@ function buildSurfaceSummaryAndWarnings(
     if (last) {
       last.end = totalDistanceMetres;
     } else {
-      ranges.push({ start: cursor, end: totalDistanceMetres, classification: "unknown" });
+      ranges.push({ start: cursor, end: totalDistanceMetres, surface: UNKNOWN_SURFACE });
     }
   }
 
@@ -189,21 +217,21 @@ function buildSurfaceSummaryAndWarnings(
   for (const range of ranges) {
     const length = range.end - range.start;
     if (length <= 0) continue;
-    switch (range.classification) {
+    switch (range.surface.classification) {
       case "paved":
         pavedMetres += length;
         break;
       case "questionable-surface":
         questionableMetres += length;
-        pushSurfaceWarning(warnings, "questionable-surface", range);
+        pushSurfaceWarning(warnings, "questionable-surface", range, range.surface);
         break;
       case "unsuitable-surface":
         unsuitableMetres += length;
-        pushSurfaceWarning(warnings, "unsuitable-surface", range);
+        pushSurfaceWarning(warnings, "unsuitable-surface", range, range.surface);
         break;
       case "unknown":
         unknownMetres += length;
-        pushSurfaceWarning(warnings, "unknown-surface", range);
+        pushSurfaceWarning(warnings, "unknown-surface", range, range.surface);
         break;
     }
   }

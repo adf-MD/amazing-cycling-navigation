@@ -555,4 +555,136 @@ describe("RouteSummaryPanel", () => {
       expect(scrollIntoViewSpy).not.toHaveBeenCalled();
     });
   });
+
+  describe("surface detail", () => {
+    function buildSurfaceDetailWarning(
+      overrides: Partial<RouteWarning> = {},
+    ): RouteWarning {
+      return {
+        kind: "questionable-surface",
+        startDistanceMetres: 100,
+        endDistanceMetres: 300,
+        message: "Questionable surface for a road bike: compacted gravel.",
+        surface: { type: "compacted-gravel", label: "Compacted gravel" },
+        ...overrides,
+      };
+    }
+
+    it("renders the structured kind · length summary, not the raw message, for a surface-detail warning", () => {
+      render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={[buildSurfaceDetailWarning()]}
+          selectedWarningIndex={null}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+
+      const button = screen.getByRole("button", { name: /^Questionable surface/ });
+      expect(button).toHaveTextContent("Questionable surface · 200 m");
+      expect(button).not.toHaveTextContent("compacted gravel");
+      expect(button).toHaveAttribute("aria-expanded", "false");
+      expect(button).not.toHaveAttribute("aria-controls");
+    });
+
+    it("expands to show Surface: <label> and Route position when a surface-detail warning is selected", () => {
+      render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={[buildSurfaceDetailWarning()]}
+          selectedWarningIndex={0}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+
+      const button = screen.getByRole("button", { name: /^Questionable surface/ });
+      expect(button).toHaveAttribute("aria-expanded", "true");
+      expect(button).toHaveAttribute("aria-controls", "route-warning-detail-0");
+      expect(screen.getByText("Surface: Compacted gravel")).toBeInTheDocument();
+      expect(screen.getByText("Route position: 0.1–0.3 km")).toBeInTheDocument();
+    });
+
+    it("collapses the detail and removes aria-controls when the selection is cleared", () => {
+      const { rerender } = render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={[buildSurfaceDetailWarning()]}
+          selectedWarningIndex={0}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+      expect(screen.getByText("Surface: Compacted gravel")).toBeInTheDocument();
+
+      rerender(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={[buildSurfaceDetailWarning()]}
+          selectedWarningIndex={null}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+
+      expect(screen.queryByText("Surface: Compacted gravel")).toBeNull();
+      const button = screen.getByRole("button", { name: /^Questionable surface/ });
+      expect(button).toHaveAttribute("aria-expanded", "false");
+      expect(button).not.toHaveAttribute("aria-controls");
+    });
+
+    it("renders a legacy (no surface field) surface warning exactly as before, even when selected", () => {
+      render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={WARNINGS}
+          selectedWarningIndex={0}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+
+      const button = getFirstWarningButton();
+      expect(button).toHaveTextContent("Questionable surface for a road bike.");
+      expect(button).not.toHaveAttribute("aria-expanded");
+      expect(button).not.toHaveAttribute("aria-controls");
+      expect(screen.queryByText(/^Surface:/)).toBeNull();
+    });
+
+    it("does not fabricate a surface field or expand detail for a non-surface warning kind", () => {
+      const stepsWarning: RouteWarning = {
+        kind: "steps",
+        startDistanceMetres: 0,
+        endDistanceMetres: 50,
+        message: "Route includes steps.",
+      };
+      render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={[stepsWarning]}
+          selectedWarningIndex={0}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+        />,
+      );
+
+      const button = screen.getByRole("button", { name: /steps/i });
+      expect(button).not.toHaveAttribute("aria-expanded");
+      expect(button).not.toHaveAttribute("aria-controls");
+      expect(screen.queryByText(/^Surface:/)).toBeNull();
+    });
+  });
 });
