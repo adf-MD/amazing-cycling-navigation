@@ -23,6 +23,7 @@ const ALL_REASONS: RoutingErrorReason[] = [
   "provider-error",
   "malformed-response",
   "no-geometry",
+  "leg-stitching-failed",
   "unknown",
 ];
 
@@ -58,6 +59,14 @@ describe("describeRoutingError", () => {
         new RoutingError({ reason: "no-routable-point", message: "generic" }),
       ),
     ).toContain("working");
+  });
+
+  it("describes a leg-stitching failure without implying a provider/network problem", () => {
+    const message = describeRoutingError(
+      new RoutingError({ reason: "leg-stitching-failed", message: "generic" }),
+    );
+    expect(message).toContain("route sections");
+    expect(message).not.toMatch(/unavailable|could not be reached|key/i);
   });
 
   it("distinguishes a local key-format problem from an unreachable provider", () => {
@@ -100,6 +109,7 @@ describe("mapErrorReasonToOutcome", () => {
       "no-api-key",
       "malformed-response",
       "no-geometry",
+      "leg-stitching-failed",
       "unknown",
     ] as const) {
       expect(mapErrorReasonToOutcome(reason)).toBeNull();

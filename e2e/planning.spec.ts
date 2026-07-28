@@ -61,6 +61,31 @@ const MOCK_ORS_RESPONSE = {
   ],
 };
 
+/** A minimal, valid ORS directions response whose LineString geometry is
+ * exactly the coordinates it was asked to route between — used by the
+ * multi-leg test below, where each of the two-waypoint leg requests must
+ * get back a response that actually starts/ends at what it requested, so
+ * stitchPlannedRouteLegs.ts's seam check passes for real (unlike the
+ * fixed MOCK_ORS_RESPONSE above, which only ever represents one whole
+ * route, not an individual leg). */
+function buildMockOrsResponseForCoordinates(coordinates: readonly (readonly number[])[]) {
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: {
+          summary: { distance: 100, duration: 20 },
+        },
+        geometry: {
+          type: "LineString",
+          coordinates: coordinates.map(([lon, lat]) => [lon, lat, 10]),
+        },
+      },
+    ],
+  };
+}
+
 test("configures a key, plans a route via a mocked ORS response, saves it, and reopens it without the provider", async ({
   page,
 }) => {
@@ -171,5 +196,85 @@ test("configures a key, plans a route via a mocked ORS response, saves it, and r
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
   expect(unexpectedOrsRequest).toBe(false);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("plans a route across three waypoints using exactly one routing request per section", async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+  await page.addInitScript(() => {
+    const originalFetch = fetch;
+    globalThis.fetch = (...args: Parameters<typeof fetch>) => originalFetch(...args);
+  });
+
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByLabel("OpenRouteService API key").fill(DUMMY_KEY);
+  await page.getByRole("button", { name: "Save on this device" }).click();
+  await expect(
+    page.getByText(/key saved on this device, not yet verified/i),
+  ).toBeVisible();
+
+  // Body-aware, unlike the fixed-response mock above: each leg request
+  // gets back a response that actually starts/ends where it asked,
+  // proving three waypoints become two real two-coordinate requests
+  // rather than one whole-route request.
+  const requestedCoordinatePairs: (readonly number[])[][] = [];
+  await page.route(ORS_URL_GLOB, async (route) => {
+    const request = route.request();
+    let responseCoordinates: (readonly number[])[] = [];
+    if (request.method() === "POST") {
+      const body = request.postDataJSON() as { coordinates: (readonly number[])[] };
+      requestedCoordinatePairs.push(body.coordinates);
+      responseCoordinates = body.coordinates;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify(buildMockOrsResponseForCoordinates(responseCoordinates)),
+    });
+  });
+
+  await page.getByRole("button", { name: "Plan" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await mapContainer.click({ position: { x: 80, y: 80 } });
+  await mapContainer.click({ position: { x: 180, y: 120 } });
+  await mapContainer.click({ position: { x: 280, y: 160 } });
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Waypoint 2", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Waypoint 3", exact: true }),
+  ).toBeVisible();
+
+  const calculateButton = page.getByRole("button", { name: /calculate route/i });
+  await expect(calculateButton).toBeEnabled();
+  await calculateButton.click();
+
+  const summaryRegion = page.getByRole("region", { name: "Route summary" });
+  await expect(summaryRegion).toBeVisible({ timeout: 15_000 });
+
+  // Exactly two sections (A->B, B->C), each a genuine two-point request,
+  // and the shared waypoint lines up as the first leg's own end.
+  expect(requestedCoordinatePairs).toHaveLength(2);
+  expect(requestedCoordinatePairs[0]).toHaveLength(2);
+  expect(requestedCoordinatePairs[1]).toHaveLength(2);
+  expect(requestedCoordinatePairs[1]?.[0]).toEqual(requestedCoordinatePairs[0]?.[1]);
+
+  const summaryText = await summaryRegion.innerText();
+  expect(summaryText).toMatch(/km|m\b/);
+
   expect(consoleErrors).toEqual([]);
 });

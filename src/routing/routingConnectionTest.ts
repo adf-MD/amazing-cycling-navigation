@@ -116,6 +116,12 @@ export function classifyConnectionTestStage(
     case "no-geometry":
     case "unknown":
       return "route-processing";
+    // Unreachable from this connection test: it always calls
+    // adapter.calculateRoute directly with a single fixed pair, never
+    // through Planning's leg-splitting/stitching. Included only so this
+    // switch stays exhaustive over RoutingErrorReason.
+    case "leg-stitching-failed":
+      return "route-processing";
   }
 }
 

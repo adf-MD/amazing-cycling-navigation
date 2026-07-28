@@ -1,8 +1,9 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import { usePlanningRoute } from "./usePlanningRoute.ts";
+import { usePlanningRoute, type PlanningRouteState } from "./usePlanningRoute.ts";
 import { RoutingError } from "../../routing/openRouteServiceErrors.ts";
 import type { RoutingOptions, RoutingProvider } from "../../routing/provider.ts";
+import { cumulativeDistancesMetres } from "../../navigation/distance.ts";
 import { db } from "../../storage/db.ts";
 import {
   getProviderKeyVerification,
@@ -15,23 +16,84 @@ const WAYPOINT_B: Waypoint = { id: "b", coordinate: [0.01, 51] };
 const WAYPOINTS: Waypoint[] = [WAYPOINT_A, WAYPOINT_B];
 const SINGLE_WAYPOINT: Waypoint[] = [WAYPOINT_A];
 
+// distanceFromStartMetres/distanceMetres are derived from the same
+// cumulativeDistancesMetres primitive stitchPlannedRouteLegs.ts uses, so a
+// single-leg calculation's stitched output is a true no-op against this
+// fixture's own declared values (see the "always stitch, even for one
+// leg" design decision) — a hand-typed round number here would drift
+// against the real haversine spacing between these coordinates.
 function buildRoute(id = "route-1"): PlannedRoute {
+  const coordinates: Coordinate[] = Array.from({ length: 10 }, (_, i) => [i * 0.001, 51]);
+  const distances = cumulativeDistancesMetres(coordinates);
   return {
     id,
     name: "Test route",
     createdAt: "2026-01-01T00:00:00.000Z",
-    points: Array.from({ length: 10 }, (_, i) => ({
-      coordinate: [i * 0.001, 51] as Coordinate,
+    points: coordinates.map((coordinate, i) => ({
+      coordinate,
       elevationMetres: null,
-      distanceFromStartMetres: i * 100,
+      distanceFromStartMetres: distances[i] ?? 0,
     })),
     manoeuvres: [],
-    distanceMetres: 1000,
-    ascentMetres: 0,
-    descentMetres: 0,
+    distanceMetres: distances.at(-1) ?? 0,
+    // No point in this fixture carries elevation, so a real recompute
+    // reports null (no data), never 0 (a real, flat route) — see
+    // analyzeElevation's hasAnyElevation guard.
+    ascentMetres: null,
+    descentMetres: null,
     warnings: [],
     source: { kind: "planner", provider: "openrouteservice", profile: "cycling-road" },
   };
+}
+
+/** A geometrically-consistent leg fixture, starting and ending exactly at
+ * the given coordinates — unlike buildRoute() (a fixed, self-contained
+ * geometry only valid alone), multi-leg tests need consecutive legs whose
+ * seams actually line up, or stitchPlannedRouteLegs.ts correctly rejects
+ * the join as too large a gap. */
+function buildLegRoute(start: Coordinate, end: Coordinate, id: string): PlannedRoute {
+  const coordinates: Coordinate[] = [start, end];
+  const distances = cumulativeDistancesMetres(coordinates);
+  return {
+    id,
+    name: "Leg",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    points: coordinates.map((coordinate, i) => ({
+      coordinate,
+      elevationMetres: null,
+      distanceFromStartMetres: distances[i] ?? 0,
+    })),
+    manoeuvres: [],
+    distanceMetres: distances.at(-1) ?? 0,
+    ascentMetres: null,
+    descentMetres: null,
+    warnings: [],
+    source: { kind: "planner", provider: "openrouteservice", profile: "cycling-road" },
+  };
+}
+
+/** Asserts a routed state matches an expected leg/route, field-by-field —
+ * never whole-object toEqual — since stitchPlannedRouteLegs.ts always
+ * mints a fresh id/createdAt (and the fixed "Planned route" name) for the
+ * combined route rather than leaking a leg's own incidental identity. */
+function expectRoutedStateMatching(
+  state: PlanningRouteState,
+  expected: { route: PlannedRoute; waypoints: readonly Waypoint[] },
+): void {
+  expect(state.kind).toBe("routed");
+  if (state.kind !== "routed") return;
+  expect(state.waypoints).toEqual(expected.waypoints);
+  expect(state.route.points).toEqual(expected.route.points);
+  expect(state.route.manoeuvres).toEqual(expected.route.manoeuvres);
+  expect(state.route.distanceMetres).toBeCloseTo(expected.route.distanceMetres, 6);
+  expect(state.route.ascentMetres).toEqual(expected.route.ascentMetres);
+  expect(state.route.descentMetres).toEqual(expected.route.descentMetres);
+  expect(state.route.warnings).toEqual(expected.route.warnings);
+  expect(state.route.source).toEqual(expected.route.source);
+  expect(state.route.name).toBe("Planned route");
+  expect(typeof state.route.id).toBe("string");
+  expect(state.route.id.length).toBeGreaterThan(0);
+  expect(typeof state.route.createdAt).toBe("string");
 }
 
 interface DeferredCall {
@@ -111,11 +173,7 @@ describe("usePlanningRoute", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.state).toEqual({
-        kind: "routed",
-        route,
-        waypoints: WAYPOINTS,
-      });
+      expectRoutedStateMatching(result.current.state, { route, waypoints: WAYPOINTS });
     });
     expect(result.current.isCalculating).toBe(false);
   });
@@ -166,7 +224,7 @@ describe("usePlanningRoute", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.state).toMatchObject({ kind: "routed", route });
+      expectRoutedStateMatching(result.current.state, { route, waypoints: WAYPOINTS });
     });
   });
 
@@ -243,8 +301,7 @@ describe("usePlanningRoute", () => {
     await waitFor(() => {
       expect(result.current.lastErrorMessage).not.toBeNull();
     });
-    expect(result.current.state).toEqual({
-      kind: "routed",
+    expectRoutedStateMatching(result.current.state, {
       route: firstRoute,
       waypoints: WAYPOINTS,
     });
@@ -574,10 +631,142 @@ describe("usePlanningRoute", () => {
     await waitFor(() => {
       expect(result.current.lastErrorMessage).not.toBeNull();
     });
-    expect(result.current.state).toEqual({
-      kind: "routed",
+    expectRoutedStateMatching(result.current.state, {
       route: firstRoute,
       waypoints: WAYPOINTS,
+    });
+  });
+
+  describe("per-leg calculation", () => {
+    const WAYPOINT_C: Waypoint = { id: "c", coordinate: [0.02, 51] };
+    const WAYPOINT_D: Waypoint = { id: "d", coordinate: [0.03, 51] };
+
+    it("requests one leg per waypoint pair, and reuses cached legs across an edit that only touches some legs", async () => {
+      const { adapter, calls } = buildQueuedAdapter();
+      const { result, rerender } = renderHook(
+        (props: { waypoints: readonly Waypoint[] }) =>
+          usePlanningRoute({
+            waypoints: props.waypoints,
+            profile: "cycling-road",
+            avoidFerries: false,
+            adapter,
+          }),
+        { initialProps: { waypoints: [WAYPOINT_A, WAYPOINT_B, WAYPOINT_C] } },
+      );
+
+      act(() => {
+        result.current.calculateNow();
+      });
+      expect(calls).toHaveLength(2);
+      expect(calls[0]?.waypoints).toEqual([WAYPOINT_A.coordinate, WAYPOINT_B.coordinate]);
+      expect(calls[1]?.waypoints).toEqual([WAYPOINT_B.coordinate, WAYPOINT_C.coordinate]);
+
+      await act(async () => {
+        calls[0]?.resolve(
+          buildLegRoute(WAYPOINT_A.coordinate, WAYPOINT_B.coordinate, "leg-ab"),
+        );
+        calls[1]?.resolve(
+          buildLegRoute(WAYPOINT_B.coordinate, WAYPOINT_C.coordinate, "leg-bc"),
+        );
+        await flushMicrotasks();
+      });
+      await waitFor(() => {
+        expect(result.current.state.kind).toBe("routed");
+      });
+
+      // Appending D only requires a new C->D leg — A->B and B->C stay cached.
+      rerender({ waypoints: [WAYPOINT_A, WAYPOINT_B, WAYPOINT_C, WAYPOINT_D] });
+
+      await waitFor(() => {
+        expect(calls).toHaveLength(3);
+      });
+      expect(calls[2]?.waypoints).toEqual([WAYPOINT_C.coordinate, WAYPOINT_D.coordinate]);
+    });
+
+    it("exposes updatingLegCount while a multi-leg batch is in flight, and clears it once settled", async () => {
+      const { adapter, calls } = buildQueuedAdapter();
+      const { result } = renderHook(() =>
+        usePlanningRoute({
+          waypoints: [WAYPOINT_A, WAYPOINT_B, WAYPOINT_C],
+          profile: "cycling-road",
+          avoidFerries: false,
+          adapter,
+        }),
+      );
+
+      expect(result.current.updatingLegCount).toBeNull();
+      act(() => {
+        result.current.calculateNow();
+      });
+      expect(result.current.updatingLegCount).toBe(2);
+
+      await act(async () => {
+        calls[0]?.resolve(
+          buildLegRoute(WAYPOINT_A.coordinate, WAYPOINT_B.coordinate, "leg-ab"),
+        );
+        calls[1]?.resolve(
+          buildLegRoute(WAYPOINT_B.coordinate, WAYPOINT_C.coordinate, "leg-bc"),
+        );
+        await flushMicrotasks();
+      });
+
+      await waitFor(() => {
+        expect(result.current.state.kind).toBe("routed");
+      });
+      expect(result.current.updatingLegCount).toBeNull();
+    });
+
+    it("keeps updatingLegCount null for a single-leg calculation", async () => {
+      const { adapter, calls } = buildQueuedAdapter();
+      const { result } = renderHook(() =>
+        usePlanningRoute({
+          waypoints: WAYPOINTS,
+          profile: "cycling-road",
+          avoidFerries: false,
+          adapter,
+        }),
+      );
+
+      act(() => {
+        result.current.calculateNow();
+      });
+      expect(result.current.updatingLegCount).toBeNull();
+
+      await act(async () => {
+        calls[0]?.resolve(buildRoute());
+        await flushMicrotasks();
+      });
+      expect(result.current.updatingLegCount).toBeNull();
+    });
+
+    it("clears updatingLegCount after a decisive multi-leg failure, without publishing a route", async () => {
+      const { adapter, calls } = buildQueuedAdapter();
+      const { result } = renderHook(() =>
+        usePlanningRoute({
+          waypoints: [WAYPOINT_A, WAYPOINT_B, WAYPOINT_C],
+          profile: "cycling-road",
+          avoidFerries: false,
+          adapter,
+        }),
+      );
+
+      act(() => {
+        result.current.calculateNow();
+      });
+      expect(result.current.updatingLegCount).toBe(2);
+
+      await act(async () => {
+        calls[0]?.reject(
+          new RoutingError({ reason: "unauthorized", message: "bad key" }),
+        );
+        await flushMicrotasks();
+      });
+
+      await waitFor(() => {
+        expect(result.current.lastErrorMessage).not.toBeNull();
+      });
+      expect(result.current.updatingLegCount).toBeNull();
+      expect(result.current.state.kind).not.toBe("routed");
     });
   });
 });

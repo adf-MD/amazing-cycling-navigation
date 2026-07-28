@@ -16,15 +16,21 @@ warnings, saving the result locally, and exporting it as GPX. See
 [Planning a road-bike route](#planning-a-road-bike-route) below for how to set
 up your own key.
 
-Route calculation requests OpenRouteService's `surface`, `waytype` and
-`waycategory` extras, so `steps`, `ford`, `ferry` and `other`
-(construction-designated way) warnings can now appear alongside the
-surface-based ones, whenever ORS actually returns matching metadata for a
-route. `access` warnings remain unavailable: ORS does not expose a
+Route calculation is split into consecutive two-waypoint sections ("legs"),
+each requested and cached independently. The first calculation costs one
+routing request per section; after that, most edits — moving, inserting,
+deleting or reordering a waypoint, undo/redo, "return to start" — only
+request the sections that actually changed, reusing every other section
+from an in-memory, session-only cache. Changing the road-cycling profile or
+the ferry-avoidance setting invalidates every section, since that changes
+what a request means. Route calculation requests OpenRouteService's
+`surface`, `waytype` and `waycategory` extras, so `steps`, `ford`, `ferry`
+and `other` (construction-designated way) warnings can now appear alongside
+the surface-based ones, whenever ORS actually returns matching metadata for
+a route. `access` warnings remain unavailable: ORS does not expose a
 `roadaccessrestrictions` extra for the `cycling-road` profile, so legal
 access restrictions are never represented. Still deferred within Milestone 3:
-per-leg (rather than whole-route) recalculation, and the road-speed-
-appropriate next-manoeuvre display planned for Milestone 4.
+the road-speed-appropriate next-manoeuvre display planned for Milestone 4.
 
 ## Requirements
 
@@ -220,10 +226,8 @@ What this means in practice:
 - The elevation chart plots raw imported points; a sparse `<rte>`-style import
   with few, far-apart points will look closer to straight-line interpolation
   than a smooth profile.
-- Planning recalculates the whole route on every edit rather than only the
-  changed leg, and moving a waypoint is select-then-relocate (tap/click, or
-  the crosshair "Move selected waypoint here" button) rather than a
-  draggable map marker.
+- Moving a waypoint is select-then-relocate (tap/click, or the crosshair
+  "Move selected waypoint here" button) rather than a draggable map marker.
 - Steps, ford, ferry and construction (`other`) warnings come from ORS's
   `waytype`/`waycategory` extras and only appear when the provider actually
   returns matching metadata for a route — their absence is not proof a

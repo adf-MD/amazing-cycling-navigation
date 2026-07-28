@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PlannedRoute, Waypoint } from "../../domain/types.ts";
+import { createRouteId } from "../../domain/id.ts";
 import { logError } from "../../platform/errorLog.ts";
 import type { RoutingProfile, RoutingProvider } from "../../routing/provider.ts";
 import { RoutingError } from "../../routing/openRouteServiceErrors.ts";
@@ -7,6 +8,13 @@ import {
   describeRoutingError,
   mapErrorReasonToOutcome,
 } from "../../routing/routingErrorPresentation.ts";
+import {
+  RouteLegCache,
+  deriveLegRequirements,
+  getProviderInstanceToken,
+  resolveRouteLegsInOrder,
+} from "../../routing/routeLegs.ts";
+import { stitchPlannedRouteLegs } from "../../routing/stitchPlannedRouteLegs.ts";
 import { recordProviderKeyVerification } from "../../storage/providerKeyRepository.ts";
 
 /** Debounce applied to automatic recalculation after a completed waypoint
@@ -37,6 +45,12 @@ export interface UsePlanningRouteResult {
    * recalculation — the UI can show this as "Calculating…"/"Updating…"
    * without needing to know which. */
   isCalculating: boolean;
+  /** The number of route sections (legs) requiring a fresh provider
+   * request in the current calculation batch, when more than one —
+   * null otherwise (including once every leg was already cached, or
+   * while not calculating at all). Purely for progress-text
+   * transparency; never required for correctness. */
+  updatingLegCount: number | null;
   /** The explicit first-calculation action; also usable as a manual
    * retry after a failure. */
   calculateNow: () => void;
@@ -77,6 +91,7 @@ export function usePlanningRoute({
   } | null>(null);
   const [lastErrorMessage, setLastErrorMessage] = useState<string | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [updatingLegCount, setUpdatingLegCount] = useState<number | null>(null);
 
   // Dropping below 2 waypoints clears any previous result: an old route
   // no longer corresponds to the current waypoints at all. Adjusted
@@ -96,6 +111,9 @@ export function usePlanningRoute({
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const requestSeqRef = useRef(0);
+  // Session-only leg cache, recreated whenever the adapter instance
+  // changes — never persisted, never shared across a different provider.
+  const legCacheRef = useRef<{ token: number; cache: RouteLegCache } | null>(null);
   const debounceTimeoutRef = useRef<number | undefined>(undefined);
   const hasRoutedResultRef = useRef(false);
   useEffect(() => {
@@ -126,18 +144,45 @@ export function usePlanningRoute({
     abortControllerRef.current = controller;
     const requestSeq = ++requestSeqRef.current;
 
+    const providerToken = getProviderInstanceToken(adapter);
+    if (legCacheRef.current?.token !== providerToken) {
+      legCacheRef.current = { token: providerToken, cache: new RouteLegCache() };
+    }
+    const legCache = legCacheRef.current.cache;
+
     setIsCalculating(true);
     setLastErrorMessage(null);
 
-    adapter
-      .calculateRoute(
-        currentWaypoints.map((waypoint) => waypoint.coordinate),
-        { profile: currentProfile, avoidFerries: currentAvoidFerries },
-        controller.signal,
+    const requirements = deriveLegRequirements(currentWaypoints);
+
+    resolveRouteLegsInOrder(
+      requirements,
+      { profile: currentProfile, avoidFerries: currentAvoidFerries },
+      {
+        adapter,
+        cache: legCache,
+        providerToken,
+        signal: controller.signal,
+        onBatchStart: (missingLegCount) => {
+          if (requestSeq !== requestSeqRef.current) return;
+          setUpdatingLegCount(missingLegCount > 1 ? missingLegCount : null);
+        },
+      },
+    )
+      .then((legs) =>
+        stitchPlannedRouteLegs(
+          legs.map((leg) => leg.route),
+          {
+            id: createRouteId(),
+            name: "Planned route",
+            createdAt: new Date().toISOString(),
+          },
+        ),
       )
       .then((route) => {
         if (requestSeq !== requestSeqRef.current) return;
         setIsCalculating(false);
+        setUpdatingLegCount(null);
         setRoutedResult({ route, waypoints: currentWaypoints });
         recordProviderKeyVerification("verified").catch((error: unknown) => {
           logError("planning-record-verification", error);
@@ -150,6 +195,7 @@ export function usePlanningRoute({
           return;
         }
         setIsCalculating(false);
+        setUpdatingLegCount(null);
         if (error instanceof RoutingError) {
           setLastErrorMessage(describeRoutingError(error));
           const outcome = mapErrorReasonToOutcome(error.reason);
@@ -203,5 +249,5 @@ export function usePlanningRoute({
     ? { kind: "routed", route: routedResult.route, waypoints: routedResult.waypoints }
     : deriveBaseState(waypoints);
 
-  return { state, lastErrorMessage, isCalculating, calculateNow };
+  return { state, lastErrorMessage, isCalculating, updatingLegCount, calculateNow };
 }

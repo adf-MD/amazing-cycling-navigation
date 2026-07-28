@@ -101,5 +101,7 @@ export function describeRoutingError(error: RoutingError): string {
     case "no-geometry":
     case "unknown":
       return "The routing provider returned an unusable response. Try again.";
+    case "leg-stitching-failed":
+      return "The route sections could not be joined into one continuous route. Try recalculating.";
   }
 }

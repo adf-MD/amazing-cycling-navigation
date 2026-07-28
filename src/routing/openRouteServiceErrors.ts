@@ -45,6 +45,11 @@ export type RoutingErrorReason =
   | "provider-error"
   | "malformed-response"
   | "no-geometry"
+  // A purely local, post-response failure: two successfully-calculated
+  // route legs could not be joined into one continuous route (e.g. their
+  // shared waypoint's endpoints came back too far apart to be the same
+  // physical seam). Never a network/provider failure — see stitchPlannedRouteLegs.ts.
+  | "leg-stitching-failed"
   | "unknown";
 
 /** A narrower, safe classification of *why* the fetch-dispatch promise

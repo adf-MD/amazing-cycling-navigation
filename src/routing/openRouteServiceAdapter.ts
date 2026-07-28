@@ -17,6 +17,7 @@ import {
 import { sanitiseTransportErrorMessage } from "./sanitiseErrorMessage.ts";
 import { generateId } from "../platform/idGenerator.ts";
 import { isValidHttpHeaderValue } from "../platform/apiKeyValidation.ts";
+import { mergeAbortSignals } from "../platform/abortSignals.ts";
 import {
   isSecureContext,
   isServiceWorkerControlled,
@@ -50,28 +51,6 @@ function isAbortError(error: unknown): boolean {
     "name" in error &&
     error.name === "AbortError"
   );
-}
-
-/** Merges an optional caller signal with this adapter's own timeout
- * signal into one combined signal — a small hand-rolled listener merge
- * rather than AbortSignal.any()/.timeout(), so this has no minimum
- * browser-version dependency at all. */
-function mergeAbortSignals(
-  external: AbortSignal | undefined,
-  timeout: AbortSignal,
-): AbortSignal {
-  if (!external) return timeout;
-  const controller = new AbortController();
-  if (external.aborted || timeout.aborted) {
-    controller.abort();
-    return controller.signal;
-  }
-  const onAbort = () => {
-    controller.abort();
-  };
-  external.addEventListener("abort", onAbort, { once: true });
-  timeout.addEventListener("abort", onAbort, { once: true });
-  return controller.signal;
 }
 
 /** Reads the standard Retry-After header (seconds) — the one quota/rate-

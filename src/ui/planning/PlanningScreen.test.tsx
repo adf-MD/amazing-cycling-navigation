@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { PlanningScreen } from "./PlanningScreen.tsx";
 import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
+import { cumulativeDistancesMetres } from "../../navigation/distance.ts";
 import { RoutingError } from "../../routing/openRouteServiceErrors.ts";
 import type { RoutingProvider } from "../../routing/provider.ts";
 import { db } from "../../storage/db.ts";
@@ -238,6 +239,81 @@ function buildRouteWithStructuralWarnings(): PlannedRoute {
 function buildResolvedAdapter(route: PlannedRoute): RoutingProvider {
   return {
     calculateRoute: () => Promise.resolve(route),
+  };
+}
+
+/** Like buildResolvedAdapter, but geometrically leg-aware: every call
+ * returns a route whose points start/end exactly at the requested pair,
+ * so a scenario with more than two waypoints (more than one leg) stitches
+ * successfully instead of failing the seam-tolerance check — unlike
+ * buildResolvedAdapter, which always returns the same fixed geometry
+ * regardless of which leg was requested. Reuses `route`'s other fields
+ * (warnings/manoeuvres/surfaceSummary/source) unchanged on every call, so
+ * only use this where a test doesn't assert on that content across a
+ * multi-leg calculation. */
+function buildLegAwareResolvedAdapter(route: PlannedRoute): RoutingProvider {
+  return {
+    calculateRoute: (waypoints) => {
+      const [start, end] = waypoints;
+      if (!start || !end) return Promise.resolve(route);
+      const distances = cumulativeDistancesMetres([start, end]);
+      return Promise.resolve({
+        ...route,
+        points: [start, end].map((coordinate, i) => ({
+          coordinate,
+          elevationMetres: null,
+          distanceFromStartMetres: distances[i] ?? 0,
+        })),
+        distanceMetres: distances.at(-1) ?? 0,
+      });
+    },
+  };
+}
+
+interface DeferredRouteCall {
+  waypoints: Coordinate[];
+  resolve: (route: PlannedRoute) => void;
+}
+
+/** A minimal deferred (resolve-on-demand) adapter for tests that need to
+ * observe UI state while a calculation is still in flight — unlike
+ * buildResolvedAdapter/buildLegAwareResolvedAdapter, which both settle
+ * immediately. */
+function buildDeferredAdapter(): {
+  adapter: RoutingProvider;
+  calls: DeferredRouteCall[];
+} {
+  const calls: DeferredRouteCall[] = [];
+  const adapter: RoutingProvider = {
+    calculateRoute: (waypoints) =>
+      new Promise<PlannedRoute>((resolve) => {
+        calls.push({ waypoints, resolve });
+      }),
+  };
+  return { adapter, calls };
+}
+
+/** A geometrically-consistent leg route matching whatever pair of
+ * coordinates a given deferred call actually requested. */
+function buildRouteForCall(waypoints: Coordinate[]): PlannedRoute {
+  const start = waypoints[0] ?? [0, 51];
+  const end = waypoints[1] ?? [0.001, 51];
+  const distances = cumulativeDistancesMetres([start, end]);
+  return {
+    id: "leg",
+    name: "Leg",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    points: [start, end].map((coordinate, i) => ({
+      coordinate,
+      elevationMetres: null,
+      distanceFromStartMetres: distances[i] ?? 0,
+    })),
+    manoeuvres: [],
+    distanceMetres: distances.at(-1) ?? 0,
+    ascentMetres: null,
+    descentMetres: null,
+    warnings: [],
+    source: { kind: "planner", provider: "openrouteservice", profile: "cycling-road" },
   };
 }
 
@@ -1225,7 +1301,7 @@ describe("PlanningScreen", () => {
         <PlanningScreen
           onNavigateToSettings={vi.fn()}
           mapFactory={map.factory}
-          routingProvider={buildResolvedAdapter(route)}
+          routingProvider={buildLegAwareResolvedAdapter(route)}
         />,
       );
       map.triggerLoad();
@@ -1496,5 +1572,58 @@ describe("PlanningScreen", () => {
     expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Waypoint 2" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Waypoint 3" })).toBeNull();
+  });
+
+  it("shows a per-section count while calculating a route needing more than one new leg", async () => {
+    const user = userEvent.setup();
+    await saveProviderKey("dummy-test-key");
+    const map = createMockMapFactory();
+    const { adapter, calls } = buildDeferredAdapter();
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={adapter}
+      />,
+    );
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+    await addWaypointViaCrosshair(map, user, [0.02, 51]);
+
+    const calculateButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /calculate route/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+    await user.click(calculateButton);
+
+    await waitFor(() => {
+      expect(calls).toHaveLength(2);
+    });
+    expect(
+      screen.getByRole("button", { name: "Calculating 2 route sections…" }),
+    ).toBeInTheDocument();
+
+    calls[0]?.resolve(buildRouteForCall(calls[0].waypoints));
+    calls[1]?.resolve(buildRouteForCall(calls[1].waypoints));
+
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: "Route summary" })).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole("button", { name: /calculating/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("explains that a route is calculated in per-waypoint sections", () => {
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    expect(
+      screen.getByText(/calculated in sections between waypoints/i),
+    ).toBeInTheDocument();
   });
 });

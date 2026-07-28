@@ -615,7 +615,9 @@ export function PlanningScreen({
         disabled={state.present.length < 2 || !hasKey || routing.isCalculating}
       >
         {routing.isCalculating
-          ? "Calculating…"
+          ? routing.updatingLegCount !== null
+            ? `Calculating ${String(routing.updatingLegCount)} route sections…`
+            : "Calculating…"
           : routing.lastErrorMessage
             ? "Try again"
             : "Calculate route"}
@@ -623,6 +625,11 @@ export function PlanningScreen({
       {hasKey ? (
         <p role="status">{describeProviderKeyStatus(key, verification, now).headline}</p>
       ) : null}
+      <p>
+        A route is calculated in sections between waypoints. The first calculation uses
+        one routing request per section; later edits normally recalculate only changed
+        sections.
+      </p>
       {routing.lastErrorMessage ? <p role="alert">{routing.lastErrorMessage}</p> : null}
 
       {routing.state.kind === "routed" ? (
