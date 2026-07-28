@@ -84,6 +84,7 @@ describe("DiagnosticsScreen", () => {
     render(<DiagnosticsScreen />);
 
     expect(getDetailValue("App version")).toHaveTextContent(__APP_VERSION__);
+    expect(getDetailValue("Build")).toHaveTextContent(__BUILD_ID__);
     expect(getDetailValue("Network")).toHaveTextContent(/online|offline/i);
     expect(getDetailValue("Service worker")).not.toBeEmptyDOMElement();
     expect(getDetailValue("Map rendering support")).not.toBeEmptyDOMElement();
@@ -373,6 +374,8 @@ describe("DiagnosticsScreen", () => {
       expect(report).not.toContain("8.681495");
       expect(report).not.toContain("dummy-test-key");
       expect(report).toContain("App version:");
+      expect(report).toContain("Build:");
+      expect(report).not.toContain("0.0.0");
     });
   });
 });

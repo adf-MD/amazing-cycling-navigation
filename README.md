@@ -270,6 +270,20 @@ Pages**, and on the completed workflow run's `deploy` job (as the job's
 environment URL) — typically
 `https://<username>.github.io/amazing-cycling-navigation/`.
 
+### Confirming the deployed build
+
+The app's current version is `0.1.0` (`package.json`). Independently of that
+version number, the **Diagnostics** screen also shows a **Build** field: the
+first 7 characters of the Git commit SHA the running app was built from
+(e.g. `4b825dc`). The deploy workflow sets this via `APP_BUILD_SHA:
+${{ github.sha }}` on its `Build` step; a local build (`npm run dev` or
+`npm run build` without that variable set) always shows `dev` instead.
+
+To confirm an installed PWA has actually picked up a given deployment,
+compare its Diagnostics "Build" value against the commit SHA of the
+corresponding successful workflow run in the Actions tab — useful since a
+service worker update can otherwise lag behind what's actually live.
+
 ## Privacy
 
 - No accounts, analytics, telemetry, or external error reporting.

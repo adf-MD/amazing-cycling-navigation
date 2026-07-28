@@ -43,6 +43,8 @@ jobs:
         run: npm test
 
       - name: Build
+        env:
+          APP_BUILD_SHA: ${{ github.sha }}
         run: npm run build
 
       - name: Install Playwright browsers

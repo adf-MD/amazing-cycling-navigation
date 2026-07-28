@@ -4,16 +4,24 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import pkg from "./package.json" with { type: "json" };
 import { workboxOptions } from "./vite.pwa.workbox.ts";
+import { resolveBuildId } from "./vite.buildId.ts";
 
 // GitHub Pages project site: https://<user>.github.io/amazing-cycling-navigation/
 // Kept as a single literal so dev, build, manifest and service-worker scope
 // can never disagree about where the app is served from.
 export const BASE_PATH = "/amazing-cycling-navigation/";
 
+// Set by the deploy workflow's Build step (APP_BUILD_SHA: ${{ github.sha }});
+// absent locally and in every other CI step, so local/dev builds and
+// `npm test` both see "dev" — see vite.buildId.ts for the exact SHA and
+// whitespace validation policy.
+const BUILD_ID = resolveBuildId(process.env.APP_BUILD_SHA);
+
 export default defineConfig({
   base: BASE_PATH,
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+    __BUILD_ID__: JSON.stringify(BUILD_ID),
   },
   plugins: [
     react(),

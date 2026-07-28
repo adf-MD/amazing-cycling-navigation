@@ -48,6 +48,10 @@ function formatFixAge(ageMs: number): string {
   return `${String(Math.round(seconds / 60))} min ago`;
 }
 
+function formatDiagnosticsReportHeader(): string {
+  return `App version: ${__APP_VERSION__}\nBuild: ${__BUILD_ID__}`;
+}
+
 function buildDefaultAdapter(): RoutingProvider {
   return new OpenRouteServiceAdapter({
     getApiKey: () => getProviderKey().then((key) => key?.apiKey),
@@ -108,7 +112,7 @@ export function DiagnosticsScreen({
 
   const copyConnectionTestReport = useCallback(() => {
     if (!connectionTestResult) return;
-    const report = `App version: ${__APP_VERSION__}\n${formatConnectionTestReport(connectionTestResult)}`;
+    const report = `${formatDiagnosticsReportHeader()}\n${formatConnectionTestReport(connectionTestResult)}`;
     void (async () => {
       try {
         await navigator.clipboard.writeText(report);
@@ -127,6 +131,9 @@ export function DiagnosticsScreen({
       <dl>
         <dt>App version</dt>
         <dd>{__APP_VERSION__}</dd>
+
+        <dt>Build</dt>
+        <dd>{__BUILD_ID__}</dd>
 
         <dt>Network</dt>
         <dd>{online ? "Online" : "Offline"}</dd>
@@ -285,7 +292,7 @@ export function DiagnosticsScreen({
               <br />
               <textarea
                 readOnly
-                value={`App version: ${__APP_VERSION__}\n${formatConnectionTestReport(connectionTestResult)}`}
+                value={`${formatDiagnosticsReportHeader()}\n${formatConnectionTestReport(connectionTestResult)}`}
               />
             </p>
           ) : null}
