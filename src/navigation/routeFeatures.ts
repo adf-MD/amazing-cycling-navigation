@@ -377,6 +377,16 @@ export function detectRouteFeatures(profile: RouteElevationProfile): RouteFeatur
   return features;
 }
 
+/** The climbs within `features`, in route order (ascending start
+ * distance) — safe to rely on detectRouteFeatures's own ascending/
+ * non-overlapping-by-construction guarantee rather than re-sorting.
+ * Used to number and order the pre-ride climb selector. */
+export function listClimbsInRouteOrder(
+  features: readonly RouteFeature[],
+): readonly ClimbFeature[] {
+  return features.filter((feature): feature is ClimbFeature => feature.kind === "climb");
+}
+
 /** The recognised feature containing `distanceMetres` (inclusive of both
  * ends), or `null` when the distance falls in an ordinary (non-feature)
  * section or outside every feature's range. */

@@ -13,6 +13,7 @@ import {
 import {
   detectRouteFeatures,
   findFeatureAtDistance,
+  listClimbsInRouteOrder,
   resolveElevationChartTap,
 } from "../../navigation/routeFeatures.ts";
 import type { ElevationViewMode, OffRouteLevel } from "../../navigation/types.ts";
@@ -29,6 +30,7 @@ import { GradientColoursDisclosure } from "../shared/GradientColoursDisclosure.t
 import { GradientSegmentDetailsPanel } from "../shared/GradientSegmentDetailsPanel.tsx";
 import { RouteFeatureDetailsPanel } from "../shared/RouteFeatureDetailsPanel.tsx";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
+import { RidingClimbSelector } from "./RidingClimbSelector.tsx";
 import { useRideCamera } from "./useRideCamera.ts";
 import { useRideNavigation } from "./useRideNavigation.ts";
 
@@ -146,11 +148,33 @@ export function RidingScreen({
     };
   }, [route]);
 
-  const [selectedRouteFeatureId, setSelectedRouteFeatureId] = useState<string | null>(
-    null,
-  );
+  // An explicit feature choice, tagged with the route it was made for —
+  // rather than storing the "current" feature id directly and resetting
+  // it imperatively (via an effect or a during-render ref comparison,
+  // both awkward here: the former trips this project's
+  // react-hooks/set-state-in-effect rule, the latter trips
+  // react-hooks/refs for reasons specific to this component that weren't
+  // worth chasing further), the *displayed* selection below is a pure
+  // derivation: an explicit choice only counts while its routeId still
+  // matches the current route, and otherwise falls back to the pre-ride
+  // default (the first recognised climb). This also means the fallback
+  // recomputes for free if the route ever changed without this screen
+  // unmounting, rather than depending on that always being true.
+  const [explicitFeatureSelection, setExplicitFeatureSelection] = useState<{
+    routeId: string;
+    featureId: string | null;
+  } | null>(null);
   const [selectedGradientSegment, setSelectedGradientSegment] =
     useState<GradientSegment | null>(null);
+
+  // Recognised climbs, in route order, for the pre-ride selector below
+  // and for the pre-ride default above.
+  const climbs = useMemo(() => listClimbsInRouteOrder(routeFeatures), [routeFeatures]);
+
+  const selectedRouteFeatureId =
+    explicitFeatureSelection?.routeId === route.id
+      ? explicitFeatureSelection.featureId
+      : (climbs[0]?.id ?? null);
 
   const selectedFeature =
     routeFeatures.find((feature) => feature.id === selectedRouteFeatureId) ?? null;
@@ -166,6 +190,16 @@ export function RidingScreen({
   // An explicit selection wins over merely being "active" — a rider can
   // inspect a different climb than the one they're currently on.
   const microDetailFeature = selectedFeature ?? activeFeature;
+  // Numbers the shared details panel's heading exactly like the pre-ride
+  // dropdown ("Climb 2 · Category 3"), whichever way the climb was
+  // selected (dropdown, map tap or chart tap) — undefined once riding is
+  // under way (no numbering there, matching the existing mid-ride
+  // heading) and for a descent (no numbering concept there).
+  let preRideClimbNumber: number | undefined;
+  if (nav.geolocationStatus === "idle" && microDetailFeature?.kind === "climb") {
+    const index = climbs.findIndex((climb) => climb.id === microDetailFeature.id);
+    preRideClimbNumber = index === -1 ? undefined : index + 1;
+  }
   const microDetailSegments = microDetailFeature
     ? clipGradientSegments(
         gradientSegments,
@@ -197,14 +231,17 @@ export function RidingScreen({
         ?.elevationMetres ?? null)
     : null;
 
-  const selectRouteFeature = useCallback((id: string) => {
-    setSelectedGradientSegment(null);
-    setSelectedRouteFeatureId(id);
-  }, []);
+  const selectRouteFeature = useCallback(
+    (id: string) => {
+      setSelectedGradientSegment(null);
+      setExplicitFeatureSelection({ routeId: route.id, featureId: id });
+    },
+    [route.id],
+  );
   const handleClearRouteFeatureSelection = useCallback(() => {
-    setSelectedRouteFeatureId(null);
+    setExplicitFeatureSelection({ routeId: route.id, featureId: null });
     setSelectedGradientSegment(null);
-  }, []);
+  }, [route.id]);
   const handleClearGradientSegmentSelection = useCallback(() => {
     setSelectedGradientSegment(null);
   }, []);
@@ -232,6 +269,20 @@ export function RidingScreen({
   };
 
   const handleStart = () => {
+    // Only clear a pre-ride selection when genuinely transitioning out of
+    // the pre-ride (idle) state — this same handler also backs the
+    // mid-ride "Try again" retry button (geolocationStatus === "error"),
+    // and CLAUDE.md requires that retry to preserve ride progress, which
+    // includes not silently discarding a rider's in-progress feature
+    // selection. Clearing here (idle only) is what stops a climb merely
+    // previewed pre-ride from continuing to override the rider's actual
+    // active climb for the rest of the ride, since
+    // microDetailFeature = selectedFeature ?? activeFeature would
+    // otherwise keep preferring the stale pre-ride pick.
+    if (nav.geolocationStatus === "idle") {
+      setExplicitFeatureSelection({ routeId: route.id, featureId: null });
+      setSelectedGradientSegment(null);
+    }
     nav.start();
     camera.requestFollow();
   };
@@ -374,6 +425,20 @@ export function RidingScreen({
         ) : null}
       </div>
 
+      {nav.geolocationStatus === "idle" ? (
+        <RidingClimbSelector
+          climbs={climbs}
+          selectedClimbId={selectedFeature?.kind === "climb" ? selectedFeature.id : null}
+          onSelectClimb={(id) => {
+            if (id) {
+              selectRouteFeature(id);
+            } else {
+              handleClearRouteFeatureSelection();
+            }
+          }}
+        />
+      ) : null}
+
       {nav.matchedDistanceFromStartMetres !== null ? (
         <div
           role="group"
@@ -478,6 +543,7 @@ export function RidingScreen({
             />
             <RouteFeatureDetailsPanel
               feature={microDetailFeature}
+              climbNumber={preRideClimbNumber}
               onClear={selectedFeature ? handleClearRouteFeatureSelection : undefined}
             />
             <GradientSegmentDetailsPanel

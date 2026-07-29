@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { GRADIENT_CLASS_COLOURS, GRADIENT_CLASS_ORDER } from "./gradientPalette.ts";
+import {
+  GRADIENT_CLASS_COLOUR_NAMES,
+  GRADIENT_CLASS_COLOURS,
+  GRADIENT_CLASS_NAMES,
+  GRADIENT_CLASS_ORDER,
+  GRADIENT_CLASS_RANGE_LABELS,
+} from "./gradientPalette.ts";
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const normalized = hex.replace("#", "");
@@ -96,5 +102,36 @@ describe("gradient palette", () => {
       }
     }
     expect(tooClose).toEqual([]);
+  });
+
+  it("has a name, range and colour name for every gradient class", () => {
+    for (const gradientClass of GRADIENT_CLASS_ORDER) {
+      expect(GRADIENT_CLASS_NAMES[gradientClass]).toBeTruthy();
+      expect(GRADIENT_CLASS_RANGE_LABELS[gradientClass]).toBeTruthy();
+      expect(GRADIENT_CLASS_COLOUR_NAMES[gradientClass]).toBeTruthy();
+    }
+  });
+
+  // A literal snapshot (not derived) so any accidental reintroduction of
+  // ambiguous adjacent boundary text — e.g. two adjacent bands both
+  // stating "−6%" with no inequality cue — shows up immediately as a
+  // failing diff, per this slice's own precise-range-description
+  // requirement.
+  it("states every range boundary unambiguously, with no two adjacent bands claiming the same boundary value", () => {
+    expect(GRADIENT_CLASS_RANGE_LABELS).toEqual({
+      "steep-descent": "Below −6%",
+      descent: "−6% to just below −2%",
+      flat: "−2% to just below 2%",
+      "gentle-climb": "2% to just below 4%",
+      "moderate-climb": "4% to just below 7%",
+      "hard-climb": "7% to just below 10%",
+      "very-steep-climb": "10% or more",
+      unknown: "No elevation data",
+    });
+  });
+
+  it("keeps every gradient colour name distinct within the class list", () => {
+    const names = GRADIENT_CLASS_ORDER.map((cls) => GRADIENT_CLASS_COLOUR_NAMES[cls]);
+    expect(new Set(names).size).toBe(names.length);
   });
 });

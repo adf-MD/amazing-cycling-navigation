@@ -1,19 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { RouteFeatureLegend } from "./RouteFeatureLegend.tsx";
-import type { RouteFeatureVisualKey } from "../../navigation/routeFeaturePalette.ts";
+import {
+  ROUTE_FEATURE_COLOURS,
+  type RouteFeatureVisualKey,
+} from "../../navigation/routeFeaturePalette.ts";
 
 function keys(...values: RouteFeatureVisualKey[]): ReadonlySet<RouteFeatureVisualKey> {
   return new Set(values);
 }
 
 describe("RouteFeatureLegend", () => {
-  it("renders nothing for an empty key set", () => {
-    const { container } = render(<RouteFeatureLegend presentVisualKeys={keys()} />);
-    expect(container).toBeEmptyDOMElement();
+  it("renders only the ordinary-route entry for an empty key set", () => {
+    render(<RouteFeatureLegend presentVisualKeys={keys()} />);
+    const list = screen.getByRole("list", { name: "Recognised route features legend" });
+    const items = list.querySelectorAll("li");
+    expect(items).toHaveLength(1);
+    expect(items[0]?.textContent).toContain("Ordinary route");
   });
 
-  it("renders one entry per present key, in a fixed order (climbs light-to-dark, then descents light-to-dark)", () => {
+  it("always includes the ordinary-route entry first, then one entry per present key, in a fixed order (climbs light-to-dark, then descents light-to-dark)", () => {
     render(
       <RouteFeatureLegend
         presentVisualKeys={keys("hc", "uncategorised", "very-steep")}
@@ -21,10 +27,11 @@ describe("RouteFeatureLegend", () => {
     );
     const list = screen.getByRole("list", { name: "Recognised route features legend" });
     const items = list.querySelectorAll("li");
-    expect(items).toHaveLength(3);
-    expect(items[0]?.textContent).toContain("Uncategorised climb");
-    expect(items[1]?.textContent).toContain("HC climb");
-    expect(items[2]?.textContent).toContain("very steep");
+    expect(items).toHaveLength(4);
+    expect(items[0]?.textContent).toContain("Ordinary route");
+    expect(items[1]?.textContent).toContain("Uncategorised climb");
+    expect(items[2]?.textContent).toContain("HC climb");
+    expect(items[3]?.textContent).toContain("very steep");
   });
 
   it("omits keys that are not present", () => {
@@ -55,5 +62,16 @@ describe("RouteFeatureLegend", () => {
   it("labels a descent as 'Recognised descent', with its severity called out in text", () => {
     render(<RouteFeatureLegend presentVisualKeys={keys("steep")} />);
     expect(screen.getByText(/Recognised descent \(steep/)).toBeInTheDocument();
+  });
+
+  it("renders a visible line sample for a present key, coloured with the same token the map layer uses", () => {
+    render(<RouteFeatureLegend presentVisualKeys={keys("category-2")} />);
+    const swatches = document.querySelectorAll(".gradient-colour-swatch");
+    // The first swatch is the always-present ordinary-route entry.
+    expect(swatches).toHaveLength(2);
+    expect(swatches[1]).toHaveStyle({
+      backgroundColor: ROUTE_FEATURE_COLOURS["category-2"],
+    });
+    expect(swatches[1]).toHaveStyle({ width: "32px", height: "8px" });
   });
 });

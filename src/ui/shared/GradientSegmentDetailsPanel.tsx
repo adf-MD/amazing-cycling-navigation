@@ -1,5 +1,5 @@
 import type { GradientSegment } from "../../navigation/gradient.ts";
-import { GRADIENT_CLASS_LABELS } from "../../navigation/gradientPalette.ts";
+import { GRADIENT_CLASS_NAMES } from "../../navigation/gradientPalette.ts";
 import { formatDistanceKmValue, formatGradientPercent } from "./routeSummary.ts";
 
 export interface GradientSegmentDetailsPanelProps {
@@ -15,18 +15,6 @@ export interface GradientSegmentDetailsPanelProps {
   startElevationMetres: number | null;
   endElevationMetres: number | null;
   onClear?: () => void;
-}
-
-/** GRADIENT_CLASS_LABELS carries the exact grade range in parentheses
- * (e.g. "Hard climb (7% to 10%)") for the legend; this heading instead
- * pairs the plain class name with the segment's own actual measured
- * gradient (e.g. "Hard climb · +8.3%"), matching the spec's example
- * ("Steep descent · −7.3%") — derived from the one authoritative label,
- * not a second hard-coded copy of the class names. */
-function gradientClassShortLabel(
-  classification: GradientSegment["classification"],
-): string {
-  return GRADIENT_CLASS_LABELS[classification].replace(/\s*\([^)]*\)$/, "");
 }
 
 /**
@@ -49,7 +37,7 @@ export function GradientSegmentDetailsPanel({
   return (
     <section aria-label="Gradient segment details" className="gradient-segment-details">
       <h3>
-        {gradientClassShortLabel(segment.classification)}
+        {GRADIENT_CLASS_NAMES[segment.classification]}
         {segment.averageGradientPercent !== null
           ? ` · ${formatGradientPercent(segment.averageGradientPercent)}`
           : ""}

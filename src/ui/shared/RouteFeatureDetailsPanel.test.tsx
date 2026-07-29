@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouteFeatureDetailsPanel } from "./RouteFeatureDetailsPanel.tsx";
 import type { ClimbFeature, DescentFeature } from "../../navigation/routeFeatures.ts";
+import { ROUTE_FEATURE_COLOURS } from "../../navigation/routeFeaturePalette.ts";
 
 const climb: ClimbFeature = {
   id: "climb-12400",
@@ -70,5 +71,27 @@ describe("RouteFeatureDetailsPanel", () => {
     const button = screen.getByRole("button", { name: "Clear selection" });
     await user.click(button);
     expect(onClear).toHaveBeenCalledTimes(1);
+  });
+
+  it("numbers the heading when climbNumber is supplied, using the bare category name", () => {
+    render(<RouteFeatureDetailsPanel feature={climb} climbNumber={2} />);
+    expect(
+      screen.getByRole("heading", { name: "Climb 2 · Category 3" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Category 3 climb")).toBeNull();
+  });
+
+  it("ignores climbNumber for a descent", () => {
+    render(<RouteFeatureDetailsPanel feature={descent} climbNumber={1} />);
+    expect(
+      screen.getByRole("heading", { name: "Recognised descent" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders a visible category-colour line sample next to the heading", () => {
+    render(<RouteFeatureDetailsPanel feature={climb} />);
+    const swatch = document.querySelector(".gradient-colour-swatch");
+    expect(swatch).not.toBeNull();
+    expect(swatch).toHaveStyle({ backgroundColor: ROUTE_FEATURE_COLOURS["category-3"] });
   });
 });

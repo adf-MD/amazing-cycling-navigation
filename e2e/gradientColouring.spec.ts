@@ -295,6 +295,78 @@ test.describe("Planning", () => {
   });
 });
 
+test.describe("Planning: legend visibility", () => {
+  test("expanding the legend reveals line samples with a real, non-transparent rendered colour", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error" && !message.text().includes("net::ERR_FAILED")) {
+        consoleErrors.push(message.text());
+      }
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+    await page.addInitScript(() => {
+      const originalFetch = fetch;
+      globalThis.fetch = (...args: Parameters<typeof fetch>) => originalFetch(...args);
+    });
+
+    await forceMapStyleFailure(page);
+    await page.route(ORS_URL_GLOB, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify(buildMockOrsResponse(buildGradientRouteCoordinates())),
+      });
+    });
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByLabel("OpenRouteService API key").fill(DUMMY_KEY);
+    await page.getByRole("button", { name: "Save on this device" }).click();
+    await expect(
+      page.getByText(/key saved on this device, not yet verified/i),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Plan" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    await mapContainer.click({ position: { x: 100, y: 150 } });
+    await mapContainer.click({ position: { x: 300, y: 150 } });
+    const calculateButton = page.getByRole("button", { name: /calculate route/i });
+    await expect(calculateButton).toBeEnabled();
+    await calculateButton.click();
+
+    const summaryRegion = page.getByRole("region", { name: "Route summary" });
+    await expect(summaryRegion).toBeVisible({ timeout: 15_000 });
+
+    await summaryRegion.getByText("Gradient colours").click();
+
+    // This is the check that would have caught the original bug: the
+    // swatch's backgroundColor was set correctly all along, but with no
+    // width/height anywhere, it painted onto a 0x0 box — invisible in a
+    // real browser despite the colour being "correct" in the DOM.
+    const swatch = summaryRegion.locator(".gradient-colour-swatch").first();
+    await expect(swatch).toBeVisible();
+    const box = await swatch.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box?.width).toBeGreaterThan(0);
+    expect(box?.height).toBeGreaterThan(0);
+    const backgroundColor = await swatch.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    );
+    expect(backgroundColor).not.toBe("");
+    expect(backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(backgroundColor).not.toBe("transparent");
+
+    expect(consoleErrors).toEqual([]);
+  });
+});
+
 test.describe("Riding", () => {
   test("shows the macro climb colour throughout, and detailed local-gradient colouring once the rider is on the climb", async ({
     page,
@@ -366,6 +438,98 @@ test.describe("Riding", () => {
         { timeout: 15_000, intervals: [500] },
       )
       .toBeGreaterThan(0);
+
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test("the pre-ride climb selector defaults to the route's first climb, lets the rider switch to All route and back, and disappears once riding starts", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error" && !message.text().includes("net::ERR_FAILED")) {
+        consoleErrors.push(message.text());
+      }
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+    await page.addInitScript(() => {
+      const originalFetch = fetch;
+      globalThis.fetch = (...args: Parameters<typeof fetch>) => originalFetch(...args);
+    });
+
+    await forceMapStyleFailure(page);
+
+    await page.goto("/");
+    await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
+    const routeButton = page.getByRole("button", { name: "gradient-route" });
+    await expect(routeButton).toBeVisible();
+    await routeButton.click();
+
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    await expect(page.getByTestId("map-fallback-banner")).toBeVisible();
+    const startButton = page.getByRole("button", { name: "Start riding" });
+    await expect(startButton).toBeVisible();
+
+    // The route's one recognised climb (see the fixture comment above:
+    // 1000 m at 20% from 1000-2000 m -> category-3) is selected by
+    // default, before any interaction — its details are already visible,
+    // and its detailed local-gradient colouring already shows. The macro
+    // category colour itself is not separately visible on the climb's own
+    // range while it's selected: micro is drawn on top at the same width,
+    // per the existing selected-feature layering (see the "Planning" test
+    // above) — only the flat lead-in (plain base route colour, not a
+    // macro feature) is unaffected by the selection.
+    const select = page.getByRole("combobox", { name: "Recognised climbs" });
+    await expect(select).toBeVisible();
+    // The exact start distance is smoothing-driven edge rounding (see
+    // routeFeatureColouring.spec.ts's own comment on the same fixture
+    // shape) — comfortably within 0.9-1.0 km, not exactly 1.0.
+    await expect(
+      page.getByRole("option", { name: /Climb 1 · Category 3 · starts at 0\.\d km/ }),
+    ).toBeAttached();
+    await expect(
+      page.getByRole("heading", { name: "Climb 1 · Category 3" }),
+    ).toBeVisible();
+
+    const preSelectedSample = await captureColourSample(page, {
+      base: BASE_ROUTE_COLOUR,
+      micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+    });
+    expect(preSelectedSample.base.pixelCount).toBeGreaterThan(0);
+    expect(preSelectedSample.micro.pixelCount).toBeGreaterThan(0);
+
+    // Switching to "All route" clears the details card, shows the
+    // route-level count instead, and removes the detailed colouring —
+    // the macro colouring stays exactly as it was.
+    await select.selectOption({ label: "All route" });
+    await expect(
+      page.getByRole("heading", { name: "Climb 1 · Category 3" }),
+    ).toBeHidden();
+    await expect(page.getByText("1 recognised climb on this route")).toBeVisible();
+    const allRouteSample = await captureColourSample(page, {
+      macro: MACRO_CATEGORY_3_COLOUR,
+      micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+    });
+    expect(allRouteSample.macro.pixelCount).toBeGreaterThan(0);
+    expect(allRouteSample.micro.pixelCount).toBe(0);
+
+    // Selecting it again from the dropdown restores both — index 1, since
+    // index 0 is always "All route" and this fixture has exactly one
+    // recognised climb.
+    await select.selectOption({ index: 1 });
+    await expect(
+      page.getByRole("heading", { name: "Climb 1 · Category 3" }),
+    ).toBeVisible();
+    const reselectedSample = await captureColourSample(page, {
+      micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+    });
+    expect(reselectedSample.micro.pixelCount).toBeGreaterThan(0);
+
+    // Starting the ride hides the pre-ride selector entirely.
+    await startButton.click();
+    await expect(select).toBeHidden();
 
     expect(consoleErrors).toEqual([]);
   });

@@ -885,7 +885,9 @@ describe("RouteSummaryPanel", () => {
       const legend = screen.getByRole("list", {
         name: "Recognised route features legend",
       });
-      expect(legend.querySelectorAll("li")).toHaveLength(1);
+      // The ordinary-route entry always renders first, plus one entry per
+      // present feature category.
+      expect(legend.querySelectorAll("li")).toHaveLength(2);
       expect(screen.getByText(/Category 4 climb/)).toBeInTheDocument();
     });
 

@@ -6,6 +6,7 @@ import {
   classifyDescentSeverity,
   detectRouteFeatures,
   findFeatureAtDistance,
+  listClimbsInRouteOrder,
   MIN_CLIMB_SCORE,
   resolveElevationChartTap,
   type ClimbFeature,
@@ -283,6 +284,35 @@ describe("detectRouteFeatures: invariants", () => {
         current?.endDistanceMetres ?? -Infinity,
       );
     }
+  });
+
+  describe("listClimbsInRouteOrder", () => {
+    it("returns only climbs, in ascending start-distance order, excluding descents", () => {
+      const points = buildLeggedRoute([
+        { lengthMetres: 1500, gradePercent: 8 },
+        { lengthMetres: 1500, gradePercent: -8 },
+        { lengthMetres: 1500, gradePercent: 6 },
+        { lengthMetres: 1500, gradePercent: -6 },
+      ]);
+      const features = detect(points);
+      const climbs = listClimbsInRouteOrder(features);
+
+      expect(climbs.length).toBeGreaterThanOrEqual(2);
+      // Descents are present in the source fixture but excluded here.
+      expect(features.some((feature) => feature.kind === "descent")).toBe(true);
+      expect(climbs.length).toBeLessThan(features.length);
+      for (let i = 0; i < climbs.length - 1; i += 1) {
+        expect(climbs[i]?.startDistanceMetres).toBeLessThan(
+          climbs[i + 1]?.startDistanceMetres ?? Infinity,
+        );
+      }
+    });
+
+    it("returns an empty array when there are no climbs", () => {
+      const points = buildLeggedRoute([{ lengthMetres: 1500, gradePercent: -8 }]);
+      const features = detect(points);
+      expect(listClimbsInRouteOrder(features)).toEqual([]);
+    });
   });
 
   it("uses the smoothed local grade (not a raw single-sample spike) for maxGradientPercent", () => {

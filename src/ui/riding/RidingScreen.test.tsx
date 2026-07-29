@@ -131,6 +131,7 @@ function buildStubMapFactory(): {
   }) => void;
   setCameraSpy: ReturnType<typeof vi.fn>;
   getZoomSpy: ReturnType<typeof vi.fn>;
+  fitBoundsSpy: ReturnType<typeof vi.fn>;
 } {
   let loadListener: (() => void) | undefined;
   let styleLoadedListener: (() => void) | undefined;
@@ -146,6 +147,7 @@ function buildStubMapFactory(): {
     | undefined;
   const setCameraSpy = vi.fn();
   const getZoomSpy = vi.fn(() => 14);
+  const fitBoundsSpy = vi.fn();
   const factory: MapFactory = () => {
     const map: MapLibreLike = {
       onLoad: (listener) => {
@@ -169,7 +171,7 @@ function buildStubMapFactory(): {
       hasImage: () => false,
       addImage: () => undefined,
       addSymbolLayer: () => undefined,
-      fitBounds: () => undefined,
+      fitBounds: fitBoundsSpy,
       getCenter: () => [0, 0],
       getZoom: getZoomSpy,
       onUserCameraInteraction: (listener) => {
@@ -204,6 +206,7 @@ function buildStubMapFactory(): {
     triggerCameraSettled: (camera) => cameraSettledListener?.(camera),
     setCameraSpy,
     getZoomSpy,
+    fitBoundsSpy,
   };
 }
 
@@ -605,7 +608,7 @@ describe("RidingScreen", () => {
       distanceMetres: (CLIMB_POINT_COUNT - 1) * CLIMB_STEP_METRES,
     };
 
-    it("colours the pre-start elevation chart by macro climb category, before any fix (no feature is yet selected/active, so no local-gradient detail shows)", () => {
+    it("auto-selects the route's first recognised climb pre-ride, showing its numbered details heading and detailed local-gradient overlay immediately", () => {
       render(
         <RidingScreen
           route={climbRoute}
@@ -614,13 +617,98 @@ describe("RidingScreen", () => {
         />,
       );
       // 4000 m at 8% -> climbScore 32000 -> category-2 (32000 to <64000).
-      // Shown via the macro legend entry only — no active/selected feature
-      // yet, so no details-panel heading (a distinct element) exists.
-      expect(screen.getByText(/Category 2 climb/)).toBeInTheDocument();
-      expect(screen.queryByRole("heading", { name: "Category 2 climb" })).toBeNull();
-      // No feature is selected or (pre-fix) active yet, so the detailed
-      // local-gradient overlay — and its "Hard climb" text — is absent.
-      expect(screen.queryByText(/Hard climb/)).toBeNull();
+      // The route's only climb auto-selects before any fix, so its
+      // numbered details heading (from the pre-ride selector, not a mere
+      // macro legend mention) is visible immediately.
+      expect(
+        screen.getByRole("heading", { name: "Climb 1 · Category 2" }),
+      ).toBeInTheDocument();
+      // With a climb selected, its detailed local-gradient overlay shows
+      // too — "Hard climb" is this constant-8%-grade climb's own class.
+      expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
+    });
+
+    it("shows the pre-ride 'All route' summary and no numbered heading once the auto-selected climb is cleared", async () => {
+      const user = userEvent.setup();
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+        "All route",
+      );
+      expect(screen.getByText("1 recognised climb on this route")).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: /Climb 1/ })).toBeNull();
+    });
+
+    it("hides the pre-ride climb selector once riding starts, and does not let the stale pre-ride selection override the active climb", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      expect(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      expect(screen.queryByRole("combobox", { name: "Recognised climbs" })).toBeNull();
+
+      // Before any fix, the pre-ride selection has already been cleared
+      // by starting, so no feature is shown as selected/active yet.
+      expect(screen.queryByRole("heading", { name: /Climb 1/ })).toBeNull();
+
+      // Once a fix lands on the climb, it becomes active on its own
+      // merits (not because of the earlier pre-ride selection), and its
+      // (unnumbered, mid-ride) heading appears.
+      stub.emitFix({
+        coordinate: [0.002, 51],
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      expect(
+        await screen.findByRole("heading", { name: "Category 2 climb" }),
+      ).toBeInTheDocument();
+    });
+
+    it("resets to the new route's first climb when the route changes", () => {
+      const otherClimbRoute: PlannedRoute = {
+        ...climbRoute,
+        id: "other-climb-route",
+        points: climbRoute.points.map((point) => ({ ...point })),
+      };
+      const { unmount } = render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      expect(
+        screen.getByRole("heading", { name: "Climb 1 · Category 2" }),
+      ).toBeInTheDocument();
+      unmount();
+
+      render(
+        <RidingScreen
+          route={otherClimbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      expect(
+        screen.getByRole("heading", { name: "Climb 1 · Category 2" }),
+      ).toBeInTheDocument();
     });
 
     it("shows the same gradient class and macro feature category in both the default windowed view and Full view", async () => {
@@ -797,6 +885,144 @@ describe("RidingScreen", () => {
       // selection/activity — the feature panel stays exactly as it was.
       expect(
         screen.getByRole("heading", { name: "Category 2 climb" }),
+      ).toBeInTheDocument();
+
+      vi.restoreAllMocks();
+    });
+
+    it("shows the explanatory empty state and no dropdown when the route has elevation but no recognised climbs", () => {
+      const gentleRoute: PlannedRoute = {
+        ...route,
+        // 200 m at a 2.5% average grade — under both the 500 m length and
+        // 3% average-gradient recognised-climb thresholds.
+        points: Array.from({ length: 11 }, (_, index) => ({
+          coordinate: [0.0001 * index, 51] as const,
+          elevationMetres: index * 0.5,
+          distanceFromStartMetres: index * 20,
+        })),
+        distanceMetres: 200,
+      };
+      render(
+        <RidingScreen
+          route={gentleRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      expect(
+        screen.getByText(
+          "No recognised climbs. A recognised climb must be at least 500 m long and average at least 3%.",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "Recognised climbs" })).toBeNull();
+    });
+
+    it("restores the climb's details panel when re-selected from the dropdown after clearing to All route", async () => {
+      const user = userEvent.setup();
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      const select = screen.getByRole("combobox", { name: "Recognised climbs" });
+      await user.selectOptions(select, "All route");
+      expect(screen.queryByRole("heading", { name: /Climb 1/ })).toBeNull();
+
+      await user.selectOptions(select, "climb-0");
+      expect(
+        screen.getByRole("heading", { name: "Climb 1 · Category 2" }),
+      ).toBeInTheDocument();
+    });
+
+    it("does not trigger an additional camera fit when a climb is selected from the pre-ride dropdown", async () => {
+      const user = userEvent.setup();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+      // The initial route-overview fit happens asynchronously (a React
+      // effect flush after the load callback), so it must be allowed to
+      // settle before capturing the "before selection" baseline —
+      // otherwise this test would race it and count it as caused by the
+      // dropdown instead.
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalled();
+      });
+      const callsBeforeSelection = map.fitBoundsSpy.mock.calls.length;
+
+      const select = screen.getByRole("combobox", { name: "Recognised climbs" });
+      await user.selectOptions(select, "All route");
+      await user.selectOptions(select, "climb-0");
+
+      expect(map.fitBoundsSpy.mock.calls.length).toBe(callsBeforeSelection);
+    });
+
+    it("preserves an explicitly-selected feature across a mid-ride 'Try again' retry, rather than clearing it like a fresh pre-ride start", async () => {
+      const user = userEvent.setup();
+      const fake = buildFakeGeolocationSource();
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 320,
+        height: 96,
+        right: 320,
+        bottom: 96,
+        x: 0,
+        y: 0,
+        toJSON: () => "",
+      });
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={fake.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      // Starting the ride clears the pre-ride selection (the idle-guarded
+      // handleStart clear) — confirmed by no heading shown before a fix.
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      expect(screen.queryByRole("heading", { name: /Climb/ })).toBeNull();
+
+      fake.watches[0]?.emitFix({
+        coordinate: [0.002, 51],
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await user.click(await screen.findByRole("button", { name: "Full" }));
+
+      // Explicitly drill into the active climb's own local-gradient
+      // segment via a chart tap — a genuine mid-ride selection, distinct
+      // from merely being "active".
+      const hitTarget = await screen.findByRole("img", {
+        name: "Elevation profile chart",
+      });
+      const tapTarget = hitTarget.parentElement?.querySelector(
+        "rect.elevation-chart-tap-target",
+      );
+      if (!tapTarget) throw new Error("expected a tap-target rect");
+      fireEvent.click(tapTarget, { clientX: 160, clientY: 48 });
+      await screen.findByRole("region", { name: "Gradient segment details" });
+
+      // A GPS error occurs mid-ride (geolocationStatus becomes "error",
+      // not "idle") and the rider taps the same Try again/Start handler.
+      fake.watches[0]?.emitError({ reason: "timeout", message: "timed out" });
+      await screen.findByRole("alert");
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+
+      // The idle-only guard means this retry must NOT have cleared the
+      // mid-ride segment selection, unlike a genuine fresh pre-ride start.
+      expect(
+        screen.getByRole("region", { name: "Gradient segment details" }),
       ).toBeInTheDocument();
 
       vi.restoreAllMocks();

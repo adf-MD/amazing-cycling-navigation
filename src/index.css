@@ -302,6 +302,37 @@ header h1 {
  * z-index of their own from maplibregl.Marker) without affecting
  * stacking against the WebGL canvas itself, which lives in a separate
  * stacking context below every DOM marker regardless. */
+/* Layout only, for the gradient/route-feature legends' rows — the swatch
+ * itself carries no rule here at all: its colour, size and border are set
+ * inline by GradientColourSwatch.tsx, deliberately not via CSS, since
+ * this project's Vitest environment never loads this stylesheet
+ * (`test: { css: false }` in vite.config.ts) and a previous swatch that
+ * depended on a CSS rule for its size rendered invisibly in production
+ * too. This block is purely cosmetic spacing and never load-bearing for
+ * visibility. */
+.gradient-legend,
+.route-feature-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gradient-legend-entry,
+.route-feature-legend-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Matches the global `button` touch-target rule — a native `<select>` has
+ * no equivalent default sizing rule of its own. */
+.recognised-climb-select {
+  min-height: var(--touch-target-min);
+}
+
 .distance-badge-marker {
   display: flex;
   align-items: center;

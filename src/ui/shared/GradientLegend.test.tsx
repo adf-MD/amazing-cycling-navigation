@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { GradientLegend } from "./GradientLegend.tsx";
 import type { GradientClass } from "../../navigation/gradient.ts";
+import { GRADIENT_CLASS_COLOURS } from "../../navigation/gradientPalette.ts";
 
 function classes(...values: GradientClass[]): ReadonlySet<GradientClass> {
   return new Set(values);
@@ -45,8 +46,18 @@ describe("GradientLegend", () => {
     expect(screen.queryAllByRole("link")).toEqual([]);
   });
 
-  it("includes the exact grade range in each label's text", () => {
+  it("includes the category name, exact grade range and colour name in each row's text", () => {
     render(<GradientLegend presentClasses={classes("moderate-climb")} />);
-    expect(screen.getByText(/Moderate climb \(4% to 7%\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Moderate climb/)).toBeInTheDocument();
+    expect(screen.getByText(/4% to just below 7%/)).toBeInTheDocument();
+    expect(screen.getByText(/brown/)).toBeInTheDocument();
+  });
+
+  it("renders a visible line sample for each row, coloured with the same token the classifier uses", () => {
+    render(<GradientLegend presentClasses={classes("hard-climb")} />);
+    const swatch = document.querySelector(".gradient-colour-swatch");
+    expect(swatch).not.toBeNull();
+    expect(swatch).toHaveStyle({ backgroundColor: GRADIENT_CLASS_COLOURS["hard-climb"] });
+    expect(swatch).toHaveStyle({ width: "32px", height: "8px" });
   });
 });

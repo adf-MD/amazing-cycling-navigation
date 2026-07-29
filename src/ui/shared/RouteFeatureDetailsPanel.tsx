@@ -1,5 +1,10 @@
 import type { RouteFeature } from "../../navigation/routeFeatures.ts";
-import { ROUTE_FEATURE_LABELS } from "../../navigation/routeFeaturePalette.ts";
+import {
+  CLIMB_CATEGORY_NAMES,
+  ROUTE_FEATURE_COLOURS,
+  ROUTE_FEATURE_LABELS,
+} from "../../navigation/routeFeaturePalette.ts";
+import { GradientColourSwatch } from "./GradientColourSwatch.tsx";
 import {
   formatDistanceKm,
   formatDistanceKmValue,
@@ -12,6 +17,12 @@ export interface RouteFeatureDetailsPanelProps {
    * nothing — a controlled/dumb component, same convention as
    * ElevationChart: no internal selection state of its own. */
   feature: RouteFeature | null;
+  /** The climb's 1-based position among the route's recognised climbs
+   * (see listClimbsInRouteOrder), shown only by the pre-ride climb
+   * selector's own call site — e.g. "Climb 2 · Category 3" instead of
+   * the plain "Category 3 climb" heading used everywhere else. Omitted
+   * (or a descent feature) preserves the existing heading exactly. */
+  climbNumber?: number;
   /** Omit to render no clear control (e.g. Riding might prefer the
    * feature to simply update as the rider progresses, with no explicit
    * "clear" action while merely active-not-selected). */
@@ -29,20 +40,26 @@ export interface RouteFeatureDetailsPanelProps {
  */
 export function RouteFeatureDetailsPanel({
   feature,
+  climbNumber,
   onClear,
 }: RouteFeatureDetailsPanelProps) {
   if (feature === null) {
     return null;
   }
 
+  const visualKey = feature.kind === "climb" ? feature.category : feature.severity;
   const heading =
-    feature.kind === "climb"
-      ? ROUTE_FEATURE_LABELS[feature.category]
-      : "Recognised descent";
+    feature.kind === "climb" && climbNumber !== undefined
+      ? `Climb ${String(climbNumber)} · ${CLIMB_CATEGORY_NAMES[feature.category]}`
+      : feature.kind === "climb"
+        ? ROUTE_FEATURE_LABELS[feature.category]
+        : "Recognised descent";
 
   return (
     <section aria-label="Route feature details" className="route-feature-details">
-      <h3>{heading}</h3>
+      <h3>
+        <GradientColourSwatch colour={ROUTE_FEATURE_COLOURS[visualKey]} /> {heading}
+      </h3>
       <p>
         Route position: {formatDistanceKmValue(feature.startDistanceMetres)}–
         {formatDistanceKmValue(feature.endDistanceMetres)} km

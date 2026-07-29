@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { ROUTE_FEATURE_COLOURS, ROUTE_FEATURE_ORDER } from "./routeFeaturePalette.ts";
+import type { ClimbCategory } from "./routeFeatures.ts";
+import {
+  CLIMB_CATEGORY_NAMES,
+  ROUTE_FEATURE_COLOUR_NAMES,
+  ROUTE_FEATURE_COLOURS,
+  ROUTE_FEATURE_LABELS,
+  ROUTE_FEATURE_ORDER,
+} from "./routeFeaturePalette.ts";
+
+const CLIMB_CATEGORIES: readonly ClimbCategory[] = [
+  "uncategorised",
+  "category-4",
+  "category-3",
+  "category-2",
+  "category-1",
+  "hc",
+];
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const normalized = hex.replace("#", "");
@@ -88,5 +104,34 @@ describe("route feature palette", () => {
       }
     }
     expect(tooClose).toEqual([]);
+  });
+
+  it("has a colour name for every climb category and descent severity", () => {
+    for (const visualKey of ROUTE_FEATURE_ORDER) {
+      expect(ROUTE_FEATURE_COLOUR_NAMES[visualKey]).toBeTruthy();
+    }
+  });
+
+  it("never lets CLIMB_CATEGORY_NAMES and ROUTE_FEATURE_LABELS drift apart", () => {
+    for (const category of CLIMB_CATEGORIES) {
+      expect(ROUTE_FEATURE_LABELS[category]).toBe(
+        `${CLIMB_CATEGORY_NAMES[category]} climb`,
+      );
+    }
+  });
+
+  // A literal snapshot so any accidental reintroduction of ambiguous
+  // adjacent-band wording (both "gentle" and "steep" claiming −6%, both
+  // "steep" and "very-steep" claiming −9%) shows up as a failing diff.
+  it("states every descent-severity boundary unambiguously", () => {
+    expect(ROUTE_FEATURE_LABELS.gentle).toBe(
+      "Recognised descent (gentle, 3% to just below 6%)",
+    );
+    expect(ROUTE_FEATURE_LABELS.steep).toBe(
+      "Recognised descent (steep, 6% to just below 9%)",
+    );
+    expect(ROUTE_FEATURE_LABELS["very-steep"]).toBe(
+      "Recognised descent (very steep, 9% or more)",
+    );
   });
 });

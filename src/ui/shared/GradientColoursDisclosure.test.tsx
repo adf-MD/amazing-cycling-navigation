@@ -75,7 +75,7 @@ describe("GradientColoursDisclosure", () => {
     expect(screen.queryByRole("list", { name: "Gradient legend" })).toBeNull();
   });
 
-  it("renders only the detailed-gradient section when there are no recognised route features yet", () => {
+  it("still shows the route-features section (with just its ordinary-route entry) when there are no recognised route features yet", () => {
     render(
       <GradientColoursDisclosure
         presentClasses={classes("flat")}
@@ -83,9 +83,11 @@ describe("GradientColoursDisclosure", () => {
       />,
     );
     expect(screen.getByRole("list", { name: "Gradient legend" })).toBeInTheDocument();
-    expect(
-      screen.queryByRole("list", { name: "Recognised route features legend" }),
-    ).toBeNull();
+    const featuresList = screen.getByRole("list", {
+      name: "Recognised route features legend",
+    });
+    expect(featuresList.querySelectorAll("li")).toHaveLength(1);
+    expect(featuresList.textContent).toContain("Ordinary route");
   });
 
   it("includes the required explanatory sentences for both sections", () => {

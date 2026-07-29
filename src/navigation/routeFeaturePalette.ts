@@ -37,6 +37,38 @@ export const ROUTE_FEATURE_COLOURS: Readonly<Record<RouteFeatureVisualKey, strin
   "very-steep": "#1a1a4e",
 };
 
+/** Human-readable name for each visual key's colour — lets the legend
+ * state a colour in words as well as showing the swatch itself, so
+ * meaning never depends on perceiving the colour. */
+export const ROUTE_FEATURE_COLOUR_NAMES: Readonly<Record<RouteFeatureVisualKey, string>> =
+  {
+    uncategorised: "light green",
+    "category-4": "green",
+    "category-3": "yellow",
+    "category-2": "orange",
+    "category-1": "red",
+    hc: "dark red",
+    gentle: "light blue",
+    steep: "blue",
+    "very-steep": "dark blue",
+  };
+
+/** Bare climb category name, with no "climb" suffix — used for the
+ * pre-ride climb selector's numbered heading ("Climb 2 · Category 3") and
+ * dropdown option text, where "Climb N" already establishes it's a climb.
+ * Kept as its own map rather than derived from ROUTE_FEATURE_LABELS (or
+ * vice versa) to avoid risking the latter's existing tested strings; a
+ * consistency test instead asserts the two can never silently drift
+ * apart. */
+export const CLIMB_CATEGORY_NAMES: Readonly<Record<ClimbCategory, string>> = {
+  uncategorised: "Uncategorised",
+  "category-4": "Category 4",
+  "category-3": "Category 3",
+  "category-2": "Category 2",
+  "category-1": "Category 1",
+  hc: "HC",
+};
+
 /** Full text labels for the legend. Descent labels spell out severity so
  * the three descent swatches remain distinguishable by text alone (the
  * details panel instead always shows the exact, severity-independent
@@ -49,9 +81,17 @@ export const ROUTE_FEATURE_LABELS: Readonly<Record<RouteFeatureVisualKey, string
   "category-2": "Category 2 climb",
   "category-1": "Category 1 climb",
   hc: "HC climb",
-  gentle: "Recognised descent (gentle, −3% to −6%)",
-  steep: "Recognised descent (steep, −6% to −9%)",
-  "very-steep": "Recognised descent (very steep, ≤ −9%)",
+  // Described by magnitude (steepness), not signed value: "just below"
+  // reads confusingly against negative numbers that grow more negative as
+  // they steepen. Verified against classifyDescentSeverity's exact
+  // thresholds (avg > -6 gentle, avg > -9 steep, else very-steep) and
+  // feature eligibility (avg <= -3) — every boundary value (6%, 9%) is
+  // unambiguously owned by exactly one entry, unlike the previous
+  // "gentle, −3% to −6%" / "steep, −6% to −9%" wording, where both
+  // adjacent bands claimed the shared boundary with no inequality cue.
+  gentle: "Recognised descent (gentle, 3% to just below 6%)",
+  steep: "Recognised descent (steep, 6% to just below 9%)",
+  "very-steep": "Recognised descent (very steep, 9% or more)",
 };
 
 /** Short codes for space-constrained map labels. Deliberately hollow
