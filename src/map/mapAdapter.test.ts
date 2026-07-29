@@ -227,6 +227,89 @@ describe("MapLibreAdapter", () => {
     });
   });
 
+  describe("queryTopRouteFeatureAt", () => {
+    it("re-derives the screen point via project() and queries only the given layer ids in the tolerance box", () => {
+      const fake = buildFakeMapLibreMap();
+      fake.project.mockReturnValue({ x: 100, y: 200 });
+      const adapter = buildAdapter(fake);
+
+      adapter.queryTopRouteFeatureAt([1, 2], ["acn-route-feature-line"]);
+
+      expect(fake.project).toHaveBeenCalledWith([1, 2]);
+      expect(fake.queryRenderedFeatures).toHaveBeenCalledWith(
+        [
+          [86, 186],
+          [114, 214],
+        ],
+        { layers: ["acn-route-feature-line"] },
+      );
+    });
+
+    it("returns the topmost feature's raw routeFeatureId, unvalidated", () => {
+      const fake = buildFakeMapLibreMap();
+      fake.queryRenderedFeatures.mockReturnValue([
+        { properties: { routeFeatureId: "climb-2000" } },
+        { properties: { routeFeatureId: "climb-0" } },
+      ]);
+      const adapter = buildAdapter(fake);
+
+      expect(adapter.queryTopRouteFeatureAt([1, 2], ["a"])).toEqual({
+        routeFeatureId: "climb-2000",
+      });
+    });
+
+    it("returns the raw (possibly malformed) routeFeatureId value as-is — validation is the caller's job", () => {
+      const fake = buildFakeMapLibreMap();
+      fake.queryRenderedFeatures.mockReturnValue([
+        { properties: { routeFeatureId: 42 } },
+      ]);
+      const adapter = buildAdapter(fake);
+
+      expect(adapter.queryTopRouteFeatureAt([1, 2], ["a"])).toEqual({
+        routeFeatureId: 42,
+      });
+    });
+
+    it("returns null when queryRenderedFeatures returns no features", () => {
+      const fake = buildFakeMapLibreMap();
+      fake.queryRenderedFeatures.mockReturnValue([]);
+      const adapter = buildAdapter(fake);
+
+      expect(adapter.queryTopRouteFeatureAt([1, 2], ["a"])).toBeNull();
+    });
+
+    it("returns null, never throws, when project() throws", () => {
+      const fake = buildFakeMapLibreMap();
+      fake.project.mockImplementation(() => {
+        throw new Error("style not ready");
+      });
+      const adapter = buildAdapter(fake);
+
+      expect(() => adapter.queryTopRouteFeatureAt([1, 2], ["a"])).not.toThrow();
+      expect(adapter.queryTopRouteFeatureAt([1, 2], ["a"])).toBeNull();
+    });
+
+    it("returns null, never throws, when queryRenderedFeatures() throws (e.g. an unready layer id)", () => {
+      const fake = buildFakeMapLibreMap();
+      fake.queryRenderedFeatures.mockImplementation(() => {
+        throw new Error("layer not found");
+      });
+      const adapter = buildAdapter(fake);
+
+      expect(() => adapter.queryTopRouteFeatureAt([1, 2], ["a"])).not.toThrow();
+      expect(adapter.queryTopRouteFeatureAt([1, 2], ["a"])).toBeNull();
+    });
+
+    it("returns null without calling project or queryRenderedFeatures when layerIds is empty", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+
+      expect(adapter.queryTopRouteFeatureAt([1, 2], [])).toBeNull();
+      expect(fake.project).not.toHaveBeenCalled();
+      expect(fake.queryRenderedFeatures).not.toHaveBeenCalled();
+    });
+  });
+
   it("addLineLayer passes line-dasharray through only when provided", () => {
     const fake = buildFakeMapLibreMap();
     const adapter = buildAdapter(fake);

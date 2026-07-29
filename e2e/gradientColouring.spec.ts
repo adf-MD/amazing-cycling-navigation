@@ -20,8 +20,10 @@ const FIXTURE_GPX_PATH = fileURLToPath(
 // (20%) climb from 1000 m to 2000 m — comfortably past every threshold
 // in src/navigation/gradient.ts (MAX_ELEVATION_GAP_METRES,
 // MIN_GRADE_WINDOW_METRES, GRADE_BASELINE_WINDOW_METRES,
-// MIN_SEGMENT_LENGTH_METRES), so both halves classify cleanly and
-// consistently as "flat" and "very-steep-climb".
+// MIN_SEGMENT_LENGTH_METRES), so it classifies cleanly as one sustained
+// "very-steep-climb" run. The climb (1000 m, 20% average grade) is also a
+// recognised macro ClimbFeature: climbScore = 1000 * 20 = 20,000, which
+// falls in [16000, 32000) -> category-3 (src/navigation/routeFeaturePalette.ts).
 const METRES_PER_DEGREE_LON = 1000 / 0.0144303623099218;
 const FIXTURE_LAT = 51.5;
 const FIXTURE_START_LON = -0.05;
@@ -62,27 +64,23 @@ function buildMockOrsResponse(coordinates: readonly (readonly number[])[]) {
 
 /** Runs entirely inside the page: decodes a screenshot PNG (see
  * directionArrows.spec.ts's own identical rationale for base64 + Image
- * decode over canvas.toDataURL), then counts pixels close to the "flat"
- * and "very-steep-climb" gradient palette colours (src/navigation/
- * gradientPalette.ts) and each colour's mean on-screen x — enough to
- * prove both classes render, and that they appear in the expected west
- * (flat) → east (climb) order, without needing a full line-orientation
- * detector like the direction-arrow spec's (gradient colour identity
- * itself already tells the two apart, unlike a single-colour arrow). */
-interface GradientColourSample {
-  flatPixelCount: number;
-  climbPixelCount: number;
-  flatCentroidX: number;
-  climbCentroidX: number;
+ * decode over canvas.toDataURL), then counts pixels close to each named
+ * target colour and each colour's mean on-screen x — enough to prove a
+ * colour renders, and roughly where. Generic over the colour map so both
+ * macro (route-feature) and micro (local-gradient) colours can be sampled
+ * with the same helper. */
+interface ColourSample {
+  pixelCount: number;
+  centroidX: number;
 }
 
-async function sampleGradientColours({
+async function sampleColourPixels({
   pngBase64,
+  colours,
 }: {
   pngBase64: string;
-}): Promise<GradientColourSample> {
-  const FLAT_COLOUR: readonly [number, number, number] = [0x2e, 0x7d, 0x63];
-  const CLIMB_COLOUR: readonly [number, number, number] = [0x5b, 0x3f, 0xa6];
+  colours: Record<string, readonly [number, number, number]>;
+}): Promise<Record<string, ColourSample>> {
   const COLOUR_THRESHOLD_SQUARED = 400;
 
   const image = new Image();
@@ -119,48 +117,64 @@ async function sampleGradientColours({
     return dr * dr + dg * dg + db * db <= COLOUR_THRESHOLD_SQUARED;
   }
 
-  let flatCount = 0;
-  let flatSumX = 0;
-  let climbCount = 0;
-  let climbSumX = 0;
+  const counts: Record<string, number> = {};
+  const sumXs: Record<string, number> = {};
+  for (const name of Object.keys(colours)) {
+    counts[name] = 0;
+    sumXs[name] = 0;
+  }
+
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const offset = (y * width + x) * 4;
       const r = data[offset];
       const g = data[offset + 1];
       const b = data[offset + 2];
-      if (closeTo(r, g, b, FLAT_COLOUR)) {
-        flatCount++;
-        flatSumX += x;
-      } else if (closeTo(r, g, b, CLIMB_COLOUR)) {
-        climbCount++;
-        climbSumX += x;
+      for (const [name, target] of Object.entries(colours)) {
+        if (closeTo(r, g, b, target)) {
+          counts[name] = (counts[name] ?? 0) + 1;
+          sumXs[name] = (sumXs[name] ?? 0) + x;
+          break;
+        }
       }
     }
   }
 
-  return {
-    flatPixelCount: flatCount,
-    climbPixelCount: climbCount,
-    flatCentroidX: flatCount > 0 ? flatSumX / flatCount : -1,
-    climbCentroidX: climbCount > 0 ? climbSumX / climbCount : -1,
-  };
+  const result: Record<string, ColourSample> = {};
+  for (const name of Object.keys(colours)) {
+    const count = counts[name] ?? 0;
+    result[name] = {
+      pixelCount: count,
+      centroidX: count > 0 ? (sumXs[name] ?? 0) / count : -1,
+    };
+  }
+  return result;
 }
 
-async function captureGradientColourSample(page: Page): Promise<GradientColourSample> {
+const MACRO_CATEGORY_3_COLOUR: readonly [number, number, number] = [0xfd, 0xd8, 0x35];
+const MICRO_VERY_STEEP_CLIMB_COLOUR: readonly [number, number, number] = [
+  0x5b, 0x3f, 0xa6,
+];
+const BASE_ROUTE_COLOUR: readonly [number, number, number] = [0x0a, 0x5f, 0x38];
+
+async function captureColourSample(
+  page: Page,
+  colours: Record<string, readonly [number, number, number]>,
+): Promise<Record<string, ColourSample>> {
   const canvasLocator = page.locator('[data-testid="map-container"] canvas');
   // Mirrors directionArrows.spec.ts's own settle wait — MapLibre's paint/
   // placement cycle runs independently of the source data already being
   // set.
   await page.waitForTimeout(500);
   const pngBuffer = await canvasLocator.screenshot();
-  return page.evaluate(sampleGradientColours, {
+  return page.evaluate(sampleColourPixels, {
     pngBase64: pngBuffer.toString("base64"),
+    colours,
   });
 }
 
 test.describe("Planning", () => {
-  test("map gradient colours agree with the elevation profile's legend, flat and climb visually distinct", async ({
+  test("shows the recognised climb in its macro category colour by default, with no per-segment detail until selected", async ({
     page,
   }) => {
     const consoleErrors: string[] = [];
@@ -211,29 +225,78 @@ test.describe("Planning", () => {
     const summaryRegion = page.getByRole("region", { name: "Route summary" });
     await expect(summaryRegion).toBeVisible({ timeout: 15_000 });
 
-    // The elevation profile (now shown in Planning too) and its legend
-    // agree with the map: both the flat and very-steep-climb bands are
-    // present.
     await expect(
       summaryRegion.getByRole("img", { name: "Elevation profile chart" }),
     ).toBeVisible();
-    await expect(page.getByText(/Flat \(/)).toBeVisible();
-    await expect(page.getByText(/Very steep climb \(/)).toBeVisible();
 
-    const sample = await captureGradientColourSample(page);
-    expect(sample.flatPixelCount).toBeGreaterThan(0);
-    expect(sample.climbPixelCount).toBeGreaterThan(0);
-    // The fixture's flat section is the west (start) half and the climb
-    // is the east (finish) half — an unrotated, north-up map keeps west
-    // at a smaller on-screen x.
-    expect(sample.flatCentroidX).toBeLessThan(sample.climbCentroidX);
+    // The "Gradient colours" disclosure is collapsed by default.
+    const disclosureSummary = summaryRegion.getByText("Gradient colours");
+    await expect(disclosureSummary).toBeVisible();
+    await expect(summaryRegion.getByText(/Category 3 climb/)).toBeHidden();
+    await disclosureSummary.click();
+    await expect(summaryRegion.getByText(/Category 3 climb/)).toBeVisible();
+    // No feature is selected yet, so the detailed local-gradient legend
+    // section has nothing to show.
+    await expect(summaryRegion.getByText(/Very steep climb \(/)).toBeHidden();
+
+    const macroSample = await captureColourSample(page, {
+      macro: MACRO_CATEGORY_3_COLOUR,
+      micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+      base: BASE_ROUTE_COLOUR,
+    });
+    // Macro colouring covers the climb by default; no detailed local-
+    // gradient colouring shows anywhere until a feature is selected.
+    expect(macroSample.macro.pixelCount).toBeGreaterThan(0);
+    expect(macroSample.micro.pixelCount).toBe(0);
+    // The flat section (west/start half) stays the plain base route
+    // colour, not a distinct "flat" class colour.
+    expect(macroSample.base.pixelCount).toBeGreaterThan(0);
+    expect(macroSample.base.centroidX).toBeLessThan(macroSample.macro.centroidX);
+
+    // Selecting the climb reveals the details panel and the detailed
+    // local-gradient colouring inside it. Selected via the elevation
+    // chart, not the map: this fixture also carries an "unknown surface"
+    // warning spanning almost the entire route, so a map tap would hit
+    // that (correctly higher-priority) warning first — see
+    // routeFeatureColouring.spec.ts for map-tap selection and the
+    // warning-priority scenario on a fixture without that overlap. The
+    // climb is the second (eastern) half of the domain, so a tap at 75%
+    // of the chart's own width lands inside it.
+    const chartTapTarget = summaryRegion.locator("rect.elevation-chart-tap-target");
+    const chartBox = await chartTapTarget.boundingBox();
+    if (!chartBox)
+      throw new Error("expected the elevation chart's tap target to be visible");
+    await chartTapTarget.click({
+      position: { x: chartBox.width * 0.75, y: chartBox.height / 2 },
+    });
+    await expect(
+      summaryRegion.getByRole("region", { name: "Route feature details" }),
+    ).toBeVisible();
+    await expect(
+      summaryRegion.getByRole("heading", { name: "Category 3 climb" }),
+    ).toBeVisible();
+
+    const selectedSample = await captureColourSample(page, {
+      micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+    });
+    expect(selectedSample.micro.pixelCount).toBeGreaterThan(0);
+
+    // Clearing the selection removes the detailed colouring again.
+    await summaryRegion.getByRole("button", { name: "Clear selection" }).click();
+    await expect(
+      summaryRegion.getByRole("region", { name: "Route feature details" }),
+    ).toBeHidden();
+    const clearedSample = await captureColourSample(page, {
+      micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+    });
+    expect(clearedSample.micro.pixelCount).toBe(0);
 
     expect(consoleErrors).toEqual([]);
   });
 });
 
 test.describe("Riding", () => {
-  test("mutes the completed flat section while keeping the remaining climb gradient-coloured", async ({
+  test("shows the macro climb colour throughout, and detailed local-gradient colouring once the rider is on the climb", async ({
     page,
     context,
   }) => {
@@ -276,15 +339,17 @@ test.describe("Riding", () => {
     await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
     await expect(page.getByTestId("map-fallback-banner")).toBeVisible();
 
-    const beforeAdvancing = await captureGradientColourSample(page);
-    expect(beforeAdvancing.flatPixelCount).toBeGreaterThan(0);
-    expect(beforeAdvancing.climbPixelCount).toBeGreaterThan(0);
+    // Before the rider reaches the climb, it's macro-coloured but not yet
+    // "active", so no detailed local-gradient colouring shows.
+    const beforeEntering = await captureColourSample(page, {
+      macro: MACRO_CATEGORY_3_COLOUR,
+      micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+    });
+    expect(beforeEntering.macro.pixelCount).toBeGreaterThan(0);
+    expect(beforeEntering.micro.pixelCount).toBe(0);
 
-    // Advances just past the flat/climb boundary, so the entire flat
-    // section is now behind the rider (completed, muted grey) while the
-    // climb remains fully ahead (remaining, gradient-coloured) — the
-    // gradient overlay uses the same live matchedDistanceFromStartMetres
-    // as the route line/arrows, so this must track immediately.
+    // Advances into the climb — it becomes the rider's active feature, so
+    // its remaining portion now also shows detailed local-gradient colour.
     await context.setGeolocation({
       latitude: FIXTURE_LAT,
       longitude: lonAtMetresAlongFixture(CLIMB_START_METRES + 50),
@@ -293,15 +358,14 @@ test.describe("Riding", () => {
     await expect
       .poll(
         async () => {
-          const sample = await captureGradientColourSample(page);
-          return sample.flatPixelCount;
+          const sample = await captureColourSample(page, {
+            micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+          });
+          return sample.micro.pixelCount;
         },
         { timeout: 15_000, intervals: [500] },
       )
-      .toBeLessThan(beforeAdvancing.flatPixelCount);
-
-    const afterAdvancing = await captureGradientColourSample(page);
-    expect(afterAdvancing.climbPixelCount).toBeGreaterThan(0);
+      .toBeGreaterThan(0);
 
     expect(consoleErrors).toEqual([]);
   });

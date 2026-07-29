@@ -29,6 +29,10 @@ interface MockMapHandle {
    * calls report as hit — null (the default) means every tap misses every
    * warning feature and falls through to placement, exactly like today. */
   setWarningHit: (warningIndex: number | null) => void;
+  /** Configures what the next (and subsequent) queryTopRouteFeatureAt
+   * calls report as hit — null (the default) means every tap misses every
+   * route feature and falls through to warning hit-testing/placement. */
+  setRouteFeatureHit: (routeFeatureId: string | null) => void;
   setCameraSpy: ReturnType<typeof vi.fn>;
   fitBoundsSpy: ReturnType<typeof vi.fn>;
   addLineLayerSpy: ReturnType<typeof vi.fn>;
@@ -49,6 +53,7 @@ function createMockMapFactory(): MockMapHandle {
   let mapTapListener: ((coordinate: Coordinate) => void) | undefined;
   let userCameraInteractionListener: (() => void) | undefined;
   let warningHitIndex: number | null = null;
+  let routeFeatureHitId: string | null = null;
   const setCameraSpy = vi.fn();
   const fitBoundsSpy = vi.fn();
   const addLineLayerSpy = vi.fn();
@@ -95,6 +100,8 @@ function createMockMapFactory(): MockMapHandle {
       },
       queryTopWarningFeatureAt: () =>
         warningHitIndex === null ? null : { warningIndex: warningHitIndex },
+      queryTopRouteFeatureAt: () =>
+        routeFeatureHitId === null ? null : { routeFeatureId: routeFeatureHitId },
       setMarkers: () => undefined,
       setDistanceBadges: () => undefined,
       remove: () => undefined,
@@ -110,6 +117,9 @@ function createMockMapFactory(): MockMapHandle {
     sources,
     setWarningHit: (warningIndex) => {
       warningHitIndex = warningIndex;
+    },
+    setRouteFeatureHit: (routeFeatureId) => {
+      routeFeatureHitId = routeFeatureId;
     },
     triggerLoad: () => {
       act(() => {
@@ -299,6 +309,45 @@ function buildRouteWithSurfaceDetailWarning(): PlannedRoute {
         endDistanceMetres: warningEnd,
         message: "Questionable surface for a road bike: compacted gravel.",
         surface: { type: "compacted-gravel", label: "Compacted gravel" },
+      },
+    ],
+    source: { kind: "planner", provider: "openrouteservice", profile: "cycling-road" },
+  };
+}
+
+// A single sustained 8% climb over its own whole length (30 points @ 50 m
+// spacing = 1450 m, ~116 m gain) — comfortably above every recognised-
+// climb eligibility threshold (500 m length, 3% average gradient, 1500
+// climbScore), forming exactly one ClimbFeature spanning the whole route.
+function buildRouteWithClimb(): PlannedRoute {
+  const pointCount = 30;
+  const stepMetres = 50;
+  const gradePercent = 8;
+  return {
+    id: "route-climb-1",
+    name: "Planned route",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    points: Array.from({ length: pointCount }, (_, i) => ({
+      coordinate: [i * 0.0005, 51] as Coordinate,
+      elevationMetres: (i * stepMetres * gradePercent) / 100,
+      distanceFromStartMetres: i * stepMetres,
+    })),
+    manoeuvres: [],
+    distanceMetres: (pointCount - 1) * stepMetres,
+    ascentMetres: 116,
+    descentMetres: 0,
+    surfaceSummary: {
+      pavedMetres: (pointCount - 1) * stepMetres,
+      questionableMetres: 0,
+      unsuitableMetres: 0,
+      unknownMetres: 0,
+    },
+    warnings: [
+      {
+        kind: "questionable-surface",
+        startDistanceMetres: 100,
+        endDistanceMetres: 200,
+        message: "Questionable surface for a road bike.",
       },
     ],
     source: { kind: "planner", provider: "openrouteservice", profile: "cycling-road" },
@@ -1762,6 +1811,164 @@ describe("PlanningScreen", () => {
       expect(
         within(summaryRegion).getByText("Route position: 0.1–0.3 km"),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe("route feature selection", () => {
+    // jsdom doesn't implement scrollIntoView at all, and RouteSummaryPanel
+    // calls it whenever a warning is selected via the map (part of the
+    // mutual-exclusivity test below, which selects a warning first).
+    let scrollIntoViewSpy: ReturnType<
+      typeof vi.fn<(options?: boolean | ScrollIntoViewOptions) => void>
+    >;
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+
+    beforeEach(() => {
+      scrollIntoViewSpy = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoViewSpy;
+    });
+
+    afterEach(() => {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    });
+
+    async function renderWithCalculatedClimb(
+      map: ReturnType<typeof createMockMapFactory>,
+      user: ReturnType<typeof userEvent.setup>,
+    ): Promise<HTMLElement> {
+      await saveProviderKey("dummy-test-key");
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          routingProvider={buildResolvedAdapter(buildRouteWithClimb())}
+        />,
+      );
+      map.triggerLoad();
+
+      await addWaypointViaCrosshair(map, user, [0, 51]);
+      await addWaypointViaCrosshair(map, user, [0.01, 51]);
+      const calculateButton = await waitFor(() => {
+        const button = screen.getByRole("button", { name: /calculate route/i });
+        expect(button).toBeEnabled();
+        return button;
+      });
+      await user.click(calculateButton);
+
+      return waitFor(() => {
+        const region = screen.getByRole("region", { name: "Route summary" });
+        expect(region).toBeInTheDocument();
+        return region;
+      });
+    }
+
+    it("detects the recognised climb and lists it in the route-features legend", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const summaryRegion = await renderWithCalculatedClimb(map, user);
+
+      expect(
+        within(summaryRegion).getByRole("list", {
+          name: "Recognised route features legend",
+        }),
+      ).toBeInTheDocument();
+      expect(within(summaryRegion).getByText(/Category 4 climb/)).toBeInTheDocument();
+    });
+
+    it("tapping the climb on the map selects it and shows the details panel", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const summaryRegion = await renderWithCalculatedClimb(map, user);
+
+      expect(
+        within(summaryRegion).queryByRole("region", { name: "Route feature details" }),
+      ).toBeNull();
+
+      map.setRouteFeatureHit("climb-0");
+      map.triggerMapTap([0.005, 51]);
+
+      const detailsPanel = within(summaryRegion).getByRole("region", {
+        name: "Route feature details",
+      });
+      expect(
+        within(detailsPanel).getByRole("heading", { name: "Category 4 climb" }),
+      ).toBeInTheDocument();
+    });
+
+    it("selecting a route feature clears any existing warning selection, and vice versa", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const summaryRegion = await renderWithCalculatedClimb(map, user);
+      const warningButton = within(summaryRegion).getByRole("button", {
+        name: /questionable surface for a road bike/i,
+      });
+
+      map.setWarningHit(0);
+      map.triggerMapTap([0.001, 51]);
+      expect(warningButton).toHaveAttribute("aria-pressed", "true");
+
+      map.setWarningHit(null);
+      map.setRouteFeatureHit("climb-0");
+      map.triggerMapTap([0.005, 51]);
+
+      expect(warningButton).toHaveAttribute("aria-pressed", "false");
+      expect(
+        within(summaryRegion).getByRole("region", { name: "Route feature details" }),
+      ).toBeInTheDocument();
+
+      // Reverse direction: selecting a warning again clears the feature.
+      map.setRouteFeatureHit(null);
+      map.setWarningHit(0);
+      map.triggerMapTap([0.001, 51]);
+
+      expect(warningButton).toHaveAttribute("aria-pressed", "true");
+      expect(
+        within(summaryRegion).queryByRole("region", { name: "Route feature details" }),
+      ).toBeNull();
+    });
+
+    it("clearing the selection via the details panel's own control removes it and re-enables placement", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const summaryRegion = await renderWithCalculatedClimb(map, user);
+
+      map.setRouteFeatureHit("climb-0");
+      map.triggerMapTap([0.005, 51]);
+      expect(
+        within(summaryRegion).getByRole("region", { name: "Route feature details" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("Clear the selected route feature to place or move a waypoint."),
+      ).toBeInTheDocument();
+
+      await user.click(
+        within(summaryRegion).getByRole("button", { name: "Clear selection" }),
+      );
+
+      expect(
+        within(summaryRegion).queryByRole("region", { name: "Route feature details" }),
+      ).toBeNull();
+      expect(
+        screen.queryByText(
+          "Clear the selected route feature to place or move a waypoint.",
+        ),
+      ).toBeNull();
+    });
+
+    it("a bare map tap that misses the climb still falls through to placement (append mode appends normally)", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      await renderWithCalculatedClimb(map, user);
+
+      expect(screen.queryByRole("button", { name: "Waypoint 3" })).toBeNull();
+
+      map.setRouteFeatureHit(null);
+      map.triggerMapTap([0.02, 51]);
+
+      // No route-feature hit: the tap reaches handlePlacementAt exactly
+      // like today, and append mode (no waypoint selected) appends.
+      expect(screen.getByRole("button", { name: "Waypoint 3" })).toBeInTheDocument();
     });
   });
 

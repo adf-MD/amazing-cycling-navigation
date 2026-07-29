@@ -53,6 +53,26 @@ export function distanceToX(
     : ((distanceFromStartMetres - domain.startDistanceMetres) / domainSpan) * width;
 }
 
+/** Inverse of distanceToX — converts a viewBox-unit pixel x back to a
+ * route-global distance. Used to resolve a chart tap/click (already
+ * converted to a viewBox-unit x by the caller, from the pointer event's
+ * screen position and the SVG's own bounding rect) to the route distance
+ * it corresponds to, so the tap can then be matched against whichever
+ * range (a GradientSegment or RouteFeature) the route analysis already
+ * produced there — see ElevationChart.tsx's onTapDistance handling and
+ * routeFeatures.ts's resolveElevationChartTap. A zero-width domain
+ * degenerates to the domain's own start, mirroring distanceToX's own
+ * zero-span guard. */
+export function xPixelToDistanceMetres(
+  xPixel: number,
+  domain: ElevationChartDomain,
+  width: number,
+): number {
+  if (width === 0) return domain.startDistanceMetres;
+  const domainSpan = domain.endDistanceMetres - domain.startDistanceMetres;
+  return domain.startDistanceMetres + (xPixel / width) * domainSpan;
+}
+
 export function elevationToY(
   elevationMetres: number,
   minElevationMetres: number,

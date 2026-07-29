@@ -6,12 +6,22 @@ import {
   type BoundsCameraTarget,
   type CameraTarget,
   type PlanningOverlay,
+  type RouteFeatureOverlay,
   type WarningOverlay,
 } from "../../map/MapView.tsx";
 import type { MapFactory } from "../../map/mapAdapter.ts";
 import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
 import { shortestAngularDifferenceDegrees } from "../../navigation/bearing.ts";
-import { analyzeRouteElevationProfile } from "../../navigation/gradient.ts";
+import {
+  analyzeRouteElevationProfile,
+  clipGradientSegments,
+  type GradientSegment,
+} from "../../navigation/gradient.ts";
+import {
+  detectRouteFeatures,
+  resolveElevationChartTap,
+} from "../../navigation/routeFeatures.ts";
+import { interpolateRoutePointAt } from "../../navigation/upcomingElevation.ts";
 import { coalesceAdjacentWarnings } from "../../navigation/warningGeometry.ts";
 import { getApproximateLocationOnce } from "../../platform/geolocation.ts";
 import { logError } from "../../platform/errorLog.ts";
@@ -148,6 +158,14 @@ export function PlanningScreen({
   // selection does not bump this, since the entry is already where the
   // user is interacting.
   const [warningRevealToken, setWarningRevealToken] = useState(0);
+  const [selectedRouteFeatureId, setSelectedRouteFeatureId] = useState<string | null>(
+    null,
+  );
+  // Drilling into a specific local-gradient segment within the currently
+  // selected feature — cleared whenever the feature selection itself
+  // changes (see selectRouteFeature/handleClearRouteFeatureSelection).
+  const [selectedGradientSegment, setSelectedGradientSegment] =
+    useState<GradientSegment | null>(null);
   // Tracks which waypoint a pending move/insert-after applies to,
   // alongside the action itself — so a selection change to a *different*
   // waypoint (or to none) automatically invalidates a stale pending
@@ -200,14 +218,24 @@ export function PlanningScreen({
   // alongside the rest of the "retain last successful route" policy.
   // `elevationDisplayPoints` is the same shared smoothed series Riding
   // uses as its chart's prominent line — RouteSummaryPanel plots it
-  // instead of the raw routed points.
-  const { gradientSegments, displayPoints: elevationDisplayPoints } = useMemo(
-    () =>
-      routedRoute
-        ? analyzeRouteElevationProfile(routedRoute.points)
-        : { gradientSegments: [], displayPoints: [] },
-    [routedRoute],
-  );
+  // instead of the raw routed points. `routeFeatures` is detected from
+  // the exact same one-per-route analysis (never a second resample/smooth
+  // pass) — see routeFeatures.ts's own doc comment on why it must always
+  // be derived from the full-route profile, never a windowed slice.
+  const {
+    gradientSegments,
+    displayPoints: elevationDisplayPoints,
+    routeFeatures,
+  } = useMemo(() => {
+    if (!routedRoute)
+      return { gradientSegments: [], displayPoints: [], routeFeatures: [] };
+    const profile = analyzeRouteElevationProfile(routedRoute.points);
+    return {
+      gradientSegments: profile.gradientSegments,
+      displayPoints: profile.displayPoints,
+      routeFeatures: detectRouteFeatures(profile),
+    };
+  }, [routedRoute]);
 
   // A new calculation invalidates the previous selection — the warnings
   // array is rebuilt wholesale each time (see RouteSummaryPanel), so a
@@ -220,6 +248,15 @@ export function PlanningScreen({
     lastRoutedRouteForSelectionRef.current = routedRoute;
     if (selectedWarningIndex !== null) {
       setSelectedWarningIndex(null);
+    }
+    // Route-feature ids are only stable for the route they were computed
+    // from — a recalculation invalidates any previous selection, exactly
+    // like the warning selection above.
+    if (selectedRouteFeatureId !== null) {
+      setSelectedRouteFeatureId(null);
+    }
+    if (selectedGradientSegment !== null) {
+      setSelectedGradientSegment(null);
     }
   }
 
@@ -245,17 +282,25 @@ export function PlanningScreen({
   const dispatchWaypointAction = useCallback(
     (action: WaypointAction) => {
       if (selectedWarningIndex !== null) setSelectedWarningIndex(null);
+      if (selectedRouteFeatureId !== null) setSelectedRouteFeatureId(null);
+      if (selectedGradientSegment !== null) setSelectedGradientSegment(null);
       dispatch(action);
     },
-    [selectedWarningIndex],
+    [selectedWarningIndex, selectedRouteFeatureId, selectedGradientSegment],
   );
 
   // Central warning-selection path, shared by both origins — the *only*
   // place selectedWarningIndex is ever set to a non-null value, so list-
   // and map-originated selection can never diverge in policy. "Selecting
-  // a warning clears any waypoint movement/insertion mode."
+  // a warning clears any waypoint movement/insertion mode." Also clears
+  // any route-feature selection — the two are mutually exclusive, mirroring
+  // the existing "editing a waypoint clears warning selection" precedent,
+  // so only one "something is selected, its detail panel is showing"
+  // state ever competes for the rider's attention at once.
   const selectWarning = useCallback((index: number, origin: "map" | "list") => {
     setPendingWaypointAction(null);
+    setSelectedRouteFeatureId(null);
+    setSelectedGradientSegment(null);
     setSelectedWarningIndex(index);
     if (origin === "map") {
       setWarningRevealToken((token) => token + 1);
@@ -285,30 +330,54 @@ export function PlanningScreen({
     setSelectedWarningIndex(null);
   }, []);
 
+  // The *only* place selectedRouteFeatureId is ever set to a non-null
+  // value — mirrors selectWarning's own shape, including mutual
+  // exclusivity with warning selection. Drilling into a specific micro
+  // segment (selectedGradientSegment) is a separate, finer-grained
+  // selection that does NOT go through this function — see
+  // handleChartTapDistance below.
+  const selectRouteFeature = useCallback((id: string) => {
+    setPendingWaypointAction(null);
+    setSelectedWarningIndex(null);
+    setSelectedGradientSegment(null);
+    setSelectedRouteFeatureId(id);
+  }, []);
+  const handleClearRouteFeatureSelection = useCallback(() => {
+    setSelectedRouteFeatureId(null);
+    setSelectedGradientSegment(null);
+  }, []);
+  const handleClearGradientSegmentSelection = useCallback(() => {
+    setSelectedGradientSegment(null);
+  }, []);
+
   // Both toggle: clicking an already-active Move/Insert-after button
   // cancels it, returning to plain "selected" — the same aria-pressed
   // affordance doubling as a cancel control.
   const handleStartMove = useCallback(
     (waypointId: string) => {
       if (selectedWarningIndex !== null) setSelectedWarningIndex(null);
+      if (selectedRouteFeatureId !== null) setSelectedRouteFeatureId(null);
+      if (selectedGradientSegment !== null) setSelectedGradientSegment(null);
       setPendingWaypointAction((current) =>
         current?.waypointId === waypointId && current.kind === "move"
           ? null
           : { waypointId, kind: "move" },
       );
     },
-    [selectedWarningIndex],
+    [selectedWarningIndex, selectedRouteFeatureId, selectedGradientSegment],
   );
   const handleStartInsertAfter = useCallback(
     (waypointId: string) => {
       if (selectedWarningIndex !== null) setSelectedWarningIndex(null);
+      if (selectedRouteFeatureId !== null) setSelectedRouteFeatureId(null);
+      if (selectedGradientSegment !== null) setSelectedGradientSegment(null);
       setPendingWaypointAction((current) =>
         current?.waypointId === waypointId && current.kind === "insert-after"
           ? null
           : { waypointId, kind: "insert-after" },
       );
     },
-    [selectedWarningIndex],
+    [selectedWarningIndex, selectedRouteFeatureId, selectedGradientSegment],
   );
 
   // Loads any previously saved draft exactly once, before draft-persisting
@@ -479,7 +548,10 @@ export function PlanningScreen({
     (coordinate: Coordinate) => {
       // Warning inspection takes priority — "a bare map tap must not
       // append or move a waypoint" while a warning is selected and framed.
-      if (selectedWarningIndex !== null) return;
+      // A selected route feature (climb/descent) gets the same guard, for
+      // the same reason — inspecting its detail shouldn't risk an
+      // accidental placement.
+      if (selectedWarningIndex !== null || selectedRouteFeatureId !== null) return;
       switch (interactionMode.kind) {
         case "append":
           dispatchWaypointAction({ type: "append", coordinate });
@@ -505,7 +577,12 @@ export function PlanningScreen({
           break;
       }
     },
-    [interactionMode, selectedWarningIndex, dispatchWaypointAction],
+    [
+      interactionMode,
+      selectedWarningIndex,
+      selectedRouteFeatureId,
+      dispatchWaypointAction,
+    ],
   );
 
   const handlePlacementHere = () => {
@@ -587,6 +664,62 @@ export function PlanningScreen({
     onSelectWarning: handleSelectWarningFromMap,
   };
 
+  const selectedRouteFeature =
+    routeFeatures.find((feature) => feature.id === selectedRouteFeatureId) ?? null;
+  // The detailed local-gradient analysis, narrowed to the selected
+  // feature's own clipped range — empty (no detail colouring) when
+  // nothing is selected. Planning has no "currently active during a ride"
+  // concept, so selection is the only source of micro detail here, unlike
+  // RidingScreen's selectedFeature ?? activeFeature.
+  const microDetailSegments = selectedRouteFeature
+    ? clipGradientSegments(
+        gradientSegments,
+        selectedRouteFeature.startDistanceMetres,
+        selectedRouteFeature.endDistanceMetres,
+      )
+    : [];
+  const chartSelectedRangeMetres = selectedGradientSegment
+    ? {
+        startDistanceMetres: selectedGradientSegment.startDistanceMetres,
+        endDistanceMetres: selectedGradientSegment.endDistanceMetres,
+      }
+    : selectedRouteFeature
+      ? {
+          startDistanceMetres: selectedRouteFeature.startDistanceMetres,
+          endDistanceMetres: selectedRouteFeature.endDistanceMetres,
+        }
+      : null;
+  const selectedSegmentStartElevationMetres = selectedGradientSegment
+    ? (interpolateRoutePointAt(
+        elevationDisplayPoints,
+        selectedGradientSegment.startDistanceMetres,
+      )?.elevationMetres ?? null)
+    : null;
+  const selectedSegmentEndElevationMetres = selectedGradientSegment
+    ? (interpolateRoutePointAt(
+        elevationDisplayPoints,
+        selectedGradientSegment.endDistanceMetres,
+      )?.elevationMetres ?? null)
+    : null;
+  const routeFeatureOverlay: RouteFeatureOverlay = {
+    features: routeFeatures,
+    selectedFeatureId: selectedRouteFeatureId,
+    onSelectRouteFeature: selectRouteFeature,
+  };
+  const handleChartTapDistance = (distanceMetres: number) => {
+    const result = resolveElevationChartTap(
+      distanceMetres,
+      routeFeatures,
+      selectedRouteFeature,
+      microDetailSegments,
+    );
+    if (result?.kind === "feature") {
+      selectRouteFeature(result.feature.id);
+    } else if (result?.kind === "segment") {
+      setSelectedGradientSegment(result.segment);
+    }
+  };
+
   return (
     <section aria-label="Planning">
       <h2>Plan a route</h2>
@@ -599,7 +732,8 @@ export function PlanningScreen({
           mapFactory={mapFactory}
           planningOverlay={planningOverlay}
           warningOverlay={warningOverlay}
-          gradientOverlay={{ segments: gradientSegments }}
+          routeFeatureOverlay={routeFeatureOverlay}
+          gradientOverlay={{ segments: microDetailSegments }}
           cameraTarget={northUpCameraTarget}
           boundsTarget={boundsTarget}
           suppressInitialOverviewFit={suppressInitialOverviewFit}
@@ -629,7 +763,8 @@ export function PlanningScreen({
             !crosshairCoordinate ||
             !isCameraSettled ||
             interactionMode.kind === "selected" ||
-            selectedWarningIndex !== null
+            selectedWarningIndex !== null ||
+            selectedRouteFeatureId !== null
           }
         >
           {describeCrosshairAction(interactionMode, state.present)}
@@ -659,6 +794,11 @@ export function PlanningScreen({
         ) : null}
         {selectedWarningIndex !== null ? (
           <p role="status">Clear the selected warning to place or move a waypoint.</p>
+        ) : null}
+        {selectedRouteFeatureId !== null ? (
+          <p role="status">
+            Clear the selected route feature to place or move a waypoint.
+          </p>
         ) : null}
       </div>
 
@@ -768,8 +908,17 @@ export function PlanningScreen({
           onSelectWarning={handleSelectWarning}
           onClearWarningSelection={handleClearWarningSelection}
           revealToken={warningRevealToken}
-          gradientSegments={gradientSegments}
+          gradientSegments={microDetailSegments}
           displayPoints={elevationDisplayPoints}
+          routeFeatures={routeFeatures}
+          selectedRouteFeature={selectedRouteFeature}
+          onClearRouteFeatureSelection={handleClearRouteFeatureSelection}
+          onTapDistance={handleChartTapDistance}
+          selectedRangeMetres={chartSelectedRangeMetres}
+          selectedGradientSegment={selectedGradientSegment}
+          selectedSegmentStartElevationMetres={selectedSegmentStartElevationMetres}
+          selectedSegmentEndElevationMetres={selectedSegmentEndElevationMetres}
+          onClearGradientSegmentSelection={handleClearGradientSegmentSelection}
         />
       ) : null}
 

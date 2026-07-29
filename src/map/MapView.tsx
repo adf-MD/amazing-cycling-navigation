@@ -5,6 +5,8 @@ import type { Coordinate, RoutePoint, RouteWarning } from "../domain/types.ts";
 import { logError } from "../platform/errorLog.ts";
 import type { GradientSegment } from "../navigation/gradient.ts";
 import { GRADIENT_CLASS_COLOURS } from "../navigation/gradientPalette.ts";
+import type { RouteFeature } from "../navigation/routeFeatures.ts";
+import { ROUTE_FEATURE_COLOURS } from "../navigation/routeFeaturePalette.ts";
 import {
   createMapLibreMap,
   type LineLayerPaint,
@@ -27,6 +29,11 @@ import {
   type BoundingBox,
 } from "./routeLayer.ts";
 import { buildGradientFeatureCollection } from "./gradientRouteLayer.ts";
+import {
+  buildRouteFeatureFeatureCollection,
+  buildSelectedRouteFeatureFeatureCollection,
+  resolveRouteFeatureIdHit,
+} from "./routeFeatureLayer.ts";
 import {
   buildUnroutedPreviewFeatureCollection,
   buildWaypointMarkerSpecs,
@@ -60,6 +67,31 @@ const PLANNING_PREVIEW_SOURCE_ID = "acn-planning-preview";
 const PLANNING_PREVIEW_LAYER_ID = "acn-planning-preview-line";
 const GRADIENT_SOURCE_ID = "acn-route-gradient";
 const GRADIENT_LAYER_ID = "acn-route-gradient-line";
+const ROUTE_FEATURE_SOURCE_ID = "acn-route-feature";
+const ROUTE_FEATURE_LAYER_ID = "acn-route-feature-line";
+const ROUTE_FEATURE_SELECTED_SOURCE_ID = "acn-route-feature-selected";
+const ROUTE_FEATURE_SELECTED_LAYER_ID = "acn-route-feature-selected-line";
+/** Matches the base route-line width, same footprint principle as
+ * GRADIENT_LINE_WIDTH — see the layer-order comment in
+ * addRouteAndPositionLayers for why this is added before (and is
+ * overridden within its own range by) the micro gradient layer, and
+ * before the whole warning group. */
+const ROUTE_FEATURE_LAYER_WIDTH = 5;
+/** Reuses the same "black = selected" visual language as
+ * WARNING_SELECTED_PAINT, at a width between the climb/descent layers'
+ * own 5px and the warning halo's 13px — wide enough to read as a ring
+ * around a selected feature's macro/micro colouring, narrow enough to
+ * stay visually secondary to an actual selected warning. */
+const ROUTE_FEATURE_SELECTED_PAINT: LineLayerPaint = {
+  lineColor: "#000000",
+  lineWidth: 9,
+};
+/** The only layer id ever passed to queryTopRouteFeatureAt — mirrors
+ * WARNING_CATEGORY_LAYER_IDS's own array-of-queryable-ids convention,
+ * even though there is only one macro route-feature layer (never the
+ * selected-halo or micro-detail layers, neither of which carries a
+ * routeFeatureId property). */
+const ROUTE_FEATURE_TAP_LAYER_IDS: readonly string[] = [ROUTE_FEATURE_LAYER_ID];
 const ROUTE_ARROW_LAYER_ID = "acn-route-arrows";
 /** symbol-spacing, in screen pixels (already zoom-adaptive — a fixed
  * on-screen spacing yields more arrows per geographic distance as the
@@ -135,6 +167,8 @@ const APP_OWNED_SOURCE_IDS: ReadonlySet<string> = new Set([
   FINISH_SOURCE_ID,
   PLANNING_PREVIEW_SOURCE_ID,
   GRADIENT_SOURCE_ID,
+  ROUTE_FEATURE_SOURCE_ID,
+  ROUTE_FEATURE_SELECTED_SOURCE_ID,
   ...Object.values(WARNING_SOURCE_ID_BY_CATEGORY),
   WARNING_SELECTED_SOURCE_ID,
 ]);
@@ -246,6 +280,29 @@ export interface WarningOverlay {
   onSelectWarning: (index: number) => void;
 }
 
+/** Grouped, optional macro climb/descent feature highlighting — unlike
+ * WarningOverlay, available to BOTH Planning and Riding (a rider may tap
+ * a recognised climb/descent mid-ride, not only while planning). When
+ * absent, the underlying route-feature sources stay empty and rendering
+ * is unchanged. Sliced against MapView's own `points` prop, same as
+ * WarningOverlay. */
+export interface RouteFeatureOverlay {
+  /** The full-route feature list — never a windowed/clipped subset (see
+   * routeFeatures.ts's own doc comment on why). */
+  features: readonly RouteFeature[];
+  /** Id into `features` currently selected for highlighting, or null for
+   * none. An id that no longer matches any current feature (e.g. after a
+   * route recalculation) is treated the same as null. */
+  selectedFeatureId: string | null;
+  /** Fired when a genuine map tap resolves, via hit-testing, to a
+   * selectable route-feature — reports only the winning feature's id.
+   * MapView performs no selection-policy logic itself; the caller applies
+   * its own (e.g. mutual exclusivity with warning selection). Never fired
+   * for a tap that misses every route feature, or when a warning was hit
+   * first — see the onMapTap wiring below for the exact priority. */
+  onSelectRouteFeature: (id: string) => void;
+}
+
 export interface MapViewProps {
   points: readonly RoutePoint[];
   /** Distance already ridden; the route line before this point is shown
@@ -303,14 +360,24 @@ export interface MapViewProps {
    * default) for every existing caller, leaving the underlying warning
    * sources empty and Riding mode's rendering unaffected. */
   warningOverlay?: WarningOverlay;
-  /** The shared gradient analysis for `points` — omitted (the default)
-   * leaves the gradient source empty, so the route line shows only its
-   * plain remaining/completed colours. Sliced against MapView's own
+  /** The shared gradient analysis for `points`, already narrowed by the
+   * caller to whichever feature is currently shown in micro detail
+   * (selected or, during active Riding, currently occupied) — omitted or
+   * empty (the default) leaves the micro-detail source empty, so only the
+   * macro route-feature colouring (see routeFeatureOverlay) and the plain
+   * remaining/completed colours show. This is a behavioural change from
+   * this prop's earlier meaning (the whole route's local-gradient
+   * colouring) — MapView's own rendering of it is unchanged; only what
+   * callers now choose to pass has narrowed. Sliced against MapView's own
    * `matchedDistanceFromStartMetres` (never a separately-supplied
    * distance), the same value that already drives the completed/remaining
-   * route-line split and the direction arrows, so the gradient-coloured
+   * route-line split and the direction arrows, so the micro-coloured
    * centre always agrees with the line it recolours during active Riding. */
   gradientOverlay?: { segments: readonly GradientSegment[] };
+  /** The shared macro climb/descent feature list and selection — omitted
+   * (the default) leaves both the macro and selected-feature sources
+   * empty. See RouteFeatureOverlay's own doc comment. */
+  routeFeatureOverlay?: RouteFeatureOverlay;
 }
 
 /**
@@ -340,6 +407,7 @@ export function MapView({
   planningOverlay,
   warningOverlay,
   gradientOverlay,
+  routeFeatureOverlay,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreLike | null>(null);
@@ -366,6 +434,14 @@ export function MapView({
   useEffect(() => {
     onSelectWarningRef.current = warningOverlay?.onSelectWarning;
   }, [warningOverlay?.onSelectWarning]);
+  const routeFeaturesRef = useRef(routeFeatureOverlay?.features);
+  useEffect(() => {
+    routeFeaturesRef.current = routeFeatureOverlay?.features;
+  }, [routeFeatureOverlay?.features]);
+  const onSelectRouteFeatureRef = useRef(routeFeatureOverlay?.onSelectRouteFeature);
+  useEffect(() => {
+    onSelectRouteFeatureRef.current = routeFeatureOverlay?.onSelectRouteFeature;
+  }, [routeFeatureOverlay?.onSelectRouteFeature]);
   const lastAppliedCameraTargetRef = useRef<{
     lon: number | null;
     lat: number | null;
@@ -479,19 +555,60 @@ export function MapView({
         lineWidth: 5,
         lineOpacity: 0.7,
       });
-      // Gradient (uphill/downhill) and surface/access/ferry warnings are
-      // two independent visual dimensions, layered as nested "target"
-      // rings so both stay simultaneously visible: the selected-warning
-      // halo (widest, added first/bottom) → the six warning-category
-      // casings (medium, added next) → the gradient-coloured centre
-      // (narrowest, added last/top, below). Each narrower layer covers
-      // the centre of the one before it, leaving the wider layer visible
-      // only as a ring around the outside — so a selected warning's black
-      // halo, its category's dash pattern, and the route's gradient
-      // colour are all visible at once through the same section. The
-      // selected-warning layer is added first of this group (still before
-      // every category) so it is never covered by a category's own
-      // casing.
+      // Recognised climbs/descents (macro), the selected/active feature's
+      // detailed local-gradient colouring (micro), and surface/access/
+      // ferry warnings are three independent visual dimensions, layered
+      // as nested "target" rings so all stay simultaneously visible
+      // wherever they overlap — each subsequently-added layer here is
+      // added FIRST (bottom), then progressively covered by a
+      // strictly-narrower layer added after (top), which paints over only
+      // the centre and leaves the wider layer's own outer margin visible
+      // as a ring. That ring technique governs a whole GROUP's internal
+      // order (selected-feature halo, widest of this group, first; the
+      // macro layer next; the micro layer last/narrowest-equal-width, so
+      // it simply wins by add-order wherever it has data) — but the
+      // ENTIRE climb/descent group (widths 5-9) is added, as a whole,
+      // BEFORE the entire warning group (widths 8-13) below, so a warning
+      // — wider and added later — always visually wins wherever it
+      // overlaps a climb/descent, per CLAUDE.md's surface-data priority.
+      // Tap-hit-testing is unaffected by any of this add-order (see
+      // queryTopWarningFeatureAt/queryTopRouteFeatureAt — both match by
+      // explicit layer-id list, never by z-order), so warning-tap
+      // priority is enforced purely by which layer is *queried first* in
+      // the onMapTap handler below, not by this paint order. A setup
+      // failure here must never break the rest of this function — an
+      // uncoloured route is always safe to fall back to.
+      try {
+        map.addGeoJsonSource(ROUTE_FEATURE_SELECTED_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
+        map.addLineLayer(
+          ROUTE_FEATURE_SELECTED_LAYER_ID,
+          ROUTE_FEATURE_SELECTED_SOURCE_ID,
+          ROUTE_FEATURE_SELECTED_PAINT,
+        );
+        map.addGeoJsonSource(ROUTE_FEATURE_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
+        map.addLineLayer(ROUTE_FEATURE_LAYER_ID, ROUTE_FEATURE_SOURCE_ID, {
+          lineColor: {
+            property: "visualKey",
+            cases: ROUTE_FEATURE_COLOURS,
+            fallback: GRADIENT_CLASS_COLOURS.unknown,
+          },
+          lineWidth: ROUTE_FEATURE_LAYER_WIDTH,
+        });
+        map.addGeoJsonSource(GRADIENT_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
+        map.addLineLayer(GRADIENT_LAYER_ID, GRADIENT_SOURCE_ID, {
+          lineColor: {
+            property: "gradientClass",
+            cases: GRADIENT_CLASS_COLOURS,
+            fallback: GRADIENT_CLASS_COLOURS.unknown,
+          },
+          lineWidth: GRADIENT_LINE_WIDTH,
+        });
+      } catch (error) {
+        logError("map", error);
+      }
+      // The selected-warning layer is added first of this group (still
+      // before every category) so it is never covered by a category's
+      // own casing — see the nested-ring explanation above.
       map.addGeoJsonSource(WARNING_SELECTED_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
       map.addLineLayer(
         WARNING_SELECTED_LAYER_ID,
@@ -515,29 +632,6 @@ export function MapView({
           WARNING_SOURCE_ID_BY_CATEGORY[category],
           WARNING_CATEGORY_PAINT[category],
         );
-      }
-      // Gradient route-line overlay: one GeoJSON source containing one
-      // LineString feature per contiguous gradient-class range (see
-      // gradientRouteLayer.ts), coloured by a single data-driven `match`
-      // expression (see mapAdapter.ts's addLineLayer) rather than one
-      // MapLibre layer per class or a continuous lineMetrics gradient.
-      // Painted above the warning casings so its narrower centre stays
-      // visible through them; below the direction arrows, which must
-      // remain visible above whatever colours the line beneath them. A
-      // setup failure here must never break the rest of this function —
-      // an uncoloured route is always safe to fall back to.
-      try {
-        map.addGeoJsonSource(GRADIENT_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
-        map.addLineLayer(GRADIENT_LAYER_ID, GRADIENT_SOURCE_ID, {
-          lineColor: {
-            property: "gradientClass",
-            cases: GRADIENT_CLASS_COLOURS,
-            fallback: GRADIENT_CLASS_COLOURS.unknown,
-          },
-          lineWidth: GRADIENT_LINE_WIDTH,
-        });
-      } catch (error) {
-        logError("map", error);
       }
       // Direction-arrow overlay: a single symbol layer reusing the
       // REMAINING_SOURCE_ID GeoJSON source, not a dedicated source of its
@@ -689,14 +783,17 @@ export function MapView({
       });
 
       map.onMapTap((coordinate) => {
-        // A genuine tap resolves to exactly one action: if it hits a
-        // selectable warning feature, select that warning and stop —
-        // never also forward to Planning's placement callback. Gated on
-        // `layersAdded` (the warning category layers, added alongside
-        // everything else in addRouteAndPositionLayers, only exist once
-        // that's true) so a tap before the style is ready, or before the
-        // fallback style's own layers are up, safely degrades to "no
-        // hit" rather than querying a not-yet-existent layer id.
+        // A genuine tap resolves to exactly one action, tried in strict
+        // priority order: (1) a selectable warning feature — surface
+        // warnings always take priority over a climb/descent, per
+        // CLAUDE.md; (2) a selectable macro route feature; (3) otherwise
+        // fall through to Planning's placement callback. The first match
+        // stops here — never also forwards on to a later tier. Gated on
+        // `layersAdded` (these layers, added alongside everything else in
+        // addRouteAndPositionLayers, only exist once that's true) so a
+        // tap before the style is ready, or before the fallback style's
+        // own layers are up, safely degrades to "no hit" rather than
+        // querying a not-yet-existent layer id.
         if (layersAdded) {
           const warnings = warningsRef.current;
           if (warnings && warnings.length > 0) {
@@ -709,6 +806,20 @@ export function MapView({
               : null;
             if (index !== null) {
               onSelectWarningRef.current?.(index);
+              return;
+            }
+          }
+          const features = routeFeaturesRef.current;
+          if (features && features.length > 0) {
+            const hit = map.queryTopRouteFeatureAt(
+              coordinate,
+              ROUTE_FEATURE_TAP_LAYER_IDS,
+            );
+            const featureId = hit
+              ? resolveRouteFeatureIdHit(hit.routeFeatureId, features)
+              : null;
+            if (featureId !== null) {
+              onSelectRouteFeatureRef.current?.(featureId);
               return;
             }
           }
@@ -873,6 +984,52 @@ export function MapView({
       ),
     );
   }, [points, matchedDistanceFromStartMetres, gradientSegments, styleStructurallyReady]);
+
+  const routeFeatures = routeFeatureOverlay?.features;
+  const routeFeatureSelectedId = routeFeatureOverlay?.selectedFeatureId ?? null;
+
+  // Macro layer: sparse, one feature per recognised climb/descent,
+  // clipped to the same remaining-portion policy as the micro gradient
+  // layer above (never distanceBadgeProgressMetres's frozen value — see
+  // that prop's own doc comment for why matchedDistanceFromStartMetres is
+  // the one shared "what's left to ride" distance every overlay clips to).
+  useEffect(() => {
+    if (!styleStructurallyReady) return;
+    mapRef.current?.setGeoJsonSourceData(
+      ROUTE_FEATURE_SOURCE_ID,
+      buildRouteFeatureFeatureCollection(
+        points,
+        routeFeatures ?? [],
+        matchedDistanceFromStartMetres,
+        points.at(-1)?.distanceFromStartMetres ?? 0,
+      ),
+    );
+  }, [points, matchedDistanceFromStartMetres, routeFeatures, styleStructurallyReady]);
+
+  // Selected-feature halo: the feature's own complete range, never
+  // clipped to the remaining portion — a selection halo should frame the
+  // whole climb/descent even if part of it has already been ridden,
+  // mirroring the selected-warning halo's own unclipped behaviour.
+  useEffect(() => {
+    if (!styleStructurallyReady) return;
+    mapRef.current?.setGeoJsonSourceData(
+      ROUTE_FEATURE_SELECTED_SOURCE_ID,
+      buildSelectedRouteFeatureFeatureCollection(
+        points,
+        routeFeatures ?? [],
+        routeFeatureSelectedId,
+      ),
+    );
+  }, [points, routeFeatures, routeFeatureSelectedId, styleStructurallyReady]);
+
+  // No camera auto-fit on route-feature selection, unlike the selected-
+  // warning bounds effect below: a route feature is selectable during
+  // active Riding (routeFeatureOverlay, unlike warningOverlay, is not
+  // Planning-only), and yanking the camera out of "following" the instant
+  // a feature is selected — or worse, merely entered — would be a real
+  // safety/UX problem on a bike-mounted phone. The spec asks only for a
+  // map highlight, not a camera move; omitting auto-fit here is the
+  // deliberately safer choice, not an oversight.
 
   // Purely derived from already-available inputs (no external-system
   // round-trip needed, unlike routeSourceLoaded/cameraCenter above), so

@@ -9,6 +9,7 @@ import {
   pathFromSegment,
   splitSegmentAtX,
   splitSegmentAtXs,
+  xPixelToDistanceMetres,
   type ElevationChartDomain,
 } from "./elevationChartGeometry.ts";
 import type { RoutePoint } from "../../domain/types.ts";
@@ -242,6 +243,34 @@ describe("distanceToX / elevationToY (exported for gradient boundary placement)"
     expect(elevationToY(100, 0, 100, 100)).toBeCloseTo(0, 5);
     expect(elevationToY(0, 0, 100, 100)).toBeCloseTo(100, 5);
     expect(elevationToY(5, 5, 5, 100)).toBe(100); // equal-elevation guarded
+  });
+});
+
+describe("xPixelToDistanceMetres", () => {
+  it("round-trips distanceToX across a representative domain", () => {
+    const testDomain = domain(0, 1000);
+    const width = 320;
+    for (const distanceMetres of [0, 1, 250, 499.5, 750, 999, 1000]) {
+      const x = distanceToX(distanceMetres, testDomain, width);
+      expect(xPixelToDistanceMetres(x, testDomain, width)).toBeCloseTo(distanceMetres, 5);
+    }
+  });
+
+  it("round-trips distanceToX across a windowed (non-zero-start) domain", () => {
+    const testDomain = domain(2000, 7000);
+    const width = 320;
+    for (const distanceMetres of [2000, 2500, 4500, 6999, 7000]) {
+      const x = distanceToX(distanceMetres, testDomain, width);
+      expect(xPixelToDistanceMetres(x, testDomain, width)).toBeCloseTo(distanceMetres, 5);
+    }
+  });
+
+  it("returns the domain start for a zero-width chart, mirroring distanceToX's own zero-span guard", () => {
+    expect(xPixelToDistanceMetres(50, domain(0, 1000), 0)).toBe(0);
+  });
+
+  it("degenerates to the domain start for a zero-width domain", () => {
+    expect(xPixelToDistanceMetres(50, domain(10, 10), 300)).toBe(10);
   });
 });
 

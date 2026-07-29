@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RidingScreen } from "./RidingScreen.tsx";
 import { db } from "../../storage/db.ts";
@@ -182,6 +182,7 @@ function buildStubMapFactory(): {
       resize: () => undefined,
       onMapTap: () => undefined,
       queryTopWarningFeatureAt: () => null,
+      queryTopRouteFeatureAt: () => null,
       setMarkers: () => undefined,
       setDistanceBadges: () => undefined,
       remove: () => undefined,
@@ -604,7 +605,7 @@ describe("RidingScreen", () => {
       distanceMetres: (CLIMB_POINT_COUNT - 1) * CLIMB_STEP_METRES,
     };
 
-    it("colours the pre-start elevation chart by gradient class, before any fix", () => {
+    it("colours the pre-start elevation chart by macro climb category, before any fix (no feature is yet selected/active, so no local-gradient detail shows)", () => {
       render(
         <RidingScreen
           route={climbRoute}
@@ -612,10 +613,17 @@ describe("RidingScreen", () => {
           mapFactory={buildStubMapFactory().factory}
         />,
       );
-      expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
+      // 4000 m at 8% -> climbScore 32000 -> category-2 (32000 to <64000).
+      // Shown via the macro legend entry only — no active/selected feature
+      // yet, so no details-panel heading (a distinct element) exists.
+      expect(screen.getByText(/Category 2 climb/)).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Category 2 climb" })).toBeNull();
+      // No feature is selected or (pre-fix) active yet, so the detailed
+      // local-gradient overlay — and its "Hard climb" text — is absent.
+      expect(screen.queryByText(/Hard climb/)).toBeNull();
     });
 
-    it("shows the same gradient class in both the default windowed view and Full view", async () => {
+    it("shows the same gradient class and macro feature category in both the default windowed view and Full view", async () => {
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
       render(
@@ -635,14 +643,166 @@ describe("RidingScreen", () => {
         headingDegrees: null,
       });
 
-      // Default view is the 5 km window.
+      // Default view is the 5 km window. Once the fix lands, the rider is
+      // "on" the whole-route climb, so it becomes active and its detailed
+      // local-gradient colouring appears alongside the unchanged macro
+      // category — both derived from the identical full-route feature
+      // boundaries regardless of which window is currently displayed.
       expect(await screen.findByText(/Hard climb/)).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Category 2 climb" }),
+      ).toBeInTheDocument();
 
       await user.click(await screen.findByRole("button", { name: "Full" }));
       expect(await screen.findByText(/Hard climb/)).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Category 2 climb" }),
+      ).toBeInTheDocument();
     });
 
-    it("shows the neutral unknown legend entry for a route with no elevation data", () => {
+    it("keeps showing the pre-off-route active feature's detail once strongly off-route, using the frozen presentation distance rather than raw live progress", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      // Reuses the exact route/fixture/off-route geometry already proven
+      // reliable by "keeps the Full-mode elevation marker pinned..."
+      // above, just with elevation added (a steady ~5.4% grade over the
+      // whole ~1113 m route — length/gradient/score all comfortably clear
+      // recognised-climb eligibility, forming one "uncategorised" climb).
+      const elevationRoute: PlannedRoute = {
+        ...route,
+        points: routePoints.map((point, index) => ({
+          ...point,
+          elevationMetres: index * 3,
+        })),
+      };
+      render(
+        <RidingScreen
+          route={elevationRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(5),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await screen.findByText("On route");
+      expect(
+        screen.getByRole("heading", { name: "Uncategorised climb" }),
+      ).toBeInTheDocument();
+
+      const farCoordinate: Coordinate = [
+        0.005,
+        51 + (OFF_ROUTE_BASE_METRES + 50) / 111_000,
+      ];
+      for (let i = 0; i < 3; i += 1) {
+        stub.emitFix({
+          coordinate: farCoordinate,
+          accuracyMetres: 5,
+          timestampMs: 2000 + i * 1000,
+          speedMetresPerSecond: null,
+          headingDegrees: null,
+        });
+      }
+      expect(await screen.findByRole("alert")).toHaveTextContent("Off route");
+
+      // The active feature — and its detailed colouring — is derived from
+      // the frozen presentation distance, so it stays exactly the climb
+      // the rider was last reliably on, not whatever the raw off-route
+      // fixes might otherwise imply.
+      expect(
+        screen.getByRole("heading", { name: "Uncategorised climb" }),
+      ).toBeInTheDocument();
+    });
+
+    it("tapping the elevation chart while on the active climb drills into the tapped local-gradient segment, with a working clear control", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 320,
+        height: 96,
+        right: 320,
+        bottom: 96,
+        x: 0,
+        y: 0,
+        toJSON: () => "",
+      });
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: [0.002, 51],
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await user.click(await screen.findByRole("button", { name: "Full" }));
+
+      // The rider is already on the climb, so it's "active" and its
+      // feature-level details panel already shows — but no segment is
+      // selected yet, so there's no segment-details panel.
+      await screen.findByRole("region", { name: "Route feature details" });
+      expect(
+        screen.queryByRole("region", { name: "Gradient segment details" }),
+      ).toBeNull();
+
+      const hitTarget = await screen.findByRole("img", {
+        name: "Elevation profile chart",
+      });
+      const tapTarget = hitTarget.parentElement?.querySelector(
+        "rect.elevation-chart-tap-target",
+      );
+      expect(tapTarget).not.toBeNull();
+      if (!tapTarget) throw new Error("expected a tap-target rect");
+      // The whole route is one climb, so any tap inside it (rather than
+      // outside every feature) resolves to the finer-grained local-
+      // gradient segment there, not a redundant re-selection of the
+      // already-active feature — see resolveElevationChartTap's own
+      // priority rule.
+      fireEvent.click(tapTarget, { clientX: 160, clientY: 48 });
+
+      const segmentPanel = await screen.findByRole("region", {
+        name: "Gradient segment details",
+      });
+      expect(
+        within(segmentPanel).getByRole("heading", { name: /Hard climb/ }),
+      ).toBeInTheDocument();
+      // The feature-level panel is untouched by the segment drill-down.
+      expect(
+        screen.getByRole("heading", { name: "Category 2 climb" }),
+      ).toBeInTheDocument();
+
+      const clearButton = within(segmentPanel).getByRole("button", {
+        name: "Clear selection",
+      });
+      await user.click(clearButton);
+
+      expect(
+        screen.queryByRole("region", { name: "Gradient segment details" }),
+      ).toBeNull();
+      // Clearing the segment selection never touches the feature-level
+      // selection/activity — the feature panel stays exactly as it was.
+      expect(
+        screen.getByRole("heading", { name: "Category 2 climb" }),
+      ).toBeInTheDocument();
+
+      vi.restoreAllMocks();
+    });
+
+    it("shows no gradient-colours disclosure for a route with no elevation data (the chart's own missing-elevation message already covers this)", () => {
       render(
         <RidingScreen
           route={route}
@@ -650,7 +810,10 @@ describe("RidingScreen", () => {
           mapFactory={buildStubMapFactory().factory}
         />,
       );
-      expect(screen.getByText(/Unknown \(no elevation data\)/)).toBeInTheDocument();
+      expect(
+        screen.getByText("Elevation data is not available for this route."),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Gradient colours")).toBeNull();
     });
   });
 

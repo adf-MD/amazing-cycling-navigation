@@ -18,11 +18,13 @@ const WEST_COORDINATE = [-0.15, 51.5, 10];
 const EAST_COORDINATE = [-0.05, 51.5, 10];
 // Comfortably under gradient.ts's MAX_ELEVATION_GAP_METRES (500 m) —
 // densifying the fixture's two endpoints keeps its constant elevation
-// analysable as one continuous "flat" run (a distinct, well-contrasted
-// gradient colour) rather than two isolated points thousands of metres
-// apart, which would classify as "unknown" and render in a low-contrast
-// neutral grey that this test's pixel-colour line detector can't reliably
-// pick out from the fallback background's own light grey.
+// analysable as one continuous known-elevation run, rather than two
+// isolated points thousands of metres apart with an unanalysable gap
+// between them (which would render as a distinct neutral-grey "unknown"
+// stretch this test's pixel-colour line detector would need to account
+// for separately). No recognised climb/descent forms either way (the
+// elevation is flat throughout), so the route itself renders in its own
+// plain base colour — see ROUTE_LINE_COLOUR in detectArrowDirection.
 const DENSIFY_STEP_COUNT = 20;
 
 /** Linearly interpolates evenly-spaced intermediate points between each
@@ -53,15 +55,27 @@ function densifyWithFlatElevation(
 }
 
 function buildMockOrsResponse(coordinates: readonly (readonly number[])[]) {
+  const densified = densifyWithFlatElevation(coordinates);
   return {
     type: "FeatureCollection",
     features: [
       {
         type: "Feature",
-        properties: { summary: { distance: 6900, duration: 1200 } },
+        properties: {
+          summary: { distance: 6900, duration: 1200 },
+          // Marks the whole route as paved (surface code 1, see
+          // src/routing/surfaceCodes.ts) — without this, a response with
+          // no surface metadata at all normalises to a single "unknown
+          // surface" warning spanning the entire route, which (correctly
+          // — see CLAUDE.md's surface-data priority) now visually
+          // dominates the plain route-line colour this test's arrow-blob
+          // detector looks for. Unrelated to this test's own concern
+          // (arrow orientation), so kept warning-free.
+          extras: { surface: { values: [[0, densified.length - 1, 1]] } },
+        },
         geometry: {
           type: "LineString",
-          coordinates: densifyWithFlatElevation(coordinates),
+          coordinates: densified,
         },
       },
     ],
@@ -183,13 +197,14 @@ async function detectArrowDirection({
   pngBase64,
   excludeRects,
 }: DetectArrowDirectionArgs): Promise<DirectionDetectionResult> {
-  // The gradient overlay (src/map/gradientRouteLayer.ts) paints over the
-  // route's full length, including the base route's own green — this
-  // fixture's constant, densely-sampled elevation (see
-  // densifyWithFlatElevation) classifies the whole line as "flat", which
-  // renders in the palette's flat colour (GRADIENT_CLASS_COLOURS.flat),
-  // not the base route's own green.
-  const ROUTE_LINE_COLOUR: readonly [number, number, number] = [0x2e, 0x7d, 0x63];
+  // This fixture's constant elevation forms no recognised climb/descent
+  // (see src/navigation/routeFeatures.ts), and its explicit paved surface
+  // tag (see buildMockOrsResponse) avoids the "unknown surface" warning
+  // that would otherwise dominate the line's colour — so the route
+  // renders in its own plain, undecorated base colour throughout
+  // (REMAINING_LAYER_ID's paint in src/map/MapView.tsx), not any
+  // gradient/route-feature colour.
+  const ROUTE_LINE_COLOUR: readonly [number, number, number] = [0x0a, 0x5f, 0x38];
   const ROUTE_LINE_THRESHOLD_SQUARED = 900;
   const ARROW_MIN_OPAQUE_ALPHA = 250;
   const ARROW_WHITE_MIN = 245;

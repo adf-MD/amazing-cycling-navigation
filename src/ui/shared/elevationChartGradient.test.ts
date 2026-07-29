@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { buildGradientChartRuns } from "./elevationChartGradient.ts";
+import {
+  buildChartColourRuns,
+  buildGradientChartRuns,
+  buildRouteFeatureChartRuns,
+} from "./elevationChartGradient.ts";
 import type {
   ElevationChartDomain,
   ElevationChartPoint,
 } from "./elevationChartGeometry.ts";
 import type { GradientSegment } from "../../navigation/gradient.ts";
+import type {
+  ClimbFeature,
+  DescentFeature,
+  RouteFeature,
+} from "../../navigation/routeFeatures.ts";
 
 function domain(
   startDistanceMetres: number,
@@ -132,5 +141,119 @@ describe("buildGradientChartRuns", () => {
       WIDTH,
     );
     expect(runs).toEqual([[{ gradientClass: "moderate-climb", points: segment }]]);
+  });
+});
+
+describe("buildChartColourRuns", () => {
+  it("produces identical splitting/labelling to the old buildGradientChartRuns logic when fed gradient-segment-shaped ranges", () => {
+    const segment: ElevationChartPoint[] = [
+      { x: 0, y: 0 },
+      { x: 40, y: 10 },
+      { x: 60, y: 20 },
+      { x: 100, y: 0 },
+    ];
+    const runs = buildChartColourRuns(
+      [segment],
+      [
+        { startDistanceMetres: 0, endDistanceMetres: 40, key: "flat" },
+        { startDistanceMetres: 40, endDistanceMetres: 100, key: "hard-climb" },
+      ],
+      domain(0, 100),
+      WIDTH,
+    );
+    const [segmentRuns] = runs;
+    expect(segmentRuns).toHaveLength(2);
+    expect(segmentRuns?.[0]?.key).toBe("flat");
+    expect(segmentRuns?.[1]?.key).toBe("hard-climb");
+    expect(segmentRuns?.[0]?.points.at(-1)).toEqual(segmentRuns?.[1]?.points[0]);
+  });
+
+  it("returns key: null (not a placeholder string) when no range overlaps", () => {
+    const segment: ElevationChartPoint[] = [
+      { x: 0, y: 0 },
+      { x: 100, y: 5 },
+    ];
+    const runs = buildChartColourRuns([segment], [], domain(0, 100), WIDTH);
+    expect(runs).toEqual([[{ key: null, points: segment }]]);
+  });
+});
+
+function climbFeature(
+  startDistanceMetres: number,
+  endDistanceMetres: number,
+  category: ClimbFeature["category"] = "category-3",
+): ClimbFeature {
+  return {
+    id: `climb-${String(startDistanceMetres)}`,
+    kind: "climb",
+    startDistanceMetres,
+    endDistanceMetres,
+    lengthMetres: endDistanceMetres - startDistanceMetres,
+    elevationGainMetres: 40,
+    averageGradientPercent: 6,
+    maxGradientPercent: 8,
+    climbScore: 20000,
+    category,
+  };
+}
+
+function descentFeature(
+  startDistanceMetres: number,
+  endDistanceMetres: number,
+  severity: DescentFeature["severity"] = "steep",
+): DescentFeature {
+  return {
+    id: `descent-${String(startDistanceMetres)}`,
+    kind: "descent",
+    startDistanceMetres,
+    endDistanceMetres,
+    lengthMetres: endDistanceMetres - startDistanceMetres,
+    elevationLossMetres: 40,
+    averageGradientPercent: -7,
+    maxGradientPercent: -9,
+    severity,
+  };
+}
+
+describe("buildRouteFeatureChartRuns", () => {
+  it("splits a chart segment at feature boundaries, labelling by visualKey (climb category or descent severity)", () => {
+    const segment: ElevationChartPoint[] = [
+      { x: 0, y: 0 },
+      { x: 40, y: 10 },
+      { x: 60, y: 20 },
+      { x: 100, y: 0 },
+    ];
+    const features: RouteFeature[] = [
+      climbFeature(0, 40, "category-2"),
+      descentFeature(40, 100, "very-steep"),
+    ];
+    const runs = buildRouteFeatureChartRuns([segment], features, domain(0, 100), WIDTH);
+    const [segmentRuns] = runs;
+    expect(segmentRuns).toHaveLength(2);
+    expect(segmentRuns?.[0]?.visualKey).toBe("category-2");
+    expect(segmentRuns?.[1]?.visualKey).toBe("very-steep");
+  });
+
+  it("leaves an ordinary (non-feature) gap as visualKey: null, not a placeholder", () => {
+    const segment: ElevationChartPoint[] = [
+      { x: 0, y: 0 },
+      { x: 30, y: 5 },
+      { x: 70, y: 5 },
+      { x: 100, y: 0 },
+    ];
+    const features: RouteFeature[] = [climbFeature(0, 30)];
+    const runs = buildRouteFeatureChartRuns([segment], features, domain(0, 100), WIDTH);
+    const [segmentRuns] = runs;
+    expect(segmentRuns?.[0]?.visualKey).toBe("category-3");
+    expect(segmentRuns?.[1]?.visualKey).toBeNull();
+  });
+
+  it("falls back to visualKey: null for the whole segment when no feature overlaps at all", () => {
+    const segment: ElevationChartPoint[] = [
+      { x: 0, y: 0 },
+      { x: 100, y: 5 },
+    ];
+    const runs = buildRouteFeatureChartRuns([segment], [], domain(0, 100), WIDTH);
+    expect(runs).toEqual([[{ visualKey: null, points: segment }]]);
   });
 });

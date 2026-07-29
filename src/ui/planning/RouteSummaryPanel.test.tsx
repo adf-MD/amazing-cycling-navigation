@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { RouteSummaryPanel } from "./RouteSummaryPanel.tsx";
 import type { PlannedRoute, RouteWarning } from "../../domain/types.ts";
 import type { GradientSegment } from "../../navigation/gradient.ts";
+import type { ClimbFeature, RouteFeature } from "../../navigation/routeFeatures.ts";
 
 function buildRoute(overrides: Partial<PlannedRoute> = {}): PlannedRoute {
   return {
@@ -848,6 +849,112 @@ describe("RouteSummaryPanel", () => {
       const figcaption = container.querySelector("figcaption");
       expect(figcaption?.textContent).toMatch(/5–45 m/);
       expect(figcaption?.textContent).not.toMatch(/10–20 m/);
+    });
+  });
+
+  describe("route features", () => {
+    const climb: ClimbFeature = {
+      id: "climb-0",
+      kind: "climb",
+      startDistanceMetres: 0,
+      endDistanceMetres: 1000,
+      lengthMetres: 1000,
+      elevationGainMetres: 60,
+      averageGradientPercent: 6,
+      maxGradientPercent: 8,
+      climbScore: 6000,
+      category: "category-4",
+    };
+    const routeFeatures: RouteFeature[] = [climb];
+
+    it("lists the route feature's macro category in the disclosure's route-features legend", () => {
+      render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={[]}
+          selectedWarningIndex={null}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+          gradientSegments={[]}
+          routeFeatures={routeFeatures}
+        />,
+      );
+
+      const legend = screen.getByRole("list", {
+        name: "Recognised route features legend",
+      });
+      expect(legend.querySelectorAll("li")).toHaveLength(1);
+      expect(screen.getByText(/Category 4 climb/)).toBeInTheDocument();
+    });
+
+    it("shows no route-feature details panel when nothing is selected", () => {
+      render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={[]}
+          selectedWarningIndex={null}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+          gradientSegments={[]}
+          routeFeatures={routeFeatures}
+        />,
+      );
+
+      expect(screen.queryByRole("region", { name: "Route feature details" })).toBeNull();
+    });
+
+    it("shows the details panel for the selected route feature, with a working clear control", async () => {
+      const user = userEvent.setup();
+      const onClearRouteFeatureSelection = vi.fn();
+      render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={[]}
+          selectedWarningIndex={null}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+          gradientSegments={[]}
+          routeFeatures={routeFeatures}
+          selectedRouteFeature={climb}
+          onClearRouteFeatureSelection={onClearRouteFeatureSelection}
+        />,
+      );
+
+      expect(
+        screen.getByRole("region", { name: "Route feature details" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Category 4 climb" }),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Clear selection" }));
+      expect(onClearRouteFeatureSelection).toHaveBeenCalledTimes(1);
+    });
+
+    it("forwards onTapDistance to the elevation chart's tap target", () => {
+      const onTapDistance = vi.fn();
+      const { container } = render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={[]}
+          selectedWarningIndex={null}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+          gradientSegments={[]}
+          routeFeatures={routeFeatures}
+          onTapDistance={onTapDistance}
+        />,
+      );
+
+      expect(container.querySelector("rect.elevation-chart-tap-target")).not.toBeNull();
     });
   });
 });

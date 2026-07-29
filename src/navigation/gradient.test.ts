@@ -4,6 +4,7 @@ import {
   analyzeRouteElevationProfile,
   classifyGrade,
   clipGradientSegments,
+  findGradientSegmentAtDistance,
   MIN_SEGMENT_LENGTH_METRES,
   type GradientSegment,
 } from "./gradient.ts";
@@ -625,5 +626,97 @@ describe("analyzeRouteElevationProfile", () => {
     expect(analyzeRouteElevationProfile(points).gradientSegments).toEqual(
       analyzeGradient(points),
     );
+  });
+});
+
+describe("analyzeRouteElevationProfile: runs", () => {
+  it("returns one run with distances/smoothed/gradesPercent of equal length for a single continuous route", () => {
+    const points = buildConstantGradeRoute(5, 60);
+    const { runs } = analyzeRouteElevationProfile(points);
+    expect(runs).toHaveLength(1);
+    const run = runs[0];
+    if (run === undefined) throw new Error("expected a run");
+    expect(run.distances.length).toBeGreaterThan(1);
+    expect(run.smoothed).toHaveLength(run.distances.length);
+    expect(run.gradesPercent).toHaveLength(run.distances.length);
+    // Every distance in the run's own resampled grid produces a smoothed
+    // elevation matching the same value analyzeRouteElevationProfile
+    // already interpolated onto displayPoints — the two must agree since
+    // they are the same underlying series.
+    const { displayPoints } = analyzeRouteElevationProfile(points);
+    for (let i = 0; i < run.distances.length; i += 1) {
+      const distance = run.distances[i];
+      if (distance === undefined) continue;
+      const displayed = displayPoints.find(
+        (point) => point.distanceFromStartMetres === distance,
+      );
+      if (displayed?.elevationMetres != null) {
+        expect(displayed.elevationMetres).toBeCloseTo(expectNumber(run.smoothed[i]), 5);
+      }
+    }
+    // Well inside a long constant-grade run, the regression-fitted local
+    // grade should closely match the true constant grade.
+    for (const grade of run.gradesPercent.slice(10, -10)) {
+      expect(expectNumber(grade)).toBeCloseTo(5, 0);
+    }
+  });
+
+  it("returns one run per contiguous known-elevation run, in ascending distance order, skipping gaps", () => {
+    const first = buildPoints([0, 1, 2, 3, 4], STEP_METRES);
+    const gapStart = totalDistanceOf(first);
+    const second: RoutePoint[] = [0, 1, 2, 3, 4].map((elevationMetres, i) => ({
+      coordinate: [0, 51] as const,
+      elevationMetres,
+      distanceFromStartMetres: gapStart + 600 + i * STEP_METRES,
+    }));
+    const { runs } = analyzeRouteElevationProfile([...first, ...second]);
+    expect(runs).toHaveLength(2);
+    const [firstRun, secondRun] = runs;
+    expect(firstRun?.distances.at(-1)).toBeLessThan(secondRun?.distances[0] ?? Infinity);
+  });
+
+  it("returns no runs for a route with no usable elevation", () => {
+    const points = buildPoints([null, null, null]);
+    const { runs } = analyzeRouteElevationProfile(points);
+    expect(runs).toEqual([]);
+  });
+
+  it("never mutates the input points while building runs", () => {
+    const points = buildConstantGradeRoute(6, 40);
+    const snapshot = JSON.parse(JSON.stringify(points)) as RoutePoint[];
+    analyzeRouteElevationProfile(points);
+    expect(points).toEqual(snapshot);
+  });
+});
+
+describe("findGradientSegmentAtDistance", () => {
+  const points = buildConstantGradeRoute(5, 60);
+  const { gradientSegments } = analyzeRouteElevationProfile(points);
+
+  it("returns the segment containing a distance strictly inside it", () => {
+    const total = totalDistanceOf(points);
+    const segment = findGradientSegmentAtDistance(gradientSegments, total / 2);
+    expect(segment).not.toBeNull();
+    expect(segment?.startDistanceMetres).toBeLessThanOrEqual(total / 2);
+    expect(segment?.endDistanceMetres).toBeGreaterThanOrEqual(total / 2);
+  });
+
+  it("resolves a distance exactly on a shared boundary to a segment (inclusive both ends)", () => {
+    const boundary = gradientSegments[0]?.endDistanceMetres;
+    if (boundary === undefined) throw new Error("expected at least one segment");
+    const segment = findGradientSegmentAtDistance(gradientSegments, boundary);
+    expect(segment).not.toBeNull();
+    expect(boundary).toBeGreaterThanOrEqual(expectNumber(segment?.startDistanceMetres));
+    expect(boundary).toBeLessThanOrEqual(expectNumber(segment?.endDistanceMetres));
+  });
+
+  it("returns null outside every segment's range", () => {
+    const total = totalDistanceOf(points);
+    expect(findGradientSegmentAtDistance(gradientSegments, -100)).toBeNull();
+    expect(findGradientSegmentAtDistance(gradientSegments, total + 1000)).toBeNull();
+  });
+
+  it("returns null for an empty segment list", () => {
+    expect(findGradientSegmentAtDistance([], 100)).toBeNull();
   });
 });

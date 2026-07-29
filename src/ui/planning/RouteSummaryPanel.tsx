@@ -6,10 +6,21 @@ import type {
   RouteWarningKind,
 } from "../../domain/types.ts";
 import type { GradientSegment } from "../../navigation/gradient.ts";
+import type { RouteFeature } from "../../navigation/routeFeatures.ts";
 import { prefersReducedMotion } from "../../platform/environmentContext.ts";
-import { ElevationChart } from "../shared/ElevationChart.tsx";
-import { GradientLegend } from "../shared/GradientLegend.tsx";
-import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
+import {
+  ElevationChart,
+  type ElevationChartSelectedRange,
+} from "../shared/ElevationChart.tsx";
+import { GradientColoursDisclosure } from "../shared/GradientColoursDisclosure.tsx";
+import { GradientSegmentDetailsPanel } from "../shared/GradientSegmentDetailsPanel.tsx";
+import { RouteFeatureDetailsPanel } from "../shared/RouteFeatureDetailsPanel.tsx";
+import {
+  formatAscent,
+  formatDistanceKm,
+  formatDistanceKmValue,
+  formatMetres,
+} from "../shared/routeSummary.ts";
 
 export interface RouteSummaryPanelProps {
   route: PlannedRoute;
@@ -21,10 +32,12 @@ export interface RouteSummaryPanelProps {
   selectedWarningIndex: number | null;
   onSelectWarning: (index: number) => void;
   onClearWarningSelection: () => void;
-  /** Shared, provider-independent gradient analysis for `route.points` —
-   * computed once by the caller (PlanningScreen) so it stays referentially
-   * stable across unrelated re-renders and across a failed recalculation
-   * (which leaves `route` itself unchanged). */
+  /** The detailed local-gradient analysis, already narrowed by the caller
+   * (PlanningScreen) to the currently selected route feature's own
+   * clipped range — empty when nothing is selected, so no detail
+   * colouring shows. Computed once by the caller so it stays
+   * referentially stable across unrelated re-renders and across a failed
+   * recalculation (which leaves `route` itself unchanged). */
   gradientSegments: readonly GradientSegment[];
   /** The shared smoothed elevation series (same analysis as
    * `gradientSegments`, and the same one Riding uses) — plotted instead of
@@ -32,6 +45,34 @@ export interface RouteSummaryPanelProps {
    * `route.points`, so existing callers/tests that only care about
    * gradient-legend behaviour don't need to supply it. */
   displayPoints?: readonly RoutePoint[];
+  /** The full-route macro climb/descent feature list — never narrowed
+   * (see routeFeatures.ts's own doc comment on why a feature's own stats
+   * must always describe the complete climb/descent). Optional, falling
+   * back to no recognised features, matching displayPoints' own
+   * existing-callers-don't-need-to-supply-it convention. */
+  routeFeatures?: readonly RouteFeature[];
+  /** The currently selected feature (already resolved by the caller from
+   * routeFeatures + its own selectedRouteFeatureId), or null/omitted. */
+  selectedRouteFeature?: RouteFeature | null;
+  /** Omit to render the details panel with no clear control. */
+  onClearRouteFeatureSelection?: () => void;
+  /** Forwarded straight to ElevationChart — see its own doc comment. */
+  onTapDistance?: (distanceMetres: number) => void;
+  /** Forwarded straight to ElevationChart — whichever specific range
+   * (a selected feature, or a further-selected micro segment within it)
+   * should be visually emphasised. */
+  selectedRangeMetres?: ElevationChartSelectedRange | null;
+  /** The selected detailed local-gradient segment (a finer-grained
+   * selection than selectedRouteFeature — a segment lives within a
+   * selected/active feature), or null/omitted. */
+  selectedGradientSegment?: GradientSegment | null;
+  /** Elevation at the selected segment's own start/end distance, already
+   * interpolated by the caller — see GradientSegmentDetailsPanel's own
+   * doc comment. */
+  selectedSegmentStartElevationMetres?: number | null;
+  selectedSegmentEndElevationMetres?: number | null;
+  /** Omit to render the segment details panel with no clear control. */
+  onClearGradientSegmentSelection?: () => void;
   /** Increments once per map-originated warning selection (including a
    * repeat tap on an already-selected warning) — the one-shot signal to
    * scroll the matching entry into view and announce it. Never itself a
@@ -39,17 +80,6 @@ export interface RouteSummaryPanelProps {
    * selectedWarningIndex. A list-originated selection does not bump
    * this, since the entry is already where the user is interacting. */
   revealToken: number;
-}
-
-function formatMetres(metres: number): string {
-  return `${String(Math.round(metres))} m`;
-}
-
-/** Just the numeric km value, no unit — for a "start–end km" range with
- * one trailing unit, unlike formatDistanceKm's own "X.X km" (used where
- * each figure stands alone). */
-function formatDistanceKmValue(metres: number): string {
-  return (metres / 1000).toFixed(1);
 }
 
 /** Short display name for a surface-classification warning kind — only
@@ -89,6 +119,15 @@ export function RouteSummaryPanel({
   revealToken,
   gradientSegments,
   displayPoints,
+  routeFeatures = [],
+  selectedRouteFeature = null,
+  onClearRouteFeatureSelection,
+  onTapDistance,
+  selectedRangeMetres = null,
+  selectedGradientSegment = null,
+  selectedSegmentStartElevationMetres = null,
+  selectedSegmentEndElevationMetres = null,
+  onClearGradientSegmentSelection,
 }: RouteSummaryPanelProps) {
   const surface = route.surfaceSummary;
   const selectedButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -137,12 +176,32 @@ export function RouteSummaryPanel({
       </p>
       <ElevationChart
         points={displayPoints ?? route.points}
+        routeFeatures={routeFeatures}
         gradientSegments={gradientSegments}
+        selectedRangeMetres={selectedRangeMetres}
+        onTapDistance={onTapDistance}
       />
-      <GradientLegend
+      <GradientColoursDisclosure
         presentClasses={
           new Set(gradientSegments.map((segment) => segment.classification))
         }
+        presentVisualKeys={
+          new Set(
+            routeFeatures.map((feature) =>
+              feature.kind === "climb" ? feature.category : feature.severity,
+            ),
+          )
+        }
+      />
+      <RouteFeatureDetailsPanel
+        feature={selectedRouteFeature}
+        onClear={onClearRouteFeatureSelection}
+      />
+      <GradientSegmentDetailsPanel
+        segment={selectedGradientSegment}
+        startElevationMetres={selectedSegmentStartElevationMetres}
+        endElevationMetres={selectedSegmentEndElevationMetres}
+        onClear={onClearGradientSegmentSelection}
       />
       {route.source.kind === "planner" ? (
         <p>

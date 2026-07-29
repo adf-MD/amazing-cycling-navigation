@@ -1,9 +1,15 @@
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { ElevationChart } from "./ElevationChart.tsx";
 import type { RoutePoint } from "../../domain/types.ts";
 import type { GradientSegment } from "../../navigation/gradient.ts";
 import { GRADIENT_CLASS_COLOURS } from "../../navigation/gradientPalette.ts";
+import type {
+  ClimbFeature,
+  DescentFeature,
+  RouteFeature,
+} from "../../navigation/routeFeatures.ts";
+import { ROUTE_FEATURE_COLOURS } from "../../navigation/routeFeaturePalette.ts";
 
 function buildPoints(entries: readonly [number, number | null][]): RoutePoint[] {
   return entries.map(([distanceFromStartMetres, elevationMetres]) => ({
@@ -315,6 +321,241 @@ describe("ElevationChart", () => {
       );
       const path = container.querySelector("path");
       expect(path?.getAttribute("stroke")).toBe(GRADIENT_CLASS_COLOURS.unknown);
+    });
+  });
+
+  describe("macro route-feature colouring", () => {
+    function climbFeature(
+      startDistanceMetres: number,
+      endDistanceMetres: number,
+      category: ClimbFeature["category"] = "category-3",
+    ): ClimbFeature {
+      return {
+        id: `climb-${String(startDistanceMetres)}`,
+        kind: "climb",
+        startDistanceMetres,
+        endDistanceMetres,
+        lengthMetres: endDistanceMetres - startDistanceMetres,
+        elevationGainMetres: 40,
+        averageGradientPercent: 6,
+        maxGradientPercent: 8,
+        climbScore: 20000,
+        category,
+      };
+    }
+
+    function descentFeature(
+      startDistanceMetres: number,
+      endDistanceMetres: number,
+      severity: DescentFeature["severity"] = "steep",
+    ): DescentFeature {
+      return {
+        id: `descent-${String(startDistanceMetres)}`,
+        kind: "descent",
+        startDistanceMetres,
+        endDistanceMetres,
+        lengthMetres: endDistanceMetres - startDistanceMetres,
+        elevationLossMetres: 40,
+        averageGradientPercent: -7,
+        maxGradientPercent: -9,
+        severity,
+      };
+    }
+
+    it("colours a recognised climb/descent by its macro category/severity, leaving ordinary sections currentColor", () => {
+      const points = buildPoints([
+        [0, 0],
+        [300, 20],
+        [600, 20],
+        [1000, 0],
+      ]);
+      const features: RouteFeature[] = [
+        climbFeature(0, 300, "category-2"),
+        descentFeature(600, 1000, "very-steep"),
+      ];
+      const { container } = render(
+        <ElevationChart points={points} routeFeatures={features} />,
+      );
+      const strokes = Array.from(container.querySelectorAll("path")).map((path) =>
+        path.getAttribute("stroke"),
+      );
+      expect(strokes).toContain(ROUTE_FEATURE_COLOURS["category-2"]);
+      expect(strokes).toContain(ROUTE_FEATURE_COLOURS["very-steep"]);
+      expect(strokes).toContain("currentColor");
+    });
+
+    it("does not colour anything macro when routeFeatures is an empty array (no recognised features)", () => {
+      const points = buildPoints([
+        [0, 10],
+        [1000, 40],
+      ]);
+      const { container } = render(<ElevationChart points={points} routeFeatures={[]} />);
+      const strokes = Array.from(container.querySelectorAll("path")).map((path) =>
+        path.getAttribute("stroke"),
+      );
+      expect(strokes.every((stroke) => stroke === "currentColor")).toBe(true);
+    });
+
+    it("shows detailed local-gradient colours only inside the selected/active feature's own (caller-narrowed) range", () => {
+      const points = buildPoints([
+        [0, 0],
+        [300, 20],
+        [1000, 20],
+      ]);
+      const features: RouteFeature[] = [climbFeature(0, 300, "category-2")];
+      const detailSegments: GradientSegment[] = [
+        {
+          startDistanceMetres: 0,
+          endDistanceMetres: 300,
+          averageGradientPercent: 6,
+          classification: "hard-climb",
+        },
+      ];
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          routeFeatures={features}
+          gradientSegments={detailSegments}
+        />,
+      );
+      const strokes = Array.from(container.querySelectorAll("path")).map((path) =>
+        path.getAttribute("stroke"),
+      );
+      // Both the macro colour (base, covering 0-300) and the detail colour
+      // (overlay, also covering 0-300) are present; the ordinary
+      // 300-1000 stretch stays currentColor since no feature covers it.
+      expect(strokes).toContain(ROUTE_FEATURE_COLOURS["category-2"]);
+      expect(strokes).toContain(GRADIENT_CLASS_COLOURS["hard-climb"]);
+      expect(strokes).toContain("currentColor");
+    });
+
+    it("renders the detail overlay at a thicker stroke width than the macro base", () => {
+      const points = buildPoints([
+        [0, 0],
+        [300, 20],
+      ]);
+      const features: RouteFeature[] = [climbFeature(0, 300, "category-2")];
+      const detailSegments: GradientSegment[] = [
+        {
+          startDistanceMetres: 0,
+          endDistanceMetres: 300,
+          averageGradientPercent: 6,
+          classification: "hard-climb",
+        },
+      ];
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          routeFeatures={features}
+          gradientSegments={detailSegments}
+        />,
+      );
+      const macroPath = container.querySelector(
+        `path[stroke="${ROUTE_FEATURE_COLOURS["category-2"]}"]`,
+      );
+      const detailPath = container.querySelector(
+        `path[stroke="${GRADIENT_CLASS_COLOURS["hard-climb"]}"]`,
+      );
+      const macroWidth = Number(macroPath?.getAttribute("stroke-width"));
+      const detailWidth = Number(detailPath?.getAttribute("stroke-width"));
+      expect(detailWidth).toBeGreaterThan(macroWidth);
+    });
+
+    it("gives a selectedRangeMetres match a further stroke-width bump, distinguishing it from its unselected sibling", () => {
+      const points = buildPoints([
+        [0, 20],
+        [300, 20],
+        [600, 20],
+      ]);
+      const features: RouteFeature[] = [
+        climbFeature(0, 300, "category-2"),
+        climbFeature(300, 600, "category-2"),
+      ];
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          routeFeatures={features}
+          selectedRangeMetres={{ startDistanceMetres: 0, endDistanceMetres: 300 }}
+        />,
+      );
+      const paths = Array.from(
+        container.querySelectorAll(
+          `path[stroke="${ROUTE_FEATURE_COLOURS["category-2"]}"]`,
+        ),
+      );
+      const widths = paths.map((path) => Number(path.getAttribute("stroke-width")));
+      expect(Math.max(...widths)).toBeGreaterThan(Math.min(...widths));
+    });
+  });
+
+  describe("chart tap interaction", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    function mockBoundingClientRect(width: number, height: number): void {
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+        left: 0,
+        top: 0,
+        width,
+        height,
+        right: width,
+        bottom: height,
+        x: 0,
+        y: 0,
+        toJSON: () => "",
+      });
+    }
+
+    it("reports the tapped route distance via onTapDistance", () => {
+      const points = buildPoints([
+        [0, 10],
+        [1000, 40],
+      ]);
+      mockBoundingClientRect(320, 96);
+      const onTapDistance = vi.fn<(distanceMetres: number) => void>();
+      const { container } = render(
+        <ElevationChart points={points} onTapDistance={onTapDistance} />,
+      );
+      const hitTarget = container.querySelector("rect.elevation-chart-tap-target");
+      expect(hitTarget).not.toBeNull();
+      if (!hitTarget) throw new Error("expected a tap-target rect");
+      fireEvent.click(hitTarget, { clientX: 160, clientY: 48 });
+
+      expect(onTapDistance).toHaveBeenCalledTimes(1);
+      // Tapping the horizontal midpoint of a 320-wide chart over a
+      // [0,1000] domain resolves to ~500 m.
+      expect(onTapDistance.mock.calls[0]?.[0]).toBeCloseTo(500, -1);
+    });
+
+    it("does not render a hit target, and never calls onTapDistance, when the prop is omitted", () => {
+      const points = buildPoints([
+        [0, 10],
+        [1000, 40],
+      ]);
+      const { container } = render(<ElevationChart points={points} />);
+      expect(container.querySelector("rect.elevation-chart-tap-target")).toBeNull();
+    });
+
+    it("resolves a tap anywhere on the chart, including an ordinary (non-feature) section — the caller decides what null resolution means", () => {
+      const points = buildPoints([
+        [0, 10],
+        [1000, 40],
+      ]);
+      mockBoundingClientRect(320, 96);
+      const onTapDistance = vi.fn<(distanceMetres: number) => void>();
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          routeFeatures={[]}
+          onTapDistance={onTapDistance}
+        />,
+      );
+      const hitTarget = container.querySelector("rect.elevation-chart-tap-target");
+      if (!hitTarget) throw new Error("expected a tap-target rect");
+      fireEvent.click(hitTarget, { clientX: 32, clientY: 48 });
+
+      expect(onTapDistance).toHaveBeenCalledTimes(1);
     });
   });
 });

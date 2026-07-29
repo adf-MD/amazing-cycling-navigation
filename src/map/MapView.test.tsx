@@ -10,6 +10,7 @@ import type {
   MapFactory,
   MapMarkerSpec,
   MapSourceDataInfo,
+  RouteFeatureHit,
   WarningFeatureHit,
 } from "./mapAdapter.ts";
 import { clearErrorLog, getRecentErrors } from "../platform/errorLog.ts";
@@ -17,6 +18,8 @@ import { clearMapDiagnostics, getRecentMapAttempts } from "./mapDiagnostics.ts";
 import type { Coordinate, RoutePoint, RouteWarning } from "../domain/types.ts";
 import type { GradientSegment } from "../navigation/gradient.ts";
 import { GRADIENT_CLASS_COLOURS } from "../navigation/gradientPalette.ts";
+import type { ClimbFeature, RouteFeature } from "../navigation/routeFeatures.ts";
+import { ROUTE_FEATURE_COLOURS } from "../navigation/routeFeaturePalette.ts";
 
 const points: RoutePoint[] = [
   { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
@@ -94,6 +97,15 @@ interface MockMapHandle {
       (coordinate: Coordinate, layerIds: readonly string[]) => WarningFeatureHit | null
     >
   >;
+  /** Default: never a hit (returns null). Tests override with
+   * .mockReturnValueOnce/.mockReturnValue to simulate a route-feature
+   * (climb/descent) hit; also lets tests assert exactly which
+   * coordinate/layerIds MapView queried. */
+  queryTopRouteFeatureAtSpy: ReturnType<
+    typeof vi.fn<
+      (coordinate: Coordinate, layerIds: readonly string[]) => RouteFeatureHit | null
+    >
+  >;
   setMarkersSpy: ReturnType<typeof vi.fn<(markers: readonly MapMarkerSpec[]) => void>>;
   setDistanceBadgesSpy: ReturnType<
     typeof vi.fn<(badges: readonly DistanceBadgeMarkerSpec[]) => void>
@@ -130,6 +142,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
   const addImageSpy = vi.fn();
   const addSymbolLayerSpy = vi.fn();
   const queryTopWarningFeatureAtSpy = vi.fn((): WarningFeatureHit | null => null);
+  const queryTopRouteFeatureAtSpy = vi.fn((): RouteFeatureHit | null => null);
   const setMarkersSpy: ReturnType<
     typeof vi.fn<(markers: readonly MapMarkerSpec[]) => void>
   > = vi.fn();
@@ -199,6 +212,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
         mapTapListener = listener;
       },
       queryTopWarningFeatureAt: queryTopWarningFeatureAtSpy,
+      queryTopRouteFeatureAt: queryTopRouteFeatureAtSpy,
       setMarkers: setMarkersSpy,
       setDistanceBadges: setDistanceBadgesSpy,
       remove: removeSpy,
@@ -217,6 +231,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
     addImageSpy,
     addSymbolLayerSpy,
     queryTopWarningFeatureAtSpy,
+    queryTopRouteFeatureAtSpy,
     setMarkersSpy,
     setDistanceBadgesSpy,
     constructedStyles,
@@ -1768,6 +1783,440 @@ describe("MapView", () => {
       expect(mock.addSymbolLayerSpy).toHaveBeenCalled(); // arrows still set up
       expect(screen.queryByTestId("map-fallback-banner")).toBeNull();
       expect(getRecentErrors().some((entry) => entry.context === "map")).toBe(true);
+    });
+  });
+
+  describe("routeFeatureOverlay", () => {
+    function climbFeature(
+      startDistanceMetres: number,
+      endDistanceMetres: number,
+      category: ClimbFeature["category"] = "category-3",
+    ): ClimbFeature {
+      return {
+        id: `climb-${String(startDistanceMetres)}`,
+        kind: "climb",
+        startDistanceMetres,
+        endDistanceMetres,
+        lengthMetres: endDistanceMetres - startDistanceMetres,
+        elevationGainMetres: 40,
+        averageGradientPercent: 6,
+        maxGradientPercent: 8,
+        climbScore: 20000,
+        category,
+      };
+    }
+
+    it("creates the macro layer with a categorical colour keyed on visualKey", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      expect(mock.layers.has("acn-route-feature-line")).toBe(true);
+      const call = mock.addLineLayerSpy.mock.calls.find(
+        ([id]) => id === "acn-route-feature-line",
+      ) as [string, string, { lineColor: unknown; lineWidth: number }] | undefined;
+      expect(call?.[1]).toBe("acn-route-feature");
+      expect(call?.[2].lineColor).toEqual({
+        property: "visualKey",
+        cases: ROUTE_FEATURE_COLOURS,
+        fallback: GRADIENT_CLASS_COLOURS.unknown,
+      });
+    });
+
+    it("creates the selected-feature halo layer", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      expect(mock.layers.has("acn-route-feature-selected-line")).toBe(true);
+    });
+
+    it("leaves the macro and selected-feature sources empty when routeFeatureOverlay is omitted", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={warningPoints} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      expect(mock.sources.get("acn-route-feature")?.features).toEqual([]);
+      expect(mock.sources.get("acn-route-feature-selected")?.features).toEqual([]);
+    });
+
+    it("populates the macro source with one sparse feature per recognised climb/descent", () => {
+      const mock = createMockMapFactory();
+      const features: RouteFeature[] = [
+        climbFeature(0, 200, "category-2"),
+        climbFeature(200, 400, "hc"),
+      ];
+      render(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          routeFeatureOverlay={{
+            features,
+            selectedFeatureId: null,
+            onSelectRouteFeature: vi.fn(),
+          }}
+        />,
+      );
+      mock.triggerLoad();
+
+      const collectionFeatures = mock.sources.get("acn-route-feature")?.features ?? [];
+      expect(collectionFeatures).toHaveLength(2);
+      expect(
+        collectionFeatures.map(
+          (feature) => (feature.properties as { visualKey?: string } | null)?.visualKey,
+        ),
+      ).toEqual(["category-2", "hc"]);
+    });
+
+    it("clips macro coverage to the remaining portion during active Riding, matching the micro gradient layer's own policy", () => {
+      const mock = createMockMapFactory();
+      const features: RouteFeature[] = [climbFeature(0, 400)];
+      const { rerender } = render(
+        <MapView
+          points={warningPoints}
+          matchedDistanceFromStartMetres={0}
+          mapFactory={mock.factory}
+          routeFeatureOverlay={{
+            features,
+            selectedFeatureId: null,
+            onSelectRouteFeature: vi.fn(),
+          }}
+        />,
+      );
+      mock.triggerLoad();
+
+      const initialFeatures = mock.sources.get("acn-route-feature")?.features ?? [];
+      const initialCoordinateCount =
+        initialFeatures[0]?.geometry.type === "LineString"
+          ? initialFeatures[0].geometry.coordinates.length
+          : 0;
+
+      rerender(
+        <MapView
+          points={warningPoints}
+          matchedDistanceFromStartMetres={200}
+          mapFactory={mock.factory}
+          routeFeatureOverlay={{
+            features,
+            selectedFeatureId: null,
+            onSelectRouteFeature: vi.fn(),
+          }}
+        />,
+      );
+
+      const remainingFeatures = mock.sources.get("acn-route-feature")?.features ?? [];
+      const remainingCoordinateCount =
+        remainingFeatures[0]?.geometry.type === "LineString"
+          ? remainingFeatures[0].geometry.coordinates.length
+          : 0;
+      expect(remainingCoordinateCount).toBeLessThan(initialCoordinateCount);
+    });
+
+    it("populates the selected-feature source with the feature's complete, unclipped range", () => {
+      const mock = createMockMapFactory();
+      const features: RouteFeature[] = [climbFeature(0, 400)];
+      render(
+        <MapView
+          points={warningPoints}
+          matchedDistanceFromStartMetres={200}
+          mapFactory={mock.factory}
+          routeFeatureOverlay={{
+            features,
+            selectedFeatureId: "climb-0",
+            onSelectRouteFeature: vi.fn(),
+          }}
+        />,
+      );
+      mock.triggerLoad();
+
+      const selected = mock.sources.get("acn-route-feature-selected")?.features ?? [];
+      expect(selected).toHaveLength(1);
+      const coordinates =
+        selected[0]?.geometry.type === "LineString"
+          ? selected[0].geometry.coordinates
+          : [];
+      // Unclipped despite matchedDistanceFromStartMetres=200 partway
+      // through the feature — starts at the feature's own start (0), not
+      // the ridden progress.
+      expect(coordinates[0]).toEqual([0, 51]);
+    });
+
+    it("leaves the selected-feature source empty when nothing is selected", () => {
+      const mock = createMockMapFactory();
+      const features: RouteFeature[] = [climbFeature(0, 400)];
+      render(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          routeFeatureOverlay={{
+            features,
+            selectedFeatureId: null,
+            onSelectRouteFeature: vi.fn(),
+          }}
+        />,
+      );
+      mock.triggerLoad();
+
+      expect(mock.sources.get("acn-route-feature-selected")?.features).toEqual([]);
+    });
+
+    it("adds the climb/descent group's layers before the whole warning group, both narrower than the warning halo", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      const order = mock.addLineLayerSpy.mock.calls.map(([id]) => id as string);
+      const featureSelectedIndex = order.indexOf("acn-route-feature-selected-line");
+      const featureIndex = order.indexOf("acn-route-feature-line");
+      const gradientIndex = order.indexOf("acn-route-gradient-line");
+      const warningSelectedIndex = order.indexOf("acn-warning-selected-line");
+      const firstWarningCategoryIndex = order.indexOf("acn-warning-unknown-surface-line");
+
+      expect(featureSelectedIndex).toBeGreaterThanOrEqual(0);
+      expect(featureSelectedIndex).toBeLessThan(featureIndex);
+      expect(featureIndex).toBeLessThan(gradientIndex);
+      expect(gradientIndex).toBeLessThan(warningSelectedIndex);
+      expect(warningSelectedIndex).toBeLessThan(firstWarningCategoryIndex);
+    });
+
+    it("a route-feature-layer setup failure leaves every other layer intact, is logged, and never forces fallback", () => {
+      clearErrorLog();
+      const mock = createMockMapFactory();
+      mock.addLineLayerSpy.mockImplementation((id: string) => {
+        if (id === "acn-route-feature-line") {
+          throw new Error("simulated route-feature-layer failure");
+        }
+      });
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      expect(mock.layers.has("acn-route-remaining-line")).toBe(true);
+      expect(mock.layers.has("acn-route-completed-line")).toBe(true);
+      expect(mock.layers.has("acn-warning-unknown-surface-line")).toBe(true);
+      expect(mock.layers.has("acn-position-marker")).toBe(true);
+      expect(screen.queryByTestId("map-fallback-banner")).toBeNull();
+      expect(getRecentErrors().some((entry) => entry.context === "map")).toBe(true);
+    });
+
+    describe("route-feature hit-testing on map tap", () => {
+      const features: RouteFeature[] = [climbFeature(0, 200)];
+
+      it("selects the hit feature and never forwards to planningOverlay.onMapTap", () => {
+        const mock = createMockMapFactory();
+        const onSelectRouteFeature = vi.fn();
+        const onMapTap = vi.fn();
+        mock.queryTopRouteFeatureAtSpy.mockReturnValue({ routeFeatureId: "climb-0" });
+        render(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            planningOverlay={{
+              waypoints: [],
+              previewCoordinates: [],
+              selectedWaypointIndex: null,
+              onMapTap,
+            }}
+            routeFeatureOverlay={{
+              features,
+              selectedFeatureId: null,
+              onSelectRouteFeature,
+            }}
+          />,
+        );
+        mock.triggerLoad();
+
+        mock.triggerMapTap([0.001, 51]);
+
+        expect(onSelectRouteFeature).toHaveBeenCalledWith("climb-0");
+        expect(onMapTap).not.toHaveBeenCalled();
+      });
+
+      it("falls through to placement for a stale (non-matching) hit id", () => {
+        const mock = createMockMapFactory();
+        const onSelectRouteFeature = vi.fn();
+        const onMapTap = vi.fn();
+        mock.queryTopRouteFeatureAtSpy.mockReturnValue({ routeFeatureId: "climb-9999" });
+        render(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            planningOverlay={{
+              waypoints: [],
+              previewCoordinates: [],
+              selectedWaypointIndex: null,
+              onMapTap,
+            }}
+            routeFeatureOverlay={{
+              features,
+              selectedFeatureId: null,
+              onSelectRouteFeature,
+            }}
+          />,
+        );
+        mock.triggerLoad();
+
+        mock.triggerMapTap([0.001, 51]);
+
+        expect(onSelectRouteFeature).not.toHaveBeenCalled();
+        expect(onMapTap).toHaveBeenCalledWith([0.001, 51]);
+      });
+
+      it("never attempts route-feature hit-testing when no routeFeatureOverlay is configured", () => {
+        const mock = createMockMapFactory();
+        const onMapTap = vi.fn();
+        render(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            planningOverlay={{
+              waypoints: [],
+              previewCoordinates: [],
+              selectedWaypointIndex: null,
+              onMapTap,
+            }}
+          />,
+        );
+        mock.triggerLoad();
+
+        mock.triggerMapTap([0.001, 51]);
+
+        expect(mock.queryTopRouteFeatureAtSpy).not.toHaveBeenCalled();
+        expect(onMapTap).toHaveBeenCalledWith([0.001, 51]);
+      });
+
+      it("a surface warning wins over an overlapping route feature — onSelectRouteFeature is not called", () => {
+        const mock = createMockMapFactory();
+        const onSelectWarning = vi.fn();
+        const onSelectRouteFeature = vi.fn();
+        const onMapTap = vi.fn();
+        mock.queryTopWarningFeatureAtSpy.mockReturnValue({ warningIndex: 0 });
+        mock.queryTopRouteFeatureAtSpy.mockReturnValue({ routeFeatureId: "climb-0" });
+        const warnings: RouteWarning[] = [
+          {
+            kind: "unsuitable-surface",
+            startDistanceMetres: 0,
+            endDistanceMetres: 100,
+            message: "Unsuitable surface",
+          },
+        ];
+        render(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            planningOverlay={{
+              waypoints: [],
+              previewCoordinates: [],
+              selectedWaypointIndex: null,
+              onMapTap,
+            }}
+            warningOverlay={{ warnings, selectedWarningIndex: null, onSelectWarning }}
+            routeFeatureOverlay={{
+              features,
+              selectedFeatureId: null,
+              onSelectRouteFeature,
+            }}
+          />,
+        );
+        mock.triggerLoad();
+
+        mock.triggerMapTap([0.001, 51]);
+
+        expect(onSelectWarning).toHaveBeenCalledWith(0);
+        expect(onSelectRouteFeature).not.toHaveBeenCalled();
+        expect(mock.queryTopRouteFeatureAtSpy).not.toHaveBeenCalled();
+        expect(onMapTap).not.toHaveBeenCalled();
+      });
+
+      it("falls through to route-feature hit-testing when the warning hit-test misses", () => {
+        const mock = createMockMapFactory();
+        const onSelectWarning = vi.fn();
+        const onSelectRouteFeature = vi.fn();
+        mock.queryTopWarningFeatureAtSpy.mockReturnValue(null);
+        mock.queryTopRouteFeatureAtSpy.mockReturnValue({ routeFeatureId: "climb-0" });
+        const warnings: RouteWarning[] = [
+          {
+            kind: "unsuitable-surface",
+            startDistanceMetres: 0,
+            endDistanceMetres: 100,
+            message: "Unsuitable surface",
+          },
+        ];
+        render(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            warningOverlay={{ warnings, selectedWarningIndex: null, onSelectWarning }}
+            routeFeatureOverlay={{
+              features,
+              selectedFeatureId: null,
+              onSelectRouteFeature,
+            }}
+          />,
+        );
+        mock.triggerLoad();
+
+        mock.triggerMapTap([0.001, 51]);
+
+        expect(onSelectWarning).not.toHaveBeenCalled();
+        expect(onSelectRouteFeature).toHaveBeenCalledWith("climb-0");
+      });
+
+      it("queries only the macro route-feature layer, never the selected-feature halo or micro-detail layer", () => {
+        const mock = createMockMapFactory();
+        render(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            routeFeatureOverlay={{
+              features,
+              selectedFeatureId: null,
+              onSelectRouteFeature: vi.fn(),
+            }}
+          />,
+        );
+        mock.triggerLoad();
+
+        mock.triggerMapTap([0.001, 51]);
+
+        expect(mock.queryTopRouteFeatureAtSpy).toHaveBeenCalledWith(
+          [0.001, 51],
+          ["acn-route-feature-line"],
+        );
+      });
+
+      it("does not move the camera (no fitBounds call) when a route feature is selected", () => {
+        const mock = createMockMapFactory();
+        const onSelectRouteFeature = vi.fn();
+        mock.queryTopRouteFeatureAtSpy.mockReturnValue({ routeFeatureId: "climb-0" });
+        const { rerender } = render(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            routeFeatureOverlay={{
+              features,
+              selectedFeatureId: null,
+              onSelectRouteFeature,
+            }}
+          />,
+        );
+        mock.triggerLoad();
+        mock.fitBoundsSpy.mockClear();
+
+        mock.triggerMapTap([0.001, 51]);
+        rerender(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            routeFeatureOverlay={{
+              features,
+              selectedFeatureId: "climb-0",
+              onSelectRouteFeature,
+            }}
+          />,
+        );
+
+        expect(mock.fitBoundsSpy).not.toHaveBeenCalled();
+      });
     });
   });
 

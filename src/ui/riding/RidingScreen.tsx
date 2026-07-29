@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { PlannedRoute } from "../../domain/types.ts";
-import { MapView } from "../../map/MapView.tsx";
+import { MapView, type RouteFeatureOverlay } from "../../map/MapView.tsx";
 import type { MapFactory } from "../../map/mapAdapter.ts";
 import type { GeolocationError, GeolocationSource } from "../../platform/geolocation.ts";
 import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
@@ -10,11 +10,24 @@ import {
   clipGradientSegments,
   type GradientSegment,
 } from "../../navigation/gradient.ts";
+import {
+  detectRouteFeatures,
+  findFeatureAtDistance,
+  resolveElevationChartTap,
+} from "../../navigation/routeFeatures.ts";
 import type { ElevationViewMode, OffRouteLevel } from "../../navigation/types.ts";
-import { ELEVATION_VIEW_MODE_OPTIONS } from "../../navigation/upcomingElevation.ts";
+import {
+  ELEVATION_VIEW_MODE_OPTIONS,
+  interpolateRoutePointAt,
+} from "../../navigation/upcomingElevation.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
-import { ElevationChart } from "../shared/ElevationChart.tsx";
-import { GradientLegend } from "../shared/GradientLegend.tsx";
+import {
+  ElevationChart,
+  type ElevationChartSelectedRange,
+} from "../shared/ElevationChart.tsx";
+import { GradientColoursDisclosure } from "../shared/GradientColoursDisclosure.tsx";
+import { GradientSegmentDetailsPanel } from "../shared/GradientSegmentDetailsPanel.tsx";
+import { RouteFeatureDetailsPanel } from "../shared/RouteFeatureDetailsPanel.tsx";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 import { useRideCamera } from "./useRideCamera.ts";
 import { useRideNavigation } from "./useRideNavigation.ts";
@@ -119,10 +132,104 @@ export function RidingScreen({
   // prominent line — useRideNavigation's own windowed view is already
   // sourced from this same analysis, so only the pre-start/Full call
   // sites below need to switch from `route.points` explicitly.
-  const { gradientSegments, displayPoints } = useMemo(
-    () => analyzeRouteElevationProfile(route.points),
-    [route],
+  // `routeFeatures` is detected from the exact same one-per-route profile
+  // (never a second resample/smooth pass) — deliberately not added to
+  // useRideNavigation, mirroring how this screen already independently
+  // re-derives the elevation profile in its own memo, separate from the
+  // hook's own internal one, keeping the hook's public contract stable.
+  const { gradientSegments, displayPoints, routeFeatures } = useMemo(() => {
+    const profile = analyzeRouteElevationProfile(route.points);
+    return {
+      gradientSegments: profile.gradientSegments,
+      displayPoints: profile.displayPoints,
+      routeFeatures: detectRouteFeatures(profile),
+    };
+  }, [route]);
+
+  const [selectedRouteFeatureId, setSelectedRouteFeatureId] = useState<string | null>(
+    null,
   );
+  const [selectedGradientSegment, setSelectedGradientSegment] =
+    useState<GradientSegment | null>(null);
+
+  const selectedFeature =
+    routeFeatures.find((feature) => feature.id === selectedRouteFeatureId) ?? null;
+  // The recognised climb/descent the rider is currently riding through,
+  // determined via the existing frozen-while-off-route presentation-
+  // distance policy (see useRideNavigation/rideNavigationCore) — never
+  // the live/raw matched distance, matching every other presentation
+  // value already keyed off this same frozen distance.
+  const activeFeature =
+    nav.presentationDistanceFromStartMetres === null
+      ? null
+      : findFeatureAtDistance(routeFeatures, nav.presentationDistanceFromStartMetres);
+  // An explicit selection wins over merely being "active" — a rider can
+  // inspect a different climb than the one they're currently on.
+  const microDetailFeature = selectedFeature ?? activeFeature;
+  const microDetailSegments = microDetailFeature
+    ? clipGradientSegments(
+        gradientSegments,
+        microDetailFeature.startDistanceMetres,
+        microDetailFeature.endDistanceMetres,
+      )
+    : [];
+  // Visual emphasis (the extra stroke-width bump) is reserved for an
+  // explicit selection, never for a merely-active feature — mirrors the
+  // map's own selected-feature-halo policy (no halo for "active" alone).
+  const chartSelectedRangeMetres: ElevationChartSelectedRange | null =
+    selectedGradientSegment
+      ? {
+          startDistanceMetres: selectedGradientSegment.startDistanceMetres,
+          endDistanceMetres: selectedGradientSegment.endDistanceMetres,
+        }
+      : selectedFeature
+        ? {
+            startDistanceMetres: selectedFeature.startDistanceMetres,
+            endDistanceMetres: selectedFeature.endDistanceMetres,
+          }
+        : null;
+  const selectedSegmentStartElevationMetres = selectedGradientSegment
+    ? (interpolateRoutePointAt(displayPoints, selectedGradientSegment.startDistanceMetres)
+        ?.elevationMetres ?? null)
+    : null;
+  const selectedSegmentEndElevationMetres = selectedGradientSegment
+    ? (interpolateRoutePointAt(displayPoints, selectedGradientSegment.endDistanceMetres)
+        ?.elevationMetres ?? null)
+    : null;
+
+  const selectRouteFeature = useCallback((id: string) => {
+    setSelectedGradientSegment(null);
+    setSelectedRouteFeatureId(id);
+  }, []);
+  const handleClearRouteFeatureSelection = useCallback(() => {
+    setSelectedRouteFeatureId(null);
+    setSelectedGradientSegment(null);
+  }, []);
+  const handleClearGradientSegmentSelection = useCallback(() => {
+    setSelectedGradientSegment(null);
+  }, []);
+  // Not useCallback-wrapped: microDetailSegments is itself a fresh array
+  // every render (a cheap clip, not memoized), so this closure would gain
+  // no stable identity from memoizing anyway.
+  function handleChartTapDistance(distanceMetres: number): void {
+    const result = resolveElevationChartTap(
+      distanceMetres,
+      routeFeatures,
+      microDetailFeature,
+      microDetailSegments,
+    );
+    if (result?.kind === "feature") {
+      selectRouteFeature(result.feature.id);
+    } else if (result?.kind === "segment") {
+      setSelectedGradientSegment(result.segment);
+    }
+  }
+
+  const routeFeatureOverlay: RouteFeatureOverlay = {
+    features: routeFeatures,
+    selectedFeatureId: selectedRouteFeatureId,
+    onSelectRouteFeature: selectRouteFeature,
+  };
 
   const handleStart = () => {
     nav.start();
@@ -200,7 +307,8 @@ export function RidingScreen({
           distanceBadgeProgressMetres={nav.presentationDistanceFromStartMetres}
           currentPosition={nav.currentFix?.coordinate}
           mapFactory={mapFactory}
-          gradientOverlay={{ segments: gradientSegments }}
+          routeFeatureOverlay={routeFeatureOverlay}
+          gradientOverlay={{ segments: microDetailSegments }}
           cameraTarget={camera.cameraTarget}
           suppressInitialOverviewFit={camera.mode !== "overview"}
           onUserCameraInteraction={camera.reportUserInteraction}
@@ -289,24 +397,34 @@ export function RidingScreen({
       {/* Before any matched progress (live or restored), show the whole
        * route with no marker. Once there's matched progress, Full mode
        * shows the whole route with a progress marker and Upcoming mode
-       * shows a rebased rolling window. The gradient segments actually
-       * displayed for the active view drive the legend below, so it never
-       * lists a class that isn't currently on screen. */}
+       * shows a rebased rolling window. Macro route-feature colouring
+       * (routeFeatures) always covers the whole route regardless of view;
+       * only the detailed micro overlay (gradientSegments, already
+       * narrowed to the selected-or-active feature) is further clipped to
+       * the current window, so the legend never lists a detail class that
+       * isn't currently on screen. */}
       {(() => {
-        let displayedGradientSegments: readonly GradientSegment[];
+        let displayedMicroSegments = microDetailSegments;
         let chart: ReactNode;
 
         if (nav.matchedDistanceFromStartMetres === null) {
-          displayedGradientSegments = gradientSegments;
-          chart = (
-            <ElevationChart points={displayPoints} gradientSegments={gradientSegments} />
-          );
-        } else if (nav.elevationProfileDisplay.kind === "full") {
-          displayedGradientSegments = gradientSegments;
           chart = (
             <ElevationChart
               points={displayPoints}
-              gradientSegments={gradientSegments}
+              routeFeatures={routeFeatures}
+              gradientSegments={microDetailSegments}
+              selectedRangeMetres={chartSelectedRangeMetres}
+              onTapDistance={handleChartTapDistance}
+            />
+          );
+        } else if (nav.elevationProfileDisplay.kind === "full") {
+          chart = (
+            <ElevationChart
+              points={displayPoints}
+              routeFeatures={routeFeatures}
+              gradientSegments={microDetailSegments}
+              selectedRangeMetres={chartSelectedRangeMetres}
+              onTapDistance={handleChartTapDistance}
               marker={
                 nav.elevationProfileDisplay.marker
                   ? {
@@ -322,12 +440,12 @@ export function RidingScreen({
           );
         } else {
           const window = nav.elevationProfileDisplay.window;
-          const windowGradientSegments = clipGradientSegments(
-            gradientSegments,
+          const windowMicroSegments = clipGradientSegments(
+            microDetailSegments,
             window.startDistanceMetres,
             window.endDistanceMetres,
           );
-          displayedGradientSegments = windowGradientSegments;
+          displayedMicroSegments = windowMicroSegments;
           chart = (
             <ElevationChart
               points={window.points}
@@ -335,7 +453,10 @@ export function RidingScreen({
                 startDistanceMetres: window.startDistanceMetres,
                 endDistanceMetres: window.endDistanceMetres,
               }}
-              gradientSegments={windowGradientSegments}
+              routeFeatures={routeFeatures}
+              gradientSegments={windowMicroSegments}
+              selectedRangeMetres={chartSelectedRangeMetres}
+              onTapDistance={handleChartTapDistance}
             />
           );
         }
@@ -343,12 +464,27 @@ export function RidingScreen({
         return (
           <>
             {chart}
-            <GradientLegend
+            <GradientColoursDisclosure
               presentClasses={
+                new Set(displayedMicroSegments.map((segment) => segment.classification))
+              }
+              presentVisualKeys={
                 new Set(
-                  displayedGradientSegments.map((segment) => segment.classification),
+                  routeFeatures.map((feature) =>
+                    feature.kind === "climb" ? feature.category : feature.severity,
+                  ),
                 )
               }
+            />
+            <RouteFeatureDetailsPanel
+              feature={microDetailFeature}
+              onClear={selectedFeature ? handleClearRouteFeatureSelection : undefined}
+            />
+            <GradientSegmentDetailsPanel
+              segment={selectedGradientSegment}
+              startElevationMetres={selectedSegmentStartElevationMetres}
+              endElevationMetres={selectedSegmentEndElevationMetres}
+              onClear={handleClearGradientSegmentSelection}
             />
           </>
         );

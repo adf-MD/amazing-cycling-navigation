@@ -32,11 +32,13 @@ const FOLLOW_VERTICAL_OFFSET_PX = 60;
 const FOLLOW_EASE_DURATION_MS = 600;
 
 /** Half-width/height, in CSS pixels, of the small screen-space box used
- * to hit-test a tapped warning segment — independent of geographic zoom,
- * so a thin line stays comfortably tappable on a phone without needing
- * the visible line itself to be drawn wider. 12-16px is the generally
- * accepted minimum touch-slop radius; 14 sits in the middle of that. */
-const WARNING_TAP_HIT_TOLERANCE_PX = 14;
+ * to hit-test a tapped warning segment or route feature — independent of
+ * geographic zoom, so a thin line stays comfortably tappable on a phone
+ * without needing the visible line itself to be drawn wider. 12-16px is
+ * the generally accepted minimum touch-slop radius; 14 sits in the
+ * middle of that. Shared by queryTopWarningFeatureAt and
+ * queryTopRouteFeatureAt — the same tap-tolerance problem either way. */
+const MAP_FEATURE_TAP_HIT_TOLERANCE_PX = 14;
 
 /**
  * Distinguishes a fatal style-document failure from a recoverable
@@ -77,6 +79,17 @@ export interface MapSourceDataInfo {
  * run it through warningLayer.ts's resolveWarningIndexHit before use. */
 export interface WarningFeatureHit {
   warningIndex: unknown;
+}
+
+/** The one safe, project-owned piece of identity a route-feature
+ * (climb/descent) hit-test can report — mirrors WarningFeatureHit
+ * exactly. `routeFeatureId` is the raw value read off the topmost
+ * matching feature's own `routeFeatureId` property (see
+ * routeFeatureLayer.ts's RouteFeatureProperties) — untyped and NOT yet
+ * validated as genuinely current; the caller must run it through
+ * routeFeatureLayer.ts's resolveRouteFeatureIdHit before use. */
+export interface RouteFeatureHit {
+  routeFeatureId: unknown;
 }
 
 /** A categorical (exact-match) line-colour expression, keyed by a
@@ -293,7 +306,7 @@ export interface MapLibreLike {
   onMapTap(listener: (coordinate: Coordinate) => void): void;
   /** Hit-tests only the given layer ids (never a layer the caller omits —
    * e.g. MapView must omit the selected-warning highlight layer) in a
-   * small screen-space box of WARNING_TAP_HIT_TOLERANCE_PX around
+   * small screen-space box of MAP_FEATURE_TAP_HIT_TOLERANCE_PX around
    * `coordinate`'s on-screen position, re-derived internally via the real
    * Map's own `.project()` — deliberately takes the same `Coordinate`
    * onMapTap's own listener already receives, so MapView can call this
@@ -310,6 +323,19 @@ export interface MapLibreLike {
     coordinate: Coordinate,
     layerIds: readonly string[],
   ): WarningFeatureHit | null;
+  /** Identical hit-testing technique to queryTopWarningFeatureAt (same
+   * tolerance box, same topmost-feature-wins semantics, same never-throws
+   * guarantee), reading a route-feature (climb/descent) layer's own
+   * `routeFeatureId` property instead of `warningIndex`. A separate
+   * method rather than a generalised one: keeping the two independently
+   * typed and named mirrors WarningFeatureHit/RouteFeatureHit's own
+   * separation and keeps each call site's intent explicit at the caller
+   * (MapView.tsx queries warnings first, then route features, in that
+   * priority order — see its onMapTap wiring). */
+  queryTopRouteFeatureAt(
+    coordinate: Coordinate,
+    layerIds: readonly string[],
+  ): RouteFeatureHit | null;
   /** Declares the complete set of Planning waypoint markers that should
    * exist right now — the same "supply the full desired state, the
    * adapter diffs it" convention setGeoJsonSourceData already follows,
@@ -620,12 +646,12 @@ export class MapLibreAdapter implements MapLibreLike {
       const features = this.map.queryRenderedFeatures(
         [
           [
-            point.x - WARNING_TAP_HIT_TOLERANCE_PX,
-            point.y - WARNING_TAP_HIT_TOLERANCE_PX,
+            point.x - MAP_FEATURE_TAP_HIT_TOLERANCE_PX,
+            point.y - MAP_FEATURE_TAP_HIT_TOLERANCE_PX,
           ],
           [
-            point.x + WARNING_TAP_HIT_TOLERANCE_PX,
-            point.y + WARNING_TAP_HIT_TOLERANCE_PX,
+            point.x + MAP_FEATURE_TAP_HIT_TOLERANCE_PX,
+            point.y + MAP_FEATURE_TAP_HIT_TOLERANCE_PX,
           ],
         ],
         { layers: [...layerIds] },
@@ -634,6 +660,37 @@ export class MapLibreAdapter implements MapLibreLike {
       if (!top) return null;
       return {
         warningIndex: (top.properties as { warningIndex?: unknown } | null)?.warningIndex,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  queryTopRouteFeatureAt(
+    coordinate: Coordinate,
+    layerIds: readonly string[],
+  ): RouteFeatureHit | null {
+    if (layerIds.length === 0) return null;
+    try {
+      const point = this.map.project([coordinate[0], coordinate[1]]);
+      const features = this.map.queryRenderedFeatures(
+        [
+          [
+            point.x - MAP_FEATURE_TAP_HIT_TOLERANCE_PX,
+            point.y - MAP_FEATURE_TAP_HIT_TOLERANCE_PX,
+          ],
+          [
+            point.x + MAP_FEATURE_TAP_HIT_TOLERANCE_PX,
+            point.y + MAP_FEATURE_TAP_HIT_TOLERANCE_PX,
+          ],
+        ],
+        { layers: [...layerIds] },
+      );
+      const top = features[0];
+      if (!top) return null;
+      return {
+        routeFeatureId: (top.properties as { routeFeatureId?: unknown } | null)
+          ?.routeFeatureId,
       };
     } catch {
       return null;

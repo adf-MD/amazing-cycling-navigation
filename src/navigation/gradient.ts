@@ -360,16 +360,30 @@ function mergeAdjacent(segments: readonly GradientSegment[]): GradientSegment[] 
  * segments share a classification) plus the underlying resampled/smoothed
  * series they were derived from — the same series doubles as the
  * displayed elevation line for this run (see analyzeRouteElevationProfile),
- * so the chart and the classification can never disagree. */
+ * so the chart and the classification can never disagree. `gradesPercent`
+ * is the same per-point regression grade used to classify each segment,
+ * kept at full per-point resolution (not merged/suppressed) for callers
+ * that need a precise local maximum over an arbitrary sub-range, such as
+ * route-feature detection (see routeFeatures.ts). */
 interface RunAnalysis {
   segments: GradientSegment[];
   distances: number[];
   smoothed: number[];
+  elevations: number[];
+  gradesPercent: (number | null)[];
 }
 
 function analyzeRun(run: readonly KnownElevationPoint[]): RunAnalysis {
   const { distances, elevations } = resampleRun(run, RESAMPLE_STEP_METRES);
-  if (distances.length < 2) return { segments: [], distances: [], smoothed: [] };
+  if (distances.length < 2) {
+    return {
+      segments: [],
+      distances: [],
+      smoothed: [],
+      elevations: [],
+      gradesPercent: [],
+    };
+  }
   const smoothed = centredMovingAverage(elevations, SMOOTHING_WINDOW_SAMPLES);
   // Grade is fitted from the raw resampled elevations, not `smoothed` —
   // see regressionSlope's own doc comment for why using the display
@@ -405,7 +419,7 @@ function analyzeRun(run: readonly KnownElevationPoint[]): RunAnalysis {
         },
   );
 
-  return { segments, distances, smoothed };
+  return { segments, distances, smoothed, elevations, gradesPercent: grades };
 }
 
 function severityDistance(a: GradientClass, b: GradientClass): number {
@@ -506,6 +520,32 @@ export interface RouteElevationProfile {
   /** Contiguous, non-overlapping segments covering [0, totalDistanceMetres]
    * exactly. */
   gradientSegments: GradientSegment[];
+  /** One entry per contiguous known-elevation run that resampled to at
+   * least two points, in the same order runs are processed (ascending
+   * distance) — the exact resampled distances/smoothed elevations/local
+   * grades already computed for `gradientSegments` and `displayPoints`,
+   * exposed so a caller (e.g. routeFeatures.ts's climb/descent detector)
+   * can build on this same analysis without a second resample/smooth/grade
+   * pass over the route. */
+  runs: readonly ElevationRun[];
+}
+
+/** See `RouteElevationProfile.runs`. */
+export interface ElevationRun {
+  distances: readonly number[];
+  smoothed: readonly number[];
+  /** Raw resampled elevations (pre-smoothing) — deliberately also exposed
+   * alongside `smoothed`: computing a delta between two arbitrary points
+   * (e.g. a climb/descent feature's own start/end) from `smoothed` would
+   * reintroduce the edge-bias problem documented on gradient.ts's own
+   * `regressionSlope` (centredMovingAverage's window can't stay centred
+   * within roughly one smoothing-window's distance of a run's own edge),
+   * exactly the bug local-gradient classification already avoids by using
+   * these same raw values (see `analyzeRun`'s own `computeGradeBetween`
+   * calls). Callers computing a whole-feature average gradient/elevation
+   * delta should use `elevations`, not `smoothed`, for the same reason. */
+  elevations: readonly number[];
+  gradesPercent: readonly (number | null)[];
 }
 
 function isWithinRun(
@@ -523,12 +563,13 @@ export function analyzeRouteElevationProfile(
 ): RouteElevationProfile {
   const totalDistanceMetres = points.at(-1)?.distanceFromStartMetres ?? 0;
   if (totalDistanceMetres <= 0) {
-    return { displayPoints: [...points], gradientSegments: [] };
+    return { displayPoints: [...points], gradientSegments: [], runs: [] };
   }
   if (points.length < 2 || !hasAnyElevation(points)) {
     return {
       displayPoints: points.map((point) => ({ ...point, elevationMetres: null })),
       gradientSegments: [unknownSegment(0, totalDistanceMetres)],
+      runs: [],
     };
   }
 
@@ -577,7 +618,16 @@ export function analyzeRouteElevationProfile(
     return { ...point, elevationMetres: null };
   });
 
-  return { displayPoints, gradientSegments };
+  const elevationRuns: ElevationRun[] = runAnalyses
+    .filter((analysis) => analysis.distances.length >= 2)
+    .map((analysis) => ({
+      distances: analysis.distances,
+      smoothed: analysis.smoothed,
+      elevations: analysis.elevations,
+      gradesPercent: analysis.gradesPercent,
+    }));
+
+  return { displayPoints, gradientSegments, runs: elevationRuns };
 }
 
 /**
@@ -611,4 +661,28 @@ export function clipGradientSegments(
     result.push({ ...segment, startDistanceMetres: start, endDistanceMetres: end });
   }
   return result;
+}
+
+/**
+ * The single gradient segment containing `distanceMetres` (inclusive of
+ * both a segment's own start and end distance, so a tap landing exactly on
+ * a shared boundary resolves to the earlier segment via a first-match
+ * linear scan). Returns `null` when `distanceMetres` falls outside every
+ * segment's range. Used to resolve an elevation-chart tap to the exact
+ * segment the route analysis already produced, rather than inventing a
+ * new boundary from the tapped coordinate.
+ */
+export function findGradientSegmentAtDistance(
+  segments: readonly GradientSegment[],
+  distanceMetres: number,
+): GradientSegment | null {
+  for (const segment of segments) {
+    if (
+      distanceMetres >= segment.startDistanceMetres &&
+      distanceMetres <= segment.endDistanceMetres
+    ) {
+      return segment;
+    }
+  }
+  return null;
 }
