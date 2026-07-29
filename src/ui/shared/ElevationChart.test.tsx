@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ElevationChart } from "./ElevationChart.tsx";
 import type { RoutePoint } from "../../domain/types.ts";
+import type { GradientSegment } from "../../navigation/gradient.ts";
+import { GRADIENT_CLASS_COLOURS } from "../../navigation/gradientPalette.ts";
 
 function buildPoints(entries: readonly [number, number | null][]): RoutePoint[] {
   return entries.map(([distanceFromStartMetres, elevationMetres]) => ({
@@ -201,5 +203,98 @@ describe("ElevationChart", () => {
 
     expect(container.querySelector("line.elevation-chart-marker")).toBeNull();
     expect(screen.queryByText(/route position/)).toBeNull();
+  });
+
+  describe("gradient colouring", () => {
+    function gradientSegment(
+      startDistanceMetres: number,
+      endDistanceMetres: number,
+      classification: GradientSegment["classification"],
+    ): GradientSegment {
+      return {
+        startDistanceMetres,
+        endDistanceMetres,
+        averageGradientPercent: null,
+        classification,
+      };
+    }
+
+    it("colours the profile per gradient class instead of currentColor", () => {
+      const points = buildPoints([
+        [0, 0],
+        [500, 20],
+        [1000, 0],
+      ]);
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          gradientSegments={[
+            gradientSegment(0, 500, "hard-climb"),
+            gradientSegment(500, 1000, "steep-descent"),
+          ]}
+        />,
+      );
+      const paths = container.querySelectorAll("path");
+      const strokes = Array.from(paths).map((path) => path.getAttribute("stroke"));
+      expect(strokes).toContain(GRADIENT_CLASS_COLOURS["hard-climb"]);
+      expect(strokes).toContain(GRADIENT_CLASS_COLOURS["steep-descent"]);
+      expect(strokes).not.toContain("currentColor");
+    });
+
+    it("combines gradient colour with the Full-mode completed/remaining split", () => {
+      const points = buildPoints([
+        [0, 0],
+        [500, 20],
+        [1000, 0],
+      ]);
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          gradientSegments={[gradientSegment(0, 1000, "moderate-climb")]}
+          marker={{ distanceFromStartMetres: 500, elevationMetres: 20, stale: false }}
+        />,
+      );
+      const completed = container.querySelector("path.elevation-chart-completed");
+      const remaining = container.querySelector("path.elevation-chart-remaining");
+      expect(completed).not.toBeNull();
+      expect(remaining).not.toBeNull();
+      expect(completed?.getAttribute("stroke")).toBe(
+        GRADIENT_CLASS_COLOURS["moderate-climb"],
+      );
+      expect(remaining?.getAttribute("stroke")).toBe(
+        GRADIENT_CLASS_COLOURS["moderate-climb"],
+      );
+      // Dash/opacity still carries ridden-status independently of colour.
+      expect(completed?.getAttribute("stroke-dasharray")).not.toBeNull();
+      expect(remaining?.getAttribute("stroke-dasharray")).toBeNull();
+    });
+
+    it("omitting gradientSegments reproduces the exact currentColor rendering", () => {
+      const points = buildPoints([
+        [0, 10],
+        [500, 40],
+        [1000, 25],
+      ]);
+      const withoutGradient = render(<ElevationChart points={points} />);
+      const strokes = Array.from(withoutGradient.container.querySelectorAll("path")).map(
+        (path) => path.getAttribute("stroke"),
+      );
+      expect(strokes.every((stroke) => stroke === "currentColor")).toBe(true);
+    });
+
+    it("colours unknown sections neutrally when gradientSegments marks them unknown", () => {
+      const points = buildPoints([
+        [0, 0],
+        [1000, 20],
+      ]);
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          gradientSegments={[gradientSegment(0, 1000, "unknown")]}
+        />,
+      );
+      const path = container.querySelector("path");
+      expect(path?.getAttribute("stroke")).toBe(GRADIENT_CLASS_COLOURS.unknown);
+    });
   });
 });

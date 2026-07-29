@@ -11,6 +11,7 @@ import {
 import type { MapFactory } from "../../map/mapAdapter.ts";
 import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
 import { shortestAngularDifferenceDegrees } from "../../navigation/bearing.ts";
+import { analyzeGradient } from "../../navigation/gradient.ts";
 import { coalesceAdjacentWarnings } from "../../navigation/warningGeometry.ts";
 import { getApproximateLocationOnce } from "../../platform/geolocation.ts";
 import { logError } from "../../platform/errorLog.ts";
@@ -190,6 +191,15 @@ export function PlanningScreen({
   const routedRoute = routing.state.kind === "routed" ? routing.state.route : null;
   const displayWarnings = useMemo(
     () => (routedRoute ? coalesceAdjacentWarnings(routedRoute.warnings) : []),
+    [routedRoute],
+  );
+  // Same referential-stability reasoning as displayWarnings above: derived
+  // off routedRoute (not routing.state directly), so a failed
+  // recalculation — which leaves routedRoute unchanged — leaves this
+  // unchanged too, preserving the map's and chart's gradient colours
+  // alongside the rest of the "retain last successful route" policy.
+  const gradientSegments = useMemo(
+    () => (routedRoute ? analyzeGradient(routedRoute.points) : []),
     [routedRoute],
   );
 
@@ -583,6 +593,7 @@ export function PlanningScreen({
           mapFactory={mapFactory}
           planningOverlay={planningOverlay}
           warningOverlay={warningOverlay}
+          gradientOverlay={{ segments: gradientSegments }}
           cameraTarget={northUpCameraTarget}
           boundsTarget={boundsTarget}
           suppressInitialOverviewFit={suppressInitialOverviewFit}
@@ -751,6 +762,7 @@ export function PlanningScreen({
           onSelectWarning={handleSelectWarning}
           onClearWarningSelection={handleClearWarningSelection}
           revealToken={warningRevealToken}
+          gradientSegments={gradientSegments}
         />
       ) : null}
 

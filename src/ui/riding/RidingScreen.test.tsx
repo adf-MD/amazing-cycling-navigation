@@ -517,6 +517,78 @@ describe("RidingScreen", () => {
     });
   });
 
+  describe("gradient integration", () => {
+    // A sustained, constant 8% climb, densely spaced (every 100 m, well
+    // under gradient.ts's MAX_ELEVATION_GAP_METRES) and long enough to
+    // clear both MIN_GRADE_WINDOW_METRES and GRADE_BASELINE_WINDOW_METRES
+    // — so every view (pre-start, Full, windowed) should classify it
+    // identically as "hard-climb" throughout.
+    const CLIMB_STEP_METRES = 100;
+    const CLIMB_POINT_COUNT = 41; // 4000 m total
+    const CLIMB_GRADE_PERCENT = 8;
+    const climbRoute: PlannedRoute = {
+      ...route,
+      points: Array.from({ length: CLIMB_POINT_COUNT }, (_, index) => {
+        const distanceFromStartMetres = index * CLIMB_STEP_METRES;
+        return {
+          coordinate: [0.0001 * index, 51] as const,
+          elevationMetres: (distanceFromStartMetres * CLIMB_GRADE_PERCENT) / 100,
+          distanceFromStartMetres,
+        };
+      }),
+      distanceMetres: (CLIMB_POINT_COUNT - 1) * CLIMB_STEP_METRES,
+    };
+
+    it("colours the pre-start elevation chart by gradient class, before any fix", () => {
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
+    });
+
+    it("shows the same gradient class in both the default windowed view and Full view", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: [0.002, 51],
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      // Default view is the 5 km window.
+      expect(await screen.findByText(/Hard climb/)).toBeInTheDocument();
+
+      await user.click(await screen.findByRole("button", { name: "Full" }));
+      expect(await screen.findByText(/Hard climb/)).toBeInTheDocument();
+    });
+
+    it("shows the neutral unknown legend entry for a route with no elevation data", () => {
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      expect(screen.getByText(/Unknown \(no elevation data\)/)).toBeInTheDocument();
+    });
+  });
+
   it("keeps the Full-mode elevation marker pinned at the last reliable position once strongly off-route", async () => {
     const user = userEvent.setup();
     const stub = buildStubGeolocationSource();

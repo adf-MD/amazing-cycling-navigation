@@ -79,8 +79,26 @@ export interface WarningFeatureHit {
   warningIndex: unknown;
 }
 
+/** A categorical (exact-match) line-colour expression, keyed by a
+ * project-owned feature property — e.g. gradientRouteLayer.ts's
+ * `gradientClass`. Deliberately only supports `match`-style exact-value
+ * lookup, not MapLibre's full expression language: this is the one shape
+ * the gradient route line needs, and a narrow, purpose-built type keeps
+ * addLineLayer's tests exhaustive rather than open-ended. */
+export interface DataDrivenLineColor {
+  /** The GeoJSON feature property to switch on. */
+  property: string;
+  /** Exact property value → colour. */
+  cases: Readonly<Record<string, string>>;
+  /** Colour for any value not present in `cases` (including a missing
+   * property) — MapLibre's `match` expression requires a fallback, and
+   * this is also this project's safety net against an unrecognised class
+   * ever rendering as fully transparent or erroring. */
+  fallback: string;
+}
+
 export interface LineLayerPaint {
-  lineColor: string;
+  lineColor: string | DataDrivenLineColor;
   lineWidth: number;
   lineOpacity?: number;
   /** Omit for a solid line (the existing route layers never pass this —
@@ -418,13 +436,29 @@ export class MapLibreAdapter implements MapLibreLike {
   }
 
   addLineLayer(id: string, sourceId: string, paint: LineLayerPaint): void {
+    // Built and typed loosely (never a bare `any`): MapLibre's own
+    // ExpressionSpecification union is a deep, purpose-built recursive
+    // type that isn't practical to satisfy for a programmatically-built
+    // categorical `match` array — the runtime shape is exactly what
+    // MapLibre itself accepts and validates, matching addLineLayer.test.ts's
+    // own exact-shape assertions. Cast only at the single paint-field
+    // assignment below, not the whole `paint` object.
+    const lineColor: string | unknown[] =
+      typeof paint.lineColor === "string"
+        ? paint.lineColor
+        : [
+            "match",
+            ["get", paint.lineColor.property],
+            ...Object.entries(paint.lineColor.cases).flat(),
+            paint.lineColor.fallback,
+          ];
     this.map.addLayer({
       id,
       type: "line",
       source: sourceId,
       layout: { "line-join": "round", "line-cap": "round" },
       paint: {
-        "line-color": paint.lineColor,
+        "line-color": lineColor as string,
         "line-width": paint.lineWidth,
         "line-opacity": paint.lineOpacity ?? 1,
         ...(paint.lineDasharray ? { "line-dasharray": paint.lineDasharray } : {}),

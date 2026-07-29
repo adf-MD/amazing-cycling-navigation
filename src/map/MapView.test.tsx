@@ -15,6 +15,8 @@ import type {
 import { clearErrorLog, getRecentErrors } from "../platform/errorLog.ts";
 import { clearMapDiagnostics, getRecentMapAttempts } from "./mapDiagnostics.ts";
 import type { Coordinate, RoutePoint, RouteWarning } from "../domain/types.ts";
+import type { GradientSegment } from "../navigation/gradient.ts";
+import { GRADIENT_CLASS_COLOURS } from "../navigation/gradientPalette.ts";
 
 const points: RoutePoint[] = [
   { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
@@ -1455,7 +1457,7 @@ describe("MapView", () => {
   });
 
   describe("direction arrow overlay", () => {
-    it("registers the arrow icon and a symbol layer above both route lines and below every warning/selected/position/marker layer", () => {
+    it("registers the arrow icon and a symbol layer above the route lines, warning/selected and gradient layers, and below every position/marker layer", () => {
       const mock = createMockMapFactory();
       render(<MapView points={points} mapFactory={mock.factory} />);
       mock.triggerLoad();
@@ -1467,8 +1469,14 @@ describe("MapView", () => {
       const arrowIndex = order.indexOf("acn-route-arrows");
       expect(arrowIndex).toBeGreaterThan(order.indexOf("acn-route-remaining-line"));
       expect(arrowIndex).toBeGreaterThan(order.indexOf("acn-route-completed-line"));
-      expect(arrowIndex).toBeLessThan(order.indexOf("acn-warning-unknown-surface-line"));
-      expect(arrowIndex).toBeLessThan(order.indexOf("acn-warning-selected-line"));
+      // Arrows now paint above the whole warning/gradient stack (a
+      // deliberate reordering — see addRouteAndPositionLayers), so they
+      // stay visible over whatever colours/patterns the route carries.
+      expect(arrowIndex).toBeGreaterThan(
+        order.indexOf("acn-warning-unknown-surface-line"),
+      );
+      expect(arrowIndex).toBeGreaterThan(order.indexOf("acn-warning-selected-line"));
+      expect(arrowIndex).toBeGreaterThan(order.indexOf("acn-route-gradient-line"));
       expect(arrowIndex).toBeLessThan(order.indexOf("acn-position-marker"));
       expect(arrowIndex).toBeLessThan(order.indexOf("acn-start-marker"));
       expect(arrowIndex).toBeLessThan(order.indexOf("acn-finish-marker"));
@@ -1605,6 +1613,159 @@ describe("MapView", () => {
       expect(mock.layers.has("acn-finish-marker")).toBe(true);
       expect(mock.layers.has("acn-warning-unknown-surface-line")).toBe(true);
       expect(mock.layers.has("acn-planning-preview-line")).toBe(true);
+      expect(screen.queryByTestId("map-fallback-banner")).toBeNull();
+      expect(getRecentErrors().some((entry) => entry.context === "map")).toBe(true);
+    });
+  });
+
+  describe("gradient overlay", () => {
+    function gradientSegment(
+      startDistanceMetres: number,
+      endDistanceMetres: number,
+      classification: GradientSegment["classification"],
+    ): GradientSegment {
+      return {
+        startDistanceMetres,
+        endDistanceMetres,
+        averageGradientPercent: null,
+        classification,
+      };
+    }
+
+    it("creates the gradient source/layer with a categorical colour keyed on gradientClass", () => {
+      // MapView calls the MapLibreLike interface directly — the actual
+      // ["match", ...] expression is built one layer down, inside
+      // MapLibreAdapter.addLineLayer (see mapAdapter.test.ts's own
+      // "data-driven line colour" tests). At this level, the structured
+      // DataDrivenLineColor MapView passes through is what's observable.
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      expect(mock.layers.has("acn-route-gradient-line")).toBe(true);
+      const call = mock.addLineLayerSpy.mock.calls.find(
+        ([id]) => id === "acn-route-gradient-line",
+      ) as [string, string, { lineColor: unknown; lineWidth: number }] | undefined;
+      expect(call?.[1]).toBe("acn-route-gradient");
+      expect(call?.[2].lineColor).toEqual({
+        property: "gradientClass",
+        cases: GRADIENT_CLASS_COLOURS,
+        fallback: GRADIENT_CLASS_COLOURS.unknown,
+      });
+    });
+
+    it("leaves the gradient source empty when gradientOverlay is omitted", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={warningPoints} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      expect(mock.sources.get("acn-route-gradient")?.features).toEqual([]);
+    });
+
+    it("populates the gradient source with one feature per segment when gradientOverlay is given", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          gradientOverlay={{
+            segments: [
+              gradientSegment(0, 200, "flat"),
+              gradientSegment(200, 400, "hard-climb"),
+            ],
+          }}
+        />,
+      );
+      mock.triggerLoad();
+
+      const features = mock.sources.get("acn-route-gradient")?.features ?? [];
+      expect(features).toHaveLength(2);
+      expect(
+        features.map(
+          (feature) =>
+            (feature.properties as { gradientClass?: string } | null)?.gradientClass,
+        ),
+      ).toEqual(["flat", "hard-climb"]);
+    });
+
+    it("clips gradient coverage to the remaining portion during active Riding, matching the route line's own live-distance split", () => {
+      const mock = createMockMapFactory();
+      const { rerender } = render(
+        <MapView
+          points={warningPoints}
+          matchedDistanceFromStartMetres={0}
+          mapFactory={mock.factory}
+          gradientOverlay={{ segments: [gradientSegment(0, 400, "hard-climb")] }}
+        />,
+      );
+      mock.triggerLoad();
+
+      const initialFeatures = mock.sources.get("acn-route-gradient")?.features ?? [];
+      const initialCoordinateCount =
+        initialFeatures[0]?.geometry.type === "LineString"
+          ? initialFeatures[0].geometry.coordinates.length
+          : 0;
+
+      rerender(
+        <MapView
+          points={warningPoints}
+          matchedDistanceFromStartMetres={200}
+          mapFactory={mock.factory}
+          gradientOverlay={{ segments: [gradientSegment(0, 400, "hard-climb")] }}
+        />,
+      );
+
+      const remainingFeatures = mock.sources.get("acn-route-gradient")?.features ?? [];
+      const remainingCoordinateCount =
+        remainingFeatures[0]?.geometry.type === "LineString"
+          ? remainingFeatures[0].geometry.coordinates.length
+          : 0;
+      expect(remainingCoordinateCount).toBeLessThan(initialCoordinateCount);
+    });
+
+    it("survives fallback and manual retry without duplication", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+      const countAfterFallback = mock.addLineLayerSpy.mock.calls.filter(
+        ([id]) => id === "acn-route-gradient-line",
+      ).length;
+      expect(countAfterFallback).toBe(1);
+
+      act(() => {
+        screen.getByTestId("retry-map-imagery-button").click();
+      });
+      mock.triggerLoad();
+
+      const countAfterRetry = mock.addLineLayerSpy.mock.calls.filter(
+        ([id]) => id === "acn-route-gradient-line",
+      ).length;
+      expect(countAfterRetry).toBe(2);
+    });
+
+    it("a gradient-layer setup failure leaves every other layer intact, is logged, and never forces fallback", () => {
+      clearErrorLog();
+      const mock = createMockMapFactory();
+      mock.addLineLayerSpy.mockImplementation((id: string) => {
+        if (id === "acn-route-gradient-line") {
+          throw new Error("simulated gradient-layer failure");
+        }
+      });
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      expect(mock.layers.has("acn-route-remaining-line")).toBe(true);
+      expect(mock.layers.has("acn-route-completed-line")).toBe(true);
+      expect(mock.layers.has("acn-position-marker")).toBe(true);
+      expect(mock.layers.has("acn-start-marker")).toBe(true);
+      expect(mock.layers.has("acn-finish-marker")).toBe(true);
+      expect(mock.layers.has("acn-planning-preview-line")).toBe(true);
+      expect(mock.addSymbolLayerSpy).toHaveBeenCalled(); // arrows still set up
       expect(screen.queryByTestId("map-fallback-banner")).toBeNull();
       expect(getRecentErrors().some((entry) => entry.context === "map")).toBe(true);
     });

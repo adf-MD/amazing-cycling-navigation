@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildElevationChartGeometry,
   buildElevationChartMarkerGeometry,
+  distanceToX,
+  elevationToY,
   pathFromSegment,
   splitSegmentAtX,
+  splitSegmentAtXs,
   type ElevationChartDomain,
 } from "./elevationChartGeometry.ts";
 import type { RoutePoint } from "../../domain/types.ts";
@@ -217,6 +220,78 @@ describe("splitSegmentAtX", () => {
 
   it("returns two empty runs for an empty segment", () => {
     expect(splitSegmentAtX([], 10)).toEqual({ completed: [], remaining: [] });
+  });
+});
+
+describe("distanceToX / elevationToY (exported for gradient boundary placement)", () => {
+  it("distanceToX matches the same formula buildElevationChartGeometry uses internally", () => {
+    expect(distanceToX(25, domain(0, 100), 300)).toBeCloseTo(75, 5);
+    expect(distanceToX(0, domain(10, 10), 300)).toBe(0); // zero-width domain guarded
+  });
+
+  it("elevationToY matches the same formula buildElevationChartGeometry uses internally", () => {
+    expect(elevationToY(100, 0, 100, 100)).toBeCloseTo(0, 5);
+    expect(elevationToY(0, 0, 100, 100)).toBeCloseTo(100, 5);
+    expect(elevationToY(5, 5, 5, 100)).toBe(100); // equal-elevation guarded
+  });
+});
+
+describe("splitSegmentAtXs", () => {
+  const segment = [
+    { x: 0, y: 0 },
+    { x: 10, y: 10 },
+    { x: 20, y: 0 },
+    { x: 30, y: 10 },
+  ];
+
+  it("with a single split produces the same two runs as splitSegmentAtX", () => {
+    const { completed, remaining } = splitSegmentAtX(segment, 15);
+    const runs = splitSegmentAtXs(segment, [15]);
+    expect(runs).toEqual([completed, remaining]);
+  });
+
+  it("splits at multiple boundaries with shared seams and no gaps", () => {
+    const runs = splitSegmentAtXs(segment, [10, 25]);
+    expect(runs).toHaveLength(3);
+    expect(runs[0]).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 10 },
+    ]);
+    expect(runs[1]).toEqual([
+      { x: 10, y: 10 },
+      { x: 20, y: 0 },
+      { x: 25, y: 5 },
+    ]);
+    expect(runs[2]).toEqual([
+      { x: 25, y: 5 },
+      { x: 30, y: 10 },
+    ]);
+    // Adjacent runs share exactly the same seam point — no gap or overlap.
+    expect(runs[0]?.at(-1)).toEqual(runs[1]?.[0]);
+    expect(runs[1]?.at(-1)).toEqual(runs[2]?.[0]);
+  });
+
+  it("does not duplicate a point when a boundary lands exactly on an existing point", () => {
+    const runs = splitSegmentAtXs(segment, [10]);
+    expect(runs[0]).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 10 },
+    ]);
+    expect(runs[1]).toEqual([
+      { x: 10, y: 10 },
+      { x: 20, y: 0 },
+      { x: 30, y: 10 },
+    ]);
+  });
+
+  it("returns the whole segment as a single run when there are no split points", () => {
+    expect(splitSegmentAtXs(segment, [])).toEqual([segment]);
+  });
+
+  it("is order-independent for unsorted split inputs", () => {
+    expect(splitSegmentAtXs(segment, [25, 10])).toEqual(
+      splitSegmentAtXs(segment, [10, 25]),
+    );
   });
 });
 

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { PlannedRoute, RouteWarning, RouteWarningKind } from "../../domain/types.ts";
+import type { GradientSegment } from "../../navigation/gradient.ts";
 import { prefersReducedMotion } from "../../platform/environmentContext.ts";
+import { ElevationChart } from "../shared/ElevationChart.tsx";
+import { GradientLegend } from "../shared/GradientLegend.tsx";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 
 export interface RouteSummaryPanelProps {
@@ -13,6 +16,11 @@ export interface RouteSummaryPanelProps {
   selectedWarningIndex: number | null;
   onSelectWarning: (index: number) => void;
   onClearWarningSelection: () => void;
+  /** Shared, provider-independent gradient analysis for `route.points` —
+   * computed once by the caller (PlanningScreen) so it stays referentially
+   * stable across unrelated re-renders and across a failed recalculation
+   * (which leaves `route` itself unchanged). */
+  gradientSegments: readonly GradientSegment[];
   /** Increments once per map-originated warning selection (including a
    * repeat tap on an already-selected warning) — the one-shot signal to
    * scroll the matching entry into view and announce it. Never itself a
@@ -68,6 +76,7 @@ export function RouteSummaryPanel({
   onSelectWarning,
   onClearWarningSelection,
   revealToken,
+  gradientSegments,
 }: RouteSummaryPanelProps) {
   const surface = route.surfaceSummary;
   const selectedButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -114,6 +123,12 @@ export function RouteSummaryPanel({
       <p>
         {waypointCount} waypoint{waypointCount === 1 ? "" : "s"}
       </p>
+      <ElevationChart points={route.points} gradientSegments={gradientSegments} />
+      <GradientLegend
+        presentClasses={
+          new Set(gradientSegments.map((segment) => segment.classification))
+        }
+      />
       {route.source.kind === "planner" ? (
         <p>
           Routed via {route.source.provider ?? "unknown provider"}

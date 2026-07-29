@@ -1,14 +1,20 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { PlannedRoute } from "../../domain/types.ts";
 import { MapView } from "../../map/MapView.tsx";
 import type { MapFactory } from "../../map/mapAdapter.ts";
 import type { GeolocationError, GeolocationSource } from "../../platform/geolocation.ts";
 import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
 import { useOnlineStatus } from "../../platform/onlineStatus.ts";
+import {
+  analyzeGradient,
+  clipGradientSegments,
+  type GradientSegment,
+} from "../../navigation/gradient.ts";
 import type { ElevationViewMode, OffRouteLevel } from "../../navigation/types.ts";
 import { ELEVATION_VIEW_MODE_OPTIONS } from "../../navigation/upcomingElevation.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
 import { ElevationChart } from "../shared/ElevationChart.tsx";
+import { GradientLegend } from "../shared/GradientLegend.tsx";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 import { useRideCamera } from "./useRideCamera.ts";
 import { useRideNavigation } from "./useRideNavigation.ts";
@@ -103,6 +109,14 @@ export function RidingScreen({
   const fixAgeMs = nav.currentFix ? now - nav.currentFix.timestampMs : null;
   const online = useOnlineStatus();
 
+  // Computed once per loaded route (route's identity is stable for the
+  // component's lifetime; recomputing per GPS fix would be wasted work for
+  // no visible benefit, since the analysis never depends on progress).
+  // The 2/5/10 km windowed views clip this same analysis rather than
+  // re-running it on their own point slice, so Full and windowed views
+  // always agree on classification at the same global route distance.
+  const gradientSegments = useMemo(() => analyzeGradient(route.points), [route]);
+
   const handleStart = () => {
     nav.start();
     camera.requestFollow();
@@ -179,6 +193,7 @@ export function RidingScreen({
           distanceBadgeProgressMetres={nav.presentationDistanceFromStartMetres}
           currentPosition={nav.currentFix?.coordinate}
           mapFactory={mapFactory}
+          gradientOverlay={{ segments: gradientSegments }}
           cameraTarget={camera.cameraTarget}
           suppressInitialOverviewFit={camera.mode !== "overview"}
           onUserCameraInteraction={camera.reportUserInteraction}
@@ -267,33 +282,70 @@ export function RidingScreen({
       {/* Before any matched progress (live or restored), show the whole
        * route with no marker. Once there's matched progress, Full mode
        * shows the whole route with a progress marker and Upcoming mode
-       * shows a rebased rolling window. */}
-      {nav.matchedDistanceFromStartMetres === null ? (
-        <ElevationChart points={route.points} />
-      ) : nav.elevationProfileDisplay.kind === "full" ? (
-        <ElevationChart
-          points={route.points}
-          marker={
-            nav.elevationProfileDisplay.marker
-              ? {
-                  distanceFromStartMetres:
-                    nav.elevationProfileDisplay.marker.markerDistanceFromStartMetres,
-                  elevationMetres:
-                    nav.elevationProfileDisplay.marker.point.elevationMetres,
-                  stale: nav.isStale,
-                }
-              : null
-          }
-        />
-      ) : (
-        <ElevationChart
-          points={nav.elevationProfileDisplay.window.points}
-          domain={{
-            startDistanceMetres: nav.elevationProfileDisplay.window.startDistanceMetres,
-            endDistanceMetres: nav.elevationProfileDisplay.window.endDistanceMetres,
-          }}
-        />
-      )}
+       * shows a rebased rolling window. The gradient segments actually
+       * displayed for the active view drive the legend below, so it never
+       * lists a class that isn't currently on screen. */}
+      {(() => {
+        let displayedGradientSegments: readonly GradientSegment[];
+        let chart: ReactNode;
+
+        if (nav.matchedDistanceFromStartMetres === null) {
+          displayedGradientSegments = gradientSegments;
+          chart = (
+            <ElevationChart points={route.points} gradientSegments={gradientSegments} />
+          );
+        } else if (nav.elevationProfileDisplay.kind === "full") {
+          displayedGradientSegments = gradientSegments;
+          chart = (
+            <ElevationChart
+              points={route.points}
+              gradientSegments={gradientSegments}
+              marker={
+                nav.elevationProfileDisplay.marker
+                  ? {
+                      distanceFromStartMetres:
+                        nav.elevationProfileDisplay.marker.markerDistanceFromStartMetres,
+                      elevationMetres:
+                        nav.elevationProfileDisplay.marker.point.elevationMetres,
+                      stale: nav.isStale,
+                    }
+                  : null
+              }
+            />
+          );
+        } else {
+          const window = nav.elevationProfileDisplay.window;
+          const windowGradientSegments = clipGradientSegments(
+            gradientSegments,
+            window.startDistanceMetres,
+            window.endDistanceMetres,
+          );
+          displayedGradientSegments = windowGradientSegments;
+          chart = (
+            <ElevationChart
+              points={window.points}
+              domain={{
+                startDistanceMetres: window.startDistanceMetres,
+                endDistanceMetres: window.endDistanceMetres,
+              }}
+              gradientSegments={windowGradientSegments}
+            />
+          );
+        }
+
+        return (
+          <>
+            {chart}
+            <GradientLegend
+              presentClasses={
+                new Set(
+                  displayedGradientSegments.map((segment) => segment.classification),
+                )
+              }
+            />
+          </>
+        );
+      })()}
     </section>
   );
 }

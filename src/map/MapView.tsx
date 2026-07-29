@@ -3,6 +3,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { StyleSpecification } from "maplibre-gl";
 import type { Coordinate, RoutePoint, RouteWarning } from "../domain/types.ts";
 import { logError } from "../platform/errorLog.ts";
+import type { GradientSegment } from "../navigation/gradient.ts";
+import { GRADIENT_CLASS_COLOURS } from "../navigation/gradientPalette.ts";
 import {
   createMapLibreMap,
   type LineLayerPaint,
@@ -24,6 +26,7 @@ import {
   splitRouteAtDistance,
   type BoundingBox,
 } from "./routeLayer.ts";
+import { buildGradientFeatureCollection } from "./gradientRouteLayer.ts";
 import {
   buildUnroutedPreviewFeatureCollection,
   buildWaypointMarkerSpecs,
@@ -55,6 +58,8 @@ const START_LAYER_ID = "acn-start-marker";
 const FINISH_LAYER_ID = "acn-finish-marker";
 const PLANNING_PREVIEW_SOURCE_ID = "acn-planning-preview";
 const PLANNING_PREVIEW_LAYER_ID = "acn-planning-preview-line";
+const GRADIENT_SOURCE_ID = "acn-route-gradient";
+const GRADIENT_LAYER_ID = "acn-route-gradient-line";
 const ROUTE_ARROW_LAYER_ID = "acn-route-arrows";
 /** symbol-spacing, in screen pixels (already zoom-adaptive — a fixed
  * on-screen spacing yields more arrows per geographic distance as the
@@ -97,18 +102,26 @@ const WARNING_CATEGORY_LAYER_IDS: readonly string[] =
  * the non-selected categories, matching its topmost paint order — see
  * WARNING_CATEGORIES_IN_PAINT_ORDER. Colours are fixed (not
  * --colour-bg/--colour-text) since these sit over variable map imagery,
- * not the app's own light/dark-scheme background. */
+ * not the app's own light/dark-scheme background. Widths act as a
+ * "casing" wider than the gradient-coloured route centre painted on top
+ * of them (see addRouteAndPositionLayers), so a warned section's dashed
+ * edges stay visible on both sides of the centre. */
 const WARNING_CATEGORY_PAINT: Readonly<Record<WarningCategory, LineLayerPaint>> = {
-  "unknown-surface": { lineColor: "#5f6368", lineWidth: 4, lineDasharray: [1, 3] },
-  other: { lineColor: "#455a64", lineWidth: 5, lineDasharray: [2, 2, 6, 2] },
-  ferry: { lineColor: "#0d47a1", lineWidth: 5, lineDasharray: [8, 4] },
-  "questionable-surface": { lineColor: "#f2a900", lineWidth: 5, lineDasharray: [4, 2] },
-  "unsuitable-surface": { lineColor: "#d32f2f", lineWidth: 6, lineDasharray: [6, 2] },
-  obstacle: { lineColor: "#7b1fa2", lineWidth: 6, lineDasharray: [1, 1, 5, 1] },
+  "unknown-surface": { lineColor: "#5f6368", lineWidth: 8, lineDasharray: [1, 3] },
+  other: { lineColor: "#455a64", lineWidth: 9, lineDasharray: [2, 2, 6, 2] },
+  ferry: { lineColor: "#0d47a1", lineWidth: 9, lineDasharray: [8, 4] },
+  "questionable-surface": { lineColor: "#f2a900", lineWidth: 9, lineDasharray: [4, 2] },
+  "unsuitable-surface": { lineColor: "#d32f2f", lineWidth: 10, lineDasharray: [6, 2] },
+  obstacle: { lineColor: "#7b1fa2", lineWidth: 10, lineDasharray: [1, 1, 5, 1] },
 };
-/** Solid (no dash) and wider than any category above — contrasts with
- * every dashed category rather than just repeating one of their colours. */
-const WARNING_SELECTED_PAINT: LineLayerPaint = { lineColor: "#000000", lineWidth: 8 };
+/** Solid (no dash) and wider than any category above — an outer focus
+ * halo around the casing, contrasting with every dashed category rather
+ * than just repeating one of their colours. */
+const WARNING_SELECTED_PAINT: LineLayerPaint = { lineColor: "#000000", lineWidth: 13 };
+/** Matches the existing route-line width — the gradient layer recolours
+ * the same visual footprint the route already had, rather than adding a
+ * new one. */
+const GRADIENT_LINE_WIDTH = 5;
 
 /** Every GeoJSON source this app itself creates — used to tell a genuine
  * external-basemap tile event apart from our own local data sources, which
@@ -121,6 +134,7 @@ const APP_OWNED_SOURCE_IDS: ReadonlySet<string> = new Set([
   START_SOURCE_ID,
   FINISH_SOURCE_ID,
   PLANNING_PREVIEW_SOURCE_ID,
+  GRADIENT_SOURCE_ID,
   ...Object.values(WARNING_SOURCE_ID_BY_CATEGORY),
   WARNING_SELECTED_SOURCE_ID,
 ]);
@@ -289,6 +303,14 @@ export interface MapViewProps {
    * default) for every existing caller, leaving the underlying warning
    * sources empty and Riding mode's rendering unaffected. */
   warningOverlay?: WarningOverlay;
+  /** The shared gradient analysis for `points` — omitted (the default)
+   * leaves the gradient source empty, so the route line shows only its
+   * plain remaining/completed colours. Sliced against MapView's own
+   * `matchedDistanceFromStartMetres` (never a separately-supplied
+   * distance), the same value that already drives the completed/remaining
+   * route-line split and the direction arrows, so the gradient-coloured
+   * centre always agrees with the line it recolours during active Riding. */
+  gradientOverlay?: { segments: readonly GradientSegment[] };
 }
 
 /**
@@ -317,6 +339,7 @@ export function MapView({
   onCameraSettled,
   planningOverlay,
   warningOverlay,
+  gradientOverlay,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreLike | null>(null);
@@ -456,6 +479,66 @@ export function MapView({
         lineWidth: 5,
         lineOpacity: 0.7,
       });
+      // Gradient (uphill/downhill) and surface/access/ferry warnings are
+      // two independent visual dimensions, layered as nested "target"
+      // rings so both stay simultaneously visible: the selected-warning
+      // halo (widest, added first/bottom) → the six warning-category
+      // casings (medium, added next) → the gradient-coloured centre
+      // (narrowest, added last/top, below). Each narrower layer covers
+      // the centre of the one before it, leaving the wider layer visible
+      // only as a ring around the outside — so a selected warning's black
+      // halo, its category's dash pattern, and the route's gradient
+      // colour are all visible at once through the same section. The
+      // selected-warning layer is added first of this group (still before
+      // every category) so it is never covered by a category's own
+      // casing.
+      map.addGeoJsonSource(WARNING_SELECTED_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
+      map.addLineLayer(
+        WARNING_SELECTED_LAYER_ID,
+        WARNING_SELECTED_SOURCE_ID,
+        WARNING_SELECTED_PAINT,
+      );
+      // Warning overlay: always created (fed empty collections when
+      // warningOverlay is absent), matching the planning-layer precedent
+      // below. Added in WARNING_CATEGORIES_IN_PAINT_ORDER so a more severe
+      // category (e.g. obstacle) paints on top of a less severe one (e.g.
+      // unknown-surface) wherever their segments visually overlap.
+      // Distinct dash patterns, not colour alone, are what tells the
+      // categories apart.
+      for (const category of WARNING_CATEGORIES_IN_PAINT_ORDER) {
+        map.addGeoJsonSource(
+          WARNING_SOURCE_ID_BY_CATEGORY[category],
+          EMPTY_FEATURE_COLLECTION,
+        );
+        map.addLineLayer(
+          WARNING_LAYER_ID_BY_CATEGORY[category],
+          WARNING_SOURCE_ID_BY_CATEGORY[category],
+          WARNING_CATEGORY_PAINT[category],
+        );
+      }
+      // Gradient route-line overlay: one GeoJSON source containing one
+      // LineString feature per contiguous gradient-class range (see
+      // gradientRouteLayer.ts), coloured by a single data-driven `match`
+      // expression (see mapAdapter.ts's addLineLayer) rather than one
+      // MapLibre layer per class or a continuous lineMetrics gradient.
+      // Painted above the warning casings so its narrower centre stays
+      // visible through them; below the direction arrows, which must
+      // remain visible above whatever colours the line beneath them. A
+      // setup failure here must never break the rest of this function —
+      // an uncoloured route is always safe to fall back to.
+      try {
+        map.addGeoJsonSource(GRADIENT_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
+        map.addLineLayer(GRADIENT_LAYER_ID, GRADIENT_SOURCE_ID, {
+          lineColor: {
+            property: "gradientClass",
+            cases: GRADIENT_CLASS_COLOURS,
+            fallback: GRADIENT_CLASS_COLOURS.unknown,
+          },
+          lineWidth: GRADIENT_LINE_WIDTH,
+        });
+      } catch (error) {
+        logError("map", error);
+      }
       // Direction-arrow overlay: a single symbol layer reusing the
       // REMAINING_SOURCE_ID GeoJSON source, not a dedicated source of its
       // own. Planning never sets matchedDistanceFromStartMetres, so its
@@ -465,10 +548,12 @@ export function MapView({
       // this same source on every progress tick — so arrow coverage
       // follows both screens' existing policies for free, with no new
       // effect, and never touches the Planning dashed-preview source.
-      // Placed above both route lines but below every warning/selected/
-      // marker layer that follows. A setup failure here must never break
-      // the rest of this function (route/warning/marker layers) or force
-      // fallback — a missing decorative arrow is never worth that.
+      // Placed above the warning/gradient stack but below every
+      // marker/position layer that follows, so arrows stay visible over
+      // whatever colours/patterns the route currently carries. A setup
+      // failure here must never break the rest of this function (marker
+      // layers) or force fallback — a missing decorative arrow is never
+      // worth that.
       try {
         if (!map.hasImage(ROUTE_ARROW_ICON_ID)) {
           map.addImage(ROUTE_ARROW_ICON_ID, buildRouteArrowIconBitmap(), {
@@ -486,34 +571,6 @@ export function MapView({
       } catch (error) {
         logError("map", error);
       }
-      // Warning overlay: always created (fed empty collections when
-      // warningOverlay is absent), matching the planning-layer precedent
-      // below. Added right above the base route lines but before every
-      // marker layer, so warnings never obscure the current-position,
-      // start/finish or planning-waypoint markers. Added in
-      // WARNING_CATEGORIES_IN_PAINT_ORDER so a more severe category (e.g.
-      // obstacle) paints on top of a less severe one (e.g. unknown-surface)
-      // wherever their segments visually overlap. Distinct dash patterns,
-      // not colour alone, are what tells the categories apart. The
-      // selected-warning layer is added last of all six so it's never
-      // obscured by any category.
-      for (const category of WARNING_CATEGORIES_IN_PAINT_ORDER) {
-        map.addGeoJsonSource(
-          WARNING_SOURCE_ID_BY_CATEGORY[category],
-          EMPTY_FEATURE_COLLECTION,
-        );
-        map.addLineLayer(
-          WARNING_LAYER_ID_BY_CATEGORY[category],
-          WARNING_SOURCE_ID_BY_CATEGORY[category],
-          WARNING_CATEGORY_PAINT[category],
-        );
-      }
-      map.addGeoJsonSource(WARNING_SELECTED_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
-      map.addLineLayer(
-        WARNING_SELECTED_LAYER_ID,
-        WARNING_SELECTED_SOURCE_ID,
-        WARNING_SELECTED_PAINT,
-      );
       map.addGeoJsonSource(POSITION_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
       map.addCircleLayer(POSITION_LAYER_ID, POSITION_SOURCE_ID, {
         circleRadius: 8,
@@ -794,6 +851,28 @@ export function MapView({
     mapRef.current?.setGeoJsonSourceData(COMPLETED_SOURCE_ID, completed);
     mapRef.current?.setGeoJsonSourceData(REMAINING_SOURCE_ID, remaining);
   }, [points, matchedDistanceFromStartMetres, styleStructurallyReady]);
+
+  const gradientSegments = gradientOverlay?.segments;
+
+  // Reuses the same matchedDistanceFromStartMetres the completed/remaining
+  // split and direction arrows already key off (never
+  // distanceBadgeProgressMetres's frozen value — see that prop's own doc
+  // comment), so during active Riding the gradient-coloured centre always
+  // clips to exactly the same remaining portion as the line it recolours.
+  // Recomputes only on a genuine route/progress/analysis change, never per
+  // camera frame.
+  useEffect(() => {
+    if (!styleStructurallyReady) return;
+    mapRef.current?.setGeoJsonSourceData(
+      GRADIENT_SOURCE_ID,
+      buildGradientFeatureCollection(
+        points,
+        gradientSegments ?? [],
+        matchedDistanceFromStartMetres,
+        points.at(-1)?.distanceFromStartMetres ?? 0,
+      ),
+    );
+  }, [points, matchedDistanceFromStartMetres, gradientSegments, styleStructurallyReady]);
 
   // Purely derived from already-available inputs (no external-system
   // round-trip needed, unlike routeSourceLoaded/cameraCenter above), so

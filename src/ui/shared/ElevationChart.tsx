@@ -1,5 +1,7 @@
 import type { RoutePoint } from "../../domain/types.ts";
 import { hasAnyElevation } from "../../navigation/elevation.ts";
+import type { GradientSegment } from "../../navigation/gradient.ts";
+import { GRADIENT_CLASS_COLOURS } from "../../navigation/gradientPalette.ts";
 import { formatDistanceKm } from "./routeSummary.ts";
 import {
   buildElevationChartGeometry,
@@ -8,6 +10,7 @@ import {
   splitSegmentAtX,
   type ElevationChartDomain,
 } from "./elevationChartGeometry.ts";
+import { buildGradientChartRuns } from "./elevationChartGradient.ts";
 
 /** The rider's current (or last known) position to plot as a vertical
  * marker, already resolved to an exact route distance and elevation by the
@@ -28,6 +31,12 @@ export interface ElevationChartProps {
    * pass a windowed/rolling domain are unaffected. */
   domain?: ElevationChartDomain;
   marker?: ElevationChartMarkerInput | null;
+  /** Already domain-relevant (the full route for a Full-mode/whole-route
+   * chart, or clipGradientSegments' output for a windowed one) — this
+   * component only colours and splits the existing raw geometry by these
+   * boundaries, it never re-runs gradient analysis itself. Omitting this
+   * prop reproduces today's exact currentColor rendering. */
+  gradientSegments?: readonly GradientSegment[];
   width?: number;
   height?: number;
 }
@@ -47,6 +56,7 @@ export function ElevationChart({
   points,
   domain,
   marker = null,
+  gradientSegments,
   width = DEFAULT_WIDTH,
   height = DEFAULT_HEIGHT,
 }: ElevationChartProps) {
@@ -70,6 +80,13 @@ export function ElevationChart({
 
   const hasGaps = points.some((point) => point.elevationMetres === null);
 
+  // Same outer length/order as geometry.segments — index-aligned below, so
+  // omitting gradientSegments (gradientRuns stays undefined) falls straight
+  // through to the original plain-path rendering, unchanged.
+  const gradientRuns = gradientSegments
+    ? buildGradientChartRuns(geometry.segments, gradientSegments, resolvedDomain, width)
+    : undefined;
+
   const markerGeometry = marker
     ? buildElevationChartMarkerGeometry(
         resolvedDomain,
@@ -92,6 +109,59 @@ export function ElevationChart({
         aria-label="Elevation profile chart"
       >
         {geometry.segments.map((segment, index) => {
+          const runs = gradientRuns?.[index];
+          if (runs) {
+            // Gradient colouring: colour (climb/descent class) and
+            // dash/opacity (ridden-status) are two independent visual
+            // channels on the same path, mirroring the map's colour
+            // (gradient)/pattern (warning) independence.
+            return (
+              <g key={index}>
+                {runs.map((run, runIndex) => {
+                  const stroke = GRADIENT_CLASS_COLOURS[run.gradientClass];
+                  if (!markerGeometry) {
+                    return (
+                      <path
+                        key={runIndex}
+                        d={pathFromSegment(run.points)}
+                        fill="none"
+                        stroke={stroke}
+                        strokeWidth={2}
+                      />
+                    );
+                  }
+                  const { completed, remaining } = splitSegmentAtX(
+                    run.points,
+                    markerGeometry.x,
+                  );
+                  return (
+                    <g key={runIndex}>
+                      {completed.length > 0 && (
+                        <path
+                          d={pathFromSegment(completed)}
+                          fill="none"
+                          stroke={stroke}
+                          strokeWidth={2}
+                          strokeDasharray={COMPLETED_DASHARRAY}
+                          className="elevation-chart-completed"
+                        />
+                      )}
+                      {remaining.length > 0 && (
+                        <path
+                          d={pathFromSegment(remaining)}
+                          fill="none"
+                          stroke={stroke}
+                          strokeWidth={2}
+                          className="elevation-chart-remaining"
+                        />
+                      )}
+                    </g>
+                  );
+                })}
+              </g>
+            );
+          }
+
           if (!markerGeometry) {
             return (
               <path

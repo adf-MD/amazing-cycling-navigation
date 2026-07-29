@@ -30,7 +30,10 @@ export interface ElevationChartMarkerGeometry {
   y: number | null;
 }
 
-function distanceToX(
+/** Exported so gradient-segment boundaries (a route-distance concept) can
+ * be converted to the same pixel x-coordinates as the plotted profile —
+ * see elevationChartGradient.ts. */
+export function distanceToX(
   distanceFromStartMetres: number,
   domain: ElevationChartDomain,
   width: number,
@@ -41,7 +44,7 @@ function distanceToX(
     : ((distanceFromStartMetres - domain.startDistanceMetres) / domainSpan) * width;
 }
 
-function elevationToY(
+export function elevationToY(
   elevationMetres: number,
   minElevationMetres: number,
   maxElevationMetres: number,
@@ -165,6 +168,32 @@ export function splitSegmentAtX(
   }
 
   return { completed, remaining };
+}
+
+/**
+ * Splits one geometry segment at every pixel x-coordinate in `splitXs`,
+ * returning `splitXs.length + 1` runs in left-to-right order. Implemented
+ * as repeated application of the existing, unmodified `splitSegmentAtX`
+ * (ascending split order, each call's "remaining" feeding the next split),
+ * so every single-split seam-continuity guarantee it already provides
+ * (an interpolated seam shared by both halves, no duplicate point when a
+ * split lands exactly on an existing point) holds at every boundary here
+ * too, rather than being reimplemented.
+ */
+export function splitSegmentAtXs(
+  segment: readonly ElevationChartPoint[],
+  splitXs: readonly number[],
+): ElevationChartPoint[][] {
+  const sortedSplitXs = [...splitXs].sort((a, b) => a - b);
+  const runs: ElevationChartPoint[][] = [];
+  let remainder: readonly ElevationChartPoint[] = segment;
+  for (const splitX of sortedSplitXs) {
+    const { completed, remaining } = splitSegmentAtX(remainder, splitX);
+    runs.push(completed);
+    remainder = remaining;
+  }
+  runs.push([...remainder]);
+  return runs;
 }
 
 export function pathFromSegment(segment: readonly ElevationChartPoint[]): string {

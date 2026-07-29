@@ -16,6 +16,41 @@ const DUMMY_KEY = "dummy-e2e-key";
 // test below simply swaps the array order.
 const WEST_COORDINATE = [-0.15, 51.5, 10];
 const EAST_COORDINATE = [-0.05, 51.5, 10];
+// Comfortably under gradient.ts's MAX_ELEVATION_GAP_METRES (500 m) —
+// densifying the fixture's two endpoints keeps its constant elevation
+// analysable as one continuous "flat" run (a distinct, well-contrasted
+// gradient colour) rather than two isolated points thousands of metres
+// apart, which would classify as "unknown" and render in a low-contrast
+// neutral grey that this test's pixel-colour line detector can't reliably
+// pick out from the fallback background's own light grey.
+const DENSIFY_STEP_COUNT = 20;
+
+/** Linearly interpolates evenly-spaced intermediate points between each
+ * consecutive pair in `coordinates` (inclusive of the original points, in
+ * the same order), holding elevation at the first point's own value
+ * throughout — so a genuinely flat fixture route stays exactly flat,
+ * regardless of how many points represent it. */
+function densifyWithFlatElevation(
+  coordinates: readonly (readonly number[])[],
+): number[][] {
+  const elevation = coordinates[0]?.[2] ?? 0;
+  const result: number[][] = [];
+  for (let i = 0; i < coordinates.length - 1; i += 1) {
+    const [startLon, startLat] = coordinates[i] ?? [0, 0];
+    const [endLon, endLat] = coordinates[i + 1] ?? [0, 0];
+    for (let step = 0; step < DENSIFY_STEP_COUNT; step += 1) {
+      const t = step / DENSIFY_STEP_COUNT;
+      result.push([
+        startLon + t * (endLon - startLon),
+        startLat + t * (endLat - startLat),
+        elevation,
+      ]);
+    }
+  }
+  const last = coordinates.at(-1);
+  if (last) result.push([last[0] ?? 0, last[1] ?? 0, elevation]);
+  return result;
+}
 
 function buildMockOrsResponse(coordinates: readonly (readonly number[])[]) {
   return {
@@ -24,7 +59,10 @@ function buildMockOrsResponse(coordinates: readonly (readonly number[])[]) {
       {
         type: "Feature",
         properties: { summary: { distance: 6900, duration: 1200 } },
-        geometry: { type: "LineString", coordinates },
+        geometry: {
+          type: "LineString",
+          coordinates: densifyWithFlatElevation(coordinates),
+        },
       },
     ],
   };
@@ -145,8 +183,14 @@ async function detectArrowDirection({
   pngBase64,
   excludeRects,
 }: DetectArrowDirectionArgs): Promise<DirectionDetectionResult> {
-  const ROUTE_GREEN: readonly [number, number, number] = [10, 95, 56];
-  const ROUTE_GREEN_THRESHOLD_SQUARED = 900;
+  // The gradient overlay (src/map/gradientRouteLayer.ts) paints over the
+  // route's full length, including the base route's own green — this
+  // fixture's constant, densely-sampled elevation (see
+  // densifyWithFlatElevation) classifies the whole line as "flat", which
+  // renders in the palette's flat colour (GRADIENT_CLASS_COLOURS.flat),
+  // not the base route's own green.
+  const ROUTE_LINE_COLOUR: readonly [number, number, number] = [0x2e, 0x7d, 0x63];
+  const ROUTE_LINE_THRESHOLD_SQUARED = 900;
   const ARROW_MIN_OPAQUE_ALPHA = 250;
   const ARROW_WHITE_MIN = 245;
   const ARROW_BLACK_MAX = 40;
@@ -183,11 +227,11 @@ async function detectArrowDirection({
     return [data[offset], data[offset + 1], data[offset + 2], data[offset + 3]];
   }
 
-  function isRouteGreen(r: number, g: number, b: number): boolean {
-    const dr = r - ROUTE_GREEN[0];
-    const dg = g - ROUTE_GREEN[1];
-    const db = b - ROUTE_GREEN[2];
-    return dr * dr + dg * dg + db * db <= ROUTE_GREEN_THRESHOLD_SQUARED;
+  function isRouteLineColour(r: number, g: number, b: number): boolean {
+    const dr = r - ROUTE_LINE_COLOUR[0];
+    const dg = g - ROUTE_LINE_COLOUR[1];
+    const db = b - ROUTE_LINE_COLOUR[2];
+    return dr * dr + dg * dg + db * db <= ROUTE_LINE_THRESHOLD_SQUARED;
   }
 
   function isArrowPixel(r: number, g: number, b: number, a: number): boolean {
@@ -211,18 +255,18 @@ async function detectArrowDirection({
     return false;
   }
 
-  const greenPixels: { x: number; y: number }[] = [];
+  const routeLinePixels: { x: number; y: number }[] = [];
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       if (isExcluded(x, y)) continue;
       const offset = (y * width + x) * 4;
-      if (isRouteGreen(data[offset], data[offset + 1], data[offset + 2])) {
-        greenPixels.push({ x, y });
+      if (isRouteLineColour(data[offset], data[offset + 1], data[offset + 2])) {
+        routeLinePixels.push({ x, y });
       }
     }
   }
 
-  if (greenPixels.length < 2) {
+  if (routeLinePixels.length < 2) {
     return { blobFound: false, lineAngleDegrees: 0, taperTowardP1: false };
   }
 
@@ -232,17 +276,17 @@ async function detectArrowDirection({
   // thousand green pixels) — robust enough for a route that renders as
   // a single, roughly straight or gently curved line.
   let bestDistanceSquared = -1;
-  let bestA = greenPixels[0];
-  let bestB = greenPixels[0];
+  let bestA = routeLinePixels[0];
+  let bestB = routeLinePixels[0];
   for (const angleDegrees of CANDIDATE_ANGLES_DEGREES) {
     const angleRadians = (angleDegrees * Math.PI) / 180;
     const dirX = Math.cos(angleRadians);
     const dirY = Math.sin(angleRadians);
     let minProjection = Infinity;
     let maxProjection = -Infinity;
-    let minPixel = greenPixels[0];
-    let maxPixel = greenPixels[0];
-    for (const pixel of greenPixels) {
+    let minPixel = routeLinePixels[0];
+    let maxPixel = routeLinePixels[0];
+    for (const pixel of routeLinePixels) {
       const projection = pixel.x * dirX + pixel.y * dirY;
       if (projection < minProjection) {
         minProjection = projection;

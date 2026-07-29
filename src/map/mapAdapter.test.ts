@@ -246,6 +246,43 @@ describe("MapLibreAdapter", () => {
     expect(dashedCall[0].paint["line-dasharray"]).toEqual([2, 2]);
   });
 
+  describe("addLineLayer with a data-driven line colour", () => {
+    it("builds a match expression keyed on the given property with an explicit fallback", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+
+      adapter.addLineLayer("gradient", "gradient-source", {
+        lineColor: {
+          property: "gradientClass",
+          cases: { flat: "#2e7d63", "hard-climb": "#d55e00" },
+          fallback: "#b3aa9c",
+        },
+        lineWidth: 5,
+      });
+
+      const [call] = fake.addLayer.mock.calls as [[{ paint: Record<string, unknown> }]];
+      expect(call[0].paint["line-color"]).toEqual([
+        "match",
+        ["get", "gradientClass"],
+        "flat",
+        "#2e7d63",
+        "hard-climb",
+        "#d55e00",
+        "#b3aa9c",
+      ]);
+    });
+
+    it("leaves every existing plain-string lineColor call site unaffected", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+
+      adapter.addLineLayer("solid", "source-a", { lineColor: "#0a5f38", lineWidth: 5 });
+
+      const [call] = fake.addLayer.mock.calls as [[{ paint: Record<string, unknown> }]];
+      expect(call[0].paint["line-color"]).toBe("#0a5f38");
+    });
+  });
+
   describe("addImage", () => {
     it("passes the image through unchanged with a default pixelRatio of 1 and sdf false", () => {
       const fake = buildFakeMapLibreMap();

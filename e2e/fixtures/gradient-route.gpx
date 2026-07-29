@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="acn-e2e-fixtures" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Gradient colouring route</name>
+    <trkseg>
+      <trkpt lat="51.500000" lon="-0.050000"><ele>10.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.048557"><ele>10.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.047114"><ele>10.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.045671"><ele>10.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.044228"><ele>10.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.042785"><ele>10.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.041342"><ele>10.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.039899"><ele>10.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.038456"><ele>10.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.037013"><ele>10.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.035570"><ele>10.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.034127"><ele>30.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.032684"><ele>50.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.031241"><ele>70.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.029797"><ele>90.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.028354"><ele>110.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.026911"><ele>130.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.025468"><ele>150.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.024025"><ele>170.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.022582"><ele>190.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.021139"><ele>210.0</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

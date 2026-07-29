@@ -84,7 +84,10 @@ function resampleElevations(
   return resampled;
 }
 
-function centredMovingAverage(values: readonly number[], windowSize: number): number[] {
+export function centredMovingAverage(
+  values: readonly number[],
+  windowSize: number,
+): number[] {
   const halfWindow = Math.floor(windowSize / 2);
 
   return values.map((_, index) => {

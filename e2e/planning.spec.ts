@@ -176,6 +176,13 @@ test("configures a key, plans a route via a mocked ORS response, saves it, and r
   // Proves the provider's own (deliberately wrong) ascent was discarded.
   expect(summaryText).not.toContain("999 m ascent");
 
+  // Planning now shows its own elevation profile (see
+  // gradientColouring.spec.ts for the fuller gradient-colouring
+  // coverage) — a lightweight presence check here, not a duplicate.
+  await expect(
+    summaryRegion.getByRole("img", { name: "Elevation profile chart" }),
+  ).toBeVisible();
+
   // Two adjacent, different questionable surface types must render as two
   // distinct, separately selectable entries — the collapsed label is
   // generic ("Questionable surface"), so the specific category is only

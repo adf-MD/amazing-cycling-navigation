@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouteSummaryPanel } from "./RouteSummaryPanel.tsx";
 import type { PlannedRoute, RouteWarning } from "../../domain/types.ts";
+import type { GradientSegment } from "../../navigation/gradient.ts";
 
 function buildRoute(overrides: Partial<PlannedRoute> = {}): PlannedRoute {
   return {
@@ -61,6 +62,7 @@ describe("RouteSummaryPanel", () => {
         onSelectWarning={vi.fn()}
         onClearWarningSelection={vi.fn()}
         revealToken={0}
+        gradientSegments={[]}
       />,
     );
 
@@ -82,6 +84,7 @@ describe("RouteSummaryPanel", () => {
         onSelectWarning={vi.fn()}
         onClearWarningSelection={vi.fn()}
         revealToken={0}
+        gradientSegments={[]}
       />,
     );
 
@@ -107,6 +110,7 @@ describe("RouteSummaryPanel", () => {
         onSelectWarning={vi.fn()}
         onClearWarningSelection={vi.fn()}
         revealToken={0}
+        gradientSegments={[]}
       />,
     );
 
@@ -128,6 +132,7 @@ describe("RouteSummaryPanel", () => {
         onSelectWarning={vi.fn()}
         onClearWarningSelection={vi.fn()}
         revealToken={0}
+        gradientSegments={[]}
       />,
     );
 
@@ -146,6 +151,7 @@ describe("RouteSummaryPanel", () => {
         onSelectWarning={vi.fn()}
         onClearWarningSelection={vi.fn()}
         revealToken={0}
+        gradientSegments={[]}
       />,
     );
 
@@ -164,6 +170,7 @@ describe("RouteSummaryPanel", () => {
         onSelectWarning={vi.fn()}
         onClearWarningSelection={vi.fn()}
         revealToken={0}
+        gradientSegments={[]}
       />,
     );
 
@@ -186,6 +193,7 @@ describe("RouteSummaryPanel", () => {
         onSelectWarning={onSelectWarning}
         onClearWarningSelection={vi.fn()}
         revealToken={0}
+        gradientSegments={[]}
       />,
     );
 
@@ -206,6 +214,7 @@ describe("RouteSummaryPanel", () => {
         onSelectWarning={vi.fn()}
         onClearWarningSelection={onClearWarningSelection}
         revealToken={0}
+        gradientSegments={[]}
       />,
     );
 
@@ -226,6 +235,7 @@ describe("RouteSummaryPanel", () => {
         onSelectWarning={vi.fn()}
         onClearWarningSelection={onClearWarningSelection}
         revealToken={0}
+        gradientSegments={[]}
       />,
     );
 
@@ -244,6 +254,7 @@ describe("RouteSummaryPanel", () => {
         onSelectWarning={vi.fn()}
         onClearWarningSelection={vi.fn()}
         revealToken={0}
+        gradientSegments={[]}
       />,
     );
 
@@ -283,6 +294,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
       expect(scrollIntoViewSpy).not.toHaveBeenCalled();
@@ -296,6 +308,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={1}
+          gradientSegments={[]}
         />,
       );
 
@@ -315,6 +328,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
 
@@ -327,6 +341,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
 
@@ -343,6 +358,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
 
@@ -355,6 +371,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={1}
+          gradientSegments={[]}
         />,
       );
 
@@ -371,6 +388,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
 
@@ -383,6 +401,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={1}
+          gradientSegments={[]}
         />,
       );
       rerender(
@@ -394,6 +413,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={2}
+          gradientSegments={[]}
         />,
       );
 
@@ -417,6 +437,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
 
@@ -429,6 +450,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={1}
+          gradientSegments={[]}
         />,
       );
 
@@ -447,6 +469,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
 
@@ -459,6 +482,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={1}
+          gradientSegments={[]}
         />,
       );
 
@@ -475,6 +499,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
 
@@ -487,6 +512,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={1}
+          gradientSegments={[]}
         />,
       );
 
@@ -504,6 +530,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
       expect(screen.queryByRole("status")).toBeNull();
@@ -517,6 +544,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={1}
+          gradientSegments={[]}
         />,
       );
 
@@ -536,6 +564,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
 
@@ -548,6 +577,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
 
@@ -580,6 +610,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
 
@@ -600,6 +631,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
 
@@ -620,6 +652,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
       expect(screen.getByText("Surface: Compacted gravel")).toBeInTheDocument();
@@ -633,6 +666,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
 
@@ -652,6 +686,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
 
@@ -678,6 +713,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          gradientSegments={[]}
         />,
       );
 
@@ -685,6 +721,108 @@ describe("RouteSummaryPanel", () => {
       expect(button).not.toHaveAttribute("aria-expanded");
       expect(button).not.toHaveAttribute("aria-controls");
       expect(screen.queryByText(/^Surface:/)).toBeNull();
+    });
+  });
+
+  describe("elevation profile and gradient legend", () => {
+    function gradientSegment(
+      startDistanceMetres: number,
+      endDistanceMetres: number,
+      classification: GradientSegment["classification"],
+    ): GradientSegment {
+      return {
+        startDistanceMetres,
+        endDistanceMetres,
+        averageGradientPercent: null,
+        classification,
+      };
+    }
+
+    it("renders an elevation profile chart for a routed route with elevation", () => {
+      render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={[]}
+          selectedWarningIndex={null}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+          gradientSegments={[gradientSegment(0, 1000, "flat")]}
+        />,
+      );
+
+      expect(
+        screen.getByRole("img", { name: "Elevation profile chart" }),
+      ).toBeInTheDocument();
+    });
+
+    it("keeps the existing missing-elevation messaging when the route has none", () => {
+      render(
+        <RouteSummaryPanel
+          route={buildRoute({
+            points: [
+              { coordinate: [0, 51], elevationMetres: null, distanceFromStartMetres: 0 },
+              {
+                coordinate: [0.01, 51],
+                elevationMetres: null,
+                distanceFromStartMetres: 1000,
+              },
+            ],
+          })}
+          waypointCount={2}
+          warnings={[]}
+          selectedWarningIndex={null}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+          gradientSegments={[gradientSegment(0, 1000, "unknown")]}
+        />,
+      );
+
+      expect(
+        screen.getByText("Elevation data is not available for this route."),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("img")).toBeNull();
+    });
+
+    it("renders a gradient legend entry for each present class", () => {
+      render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={[]}
+          selectedWarningIndex={null}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+          gradientSegments={[
+            gradientSegment(0, 500, "flat"),
+            gradientSegment(500, 1000, "hard-climb"),
+          ]}
+        />,
+      );
+
+      const legend = screen.getByRole("list", { name: "Gradient legend" });
+      expect(legend.querySelectorAll("li")).toHaveLength(2);
+      expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
+    });
+
+    it("renders no gradient legend when there are no gradient segments", () => {
+      render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={[]}
+          selectedWarningIndex={null}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+          gradientSegments={[]}
+        />,
+      );
+
+      expect(screen.queryByRole("list", { name: "Gradient legend" })).toBeNull();
     });
   });
 });
