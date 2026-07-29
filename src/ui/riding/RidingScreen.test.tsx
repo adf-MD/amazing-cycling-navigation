@@ -11,7 +11,7 @@ import type {
 } from "../../platform/geolocation.ts";
 import type { Clock } from "../../platform/clock.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
-import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
+import type { Coordinate, PlannedRoute, RoutePoint } from "../../domain/types.ts";
 import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry.ts";
 import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
 import { OFF_ROUTE_BASE_METRES } from "../../navigation/offRoute.ts";
@@ -41,6 +41,43 @@ const route: PlannedRoute = {
 
 function pointAt(index: number): Coordinate {
   return routePoints[index]?.coordinate ?? [0, 51];
+}
+
+/** Linearly interpolates intermediate points between each consecutive
+ * "keyframe" so a route shaped by a few widely-spaced elevation/position
+ * waypoints — a convenient shorthand for defining a fixture's overall
+ * profile — stays within gradient.ts's MAX_ELEVATION_GAP_METRES between
+ * any two adjacent points, matching how real GPX/ORS data is always
+ * densely sampled. Every keyframe's own distance/elevation/coordinate is
+ * preserved exactly; only points strictly between them are synthesised. */
+function densifyElevationRoute(
+  keyframes: readonly RoutePoint[],
+  stepMetres = 250,
+): RoutePoint[] {
+  const result: RoutePoint[] = [];
+  for (let i = 0; i < keyframes.length - 1; i += 1) {
+    const start = keyframes[i];
+    const end = keyframes[i + 1];
+    if (!start || !end) continue;
+    const span = end.distanceFromStartMetres - start.distanceFromStartMetres;
+    const steps = Math.max(1, Math.ceil(span / stepMetres));
+    for (let step = 0; step < steps; step += 1) {
+      const t = step / steps;
+      const startElevation = start.elevationMetres ?? 0;
+      const endElevation = end.elevationMetres ?? 0;
+      result.push({
+        coordinate: [
+          start.coordinate[0] + t * (end.coordinate[0] - start.coordinate[0]),
+          start.coordinate[1] + t * (end.coordinate[1] - start.coordinate[1]),
+        ],
+        elevationMetres: startElevation + t * (endElevation - startElevation),
+        distanceFromStartMetres: start.distanceFromStartMetres + t * span,
+      });
+    }
+  }
+  const last = keyframes.at(-1);
+  if (last) result.push(last);
+  return result;
 }
 
 // The route isn't due-north, so its own tangent bearing isn't a clean
@@ -243,13 +280,13 @@ describe("RidingScreen", () => {
     // different, not just "some chart rendered".
     const elevationRoute: PlannedRoute = {
       ...route,
-      points: [
+      points: densifyElevationRoute([
         { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
         { coordinate: [0.01, 51], elevationMetres: 20, distanceFromStartMetres: 2000 },
         { coordinate: [0.02, 51], elevationMetres: 15, distanceFromStartMetres: 4000 },
         { coordinate: [0.03, 51], elevationMetres: 90, distanceFromStartMetres: 7000 },
         { coordinate: [0.04, 51], elevationMetres: 80, distanceFromStartMetres: 8000 },
-      ],
+      ]),
       distanceMetres: 8000,
     };
     render(
@@ -284,6 +321,34 @@ describe("RidingScreen", () => {
     // old behaviour would have shown 10–20 m here, clipping the boundary
     // instead of interpolating it.
     expect(await screen.findByText(/10–40 m/)).toBeInTheDocument();
+  });
+
+  it("shows a smoothed (not raw) elevation range, diluting an isolated single-sample spike", () => {
+    const spikeRoute: PlannedRoute = {
+      ...route,
+      points: Array.from({ length: 60 }, (_, i) => ({
+        coordinate: [i * 0.0001, 51] as const,
+        elevationMetres: i === 30 ? 50 : 10,
+        distanceFromStartMetres: i * 20,
+      })),
+      distanceMetres: 59 * 20,
+    };
+    const { container } = render(
+      <RidingScreen
+        route={spikeRoute}
+        geolocationSource={buildStubGeolocationSource().source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+    const figcaption = container.querySelector("figcaption");
+    const match = /(\d+)–(\d+) m/.exec(figcaption?.textContent ?? "");
+    expect(match).not.toBeNull();
+    const maxElevationShown = Number(match?.[2]);
+    // Plotting route.points raw would show a max of exactly 50 (the spike
+    // itself); the shared smoothed analysis (analyzeRouteElevationProfile)
+    // dilutes an isolated single-sample spike substantially, proving the
+    // chart is driven by that analysis rather than the raw points.
+    expect(maxElevationShown).toBeLessThan(30);
   });
 
   it("starts watching only after the explicit tap, and shows a waiting state before a fix arrives", async () => {
@@ -428,11 +493,11 @@ describe("RidingScreen", () => {
     const stub = buildStubGeolocationSource();
     const elevationRoute: PlannedRoute = {
       ...route,
-      points: [
+      points: densifyElevationRoute([
         { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
         { coordinate: [0.01, 51], elevationMetres: 20, distanceFromStartMetres: 2000 },
         { coordinate: [0.02, 51], elevationMetres: 15, distanceFromStartMetres: 4000 },
-      ],
+      ]),
       distanceMetres: 4000,
     };
     render(
@@ -466,11 +531,11 @@ describe("RidingScreen", () => {
   it("restores a previously selected Full view as stale, then marks the position fresh once a new fix arrives", async () => {
     const elevationRoute: PlannedRoute = {
       ...route,
-      points: [
+      points: densifyElevationRoute([
         { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
         { coordinate: [0.01, 51], elevationMetres: 20, distanceFromStartMetres: 2000 },
         { coordinate: [0.02, 51], elevationMetres: 15, distanceFromStartMetres: 4000 },
-      ],
+      ]),
       distanceMetres: 4000,
     };
 

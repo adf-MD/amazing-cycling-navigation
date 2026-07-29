@@ -19,8 +19,17 @@ export interface ElevationChartGeometry {
   /** One array per contiguous run of known-elevation points; a gap in
    * elevation data breaks the line rather than being interpolated across. */
   segments: ElevationChartPoint[][];
+  /** The true, unpadded elevation range of the plotted data — what the
+   * figcaption reports, since a caption should describe the actual route,
+   * not an internal rendering concern. */
   minElevationMetres: number;
   maxElevationMetres: number;
+  /** The (padded, floor-enforced) range actually used for the chart's
+   * vertical pixel mapping — see computeDisplayElevationRange. Always
+   * `displayMinElevationMetres <= minElevationMetres` and
+   * `displayMaxElevationMetres >= maxElevationMetres`. */
+  displayMinElevationMetres: number;
+  displayMaxElevationMetres: number;
 }
 
 export interface ElevationChartMarkerGeometry {
@@ -54,6 +63,43 @@ export function elevationToY(
   return height - ((elevationMetres - minElevationMetres) / elevationRange) * height;
 }
 
+/** Fraction of the true elevation range added as headroom above and below
+ * the plotted line, so a climb/descent doesn't touch the very top/bottom
+ * edge of the chart. A rendering concern only — never reflected in the
+ * figcaption, which reports the true range. */
+export const ELEVATION_CHART_VERTICAL_PADDING_FRACTION = 0.1;
+/** The vertical scale never represents less than this many metres of
+ * elevation, even for a genuinely flat/near-flat route — otherwise a 2 m
+ * wobble would fill the whole chart height and read as a real hill. */
+export const MIN_DISPLAY_ELEVATION_RANGE_METRES = 20;
+
+/**
+ * The padded, floor-enforced elevation range used for the chart's
+ * vertical pixel mapping, derived from (but never replacing) the true
+ * data range. Padding is applied first, then, if the padded range still
+ * falls short of MIN_DISPLAY_ELEVATION_RANGE_METRES, the range is
+ * expanded further, equally on both sides, to reach the floor.
+ */
+export function computeDisplayElevationRange(
+  minElevationMetres: number,
+  maxElevationMetres: number,
+): { displayMinElevationMetres: number; displayMaxElevationMetres: number } {
+  const trueRangeMetres = maxElevationMetres - minElevationMetres;
+  const paddingMetres = trueRangeMetres * ELEVATION_CHART_VERTICAL_PADDING_FRACTION;
+  let displayMinElevationMetres = minElevationMetres - paddingMetres;
+  let displayMaxElevationMetres = maxElevationMetres + paddingMetres;
+
+  const shortfallMetres =
+    MIN_DISPLAY_ELEVATION_RANGE_METRES -
+    (displayMaxElevationMetres - displayMinElevationMetres);
+  if (shortfallMetres > 0) {
+    displayMinElevationMetres -= shortfallMetres / 2;
+    displayMaxElevationMetres += shortfallMetres / 2;
+  }
+
+  return { displayMinElevationMetres, displayMaxElevationMetres };
+}
+
 export function buildElevationChartGeometry(
   points: readonly RoutePoint[],
   domain: ElevationChartDomain,
@@ -70,6 +116,8 @@ export function buildElevationChartGeometry(
 
   const minElevationMetres = Math.min(...knownElevations);
   const maxElevationMetres = Math.max(...knownElevations);
+  const { displayMinElevationMetres, displayMaxElevationMetres } =
+    computeDisplayElevationRange(minElevationMetres, maxElevationMetres);
 
   const segments: ElevationChartPoint[][] = [];
   let currentSegment: ElevationChartPoint[] = [];
@@ -86,8 +134,8 @@ export function buildElevationChartGeometry(
     const x = distanceToX(point.distanceFromStartMetres, domain, width);
     const y = elevationToY(
       point.elevationMetres,
-      minElevationMetres,
-      maxElevationMetres,
+      displayMinElevationMetres,
+      displayMaxElevationMetres,
       height,
     );
     currentSegment.push({ x, y });
@@ -96,7 +144,13 @@ export function buildElevationChartGeometry(
     segments.push(currentSegment);
   }
 
-  return { segments, minElevationMetres, maxElevationMetres };
+  return {
+    segments,
+    minElevationMetres,
+    maxElevationMetres,
+    displayMinElevationMetres,
+    displayMaxElevationMetres,
+  };
 }
 
 /**

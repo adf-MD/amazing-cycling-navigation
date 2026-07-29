@@ -1,6 +1,7 @@
 import type { RoutePoint } from "../domain/types.ts";
 import {
   RESAMPLE_STEP_METRES,
+  SMOOTHING_WINDOW_SAMPLES,
   centredMovingAverage,
   hasAnyElevation,
 } from "./elevation.ts";
@@ -10,25 +11,31 @@ import {
  * left `unknown` rather than presented as a measured grade over an
  * unmeasured stretch. */
 export const MAX_ELEVATION_GAP_METRES = 500;
-/** A short, ~40 m-span pre-smooth applied before grade calculation, on top
- * of (not instead of) the resampling step — distinct in purpose and window
- * size from elevation.ts's own ~100 m ascent/descent smoothing, since a
- * grade (a derivative) is far more noise-sensitive than a cumulative sum. */
-export const GRADIENT_SMOOTHING_WINDOW_SAMPLES = 3;
 /** The centred horizontal baseline over which a displayed grade is
  * measured — deliberately much wider than the 20 m resample step, so
  * gradient reflects a genuine road-length feature rather than
- * sample-to-sample noise. Shifted, never shrunk, near a run's own edges. */
-export const GRADE_BASELINE_WINDOW_METRES = 160;
-/** A run shorter than this can't support even one full baseline window and
- * is left `unknown` in its entirety, rather than implying a slope from too
+ * sample-to-sample noise. Shrunk (clamped to the run's own bounds), never
+ * shifted away from the target distance, near a run's edges — the same
+ * "use whatever's actually available" edge philosophy `centredMovingAverage`
+ * (elevation.ts, reused for the smoothing pass below) already applies, so
+ * both stages of this pipeline share one edge policy. Equal to
+ * elevation.ts's own `SMOOTHING_WINDOW_SAMPLES` window in metres (5
+ * samples * 20 m = 100 m) — this module reuses that exact smoothing pass
+ * (not a second, independently-tuned one), so the displayed elevation line
+ * and the gradient classification are provably the same analysis. */
+export const GRADE_BASELINE_WINDOW_METRES = 100;
+/** A run shorter than this can't support a stable grade measurement and is
+ * left `unknown` in its entirety, rather than implying a slope from too
  * little horizontal span (this also covers the "single known point" case,
- * since a run must have at least two points spanning this distance). */
+ * since a run must have at least two points spanning this distance). A run
+ * between this and GRADE_BASELINE_WINDOW_METRES still gets one grade per
+ * point, computed over its own full (clamped) extent — the general clamp
+ * formula in computeGradesForRun handles this without a separate branch. */
 export const MIN_GRADE_WINDOW_METRES = 40;
 /** A classified segment shorter than this is treated as flicker and
  * absorbed into whichever neighbouring segment is closer in severity,
  * rather than left as an isolated sliver. */
-export const MIN_SEGMENT_LENGTH_METRES = 60;
+export const MIN_SEGMENT_LENGTH_METRES = 80;
 
 export type GradientClass =
   | "steep-descent"
@@ -198,7 +205,7 @@ function resampleRun(
 /** Linear interpolation of `values` at `target`, given the parallel,
  * ascending `distances` they were sampled at. Assumes target falls within
  * distances' own bounds (true for every caller in this module, since grade
- * windows are always shifted to stay inside a run's bounds). */
+ * windows are always clamped to stay inside a run's bounds). */
 function interpolateAt(
   distances: readonly number[],
   values: readonly number[],
@@ -224,17 +231,67 @@ function computeGradeBetween(d1: number, e1: number, d2: number, e2: number): nu
 }
 
 /**
- * Grade at every resampled point in a run, using a centred baseline window
- * that is shifted (never shrunk) to stay inside the run's own bounds near
- * an edge — this is what avoids exaggerated start/finish grades from only
- * half a window. A run shorter than MIN_GRADE_WINDOW_METRES yields
- * `null` (unknown) throughout; a run shorter than the full baseline window
- * but at least MIN_GRADE_WINDOW_METRES yields one single grade estimate
- * over its own full extent for every point.
+ * Least-squares linear-regression slope (elevation metres risen per metre
+ * travelled) of the (distance, value) samples whose distance falls within
+ * [windowStart, windowEnd]. Deliberately used instead of a two-point
+ * endpoint difference: fitting a line through every sample in the window
+ * is unbiased for a genuinely linear underlying profile regardless of
+ * whether the window is symmetric around the target distance, whereas a
+ * two-point difference computed from an already edge-smoothed series
+ * inherits whatever bias `centredMovingAverage`'s own shrinking-window
+ * edge handling baked into those two specific values (its average is
+ * centred on the window's own midpoint, not the target index, whenever
+ * the window can't be symmetric — verified to otherwise corrupt grade
+ * measurements for roughly the first/last baseline-window's worth of a
+ * run). Regression also averages every sample in the window rather than
+ * just its two ends, so it is at least as noise-resistant. Returns null
+ * when fewer than two distinct-x samples fall in the window (can't fit a
+ * line).
+ */
+function regressionSlope(
+  distances: readonly number[],
+  values: readonly number[],
+  windowStart: number,
+  windowEnd: number,
+): number | null {
+  let n = 0;
+  let sumX = 0;
+  let sumY = 0;
+  let sumXY = 0;
+  let sumXX = 0;
+  for (let i = 0; i < distances.length; i += 1) {
+    const d = distances[i];
+    const v = values[i];
+    if (d === undefined || v === undefined || d < windowStart || d > windowEnd) continue;
+    n += 1;
+    sumX += d;
+    sumY += v;
+    sumXY += d * v;
+    sumXX += d * d;
+  }
+  if (n < 2) return null;
+  const denominator = n * sumXX - sumX * sumX;
+  if (denominator === 0) return 0;
+  return (n * sumXY - sumX * sumY) / denominator;
+}
+
+/**
+ * Grade at every resampled point in a run, fitted by least-squares
+ * regression (see regressionSlope) over the *raw* resampled elevations —
+ * never the smoothed display series, to avoid the edge-bias problem
+ * documented on regressionSlope — within a centred baseline window that
+ * is clamped (shrunk to whatever's actually available), never shifted
+ * away from the target distance, near an edge. A run shorter than
+ * MIN_GRADE_WINDOW_METRES yields `null` (unknown) throughout. A run
+ * shorter than the full baseline window but at least MIN_GRADE_WINDOW_METRES
+ * still gets one grade per point, fitted over its own full clamped extent
+ * — this isn't a separate case, it falls out of the same clamp formula
+ * below (windowStart/windowEnd both clamp to the run's own bounds for
+ * every target distance when the run itself is shorter than the window).
  */
 function computeGradesForRun(
   distances: readonly number[],
-  smoothed: readonly number[],
+  elevations: readonly number[],
 ): (number | null)[] {
   const runStart = distances[0];
   const runEnd = distances.at(-1);
@@ -244,36 +301,18 @@ function computeGradesForRun(
   if (runLengthMetres < MIN_GRADE_WINDOW_METRES) {
     return distances.map(() => null);
   }
-  if (runLengthMetres < GRADE_BASELINE_WINDOW_METRES) {
-    const grade = computeGradeBetween(
-      runStart,
-      smoothed[0] ?? 0,
-      runEnd,
-      smoothed.at(-1) ?? 0,
-    );
-    return distances.map(() => grade);
-  }
 
   const halfWindow = GRADE_BASELINE_WINDOW_METRES / 2;
   return distances.map((targetDistance) => {
-    let windowStart = targetDistance - halfWindow;
-    let windowEnd = targetDistance + halfWindow;
-    if (windowStart < runStart) {
-      const shift = runStart - windowStart;
-      windowStart += shift;
-      windowEnd += shift;
-    }
-    if (windowEnd > runEnd) {
-      const shift = windowEnd - runEnd;
-      windowStart -= shift;
-      windowEnd -= shift;
-    }
-    return computeGradeBetween(
+    const windowStart = Math.max(runStart, targetDistance - halfWindow);
+    const windowEnd = Math.min(runEnd, targetDistance + halfWindow);
+    const slopeMetresPerMetre = regressionSlope(
+      distances,
+      elevations,
       windowStart,
-      interpolateAt(distances, smoothed, windowStart),
       windowEnd,
-      interpolateAt(distances, smoothed, windowEnd),
     );
+    return slopeMetresPerMetre === null ? null : slopeMetresPerMetre * 100;
   });
 }
 
@@ -317,13 +356,25 @@ function mergeAdjacent(segments: readonly GradientSegment[]): GradientSegment[] 
   return result;
 }
 
-/** Grade-classified segments for one continuous run, already merged so no
- * two adjacent segments share a classification. */
-function analyzeRun(run: readonly KnownElevationPoint[]): GradientSegment[] {
+/** One run's grade-classified segments (already merged so no two adjacent
+ * segments share a classification) plus the underlying resampled/smoothed
+ * series they were derived from — the same series doubles as the
+ * displayed elevation line for this run (see analyzeRouteElevationProfile),
+ * so the chart and the classification can never disagree. */
+interface RunAnalysis {
+  segments: GradientSegment[];
+  distances: number[];
+  smoothed: number[];
+}
+
+function analyzeRun(run: readonly KnownElevationPoint[]): RunAnalysis {
   const { distances, elevations } = resampleRun(run, RESAMPLE_STEP_METRES);
-  if (distances.length < 2) return [];
-  const smoothed = centredMovingAverage(elevations, GRADIENT_SMOOTHING_WINDOW_SAMPLES);
-  const grades = computeGradesForRun(distances, smoothed);
+  if (distances.length < 2) return { segments: [], distances: [], smoothed: [] };
+  const smoothed = centredMovingAverage(elevations, SMOOTHING_WINDOW_SAMPLES);
+  // Grade is fitted from the raw resampled elevations, not `smoothed` —
+  // see regressionSlope's own doc comment for why using the display
+  // series here would reintroduce edge bias into the classification.
+  const grades = computeGradesForRun(distances, elevations);
 
   const pointSegments: GradientSegment[] = [];
   for (let i = 0; i < distances.length - 1; i += 1) {
@@ -340,19 +391,21 @@ function analyzeRun(run: readonly KnownElevationPoint[]): GradientSegment[] {
     });
   }
 
-  return mergeAdjacent(pointSegments).map((segment) =>
+  const segments = mergeAdjacent(pointSegments).map((segment) =>
     segment.classification === "unknown"
       ? segment
       : {
           ...segment,
           averageGradientPercent: computeGradeBetween(
             segment.startDistanceMetres,
-            interpolateAt(distances, smoothed, segment.startDistanceMetres),
+            interpolateAt(distances, elevations, segment.startDistanceMetres),
             segment.endDistanceMetres,
-            interpolateAt(distances, smoothed, segment.endDistanceMetres),
+            interpolateAt(distances, elevations, segment.endDistanceMetres),
           ),
         },
   );
+
+  return { segments, distances, smoothed };
 }
 
 function severityDistance(a: GradientClass, b: GradientClass): number {
@@ -433,42 +486,107 @@ function suppressFlicker(segments: readonly GradientSegment[]): GradientSegment[
 }
 
 /**
- * Provider-independent, noise-resistant gradient analysis of a route's
- * points, expressed as contiguous, non-overlapping segments covering
- * [0, totalDistanceMetres] exactly. Never mutates `points`, never sends
- * data anywhere, and is derived purely from already-normalised
- * RoutePoint.elevationMetres — safe to recompute entirely offline.
+ * The shared, provider-independent full-route elevation-profile analysis:
+ * one resample+smooth pass per contiguous known-elevation run, producing
+ * both a smoothed *display* series and the classified gradient segments
+ * from the literal same underlying values — so the elevation-chart line
+ * and the map/chart gradient colours can never disagree for the same
+ * route section. Never mutates `points`, never sends data anywhere, and
+ * runs entirely offline from already-normalised RoutePoint.elevationMetres.
  */
-export function analyzeGradient(points: readonly RoutePoint[]): GradientSegment[] {
+export interface RouteElevationProfile {
+  /** Same length, order, coordinates and distances as the input points —
+   * only elevationMetres is replaced, with the shared smoothed value where
+   * the point falls inside an analysable run, or left `null` otherwise
+   * (before the first run, after the last, inside a >500 m gap between
+   * runs, or a run too short to analyse) — matching the chart's existing
+   * gap-break-the-line behaviour. Never the same array/object identity as
+   * the input; the input is never written to. */
+  displayPoints: RoutePoint[];
+  /** Contiguous, non-overlapping segments covering [0, totalDistanceMetres]
+   * exactly. */
+  gradientSegments: GradientSegment[];
+}
+
+function isWithinRun(
+  run: readonly KnownElevationPoint[],
+  distanceMetres: number,
+): boolean {
+  const first = run[0];
+  const last = run.at(-1);
+  if (first === undefined || last === undefined) return false;
+  return distanceMetres >= first.distanceMetres && distanceMetres <= last.distanceMetres;
+}
+
+export function analyzeRouteElevationProfile(
+  points: readonly RoutePoint[],
+): RouteElevationProfile {
   const totalDistanceMetres = points.at(-1)?.distanceFromStartMetres ?? 0;
-  if (totalDistanceMetres <= 0) return [];
+  if (totalDistanceMetres <= 0) {
+    return { displayPoints: [...points], gradientSegments: [] };
+  }
   if (points.length < 2 || !hasAnyElevation(points)) {
-    return [unknownSegment(0, totalDistanceMetres)];
+    return {
+      displayPoints: points.map((point) => ({ ...point, elevationMetres: null })),
+      gradientSegments: [unknownSegment(0, totalDistanceMetres)],
+    };
   }
 
   const known = buildMonotonicKnownPoints(points);
   const runs = splitIntoRuns(known);
+  const runAnalyses = runs.map((run) => analyzeRun(run));
 
   const rawSegments: GradientSegment[] = [];
   let cursor = 0;
-  for (const run of runs) {
+  for (let i = 0; i < runs.length; i += 1) {
+    const run = runs[i];
+    const analysis = runAnalyses[i];
+    if (run === undefined || analysis === undefined) continue;
     const first = run[0];
     const last = run.at(-1);
     if (first === undefined || last === undefined) continue;
     if (first.distanceMetres > cursor) {
       rawSegments.push(unknownSegment(cursor, first.distanceMetres));
     }
-    rawSegments.push(...analyzeRun(run));
+    rawSegments.push(...analysis.segments);
     cursor = last.distanceMetres;
   }
   if (cursor < totalDistanceMetres) {
     rawSegments.push(unknownSegment(cursor, totalDistanceMetres));
   }
-  if (rawSegments.length === 0) {
-    return [unknownSegment(0, totalDistanceMetres)];
-  }
+  const gradientSegments =
+    rawSegments.length === 0
+      ? [unknownSegment(0, totalDistanceMetres)]
+      : suppressFlicker(rawSegments);
 
-  return suppressFlicker(rawSegments);
+  const displayPoints = points.map((point) => {
+    const distance = point.distanceFromStartMetres;
+    for (let i = 0; i < runs.length; i += 1) {
+      const run = runs[i];
+      const analysis = runAnalyses[i];
+      if (run === undefined || analysis === undefined || analysis.distances.length < 2) {
+        continue;
+      }
+      if (isWithinRun(run, distance)) {
+        return {
+          ...point,
+          elevationMetres: interpolateAt(analysis.distances, analysis.smoothed, distance),
+        };
+      }
+    }
+    return { ...point, elevationMetres: null };
+  });
+
+  return { displayPoints, gradientSegments };
+}
+
+/**
+ * Gradient-classification-only view of analyzeRouteElevationProfile, for
+ * callers (e.g. the map overlay) that only need GradientSegment[] and not
+ * the smoothed display series.
+ */
+export function analyzeGradient(points: readonly RoutePoint[]): GradientSegment[] {
+  return analyzeRouteElevationProfile(points).gradientSegments;
 }
 
 /**

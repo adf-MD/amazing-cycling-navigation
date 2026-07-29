@@ -11,7 +11,7 @@ import {
 import type { MapFactory } from "../../map/mapAdapter.ts";
 import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
 import { shortestAngularDifferenceDegrees } from "../../navigation/bearing.ts";
-import { analyzeGradient } from "../../navigation/gradient.ts";
+import { analyzeRouteElevationProfile } from "../../navigation/gradient.ts";
 import { coalesceAdjacentWarnings } from "../../navigation/warningGeometry.ts";
 import { getApproximateLocationOnce } from "../../platform/geolocation.ts";
 import { logError } from "../../platform/errorLog.ts";
@@ -198,8 +198,14 @@ export function PlanningScreen({
   // recalculation — which leaves routedRoute unchanged — leaves this
   // unchanged too, preserving the map's and chart's gradient colours
   // alongside the rest of the "retain last successful route" policy.
-  const gradientSegments = useMemo(
-    () => (routedRoute ? analyzeGradient(routedRoute.points) : []),
+  // `elevationDisplayPoints` is the same shared smoothed series Riding
+  // uses as its chart's prominent line — RouteSummaryPanel plots it
+  // instead of the raw routed points.
+  const { gradientSegments, displayPoints: elevationDisplayPoints } = useMemo(
+    () =>
+      routedRoute
+        ? analyzeRouteElevationProfile(routedRoute.points)
+        : { gradientSegments: [], displayPoints: [] },
     [routedRoute],
   );
 
@@ -763,6 +769,7 @@ export function PlanningScreen({
           onClearWarningSelection={handleClearWarningSelection}
           revealToken={warningRevealToken}
           gradientSegments={gradientSegments}
+          displayPoints={elevationDisplayPoints}
         />
       ) : null}
 

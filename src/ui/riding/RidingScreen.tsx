@@ -6,7 +6,7 @@ import type { GeolocationError, GeolocationSource } from "../../platform/geoloca
 import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
 import { useOnlineStatus } from "../../platform/onlineStatus.ts";
 import {
-  analyzeGradient,
+  analyzeRouteElevationProfile,
   clipGradientSegments,
   type GradientSegment,
 } from "../../navigation/gradient.ts";
@@ -115,7 +115,14 @@ export function RidingScreen({
   // The 2/5/10 km windowed views clip this same analysis rather than
   // re-running it on their own point slice, so Full and windowed views
   // always agree on classification at the same global route distance.
-  const gradientSegments = useMemo(() => analyzeGradient(route.points), [route]);
+  // `displayPoints` is the shared smoothed series used as the chart's
+  // prominent line — useRideNavigation's own windowed view is already
+  // sourced from this same analysis, so only the pre-start/Full call
+  // sites below need to switch from `route.points` explicitly.
+  const { gradientSegments, displayPoints } = useMemo(
+    () => analyzeRouteElevationProfile(route.points),
+    [route],
+  );
 
   const handleStart = () => {
     nav.start();
@@ -292,13 +299,13 @@ export function RidingScreen({
         if (nav.matchedDistanceFromStartMetres === null) {
           displayedGradientSegments = gradientSegments;
           chart = (
-            <ElevationChart points={route.points} gradientSegments={gradientSegments} />
+            <ElevationChart points={displayPoints} gradientSegments={gradientSegments} />
           );
         } else if (nav.elevationProfileDisplay.kind === "full") {
           displayedGradientSegments = gradientSegments;
           chart = (
             <ElevationChart
-              points={route.points}
+              points={displayPoints}
               gradientSegments={gradientSegments}
               marker={
                 nav.elevationProfileDisplay.marker

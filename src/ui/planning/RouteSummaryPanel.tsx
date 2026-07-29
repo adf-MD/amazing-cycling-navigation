@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import type { PlannedRoute, RouteWarning, RouteWarningKind } from "../../domain/types.ts";
+import type {
+  PlannedRoute,
+  RoutePoint,
+  RouteWarning,
+  RouteWarningKind,
+} from "../../domain/types.ts";
 import type { GradientSegment } from "../../navigation/gradient.ts";
 import { prefersReducedMotion } from "../../platform/environmentContext.ts";
 import { ElevationChart } from "../shared/ElevationChart.tsx";
@@ -21,6 +26,12 @@ export interface RouteSummaryPanelProps {
    * stable across unrelated re-renders and across a failed recalculation
    * (which leaves `route` itself unchanged). */
   gradientSegments: readonly GradientSegment[];
+  /** The shared smoothed elevation series (same analysis as
+   * `gradientSegments`, and the same one Riding uses) — plotted instead of
+   * `route.points`' own raw elevations. Optional, falling back to
+   * `route.points`, so existing callers/tests that only care about
+   * gradient-legend behaviour don't need to supply it. */
+  displayPoints?: readonly RoutePoint[];
   /** Increments once per map-originated warning selection (including a
    * repeat tap on an already-selected warning) — the one-shot signal to
    * scroll the matching entry into view and announce it. Never itself a
@@ -77,6 +88,7 @@ export function RouteSummaryPanel({
   onClearWarningSelection,
   revealToken,
   gradientSegments,
+  displayPoints,
 }: RouteSummaryPanelProps) {
   const surface = route.surfaceSummary;
   const selectedButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -123,7 +135,10 @@ export function RouteSummaryPanel({
       <p>
         {waypointCount} waypoint{waypointCount === 1 ? "" : "s"}
       </p>
-      <ElevationChart points={route.points} gradientSegments={gradientSegments} />
+      <ElevationChart
+        points={displayPoints ?? route.points}
+        gradientSegments={gradientSegments}
+      />
       <GradientLegend
         presentClasses={
           new Set(gradientSegments.map((segment) => segment.classification))

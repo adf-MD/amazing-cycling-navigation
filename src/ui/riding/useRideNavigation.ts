@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PlannedRoute } from "../../domain/types.ts";
 import {
   browserGeolocationSource,
@@ -8,6 +8,7 @@ import {
   type GeolocationWatchStatus,
 } from "../../platform/geolocation.ts";
 import type { OffRouteLevel, ElevationViewMode } from "../../navigation/types.ts";
+import { analyzeRouteElevationProfile } from "../../navigation/gradient.ts";
 import {
   DEFAULT_ELEVATION_VIEW_MODE,
   buildFullProfileMarker,
@@ -323,6 +324,18 @@ export function useRideNavigation(
       ? null
       : Math.max(0, route.distanceMetres - matchedDistanceFromStartMetres);
 
+  // Computed once per loaded route (route's identity is stable for the
+  // component's lifetime; recomputing per GPS fix would be wasted work for
+  // no visible benefit, since the analysis never depends on progress) —
+  // this is the same shared, noise-resistant series RidingScreen/
+  // PlanningScreen use for the chart line and gradient colours, so the
+  // Full marker and the rolling window are placed against the smoothed
+  // profile the rider actually sees, not the raw imported samples.
+  const elevationDisplayPoints = useMemo(
+    () => analyzeRouteElevationProfile(route.points).displayPoints,
+    [route],
+  );
+
   const elevationProfileDisplay: ElevationProfileDisplay =
     elevationViewMode.kind === "full"
       ? {
@@ -330,12 +343,15 @@ export function useRideNavigation(
           marker:
             presentationDistanceFromStartMetres === null
               ? null
-              : buildFullProfileMarker(route.points, presentationDistanceFromStartMetres),
+              : buildFullProfileMarker(
+                  elevationDisplayPoints,
+                  presentationDistanceFromStartMetres,
+                ),
         }
       : {
           kind: "upcoming",
           window: selectUpcomingElevationWindow(
-            route.points,
+            elevationDisplayPoints,
             presentationDistanceFromStartMetres ?? 0,
             elevationViewMode.windowMetres,
           ),

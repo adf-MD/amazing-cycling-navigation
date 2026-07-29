@@ -90,6 +90,26 @@ describe("ElevationChart", () => {
     expect(container.querySelector("circle.elevation-chart-marker-dot")).not.toBeNull();
   });
 
+  it("positions the marker dot using the padded display range, not flush against the chart edge", () => {
+    const points = buildPoints([
+      [0, 0],
+      [1000, 10],
+    ]);
+    const { container } = render(
+      <ElevationChart
+        points={points}
+        height={100}
+        marker={{ distanceFromStartMetres: 1000, elevationMetres: 10, stale: false }}
+      />,
+    );
+    const dot = container.querySelector("circle.elevation-chart-marker-dot");
+    const cy = Number(dot?.getAttribute("cy"));
+    // At the true maximum elevation, an unpadded scale would place the dot
+    // exactly at y = 0 (the very top edge); the padded display range
+    // leaves headroom above it, matching the segment lines' own scale.
+    expect(cy).toBeGreaterThan(0);
+  });
+
   it("omits the marker dot when elevation at the marker is unknown", () => {
     const points = buildPoints([
       [0, 10],

@@ -47,10 +47,15 @@ const STALE_MARKER_DASHARRAY = "4 3";
 const COMPLETED_DASHARRAY = "5 4";
 
 /**
- * Always plots the route's raw imported elevations — never a smoothed
- * series — so what's shown matches what the file actually contains. A gap
- * where elevation is missing breaks the line rather than interpolating
- * across it.
+ * Plots whatever elevation series the caller provides — normally the
+ * shared, noise-resistant smoothed analysis (see
+ * `analyzeRouteElevationProfile` in `src/navigation/gradient.ts`), not the
+ * raw imported samples, so the line reads as a genuine profile rather than
+ * GPS/barometric jitter. A gap where elevation is missing breaks the line
+ * rather than interpolating across it. Raw route elevations are never
+ * altered by this component or its callers — only the array passed via
+ * `points` is (optionally) a smoothed derivative, kept entirely separate
+ * from the stored/exported route data.
  */
 export function ElevationChart({
   points,
@@ -92,8 +97,8 @@ export function ElevationChart({
         resolvedDomain,
         marker.distanceFromStartMetres,
         marker.elevationMetres,
-        geometry.minElevationMetres,
-        geometry.maxElevationMetres,
+        geometry.displayMinElevationMetres,
+        geometry.displayMaxElevationMetres,
         width,
         height,
       )

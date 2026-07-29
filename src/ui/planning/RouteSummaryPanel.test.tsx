@@ -824,5 +824,30 @@ describe("RouteSummaryPanel", () => {
 
       expect(screen.queryByRole("list", { name: "Gradient legend" })).toBeNull();
     });
+
+    it("plots the given displayPoints (the shared smoothed series) rather than route.points' own raw elevations", () => {
+      const route = buildRoute(); // route.points elevations are 10 and 20
+      const smoothedDisplayPoints = route.points.map((point) => ({
+        ...point,
+        elevationMetres: point.elevationMetres === 10 ? 5 : 45,
+      }));
+      const { container } = render(
+        <RouteSummaryPanel
+          route={route}
+          waypointCount={2}
+          warnings={[]}
+          selectedWarningIndex={null}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+          gradientSegments={[gradientSegment(0, 1000, "flat")]}
+          displayPoints={smoothedDisplayPoints}
+        />,
+      );
+
+      const figcaption = container.querySelector("figcaption");
+      expect(figcaption?.textContent).toMatch(/5–45 m/);
+      expect(figcaption?.textContent).not.toMatch(/10–20 m/);
+    });
   });
 });

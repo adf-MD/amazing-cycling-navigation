@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildElevationChartGeometry,
   buildElevationChartMarkerGeometry,
+  computeDisplayElevationRange,
   distanceToX,
   elevationToY,
+  MIN_DISPLAY_ELEVATION_RANGE_METRES,
   pathFromSegment,
   splitSegmentAtX,
   splitSegmentAtXs,
@@ -44,15 +46,22 @@ describe("buildElevationChartGeometry", () => {
     const geometry = buildElevationChartGeometry(points, domain(0, 100), 300, 100);
 
     expect(geometry?.segments).toHaveLength(1);
+    // The true (unpadded) range, as reported in the figcaption.
     expect(geometry?.minElevationMetres).toBe(0);
     expect(geometry?.maxElevationMetres).toBe(100);
+    // The display range used for the y-scale adds 10% padding on each
+    // side (see computeDisplayElevationRange's own tests for the exact
+    // formula) — 100 m true range → 10 m padding each side.
+    expect(geometry?.displayMinElevationMetres).toBeCloseTo(-10, 5);
+    expect(geometry?.displayMaxElevationMetres).toBeCloseTo(110, 5);
 
     const segment = geometry?.segments[0] ?? [];
     expect(segment).toHaveLength(3);
-    // Lowest elevation maps to the bottom of the chart (y = height).
-    expect(segment[0]?.y).toBeCloseTo(100, 5);
-    // Highest elevation maps to the top of the chart (y = 0).
-    expect(segment[2]?.y).toBeCloseTo(0, 5);
+    // Lowest elevation sits near, but not exactly at, the bottom of the
+    // chart — the padding leaves headroom below it too.
+    expect(segment[0]?.y).toBeCloseTo(91.6667, 3);
+    // Highest elevation sits near, but not exactly at, the top.
+    expect(segment[2]?.y).toBeCloseTo(8.3333, 3);
   });
 
   it("breaks the line into separate segments across a gap in elevation data", () => {
@@ -307,5 +316,42 @@ describe("pathFromSegment", () => {
 
   it("returns an empty string for an empty segment", () => {
     expect(pathFromSegment([])).toBe("");
+  });
+});
+
+describe("computeDisplayElevationRange", () => {
+  it("pads a large range by the configured fraction on each side", () => {
+    const { displayMinElevationMetres, displayMaxElevationMetres } =
+      computeDisplayElevationRange(0, 100);
+    expect(displayMinElevationMetres).toBeCloseTo(-10, 5);
+    expect(displayMaxElevationMetres).toBeCloseTo(110, 5);
+  });
+
+  it("enforces the minimum display range for a flat/near-flat true range", () => {
+    const { displayMinElevationMetres, displayMaxElevationMetres } =
+      computeDisplayElevationRange(10, 12);
+    const displaySpan = displayMaxElevationMetres - displayMinElevationMetres;
+    expect(displaySpan).toBeCloseTo(MIN_DISPLAY_ELEVATION_RANGE_METRES, 5);
+    // Expanded symmetrically around the true range's own centre (11).
+    expect(displayMinElevationMetres).toBeCloseTo(1, 5);
+    expect(displayMaxElevationMetres).toBeCloseTo(21, 5);
+  });
+
+  it("enforces the minimum display range for a perfectly flat (zero-span) route", () => {
+    const { displayMinElevationMetres, displayMaxElevationMetres } =
+      computeDisplayElevationRange(50, 50);
+    expect(displayMaxElevationMetres - displayMinElevationMetres).toBeCloseTo(
+      MIN_DISPLAY_ELEVATION_RANGE_METRES,
+      5,
+    );
+    expect(displayMinElevationMetres).toBeCloseTo(40, 5);
+    expect(displayMaxElevationMetres).toBeCloseTo(60, 5);
+  });
+
+  it("never returns a display range narrower than the true range", () => {
+    const { displayMinElevationMetres, displayMaxElevationMetres } =
+      computeDisplayElevationRange(0, 500);
+    expect(displayMinElevationMetres).toBeLessThanOrEqual(0);
+    expect(displayMaxElevationMetres).toBeGreaterThanOrEqual(500);
   });
 });
