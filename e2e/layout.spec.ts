@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { fileURLToPath } from "node:url";
+import { installLocalMapStyle } from "./support/localMapStyle.ts";
 
 const FIXTURE_GPX_PATH = fileURLToPath(
   new URL("./fixtures/smoke-route.gpx", import.meta.url),
@@ -35,12 +36,28 @@ function intersects(a: Box, b: Box): boolean {
 // overlay to stay clear of the right-hand camera controls.
 test.use({ viewport: { width: 390, height: 844 } });
 
+// Requests handled by the app's own service worker never reach
+// page.route()'s interception (a documented Playwright limitation) —
+// see planning.spec.ts, which needs the same workaround. This file's
+// one test needs it too, to reliably mock the tile-style request.
+test.use({ serviceWorkers: "block" });
+
 test("map attribution stays inside the map and clear of the elevation controls and camera buttons", async ({
   page,
   context,
 }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
   await context.grantPermissions(["geolocation"]);
   await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
 
   await page.goto("/");
   await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
@@ -85,4 +102,7 @@ test("map attribution stays inside the map and clear of the elevation controls a
   // longer appear attached to the map's edge.
   const gap = elevationBox.y - (mapBox.y + mapBox.height);
   expect(gap).toBeGreaterThanOrEqual(4);
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
 });

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { forceMapStyleFailure } from "./support/localMapStyle.ts";
 
 // Requests handled by the app's own service worker never reach
 // page.route()'s interception (a documented Playwright limitation) — see
@@ -7,7 +8,6 @@ import { expect, test, type Page } from "@playwright/test";
 test.use({ serviceWorkers: "block" });
 
 const ORS_URL_GLOB = "https://api.heigit.org/**";
-const TILE_URL_GLOB = "https://tiles.openfreemap.org/**";
 const DUMMY_KEY = "dummy-e2e-key";
 
 // A same-latitude, geographically substantial (~6.9km) two-point route —
@@ -58,9 +58,7 @@ async function planRouteOnFallbackMap(
   // Aborting the style document itself is a pre-"style.load" failure —
   // MapView's existing switchToFallback() fires immediately, well before
   // the 15s style-ready timeout, with no live tile ever requested.
-  await page.route(TILE_URL_GLOB, async (route) => {
-    await route.abort("failed");
-  });
+  await forceMapStyleFailure(page);
   await page.route(ORS_URL_GLOB, async (route) => {
     await route.fulfill({
       status: 200,

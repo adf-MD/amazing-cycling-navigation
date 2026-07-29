@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { installLocalMapStyle } from "./support/localMapStyle.ts";
 
 // Requests handled by the app's own service worker never reach
 // page.route()'s interception (a documented Playwright limitation), and
@@ -114,6 +115,8 @@ test("configures a key, plans a route via a mocked ORS response, saves it, and r
     globalThis.fetch = (...args: Parameters<typeof fetch>) => originalFetch(...args);
   });
 
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
   await page.goto("/");
 
   // Configure the key in Settings — never a real one, a fixed dummy string.
@@ -217,6 +220,7 @@ test("configures a key, plans a route via a mocked ORS response, saves it, and r
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
   expect(unexpectedOrsRequest).toBe(false);
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
 
@@ -234,6 +238,8 @@ test("plans a route across three waypoints using exactly one routing request per
     const originalFetch = fetch;
     globalThis.fetch = (...args: Parameters<typeof fetch>) => originalFetch(...args);
   });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
 
   await page.goto("/");
 
@@ -297,6 +303,7 @@ test("plans a route across three waypoints using exactly one routing request per
   const summaryText = await summaryRegion.innerText();
   expect(summaryText).toMatch(/km|m\b/);
 
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
 
@@ -310,6 +317,8 @@ test("aligns the crosshair exactly with the map's own visual centre, and renders
   page.on("pageerror", (error) => {
     consoleErrors.push(error.message);
   });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
 
   await page.goto("/");
   await page.getByRole("button", { name: "Plan" }).click();
@@ -348,5 +357,6 @@ test("aligns the crosshair exactly with the map's own visual centre, and renders
   await expect(marker).toHaveClass(/planning-waypoint-marker--start/);
   await expect(page.getByRole("img", { name: "Start waypoint 1" })).toBeVisible();
 
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });

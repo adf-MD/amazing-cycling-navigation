@@ -231,6 +231,7 @@ The first provider adapter should target openrouteservice with `cycling-road`, b
 
 - Keep TypeScript strict; do not suppress errors with broad `any`, `@ts-ignore`, or unchecked casts.
 - Use deterministic pure functions for distance, elevation, projection, and off-route calculations, with fixture-based tests.
+- Ordinary e2e tests must not depend on a live map tile provider: tests expecting the map's normal ready state serve a locally fulfilled minimal style (`e2e/support/localMapStyle.ts`'s `installLocalMapStyle`), and tests exercising the fallback style deliberately fail that request instead (`forceMapStyleFailure`). Live-provider reachability is a separate manual/optional check, not a required automated test.
 - Treat GPS, GPX, provider, IndexedDB, service-worker, and map failures as expected conditions.
 - Abort obsolete network requests.
 - Avoid logging coordinates or API keys. Redact sensitive values in diagnostics.
