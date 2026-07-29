@@ -30,6 +30,10 @@ import {
   type PlanningOverlayWaypoint,
 } from "./planningLayer.ts";
 import {
+  buildDistanceBadgeMarkerSpecs,
+  selectDistanceBadgeIntervalMetres,
+} from "./distanceBadgeLayer.ts";
+import {
   buildSelectedWarningFeatureCollection,
   buildWarningFeatureCollectionsByCategory,
   computeSelectedWarningBounds,
@@ -234,6 +238,17 @@ export interface MapViewProps {
    * dimmed as "completed" and the rest highlighted as "remaining". Omit
    * (or 0) to show the whole route as upcoming, e.g. a library preview. */
   matchedDistanceFromStartMetres?: number;
+  /** The rider's frozen/reliable progress for filtering which route-
+   * distance badges are shown ahead vs. omitted as completed — see
+   * useRideNavigation's presentationDistanceFromStartMetres. null
+   * (the default — every caller except active Riding; Planning never
+   * passes this, and Riding passes null before Start riding / before any
+   * reliable matched progress) shows every badge on the whole route,
+   * unfiltered. Deliberately NOT matchedDistanceFromStartMetres above,
+   * which drives the route line/arrows and updates live even while
+   * off-route — this is an intentional divergence, not an oversight; see
+   * distanceBadgeLayer.ts's own module doc comment. */
+  distanceBadgeProgressMetres?: number | null;
   currentPosition?: Coordinate;
   tileSource?: TileSourceConfig;
   mapFactory?: MapFactory;
@@ -291,6 +306,7 @@ export interface MapViewProps {
 export function MapView({
   points,
   matchedDistanceFromStartMetres = 0,
+  distanceBadgeProgressMetres = null,
   currentPosition,
   tileSource = DEFAULT_TILE_SOURCE,
   mapFactory = createMapLibreMap,
@@ -346,6 +362,13 @@ export function MapView({
   const [usingFallbackStyle, setUsingFallbackStyle] = useState(false);
   const [routeSourceLoaded, setRouteSourceLoaded] = useState(false);
   const [cameraCenter, setCameraCenter] = useState<Coordinate | null>(null);
+  // The map's own zoom, rounded to the nearest whole level and updated
+  // only when the camera settles (never per animation frame) — the sole
+  // input, together with route length, to the adaptive distance-badge
+  // interval. null until the first camera settle on this instance;
+  // selectDistanceBadgeIntervalMetres treats a non-finite zoom as needing
+  // the safest, coarsest interval.
+  const [distanceBadgeZoom, setDistanceBadgeZoom] = useState<number | null>(null);
   // True once the style document itself is structurally ready (MapLibre's
   // "style.load"), independent of whether any tile has finished loading —
   // this is what lets the route/position render before/without full
@@ -391,6 +414,7 @@ export function MapView({
     setUsingFallbackStyle(false);
     setRouteSourceLoaded(false);
     setCameraCenter(null);
+    setDistanceBadgeZoom(null);
     setStyleStructurallyReady(false);
     lastAppliedCameraTargetRef.current = null;
     lastAppliedBoundsRequestIdRef.current = null;
@@ -595,6 +619,15 @@ export function MapView({
         // jump, free-mode panning), not just the initial overview fit,
         // which is the only thing that used to update it.
         setCameraCenter(camera.coordinate);
+        // Quantised to the nearest whole zoom level, with a no-op guard
+        // (skip the state update entirely when unchanged) — this, plus
+        // only ever reading zoom here rather than per animation frame,
+        // is the distance-badge interval's whole stabilisation mechanism
+        // (see distanceBadgeLayer.ts's own doc comment).
+        setDistanceBadgeZoom((previous) => {
+          const rounded = Math.round(camera.zoom);
+          return previous === rounded ? previous : rounded;
+        });
         onCameraSettledRef.current?.(camera);
       });
 
@@ -897,6 +930,31 @@ export function MapView({
       buildWaypointMarkerSpecs(planningWaypoints ?? [], planningSelectedIndex),
     );
   }, [planningWaypoints, planningSelectedIndex, styleStructurallyReady]);
+
+  // Distance-from-start badges: an entirely independent marker
+  // collection from the waypoint markers above (see setDistanceBadges),
+  // recomputed only when the route, the settled zoom band, or the
+  // rider's frozen ahead/completed progress actually changes — never on
+  // every animation frame. `points` already carries whatever Planning/
+  // Riding currently consider "the route" (empty until routed for
+  // Planning, the full canonical route for Riding), so this needs no
+  // camera-mode awareness of its own: "unfiltered" already falls out of
+  // distanceBadgeProgressMetres being null.
+  useEffect(() => {
+    if (!styleStructurallyReady) return;
+    const routeLengthMetres = points.at(-1)?.distanceFromStartMetres ?? 0;
+    const intervalMetres = selectDistanceBadgeIntervalMetres(
+      distanceBadgeZoom ?? Number.NaN,
+      routeLengthMetres,
+    );
+    mapRef.current?.setDistanceBadges(
+      buildDistanceBadgeMarkerSpecs(
+        points,
+        intervalMetres,
+        distanceBadgeProgressMetres ?? null,
+      ),
+    );
+  }, [points, distanceBadgeZoom, distanceBadgeProgressMetres, styleStructurallyReady]);
 
   useEffect(() => {
     if (!styleStructurallyReady) return;

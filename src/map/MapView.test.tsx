@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 import { MapView } from "./MapView.tsx";
 import type {
   CreateMapOptions,
+  DistanceBadgeMarkerSpec,
   MapErrorInfo,
   MapLibreLike,
   MapFactory,
@@ -24,6 +25,25 @@ const warningPoints: RoutePoint[] = Array.from({ length: 5 }, (_, index) => ({
   coordinate: [index * 0.001, 51] as Coordinate,
   elevationMetres: null,
   distanceFromStartMetres: index * 100,
+}));
+
+// Long enough (5km, 500m spacing) that a 1km badge interval places
+// several exact-on-point candidates (1/2/3/4 km) with no interpolation
+// noise to account for in assertions.
+const badgeRoutePoints: RoutePoint[] = Array.from({ length: 11 }, (_, index) => ({
+  coordinate: [(index * 500) / 100_000, 51] as Coordinate,
+  elevationMetres: null,
+  distanceFromStartMetres: index * 500,
+}));
+
+// 22km — long enough that the naive candidate count at every one of the
+// four approved intervals (1/5/10/20km) is both non-zero and within the
+// marker cap, so a zoom-band change actually changes which interval is
+// selected (a short route de-escalates back to 1km regardless of zoom).
+const longBadgeRoutePoints: RoutePoint[] = Array.from({ length: 45 }, (_, index) => ({
+  coordinate: [(index * 500) / 100_000, 51] as Coordinate,
+  elevationMetres: null,
+  distanceFromStartMetres: index * 500,
 }));
 
 interface MockMapHandle {
@@ -73,6 +93,9 @@ interface MockMapHandle {
     >
   >;
   setMarkersSpy: ReturnType<typeof vi.fn<(markers: readonly MapMarkerSpec[]) => void>>;
+  setDistanceBadgesSpy: ReturnType<
+    typeof vi.fn<(badges: readonly DistanceBadgeMarkerSpec[]) => void>
+  >;
   constructedStyles: CreateMapOptions["style"][];
 }
 
@@ -107,6 +130,9 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
   const queryTopWarningFeatureAtSpy = vi.fn((): WarningFeatureHit | null => null);
   const setMarkersSpy: ReturnType<
     typeof vi.fn<(markers: readonly MapMarkerSpec[]) => void>
+  > = vi.fn();
+  const setDistanceBadgesSpy: ReturnType<
+    typeof vi.fn<(badges: readonly DistanceBadgeMarkerSpec[]) => void>
   > = vi.fn();
   const constructedStyles: CreateMapOptions["style"][] = [];
 
@@ -172,6 +198,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
       },
       queryTopWarningFeatureAt: queryTopWarningFeatureAtSpy,
       setMarkers: setMarkersSpy,
+      setDistanceBadges: setDistanceBadgesSpy,
       remove: removeSpy,
     };
     return map;
@@ -189,6 +216,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
     addSymbolLayerSpy,
     queryTopWarningFeatureAtSpy,
     setMarkersSpy,
+    setDistanceBadgesSpy,
     constructedStyles,
     triggerLoad: () => {
       act(() => {
@@ -247,6 +275,17 @@ function firstCallOrder(spy: ReturnType<typeof vi.fn>): number {
     throw new Error("expected spy to have been called");
   }
   return order;
+}
+
+/** The sole argument of a single-argument spy's most recent call — used
+ * throughout the distance badge overlay tests below to read back
+ * whatever setMarkers/setDistanceBadges was last called with. */
+function lastCallFirstArg<T>(spy: { mock: { calls: [T][] } }): T {
+  const lastCall = spy.mock.calls.at(-1);
+  if (lastCall === undefined) {
+    throw new Error("expected the spy to have been called at least once");
+  }
+  return lastCall[0];
 }
 
 beforeEach(() => {
@@ -1568,6 +1607,294 @@ describe("MapView", () => {
       expect(mock.layers.has("acn-planning-preview-line")).toBe(true);
       expect(screen.queryByTestId("map-fallback-banner")).toBeNull();
       expect(getRecentErrors().some((entry) => entry.context === "map")).toBe(true);
+    });
+  });
+
+  describe("distance badge overlay", () => {
+    it("computes and pushes badges for routed points once the camera has settled", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={badgeRoutePoints} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 15,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      expect(mock.setDistanceBadgesSpy).toHaveBeenCalledWith([
+        {
+          id: "distance-badge-1",
+          coordinate: [0.01, 51],
+          label: "1",
+          ariaLabel: "1 kilometre from route start",
+        },
+        {
+          id: "distance-badge-2",
+          coordinate: [0.02, 51],
+          label: "2",
+          ariaLabel: "2 kilometres from route start",
+        },
+        {
+          id: "distance-badge-3",
+          coordinate: [0.03, 51],
+          label: "3",
+          ariaLabel: "3 kilometres from route start",
+        },
+        {
+          id: "distance-badge-4",
+          coordinate: [0.04, 51],
+          label: "4",
+          ariaLabel: "4 kilometres from route start",
+        },
+      ]);
+    });
+
+    it("has its own marker collection, independent from Planning waypoint markers", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={badgeRoutePoints}
+          mapFactory={mock.factory}
+          planningOverlay={{
+            waypoints: [
+              { id: "w1", coordinate: [0, 51] },
+              { id: "w2", coordinate: [0.05, 51] },
+            ],
+            previewCoordinates: [],
+            selectedWaypointIndex: null,
+            onMapTap: vi.fn(),
+          }}
+        />,
+      );
+      mock.triggerLoad();
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 15,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      expect(mock.setMarkersSpy).toHaveBeenCalled();
+      const waypointCall = lastCallFirstArg(mock.setMarkersSpy);
+      expect(waypointCall).toHaveLength(2);
+
+      expect(mock.setDistanceBadgesSpy).toHaveBeenCalled();
+      const badgeCall = lastCallFirstArg(mock.setDistanceBadgesSpy);
+      expect(badgeCall.length).toBeGreaterThan(0);
+      // Neither call's ids collide with the other's — the two groups are
+      // diffed independently on the adapter (separate Map fields), never
+      // through a single shared collection.
+      const waypointIds = new Set(waypointCall.map((m) => m.id));
+      const badgeIds = new Set(badgeCall.map((b: { id: string }) => b.id));
+      for (const id of badgeIds) expect(waypointIds.has(id)).toBe(false);
+    });
+
+    it("only shows waypoint markers, never distance badges, on Planning's unrouted preview", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={[]}
+          mapFactory={mock.factory}
+          planningOverlay={{
+            waypoints: [{ id: "w1", coordinate: [0, 51] }],
+            previewCoordinates: [
+              [0, 51],
+              [0.001, 51],
+            ],
+            selectedWaypointIndex: null,
+            onMapTap: vi.fn(),
+          }}
+        />,
+      );
+      mock.triggerLoad();
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 15,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      expect(mock.setDistanceBadgesSpy).toHaveBeenCalledWith([]);
+    });
+
+    it("updates badge positions and labels when the route changes", () => {
+      const mock = createMockMapFactory();
+      const { rerender } = render(
+        <MapView points={badgeRoutePoints} mapFactory={mock.factory} />,
+      );
+      mock.triggerLoad();
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 15,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      const firstCallCount = mock.setDistanceBadgesSpy.mock.calls.length;
+
+      const shorterRoute = badgeRoutePoints.slice(0, 3); // 0, 500, 1000 — too short for any badge
+      rerender(<MapView points={shorterRoute} mapFactory={mock.factory} />);
+
+      expect(mock.setDistanceBadgesSpy.mock.calls.length).toBeGreaterThan(firstCallCount);
+      expect(lastCallFirstArg(mock.setDistanceBadgesSpy)).toEqual([]);
+    });
+
+    it("retains the previous badges when a failed Planning recalculation leaves the same points reference", () => {
+      const mock = createMockMapFactory();
+      const { rerender } = render(
+        <MapView points={badgeRoutePoints} mapFactory={mock.factory} />,
+      );
+      mock.triggerLoad();
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 15,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      const callCountAfterFirstRoute = mock.setDistanceBadgesSpy.mock.calls.length;
+
+      // Simulates PlanningScreen's own mapPoints: unchanged (same array
+      // reference) when a recalculation fails and routing.state never
+      // updates — the effect's own `points` dependency is referentially
+      // unchanged, so it correctly never recomputes.
+      rerender(<MapView points={badgeRoutePoints} mapFactory={mock.factory} />);
+
+      expect(mock.setDistanceBadgesSpy.mock.calls.length).toBe(callCountAfterFirstRoute);
+    });
+
+    it("recomputes the interval only once the camera settles in a different zoom band, not on every settle event", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={longBadgeRoutePoints} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 15.4,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      const callCountAfterFirstSettle = mock.setDistanceBadgesSpy.mock.calls.length;
+      const specsAtStreetZoom = lastCallFirstArg(mock.setDistanceBadgesSpy);
+      expect(specsAtStreetZoom.length).toBeGreaterThan(1); // 1km interval
+
+      // Rounds to the same whole zoom level (15) — no state change, so
+      // the badge effect must not re-run.
+      mock.triggerCameraSettled({
+        coordinate: [0.001, 51],
+        zoom: 15.49,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      expect(mock.setDistanceBadgesSpy.mock.calls.length).toBe(callCountAfterFirstSettle);
+
+      // A genuinely different zoom band (wide overview, 20km) — the
+      // effect must recompute, and a 22km route at 20km spacing places
+      // exactly one badge, unlike the >1 at street zoom above.
+      mock.triggerCameraSettled({
+        coordinate: [0.002, 51],
+        zoom: 0,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      expect(mock.setDistanceBadgesSpy.mock.calls.length).toBeGreaterThan(
+        callCountAfterFirstSettle,
+      );
+      expect(lastCallFirstArg(mock.setDistanceBadgesSpy)).toEqual([
+        {
+          id: "distance-badge-20",
+          coordinate: [0.2, 51],
+          label: "20",
+          ariaLabel: "20 kilometres from route start",
+        },
+      ]);
+    });
+
+    it("registers badges on the fallback style too", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={badgeRoutePoints} mapFactory={mock.factory} />);
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 15,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+      expect(lastCallFirstArg(mock.setDistanceBadgesSpy).length).toBeGreaterThan(0);
+    });
+
+    it("does not duplicate badges across a manual imagery retry", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={badgeRoutePoints} mapFactory={mock.factory} />);
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 15,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      const specsAfterFallback = lastCallFirstArg(mock.setDistanceBadgesSpy);
+
+      act(() => {
+        screen.getByTestId("retry-map-imagery-button").click();
+      });
+      mock.triggerLoad();
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 15,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      const specsAfterRetry = lastCallFirstArg(mock.setDistanceBadgesSpy);
+
+      // Content is identical, not doubled — true cross-instance isolation
+      // (a fresh Map instance's adapter starts with an empty
+      // badgeMarkersById) is a structural guarantee exercised for real by
+      // the e2e distanceBadges.spec.ts, since this mock records calls
+      // rather than modelling marker identity across instances.
+      expect(specsAfterRetry).toEqual(specsAfterFallback);
+    });
+
+    it("never triggers a camera fit as a side effect of a badge recompute", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={badgeRoutePoints} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 15,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      const fitCountBeforeSecondSettle = mock.fitBoundsSpy.mock.calls.length;
+      const setCameraCountBeforeSecondSettle = mock.setCameraSpy.mock.calls.length;
+      const callCountBeforeSecondSettle = mock.setDistanceBadgesSpy.mock.calls.length;
+
+      // A different zoom band recomputes badges (points is unchanged, so
+      // this isolates the badge-recompute path from the unrelated
+      // "fit to whole route on a genuine points change" effect).
+      mock.triggerCameraSettled({
+        coordinate: [0.001, 51],
+        zoom: 8,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      expect(mock.setDistanceBadgesSpy.mock.calls.length).toBeGreaterThan(
+        callCountBeforeSecondSettle,
+      );
+      expect(mock.fitBoundsSpy.mock.calls.length).toBe(fitCountBeforeSecondSettle);
+      expect(mock.setCameraSpy.mock.calls.length).toBe(setCameraCountBeforeSecondSettle);
     });
   });
 

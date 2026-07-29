@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="acn-e2e-fixtures" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Distance badges route</name>
+    <trkseg>
+      <trkpt lat="51.500000" lon="-0.500000"><ele>20.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.485570"><ele>20.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.471139"><ele>21.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.456709"><ele>21.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.442279"><ele>22.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.427848"><ele>20.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.413418"><ele>20.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.398987"><ele>21.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.384557"><ele>21.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.370127"><ele>22.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.355696"><ele>20.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.341266"><ele>20.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.326836"><ele>21.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.312405"><ele>21.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.297975"><ele>22.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.283545"><ele>20.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.269114"><ele>20.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.254684"><ele>21.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.240253"><ele>21.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.225823"><ele>22.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.211393"><ele>20.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.196962"><ele>20.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.182532"><ele>21.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.168102"><ele>21.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.153671"><ele>22.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.139241"><ele>20.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.124811"><ele>20.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.110380"><ele>21.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.095950"><ele>21.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.081519"><ele>22.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.067089"><ele>20.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.052659"><ele>20.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.038228"><ele>21.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.023798"><ele>21.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="-0.009368"><ele>22.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="0.005063"><ele>20.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="0.019493"><ele>20.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="0.033923"><ele>21.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="0.048354"><ele>21.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="0.062784"><ele>22.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="0.077214"><ele>20.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="0.091645"><ele>20.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="0.106075"><ele>21.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="0.120506"><ele>21.5</ele></trkpt>
+      <trkpt lat="51.500000" lon="0.134936"><ele>22.0</ele></trkpt>
+      <trkpt lat="51.500000" lon="0.149366"><ele>20.0</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

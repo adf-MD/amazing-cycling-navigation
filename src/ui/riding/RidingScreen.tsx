@@ -176,6 +176,7 @@ export function RidingScreen({
         <MapView
           points={route.points}
           matchedDistanceFromStartMetres={nav.matchedDistanceFromStartMetres ?? 0}
+          distanceBadgeProgressMetres={nav.presentationDistanceFromStartMetres}
           currentPosition={nav.currentFix?.coordinate}
           mapFactory={mapFactory}
           cameraTarget={camera.cameraTarget}

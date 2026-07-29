@@ -16,6 +16,19 @@ warnings, saving the result locally, and exporting it as GPX. See
 [Planning a road-bike route](#planning-a-road-bike-route) below for how to set
 up your own key.
 
+Planning's and Riding's maps also carry two small, restrained route-orientation
+overlays layered onto the routed line: direction arrows repeating along the
+remaining route to show its direction of travel, and kilometre distance badges
+giving each point's absolute cumulative distance from the route's original
+start — never renumbered as the rider progresses, zooms, or changes camera
+mode. Badges use an adaptive interval (1/5/10/20 km, chosen from the map's
+settled zoom and the route's length) and, in active Riding, omit a badge once
+the rider's reliable matched progress has passed it while keeping every
+remaining label absolute. Both overlays are plain project-owned rendering (a
+locally generated icon for arrows, plain DOM markers for badges) with no
+external glyph, sprite or network dependency, so they remain visible under the
+local fallback background too.
+
 Route calculation is split into consecutive two-waypoint sections ("legs"),
 each requested and cached independently. The first calculation costs one
 routing request per section; after that, most edits — moving, inserting,

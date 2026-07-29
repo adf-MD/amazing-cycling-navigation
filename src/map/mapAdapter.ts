@@ -13,6 +13,10 @@ import {
   createWaypointMarkerElement,
   renderWaypointMarkerElement,
 } from "./waypointMarkerElement.ts";
+import {
+  createDistanceBadgeElement,
+  renderDistanceBadgeElement,
+} from "./distanceBadgeMarkerElement.ts";
 
 setWorkerUrl(maplibreWorkerUrl);
 
@@ -144,6 +148,23 @@ export interface MapMarkerSpec {
   label: string;
   role: MapMarkerRole;
   selected: boolean;
+  ariaLabel: string;
+}
+
+/** A route-distance kilometre badge to render — plain structured data,
+ * like MapMarkerSpec, but for an entirely independent DOM marker
+ * collection (see setDistanceBadges) so the two groups can never delete
+ * each other. `label` is the abbreviated numeric text the caller has
+ * already formatted ("5", or "10 / 30" for a merged loop/out-and-back
+ * coincidence — see distanceBadgeLayer.ts); `ariaLabel` is the fuller
+ * accessible description ("5 kilometres from route start"). `id` is
+ * derived from the badge's absolute distance(s), never array index, so
+ * it stays stable across a route recalculation that doesn't move this
+ * particular badge. */
+export interface DistanceBadgeMarkerSpec {
+  id: string;
+  coordinate: Coordinate;
+  label: string;
   ariaLabel: string;
 }
 
@@ -279,6 +300,17 @@ export interface MapLibreLike {
    * MapLibre symbol/text layer, so they have no glyph/sprite dependency
    * and render under the local fallback style too. */
   setMarkers(markers: readonly MapMarkerSpec[]): void;
+  /** Declares the complete set of route-distance badges that should
+   * exist right now — same "supply the full desired state, the adapter
+   * diffs it" convention as setMarkers, but backed by an entirely
+   * separate keyed collection (MapLibreAdapter's badgeMarkersById) so
+   * this call can never delete/recreate Planning's waypoint markers, or
+   * vice versa. Plain DOM elements (distanceBadgeMarkerElement.ts) — no
+   * glyph/sprite dependency, so badges render under the local fallback
+   * style too — and MapLibre's own default Marker rotation/pitch
+   * alignment keeps them upright when the map rotates or tilts with no
+   * extra code, unlike the route-arrow icon layer. */
+  setDistanceBadges(badges: readonly DistanceBadgeMarkerSpec[]): void;
   remove(): void;
 }
 
@@ -313,6 +345,12 @@ export class MapLibreAdapter implements MapLibreLike {
   /** Planning waypoint markers currently on the map, keyed by
    * MapMarkerSpec.id — diffed against on every setMarkers call. */
   private readonly markersById = new Map<string, Marker>();
+  /** Route-distance badge markers currently on the map, keyed by
+   * DistanceBadgeMarkerSpec.id — diffed against on every
+   * setDistanceBadges call. A structurally separate Map from
+   * markersById, by construction, so the two marker groups can never
+   * delete or recreate each other's entries. */
+  private readonly badgeMarkersById = new Map<string, Marker>();
 
   constructor(map: MapLibreGlMap) {
     this.map = map;
@@ -594,11 +632,41 @@ export class MapLibreAdapter implements MapLibreLike {
     }
   }
 
+  setDistanceBadges(badges: readonly DistanceBadgeMarkerSpec[]): void {
+    const seenIds = new Set<string>();
+    for (const spec of badges) {
+      seenIds.add(spec.id);
+      const existing = this.badgeMarkersById.get(spec.id);
+      const lngLat: [number, number] = [spec.coordinate[0], spec.coordinate[1]];
+      if (existing) {
+        existing.setLngLat(lngLat);
+        renderDistanceBadgeElement(existing.getElement(), spec);
+      } else {
+        const element = createDistanceBadgeElement();
+        renderDistanceBadgeElement(element, spec);
+        const marker = new Marker({ element, anchor: "center" })
+          .setLngLat(lngLat)
+          .addTo(this.map);
+        this.badgeMarkersById.set(spec.id, marker);
+      }
+    }
+    for (const [id, marker] of this.badgeMarkersById) {
+      if (!seenIds.has(id)) {
+        marker.remove();
+        this.badgeMarkersById.delete(id);
+      }
+    }
+  }
+
   remove(): void {
     for (const marker of this.markersById.values()) {
       marker.remove();
     }
     this.markersById.clear();
+    for (const marker of this.badgeMarkersById.values()) {
+      marker.remove();
+    }
+    this.badgeMarkersById.clear();
     this.map.remove();
   }
 }

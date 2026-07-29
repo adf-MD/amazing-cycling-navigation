@@ -146,6 +146,7 @@ function buildStubMapFactory(): {
       onMapTap: () => undefined,
       queryTopWarningFeatureAt: () => null,
       setMarkers: () => undefined,
+      setDistanceBadges: () => undefined,
       remove: () => undefined,
     };
     return map;

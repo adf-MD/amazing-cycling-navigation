@@ -96,6 +96,7 @@ function createMockMapFactory(): MockMapHandle {
       queryTopWarningFeatureAt: () =>
         warningHitIndex === null ? null : { warningIndex: warningHitIndex },
       setMarkers: () => undefined,
+      setDistanceBadges: () => undefined,
       remove: () => undefined,
     };
     return map;

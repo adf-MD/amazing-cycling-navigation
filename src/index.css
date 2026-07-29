@@ -288,3 +288,36 @@ header h1 {
     0 0 0 3px #d32f2f,
     0 1px 3px rgb(0 0 0 / 45%);
 }
+
+/* Route-distance kilometre badges — plain DOM elements (see
+ * src/map/distanceBadgeMarkerElement.ts), never a MapLibre symbol/text
+ * layer, so the numeric label has no glyph/sprite dependency and still
+ * renders under the local fallback style. A small rounded rectangle, not
+ * a circle, so its shape alone (not just its content) reads as distinct
+ * from the circular waypoint/start/finish markers above. pointer-events:
+ * none throughout — a badge is a passive orientation aid, never a tap
+ * target, so it never intercepts a Planning map-tap or a warning tap
+ * beneath it. z-index: -1 keeps it visually subordinate to Planning's
+ * own waypoint markers (both are position:absolute DOM markers with no
+ * z-index of their own from maplibregl.Marker) without affecting
+ * stacking against the WebGL canvas itself, which lives in a separate
+ * stacking context below every DOM marker regardless. */
+.distance-badge-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  min-height: 16px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background-color: #ffffff;
+  border: 1.5px solid #101010;
+  color: #101010;
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 35%);
+  z-index: -1;
+}
