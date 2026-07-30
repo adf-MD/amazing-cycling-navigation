@@ -20,9 +20,34 @@ export interface Waypoint {
   coordinate: Coordinate;
 }
 
+/** Canonical, provider-independent manoeuvre vocabulary. Raw provider codes
+ * are decoded into this by routing/manoeuvreTypes.ts and never leave
+ * routing/ in raw form; "waypoint" is synthesised only by
+ * stitchPlannedRouteLegs.ts at an internal multi-leg seam (no decoder ever
+ * produces it directly). "unknown" covers any unrecognised/malformed code.
+ * A route saved before this vocabulary existed may still hold a legacy raw
+ * numeric-code string (e.g. "10") in Manoeuvre.type at runtime forever —
+ * Dexie never validates stored data against this type — so every consumer
+ * must handle a non-member value defensively (a generic icon/label
+ * fallback), never assume exhaustive coverage via a Record lookup. */
+export type ManoeuvreType =
+  | "start"
+  | "continue"
+  | "slight-left"
+  | "left"
+  | "sharp-left"
+  | "slight-right"
+  | "right"
+  | "sharp-right"
+  | "u-turn"
+  | "roundabout"
+  | "waypoint"
+  | "finish"
+  | "unknown";
+
 export interface Manoeuvre {
   distanceFromStartMetres: number;
-  type: string;
+  type: ManoeuvreType;
   instruction?: string;
 }
 

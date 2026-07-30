@@ -1,0 +1,147 @@
+import type { ManoeuvreType, PlannedRouteSource } from "../../domain/types.ts";
+import {
+  classifyManoeuvreUrgency,
+  type NextManoeuvreSelection,
+} from "../../navigation/nextManoeuvre.ts";
+import { formatManoeuvreDistance } from "../shared/routeSummary.ts";
+import { ManoeuvreIcon } from "./ManoeuvreIcon.tsx";
+
+export interface RidingNextManoeuvrePanelProps {
+  sourceKind: PlannedRouteSource["kind"];
+  hasManoeuvres: boolean;
+  selection: NextManoeuvreSelection | null;
+  /** True while the shown manoeuvre/distance is based on the rider's last
+   * reliable position rather than a fresh, on-route fix — nav.isStale or a
+   * strongly off-route episode. Deliberately a single combined qualifier
+   * (not distinguishing "why"), mirroring ElevationChart's own simple
+   * "Last known position"/"Current route position" wording rather than
+   * describing every possible cause. */
+  isFrozen: boolean;
+}
+
+/** Generic, per-type fallback instruction text, used whenever the provider
+ * gave no usable instruction text of its own. A switch with a real
+ * `default` branch, not an exhaustive Record lookup — Manoeuvre.type can
+ * hold a legacy raw provider-code string for a route saved before this
+ * canonical vocabulary existed, and a Record lookup would silently return
+ * undefined for it. */
+function genericManoeuvreLabel(type: ManoeuvreType): string {
+  switch (type) {
+    case "start":
+      return "Start of route";
+    case "continue":
+      return "Continue straight ahead";
+    case "slight-left":
+      return "Bear left";
+    case "left":
+      return "Turn left";
+    case "sharp-left":
+      return "Sharp left turn";
+    case "slight-right":
+      return "Bear right";
+    case "right":
+      return "Turn right";
+    case "sharp-right":
+      return "Sharp right turn";
+    case "u-turn":
+      return "Make a U-turn";
+    case "roundabout":
+      return "Go through the roundabout";
+    case "waypoint":
+      return "Waypoint";
+    case "finish":
+      return "Arrive at the finish";
+    default:
+      return "Continue on the route";
+  }
+}
+
+const URGENCY_FONT_SIZE_REM: Record<
+  ReturnType<typeof classifyManoeuvreUrgency>,
+  number
+> = {
+  normal: 1,
+  near: 1.25,
+  imminent: 1.75,
+};
+const URGENCY_FONT_WEIGHT: Record<ReturnType<typeof classifyManoeuvreUrgency>, number> = {
+  normal: 400,
+  near: 600,
+  imminent: 800,
+};
+
+/**
+ * Riding-only "what's next" panel, sourced solely from trusted (provider-
+ * generated) route.manoeuvres — never geometry-inferred. Four mutually
+ * exclusive states: an active next-manoeuvre display; an explanatory
+ * "unavailable" message for a planner route with no usable manoeuvres; an
+ * explanatory message for an ordinary imported GPX (which never has
+ * trusted manoeuvres at all); or nothing at all once there is nothing
+ * meaningful to show — either every manoeuvre has already been reliably
+ * passed (end of route: a stale final turn must not be left showing
+ * indefinitely) or there is no reliable presentation distance yet (e.g.
+ * before the first GPS fix is accepted; the existing "Waiting for a GPS
+ * fix…" status above already covers that wait, so this panel need not
+ * duplicate it).
+ *
+ * Accessibility: only the instruction+qualifier text carries
+ * `role="status"`. Its rendered content changes only at a meaningful
+ * transition (a new manoeuvre selected, or the qualifier appearing/
+ * disappearing) — never on every GPS fix, since the numeric distance
+ * lives in a separate sibling with no role at all and can re-render
+ * silently every fix. Never `role="alert"`, even when imminent: this is
+ * routine navigation information, not a safety condition (off-route
+ * status already owns that escalation).
+ */
+export function RidingNextManoeuvrePanel({
+  sourceKind,
+  hasManoeuvres,
+  selection,
+  isFrozen,
+}: RidingNextManoeuvrePanelProps) {
+  if (!selection) {
+    if (sourceKind === "gpx-import") {
+      return (
+        <p role="status">
+          No trusted turn information is available for this imported GPX. Follow the route
+          line on the map.
+        </p>
+      );
+    }
+    if (!hasManoeuvres) {
+      return <p role="status">Turn information is unavailable for this route.</p>;
+    }
+    // Every manoeuvre has been reliably passed — end of route.
+    return null;
+  }
+
+  const urgency = classifyManoeuvreUrgency(selection.remainingDistanceMetres);
+  // A whitespace-only (but non-empty pre-trim) provider instruction would
+  // render as blank rather than falling back to the generic label — an ORS
+  // response is never expected to actually do this, so it's an accepted,
+  // effectively unreachable edge case rather than a real correctness gap.
+  const instructionText =
+    selection.manoeuvre.instruction?.trim() ??
+    genericManoeuvreLabel(selection.manoeuvre.type);
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+      <ManoeuvreIcon type={selection.manoeuvre.type} sizePx={32} />
+      <div>
+        <p role="status" style={{ margin: 0 }}>
+          {instructionText}
+          {isFrozen ? " — based on your last known position" : ""}
+        </p>
+        <p
+          style={{
+            margin: 0,
+            fontSize: `${String(URGENCY_FONT_SIZE_REM[urgency])}rem`,
+            fontWeight: URGENCY_FONT_WEIGHT[urgency],
+          }}
+        >
+          {formatManoeuvreDistance(selection.remainingDistanceMetres)}
+        </p>
+      </div>
+    </div>
+  );
+}

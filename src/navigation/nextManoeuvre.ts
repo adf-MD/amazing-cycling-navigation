@@ -1,0 +1,102 @@
+import type { Manoeuvre } from "../domain/types.ts";
+
+/**
+ * How far past a manoeuvre's own distance the rider's presentation
+ * distance must be before it counts as reliably passed. Order-of-magnitude
+ * comparable to offRoute.ts's POSSIBLY_OFF_ROUTE_BASE_METRES (20 m) — both
+ * exist to absorb GPS/projection uncertainty rather than trust a single
+ * fix's distance to the metre. Deliberately a "must be past by at least
+ * this much" comparison, not "within this much of" — the latter would
+ * wrongly let a second manoeuvre that is still genuinely ahead, but within
+ * this same tolerance distance of one just passed, be skipped too.
+ */
+export const MANOEUVRE_REACHED_TOLERANCE_METRES = 15;
+
+export interface NextManoeuvreSelection {
+  index: number;
+  manoeuvre: Manoeuvre;
+  remainingDistanceMetres: number;
+}
+
+export interface NextManoeuvreResult {
+  /** Feed this back in as previousReachedIndex on the next call. */
+  reachedIndex: number;
+  selection: NextManoeuvreSelection | null;
+}
+
+/**
+ * Selects the next manoeuvre a rider has not yet reliably passed, from the
+ * frozen/reliable presentationDistanceFromStartMetres — never the live
+ * matched distance — so this inherits the same off-route-freeze and
+ * stale-fix-restore behaviour as every other presentation value already
+ * keyed off that same distance (e.g. RidingScreen's activeFeature).
+ *
+ * previousReachedIndex makes advancement monotonic: the result never
+ * regresses to an earlier manoeuvre because of a small backward jitter in
+ * presentationDistanceFromStartMetres. Callers should pass 0 initially and
+ * feed reachedIndex back in on every subsequent call (see RidingScreen's
+ * derive-during-render + conditional setState pattern, mirroring its
+ * existing explicitFeatureSelection state).
+ *
+ * Returns selection: null when there is nothing to show — an empty
+ * manoeuvre list, no reliable presentation distance yet, or every
+ * manoeuvre already reliably passed (end of route) — in every case
+ * reachedIndex is still returned so the caller's state stays consistent.
+ */
+export function selectNextManoeuvre(
+  manoeuvres: readonly Manoeuvre[],
+  presentationDistanceFromStartMetres: number | null,
+  previousReachedIndex: number,
+): NextManoeuvreResult {
+  if (manoeuvres.length === 0 || presentationDistanceFromStartMetres === null) {
+    return { reachedIndex: previousReachedIndex, selection: null };
+  }
+
+  let reachedIndex = previousReachedIndex;
+  while (
+    reachedIndex < manoeuvres.length &&
+    presentationDistanceFromStartMetres >=
+      (manoeuvres[reachedIndex]?.distanceFromStartMetres ?? 0) +
+        MANOEUVRE_REACHED_TOLERANCE_METRES
+  ) {
+    reachedIndex += 1;
+  }
+  // Never regress below what was already reliably reached, even if a
+  // stray fix briefly reduced the scan above (defensive — the while loop
+  // above is already monotonic non-decreasing from previousReachedIndex,
+  // but this keeps the invariant explicit and cheap to verify).
+  reachedIndex = Math.max(reachedIndex, previousReachedIndex);
+  reachedIndex = Math.min(reachedIndex, manoeuvres.length);
+
+  const manoeuvre = manoeuvres[reachedIndex];
+  if (!manoeuvre) {
+    return { reachedIndex, selection: null };
+  }
+
+  return {
+    reachedIndex,
+    selection: {
+      index: reachedIndex,
+      manoeuvre,
+      remainingDistanceMetres: Math.max(
+        0,
+        manoeuvre.distanceFromStartMetres - presentationDistanceFromStartMetres,
+      ),
+    },
+  };
+}
+
+export type ManoeuvreUrgency = "normal" | "near" | "imminent";
+
+const IMMINENT_THRESHOLD_METRES = 100;
+const NEAR_THRESHOLD_METRES = 500;
+
+/** CLAUDE.md's own figure (500 m) marks the "near" boundary; 100 m is this
+ * slice's own extra sub-band for the strongest presentation. */
+export function classifyManoeuvreUrgency(
+  remainingDistanceMetres: number,
+): ManoeuvreUrgency {
+  if (remainingDistanceMetres < IMMINENT_THRESHOLD_METRES) return "imminent";
+  if (remainingDistanceMetres < NEAR_THRESHOLD_METRES) return "near";
+  return "normal";
+}

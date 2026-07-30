@@ -2301,4 +2301,144 @@ describe("RidingScreen", () => {
       expect(fake.watchPositionSpy).toHaveBeenCalledOnce();
     });
   });
+
+  describe("next manoeuvre", () => {
+    const manoeuvreDistanceA = routePoints[5]?.distanceFromStartMetres ?? 0;
+    const manoeuvreDistanceB = routePoints[15]?.distanceFromStartMetres ?? 0;
+
+    const plannerRouteWithManoeuvres: PlannedRoute = {
+      ...route,
+      id: "route-with-manoeuvres",
+      manoeuvres: [
+        {
+          distanceFromStartMetres: manoeuvreDistanceA,
+          type: "left",
+          instruction: "Turn left onto Ridge Road",
+        },
+        {
+          distanceFromStartMetres: manoeuvreDistanceB,
+          type: "finish",
+          instruction: "Arrive at your destination",
+        },
+      ],
+      source: { kind: "planner", provider: "openrouteservice", profile: "cycling-road" },
+    };
+
+    const plannerRouteWithoutManoeuvres: PlannedRoute = {
+      ...route,
+      id: "route-no-manoeuvres",
+      manoeuvres: [],
+      source: { kind: "planner", provider: "openrouteservice", profile: "cycling-road" },
+    };
+
+    it("does not show the next-manoeuvre panel before Start riding is tapped", () => {
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={plannerRouteWithManoeuvres}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      expect(screen.queryByText("Turn left onto Ridge Road")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("Turn information is unavailable for this route."),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows the first trusted manoeuvre once riding starts and a fix arrives", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={plannerRouteWithManoeuvres}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      expect(await screen.findByText("Turn left onto Ridge Road")).toBeInTheDocument();
+    });
+
+    it("advances to the next manoeuvre once the first is reliably passed, without regressing", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={plannerRouteWithManoeuvres}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await screen.findByText("Turn left onto Ridge Road");
+
+      stub.emitFix({
+        coordinate: pointAt(10),
+        accuracyMetres: 5,
+        timestampMs: 2000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      expect(await screen.findByText("Arrive at your destination")).toBeInTheDocument();
+      expect(screen.queryByText("Turn left onto Ridge Road")).not.toBeInTheDocument();
+    });
+
+    it("shows an unavailable message for a planner route with no usable manoeuvres", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={plannerRouteWithoutManoeuvres}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+
+      expect(
+        await screen.findByText("Turn information is unavailable for this route."),
+      ).toBeInTheDocument();
+    });
+
+    it("shows the imported-GPX message, never an inferred turn, for an ordinary imported GPX route", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+
+      expect(
+        await screen.findByText(
+          "No trusted turn information is available for this imported GPX. Follow the route line on the map.",
+        ),
+      ).toBeInTheDocument();
+    });
+  });
 });

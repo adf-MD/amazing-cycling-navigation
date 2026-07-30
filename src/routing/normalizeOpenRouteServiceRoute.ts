@@ -11,6 +11,7 @@ import { normalizeGpxPoints } from "../gpx/normalizeGpx.ts";
 import type { RawGpxPoint } from "../gpx/parseGpx.ts";
 import { analyzeElevation } from "../navigation/elevation.ts";
 import { coalesceAdjacentWarnings } from "../navigation/warningGeometry.ts";
+import { decodeOrsManoeuvreType } from "./manoeuvreTypes.ts";
 import { RoutingError } from "./openRouteServiceErrors.ts";
 import type { RoutingProfile } from "./provider.ts";
 import {
@@ -31,23 +32,60 @@ export interface NormalizeOrsRouteOptions {
   providerId: string;
 }
 
+/** A safe upper bound on a stored manoeuvre instruction's length — plain
+ * text only (React already prevents any HTML injection), this simply
+ * guards against an unreasonably long provider string reaching storage or
+ * the Riding UI. */
+const MAX_MANOEUVRE_INSTRUCTION_LENGTH = 200;
+
+function truncateInstruction(instruction: string): string {
+  return instruction.length > MAX_MANOEUVRE_INSTRUCTION_LENGTH
+    ? instruction.slice(0, MAX_MANOEUVRE_INSTRUCTION_LENGTH)
+    : instruction;
+}
+
+/** Builds canonical Manoeuvre entries from ORS's own segments[].steps[].
+ * A step whose way_points[0] is not a genuinely valid in-bounds index into
+ * this route's own points array is dropped entirely rather than defaulted
+ * to distance 0 — an invalid index carries no trustworthy position, and
+ * defaulting would misplace it at the route start. Once validated, the
+ * lookup itself reuses distanceAtPointIndex (the same primitive every
+ * other index->distance conversion in this file uses) rather than
+ * inlining a second fallback. Result is sorted by distance ascending,
+ * defensively — ORS's own per-leg step order is expected to already be
+ * ascending, but nothing downstream should have to re-verify that. */
 function buildManoeuvres(
   segments: readonly OrsSegment[] | undefined,
   points: readonly RoutePoint[],
 ): Manoeuvre[] {
   if (!segments) return [];
+  const totalDistanceMetres = points.at(-1)?.distanceFromStartMetres ?? 0;
   const manoeuvres: Manoeuvre[] = [];
   for (const segment of segments) {
     for (const step of segment.steps) {
-      const distanceFromStartMetres =
-        points[step.way_points[0]]?.distanceFromStartMetres ?? 0;
+      const pointIndex = step.way_points[0];
+      if (
+        !Number.isInteger(pointIndex) ||
+        pointIndex < 0 ||
+        pointIndex >= points.length
+      ) {
+        continue;
+      }
+      const distanceFromStartMetres = distanceAtPointIndex(
+        points,
+        totalDistanceMetres,
+        pointIndex,
+      );
       manoeuvres.push({
         distanceFromStartMetres,
-        type: String(step.type),
-        ...(step.instruction ? { instruction: step.instruction } : {}),
+        type: decodeOrsManoeuvreType(step.type),
+        ...(step.instruction
+          ? { instruction: truncateInstruction(step.instruction) }
+          : {}),
       });
     }
   }
+  manoeuvres.sort((a, b) => a.distanceFromStartMetres - b.distanceFromStartMetres);
   return manoeuvres;
 }
 

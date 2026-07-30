@@ -24,3 +24,17 @@ export function formatAscent(ascentMetres: number | null): string {
     ? "ascent not available"
     : `${String(Math.round(ascentMetres))} m ascent`;
 }
+
+/** A tiered rounding policy for a distance-to-manoeuvre display, deliberately
+ * coarser the closer the rounding granularity gets to typical consumer GPS
+ * accuracy — never implying more precision than the fix actually supports.
+ * This slice's own judgement call (CLAUDE.md only requires "increasingly
+ * prominent inside 500 m", not a specific rounding scheme): >= 1000 m
+ * reuses formatDistanceKm; 200-999 m rounds to the nearest 50 m; 50-199 m
+ * rounds to the nearest 10 m; below 50 m rounds to the nearest 5 m. */
+export function formatManoeuvreDistance(metres: number): string {
+  const clamped = Math.max(0, metres);
+  if (clamped >= 1000) return formatDistanceKm(clamped);
+  const roundingMetres = clamped >= 200 ? 50 : clamped >= 50 ? 10 : 5;
+  return `${String(Math.round(clamped / roundingMetres) * roundingMetres)} m`;
+}

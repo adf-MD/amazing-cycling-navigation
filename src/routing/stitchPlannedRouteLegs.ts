@@ -26,7 +26,10 @@ export const SEAM_TOLERANCE_METRES = 10;
 /** Matches coalesceAdjacentWarnings' own default tolerance — the
  * codebase's already-established definition of "close enough to be the
  * same point" — rather than inventing a second, uncoordinated precision
- * constant for manoeuvre seam deduplication. */
+ * constant for manoeuvre seam deduplication. Used to confirm a leg
+ * boundary's "finish" (previous leg's own arrival) and "start" (next
+ * leg's own departure) manoeuvres genuinely land at the same point before
+ * collapsing them — see the manoeuvres-building loop below. */
 export const MANOEUVRE_SEAM_DEDUP_TOLERANCE_METRES = 1;
 
 export interface StitchRouteMetadata {
@@ -112,9 +115,12 @@ function mapLegDistance(
  * array via analyzeElevation — never summed per leg, since smoothing and
  * threshold behaviour at a seam would otherwise be inconsistent with a
  * genuinely continuous route. Manoeuvre and warning distances are rebased
- * through a per-leg piecewise-linear distance mapping; warnings are then
- * run through the existing coalesceAdjacentWarnings so a hazard reported
- * by both legs at a shared seam merges into one.
+ * through a per-leg piecewise-linear distance mapping; a leg-boundary
+ * "finish"+"start" manoeuvre pair (every leg's own independently-normalised
+ * arrival/departure) collapses into a single "waypoint" manoeuvre rather
+ * than surfacing both (see the manoeuvres-building loop below); warnings
+ * are then run through the existing coalesceAdjacentWarnings so a hazard
+ * reported by both legs at a shared seam merges into one.
  *
  * Throws a RoutingError with reason "leg-stitching-failed" — a purely
  * local, non-network condition — for an empty leg list or a seam gap
@@ -241,19 +247,35 @@ export function stitchPlannedRouteLegs(
           ? { instruction: manoeuvre.instruction }
           : {}),
       };
-      // Conservatively dedupe only a genuine seam duplicate: the very
-      // first manoeuvre of a non-first leg, matching the immediately
-      // preceding leg's own last manoeuvre in type/instruction and
-      // landing within tolerance of it — never a broader pass.
+      // Every leg is itself a normalised two-waypoint PlannedRoute, so its
+      // own trailing manoeuvre always decodes to canonical "finish" (ORS's
+      // own arrive/goal step) and its own leading manoeuvre to "start"
+      // (ORS's own depart step) — context-free, regardless of where that
+      // leg sits in the overall stitched route. At an internal waypoint
+      // this produces exactly the spurious pair CLAUDE.md warns about: the
+      // previous leg's own "finish" immediately followed by this leg's own
+      // "start", at (near enough) the same point. Collapse that specific
+      // pair into a single "waypoint" manoeuvre — dropping any instruction,
+      // since neither leg's own arrive/depart text ("Arrive at your
+      // destination" / "Head north…") is correct mid-route; the UI derives
+      // its own generic per-type label instead. The very first leg's
+      // leading "start" and the very last leg's trailing "finish" are never
+      // touched by this rule (nothing precedes/follows to trigger it).
       const previous = manoeuvres.at(-1);
-      const isSeamDuplicate =
+      const isLegBoundarySeam =
         legIndex > 0 &&
         manoeuvreIndex === 0 &&
-        previous?.type === rebased.type &&
-        previous.instruction === rebased.instruction &&
+        previous?.type === "finish" &&
+        rebased.type === "start" &&
         Math.abs(rebased.distanceFromStartMetres - previous.distanceFromStartMetres) <=
           MANOEUVRE_SEAM_DEDUP_TOLERANCE_METRES;
-      if (isSeamDuplicate) return;
+      if (previous && isLegBoundarySeam) {
+        manoeuvres[manoeuvres.length - 1] = {
+          distanceFromStartMetres: previous.distanceFromStartMetres,
+          type: "waypoint",
+        };
+        return;
+      }
       manoeuvres.push(rebased);
     });
   });

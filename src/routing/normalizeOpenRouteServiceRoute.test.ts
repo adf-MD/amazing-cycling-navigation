@@ -106,13 +106,141 @@ describe("normalizeOpenRouteServiceRoute", () => {
     expect(route.manoeuvres).toHaveLength(2);
     expect(route.manoeuvres[0]).toMatchObject({
       distanceFromStartMetres: route.points[0]?.distanceFromStartMetres,
-      type: "0",
+      type: "left",
       instruction: "Head east",
     });
     expect(route.manoeuvres[1]).toMatchObject({
       distanceFromStartMetres: route.points[2]?.distanceFromStartMetres,
-      type: "1",
+      type: "right",
     });
+  });
+
+  it("drops a step whose way_points[0] is not a valid in-bounds index, rather than defaulting it to distance 0", () => {
+    const route = normalizeOpenRouteServiceRoute(
+      buildResponse({
+        segments: [
+          {
+            distance: 200,
+            duration: 20,
+            steps: [
+              {
+                distance: 100,
+                duration: 10,
+                type: 0,
+                instruction: "Head east",
+                way_points: [0, 2],
+              },
+              {
+                // Out-of-range index — must be dropped, not coerced to 0.
+                distance: 50,
+                duration: 5,
+                type: 1,
+                instruction: "Bad step",
+                way_points: [999, 999],
+              },
+              {
+                distance: 50,
+                duration: 5,
+                type: 1,
+                instruction: "Also bad",
+                way_points: [-1, 0],
+              },
+            ],
+          },
+        ],
+      }),
+      OPTIONS,
+    );
+
+    expect(route.manoeuvres).toHaveLength(1);
+    expect(route.manoeuvres[0]?.instruction).toBe("Head east");
+  });
+
+  it("truncates an unreasonably long instruction rather than storing it in full", () => {
+    const longInstruction = "x".repeat(500);
+    const route = normalizeOpenRouteServiceRoute(
+      buildResponse({
+        segments: [
+          {
+            distance: 100,
+            duration: 10,
+            steps: [
+              {
+                distance: 100,
+                duration: 10,
+                type: 0,
+                instruction: longInstruction,
+                way_points: [0, 2],
+              },
+            ],
+          },
+        ],
+      }),
+      OPTIONS,
+    );
+
+    expect(route.manoeuvres[0]?.instruction?.length).toBeLessThanOrEqual(200);
+    expect(route.manoeuvres[0]?.instruction?.length).toBeLessThan(longInstruction.length);
+  });
+
+  it("maps an unrecognised raw step type to the canonical 'unknown' rather than crashing", () => {
+    const route = normalizeOpenRouteServiceRoute(
+      buildResponse({
+        segments: [
+          {
+            distance: 100,
+            duration: 10,
+            steps: [
+              {
+                distance: 100,
+                duration: 10,
+                type: 9999,
+                instruction: "Mystery manoeuvre",
+                way_points: [0, 2],
+              },
+            ],
+          },
+        ],
+      }),
+      OPTIONS,
+    );
+
+    expect(route.manoeuvres[0]?.type).toBe("unknown");
+  });
+
+  it("sorts manoeuvres by distance ascending even if steps arrive out of order", () => {
+    const route = normalizeOpenRouteServiceRoute(
+      buildResponse({
+        segments: [
+          {
+            distance: 200,
+            duration: 20,
+            steps: [
+              {
+                distance: 100,
+                duration: 10,
+                type: 1,
+                instruction: "Second",
+                way_points: [4, 5],
+              },
+              {
+                distance: 100,
+                duration: 10,
+                type: 0,
+                instruction: "First",
+                way_points: [0, 2],
+              },
+            ],
+          },
+        ],
+      }),
+      OPTIONS,
+    );
+
+    expect(route.manoeuvres.map((m) => m.instruction)).toEqual(["First", "Second"]);
+    expect(route.manoeuvres[0]?.distanceFromStartMetres).toBeLessThanOrEqual(
+      route.manoeuvres[1]?.distanceFromStartMetres ?? Number.POSITIVE_INFINITY,
+    );
   });
 
   it("classifies surface into paved/unsuitable/unknown buckets that sum to the total distance", () => {

@@ -266,7 +266,7 @@ describe("stitchPlannedRouteLegs", () => {
         manoeuvres: [
           {
             distanceFromStartMetres: pointsA[1]?.distanceFromStartMetres ?? 0,
-            type: "1",
+            type: "left",
           },
         ],
       });
@@ -275,7 +275,7 @@ describe("stitchPlannedRouteLegs", () => {
         manoeuvres: [
           {
             distanceFromStartMetres: pointsB[2]?.distanceFromStartMetres ?? 0,
-            type: "7",
+            type: "roundabout",
           },
         ],
       });
@@ -283,39 +283,46 @@ describe("stitchPlannedRouteLegs", () => {
       const stitched = stitchPlannedRouteLegs([legA, legB], METADATA);
 
       expect(stitched.manoeuvres).toHaveLength(2);
-      expect(stitched.manoeuvres[0]?.type).toBe("1");
+      expect(stitched.manoeuvres[0]?.type).toBe("left");
       expect(stitched.manoeuvres[0]?.distanceFromStartMetres).toBeCloseTo(
         stitched.points[1]?.distanceFromStartMetres ?? -1,
         6,
       );
-      expect(stitched.manoeuvres[1]?.type).toBe("7");
+      expect(stitched.manoeuvres[1]?.type).toBe("roundabout");
       expect(stitched.manoeuvres[1]?.distanceFromStartMetres).toBeCloseTo(
         stitched.points[4]?.distanceFromStartMetres ?? -1,
         6,
       );
     });
 
-    it("drops a genuine seam-duplicate manoeuvre (same type/instruction, at the boundary)", () => {
+    it("collapses a leg-boundary finish+start pair into a single waypoint manoeuvre", () => {
       const pointsA = buildPoints([coord(0), coord(0.001), coord(0.002)]);
       const pointsB = buildPoints([coord(0.002), coord(0.003), coord(0.004)]);
       const legA = buildLeg({
         points: pointsA,
         manoeuvres: [
           {
+            // legA's own arrival at its own local endpoint.
             distanceFromStartMetres: pointsA[2]?.distanceFromStartMetres ?? 0,
-            type: "1",
-            instruction: "Continue",
+            type: "finish",
+            instruction: "Arrive at your destination",
           },
         ],
       });
       const legB = buildLeg({
         points: pointsB,
         manoeuvres: [
-          { distanceFromStartMetres: 0, type: "1", instruction: "Continue" },
+          {
+            // legB's own departure from its own local start (the same
+            // point as legA's arrival, since they share a seam).
+            distanceFromStartMetres: 0,
+            type: "start",
+            instruction: "Head north on Ridge Road",
+          },
           {
             distanceFromStartMetres: pointsB[2]?.distanceFromStartMetres ?? 0,
-            type: "9",
-            instruction: "Arrive",
+            type: "finish",
+            instruction: "Arrive at your destination",
           },
         ],
       });
@@ -323,10 +330,62 @@ describe("stitchPlannedRouteLegs", () => {
       const stitched = stitchPlannedRouteLegs([legA, legB], METADATA);
 
       expect(stitched.manoeuvres).toHaveLength(2);
-      expect(stitched.manoeuvres.map((m) => m.type)).toEqual(["1", "9"]);
+      expect(stitched.manoeuvres[0]?.type).toBe("waypoint");
+      expect(stitched.manoeuvres[0]?.instruction).toBeUndefined();
+      expect(stitched.manoeuvres[1]?.type).toBe("finish");
     });
 
-    it("keeps two seam-adjacent manoeuvres that genuinely differ in type or instruction", () => {
+    it("collapses both internal seams of a 3-leg route while the overall start/finish survive", () => {
+      const pointsA = buildPoints([coord(0), coord(0.001)]);
+      const pointsB = buildPoints([coord(0.001), coord(0.002)]);
+      const pointsC = buildPoints([coord(0.002), coord(0.003)]);
+      const legA = buildLeg({
+        points: pointsA,
+        manoeuvres: [
+          { distanceFromStartMetres: 0, type: "start", instruction: "Depart" },
+          {
+            distanceFromStartMetres: pointsA[1]?.distanceFromStartMetres ?? 0,
+            type: "finish",
+            instruction: "Arrive",
+          },
+        ],
+      });
+      const legB = buildLeg({
+        points: pointsB,
+        manoeuvres: [
+          { distanceFromStartMetres: 0, type: "start", instruction: "Depart" },
+          {
+            distanceFromStartMetres: pointsB[1]?.distanceFromStartMetres ?? 0,
+            type: "finish",
+            instruction: "Arrive",
+          },
+        ],
+      });
+      const legC = buildLeg({
+        points: pointsC,
+        manoeuvres: [
+          { distanceFromStartMetres: 0, type: "start", instruction: "Depart" },
+          {
+            distanceFromStartMetres: pointsC[1]?.distanceFromStartMetres ?? 0,
+            type: "finish",
+            instruction: "Arrive",
+          },
+        ],
+      });
+
+      const stitched = stitchPlannedRouteLegs([legA, legB, legC], METADATA);
+
+      expect(stitched.manoeuvres.map((m) => m.type)).toEqual([
+        "start",
+        "waypoint",
+        "waypoint",
+        "finish",
+      ]);
+      expect(stitched.manoeuvres[0]?.instruction).toBe("Depart");
+      expect(stitched.manoeuvres[3]?.instruction).toBe("Arrive");
+    });
+
+    it("keeps two seam-adjacent manoeuvres that are not a finish+start pair", () => {
       const pointsA = buildPoints([coord(0), coord(0.001), coord(0.002)]);
       const pointsB = buildPoints([coord(0.002), coord(0.003)]);
       const legA = buildLeg({
@@ -334,7 +393,7 @@ describe("stitchPlannedRouteLegs", () => {
         manoeuvres: [
           {
             distanceFromStartMetres: pointsA[2]?.distanceFromStartMetres ?? 0,
-            type: "1",
+            type: "left",
             instruction: "Turn left",
           },
         ],
@@ -342,36 +401,61 @@ describe("stitchPlannedRouteLegs", () => {
       const legB = buildLeg({
         points: pointsB,
         manoeuvres: [
-          { distanceFromStartMetres: 0, type: "2", instruction: "Turn right" },
+          { distanceFromStartMetres: 0, type: "right", instruction: "Turn right" },
         ],
       });
 
       const stitched = stitchPlannedRouteLegs([legA, legB], METADATA);
 
       expect(stitched.manoeuvres).toHaveLength(2);
+      expect(stitched.manoeuvres.map((m) => m.type)).toEqual(["left", "right"]);
     });
 
-    it("only dedupes at a leg boundary, never elsewhere in the same leg", () => {
+    it("only collapses at a leg boundary, never elsewhere in the same leg", () => {
       const points = buildPoints([coord(0), coord(0.001), coord(0.002), coord(0.003)]);
       const leg = buildLeg({
         points,
         manoeuvres: [
           {
             distanceFromStartMetres: points[1]?.distanceFromStartMetres ?? 0,
-            type: "1",
-            instruction: "Continue",
+            type: "finish",
+            instruction: "Arrive",
           },
           {
             distanceFromStartMetres: points[2]?.distanceFromStartMetres ?? 0,
-            type: "1",
-            instruction: "Continue",
+            type: "start",
+            instruction: "Depart",
           },
         ],
       });
 
       const stitched = stitchPlannedRouteLegs([leg], METADATA);
 
+      // Both manoeuvres belong to the same (only) leg — manoeuvreIndex is 1
+      // for the second, so the leg-boundary rule (manoeuvreIndex === 0)
+      // never applies within a single leg, regardless of type.
       expect(stitched.manoeuvres).toHaveLength(2);
+    });
+
+    it("accepted limitation: a leg with no manoeuvres leaves the next leg's start uncollapsed", () => {
+      const pointsA = buildPoints([coord(0), coord(0.001)]);
+      const pointsB = buildPoints([coord(0.001), coord(0.002)]);
+      const legA = buildLeg({ points: pointsA, manoeuvres: [] });
+      const legB = buildLeg({
+        points: pointsB,
+        manoeuvres: [
+          { distanceFromStartMetres: 0, type: "start", instruction: "Depart" },
+        ],
+      });
+
+      const stitched = stitchPlannedRouteLegs([legA, legB], METADATA);
+
+      // legA contributed no "finish" to collapse against, so legB's own
+      // "start" survives as-is — a known, accepted residual gap (ORS
+      // always returns a genuine arrive/depart pair in practice; only a
+      // malformed/empty leg response hits this).
+      expect(stitched.manoeuvres).toHaveLength(1);
+      expect(stitched.manoeuvres[0]?.type).toBe("start");
     });
   });
 

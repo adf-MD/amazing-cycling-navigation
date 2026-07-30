@@ -62,7 +62,7 @@ describe("exportRouteToGpx", () => {
     const xml = exportRouteToGpx(
       buildRoute({
         manoeuvres: [
-          { distanceFromStartMetres: 50, type: "turn-left", instruction: "Turn left" },
+          { distanceFromStartMetres: 50, type: "left", instruction: "Turn left" },
         ],
       }),
     );
@@ -71,7 +71,7 @@ describe("exportRouteToGpx", () => {
     expect(doc.getElementsByTagName("parsererror")).toHaveLength(0);
     const manoeuvreElements = doc.getElementsByTagNameNS("*", "manoeuvre");
     expect(manoeuvreElements).toHaveLength(1);
-    expect(manoeuvreElements[0]?.getAttribute("type")).toBe("turn-left");
+    expect(manoeuvreElements[0]?.getAttribute("type")).toBe("left");
 
     // A plain-GPX reader ignoring unknown extensions still sees exactly
     // the track points, nothing from the extension.
@@ -118,7 +118,7 @@ describe("exportRouteToGpx", () => {
   it("nests manoeuvres and provenance under one shared extensions element", () => {
     const xml = exportRouteToGpx(
       buildRoute({
-        manoeuvres: [{ distanceFromStartMetres: 50, type: "turn-left" }],
+        manoeuvres: [{ distanceFromStartMetres: 50, type: "left" }],
         source: {
           kind: "planner",
           provider: "openrouteservice",

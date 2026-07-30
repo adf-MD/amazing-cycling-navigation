@@ -19,6 +19,7 @@ import {
 import { buildFeatureDetailSegments } from "../../navigation/routeFeatureDetail.ts";
 import type { MicroDetailVisualKey } from "../../navigation/routeFeaturePalette.ts";
 import type { ClassifiedSegment } from "../../navigation/gradient.ts";
+import { selectNextManoeuvre } from "../../navigation/nextManoeuvre.ts";
 import type { ElevationViewMode, OffRouteLevel } from "../../navigation/types.ts";
 import {
   ELEVATION_VIEW_MODE_OPTIONS,
@@ -34,6 +35,7 @@ import { GradientSegmentDetailsPanel } from "../shared/GradientSegmentDetailsPan
 import { RouteFeatureDetailsPanel } from "../shared/RouteFeatureDetailsPanel.tsx";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 import { RidingClimbSelector } from "./RidingClimbSelector.tsx";
+import { RidingNextManoeuvrePanel } from "./RidingNextManoeuvrePanel.tsx";
 import { useRideCamera } from "./useRideCamera.ts";
 import { useRideNavigation } from "./useRideNavigation.ts";
 
@@ -169,6 +171,26 @@ export function RidingScreen({
   } | null>(null);
   const [selectedGradientSegment, setSelectedGradientSegment] =
     useState<ClassifiedSegment<MicroDetailVisualKey> | null>(null);
+
+  // Tracks the furthest manoeuvre reliably reached so far, so selection
+  // stays monotonic (never regresses on GPS jitter) — derived during
+  // render and conditionally set, the same pattern this file already uses
+  // for explicitFeatureSelection, rather than an effect. No route-id
+  // tagging is needed here (unlike explicitFeatureSelection): this screen
+  // fully remounts on route change, and selectNextManoeuvre itself no-ops
+  // (returning the unchanged previous index) while there is no reliable
+  // presentation distance yet, so there is nothing to reset on handleStart
+  // either.
+  const [reachedManoeuvreIndex, setReachedManoeuvreIndex] = useState(0);
+  const { reachedIndex: nextReachedManoeuvreIndex, selection: nextManoeuvre } =
+    selectNextManoeuvre(
+      route.manoeuvres,
+      nav.presentationDistanceFromStartMetres,
+      reachedManoeuvreIndex,
+    );
+  if (nextReachedManoeuvreIndex !== reachedManoeuvreIndex) {
+    setReachedManoeuvreIndex(nextReachedManoeuvreIndex);
+  }
 
   // Recognised climbs, in route order, for the pre-ride selector below
   // and for the pre-ride default above.
@@ -348,6 +370,15 @@ export function RidingScreen({
             <p>Remaining: {formatDistanceKm(nav.distanceRemainingMetres)}</p>
           ) : null}
         </div>
+      ) : null}
+
+      {nav.geolocationStatus !== "idle" ? (
+        <RidingNextManoeuvrePanel
+          sourceKind={route.source.kind}
+          hasManoeuvres={route.manoeuvres.length > 0}
+          selection={nextManoeuvre}
+          isFrozen={nav.isStale || nav.offRouteLevel === "off-route"}
+        />
       ) : null}
 
       {camera.showPausedToast ? <p role="status">Map follow paused.</p> : null}
