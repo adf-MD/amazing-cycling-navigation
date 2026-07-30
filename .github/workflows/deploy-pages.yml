@@ -24,8 +24,26 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version-file: ".nvmrc"
           cache: npm
+
+      - name: Verify pinned toolchain versions
+        run: |
+          set -eu
+          expected_node="v24.18.0"
+          expected_npm="11.16.0"
+          actual_node="$(node --version)"
+          actual_npm="$(npm --version)"
+          echo "Resolved Node.js: ${actual_node} (expected ${expected_node})"
+          echo "Resolved npm: ${actual_npm} (expected ${expected_npm})"
+          if [ "${actual_node}" != "${expected_node}" ]; then
+            echo "::error::Resolved Node.js ${actual_node}, expected ${expected_node}. Keep .nvmrc and this check in sync."
+            exit 1
+          fi
+          if [ "${actual_npm}" != "${expected_npm}" ]; then
+            echo "::error::Resolved npm ${actual_npm}, expected ${expected_npm}. Node ${expected_node}'s bundled npm has apparently changed; update this check deliberately."
+            exit 1
+          fi
 
       - name: Install dependencies
         run: npm ci

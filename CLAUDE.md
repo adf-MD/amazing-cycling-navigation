@@ -212,7 +212,7 @@ The first provider adapter should target openrouteservice with `cycling-road`, b
 - Derive or configure Vite's `base` correctly and keep manifest `start_url`, `scope`, icons, service-worker URLs, and asset URLs within that base.
 - Prefer no URL router. If routes become necessary, use hash routing so direct loads do not return a GitHub Pages 404.
 - Supply a GitHub Actions Pages workflow that runs install, checks, tests, build, and deployment.
-- Pin the Node.js major version and use `npm ci` in CI.
+- Pin the exact Node.js version (via `.nvmrc`, read by CI through `actions/setup-node`'s `node-version-file`) and its bundled npm version; fail CI immediately if the resolved versions don't match, and use `npm ci`.
 - Cache the application shell, not personal data or arbitrary routing responses.
 - Never force a service-worker update or page reload during an active ride. Surface a deferred update prompt.
 - Keep IndexedDB data compatible across ordinary application updates through explicit schema versions and migrations.
@@ -246,6 +246,7 @@ The first provider adapter should target openrouteservice with `cycling-road`, b
 - Before editing, inspect the relevant files, tests, configuration, Git status, and nearby conventions. Do not assume the repository is clean.
 - Preserve user changes and unrelated work. Never discard, reset, overwrite, or reformat unrelated files.
 - Do not refactor unrelated code, rename broad APIs, upgrade dependencies, or change tooling merely while passing through an area.
+- When repairing a broken lockfile or toolchain pin, reconstruct the smallest deterministic diff against the last known-good commit (e.g. a literal version-string patch) rather than regenerating via `npm install`; a full re-resolution can silently add, drop, or re-nest transitive or optional dependencies well beyond the intended fix.
 - Avoid repository-wide mechanical changes unless they are explicitly required. Keep formatting churn out of behavioural changes.
 - For each slice: define the observable outcome, implement it, add or update focused tests, run the narrowest useful checks, and only then continue.
 - Keep temporary compatibility shims small and documented. Do not leave two competing architectures behind.
