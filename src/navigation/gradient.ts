@@ -8,8 +8,8 @@ import {
 
 /** Distance beyond which two consecutive known-elevation points are no
  * longer treated as one continuous, analysable run — the gap in between is
- * left `unknown` rather than presented as a measured grade over an
- * unmeasured stretch. */
+ * left with no smoothed/classified value rather than presented as a
+ * measured grade over an unmeasured stretch. */
 export const MAX_ELEVATION_GAP_METRES = 500;
 /** The centred horizontal baseline over which a displayed grade is
  * measured — deliberately much wider than the 20 m resample step, so
@@ -22,80 +22,26 @@ export const MAX_ELEVATION_GAP_METRES = 500;
  * elevation.ts's own `SMOOTHING_WINDOW_SAMPLES` window in metres (5
  * samples * 20 m = 100 m) — this module reuses that exact smoothing pass
  * (not a second, independently-tuned one), so the displayed elevation line
- * and the gradient classification are provably the same analysis. */
+ * and every gradient classification derived from it are provably the same
+ * analysis. */
 export const GRADE_BASELINE_WINDOW_METRES = 100;
-/** A run shorter than this can't support a stable grade measurement and is
- * left `unknown` in its entirety, rather than implying a slope from too
- * little horizontal span (this also covers the "single known point" case,
- * since a run must have at least two points spanning this distance). A run
- * between this and GRADE_BASELINE_WINDOW_METRES still gets one grade per
- * point, computed over its own full (clamped) extent — the general clamp
- * formula in computeGradesForRun handles this without a separate branch. */
+/** A run shorter than this can't support a stable grade measurement and
+ * gets no grade throughout (every point's gradesPercent is null), rather
+ * than implying a slope from too little horizontal span (this also covers
+ * the "single known point" case, since a run must have at least two points
+ * spanning this distance). A run between this and
+ * GRADE_BASELINE_WINDOW_METRES still gets one grade per point, computed
+ * over its own full (clamped) extent — the general clamp formula in
+ * computeGradesForRun handles this without a separate branch. */
 export const MIN_GRADE_WINDOW_METRES = 40;
 /** A classified segment shorter than this is treated as flicker and
  * absorbed into whichever neighbouring segment is closer in severity,
  * rather than left as an isolated sliver. */
 export const MIN_SEGMENT_LENGTH_METRES = 80;
 
-export type GradientClass =
-  | "steep-descent"
-  | "descent"
-  | "flat"
-  | "gentle-climb"
-  | "moderate-climb"
-  | "hard-climb"
-  | "very-steep-climb"
-  | "unknown";
-
-export interface GradientSegment {
-  startDistanceMetres: number;
-  endDistanceMetres: number;
-  averageGradientPercent: number | null;
-  classification: GradientClass;
-}
-
-/** Classifications ordered from steepest descent to steepest climb, used to
- * measure how many bands apart two classes are when suppressing flicker.
- * `"unknown"` is deliberately excluded — it never participates in a
- * severity comparison, since absorbing a real reading into "no data" would
- * erase information rather than merely reclassifying it. */
-const CLASS_SEVERITY_ORDER: readonly GradientClass[] = [
-  "steep-descent",
-  "descent",
-  "flat",
-  "gentle-climb",
-  "moderate-climb",
-  "hard-climb",
-  "very-steep-climb",
-];
-
-/** Deterministic grade→class mapping. Every upper bound is exclusive, so a
- * value exactly on a boundary belongs to the steeper/higher band. */
-export function classifyGrade(gradePercent: number): GradientClass {
-  if (gradePercent < -6) return "steep-descent";
-  if (gradePercent < -2) return "descent";
-  if (gradePercent < 2) return "flat";
-  if (gradePercent < 4) return "gentle-climb";
-  if (gradePercent < 7) return "moderate-climb";
-  if (gradePercent < 10) return "hard-climb";
-  return "very-steep-climb";
-}
-
 interface KnownElevationPoint {
   distanceMetres: number;
   elevationMetres: number;
-}
-
-function unknownSegment(
-  startDistanceMetres: number,
-  endDistanceMetres: number,
-): GradientSegment {
-  return {
-    startDistanceMetres,
-    endDistanceMetres,
-    averageGradientPercent: null,
-    classification: "unknown",
-  };
 }
 
 /** Filters to points with known, finite elevation and a strictly-increasing
@@ -131,7 +77,7 @@ function buildMonotonicKnownPoints(points: readonly RoutePoint[]): KnownElevatio
  * legitimately treated as one continuous analysable stretch: a new run
  * starts whenever the gap to the previous known point exceeds
  * MAX_ELEVATION_GAP_METRES. A run of a single point can't support any
- * resampling and is dropped (its span becomes an `unknown` gap instead). */
+ * resampling and is dropped (its span becomes an unanalysable gap instead). */
 function splitIntoRuns(known: readonly KnownElevationPoint[]): KnownElevationPoint[][] {
   const runs: KnownElevationPoint[][] = [];
   let current: KnownElevationPoint[] = [];
@@ -316,197 +262,15 @@ function computeGradesForRun(
   });
 }
 
-/** Combines two adjacent segments' average grades as a length-weighted
- * mean — a close, deliberately simple approximation to the true combined
- * rise/run that avoids re-threading raw elevation samples through the
- * merge step. The approximation error is bounded by each input segment's
- * own internal grade variance, which is small since every input segment
- * already represents an already-smoothed, roughly-linear stretch. */
-function combineAverageGradient(a: GradientSegment, b: GradientSegment): number | null {
-  if (a.averageGradientPercent === null || b.averageGradientPercent === null) return null;
-  const aLength = a.endDistanceMetres - a.startDistanceMetres;
-  const bLength = b.endDistanceMetres - b.startDistanceMetres;
-  const totalLength = aLength + bLength;
-  if (totalLength <= 0) return a.averageGradientPercent;
-  return (
-    (a.averageGradientPercent * aLength + b.averageGradientPercent * bLength) /
-    totalLength
-  );
-}
-
-/** Merges consecutive segments sharing the same classification into one,
- * extending the distance range and combining averageGradientPercent.
- * Never merges across a classification change, so "unknown" gaps always
- * stay distinct from their classified neighbours. */
-function mergeAdjacent(segments: readonly GradientSegment[]): GradientSegment[] {
-  const result: GradientSegment[] = [];
-  for (const segment of segments) {
-    const previous = result.at(-1);
-    if (previous?.classification === segment.classification) {
-      result[result.length - 1] = {
-        startDistanceMetres: previous.startDistanceMetres,
-        endDistanceMetres: segment.endDistanceMetres,
-        classification: previous.classification,
-        averageGradientPercent: combineAverageGradient(previous, segment),
-      };
-    } else {
-      result.push({ ...segment });
-    }
-  }
-  return result;
-}
-
-/** One run's grade-classified segments (already merged so no two adjacent
- * segments share a classification) plus the underlying resampled/smoothed
- * series they were derived from — the same series doubles as the
- * displayed elevation line for this run (see analyzeRouteElevationProfile),
- * so the chart and the classification can never disagree. `gradesPercent`
- * is the same per-point regression grade used to classify each segment,
- * kept at full per-point resolution (not merged/suppressed) for callers
- * that need a precise local maximum over an arbitrary sub-range, such as
- * route-feature detection (see routeFeatures.ts). */
-interface RunAnalysis {
-  segments: GradientSegment[];
-  distances: number[];
-  smoothed: number[];
-  elevations: number[];
-  gradesPercent: (number | null)[];
-}
-
-function analyzeRun(run: readonly KnownElevationPoint[]): RunAnalysis {
-  const { distances, elevations } = resampleRun(run, RESAMPLE_STEP_METRES);
-  if (distances.length < 2) {
-    return {
-      segments: [],
-      distances: [],
-      smoothed: [],
-      elevations: [],
-      gradesPercent: [],
-    };
-  }
-  const smoothed = centredMovingAverage(elevations, SMOOTHING_WINDOW_SAMPLES);
-  // Grade is fitted from the raw resampled elevations, not `smoothed` —
-  // see regressionSlope's own doc comment for why using the display
-  // series here would reintroduce edge bias into the classification.
-  const grades = computeGradesForRun(distances, elevations);
-
-  const pointSegments: GradientSegment[] = [];
-  for (let i = 0; i < distances.length - 1; i += 1) {
-    const start = distances[i];
-    const end = distances[i + 1];
-    const grade = grades[i];
-    if (start === undefined || end === undefined) continue;
-    pointSegments.push({
-      startDistanceMetres: start,
-      endDistanceMetres: end,
-      averageGradientPercent: null,
-      classification:
-        grade === null || grade === undefined ? "unknown" : classifyGrade(grade),
-    });
-  }
-
-  const segments = mergeAdjacent(pointSegments).map((segment) =>
-    segment.classification === "unknown"
-      ? segment
-      : {
-          ...segment,
-          averageGradientPercent: computeGradeBetween(
-            segment.startDistanceMetres,
-            interpolateAt(distances, elevations, segment.startDistanceMetres),
-            segment.endDistanceMetres,
-            interpolateAt(distances, elevations, segment.endDistanceMetres),
-          ),
-        },
-  );
-
-  return { segments, distances, smoothed, elevations, gradesPercent: grades };
-}
-
-function severityDistance(a: GradientClass, b: GradientClass): number {
-  const ai = CLASS_SEVERITY_ORDER.indexOf(a);
-  const bi = CLASS_SEVERITY_ORDER.indexOf(b);
-  if (ai === -1 || bi === -1) return Number.POSITIVE_INFINITY;
-  return Math.abs(ai - bi);
-}
-
-/** One reassign-then-merge pass: absorbs short, non-`unknown` segments into
- * whichever *original* neighbour (as of the start of this pass) is closer
- * in severity, a tie preferring the following segment. `unknown` segments
- * are never a reassignment target's source nor absorbed themselves, so a
- * real reading is never silently erased into "no data", and a genuinely
- * isolated short reading with only unknown neighbours on both sides is
- * left untouched rather than forced to merge. Every reassignment target is
- * an existing adjacent value, so any segment actually reassigned this pass
- * is guaranteed to merge with that neighbour — `changed` tracks whether
- * that happened, so the caller knows whether another pass could help. */
-function suppressFlickerPass(segments: readonly GradientSegment[]): {
-  result: GradientSegment[];
-  changed: boolean;
-} {
-  let changed = false;
-  const reassigned = segments.map((segment, index) => {
-    const length = segment.endDistanceMetres - segment.startDistanceMetres;
-    if (segment.classification === "unknown" || length >= MIN_SEGMENT_LENGTH_METRES) {
-      return segment;
-    }
-    const previous = segments[index - 1];
-    const next = segments[index + 1];
-    const previousEligible =
-      previous !== undefined && previous.classification !== "unknown";
-    const nextEligible = next !== undefined && next.classification !== "unknown";
-    if (!previousEligible && !nextEligible) return segment;
-
-    let targetClassification: GradientClass;
-    if (previousEligible && nextEligible) {
-      const previousDistance = severityDistance(
-        segment.classification,
-        previous.classification,
-      );
-      const nextDistance = severityDistance(segment.classification, next.classification);
-      targetClassification =
-        nextDistance <= previousDistance ? next.classification : previous.classification;
-    } else if (previousEligible) {
-      targetClassification = previous.classification;
-    } else if (next) {
-      targetClassification = next.classification;
-    } else {
-      return segment;
-    }
-    if (targetClassification === segment.classification) return segment;
-    changed = true;
-    return { ...segment, classification: targetClassification };
-  });
-  return { result: mergeAdjacent(reassigned), changed };
-}
-
-/**
- * Repeats reassign-then-merge passes until a pass makes no further change.
- * Two short segments flanking one real feature can each tie-break toward
- * each other's original class in the same pass without either matching
- * their shared, longer far neighbour yet — a second pass resolves this,
- * since the first pass's merge has already removed the segment they were
- * ties against. Each changed pass strictly reduces the segment count (a
- * reassignment always matches an existing adjacent value, so it always
- * merges), so this is bounded by the initial segment count and always
- * terminates. */
-function suppressFlicker(segments: readonly GradientSegment[]): GradientSegment[] {
-  let current: GradientSegment[] = [...segments];
-  for (let pass = 0; pass <= segments.length; pass += 1) {
-    const { result, changed } = suppressFlickerPass(current);
-    current = result;
-    if (!changed) break;
-  }
-  return current;
-}
-
 /**
  * The shared, provider-independent full-route elevation-profile analysis:
  * one resample+smooth pass per contiguous known-elevation run, producing
- * both a smoothed *display* series and the classified gradient segments
- * from the literal same underlying values — so the elevation-chart line
- * and the map/chart gradient colours can never disagree for the same
- * route section. Never mutates `points`, never sends data anywhere, and
- * runs entirely offline from already-normalised RoutePoint.elevationMetres.
+ * the smoothed *display* series and the per-run resampled/smoothed/graded
+ * values every gradient/route-feature classification is built from — so
+ * the elevation-chart line and every derived colouring can never disagree
+ * for the same route section. Never mutates `points`, never sends data
+ * anywhere, and runs entirely offline from already-normalised
+ * RoutePoint.elevationMetres.
  */
 export interface RouteElevationProfile {
   /** Same length, order, coordinates and distances as the input points —
@@ -517,16 +281,13 @@ export interface RouteElevationProfile {
    * gap-break-the-line behaviour. Never the same array/object identity as
    * the input; the input is never written to. */
   displayPoints: RoutePoint[];
-  /** Contiguous, non-overlapping segments covering [0, totalDistanceMetres]
-   * exactly. */
-  gradientSegments: GradientSegment[];
   /** One entry per contiguous known-elevation run that resampled to at
    * least two points, in the same order runs are processed (ascending
    * distance) — the exact resampled distances/smoothed elevations/local
-   * grades already computed for `gradientSegments` and `displayPoints`,
-   * exposed so a caller (e.g. routeFeatures.ts's climb/descent detector)
-   * can build on this same analysis without a second resample/smooth/grade
-   * pass over the route. */
+   * grades already computed for `displayPoints`, exposed so a caller
+   * (e.g. routeFeatures.ts's climb/descent detector, or
+   * routeFeatureDetail.ts's local-band classifier) can build on this same
+   * analysis without a second resample/smooth/grade pass over the route. */
   runs: readonly ElevationRun[];
 }
 
@@ -541,11 +302,25 @@ export interface ElevationRun {
    * `regressionSlope` (centredMovingAverage's window can't stay centred
    * within roughly one smoothing-window's distance of a run's own edge),
    * exactly the bug local-gradient classification already avoids by using
-   * these same raw values (see `analyzeRun`'s own `computeGradeBetween`
-   * calls). Callers computing a whole-feature average gradient/elevation
-   * delta should use `elevations`, not `smoothed`, for the same reason. */
+   * these same raw values. Callers computing a whole-feature average
+   * gradient/elevation delta should use `elevations`, not `smoothed`, for
+   * the same reason. */
   elevations: readonly number[];
   gradesPercent: readonly (number | null)[];
+}
+
+function analyzeRun(run: readonly KnownElevationPoint[]): ElevationRun {
+  const { distances, elevations } = resampleRun(run, RESAMPLE_STEP_METRES);
+  if (distances.length < 2) {
+    return { distances: [], smoothed: [], elevations: [], gradesPercent: [] };
+  }
+  const smoothed = centredMovingAverage(elevations, SMOOTHING_WINDOW_SAMPLES);
+  // Grade is fitted from the raw resampled elevations, not `smoothed` —
+  // see regressionSlope's own doc comment for why using the display
+  // series here would reintroduce edge bias into any classification built
+  // on top of it.
+  const gradesPercent = computeGradesForRun(distances, elevations);
+  return { distances, smoothed, elevations, gradesPercent };
 }
 
 function isWithinRun(
@@ -563,12 +338,11 @@ export function analyzeRouteElevationProfile(
 ): RouteElevationProfile {
   const totalDistanceMetres = points.at(-1)?.distanceFromStartMetres ?? 0;
   if (totalDistanceMetres <= 0) {
-    return { displayPoints: [...points], gradientSegments: [], runs: [] };
+    return { displayPoints: [...points], runs: [] };
   }
   if (points.length < 2 || !hasAnyElevation(points)) {
     return {
       displayPoints: points.map((point) => ({ ...point, elevationMetres: null })),
-      gradientSegments: [unknownSegment(0, totalDistanceMetres)],
       runs: [],
     };
   }
@@ -576,29 +350,6 @@ export function analyzeRouteElevationProfile(
   const known = buildMonotonicKnownPoints(points);
   const runs = splitIntoRuns(known);
   const runAnalyses = runs.map((run) => analyzeRun(run));
-
-  const rawSegments: GradientSegment[] = [];
-  let cursor = 0;
-  for (let i = 0; i < runs.length; i += 1) {
-    const run = runs[i];
-    const analysis = runAnalyses[i];
-    if (run === undefined || analysis === undefined) continue;
-    const first = run[0];
-    const last = run.at(-1);
-    if (first === undefined || last === undefined) continue;
-    if (first.distanceMetres > cursor) {
-      rawSegments.push(unknownSegment(cursor, first.distanceMetres));
-    }
-    rawSegments.push(...analysis.segments);
-    cursor = last.distanceMetres;
-  }
-  if (cursor < totalDistanceMetres) {
-    rawSegments.push(unknownSegment(cursor, totalDistanceMetres));
-  }
-  const gradientSegments =
-    rawSegments.length === 0
-      ? [unknownSegment(0, totalDistanceMetres)]
-      : suppressFlicker(rawSegments);
 
   const displayPoints = points.map((point) => {
     const distance = point.distanceFromStartMetres;
@@ -618,42 +369,220 @@ export function analyzeRouteElevationProfile(
     return { ...point, elevationMetres: null };
   });
 
-  const elevationRuns: ElevationRun[] = runAnalyses
-    .filter((analysis) => analysis.distances.length >= 2)
-    .map((analysis) => ({
-      distances: analysis.distances,
-      smoothed: analysis.smoothed,
-      elevations: analysis.elevations,
-      gradesPercent: analysis.gradesPercent,
-    }));
+  const elevationRuns: ElevationRun[] = runAnalyses.filter(
+    (analysis) => analysis.distances.length >= 2,
+  );
 
-  return { displayPoints, gradientSegments, runs: elevationRuns };
+  return { displayPoints, runs: elevationRuns };
+}
+
+/** One classified, contiguous distance range — the shared shape produced
+ * by classifying an ElevationRun's per-point grades (see classifyRunGrades
+ * below) into whichever discrete scheme a caller supplies (e.g. climb
+ * gradient bands or descent bands, see routeFeatures.ts). Generic over the
+ * classification's own key type, since the merge/flicker-suppression
+ * pipeline below never needs to know what a key means, only whether two
+ * adjacent keys are equal and how far apart they are in a supplied
+ * severity order. */
+export interface ClassifiedSegment<Class extends string> {
+  startDistanceMetres: number;
+  endDistanceMetres: number;
+  averageGradientPercent: number | null;
+  visualKey: Class;
+}
+
+function severityDistance<Class extends string>(
+  severityOrder: readonly Class[],
+  a: Class,
+  b: Class,
+): number {
+  const ai = severityOrder.indexOf(a);
+  const bi = severityOrder.indexOf(b);
+  if (ai === -1 || bi === -1) return Number.POSITIVE_INFINITY;
+  return Math.abs(ai - bi);
+}
+
+/** Combines two adjacent segments' average grades as a length-weighted
+ * mean — a close, deliberately simple approximation to the true combined
+ * rise/run that avoids re-threading raw elevation samples through the
+ * merge step. The approximation error is bounded by each input segment's
+ * own internal grade variance, which is small since every input segment
+ * already represents an already-smoothed, roughly-linear stretch. */
+function combineAverageGradient<Class extends string>(
+  a: ClassifiedSegment<Class>,
+  b: ClassifiedSegment<Class>,
+): number | null {
+  if (a.averageGradientPercent === null || b.averageGradientPercent === null) return null;
+  const aLength = a.endDistanceMetres - a.startDistanceMetres;
+  const bLength = b.endDistanceMetres - b.startDistanceMetres;
+  const totalLength = aLength + bLength;
+  if (totalLength <= 0) return a.averageGradientPercent;
+  return (
+    (a.averageGradientPercent * aLength + b.averageGradientPercent * bLength) /
+    totalLength
+  );
+}
+
+/** Merges consecutive segments sharing the same visualKey into one,
+ * extending the distance range and combining averageGradientPercent. */
+function mergeAdjacentClassified<Class extends string>(
+  segments: readonly ClassifiedSegment<Class>[],
+): ClassifiedSegment<Class>[] {
+  const result: ClassifiedSegment<Class>[] = [];
+  for (const segment of segments) {
+    const previous = result.at(-1);
+    if (previous?.visualKey === segment.visualKey) {
+      result[result.length - 1] = {
+        startDistanceMetres: previous.startDistanceMetres,
+        endDistanceMetres: segment.endDistanceMetres,
+        visualKey: previous.visualKey,
+        averageGradientPercent: combineAverageGradient(previous, segment),
+      };
+    } else {
+      result.push({ ...segment });
+    }
+  }
+  return result;
+}
+
+/** One reassign-then-merge pass: absorbs short segments into whichever
+ * *original* neighbour (as of the start of this pass) is closer in
+ * severity, a tie preferring the following segment. Every reassignment
+ * target is an existing adjacent value, so any segment actually
+ * reassigned this pass is guaranteed to merge with that neighbour —
+ * `changed` tracks whether that happened, so the caller knows whether
+ * another pass could help. Unlike the retired whole-route GradientClass
+ * scheme, a classified run has no "unknown gap" segments to exclude from
+ * this comparison — every point within one run has a real classified
+ * value, by construction (see classifyRunGrades's own doc comment). */
+function suppressFlickerPassClassified<Class extends string>(
+  segments: readonly ClassifiedSegment<Class>[],
+  severityOrder: readonly Class[],
+): { result: ClassifiedSegment<Class>[]; changed: boolean } {
+  let changed = false;
+  const reassigned = segments.map((segment, index) => {
+    const length = segment.endDistanceMetres - segment.startDistanceMetres;
+    if (length >= MIN_SEGMENT_LENGTH_METRES) return segment;
+    const previous = segments[index - 1];
+    const next = segments[index + 1];
+    if (previous === undefined && next === undefined) return segment;
+
+    let targetKey: Class;
+    if (previous !== undefined && next !== undefined) {
+      const previousDistance = severityDistance(
+        severityOrder,
+        segment.visualKey,
+        previous.visualKey,
+      );
+      const nextDistance = severityDistance(
+        severityOrder,
+        segment.visualKey,
+        next.visualKey,
+      );
+      targetKey = nextDistance <= previousDistance ? next.visualKey : previous.visualKey;
+    } else if (previous !== undefined) {
+      targetKey = previous.visualKey;
+    } else if (next !== undefined) {
+      targetKey = next.visualKey;
+    } else {
+      return segment;
+    }
+    if (targetKey === segment.visualKey) return segment;
+    changed = true;
+    return { ...segment, visualKey: targetKey };
+  });
+  return { result: mergeAdjacentClassified(reassigned), changed };
 }
 
 /**
- * Gradient-classification-only view of analyzeRouteElevationProfile, for
- * callers (e.g. the map overlay) that only need GradientSegment[] and not
- * the smoothed display series.
+ * Repeats reassign-then-merge passes until a pass makes no further change.
+ * Two short segments flanking one real feature can each tie-break toward
+ * each other's original class in the same pass without either matching
+ * their shared, longer far neighbour yet — a second pass resolves this,
+ * since the first pass's merge has already removed the segment they were
+ * ties against. Each changed pass strictly reduces the segment count (a
+ * reassignment always matches an existing adjacent value, so it always
+ * merges), so this is bounded by the initial segment count and always
+ * terminates. */
+function suppressFlickerClassified<Class extends string>(
+  segments: readonly ClassifiedSegment<Class>[],
+  severityOrder: readonly Class[],
+): ClassifiedSegment<Class>[] {
+  let current: ClassifiedSegment<Class>[] = [...segments];
+  for (let pass = 0; pass <= segments.length; pass += 1) {
+    const { result, changed } = suppressFlickerPassClassified(current, severityOrder);
+    current = result;
+    if (!changed) break;
+  }
+  return current;
+}
+
+/**
+ * Classifies one run's per-point regression grades (ElevationRun.gradesPercent)
+ * into merged, flicker-suppressed segments — the same classify → merge-
+ * adjacent → suppress-flicker pipeline this module used for the retired
+ * whole-route GradientClass scheme, generalised over an arbitrary
+ * classification supplied by the caller (see routeFeatures.ts's climb/
+ * descent band classifiers). Never re-resamples, re-smooths or refits a
+ * grade — `run` is exactly one entry from RouteElevationProfile.runs.
+ * `fallbackForUnknownGrade` only matters for a null grade, which is
+ * provably unreachable for any run long enough to contain a recognised
+ * climb/descent feature (a feature's own length always exceeds
+ * MIN_GRADE_WINDOW_METRES by a wide margin — see computeGradesForRun's own
+ * doc comment) — kept as an explicit, documented, defensive value rather
+ * than throwing or forcing every caller's Class to carry its own "unknown"
+ * member.
  */
-export function analyzeGradient(points: readonly RoutePoint[]): GradientSegment[] {
-  return analyzeRouteElevationProfile(points).gradientSegments;
+export function classifyRunGrades<Class extends string>(
+  run: ElevationRun,
+  classify: (gradePercent: number) => Class,
+  fallbackForUnknownGrade: Class,
+  severityOrder: readonly Class[],
+): ClassifiedSegment<Class>[] {
+  const { distances, elevations, gradesPercent } = run;
+  const pointSegments: ClassifiedSegment<Class>[] = [];
+  for (let i = 0; i < distances.length - 1; i += 1) {
+    const start = distances[i];
+    const end = distances[i + 1];
+    const grade = gradesPercent[i];
+    if (start === undefined || end === undefined) continue;
+    pointSegments.push({
+      startDistanceMetres: start,
+      endDistanceMetres: end,
+      averageGradientPercent: null,
+      visualKey:
+        grade === null || grade === undefined ? fallbackForUnknownGrade : classify(grade),
+    });
+  }
+
+  const withGradient = mergeAdjacentClassified(pointSegments).map((segment) => ({
+    ...segment,
+    averageGradientPercent: computeGradeBetween(
+      segment.startDistanceMetres,
+      interpolateAt(distances, elevations, segment.startDistanceMetres),
+      segment.endDistanceMetres,
+      interpolateAt(distances, elevations, segment.endDistanceMetres),
+    ),
+  }));
+
+  return suppressFlickerClassified(withGradient, severityOrder);
 }
 
 /**
- * Clips gradient segments to [startDistanceMetres, endDistanceMetres],
+ * Clips classified segments to [startDistanceMetres, endDistanceMetres],
  * truncating any segment that straddles a boundary rather than
- * re-analysing the windowed range — so a windowed (2/5/10 km) view always
- * agrees with the Full-route analysis at every shared distance, by
- * construction rather than by coincidence.
+ * re-classifying the windowed range — so a windowed (2/5/10 km) view
+ * always agrees with the whole-feature analysis at every shared distance,
+ * by construction rather than by coincidence.
  */
-export function clipGradientSegments(
-  segments: readonly GradientSegment[],
+export function clipClassifiedSegments<Class extends string>(
+  segments: readonly ClassifiedSegment<Class>[],
   startDistanceMetres: number,
   endDistanceMetres: number,
-): GradientSegment[] {
+): ClassifiedSegment<Class>[] {
   const clampedStart = Math.min(startDistanceMetres, endDistanceMetres);
   const clampedEnd = Math.max(startDistanceMetres, endDistanceMetres);
-  const result: GradientSegment[] = [];
+  const result: ClassifiedSegment<Class>[] = [];
   for (const segment of segments) {
     const start = Math.max(segment.startDistanceMetres, clampedStart);
     const end = Math.min(segment.endDistanceMetres, clampedEnd);
@@ -664,7 +593,7 @@ export function clipGradientSegments(
 }
 
 /**
- * The single gradient segment containing `distanceMetres` (inclusive of
+ * The single classified segment containing `distanceMetres` (inclusive of
  * both a segment's own start and end distance, so a tap landing exactly on
  * a shared boundary resolves to the earlier segment via a first-match
  * linear scan). Returns `null` when `distanceMetres` falls outside every
@@ -672,10 +601,10 @@ export function clipGradientSegments(
  * segment the route analysis already produced, rather than inventing a
  * new boundary from the tapped coordinate.
  */
-export function findGradientSegmentAtDistance(
-  segments: readonly GradientSegment[],
+export function findClassifiedSegmentAtDistance<Class extends string>(
+  segments: readonly ClassifiedSegment<Class>[],
   distanceMetres: number,
-): GradientSegment | null {
+): ClassifiedSegment<Class> | null {
   for (const segment of segments) {
     if (
       distanceMetres >= segment.startDistanceMetres &&

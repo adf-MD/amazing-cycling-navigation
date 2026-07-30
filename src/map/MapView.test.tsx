@@ -16,10 +16,14 @@ import type {
 import { clearErrorLog, getRecentErrors } from "../platform/errorLog.ts";
 import { clearMapDiagnostics, getRecentMapAttempts } from "./mapDiagnostics.ts";
 import type { Coordinate, RoutePoint, RouteWarning } from "../domain/types.ts";
-import type { GradientSegment } from "../navigation/gradient.ts";
-import { GRADIENT_CLASS_COLOURS } from "../navigation/gradientPalette.ts";
+import type { ClassifiedSegment } from "../navigation/gradient.ts";
 import type { ClimbFeature, RouteFeature } from "../navigation/routeFeatures.ts";
-import { ROUTE_FEATURE_COLOURS } from "../navigation/routeFeaturePalette.ts";
+import {
+  MICRO_DETAIL_COLOURS,
+  ROUTE_FEATURE_COLOURS,
+  UNREACHABLE_FALLBACK_COLOUR,
+  type MicroDetailVisualKey,
+} from "../navigation/routeFeaturePalette.ts";
 
 const points: RoutePoint[] = [
   { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
@@ -1637,17 +1641,17 @@ describe("MapView", () => {
     function gradientSegment(
       startDistanceMetres: number,
       endDistanceMetres: number,
-      classification: GradientSegment["classification"],
-    ): GradientSegment {
+      visualKey: MicroDetailVisualKey,
+    ): ClassifiedSegment<MicroDetailVisualKey> {
       return {
         startDistanceMetres,
         endDistanceMetres,
         averageGradientPercent: null,
-        classification,
+        visualKey,
       };
     }
 
-    it("creates the gradient source/layer with a categorical colour keyed on gradientClass", () => {
+    it("creates the gradient source/layer with a categorical colour keyed on visualKey", () => {
       // MapView calls the MapLibreLike interface directly — the actual
       // ["match", ...] expression is built one layer down, inside
       // MapLibreAdapter.addLineLayer (see mapAdapter.test.ts's own
@@ -1663,9 +1667,9 @@ describe("MapView", () => {
       ) as [string, string, { lineColor: unknown; lineWidth: number }] | undefined;
       expect(call?.[1]).toBe("acn-route-gradient");
       expect(call?.[2].lineColor).toEqual({
-        property: "gradientClass",
-        cases: GRADIENT_CLASS_COLOURS,
-        fallback: GRADIENT_CLASS_COLOURS.unknown,
+        property: "visualKey",
+        cases: MICRO_DETAIL_COLOURS,
+        fallback: UNREACHABLE_FALLBACK_COLOUR,
       });
     });
 
@@ -1685,7 +1689,7 @@ describe("MapView", () => {
           mapFactory={mock.factory}
           gradientOverlay={{
             segments: [
-              gradientSegment(0, 200, "flat"),
+              gradientSegment(0, 200, "gentle-or-descending"),
               gradientSegment(200, 400, "hard-climb"),
             ],
           }}
@@ -1697,10 +1701,9 @@ describe("MapView", () => {
       expect(features).toHaveLength(2);
       expect(
         features.map(
-          (feature) =>
-            (feature.properties as { gradientClass?: string } | null)?.gradientClass,
+          (feature) => (feature.properties as { visualKey?: string } | null)?.visualKey,
         ),
-      ).toEqual(["flat", "hard-climb"]);
+      ).toEqual(["gentle-or-descending", "hard-climb"]);
     });
 
     it("clips gradient coverage to the remaining portion during active Riding, matching the route line's own live-distance split", () => {
@@ -1819,7 +1822,7 @@ describe("MapView", () => {
       expect(call?.[2].lineColor).toEqual({
         property: "visualKey",
         cases: ROUTE_FEATURE_COLOURS,
-        fallback: GRADIENT_CLASS_COLOURS.unknown,
+        fallback: UNREACHABLE_FALLBACK_COLOUR,
       });
     });
 

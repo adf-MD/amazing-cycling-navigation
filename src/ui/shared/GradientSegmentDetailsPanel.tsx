@@ -1,12 +1,15 @@
-import type { GradientSegment } from "../../navigation/gradient.ts";
-import { GRADIENT_CLASS_NAMES } from "../../navigation/gradientPalette.ts";
+import type { ClassifiedSegment } from "../../navigation/gradient.ts";
+import {
+  MICRO_DETAIL_LABELS,
+  type MicroDetailVisualKey,
+} from "../../navigation/routeFeaturePalette.ts";
 import { formatDistanceKmValue, formatGradientPercent } from "./routeSummary.ts";
 
 export interface GradientSegmentDetailsPanelProps {
   /** The selected local-gradient segment to show detail for, or null to
    * render nothing — a controlled/dumb component, same convention as
    * ElevationChart and RouteFeatureDetailsPanel. */
-  segment: GradientSegment | null;
+  segment: ClassifiedSegment<MicroDetailVisualKey> | null;
   /** Elevation at the segment's own start/end distance, already
    * interpolated by the caller from the shared smoothed displayPoints
    * series (see upcomingElevation.ts's interpolateRoutePointAt) — this
@@ -37,7 +40,7 @@ export function GradientSegmentDetailsPanel({
   return (
     <section aria-label="Gradient segment details" className="gradient-segment-details">
       <h3>
-        {GRADIENT_CLASS_NAMES[segment.classification]}
+        {MICRO_DETAIL_LABELS[segment.visualKey]}
         {segment.averageGradientPercent !== null
           ? ` · ${formatGradientPercent(segment.averageGradientPercent)}`
           : ""}

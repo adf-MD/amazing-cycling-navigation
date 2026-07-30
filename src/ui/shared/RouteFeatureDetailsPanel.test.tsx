@@ -27,7 +27,7 @@ const descent: DescentFeature = {
   elevationLossMetres: 197,
   averageGradientPercent: -7.3,
   maxGradientPercent: -11.5,
-  severity: "steep",
+  band: "steep",
 };
 
 describe("RouteFeatureDetailsPanel", () => {
@@ -59,6 +59,16 @@ describe("RouteFeatureDetailsPanel", () => {
     expect(screen.getByText(/Average gradient: -7\.3%/)).toBeInTheDocument();
     expect(screen.getByText(/Steepest local gradient: -11\.5%/)).toBeInTheDocument();
     expect(screen.queryByText(/Climb score/)).toBeNull();
+    expect(
+      screen.getByText(
+        /Blue intensity reflects gradient steepness only, not surface, bends, traffic or other conditions\./,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show the descent safety disclaimer for a climb", () => {
+    render(<RouteFeatureDetailsPanel feature={climb} />);
+    expect(screen.queryByText(/Blue intensity reflects/)).toBeNull();
   });
 
   it("renders a clear-selection control only when onClear is supplied, and calls it on click", async () => {

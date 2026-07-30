@@ -5,8 +5,9 @@ import type {
   RouteWarning,
   RouteWarningKind,
 } from "../../domain/types.ts";
-import type { GradientSegment } from "../../navigation/gradient.ts";
-import type { RouteFeature } from "../../navigation/routeFeatures.ts";
+import type { ClassifiedSegment } from "../../navigation/gradient.ts";
+import type { ClimbGradientBand, RouteFeature } from "../../navigation/routeFeatures.ts";
+import type { MicroDetailVisualKey } from "../../navigation/routeFeaturePalette.ts";
 import { prefersReducedMotion } from "../../platform/environmentContext.ts";
 import {
   ElevationChart,
@@ -38,7 +39,7 @@ export interface RouteSummaryPanelProps {
    * colouring shows. Computed once by the caller so it stays
    * referentially stable across unrelated re-renders and across a failed
    * recalculation (which leaves `route` itself unchanged). */
-  gradientSegments: readonly GradientSegment[];
+  gradientSegments: readonly ClassifiedSegment<MicroDetailVisualKey>[];
   /** The shared smoothed elevation series (same analysis as
    * `gradientSegments`, and the same one Riding uses) — plotted instead of
    * `route.points`' own raw elevations. Optional, falling back to
@@ -65,7 +66,7 @@ export interface RouteSummaryPanelProps {
   /** The selected detailed local-gradient segment (a finer-grained
    * selection than selectedRouteFeature — a segment lives within a
    * selected/active feature), or null/omitted. */
-  selectedGradientSegment?: GradientSegment | null;
+  selectedGradientSegment?: ClassifiedSegment<MicroDetailVisualKey> | null;
   /** Elevation at the selected segment's own start/end distance, already
    * interpolated by the caller — see GradientSegmentDetailsPanel's own
    * doc comment. */
@@ -182,13 +183,17 @@ export function RouteSummaryPanel({
         onTapDistance={onTapDistance}
       />
       <GradientColoursDisclosure
-        presentClasses={
-          new Set(gradientSegments.map((segment) => segment.classification))
+        presentClimbBands={
+          selectedRouteFeature?.kind === "climb"
+            ? new Set(
+                gradientSegments.map((segment) => segment.visualKey as ClimbGradientBand),
+              )
+            : new Set()
         }
         presentVisualKeys={
           new Set(
             routeFeatures.map((feature) =>
-              feature.kind === "climb" ? feature.category : feature.severity,
+              feature.kind === "climb" ? feature.category : feature.band,
             ),
           )
         }

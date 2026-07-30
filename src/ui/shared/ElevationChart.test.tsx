@@ -2,14 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { ElevationChart } from "./ElevationChart.tsx";
 import type { RoutePoint } from "../../domain/types.ts";
-import type { GradientSegment } from "../../navigation/gradient.ts";
-import { GRADIENT_CLASS_COLOURS } from "../../navigation/gradientPalette.ts";
+import type { ClassifiedSegment } from "../../navigation/gradient.ts";
 import type {
   ClimbFeature,
   DescentFeature,
   RouteFeature,
 } from "../../navigation/routeFeatures.ts";
-import { ROUTE_FEATURE_COLOURS } from "../../navigation/routeFeaturePalette.ts";
+import {
+  MICRO_DETAIL_COLOURS,
+  ROUTE_FEATURE_COLOURS,
+  type MicroDetailVisualKey,
+} from "../../navigation/routeFeaturePalette.ts";
 
 function buildPoints(entries: readonly [number, number | null][]): RoutePoint[] {
   return entries.map(([distanceFromStartMetres, elevationMetres]) => ({
@@ -231,21 +234,21 @@ describe("ElevationChart", () => {
     expect(screen.queryByText(/route position/)).toBeNull();
   });
 
-  describe("gradient colouring", () => {
+  describe("detailed local-gradient colouring", () => {
     function gradientSegment(
       startDistanceMetres: number,
       endDistanceMetres: number,
-      classification: GradientSegment["classification"],
-    ): GradientSegment {
+      visualKey: MicroDetailVisualKey,
+    ): ClassifiedSegment<MicroDetailVisualKey> {
       return {
         startDistanceMetres,
         endDistanceMetres,
         averageGradientPercent: null,
-        classification,
+        visualKey,
       };
     }
 
-    it("colours the profile per gradient class instead of currentColor", () => {
+    it("colours the profile per local-gradient band instead of currentColor", () => {
       const points = buildPoints([
         [0, 0],
         [500, 20],
@@ -256,18 +259,18 @@ describe("ElevationChart", () => {
           points={points}
           gradientSegments={[
             gradientSegment(0, 500, "hard-climb"),
-            gradientSegment(500, 1000, "steep-descent"),
+            gradientSegment(500, 1000, "steep"),
           ]}
         />,
       );
       const paths = container.querySelectorAll("path");
       const strokes = Array.from(paths).map((path) => path.getAttribute("stroke"));
-      expect(strokes).toContain(GRADIENT_CLASS_COLOURS["hard-climb"]);
-      expect(strokes).toContain(GRADIENT_CLASS_COLOURS["steep-descent"]);
+      expect(strokes).toContain(MICRO_DETAIL_COLOURS["hard-climb"]);
+      expect(strokes).toContain(MICRO_DETAIL_COLOURS.steep);
       expect(strokes).not.toContain("currentColor");
     });
 
-    it("combines gradient colour with the Full-mode completed/remaining split", () => {
+    it("combines detail colour with the Full-mode completed/remaining split", () => {
       const points = buildPoints([
         [0, 0],
         [500, 20],
@@ -285,10 +288,10 @@ describe("ElevationChart", () => {
       expect(completed).not.toBeNull();
       expect(remaining).not.toBeNull();
       expect(completed?.getAttribute("stroke")).toBe(
-        GRADIENT_CLASS_COLOURS["moderate-climb"],
+        MICRO_DETAIL_COLOURS["moderate-climb"],
       );
       expect(remaining?.getAttribute("stroke")).toBe(
-        GRADIENT_CLASS_COLOURS["moderate-climb"],
+        MICRO_DETAIL_COLOURS["moderate-climb"],
       );
       // Dash/opacity still carries ridden-status independently of colour.
       expect(completed?.getAttribute("stroke-dasharray")).not.toBeNull();
@@ -308,7 +311,7 @@ describe("ElevationChart", () => {
       expect(strokes.every((stroke) => stroke === "currentColor")).toBe(true);
     });
 
-    it("colours unknown sections neutrally when gradientSegments marks them unknown", () => {
+    it("renders a descent's neutral local stretch as currentColor, even as the sole (base-only) colouring", () => {
       const points = buildPoints([
         [0, 0],
         [1000, 20],
@@ -316,11 +319,32 @@ describe("ElevationChart", () => {
       const { container } = render(
         <ElevationChart
           points={points}
-          gradientSegments={[gradientSegment(0, 1000, "unknown")]}
+          gradientSegments={[gradientSegment(0, 1000, "neutral")]}
         />,
       );
       const path = container.querySelector("path");
-      expect(path?.getAttribute("stroke")).toBe(GRADIENT_CLASS_COLOURS.unknown);
+      expect(path?.getAttribute("stroke")).toBe("currentColor");
+    });
+
+    it("regression: does not paint the untouched remainder outside the narrowed detail range with a placeholder colour (previously coerced to a synthetic 'unknown' grey)", () => {
+      const points = buildPoints([
+        [0, 0],
+        [300, 20],
+        [1000, 20],
+      ]);
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          gradientSegments={[gradientSegment(0, 300, "hard-climb")]}
+        />,
+      );
+      const strokes = Array.from(container.querySelectorAll("path")).map((path) =>
+        path.getAttribute("stroke"),
+      );
+      expect(strokes).toContain(MICRO_DETAIL_COLOURS["hard-climb"]);
+      // The 300-1000 remainder, outside the supplied detail segment, must
+      // fall back to currentColor rather than any leftover placeholder hex.
+      expect(strokes).toContain("currentColor");
     });
   });
 
@@ -347,7 +371,7 @@ describe("ElevationChart", () => {
     function descentFeature(
       startDistanceMetres: number,
       endDistanceMetres: number,
-      severity: DescentFeature["severity"] = "steep",
+      band: DescentFeature["band"] = "steep",
     ): DescentFeature {
       return {
         id: `descent-${String(startDistanceMetres)}`,
@@ -358,7 +382,7 @@ describe("ElevationChart", () => {
         elevationLossMetres: 40,
         averageGradientPercent: -7,
         maxGradientPercent: -9,
-        severity,
+        band,
       };
     }
 
@@ -403,12 +427,12 @@ describe("ElevationChart", () => {
         [1000, 20],
       ]);
       const features: RouteFeature[] = [climbFeature(0, 300, "category-2")];
-      const detailSegments: GradientSegment[] = [
+      const detailSegments: ClassifiedSegment<MicroDetailVisualKey>[] = [
         {
           startDistanceMetres: 0,
           endDistanceMetres: 300,
           averageGradientPercent: 6,
-          classification: "hard-climb",
+          visualKey: "hard-climb",
         },
       ];
       const { container } = render(
@@ -425,7 +449,7 @@ describe("ElevationChart", () => {
       // (overlay, also covering 0-300) are present; the ordinary
       // 300-1000 stretch stays currentColor since no feature covers it.
       expect(strokes).toContain(ROUTE_FEATURE_COLOURS["category-2"]);
-      expect(strokes).toContain(GRADIENT_CLASS_COLOURS["hard-climb"]);
+      expect(strokes).toContain(MICRO_DETAIL_COLOURS["hard-climb"]);
       expect(strokes).toContain("currentColor");
     });
 
@@ -434,13 +458,19 @@ describe("ElevationChart", () => {
         [0, 0],
         [300, 20],
       ]);
-      const features: RouteFeature[] = [climbFeature(0, 300, "category-2")];
-      const detailSegments: GradientSegment[] = [
+      // Deliberately a macro category and detail band whose colours
+      // *don't* share a tier (category-3 yellow vs the dark-red top band)
+      // — a category paired with its own corresponding band (e.g.
+      // category-2/hard-climb, both orange) would make the two
+      // colour-keyed querySelectors below ambiguous, since they'd match
+      // the identical stroke value.
+      const features: RouteFeature[] = [climbFeature(0, 300, "category-3")];
+      const detailSegments: ClassifiedSegment<MicroDetailVisualKey>[] = [
         {
           startDistanceMetres: 0,
           endDistanceMetres: 300,
-          averageGradientPercent: 6,
-          classification: "hard-climb",
+          averageGradientPercent: 13,
+          visualKey: "extremely-steep-climb",
         },
       ];
       const { container } = render(
@@ -451,10 +481,10 @@ describe("ElevationChart", () => {
         />,
       );
       const macroPath = container.querySelector(
-        `path[stroke="${ROUTE_FEATURE_COLOURS["category-2"]}"]`,
+        `path[stroke="${ROUTE_FEATURE_COLOURS["category-3"]}"]`,
       );
       const detailPath = container.querySelector(
-        `path[stroke="${GRADIENT_CLASS_COLOURS["hard-climb"]}"]`,
+        `path[stroke="${MICRO_DETAIL_COLOURS["extremely-steep-climb"]}"]`,
       );
       const macroWidth = Number(macroPath?.getAttribute("stroke-width"));
       const detailWidth = Number(detailPath?.getAttribute("stroke-width"));

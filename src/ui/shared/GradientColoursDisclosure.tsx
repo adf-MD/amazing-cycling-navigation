@@ -1,10 +1,10 @@
-import type { GradientClass } from "../../navigation/gradient.ts";
+import type { ClimbGradientBand } from "../../navigation/routeFeatures.ts";
 import type { RouteFeatureVisualKey } from "../../navigation/routeFeaturePalette.ts";
-import { GradientLegend } from "./GradientLegend.tsx";
+import { ClimbGradientBandLegend } from "./ClimbGradientBandLegend.tsx";
 import { RouteFeatureLegend } from "./RouteFeatureLegend.tsx";
 
 export interface GradientColoursDisclosureProps {
-  presentClasses: ReadonlySet<GradientClass>;
+  presentClimbBands: ReadonlySet<ClimbGradientBand>;
   presentVisualKeys: ReadonlySet<RouteFeatureVisualKey>;
 }
 
@@ -19,14 +19,21 @@ export interface GradientColoursDisclosureProps {
  * gives correct collapsed-by-default state, keyboard operation, and a
  * clearly associated panel for free, with no risk of reimplementing any
  * of that incorrectly. Renders nothing (not even the outer `<details>`)
- * when both sections would be empty, matching GradientLegend's and
- * RouteFeatureLegend's own "nothing to show yet" convention.
+ * when both sections would be empty, matching ClimbGradientBandLegend's
+ * and RouteFeatureLegend's own "nothing to show yet" convention. Only
+ * climb bands are shown in the "Detailed local gradient" section — a
+ * selected/active descent reuses the exact same three blues already
+ * shown in the macro section above, applied locally (see routeFeatures.ts
+ * — descent macro and local classification are literally the same
+ * scheme, unlike a climb's macro category and local band, which are
+ * mathematically different despite sharing colour tokens), so a second,
+ * duplicate set of descent rows here would read as a copy-paste bug.
  */
 export function GradientColoursDisclosure({
-  presentClasses,
+  presentClimbBands,
   presentVisualKeys,
 }: GradientColoursDisclosureProps) {
-  if (presentClasses.size === 0 && presentVisualKeys.size === 0) {
+  if (presentClimbBands.size === 0 && presentVisualKeys.size === 0) {
     return null;
   }
 
@@ -35,17 +42,21 @@ export function GradientColoursDisclosure({
       <summary>Gradient colours</summary>
       <section aria-label="Recognised route features">
         <p>
-          Overall climb colours consider both length and average gradient. Descent colours
-          describe average gradient and are specific to this app.
+          Overall climb colours depend on climb length and average gradient. Recognised
+          descents use one of three blues based on average gradient and are specific to
+          this app.
         </p>
         <RouteFeatureLegend presentVisualKeys={presentVisualKeys} />
       </section>
       <section aria-label="Detailed local gradient">
         <p>
-          Detailed colours show local gradient calculated over approximately 100 m. They
-          appear for the selected or currently active climb or descent.
+          Detailed colours show local gradient over approximately 100 m within the
+          selected or currently active climb. Brief flat or descending sections inside a
+          climb are green. A selected or currently active descent reuses the same three
+          blues shown above, applied to its local sections instead of its whole length —
+          any locally shallow stretch there shows the plain route colour instead.
         </p>
-        <GradientLegend presentClasses={presentClasses} />
+        <ClimbGradientBandLegend presentClimbBands={presentClimbBands} />
       </section>
     </details>
   );

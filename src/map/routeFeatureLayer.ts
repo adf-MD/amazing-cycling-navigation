@@ -18,7 +18,7 @@ function toGeoJsonCoordinate(coordinate: Coordinate): [number, number] {
 }
 
 function visualKeyOf(feature: RouteFeature): RouteFeatureVisualKey {
-  return feature.kind === "climb" ? feature.category : feature.severity;
+  return feature.kind === "climb" ? feature.category : feature.band;
 }
 
 function emptyRouteFeatureCollection(): GeoJSON.FeatureCollection<

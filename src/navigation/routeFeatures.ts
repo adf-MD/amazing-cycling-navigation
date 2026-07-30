@@ -1,5 +1,5 @@
-import type { GradientSegment, RouteElevationProfile } from "./gradient.ts";
-import { findGradientSegmentAtDistance } from "./gradient.ts";
+import type { ClassifiedSegment, RouteElevationProfile } from "./gradient.ts";
+import { findClassifiedSegmentAtDistance } from "./gradient.ts";
 
 /** A route length shorter than this can never be a recognised climb or
  * descent, regardless of gradient — matches both Garmin's own climb
@@ -23,8 +23,8 @@ export const MIN_CLIMB_SCORE = 1500;
  * recognised. App-specific — Garmin publishes no descent eligibility. */
 export const MAX_DESCENT_AVERAGE_GRADIENT_PERCENT = -3;
 /** Garmin-style climb score boundaries: score < 8000 is "uncategorised",
- * score >= 80000 is "HC". Every upper bound is exclusive, mirroring
- * gradient.ts's classifyGrade convention. */
+ * score >= 80000 is "HC". Every upper bound is exclusive, matching this
+ * module's own classifyClimbGradientBand/classifyDescentBand convention. */
 const CLIMB_CATEGORY_4_SCORE = 8000;
 const CLIMB_CATEGORY_3_SCORE = 16000;
 const CLIMB_CATEGORY_2_SCORE = 32000;
@@ -45,12 +45,64 @@ export const REVERSAL_BRIDGE_ELEVATION_METRES = 10;
 export type ClimbCategory =
   "uncategorised" | "category-4" | "category-3" | "category-2" | "category-1" | "hc";
 
-/** App-specific severity naming for descents, deliberately not
- * "category-N" — Garmin publishes no descent classification, so this app
- * invents its own, clearly distinct scheme (see CLAUDE.md). Decoupled
- * from colour and from GradientClass's unrelated "steep-descent" (a
- * MICRO local-gradient class, a different concept at a different scale). */
-export type DescentSeverity = "gentle" | "steep" | "very-steep";
+/** App-specific naming for descents, deliberately not "category-N" —
+ * Garmin publishes no descent classification, so this app invents its own,
+ * clearly distinct scheme (see CLAUDE.md). Used identically at both the
+ * macro (whole-feature, by average gradient) and local (selected/active,
+ * by smoothed local gradient) level — see classifyDescentBand/
+ * classifyDescentLocalKey below — unlike a climb's macro category (a
+ * length+average-gradient score) and local band (a plain gradient
+ * threshold), which are genuinely different scales that only happen to
+ * share colour tokens. */
+export type DescentBand = "moderate" | "steep" | "very-steep";
+
+/**
+ * Garmin-ClimbPro-style local-gradient bands for a *selected or currently
+ * active* recognised climb — a different concept from ClimbCategory (which
+ * scores the climb's own overall length+average-gradient), describing only
+ * the smoothed local gradient at one point within it. Deliberately not
+ * reusing GradientClass's old climb member names (that scheme's thresholds
+ * were 2/4/7/10%, this one's are 3/6/9/12%) — see classifyClimbGradientBand.
+ */
+export type ClimbGradientBand =
+  | "gentle-or-descending"
+  | "moderate-climb"
+  | "hard-climb"
+  | "very-hard-climb"
+  | "extremely-steep-climb";
+
+/** Deterministic grade→band mapping for a climb's *detailed* local
+ * presentation. Every upper bound is exclusive. Brief flat or descending
+ * sections within a climb fall into the lowest ("below 3%") band, matching
+ * Garmin's own ClimbPro approach — there is no separate "descent"/"flat"
+ * concept at this local level, unlike the retired whole-route
+ * GradientClass scheme. */
+export function classifyClimbGradientBand(gradePercent: number): ClimbGradientBand {
+  if (gradePercent < 3) return "gentle-or-descending";
+  if (gradePercent < 6) return "moderate-climb";
+  if (gradePercent < 9) return "hard-climb";
+  if (gradePercent < 12) return "very-hard-climb";
+  return "extremely-steep-climb";
+}
+
+/** Ordered light-to-dark, for flicker-suppression severity comparisons
+ * (see gradient.ts's classifyRunGrades) and for legend/UI enumeration. */
+export const CLIMB_GRADIENT_BAND_SEVERITY_ORDER: readonly ClimbGradientBand[] = [
+  "gentle-or-descending",
+  "moderate-climb",
+  "hard-climb",
+  "very-hard-climb",
+  "extremely-steep-climb",
+];
+
+/** A selected/active descent's local presentation: one of the same three
+ * DescentBand values used at the macro level, or "neutral" for a local
+ * stretch shallower than the descent eligibility threshold (a flat or
+ * brief rise within an otherwise-recognised descent) — deliberately NOT
+ * banded the way a climb's shallow sections are, since a descent's local
+ * detail should read as "just the ordinary route" there rather than
+ * implying a fourth descent-severity colour. */
+export type DescentLocalKey = DescentBand | "neutral";
 
 interface RouteFeatureCommon {
   /** Deterministic, derived from kind + start distance — stable across
@@ -82,13 +134,13 @@ export interface DescentFeature extends RouteFeatureCommon {
   /** The steepest (most negative) smoothed local gradient anywhere in the
    * descent, signed to match averageGradientPercent's own convention. */
   maxGradientPercent: number;
-  severity: DescentSeverity;
+  band: DescentBand;
 }
 
 export type RouteFeature = ClimbFeature | DescentFeature;
 
 /** Garmin-style score-to-category mapping. Every upper bound is
- * exclusive, mirroring gradient.ts's classifyGrade convention. */
+ * exclusive, matching this module's own house style. */
 export function classifyClimbScore(score: number): ClimbCategory {
   if (score < CLIMB_CATEGORY_4_SCORE) return "uncategorised";
   if (score < CLIMB_CATEGORY_3_SCORE) return "category-4";
@@ -98,14 +150,46 @@ export function classifyClimbScore(score: number): ClimbCategory {
   return "hc";
 }
 
-/** App-specific average-gradient-to-severity mapping for descents. More
- * negative gradient is more severe; `averageGradientPercent` is assumed
- * to already satisfy MAX_DESCENT_AVERAGE_GRADIENT_PERCENT eligibility. */
-export function classifyDescentSeverity(averageGradientPercent: number): DescentSeverity {
-  if (averageGradientPercent > DESCENT_STEEP_GRADIENT_PERCENT) return "gentle";
-  if (averageGradientPercent > DESCENT_VERY_STEEP_GRADIENT_PERCENT) return "steep";
+/** Shared grade→band mapping used at BOTH the macro (whole-feature average
+ * gradient) and local (selected/active, smoothed local gradient) level —
+ * see classifyDescentBand/classifyDescentLocalKey below, the only two
+ * public entry points. Assumes the caller's gradient is already at least
+ * as steep as MAX_DESCENT_AVERAGE_GRADIENT_PERCENT (checked by
+ * classifyDescentLocalKey for the local case, and by feature eligibility
+ * for the macro case). */
+function descentBandFromGradient(gradePercent: number): DescentBand {
+  if (gradePercent > DESCENT_STEEP_GRADIENT_PERCENT) return "moderate";
+  if (gradePercent > DESCENT_VERY_STEEP_GRADIENT_PERCENT) return "steep";
   return "very-steep";
 }
+
+/** App-specific average-gradient-to-band mapping for a complete recognised
+ * descent (macro level). More negative gradient is more severe;
+ * `averageGradientPercent` is assumed to already satisfy
+ * MAX_DESCENT_AVERAGE_GRADIENT_PERCENT eligibility. */
+export function classifyDescentBand(averageGradientPercent: number): DescentBand {
+  return descentBandFromGradient(averageGradientPercent);
+}
+
+/** Local-gradient view of the same scheme, for a selected/active descent's
+ * detailed presentation: a point shallower than the descent eligibility
+ * threshold (a flat or brief rise within the descent) is "neutral" —
+ * deliberately not banded — rather than being force-fit into "moderate".
+ */
+export function classifyDescentLocalKey(gradePercent: number): DescentLocalKey {
+  if (gradePercent > MAX_DESCENT_AVERAGE_GRADIENT_PERCENT) return "neutral";
+  return descentBandFromGradient(gradePercent);
+}
+
+/** Ordered light-to-dark plus "neutral" first (least severe), for
+ * flicker-suppression severity comparisons (see gradient.ts's
+ * classifyRunGrades). */
+export const DESCENT_LOCAL_KEY_SEVERITY_ORDER: readonly DescentLocalKey[] = [
+  "neutral",
+  "moderate",
+  "steep",
+  "very-steep",
+];
 
 /**
  * Confirmed leg-boundary indices within one run's own (distances,
@@ -346,7 +430,7 @@ function detectFeaturesForRun(
           "min",
           averageGradientPercent,
         ),
-        severity: classifyDescentSeverity(averageGradientPercent),
+        band: classifyDescentBand(averageGradientPercent),
       });
     }
   }
@@ -405,9 +489,9 @@ export function findFeatureAtDistance(
   return null;
 }
 
-export type ElevationChartTapResolution =
+export type ElevationChartTapResolution<Class extends string> =
   | { kind: "feature"; feature: RouteFeature }
-  | { kind: "segment"; segment: GradientSegment }
+  | { kind: "segment"; segment: ClassifiedSegment<Class> }
   | null;
 
 /**
@@ -422,20 +506,22 @@ export type ElevationChartTapResolution =
  * inside the detail feature) resolves to `null` — deliberately a no-op
  * for the caller, not a "clear selection" signal, mirroring the existing
  * warnings convention of a dedicated Clear-selection control rather than
- * tap-empty-to-clear.
+ * tap-empty-to-clear. Generic over the micro segment's own classification
+ * type — this function never inspects a segment's visualKey, it only
+ * looks up which one (if any) contains the tapped distance.
  */
-export function resolveElevationChartTap(
+export function resolveElevationChartTap<Class extends string>(
   distanceMetres: number,
   routeFeatures: readonly RouteFeature[],
   microDetailFeature: RouteFeature | null,
-  microDetailSegments: readonly GradientSegment[],
-): ElevationChartTapResolution {
+  microDetailSegments: readonly ClassifiedSegment<Class>[],
+): ElevationChartTapResolution<Class> {
   if (
     microDetailFeature !== null &&
     distanceMetres >= microDetailFeature.startDistanceMetres &&
     distanceMetres <= microDetailFeature.endDistanceMetres
   ) {
-    const segment = findGradientSegmentAtDistance(microDetailSegments, distanceMetres);
+    const segment = findClassifiedSegmentAtDistance(microDetailSegments, distanceMetres);
     if (segment !== null) return { kind: "segment", segment };
   }
   const feature = findFeatureAtDistance(routeFeatures, distanceMetres);

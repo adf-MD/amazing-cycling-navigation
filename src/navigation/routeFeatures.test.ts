@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { analyzeRouteElevationProfile } from "./gradient.ts";
-import type { GradientSegment } from "./gradient.ts";
+import type { ClassifiedSegment } from "./gradient.ts";
 import {
+  classifyClimbGradientBand,
   classifyClimbScore,
-  classifyDescentSeverity,
+  classifyDescentBand,
+  classifyDescentLocalKey,
   detectRouteFeatures,
   findFeatureAtDistance,
   listClimbsInRouteOrder,
   MIN_CLIMB_SCORE,
   resolveElevationChartTap,
   type ClimbFeature,
+  type ClimbGradientBand,
   type DescentFeature,
   type RouteFeature,
 } from "./routeFeatures.ts";
@@ -108,7 +111,7 @@ describe("detectRouteFeatures: eligibility", () => {
     const feature = features[0];
     if (!feature || !isDescent(feature)) throw new Error("expected one descent feature");
     expect(feature.averageGradientPercent).toBeCloseTo(-7, 0);
-    expect(feature.severity).toBe("steep");
+    expect(feature.band).toBe("steep");
     expect(feature.elevationLossMetres).toBeGreaterThan(0);
   });
 
@@ -153,10 +156,10 @@ describe("classifyClimbScore: boundaries", () => {
   });
 });
 
-describe("classifyDescentSeverity: boundaries", () => {
+describe("classifyDescentBand: boundaries", () => {
   it.each([
-    [-3, "gentle"],
-    [-5.99, "gentle"],
+    [-3, "moderate"],
+    [-5.99, "moderate"],
     [-6, "steep"],
     [-8.99, "steep"],
     [-9, "very-steep"],
@@ -164,9 +167,59 @@ describe("classifyDescentSeverity: boundaries", () => {
   ] as const)(
     "classifies an average gradient of %d%% as %s",
     (gradePercent, expected) => {
-      expect(classifyDescentSeverity(gradePercent)).toBe(expected);
+      expect(classifyDescentBand(gradePercent)).toBe(expected);
     },
   );
+});
+
+describe("classifyClimbGradientBand: boundaries", () => {
+  it.each([
+    [-10, "gentle-or-descending"],
+    [0, "gentle-or-descending"],
+    [2.999, "gentle-or-descending"],
+    [3, "moderate-climb"],
+    [4, "moderate-climb"],
+    [5.999, "moderate-climb"],
+    [6, "hard-climb"],
+    [7, "hard-climb"],
+    [8.999, "hard-climb"],
+    [9, "very-hard-climb"],
+    [10, "very-hard-climb"],
+    [11.999, "very-hard-climb"],
+    [12, "extremely-steep-climb"],
+    [20, "extremely-steep-climb"],
+  ] as const)("classifies a local gradient of %d%% as %s", (gradePercent, expected) => {
+    expect(classifyClimbGradientBand(gradePercent)).toBe(expected);
+  });
+
+  it("maps negative and flat local values inside a recognised climb to the lowest (green) band", () => {
+    expect(classifyClimbGradientBand(-8)).toBe("gentle-or-descending");
+    expect(classifyClimbGradientBand(0)).toBe("gentle-or-descending");
+  });
+});
+
+describe("classifyDescentLocalKey: boundaries", () => {
+  it.each([
+    [5, "neutral"],
+    [0, "neutral"],
+    [-2.999, "neutral"],
+    [-3, "moderate"],
+    [-4, "moderate"],
+    [-5.999, "moderate"],
+    [-6, "steep"],
+    [-7, "steep"],
+    [-8.999, "steep"],
+    [-9, "very-steep"],
+    [-20, "very-steep"],
+  ] as const)("classifies a local gradient of %d%% as %s", (gradePercent, expected) => {
+    expect(classifyDescentLocalKey(gradePercent)).toBe(expected);
+  });
+
+  it("maps shallow, flat and climbing local values inside a recognised descent to neutral, not a blue band", () => {
+    expect(classifyDescentLocalKey(-1)).toBe("neutral");
+    expect(classifyDescentLocalKey(0)).toBe("neutral");
+    expect(classifyDescentLocalKey(5)).toBe("neutral");
+  });
 });
 
 describe("detectRouteFeatures: reversal bridging", () => {
@@ -409,13 +462,13 @@ describe("resolveElevationChartTap", () => {
     startDistanceMetres: 2000,
     endDistanceMetres: 3000,
   };
-  const segment: GradientSegment = {
+  const segment: ClassifiedSegment<ClimbGradientBand> = {
     startDistanceMetres: 200,
     endDistanceMetres: 400,
     averageGradientPercent: 7,
-    classification: "moderate-climb",
+    visualKey: "moderate-climb",
   };
-  const microSegments: GradientSegment[] = [segment];
+  const microSegments: ClassifiedSegment<ClimbGradientBand>[] = [segment];
 
   it("resolves to the micro segment when the tap falls inside the detail feature and a matching segment exists", () => {
     const result = resolveElevationChartTap(

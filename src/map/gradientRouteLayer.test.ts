@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildGradientFeatureCollection } from "./gradientRouteLayer.ts";
 import type { RoutePoint } from "../domain/types.ts";
-import type { GradientSegment } from "../navigation/gradient.ts";
+import type { ClassifiedSegment } from "../navigation/gradient.ts";
+import type { MicroDetailVisualKey } from "../navigation/routeFeaturePalette.ts";
 
 const POINTS: RoutePoint[] = Array.from({ length: 11 }, (_, index) => ({
   coordinate: [index * 0.001, 51],
@@ -12,34 +13,40 @@ const POINTS: RoutePoint[] = Array.from({ length: 11 }, (_, index) => ({
 function gradientSegment(
   startDistanceMetres: number,
   endDistanceMetres: number,
-  classification: GradientSegment["classification"],
-): GradientSegment {
+  visualKey: MicroDetailVisualKey,
+): ClassifiedSegment<MicroDetailVisualKey> {
   return {
     startDistanceMetres,
     endDistanceMetres,
     averageGradientPercent: null,
-    classification,
+    visualKey,
   };
 }
 
 describe("buildGradientFeatureCollection", () => {
-  it("builds one feature per gradient segment, each carrying its own gradientClass", () => {
+  it("builds one feature per gradient segment, each carrying its own visualKey", () => {
     const collection = buildGradientFeatureCollection(
       POINTS,
-      [gradientSegment(0, 400, "flat"), gradientSegment(400, 1000, "hard-climb")],
+      [
+        gradientSegment(0, 400, "gentle-or-descending"),
+        gradientSegment(400, 1000, "hard-climb"),
+      ],
       0,
       1000,
     );
 
     expect(collection.features).toHaveLength(2);
-    expect(collection.features[0]?.properties.gradientClass).toBe("flat");
-    expect(collection.features[1]?.properties.gradientClass).toBe("hard-climb");
+    expect(collection.features[0]?.properties.visualKey).toBe("gentle-or-descending");
+    expect(collection.features[1]?.properties.visualKey).toBe("hard-climb");
   });
 
   it("shares an exact seam coordinate between adjacent segments", () => {
     const collection = buildGradientFeatureCollection(
       POINTS,
-      [gradientSegment(0, 450, "flat"), gradientSegment(450, 1000, "hard-climb")],
+      [
+        gradientSegment(0, 450, "gentle-or-descending"),
+        gradientSegment(450, 1000, "hard-climb"),
+      ],
       0,
       1000,
     );
@@ -66,7 +73,10 @@ describe("buildGradientFeatureCollection", () => {
   it("omits a segment entirely outside the clip range", () => {
     const collection = buildGradientFeatureCollection(
       POINTS,
-      [gradientSegment(0, 300, "flat"), gradientSegment(300, 600, "hard-climb")],
+      [
+        gradientSegment(0, 300, "gentle-or-descending"),
+        gradientSegment(300, 600, "hard-climb"),
+      ],
       700,
       1000,
     );
@@ -77,7 +87,7 @@ describe("buildGradientFeatureCollection", () => {
   it("omits a degenerate slice shorter than two points", () => {
     const collection = buildGradientFeatureCollection(
       POINTS,
-      [gradientSegment(995, 1000, "flat")],
+      [gradientSegment(995, 1000, "gentle-or-descending")],
       0,
       1000,
     );

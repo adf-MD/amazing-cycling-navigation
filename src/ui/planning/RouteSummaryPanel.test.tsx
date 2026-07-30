@@ -3,8 +3,9 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouteSummaryPanel } from "./RouteSummaryPanel.tsx";
 import type { PlannedRoute, RouteWarning } from "../../domain/types.ts";
-import type { GradientSegment } from "../../navigation/gradient.ts";
+import type { ClassifiedSegment } from "../../navigation/gradient.ts";
 import type { ClimbFeature, RouteFeature } from "../../navigation/routeFeatures.ts";
+import type { MicroDetailVisualKey } from "../../navigation/routeFeaturePalette.ts";
 
 function buildRoute(overrides: Partial<PlannedRoute> = {}): PlannedRoute {
   return {
@@ -729,15 +730,28 @@ describe("RouteSummaryPanel", () => {
     function gradientSegment(
       startDistanceMetres: number,
       endDistanceMetres: number,
-      classification: GradientSegment["classification"],
-    ): GradientSegment {
+      visualKey: MicroDetailVisualKey,
+    ): ClassifiedSegment<MicroDetailVisualKey> {
       return {
         startDistanceMetres,
         endDistanceMetres,
         averageGradientPercent: null,
-        classification,
+        visualKey,
       };
     }
+
+    const selectedClimb: ClimbFeature = {
+      id: "climb-0",
+      kind: "climb",
+      startDistanceMetres: 0,
+      endDistanceMetres: 1000,
+      lengthMetres: 1000,
+      elevationGainMetres: 60,
+      averageGradientPercent: 6,
+      maxGradientPercent: 8,
+      climbScore: 6000,
+      category: "category-4",
+    };
 
     it("renders an elevation profile chart for a routed route with elevation", () => {
       render(
@@ -749,7 +763,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
-          gradientSegments={[gradientSegment(0, 1000, "flat")]}
+          gradientSegments={[gradientSegment(0, 1000, "hard-climb")]}
         />,
       );
 
@@ -777,7 +791,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
-          gradientSegments={[gradientSegment(0, 1000, "unknown")]}
+          gradientSegments={[]}
         />,
       );
 
@@ -787,7 +801,7 @@ describe("RouteSummaryPanel", () => {
       expect(screen.queryByRole("img")).toBeNull();
     });
 
-    it("renders a gradient legend entry for each present class", () => {
+    it("renders a detailed climb-band legend entry for each present band, only while a climb is selected", () => {
       render(
         <RouteSummaryPanel
           route={buildRoute()}
@@ -797,19 +811,21 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          routeFeatures={[selectedClimb]}
+          selectedRouteFeature={selectedClimb}
           gradientSegments={[
-            gradientSegment(0, 500, "flat"),
+            gradientSegment(0, 500, "gentle-or-descending"),
             gradientSegment(500, 1000, "hard-climb"),
           ]}
         />,
       );
 
-      const legend = screen.getByRole("list", { name: "Gradient legend" });
+      const legend = screen.getByRole("list", { name: "Detailed climb gradient legend" });
       expect(legend.querySelectorAll("li")).toHaveLength(2);
       expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
     });
 
-    it("renders no gradient legend when there are no gradient segments", () => {
+    it("renders no detailed climb-band legend when there are no gradient segments", () => {
       render(
         <RouteSummaryPanel
           route={buildRoute()}
@@ -823,7 +839,40 @@ describe("RouteSummaryPanel", () => {
         />,
       );
 
-      expect(screen.queryByRole("list", { name: "Gradient legend" })).toBeNull();
+      expect(
+        screen.queryByRole("list", { name: "Detailed climb gradient legend" }),
+      ).toBeNull();
+    });
+
+    it("renders no detailed climb-band legend when the selected feature is a descent, not a climb", () => {
+      const selectedDescent: RouteFeature = {
+        id: "descent-0",
+        kind: "descent",
+        startDistanceMetres: 0,
+        endDistanceMetres: 1000,
+        lengthMetres: 1000,
+        elevationLossMetres: 60,
+        averageGradientPercent: -6,
+        maxGradientPercent: -8,
+        band: "steep",
+      };
+      render(
+        <RouteSummaryPanel
+          route={buildRoute()}
+          waypointCount={2}
+          warnings={[]}
+          selectedWarningIndex={null}
+          onSelectWarning={vi.fn()}
+          onClearWarningSelection={vi.fn()}
+          revealToken={0}
+          gradientSegments={[gradientSegment(0, 1000, "steep")]}
+          selectedRouteFeature={selectedDescent}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("list", { name: "Detailed climb gradient legend" }),
+      ).toBeNull();
     });
 
     it("plots the given displayPoints (the shared smoothed series) rather than route.points' own raw elevations", () => {
@@ -841,7 +890,7 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
-          gradientSegments={[gradientSegment(0, 1000, "flat")]}
+          gradientSegments={[gradientSegment(0, 1000, "hard-climb")]}
           displayPoints={smoothedDisplayPoints}
         />,
       );

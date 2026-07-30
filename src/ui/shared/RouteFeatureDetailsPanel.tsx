@@ -47,7 +47,7 @@ export function RouteFeatureDetailsPanel({
     return null;
   }
 
-  const visualKey = feature.kind === "climb" ? feature.category : feature.severity;
+  const visualKey = feature.kind === "climb" ? feature.category : feature.band;
   const heading =
     feature.kind === "climb" && climbNumber !== undefined
       ? `Climb ${String(climbNumber)} · ${CLIMB_CATEGORY_NAMES[feature.category]}`
@@ -77,6 +77,12 @@ export function RouteFeatureDetailsPanel({
       </p>
       {feature.kind === "climb" && <p>Climb score: {Math.round(feature.climbScore)}</p>}
       <p>Values are derived from available route elevation data.</p>
+      {feature.kind === "descent" && (
+        <p>
+          Blue intensity reflects gradient steepness only, not surface, bends, traffic or
+          other conditions.
+        </p>
+      )}
       {onClear && (
         <button type="button" onClick={onClear}>
           Clear selection

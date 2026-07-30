@@ -29,9 +29,20 @@ describe("RouteFeatureLegend", () => {
     const items = list.querySelectorAll("li");
     expect(items).toHaveLength(4);
     expect(items[0]?.textContent).toContain("Ordinary route");
-    expect(items[1]?.textContent).toContain("Uncategorised climb");
+    expect(items[1]?.textContent).toContain("Uncategorised or Category 4 climb");
     expect(items[2]?.textContent).toContain("HC climb");
     expect(items[3]?.textContent).toContain("very steep");
+  });
+
+  it("combines Uncategorised and Category 4 into a single row even when both are present", () => {
+    render(
+      <RouteFeatureLegend presentVisualKeys={keys("uncategorised", "category-4")} />,
+    );
+    const list = screen.getByRole("list", { name: "Recognised route features legend" });
+    const items = list.querySelectorAll("li");
+    // Ordinary route + one combined climb row, not two.
+    expect(items).toHaveLength(2);
+    expect(items[1]?.textContent).toContain("Uncategorised or Category 4 climb");
   });
 
   it("omits keys that are not present", () => {
@@ -49,7 +60,9 @@ describe("RouteFeatureLegend", () => {
   });
 
   it("has no focusable descendants", () => {
-    render(<RouteFeatureLegend presentVisualKeys={keys("category-3", "gentle", "hc")} />);
+    render(
+      <RouteFeatureLegend presentVisualKeys={keys("category-3", "moderate", "hc")} />,
+    );
     expect(screen.queryAllByRole("button")).toEqual([]);
     expect(screen.queryAllByRole("link")).toEqual([]);
   });
@@ -59,9 +72,18 @@ describe("RouteFeatureLegend", () => {
     expect(screen.getByText(/Category 2 climb/)).toBeInTheDocument();
   });
 
-  it("labels a descent as 'Recognised descent', with its severity called out in text", () => {
+  it("labels a descent as 'Recognised descent', with its band called out in text", () => {
     render(<RouteFeatureLegend presentVisualKeys={keys("steep")} />);
     expect(screen.getByText(/Recognised descent \(steep/)).toBeInTheDocument();
+  });
+
+  it("renders three distinct descent rows when all three bands are present, never a single merged blue", () => {
+    render(
+      <RouteFeatureLegend presentVisualKeys={keys("moderate", "steep", "very-steep")} />,
+    );
+    expect(screen.getByText(/Recognised descent \(moderate/)).toBeInTheDocument();
+    expect(screen.getByText(/Recognised descent \(steep/)).toBeInTheDocument();
+    expect(screen.getByText(/Recognised descent \(very steep/)).toBeInTheDocument();
   });
 
   it("renders a visible line sample for a present key, coloured with the same token the map layer uses", () => {

@@ -7,15 +7,18 @@ import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
 import { useOnlineStatus } from "../../platform/onlineStatus.ts";
 import {
   analyzeRouteElevationProfile,
-  clipGradientSegments,
-  type GradientSegment,
+  clipClassifiedSegments,
 } from "../../navigation/gradient.ts";
 import {
   detectRouteFeatures,
   findFeatureAtDistance,
   listClimbsInRouteOrder,
   resolveElevationChartTap,
+  type ClimbGradientBand,
 } from "../../navigation/routeFeatures.ts";
+import { buildFeatureDetailSegments } from "../../navigation/routeFeatureDetail.ts";
+import type { MicroDetailVisualKey } from "../../navigation/routeFeaturePalette.ts";
+import type { ClassifiedSegment } from "../../navigation/gradient.ts";
 import type { ElevationViewMode, OffRouteLevel } from "../../navigation/types.ts";
 import {
   ELEVATION_VIEW_MODE_OPTIONS,
@@ -139,10 +142,10 @@ export function RidingScreen({
   // useRideNavigation, mirroring how this screen already independently
   // re-derives the elevation profile in its own memo, separate from the
   // hook's own internal one, keeping the hook's public contract stable.
-  const { gradientSegments, displayPoints, routeFeatures } = useMemo(() => {
+  const { runs, displayPoints, routeFeatures } = useMemo(() => {
     const profile = analyzeRouteElevationProfile(route.points);
     return {
-      gradientSegments: profile.gradientSegments,
+      runs: profile.runs,
       displayPoints: profile.displayPoints,
       routeFeatures: detectRouteFeatures(profile),
     };
@@ -165,7 +168,7 @@ export function RidingScreen({
     featureId: string | null;
   } | null>(null);
   const [selectedGradientSegment, setSelectedGradientSegment] =
-    useState<GradientSegment | null>(null);
+    useState<ClassifiedSegment<MicroDetailVisualKey> | null>(null);
 
   // Recognised climbs, in route order, for the pre-ride selector below
   // and for the pre-ride default above.
@@ -200,13 +203,15 @@ export function RidingScreen({
     const index = climbs.findIndex((climb) => climb.id === microDetailFeature.id);
     preRideClimbNumber = index === -1 ? undefined : index + 1;
   }
-  const microDetailSegments = microDetailFeature
-    ? clipGradientSegments(
-        gradientSegments,
-        microDetailFeature.startDistanceMetres,
-        microDetailFeature.endDistanceMetres,
-      )
-    : [];
+  // buildFeatureDetailSegments does real classify+merge+flicker-suppress
+  // work over the feature's owning run (unlike the old cheap clip-only
+  // approach), so this must be memoized — otherwise it would re-run on
+  // every GPS tick during active Riding.
+  const microDetailSegments = useMemo(
+    () =>
+      microDetailFeature ? buildFeatureDetailSegments(microDetailFeature, runs) : [],
+    [microDetailFeature, runs],
+  );
   // Visual emphasis (the extra stroke-width bump) is reserved for an
   // explicit selection, never for a merely-active feature — mirrors the
   // map's own selected-feature-halo policy (no halo for "active" alone).
@@ -505,7 +510,7 @@ export function RidingScreen({
           );
         } else {
           const window = nav.elevationProfileDisplay.window;
-          const windowMicroSegments = clipGradientSegments(
+          const windowMicroSegments = clipClassifiedSegments(
             microDetailSegments,
             window.startDistanceMetres,
             window.endDistanceMetres,
@@ -530,13 +535,19 @@ export function RidingScreen({
           <>
             {chart}
             <GradientColoursDisclosure
-              presentClasses={
-                new Set(displayedMicroSegments.map((segment) => segment.classification))
+              presentClimbBands={
+                microDetailFeature?.kind === "climb"
+                  ? new Set(
+                      displayedMicroSegments.map(
+                        (segment) => segment.visualKey as ClimbGradientBand,
+                      ),
+                    )
+                  : new Set()
               }
               presentVisualKeys={
                 new Set(
                   routeFeatures.map((feature) =>
-                    feature.kind === "climb" ? feature.category : feature.severity,
+                    feature.kind === "climb" ? feature.category : feature.band,
                   ),
                 )
               }

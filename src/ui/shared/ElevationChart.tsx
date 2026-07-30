@@ -1,9 +1,12 @@
 import type { RoutePoint } from "../../domain/types.ts";
 import { hasAnyElevation } from "../../navigation/elevation.ts";
-import type { GradientSegment } from "../../navigation/gradient.ts";
-import { GRADIENT_CLASS_COLOURS } from "../../navigation/gradientPalette.ts";
+import type { ClassifiedSegment } from "../../navigation/gradient.ts";
 import type { RouteFeature } from "../../navigation/routeFeatures.ts";
-import { ROUTE_FEATURE_COLOURS } from "../../navigation/routeFeaturePalette.ts";
+import {
+  MICRO_DETAIL_COLOURS,
+  ROUTE_FEATURE_COLOURS,
+  type MicroDetailVisualKey,
+} from "../../navigation/routeFeaturePalette.ts";
 import { formatDistanceKm } from "./routeSummary.ts";
 import {
   buildElevationChartGeometry,
@@ -15,9 +18,19 @@ import {
   type ElevationChartPoint,
 } from "./elevationChartGeometry.ts";
 import {
-  buildGradientChartRuns,
+  buildFeatureDetailChartRuns,
   buildRouteFeatureChartRuns,
 } from "./elevationChartGradient.ts";
+
+/** A detail run's visualKey resolves to plain currentColor both when
+ * there is no detail segment covering this run at all (null — outside the
+ * currently-shown selected/active feature) and when it's explicitly
+ * "neutral" (a shallow/flat/climbing stretch inside a selected descent,
+ * which should read as "just the ordinary route", not a fourth blue). */
+function detailColour(visualKey: MicroDetailVisualKey | null): string {
+  if (visualKey === null || visualKey === "neutral") return "currentColor";
+  return MICRO_DETAIL_COLOURS[visualKey];
+}
 
 /** The rider's current (or last known) position to plot as a vertical
  * marker, already resolved to an exact route distance and elevation by the
@@ -66,7 +79,7 @@ export interface ElevationChartProps {
    * comment above for how the two compose. This component only colours
    * and splits the existing raw geometry by these boundaries, it never
    * re-runs gradient analysis itself. */
-  gradientSegments?: readonly GradientSegment[];
+  gradientSegments?: readonly ClassifiedSegment<MicroDetailVisualKey>[];
   /** Visually emphasises whichever specific range (a selected macro
    * feature, or a further-selected micro segment within it) the caller
    * currently considers "selected", independent of `marker`. */
@@ -74,7 +87,7 @@ export interface ElevationChartProps {
   /** Fired with the route-global distance (metres) corresponding to a tap
    * anywhere on the chart's plot area — converted from the tap's pixel
    * position via the same domain/width this component itself uses, so
-   * the caller can resolve it against whichever GradientSegment/
+   * the caller can resolve it against whichever ClassifiedSegment/
    * RouteFeature boundaries the route analysis already produced (see
    * routeFeatures.ts's resolveElevationChartTap). This component does no
    * resolution of its own and holds no selection state — every tap
@@ -153,7 +166,12 @@ export function ElevationChart({
     ? buildRouteFeatureChartRuns(geometry.segments, routeFeatures, resolvedDomain, width)
     : undefined;
   const detailRuns = gradientSegments
-    ? buildGradientChartRuns(geometry.segments, gradientSegments, resolvedDomain, width)
+    ? buildFeatureDetailChartRuns(
+        geometry.segments,
+        gradientSegments,
+        resolvedDomain,
+        width,
+      )
     : undefined;
 
   const markerGeometry = marker
@@ -284,7 +302,7 @@ export function ElevationChart({
             : details
               ? details.map((run) => ({
                   points: run.points,
-                  stroke: GRADIENT_CLASS_COLOURS[run.gradientClass],
+                  stroke: detailColour(run.visualKey),
                   strokeWidth: DETAIL_STROKE_WIDTH,
                 }))
               : [
@@ -297,14 +315,25 @@ export function ElevationChart({
 
           // The OVERLAY layer only exists when BOTH macro and detail data
           // are supplied — detail then draws on top of (not instead of)
-          // the macro base, covering only its own narrower range.
+          // the macro base, covering only its own narrower range. A run
+          // with visualKey === null falls outside the currently-shown
+          // detail feature entirely and is omitted rather than painted —
+          // rendering it (even as currentColor) would draw a solid stroke
+          // over the macro colour of every OTHER climb/descent on the
+          // route, hiding it. A "neutral" run, by contrast, IS inside the
+          // detail feature (a shallow/flat/climbing stretch within a
+          // selected descent) and is rendered via detailColour, which
+          // resolves it to currentColor — the intended "just the ordinary
+          // route" look for that specific case.
           const overlayRuns =
             features && details
-              ? details.map((run) => ({
-                  points: run.points,
-                  stroke: GRADIENT_CLASS_COLOURS[run.gradientClass],
-                  strokeWidth: DETAIL_STROKE_WIDTH,
-                }))
+              ? details
+                  .filter((run) => run.visualKey !== null)
+                  .map((run) => ({
+                    points: run.points,
+                    stroke: detailColour(run.visualKey),
+                    strokeWidth: DETAIL_STROKE_WIDTH,
+                  }))
               : [];
 
           return (

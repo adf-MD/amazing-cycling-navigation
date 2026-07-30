@@ -14,13 +14,14 @@ import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
 import { shortestAngularDifferenceDegrees } from "../../navigation/bearing.ts";
 import {
   analyzeRouteElevationProfile,
-  clipGradientSegments,
-  type GradientSegment,
+  type ClassifiedSegment,
 } from "../../navigation/gradient.ts";
 import {
   detectRouteFeatures,
   resolveElevationChartTap,
 } from "../../navigation/routeFeatures.ts";
+import { buildFeatureDetailSegments } from "../../navigation/routeFeatureDetail.ts";
+import type { MicroDetailVisualKey } from "../../navigation/routeFeaturePalette.ts";
 import { interpolateRoutePointAt } from "../../navigation/upcomingElevation.ts";
 import { coalesceAdjacentWarnings } from "../../navigation/warningGeometry.ts";
 import { getApproximateLocationOnce } from "../../platform/geolocation.ts";
@@ -165,7 +166,7 @@ export function PlanningScreen({
   // selected feature — cleared whenever the feature selection itself
   // changes (see selectRouteFeature/handleClearRouteFeatureSelection).
   const [selectedGradientSegment, setSelectedGradientSegment] =
-    useState<GradientSegment | null>(null);
+    useState<ClassifiedSegment<MicroDetailVisualKey> | null>(null);
   // Tracks which waypoint a pending move/insert-after applies to,
   // alongside the action itself — so a selection change to a *different*
   // waypoint (or to none) automatically invalidates a stale pending
@@ -223,15 +224,14 @@ export function PlanningScreen({
   // pass) — see routeFeatures.ts's own doc comment on why it must always
   // be derived from the full-route profile, never a windowed slice.
   const {
-    gradientSegments,
+    runs,
     displayPoints: elevationDisplayPoints,
     routeFeatures,
   } = useMemo(() => {
-    if (!routedRoute)
-      return { gradientSegments: [], displayPoints: [], routeFeatures: [] };
+    if (!routedRoute) return { runs: [], displayPoints: [], routeFeatures: [] };
     const profile = analyzeRouteElevationProfile(routedRoute.points);
     return {
-      gradientSegments: profile.gradientSegments,
+      runs: profile.runs,
       displayPoints: profile.displayPoints,
       routeFeatures: detectRouteFeatures(profile),
     };
@@ -671,13 +671,15 @@ export function PlanningScreen({
   // nothing is selected. Planning has no "currently active during a ride"
   // concept, so selection is the only source of micro detail here, unlike
   // RidingScreen's selectedFeature ?? activeFeature.
-  const microDetailSegments = selectedRouteFeature
-    ? clipGradientSegments(
-        gradientSegments,
-        selectedRouteFeature.startDistanceMetres,
-        selectedRouteFeature.endDistanceMetres,
-      )
-    : [];
+  // buildFeatureDetailSegments does real classify+merge+flicker-suppress
+  // work over the feature's owning run, so this must be memoized to avoid
+  // recomputing it on every unrelated render (e.g. a keystroke in the
+  // route name field).
+  const microDetailSegments = useMemo(
+    () =>
+      selectedRouteFeature ? buildFeatureDetailSegments(selectedRouteFeature, runs) : [],
+    [selectedRouteFeature, runs],
+  );
   const chartSelectedRangeMetres = selectedGradientSegment
     ? {
         startDistanceMetres: selectedGradientSegment.startDistanceMetres,

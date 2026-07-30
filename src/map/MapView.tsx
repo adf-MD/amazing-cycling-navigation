@@ -3,10 +3,14 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { StyleSpecification } from "maplibre-gl";
 import type { Coordinate, RoutePoint, RouteWarning } from "../domain/types.ts";
 import { logError } from "../platform/errorLog.ts";
-import type { GradientSegment } from "../navigation/gradient.ts";
-import { GRADIENT_CLASS_COLOURS } from "../navigation/gradientPalette.ts";
+import type { ClassifiedSegment } from "../navigation/gradient.ts";
 import type { RouteFeature } from "../navigation/routeFeatures.ts";
-import { ROUTE_FEATURE_COLOURS } from "../navigation/routeFeaturePalette.ts";
+import {
+  MICRO_DETAIL_COLOURS,
+  ROUTE_FEATURE_COLOURS,
+  UNREACHABLE_FALLBACK_COLOUR,
+  type MicroDetailVisualKey,
+} from "../navigation/routeFeaturePalette.ts";
 import {
   createMapLibreMap,
   type LineLayerPaint,
@@ -373,7 +377,7 @@ export interface MapViewProps {
    * distance), the same value that already drives the completed/remaining
    * route-line split and the direction arrows, so the micro-coloured
    * centre always agrees with the line it recolours during active Riding. */
-  gradientOverlay?: { segments: readonly GradientSegment[] };
+  gradientOverlay?: { segments: readonly ClassifiedSegment<MicroDetailVisualKey>[] };
   /** The shared macro climb/descent feature list and selection — omitted
    * (the default) leaves both the macro and selected-feature sources
    * empty. See RouteFeatureOverlay's own doc comment. */
@@ -590,16 +594,16 @@ export function MapView({
           lineColor: {
             property: "visualKey",
             cases: ROUTE_FEATURE_COLOURS,
-            fallback: GRADIENT_CLASS_COLOURS.unknown,
+            fallback: UNREACHABLE_FALLBACK_COLOUR,
           },
           lineWidth: ROUTE_FEATURE_LAYER_WIDTH,
         });
         map.addGeoJsonSource(GRADIENT_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
         map.addLineLayer(GRADIENT_LAYER_ID, GRADIENT_SOURCE_ID, {
           lineColor: {
-            property: "gradientClass",
-            cases: GRADIENT_CLASS_COLOURS,
-            fallback: GRADIENT_CLASS_COLOURS.unknown,
+            property: "visualKey",
+            cases: MICRO_DETAIL_COLOURS,
+            fallback: UNREACHABLE_FALLBACK_COLOUR,
           },
           lineWidth: GRADIENT_LINE_WIDTH,
         });

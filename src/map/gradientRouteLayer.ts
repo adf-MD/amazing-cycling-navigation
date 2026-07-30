@@ -1,12 +1,14 @@
 import type { Coordinate, RoutePoint } from "../domain/types.ts";
-import type { GradientClass, GradientSegment } from "../navigation/gradient.ts";
+import type { ClassifiedSegment } from "../navigation/gradient.ts";
+import type { MicroDetailVisualKey } from "../navigation/routeFeaturePalette.ts";
 import { sliceRoutePointsForRange } from "../navigation/warningGeometry.ts";
 
-/** The one project-owned property stamped onto every gradient feature —
- * consumed by mapAdapter.ts's DataDrivenLineColor `match` expression to
- * pick each feature's paint colour. */
+/** The one project-owned property stamped onto every micro-detail
+ * feature — consumed by mapAdapter.ts's DataDrivenLineColor `match`
+ * expression to pick each feature's paint colour (see
+ * routeFeaturePalette.ts's MICRO_DETAIL_COLOURS). */
 export interface GradientFeatureProperties {
-  gradientClass: GradientClass;
+  visualKey: MicroDetailVisualKey;
 }
 
 function toGeoJsonCoordinate(coordinate: Coordinate): [number, number] {
@@ -14,9 +16,9 @@ function toGeoJsonCoordinate(coordinate: Coordinate): [number, number] {
 }
 
 /**
- * Builds one LineString feature per gradient segment overlapping
+ * Builds one LineString feature per classified detail segment overlapping
  * [clipStartDistanceMetres, clipEndDistanceMetres], each carrying its own
- * `gradientClass` property for a single data-driven line layer to colour
+ * `visualKey` property for a single data-driven line layer to colour
  * (see mapAdapter.ts's addLineLayer) — avoiding both a `lineMetrics`
  * continuous gradient and one MapLibre layer per class. Reuses
  * sliceRoutePointsForRange (navigation/warningGeometry.ts), the same
@@ -32,7 +34,7 @@ function toGeoJsonCoordinate(coordinate: Coordinate): [number, number] {
  */
 export function buildGradientFeatureCollection(
   points: readonly RoutePoint[],
-  segments: readonly GradientSegment[],
+  segments: readonly ClassifiedSegment<MicroDetailVisualKey>[],
   clipStartDistanceMetres: number,
   clipEndDistanceMetres: number,
 ): GeoJSON.FeatureCollection<GeoJSON.LineString, GradientFeatureProperties> {
@@ -50,7 +52,7 @@ export function buildGradientFeatureCollection(
 
     features.push({
       type: "Feature",
-      properties: { gradientClass: segment.classification },
+      properties: { visualKey: segment.visualKey },
       geometry: {
         type: "LineString",
         coordinates: slice.map((point) => toGeoJsonCoordinate(point.coordinate)),

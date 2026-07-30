@@ -39,7 +39,7 @@ function climb(
 function descent(
   startDistanceMetres: number,
   endDistanceMetres: number,
-  severity: DescentFeature["severity"] = "steep",
+  band: DescentFeature["band"] = "steep",
 ): DescentFeature {
   return {
     id: `descent-${String(startDistanceMetres)}`,
@@ -50,7 +50,7 @@ function descent(
     elevationLossMetres: 50,
     averageGradientPercent: -7,
     maxGradientPercent: -9,
-    severity,
+    band,
   };
 }
 

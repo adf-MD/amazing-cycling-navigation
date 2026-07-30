@@ -20,10 +20,12 @@ const FIXTURE_GPX_PATH = fileURLToPath(
 // (20%) climb from 1000 m to 2000 m — comfortably past every threshold
 // in src/navigation/gradient.ts (MAX_ELEVATION_GAP_METRES,
 // MIN_GRADE_WINDOW_METRES, GRADE_BASELINE_WINDOW_METRES,
-// MIN_SEGMENT_LENGTH_METRES), so it classifies cleanly as one sustained
-// "very-steep-climb" run. The climb (1000 m, 20% average grade) is also a
-// recognised macro ClimbFeature: climbScore = 1000 * 20 = 20,000, which
-// falls in [16000, 32000) -> category-3 (src/navigation/routeFeaturePalette.ts).
+// MIN_SEGMENT_LENGTH_METRES), so its detailed local gradient classifies
+// cleanly as one sustained "extremely-steep-climb" band (>=12%, see
+// src/navigation/routeFeatures.ts's classifyClimbGradientBand). The climb
+// (1000 m, 20% average grade) is also a recognised macro ClimbFeature:
+// climbScore = 1000 * 20 = 20,000, which falls in [16000, 32000) ->
+// category-3 (src/navigation/routeFeaturePalette.ts).
 const METRES_PER_DEGREE_LON = 1000 / 0.0144303623099218;
 const FIXTURE_LAT = 51.5;
 const FIXTURE_START_LON = -0.05;
@@ -152,8 +154,8 @@ async function sampleColourPixels({
 }
 
 const MACRO_CATEGORY_3_COLOUR: readonly [number, number, number] = [0xfd, 0xd8, 0x35];
-const MICRO_VERY_STEEP_CLIMB_COLOUR: readonly [number, number, number] = [
-  0x5b, 0x3f, 0xa6,
+const MICRO_EXTREMELY_STEEP_CLIMB_COLOUR: readonly [number, number, number] = [
+  0x8e, 0x00, 0x00,
 ];
 const BASE_ROUTE_COLOUR: readonly [number, number, number] = [0x0a, 0x5f, 0x38];
 
@@ -237,11 +239,11 @@ test.describe("Planning", () => {
     await expect(summaryRegion.getByText(/Category 3 climb/)).toBeVisible();
     // No feature is selected yet, so the detailed local-gradient legend
     // section has nothing to show.
-    await expect(summaryRegion.getByText(/Very steep climb \(/)).toBeHidden();
+    await expect(summaryRegion.getByText(/Extremely steep climb/)).toBeHidden();
 
     const macroSample = await captureColourSample(page, {
       macro: MACRO_CATEGORY_3_COLOUR,
-      micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+      micro: MICRO_EXTREMELY_STEEP_CLIMB_COLOUR,
       base: BASE_ROUTE_COLOUR,
     });
     // Macro colouring covers the climb by default; no detailed local-
@@ -277,7 +279,7 @@ test.describe("Planning", () => {
     ).toBeVisible();
 
     const selectedSample = await captureColourSample(page, {
-      micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+      micro: MICRO_EXTREMELY_STEEP_CLIMB_COLOUR,
     });
     expect(selectedSample.micro.pixelCount).toBeGreaterThan(0);
 
@@ -287,7 +289,7 @@ test.describe("Planning", () => {
       summaryRegion.getByRole("region", { name: "Route feature details" }),
     ).toBeHidden();
     const clearedSample = await captureColourSample(page, {
-      micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+      micro: MICRO_EXTREMELY_STEEP_CLIMB_COLOUR,
     });
     expect(clearedSample.micro.pixelCount).toBe(0);
 
@@ -367,6 +369,126 @@ test.describe("Planning: legend visibility", () => {
   });
 });
 
+test.describe("Planning: descent colouring", () => {
+  // A flat lead-in (0-500 m, 200 m elevation), then a sustained 15%
+  // descent (500-1500 m, dropping to 50 m), then a short flat tail
+  // (1500-2000 m) — comfortably past every eligibility/analysis
+  // threshold, so it's recognised as one descent feature. Average
+  // gradient -15% falls at or below -9%, so classifyDescentBand
+  // (src/navigation/routeFeatures.ts) resolves it to "very-steep" — the
+  // same colour (#1a1a4e) is used at both the macro (whole-descent) and
+  // local (selected) level, since descent macro/local classification is
+  // literally the same scheme (unlike a climb's category vs local band).
+  const DESCENT_STEP_METRES = 100;
+  const DESCENT_START_METRES = 500;
+  const DESCENT_END_METRES = 1500;
+  const DESCENT_START_ELEVATION_METRES = 200;
+  const DESCENT_GRADE_PERCENT = -15;
+  const DESCENT_POINT_COUNT = 21;
+
+  function buildDescentRouteCoordinates(): number[][] {
+    return Array.from({ length: DESCENT_POINT_COUNT }, (_, index) => {
+      const distanceMetres = index * DESCENT_STEP_METRES;
+      let elevation = DESCENT_START_ELEVATION_METRES;
+      if (distanceMetres > DESCENT_START_METRES) {
+        const descended =
+          Math.min(distanceMetres, DESCENT_END_METRES) - DESCENT_START_METRES;
+        elevation += (descended * DESCENT_GRADE_PERCENT) / 100;
+      }
+      return [lonAtMetresAlongFixture(distanceMetres), FIXTURE_LAT, elevation];
+    });
+  }
+
+  const VERY_STEEP_DESCENT_COLOUR: readonly [number, number, number] = [0x1a, 0x1a, 0x4e];
+
+  test("colours a recognised descent blue by default, and shows the same blue plus its safety disclaimer once selected", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error" && !message.text().includes("net::ERR_FAILED")) {
+        consoleErrors.push(message.text());
+      }
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+    await page.addInitScript(() => {
+      const originalFetch = fetch;
+      globalThis.fetch = (...args: Parameters<typeof fetch>) => originalFetch(...args);
+    });
+
+    await forceMapStyleFailure(page);
+    await page.route(ORS_URL_GLOB, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify(buildMockOrsResponse(buildDescentRouteCoordinates())),
+      });
+    });
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByLabel("OpenRouteService API key").fill(DUMMY_KEY);
+    await page.getByRole("button", { name: "Save on this device" }).click();
+    await expect(
+      page.getByText(/key saved on this device, not yet verified/i),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Plan" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    await mapContainer.click({ position: { x: 100, y: 150 } });
+    await mapContainer.click({ position: { x: 300, y: 150 } });
+    const calculateButton = page.getByRole("button", { name: /calculate route/i });
+    await expect(calculateButton).toBeEnabled();
+    await calculateButton.click();
+
+    const summaryRegion = page.getByRole("region", { name: "Route summary" });
+    await expect(summaryRegion).toBeVisible({ timeout: 15_000 });
+    await expect(
+      summaryRegion.getByRole("img", { name: "Elevation profile chart" }),
+    ).toBeVisible();
+
+    const macroSample = await captureColourSample(page, {
+      descent: VERY_STEEP_DESCENT_COLOUR,
+    });
+    expect(macroSample.descent.pixelCount).toBeGreaterThan(0);
+
+    // The descent occupies roughly the middle half of the 2000 m route.
+    const chartTapTarget = summaryRegion.locator("rect.elevation-chart-tap-target");
+    const chartBox = await chartTapTarget.boundingBox();
+    if (!chartBox)
+      throw new Error("expected the elevation chart's tap target to be visible");
+    await chartTapTarget.click({
+      position: { x: chartBox.width * 0.5, y: chartBox.height / 2 },
+    });
+    await expect(
+      summaryRegion.getByRole("region", { name: "Route feature details" }),
+    ).toBeVisible();
+    await expect(
+      summaryRegion.getByRole("heading", { name: "Recognised descent" }),
+    ).toBeVisible();
+    await expect(
+      summaryRegion.getByText(
+        /Blue intensity reflects gradient steepness only, not surface, bends, traffic or other conditions\./,
+      ),
+    ).toBeVisible();
+
+    const selectedSample = await captureColourSample(page, {
+      descent: VERY_STEEP_DESCENT_COLOUR,
+    });
+    // Selecting a descent changes its selection styling, not its base
+    // blue — the same colour is still present, at both macro and local
+    // level.
+    expect(selectedSample.descent.pixelCount).toBeGreaterThan(0);
+
+    expect(consoleErrors).toEqual([]);
+  });
+});
+
 test.describe("Riding", () => {
   test("shows the macro climb colour throughout, and detailed local-gradient colouring once the rider is on the climb", async ({
     page,
@@ -415,7 +537,7 @@ test.describe("Riding", () => {
     // "active", so no detailed local-gradient colouring shows.
     const beforeEntering = await captureColourSample(page, {
       macro: MACRO_CATEGORY_3_COLOUR,
-      micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+      micro: MICRO_EXTREMELY_STEEP_CLIMB_COLOUR,
     });
     expect(beforeEntering.macro.pixelCount).toBeGreaterThan(0);
     expect(beforeEntering.micro.pixelCount).toBe(0);
@@ -431,7 +553,7 @@ test.describe("Riding", () => {
       .poll(
         async () => {
           const sample = await captureColourSample(page, {
-            micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+            micro: MICRO_EXTREMELY_STEEP_CLIMB_COLOUR,
           });
           return sample.micro.pixelCount;
         },
@@ -495,7 +617,7 @@ test.describe("Riding", () => {
 
     const preSelectedSample = await captureColourSample(page, {
       base: BASE_ROUTE_COLOUR,
-      micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+      micro: MICRO_EXTREMELY_STEEP_CLIMB_COLOUR,
     });
     expect(preSelectedSample.base.pixelCount).toBeGreaterThan(0);
     expect(preSelectedSample.micro.pixelCount).toBeGreaterThan(0);
@@ -510,7 +632,7 @@ test.describe("Riding", () => {
     await expect(page.getByText("1 recognised climb on this route")).toBeVisible();
     const allRouteSample = await captureColourSample(page, {
       macro: MACRO_CATEGORY_3_COLOUR,
-      micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+      micro: MICRO_EXTREMELY_STEEP_CLIMB_COLOUR,
     });
     expect(allRouteSample.macro.pixelCount).toBeGreaterThan(0);
     expect(allRouteSample.micro.pixelCount).toBe(0);
@@ -523,7 +645,7 @@ test.describe("Riding", () => {
       page.getByRole("heading", { name: "Climb 1 · Category 3" }),
     ).toBeVisible();
     const reselectedSample = await captureColourSample(page, {
-      micro: MICRO_VERY_STEEP_CLIMB_COLOUR,
+      micro: MICRO_EXTREMELY_STEEP_CLIMB_COLOUR,
     });
     expect(reselectedSample.micro.pixelCount).toBeGreaterThan(0);
 

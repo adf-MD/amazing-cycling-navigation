@@ -1,6 +1,9 @@
-import type { GradientClass, GradientSegment } from "../../navigation/gradient.ts";
+import type { ClassifiedSegment } from "../../navigation/gradient.ts";
 import type { RouteFeature } from "../../navigation/routeFeatures.ts";
-import type { RouteFeatureVisualKey } from "../../navigation/routeFeaturePalette.ts";
+import type {
+  MicroDetailVisualKey,
+  RouteFeatureVisualKey,
+} from "../../navigation/routeFeaturePalette.ts";
 import {
   distanceToX,
   splitSegmentAtXs,
@@ -10,8 +13,8 @@ import {
 
 /** One distance range to colour on the chart, tagged with an opaque
  * lookup key the caller resolves to an actual colour — shared shape for
- * both local-gradient segments (key = GradientClass) and macro route
- * features (key = ClimbCategory | DescentSeverity). */
+ * both detailed local-gradient segments (key = MicroDetailVisualKey) and
+ * macro route features (key = ClimbCategory | DescentBand). */
 export interface ChartColourRange {
   startDistanceMetres: number;
   endDistanceMetres: number;
@@ -20,10 +23,10 @@ export interface ChartColourRange {
 
 export interface ChartColourRun {
   /** null when no supplied range overlaps this run — the caller decides
-   * what that means for its own use case (gradient.ts: an "unknown"
-   * grey; route features: no macro colouring, fall back to plain
-   * currentColor — see buildGradientChartRuns/buildRouteFeatureChartRuns's
-   * own wrapping). */
+   * what that means for its own use case: both local-gradient detail and
+   * macro route features render plain currentColor there (see
+   * buildFeatureDetailChartRuns/buildRouteFeatureChartRuns's own
+   * wrapping) — "no data here" is never a placeholder colour. */
   key: string | null;
   points: ElevationChartPoint[];
 }
@@ -100,31 +103,38 @@ function buildRunsForSegment(
   });
 }
 
-export interface GradientChartRun {
-  gradientClass: GradientClass;
+export interface FeatureDetailChartRun {
+  /** null where no supplied detail segment overlaps this run — i.e.
+   * outside the currently-shown selected/active feature's own range.
+   * ElevationChart.tsx renders plain currentColor there (never a
+   * synthetic filler colour), exactly like buildRouteFeatureChartRuns'
+   * own `visualKey: null` case below — a route section outside the
+   * detail feature is a legitimate, common outcome, not a data gap. */
+  visualKey: MicroDetailVisualKey | null;
   points: ElevationChartPoint[];
 }
 
 /**
- * Local-gradient-specific view of buildChartColourRuns: a range with no
- * overlap becomes `"unknown"`, matching this module's original (pre-
- * generalisation) behaviour exactly — existing callers/tests are
- * unaffected by the shared implementation underneath.
+ * Detailed-local-gradient-specific view of buildChartColourRuns, scoped to
+ * whichever selected/active climb or descent the caller has already
+ * narrowed `detailSegments` to (see RidingScreen.tsx/PlanningScreen.tsx's
+ * buildFeatureDetailSegments call). Preserves `null` for any run outside
+ * that narrowed range rather than substituting a placeholder class.
  */
-export function buildGradientChartRuns(
+export function buildFeatureDetailChartRuns(
   segments: readonly ElevationChartPoint[][],
-  gradientSegments: readonly GradientSegment[],
+  detailSegments: readonly ClassifiedSegment<MicroDetailVisualKey>[],
   domain: ElevationChartDomain,
   width: number,
-): GradientChartRun[][] {
-  const ranges: ChartColourRange[] = gradientSegments.map((segment) => ({
+): FeatureDetailChartRun[][] {
+  const ranges: ChartColourRange[] = detailSegments.map((segment) => ({
     startDistanceMetres: segment.startDistanceMetres,
     endDistanceMetres: segment.endDistanceMetres,
-    key: segment.classification,
+    key: segment.visualKey,
   }));
   return buildChartColourRuns(segments, ranges, domain, width).map((runs) =>
     runs.map((run) => ({
-      gradientClass: (run.key ?? "unknown") as GradientClass,
+      visualKey: run.key as MicroDetailVisualKey | null,
       points: run.points,
     })),
   );
@@ -154,7 +164,7 @@ export function buildRouteFeatureChartRuns(
   const ranges: ChartColourRange[] = features.map((feature) => ({
     startDistanceMetres: feature.startDistanceMetres,
     endDistanceMetres: feature.endDistanceMetres,
-    key: feature.kind === "climb" ? feature.category : feature.severity,
+    key: feature.kind === "climb" ? feature.category : feature.band,
   }));
   return buildChartColourRuns(segments, ranges, domain, width).map((runs) =>
     runs.map((run) => ({
