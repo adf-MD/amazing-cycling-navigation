@@ -116,12 +116,28 @@ export interface SurfaceSummary {
 export type PlannedRouteSource =
   { kind: "gpx-import" } | { kind: "planner"; provider?: string; profile?: string };
 
+/** Whether route.manoeuvres is safe to use for trusted next-manoeuvre
+ * navigation — a separate concept from PlannedRouteSource: an ACN-GPX
+ * re-import deliberately keeps source.kind === "gpx-import" while still
+ * being trusted for navigation. "routing-provider" covers a route fresh
+ * from a RoutingProvider; "acn-gpx-extension" covers a GPX re-import whose
+ * namespaced <acn:navigation> extension validated against its own
+ * geometry (see gpx/parseAcnExtension.ts). Absent on a route saved before
+ * this field existed — domain/manoeuvreTrust.ts's hasTrustedManoeuvres is
+ * the single source of truth for interpreting that legacy case. */
+export type ManoeuvreProvenance =
+  | { kind: "routing-provider"; provider: string }
+  | { kind: "acn-gpx-extension"; version: 1 };
+
 export interface PlannedRoute {
   id: string;
   name: string;
   createdAt: string;
   points: RoutePoint[];
   manoeuvres: Manoeuvre[];
+  /** Present only when manoeuvres is non-empty. See ManoeuvreProvenance's
+   * own doc comment and domain/manoeuvreTrust.ts. */
+  manoeuvreProvenance?: ManoeuvreProvenance;
   distanceMetres: number;
   ascentMetres: number | null;
   descentMetres: number | null;

@@ -8,13 +8,22 @@ export interface RawGpxPoint {
 }
 
 export interface GpxImportNotice {
-  kind: "multiple-tracks-first-used" | "multiple-routes-first-used";
+  kind:
+    | "multiple-tracks-first-used"
+    | "multiple-routes-first-used"
+    | "acn-extension-rejected";
   message: string;
 }
 
 export interface GpxExtractionResult {
   points: RawGpxPoint[];
   notices: GpxImportNotice[];
+  /** The specific <trk> element points was extracted from, so a caller can
+   * scope an ACN navigation-extension lookup to exactly this element —
+   * never a second, non-selected track. Null when a <rte> was used
+   * instead: GPX routes never carry the ACN navigation extension, since
+   * this project's own exporter never writes <rte> at all. */
+  selectedTrackElement: Element | null;
 }
 
 export function parseGpxDocument(xmlText: string): Document {
@@ -100,7 +109,7 @@ export function extractRoutePoints(doc: Document): GpxExtractionResult {
           ]
         : [];
 
-    return { points, notices };
+    return { points, notices, selectedTrackElement: firstTrack };
   }
 
   const routes = Array.from(doc.getElementsByTagNameNS("*", "rte"));
@@ -127,7 +136,7 @@ export function extractRoutePoints(doc: Document): GpxExtractionResult {
           ]
         : [];
 
-    return { points, notices };
+    return { points, notices, selectedTrackElement: null };
   }
 
   throw new GpxParseError(

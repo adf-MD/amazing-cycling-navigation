@@ -2331,6 +2331,33 @@ describe("RidingScreen", () => {
       source: { kind: "planner", provider: "openrouteservice", profile: "cycling-road" },
     };
 
+    const acnImportedRouteWithManoeuvres: PlannedRoute = {
+      ...route,
+      id: "route-acn-import",
+      manoeuvres: [
+        {
+          distanceFromStartMetres: manoeuvreDistanceA,
+          type: "left",
+          instruction: "Turn left onto Ridge Road",
+        },
+      ],
+      manoeuvreProvenance: { kind: "acn-gpx-extension", version: 1 },
+      source: { kind: "gpx-import" },
+    };
+
+    const untrustedGpxImportWithManoeuvres: PlannedRoute = {
+      ...route,
+      id: "route-untrusted-manoeuvres",
+      manoeuvres: [
+        {
+          distanceFromStartMetres: manoeuvreDistanceA,
+          type: "left",
+          instruction: "Turn left onto Ridge Road",
+        },
+      ],
+      source: { kind: "gpx-import" },
+    };
+
     it("does not show the next-manoeuvre panel before Start riding is tapped", () => {
       const stub = buildStubGeolocationSource();
       render(
@@ -2439,6 +2466,57 @@ describe("RidingScreen", () => {
           "No trusted turn information is available for this imported GPX. Follow the route line on the map.",
         ),
       ).toBeInTheDocument();
+    });
+
+    it("shows the first trusted manoeuvre for a GPX import carrying a valid ACN navigation extension", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={acnImportedRouteWithManoeuvres}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      expect(await screen.findByText("Turn left onto Ridge Road")).toBeInTheDocument();
+    });
+
+    it("never shows an active manoeuvre for a gpx-import route with manoeuvres but no recorded provenance", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={untrustedGpxImportWithManoeuvres}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      expect(
+        await screen.findByText(
+          "No trusted turn information is available for this imported GPX. Follow the route line on the map.",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Turn left onto Ridge Road")).not.toBeInTheDocument();
     });
   });
 });

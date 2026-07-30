@@ -126,6 +126,7 @@ export function PlanningScreen({
   const [avoidFerries, setAvoidFerries] = useState(true);
   const [routeName, setRouteName] = useState("Planned route");
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [crosshairCoordinate, setCrosshairCoordinate] = useState<Coordinate | null>(null);
   const [isDraftHydrated, setIsDraftHydrated] = useState(false);
   const [boundsTarget, setBoundsTarget] = useState<BoundsCameraTarget | null>(null);
@@ -627,13 +628,19 @@ export function PlanningScreen({
 
   const handleExport = () => {
     if (routing.state.kind !== "routed") return;
+    setExportError(null);
     const trimmedName = routeName.trim() || "Planned route";
     const routeToExport: PlannedRoute = { ...routing.state.route, name: trimmedName };
-    downloadTextFile(
-      `${trimmedName}.gpx`,
-      exportRouteToGpx(routeToExport),
-      "application/gpx+xml",
-    );
+    exportRouteToGpx(routeToExport)
+      .then((xml) => {
+        downloadTextFile(`${trimmedName}.gpx`, xml, "application/gpx+xml");
+      })
+      .catch((error: unknown) => {
+        setExportError(
+          error instanceof Error ? error.message : "The route could not be exported.",
+        );
+        logError("planning-export-route", error);
+      });
   };
 
   const planningOverlay: PlanningOverlay = {
@@ -939,6 +946,7 @@ export function PlanningScreen({
         <p>Calculate a complete routed result before saving or exporting.</p>
       ) : null}
       {saveError ? <p role="alert">{saveError}</p> : null}
+      {exportError ? <p role="alert">{exportError}</p> : null}
       <button type="button" onClick={handleSave} disabled={!canSaveOrExport}>
         Save route
       </button>

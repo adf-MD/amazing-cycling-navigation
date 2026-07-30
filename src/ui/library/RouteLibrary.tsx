@@ -22,6 +22,7 @@ export function RouteLibrary({ onOpenRoute }: RouteLibraryProps) {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [notices, setNotices] = useState<GpxImportNotice[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const handleImported = (result: GpxImportResult) => {
     setNotices(result.notices);
@@ -43,8 +44,18 @@ export function RouteLibrary({ onOpenRoute }: RouteLibraryProps) {
   };
 
   const handleExport = (route: PlannedRoute) => {
+    setExportError(null);
     const fileName = `${route.name.trim() || "route"}.gpx`;
-    downloadTextFile(fileName, exportRouteToGpx(route), "application/gpx+xml");
+    exportRouteToGpx(route)
+      .then((xml) => {
+        downloadTextFile(fileName, xml, "application/gpx+xml");
+      })
+      .catch((error: unknown) => {
+        setExportError(
+          error instanceof Error ? error.message : "That route could not be exported.",
+        );
+        logError("route-export", error);
+      });
   };
 
   const handleDeleteRequest = (id: string) => {
@@ -70,6 +81,7 @@ export function RouteLibrary({ onOpenRoute }: RouteLibraryProps) {
       <h2>Routes</h2>
       <ImportGpxButton onImported={handleImported} onError={handleImportError} />
       {importError ? <p role="alert">{importError}</p> : null}
+      {exportError ? <p role="alert">{exportError}</p> : null}
       {notices.map((notice) => (
         <p role="status" key={notice.message}>
           {notice.message}

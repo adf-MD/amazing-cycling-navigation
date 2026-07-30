@@ -56,3 +56,40 @@ export function cumulativeDistancesMetres(coordinates: readonly Coordinate[]): n
 export function totalDistanceMetres(coordinates: readonly Coordinate[]): number {
   return cumulativeDistancesMetres(coordinates).at(-1) ?? 0;
 }
+
+/**
+ * The index into a sorted-ascending array of per-point cumulative
+ * distances whose own distance is closest to `targetDistanceMetres`. Used
+ * to anchor a manoeuvre (which only stores a distance) to a concrete track
+ * point for GPX export — needed because a stitched multi-leg route's
+ * manoeuvre distance can legitimately fall between two points, not exactly
+ * on one. A target outside the array's range clamps to the nearest end. On
+ * an exact tie between two neighbouring points, the earlier index wins,
+ * deterministically. Returns -1 for an empty array.
+ */
+export function nearestPointIndexForDistance(
+  distances: readonly number[],
+  targetDistanceMetres: number,
+): number {
+  if (distances.length === 0) {
+    return -1;
+  }
+
+  let low = 0;
+  let high = distances.length - 1;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if ((distances[mid] ?? 0) < targetDistanceMetres) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  if (low === 0) {
+    return 0;
+  }
+  const before = distances[low - 1] ?? 0;
+  const at = distances[low] ?? 0;
+  return targetDistanceMetres - before <= at - targetDistanceMetres ? low - 1 : low;
+}

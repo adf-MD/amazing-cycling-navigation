@@ -11,6 +11,7 @@ import { analyzeElevation } from "../navigation/elevation.ts";
 import type {
   Coordinate,
   Manoeuvre,
+  ManoeuvreProvenance,
   PlannedRoute,
   RoutePoint,
   RouteWarning,
@@ -45,6 +46,7 @@ function buildLeg(overrides: {
   name?: string;
   createdAt?: string;
   manoeuvres?: Manoeuvre[];
+  manoeuvreProvenance?: ManoeuvreProvenance;
   ascentMetres?: number | null;
   descentMetres?: number | null;
   surfaceSummary?: SurfaceSummary;
@@ -57,6 +59,9 @@ function buildLeg(overrides: {
     createdAt: overrides.createdAt ?? "2026-01-01T00:00:00.000Z",
     points: overrides.points,
     manoeuvres: overrides.manoeuvres ?? [],
+    ...(overrides.manoeuvreProvenance
+      ? { manoeuvreProvenance: overrides.manoeuvreProvenance }
+      : {}),
     distanceMetres: overrides.points.at(-1)?.distanceFromStartMetres ?? 0,
     ascentMetres: overrides.ascentMetres ?? null,
     descentMetres: overrides.descentMetres ?? null,
@@ -333,6 +338,42 @@ describe("stitchPlannedRouteLegs", () => {
       expect(stitched.manoeuvres[0]?.type).toBe("waypoint");
       expect(stitched.manoeuvres[0]?.instruction).toBeUndefined();
       expect(stitched.manoeuvres[1]?.type).toBe("finish");
+    });
+
+    it("propagates the first leg's manoeuvreProvenance when the stitched route has manoeuvres", () => {
+      const pointsA = buildPoints([coord(0), coord(0.001), coord(0.002)]);
+      const pointsB = buildPoints([coord(0.002), coord(0.003), coord(0.004)]);
+      const legA = buildLeg({
+        points: pointsA,
+        manoeuvres: [
+          {
+            distanceFromStartMetres: pointsA[1]?.distanceFromStartMetres ?? 0,
+            type: "left",
+          },
+        ],
+        manoeuvreProvenance: { kind: "routing-provider", provider: "openrouteservice" },
+      });
+      const legB = buildLeg({ points: pointsB });
+
+      const stitched = stitchPlannedRouteLegs([legA, legB], METADATA);
+
+      expect(stitched.manoeuvres.length).toBeGreaterThan(0);
+      expect(stitched.manoeuvreProvenance).toEqual({
+        kind: "routing-provider",
+        provider: "openrouteservice",
+      });
+    });
+
+    it("leaves manoeuvreProvenance unset when the stitched route has no manoeuvres", () => {
+      const pointsA = buildPoints([coord(0), coord(0.001)]);
+      const pointsB = buildPoints([coord(0.001), coord(0.002)]);
+      const legA = buildLeg({ points: pointsA });
+      const legB = buildLeg({ points: pointsB });
+
+      const stitched = stitchPlannedRouteLegs([legA, legB], METADATA);
+
+      expect(stitched.manoeuvres).toEqual([]);
+      expect(stitched.manoeuvreProvenance).toBeUndefined();
     });
 
     it("collapses both internal seams of a 3-leg route while the overall start/finish survive", () => {

@@ -6,3 +6,5 @@ export { default as malformedGpx } from "./malformed.gpx?raw";
 export { default as outOfRangeCoordsGpx } from "./out-of-range-coords.gpx?raw";
 export { default as nonFiniteElevationGpx } from "./non-finite-elevation.gpx?raw";
 export { default as noTrackOrRouteGpx } from "./no-track-or-route.gpx?raw";
+export { default as acnLookalikeWrongNamespaceGpx } from "./acn-lookalike-wrong-namespace.gpx?raw";
+export { default as acnExtensionOnSecondTrackGpx } from "./acn-extension-on-second-track.gpx?raw";

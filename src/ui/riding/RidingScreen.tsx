@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { hasTrustedManoeuvres } from "../../domain/manoeuvreTrust.ts";
 import type { PlannedRoute } from "../../domain/types.ts";
 import { MapView, type RouteFeatureOverlay } from "../../map/MapView.tsx";
 import type { MapFactory } from "../../map/mapAdapter.ts";
@@ -182,9 +183,15 @@ export function RidingScreen({
   // presentation distance yet, so there is nothing to reset on handleStart
   // either.
   const [reachedManoeuvreIndex, setReachedManoeuvreIndex] = useState(0);
+  // Restores the invariant "a non-null selection is always trustworthy":
+  // gate at selectNextManoeuvre's own input (an empty list) rather than
+  // only in the panel's messaging, so a route with non-empty but
+  // untrusted manoeuvres (structurally possible now that GPX re-imports
+  // can carry manoeuvres) never drives live turn-by-turn navigation.
+  const isTrustedForNavigation = hasTrustedManoeuvres(route);
   const { reachedIndex: nextReachedManoeuvreIndex, selection: nextManoeuvre } =
     selectNextManoeuvre(
-      route.manoeuvres,
+      isTrustedForNavigation ? route.manoeuvres : [],
       nav.presentationDistanceFromStartMetres,
       reachedManoeuvreIndex,
     );
@@ -375,7 +382,7 @@ export function RidingScreen({
       {nav.geolocationStatus !== "idle" ? (
         <RidingNextManoeuvrePanel
           sourceKind={route.source.kind}
-          hasManoeuvres={route.manoeuvres.length > 0}
+          isTrusted={isTrustedForNavigation}
           selection={nextManoeuvre}
           isFrozen={nav.isStale || nav.offRouteLevel === "off-route"}
         />

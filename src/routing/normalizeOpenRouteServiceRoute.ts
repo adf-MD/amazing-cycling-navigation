@@ -1,4 +1,5 @@
 import { createRouteId } from "../domain/id.ts";
+import { MAX_MANOEUVRE_INSTRUCTION_LENGTH } from "../domain/manoeuvreLimits.ts";
 import type {
   Coordinate,
   Manoeuvre,
@@ -31,12 +32,6 @@ export interface NormalizeOrsRouteOptions {
   profile: RoutingProfile;
   providerId: string;
 }
-
-/** A safe upper bound on a stored manoeuvre instruction's length — plain
- * text only (React already prevents any HTML injection), this simply
- * guards against an unreasonably long provider string reaching storage or
- * the Riding UI. */
-const MAX_MANOEUVRE_INSTRUCTION_LENGTH = 200;
 
 function truncateInstruction(instruction: string): string {
   return instruction.length > MAX_MANOEUVRE_INSTRUCTION_LENGTH
@@ -430,6 +425,14 @@ export function normalizeOpenRouteServiceRoute(
     createdAt: options.createdAt,
     points,
     manoeuvres,
+    ...(manoeuvres.length > 0
+      ? {
+          manoeuvreProvenance: {
+            kind: "routing-provider" as const,
+            provider: options.providerId,
+          },
+        }
+      : {}),
     distanceMetres,
     ascentMetres,
     descentMetres,

@@ -36,23 +36,29 @@ describe("parseGpxDocument", () => {
 describe("extractRoutePoints: tracks", () => {
   it("extracts track points with elevation in document order", () => {
     const doc = parseGpxDocument(trackWithElevationGpx);
-    const { points, notices } = extractRoutePoints(doc);
+    const { points, notices, selectedTrackElement } = extractRoutePoints(doc);
 
     expect(points).toHaveLength(4);
     expect(points[0]).toEqual({ coordinate: [0, 51.5], elevationMetres: 10 });
     expect(points[3]).toEqual({ coordinate: [0.003, 51.503], elevationMetres: 11 });
     expect(notices).toEqual([]);
+    expect(selectedTrackElement).not.toBeNull();
+    expect(selectedTrackElement?.localName).toBe("trk");
   });
 
   it("prefers the first track and reports a notice when multiple tracks exist", () => {
     const doc = parseGpxDocument(multiTrackGpx);
-    const { points, notices } = extractRoutePoints(doc);
+    const { points, notices, selectedTrackElement } = extractRoutePoints(doc);
 
     expect(points).toHaveLength(2);
     expect(points[0]?.coordinate).toEqual([0.2, 51.7]);
     expect(notices).toHaveLength(1);
     expect(notices[0]?.kind).toBe("multiple-tracks-first-used");
     expect(notices[0]?.message).toContain("2 tracks");
+
+    // selectedTrackElement must be the FIRST <trk>, not just any <trk>.
+    const firstTrack = Array.from(doc.getElementsByTagNameNS("*", "trk"))[0];
+    expect(selectedTrackElement).toBe(firstTrack);
   });
 
   it("concatenates multiple segments within a single track in document order", () => {
@@ -68,11 +74,12 @@ describe("extractRoutePoints: tracks", () => {
 describe("extractRoutePoints: routes", () => {
   it("extracts route points with explicit missing elevation", () => {
     const doc = parseGpxDocument(routeNoElevationGpx);
-    const { points, notices } = extractRoutePoints(doc);
+    const { points, notices, selectedTrackElement } = extractRoutePoints(doc);
 
     expect(points).toHaveLength(3);
     expect(points.every((point) => point.elevationMetres === null)).toBe(true);
     expect(notices).toEqual([]);
+    expect(selectedTrackElement).toBeNull();
   });
 });
 

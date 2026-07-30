@@ -120,7 +120,9 @@ describe("RouteLibrary", () => {
 
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    expect(clickSpy).toHaveBeenCalledOnce();
+    await waitFor(() => {
+      expect(clickSpy).toHaveBeenCalledOnce();
+    });
 
     clickSpy.mockRestore();
     vi.unstubAllGlobals();

@@ -1,18 +1,27 @@
+import { hasTrustedManoeuvres } from "../domain/manoeuvreTrust.ts";
 import type { PlannedRoute } from "../domain/types.ts";
+import { nearestPointIndexForDistance } from "../navigation/distance.ts";
+import { ACN_NAMESPACE, ACN_NAVIGATION_EXTENSION_VERSION } from "./acnNamespace.ts";
+import { GpxExportError } from "./exportErrors.ts";
+import { canonicalizeTrackGeometry, computeGeometryDigestHex } from "./geometryDigest.ts";
 
 const GPX_NAMESPACE = "http://www.topografix.com/GPX/1/1";
-const ACN_NAMESPACE =
-  "https://adf-md.github.io/amazing-cycling-navigation/gpx-extensions/v1";
 
 /**
  * Serialises a PlannedRoute as a standards-compatible GPX 1.1 track,
- * including full geometry and elevation. Manoeuvres, if present, are
- * written as an optional namespaced <acn:manoeuvre> extension that other
- * GPX readers can safely ignore. Built via the DOM/XMLSerializer rather
- * than string templating so text content and attribute values are always
- * escaped correctly.
+ * including full geometry and elevation. When the route has trusted
+ * manoeuvres (hasTrustedManoeuvres), they are written as a namespaced
+ * <acn:navigation> extension — geometry-bound via a point count and a
+ * SHA-256 digest, so a re-import can detect whether the file's track was
+ * modified since export — that other GPX readers can safely ignore. Built
+ * via the DOM/XMLSerializer rather than string templating so text content
+ * and attribute values are always escaped correctly.
+ *
+ * Async only because computing the geometry digest requires
+ * crypto.subtle.digest, which has no synchronous form. A route with no
+ * trusted manoeuvres never touches Web Crypto and always resolves.
  */
-export function exportRouteToGpx(route: PlannedRoute): string {
+export async function exportRouteToGpx(route: PlannedRoute): Promise<string> {
   const doc = document.implementation.createDocument(GPX_NAMESPACE, "gpx", null);
   const gpxElement = doc.documentElement;
   gpxElement.setAttribute("version", "1.1");
@@ -33,17 +42,48 @@ export function exportRouteToGpx(route: PlannedRoute): string {
   // appended to the document) when there's genuinely something to hold.
   const extensionChildren: Element[] = [];
 
-  for (const manoeuvre of route.manoeuvres) {
-    const manoeuvreElement = doc.createElementNS(ACN_NAMESPACE, "acn:manoeuvre");
-    manoeuvreElement.setAttribute(
-      "distanceFromStartMetres",
-      String(manoeuvre.distanceFromStartMetres),
-    );
-    manoeuvreElement.setAttribute("type", manoeuvre.type);
-    if (manoeuvre.instruction !== undefined) {
-      manoeuvreElement.setAttribute("instruction", manoeuvre.instruction);
+  if (hasTrustedManoeuvres(route)) {
+    if (typeof crypto === "undefined" || typeof crypto.subtle === "undefined") {
+      throw new GpxExportError(
+        "crypto-unavailable",
+        "This route's turn information could not be preserved in the GPX export because " +
+          "this browser does not support the cryptography needed to bind it to the route " +
+          "geometry. Export was cancelled rather than silently dropping the turn data.",
+      );
     }
-    extensionChildren.push(manoeuvreElement);
+
+    const pointDistances = route.points.map((point) => point.distanceFromStartMetres);
+    const canonical = canonicalizeTrackGeometry(
+      route.points.map((point) => point.coordinate),
+    );
+    const geometrySha256 = await computeGeometryDigestHex(canonical);
+
+    const navigationElement = doc.createElementNS(ACN_NAMESPACE, "acn:navigation");
+    navigationElement.setAttribute("version", ACN_NAVIGATION_EXTENSION_VERSION);
+    navigationElement.setAttribute("pointCount", String(route.points.length));
+    navigationElement.setAttribute("geometrySha256", geometrySha256);
+
+    for (const manoeuvre of route.manoeuvres) {
+      const trackPointIndex = nearestPointIndexForDistance(
+        pointDistances,
+        manoeuvre.distanceFromStartMetres,
+      );
+      const manoeuvreElement = doc.createElementNS(ACN_NAMESPACE, "acn:manoeuvre");
+      manoeuvreElement.setAttribute("trackPointIndex", String(trackPointIndex));
+      manoeuvreElement.setAttribute(
+        "distanceMetres",
+        String(manoeuvre.distanceFromStartMetres),
+      );
+      manoeuvreElement.setAttribute("type", manoeuvre.type);
+      if (manoeuvre.instruction !== undefined) {
+        const instructionElement = doc.createElementNS(ACN_NAMESPACE, "acn:instruction");
+        instructionElement.textContent = manoeuvre.instruction;
+        manoeuvreElement.appendChild(instructionElement);
+      }
+      navigationElement.appendChild(manoeuvreElement);
+    }
+
+    extensionChildren.push(navigationElement);
   }
 
   if (

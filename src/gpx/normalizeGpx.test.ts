@@ -69,4 +69,27 @@ describe("buildPlannedRouteFromGpx", () => {
     expect(route.ascentMetres).toBeNull();
     expect(route.descentMetres).toBeNull();
   });
+
+  it("sets manoeuvres and manoeuvreProvenance when trustedManoeuvres is given, keeping source as gpx-import", () => {
+    const route = buildPlannedRouteFromGpx(
+      rawPoints,
+      { name: "Trusted import", createdAt: "2026-01-01T00:00:00.000Z" },
+      {
+        manoeuvres: [{ distanceFromStartMetres: 50, type: "left" }],
+        provenance: { kind: "acn-gpx-extension", version: 1 },
+      },
+    );
+
+    expect(route.manoeuvres).toEqual([{ distanceFromStartMetres: 50, type: "left" }]);
+    expect(route.manoeuvreProvenance).toEqual({ kind: "acn-gpx-extension", version: 1 });
+    expect(route.source).toEqual({ kind: "gpx-import" });
+  });
+
+  it("leaves manoeuvreProvenance unset when trustedManoeuvres is omitted", () => {
+    const route = buildPlannedRouteFromGpx(rawPoints, {
+      name: "Evening loop",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(route.manoeuvreProvenance).toBeUndefined();
+  });
 });

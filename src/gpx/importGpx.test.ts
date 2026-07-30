@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { importGpxFile } from "./importGpx.ts";
+import { exportRouteToGpx } from "./exportGpx.ts";
 import { GpxParseError } from "./errors.ts";
 import type { Clock } from "../platform/clock.ts";
+import type { PlannedRoute } from "../domain/types.ts";
 import {
   malformedGpx,
   multiSegmentTrackGpx,
@@ -84,5 +86,85 @@ describe("importGpxFile", () => {
     await expect(
       importGpxFile(buildGpxFile("notes.txt", trackWithElevationGpx), fixedClock),
     ).rejects.toMatchObject({ reason: "unsupported-type" });
+  });
+
+  describe("ACN navigation extension", () => {
+    function buildTrustedRoute(): PlannedRoute {
+      return {
+        id: "test-route",
+        name: "Trusted route",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        points: [
+          { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
+          { coordinate: [0.001, 51], elevationMetres: 12, distanceFromStartMetres: 111 },
+          {
+            coordinate: [0.002, 51.001],
+            elevationMetres: null,
+            distanceFromStartMetres: 230,
+          },
+        ],
+        manoeuvres: [
+          { distanceFromStartMetres: 111, type: "left", instruction: "Turn left" },
+        ],
+        manoeuvreProvenance: { kind: "routing-provider", provider: "openrouteservice" },
+        distanceMetres: 230,
+        ascentMetres: 2,
+        descentMetres: 0,
+        warnings: [],
+        source: {
+          kind: "planner",
+          provider: "openrouteservice",
+          profile: "cycling-road",
+        },
+      };
+    }
+
+    it("becomes trusted for navigation when the ACN extension validates", async () => {
+      const xml = await exportRouteToGpx(buildTrustedRoute());
+      const { route, notices } = await importGpxFile(
+        buildGpxFile("trusted.gpx", xml),
+        fixedClock,
+      );
+
+      expect(route.source).toEqual({ kind: "gpx-import" });
+      expect(route.manoeuvres).toHaveLength(1);
+      expect(route.manoeuvres[0]?.type).toBe("left");
+      expect(route.manoeuvreProvenance).toEqual({
+        kind: "acn-gpx-extension",
+        version: 1,
+      });
+      expect(notices).toEqual([]);
+    });
+
+    it("discards a corrupted ACN extension, keeps the route, and adds a rejection notice", async () => {
+      const xml = await exportRouteToGpx(buildTrustedRoute());
+      const corrupted = xml.replace(
+        /geometrySha256="[0-9a-f]{64}"/,
+        'geometrySha256="' + "a".repeat(64) + '"',
+      );
+      const { route, notices } = await importGpxFile(
+        buildGpxFile("corrupted.gpx", corrupted),
+        fixedClock,
+      );
+
+      expect(route.points).toHaveLength(3);
+      expect(route.manoeuvres).toEqual([]);
+      expect(route.manoeuvreProvenance).toBeUndefined();
+      expect(route.source).toEqual({ kind: "gpx-import" });
+      expect(notices).toHaveLength(1);
+      expect(notices[0]?.kind).toBe("acn-extension-rejected");
+      expect(notices[0]?.message).toMatch(/did not match the route geometry/);
+    });
+
+    it("leaves an ordinary GPX file with no extension unaffected", async () => {
+      const { route, notices } = await importGpxFile(
+        buildGpxFile("plain.gpx", trackWithElevationGpx),
+        fixedClock,
+      );
+
+      expect(route.manoeuvres).toEqual([]);
+      expect(route.manoeuvreProvenance).toBeUndefined();
+      expect(notices).toEqual([]);
+    });
   });
 });

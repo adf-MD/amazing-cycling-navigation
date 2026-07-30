@@ -1,5 +1,10 @@
 import { createRouteId } from "../domain/id.ts";
-import type { PlannedRoute, RoutePoint } from "../domain/types.ts";
+import type {
+  Manoeuvre,
+  ManoeuvreProvenance,
+  PlannedRoute,
+  RoutePoint,
+} from "../domain/types.ts";
 import { cumulativeDistancesMetres } from "../navigation/distance.ts";
 import { analyzeElevation } from "../navigation/elevation.ts";
 import type { RawGpxPoint } from "./parseGpx.ts";
@@ -7,6 +12,14 @@ import type { RawGpxPoint } from "./parseGpx.ts";
 export interface NormalizeGpxOptions {
   name: string;
   createdAt: string;
+}
+
+/** A validated ACN GPX navigation extension's manoeuvres, with the
+ * provenance to stamp on the resulting route. Passed only when
+ * readAcnNavigationExtension accepted the file's extension. */
+export interface TrustedGpxManoeuvres {
+  manoeuvres: Manoeuvre[];
+  provenance: ManoeuvreProvenance;
 }
 
 export interface NormalizedGpxPoints {
@@ -32,6 +45,7 @@ export function normalizeGpxPoints(
 export function buildPlannedRouteFromGpx(
   rawPoints: readonly RawGpxPoint[],
   options: NormalizeGpxOptions,
+  trustedManoeuvres?: TrustedGpxManoeuvres,
 ): PlannedRoute {
   const { points, distanceMetres } = normalizeGpxPoints(rawPoints);
   const { ascentMetres, descentMetres } = analyzeElevation(points);
@@ -41,7 +55,8 @@ export function buildPlannedRouteFromGpx(
     name: options.name,
     createdAt: options.createdAt,
     points,
-    manoeuvres: [],
+    manoeuvres: trustedManoeuvres?.manoeuvres ?? [],
+    ...(trustedManoeuvres ? { manoeuvreProvenance: trustedManoeuvres.provenance } : {}),
     distanceMetres,
     ascentMetres,
     descentMetres,

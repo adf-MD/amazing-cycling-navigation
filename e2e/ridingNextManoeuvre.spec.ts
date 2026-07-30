@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 
@@ -218,6 +219,125 @@ test("shows the next trusted manoeuvre in Riding, advances with progress, become
   // integration proof that matters at this layer — that the manoeuvre
   // survives a reload and reopen without any further routing request — is
   // what the assertions below establish.
+  await expect(page.getByText("Arrive at your destination")).toBeVisible();
+
+  expect(unexpectedOrsRequest).toBe(false);
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("preserves trusted manoeuvres through export and re-import, entirely offline", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+  await page.addInitScript(() => {
+    const originalFetch = fetch;
+    globalThis.fetch = (...args: Parameters<typeof fetch>) => originalFetch(...args);
+  });
+
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: ROUTE_LAT, longitude: ROUTE_START_LON });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByLabel("OpenRouteService API key").fill(DUMMY_KEY);
+  await page.getByRole("button", { name: "Save on this device" }).click();
+  await expect(
+    page.getByText(/key saved on this device, not yet verified/i),
+  ).toBeVisible();
+
+  await page.route(ORS_URL_GLOB, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify(buildMockOrsResponse()),
+    });
+  });
+
+  await page.getByRole("button", { name: "Plan" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await mapContainer.click({ position: { x: 100, y: 100 } });
+  await mapContainer.click({ position: { x: 200, y: 150 } });
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+
+  const calculateButton = page.getByRole("button", { name: /calculate route/i });
+  await expect(calculateButton).toBeEnabled();
+  await calculateButton.click();
+
+  const summaryRegion = page.getByRole("region", { name: "Route summary" });
+  await expect(summaryRegion).toBeVisible({ timeout: 15_000 });
+
+  const routeName = "E2E Export Roundtrip Route";
+  await page.getByLabel("Route name").fill(routeName);
+
+  // Export without ever saving to the local library — the route opened at
+  // the end of this test must stand entirely on the GPX file's own
+  // ACN-encoded manoeuvres, never on a locally saved copy of the planner
+  // route.
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: /export gpx/i }).click();
+  const download = await downloadPromise;
+  const downloadPath = await download.path();
+  if (!downloadPath) throw new Error("expected a downloaded file to have a local path");
+  const gpxContents = await readFile(downloadPath, "utf-8");
+  expect(gpxContents).toContain("acn:navigation");
+  expect(gpxContents).toContain("Turn left onto Church Lane");
+
+  // Block ORS entirely from this point on — importing, opening, and
+  // riding the re-imported route below must work without any further
+  // routing-provider request.
+  await page.unroute(ORS_URL_GLOB);
+  let unexpectedOrsRequest = false;
+  await page.route(ORS_URL_GLOB, async (route) => {
+    unexpectedOrsRequest = true;
+    await route.abort("failed");
+  });
+
+  await page.getByRole("button", { name: "Routes" }).click();
+  await page.getByLabel("Import GPX file").setInputFiles({
+    name: download.suggestedFilename(),
+    mimeType: "application/gpx+xml",
+    buffer: Buffer.from(gpxContents),
+  });
+
+  const importedRouteButton = page.getByRole("button", { name: routeName, exact: true });
+  await expect(importedRouteButton).toBeVisible();
+  await importedRouteButton.click();
+  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+
+  await context.setGeolocation({ latitude: ROUTE_LAT, longitude: lonAtMetres(50) });
+  await page.getByRole("button", { name: "Start riding" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  await expect(page.getByText("Turn left onto Church Lane")).toBeVisible();
+
+  await context.setGeolocation({
+    latitude: ROUTE_LAT,
+    longitude: lonAtMetres(LEFT_TURN_DISTANCE_METRES + 50),
+  });
+  await expect(page.getByText("Arrive at your destination")).toBeVisible();
+  await expect(page.getByText("Turn left onto Church Lane")).toBeHidden();
+
+  // Reload to prove the re-imported route's manoeuvres survive suspension/
+  // reload, still without any routing request.
+  await page.waitForTimeout(300);
+  await page.reload();
+  await page.getByRole("button", { name: routeName, exact: true }).click();
+  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+  await page.getByRole("button", { name: "Resume riding" }).click();
   await expect(page.getByText("Arrive at your destination")).toBeVisible();
 
   expect(unexpectedOrsRequest).toBe(false);

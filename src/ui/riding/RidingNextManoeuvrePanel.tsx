@@ -7,8 +7,16 @@ import { formatManoeuvreDistance } from "../shared/routeSummary.ts";
 import { ManoeuvreIcon } from "./ManoeuvreIcon.tsx";
 
 export interface RidingNextManoeuvrePanelProps {
+  /** Used only to choose the "unavailable" message's wording — trust
+   * itself is decided upstream by domain/manoeuvreTrust.ts's
+   * hasTrustedManoeuvres, not by this field. */
   sourceKind: PlannedRouteSource["kind"];
-  hasManoeuvres: boolean;
+  /** Whether route.manoeuvres is safe to use for navigation (see
+   * hasTrustedManoeuvres). The caller must also have gated the
+   * selectNextManoeuvre call itself on this — a non-null `selection` here
+   * is trusted by construction, so the active-display branch below never
+   * re-checks trust. */
+  isTrusted: boolean;
   selection: NextManoeuvreSelection | null;
   /** True while the shown manoeuvre/distance is based on the rider's last
    * reliable position rather than a fresh, on-route fix — nav.isStale or a
@@ -71,18 +79,19 @@ const URGENCY_FONT_WEIGHT: Record<ReturnType<typeof classifyManoeuvreUrgency>, n
 };
 
 /**
- * Riding-only "what's next" panel, sourced solely from trusted (provider-
- * generated) route.manoeuvres — never geometry-inferred. Four mutually
- * exclusive states: an active next-manoeuvre display; an explanatory
- * "unavailable" message for a planner route with no usable manoeuvres; an
- * explanatory message for an ordinary imported GPX (which never has
- * trusted manoeuvres at all); or nothing at all once there is nothing
- * meaningful to show — either every manoeuvre has already been reliably
- * passed (end of route: a stale final turn must not be left showing
- * indefinitely) or there is no reliable presentation distance yet (e.g.
- * before the first GPS fix is accepted; the existing "Waiting for a GPS
- * fix…" status above already covers that wait, so this panel need not
- * duplicate it).
+ * Riding-only "what's next" panel, sourced solely from trusted
+ * route.manoeuvres — either provider-generated or from a validated ACN GPX
+ * navigation extension (see domain/manoeuvreTrust.ts), never geometry-
+ * inferred. Four mutually exclusive states: an active next-manoeuvre
+ * display; an explanatory "unavailable" message for an untrusted planner
+ * route with no usable manoeuvres; an explanatory message for an untrusted
+ * imported GPX (no ACN extension, or one that failed validation); or
+ * nothing at all once there is nothing meaningful to show — either every
+ * manoeuvre has already been reliably passed (end of route: a stale final
+ * turn must not be left showing indefinitely) or there is no reliable
+ * presentation distance yet (e.g. before the first GPS fix is accepted;
+ * the existing "Waiting for a GPS fix…" status above already covers that
+ * wait, so this panel need not duplicate it).
  *
  * Accessibility: only the instruction+qualifier text carries
  * `role="status"`. Its rendered content changes only at a meaningful
@@ -95,20 +104,20 @@ const URGENCY_FONT_WEIGHT: Record<ReturnType<typeof classifyManoeuvreUrgency>, n
  */
 export function RidingNextManoeuvrePanel({
   sourceKind,
-  hasManoeuvres,
+  isTrusted,
   selection,
   isFrozen,
 }: RidingNextManoeuvrePanelProps) {
   if (!selection) {
-    if (sourceKind === "gpx-import") {
-      return (
-        <p role="status">
-          No trusted turn information is available for this imported GPX. Follow the route
-          line on the map.
-        </p>
-      );
-    }
-    if (!hasManoeuvres) {
+    if (!isTrusted) {
+      if (sourceKind === "gpx-import") {
+        return (
+          <p role="status">
+            No trusted turn information is available for this imported GPX. Follow the
+            route line on the map.
+          </p>
+        );
+      }
       return <p role="status">Turn information is unavailable for this route.</p>;
     }
     // Every manoeuvre has been reliably passed — end of route.

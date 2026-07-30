@@ -24,7 +24,7 @@ describe("RidingNextManoeuvrePanel", () => {
     const { container } = render(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres
+        isTrusted
         selection={buildSelection()}
         isFrozen={false}
       />,
@@ -38,7 +38,7 @@ describe("RidingNextManoeuvrePanel", () => {
     render(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres
+        isTrusted
         selection={buildSelection({
           manoeuvre: {
             distanceFromStartMetres: 500,
@@ -57,7 +57,7 @@ describe("RidingNextManoeuvrePanel", () => {
     render(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres
+        isTrusted
         selection={buildSelection({
           manoeuvre: { distanceFromStartMetres: 500, type: "roundabout" },
         })}
@@ -71,7 +71,7 @@ describe("RidingNextManoeuvrePanel", () => {
     render(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres={false}
+        isTrusted={false}
         selection={null}
         isFrozen={false}
       />,
@@ -81,11 +81,11 @@ describe("RidingNextManoeuvrePanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the imported-GPX message for a gpx-import route, regardless of hasManoeuvres", () => {
+  it("shows the imported-GPX message for an untrusted gpx-import route", () => {
     render(
       <RidingNextManoeuvrePanel
         sourceKind="gpx-import"
-        hasManoeuvres={false}
+        isTrusted={false}
         selection={null}
         isFrozen={false}
       />,
@@ -97,11 +97,35 @@ describe("RidingNextManoeuvrePanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the active display for a trusted gpx-import route (ACN extension)", () => {
+    render(
+      <RidingNextManoeuvrePanel
+        sourceKind="gpx-import"
+        isTrusted
+        selection={buildSelection()}
+        isFrozen={false}
+      />,
+    );
+    expect(screen.getByText("Turn left onto Main Street")).toBeInTheDocument();
+  });
+
+  it("renders nothing (end of route) for a trusted gpx-import route once every manoeuvre is passed", () => {
+    const { container } = render(
+      <RidingNextManoeuvrePanel
+        sourceKind="gpx-import"
+        isTrusted
+        selection={null}
+        isFrozen={false}
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it("renders nothing once every manoeuvre has been passed (end of route)", () => {
     const { container } = render(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres
+        isTrusted
         selection={null}
         isFrozen={false}
       />,
@@ -113,7 +137,7 @@ describe("RidingNextManoeuvrePanel", () => {
     const { rerender } = render(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres
+        isTrusted
         selection={buildSelection()}
         isFrozen={false}
       />,
@@ -123,7 +147,7 @@ describe("RidingNextManoeuvrePanel", () => {
     rerender(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres
+        isTrusted
         selection={buildSelection()}
         isFrozen
       />,
@@ -135,7 +159,7 @@ describe("RidingNextManoeuvrePanel", () => {
     const { container: normalContainer } = render(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres
+        isTrusted
         selection={buildSelection({ remainingDistanceMetres: 800 })}
         isFrozen={false}
       />,
@@ -143,7 +167,7 @@ describe("RidingNextManoeuvrePanel", () => {
     const { container: nearContainer } = render(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres
+        isTrusted
         selection={buildSelection({ remainingDistanceMetres: 300 })}
         isFrozen={false}
       />,
@@ -151,7 +175,7 @@ describe("RidingNextManoeuvrePanel", () => {
     const { container: imminentContainer } = render(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres
+        isTrusted
         selection={buildSelection({ remainingDistanceMetres: 50 })}
         isFrozen={false}
       />,
@@ -181,7 +205,7 @@ describe("RidingNextManoeuvrePanel", () => {
     const { container, rerender } = render(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres
+        isTrusted
         selection={buildSelection({ remainingDistanceMetres: 420 })}
         isFrozen={false}
       />,
@@ -191,7 +215,7 @@ describe("RidingNextManoeuvrePanel", () => {
     rerender(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres
+        isTrusted
         selection={buildSelection({ remainingDistanceMetres: 415 })}
         isFrozen={false}
       />,
@@ -205,7 +229,7 @@ describe("RidingNextManoeuvrePanel", () => {
     const { container, rerender } = render(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres
+        isTrusted
         selection={buildSelection({ remainingDistanceMetres: 420 })}
         isFrozen={false}
       />,
@@ -215,7 +239,7 @@ describe("RidingNextManoeuvrePanel", () => {
     rerender(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres
+        isTrusted
         selection={buildSelection({ remainingDistanceMetres: 420 })}
         isFrozen
       />,
@@ -230,7 +254,7 @@ describe("RidingNextManoeuvrePanel", () => {
     render(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres
+        isTrusted
         selection={buildSelection({
           manoeuvre: { distanceFromStartMetres: 500, type: legacyType },
         })}
@@ -244,7 +268,7 @@ describe("RidingNextManoeuvrePanel", () => {
     const { container } = render(
       <RidingNextManoeuvrePanel
         sourceKind="planner"
-        hasManoeuvres
+        isTrusted
         selection={buildSelection({ remainingDistanceMetres: 10 })}
         isFrozen={false}
       />,

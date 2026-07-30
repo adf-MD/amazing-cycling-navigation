@@ -411,6 +411,26 @@ describe("normalizeOpenRouteServiceRoute", () => {
     });
   });
 
+  it("sets manoeuvreProvenance to routing-provider when manoeuvres are present", () => {
+    const route = normalizeOpenRouteServiceRoute(buildResponse(), OPTIONS);
+
+    expect(route.manoeuvres.length).toBeGreaterThan(0);
+    expect(route.manoeuvreProvenance).toEqual({
+      kind: "routing-provider",
+      provider: "openrouteservice",
+    });
+  });
+
+  it("leaves manoeuvreProvenance unset when there are no manoeuvres", () => {
+    const route = normalizeOpenRouteServiceRoute(
+      buildResponse({ segments: [] }),
+      OPTIONS,
+    );
+
+    expect(route.manoeuvres).toEqual([]);
+    expect(route.manoeuvreProvenance).toBeUndefined();
+  });
+
   it("throws a RoutingError for a response with no features", () => {
     const response: OrsFeatureCollectionResponse = {
       type: "FeatureCollection",

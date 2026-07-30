@@ -348,6 +348,9 @@ export function stitchPlannedRouteLegs(
     createdAt: metadata.createdAt,
     points,
     manoeuvres,
+    ...(manoeuvres.length > 0 && firstLeg.manoeuvreProvenance
+      ? { manoeuvreProvenance: firstLeg.manoeuvreProvenance }
+      : {}),
     distanceMetres: totalDistanceMetres,
     ascentMetres,
     descentMetres,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cumulativeDistancesMetres,
   haversineDistanceMetres,
+  nearestPointIndexForDistance,
   totalDistanceMetres,
 } from "./distance.ts";
 import type { Coordinate } from "../domain/types.ts";
@@ -73,5 +74,42 @@ describe("totalDistanceMetres", () => {
   it("is 0 for an empty or single-point route", () => {
     expect(totalDistanceMetres([])).toBe(0);
     expect(totalDistanceMetres([[0, 51]])).toBe(0);
+  });
+});
+
+describe("nearestPointIndexForDistance", () => {
+  const DISTANCES = [0, 10, 30, 60, 100];
+
+  it("returns -1 for an empty array", () => {
+    expect(nearestPointIndexForDistance([], 50)).toBe(-1);
+  });
+
+  it("returns 0 for a single-point array regardless of target", () => {
+    expect(nearestPointIndexForDistance([42], 0)).toBe(0);
+    expect(nearestPointIndexForDistance([42], 1000)).toBe(0);
+  });
+
+  it("returns the exact index for a distance matching a point exactly", () => {
+    expect(nearestPointIndexForDistance(DISTANCES, 30)).toBe(2);
+  });
+
+  it("returns the nearer neighbour for a distance between two points", () => {
+    // Between 10 and 30, closer to 10.
+    expect(nearestPointIndexForDistance(DISTANCES, 15)).toBe(1);
+    // Between 30 and 60, closer to 60.
+    expect(nearestPointIndexForDistance(DISTANCES, 50)).toBe(3);
+  });
+
+  it("breaks an exact tie by choosing the earlier index", () => {
+    // Exactly midway between 10 (index 1) and 30 (index 2).
+    expect(nearestPointIndexForDistance(DISTANCES, 20)).toBe(1);
+  });
+
+  it("clamps to the first index for a target below the range", () => {
+    expect(nearestPointIndexForDistance(DISTANCES, -50)).toBe(0);
+  });
+
+  it("clamps to the last index for a target above the range", () => {
+    expect(nearestPointIndexForDistance(DISTANCES, 500)).toBe(4);
   });
 });

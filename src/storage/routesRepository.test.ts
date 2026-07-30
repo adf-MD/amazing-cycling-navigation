@@ -104,6 +104,18 @@ describe("routesRepository", () => {
     await expect(getRoute(route.id)).resolves.toEqual(route);
   });
 
+  it("round-trips a route with manoeuvreProvenance unchanged (no schema migration needed)", async () => {
+    const route = buildRoute({
+      manoeuvres: [
+        { distanceFromStartMetres: 100, type: "left", instruction: "Turn left" },
+      ],
+      manoeuvreProvenance: { kind: "acn-gpx-extension", version: 1 },
+    });
+    await saveRoute(route);
+
+    await expect(getRoute(route.id)).resolves.toEqual(route);
+  });
+
   it("lists routes newest-first by createdAt", async () => {
     const older = buildRoute({
       id: "older",
