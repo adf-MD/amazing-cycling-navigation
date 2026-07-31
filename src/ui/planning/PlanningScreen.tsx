@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { Coordinate, PlannedRoute, RoutingProfile } from "../../domain/types.ts";
 import { exportRouteToGpx } from "../../gpx/exportGpx.ts";
+import { isValidLatitude, isValidLongitude } from "../../gpx/validateGpx.ts";
 import {
   MapView,
   type BoundsCameraTarget,
@@ -104,6 +105,16 @@ function buildDefaultAdapter(): RoutingProvider {
   });
 }
 
+/** Guards a resolved geolocation fix before it's shown as a map marker —
+ * reuses the project's only existing finite/range coordinate validators
+ * (gpx/validateGpx.ts) rather than a second one. Independent of
+ * computeLocalAreaBounds's own internal validity check, whose null return
+ * means "not usable for local-area framing", not a general coordinate
+ * validity contract. */
+function isValidCoordinate(coordinate: Coordinate): boolean {
+  return isValidLongitude(coordinate[0]) && isValidLatitude(coordinate[1]);
+}
+
 /**
  * Orchestrates waypoint editing, debounced route calculation, draft
  * persistence and save/export — the map's own lifecycle, sources and
@@ -135,6 +146,15 @@ export function PlanningScreen({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [crosshairCoordinate, setCrosshairCoordinate] = useState<Coordinate | null>(null);
+  // The rider's last successfully resolved approximate-location fix, shown
+  // as a plain dot via MapView's existing currentPosition/acn-position
+  // mechanism (otherwise only ever fed from Riding's continuous watch).
+  // Purely transient device/component state: never persisted to the
+  // draft, a saved route, IndexedDB, service worker or GPX, and reset to
+  // null on every fresh mount. A failed or invalid Locate-me retry
+  // deliberately leaves the previous marker in place rather than clearing
+  // it (see handleLocateMe below).
+  const [currentPosition, setCurrentPosition] = useState<Coordinate | null>(null);
   const [isDraftHydrated, setIsDraftHydrated] = useState(false);
   const [boundsTarget, setBoundsTarget] = useState<BoundsCameraTarget | null>(null);
   const [northUpCameraTarget, setNorthUpCameraTarget] = useState<CameraTarget | null>(
@@ -473,6 +493,9 @@ export function PlanningScreen({
     requestApproximateLocation()
       .then((coordinate) => {
         if (!coordinate) return;
+        if (isValidCoordinate(coordinate)) {
+          setCurrentPosition(coordinate);
+        }
         if (waypointsRef.current.length > 0 || hasManualCameraActionRef.current) return;
         const bounds = computeLocalAreaBounds(coordinate);
         if (!bounds) return;
@@ -490,6 +513,9 @@ export function PlanningScreen({
     setLocateStatus("locating");
     requestApproximateLocation()
       .then((coordinate) => {
+        if (coordinate && isValidCoordinate(coordinate)) {
+          setCurrentPosition(coordinate);
+        }
         const bounds = coordinate ? computeLocalAreaBounds(coordinate) : null;
         if (!bounds) {
           setLocateStatus("failed");
@@ -747,6 +773,7 @@ export function PlanningScreen({
       <div style={{ height: 320, position: "relative" }}>
         <MapView
           points={mapPoints}
+          currentPosition={currentPosition ?? undefined}
           mapFactory={mapFactory}
           planningOverlay={planningOverlay}
           warningOverlay={warningOverlay}
@@ -882,18 +909,26 @@ export function PlanningScreen({
       />
 
       <div role="group" aria-label="Cycling profile" className="cycling-profile-group">
-        {ROUTING_PROFILES.map((metadata) => (
-          <button
-            key={metadata.value}
-            type="button"
-            aria-pressed={profile === metadata.value}
-            onClick={() => {
-              setProfile(metadata.value);
-            }}
-          >
-            {metadata.label}
-          </button>
-        ))}
+        {ROUTING_PROFILES.map((metadata) => {
+          const isSelected = profile === metadata.value;
+          return (
+            <button
+              key={metadata.value}
+              type="button"
+              className={
+                isSelected
+                  ? "cycling-profile-button is-selected"
+                  : "cycling-profile-button"
+              }
+              aria-pressed={isSelected}
+              onClick={() => {
+                setProfile(metadata.value);
+              }}
+            >
+              {metadata.label}
+            </button>
+          );
+        })}
       </div>
       <p>{describeRoutingProfile(profile)}</p>
 

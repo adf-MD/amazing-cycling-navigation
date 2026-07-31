@@ -9,6 +9,60 @@ test.use({ serviceWorkers: "block" });
 const ORS_URL_GLOB = "https://api.heigit.org/**";
 const DUMMY_KEY = "dummy-e2e-key";
 
+// MapView.tsx's POSITION_LAYER_ID paint colour for the current-location dot.
+const CURRENT_POSITION_DOT_COLOUR: readonly [number, number, number] = [0x1a, 0x73, 0xe8];
+
+/** Runs entirely inside the page: decodes a screenshot PNG and counts
+ * pixels close to the current-location dot's known fill colour, proving
+ * the real MapLibre circle layer actually paints — not just that
+ * PlanningScreen called setGeoJsonSourceData (see PlanningScreen.test.tsx's
+ * mock-level assertions for that). Mirrors gradientColouring.spec.ts's own
+ * screenshot-decode-and-sample technique, duplicated locally here rather
+ * than imported, matching that file's own precedent of not sharing it
+ * across spec files. */
+async function countCurrentPositionDotPixels({
+  pngBase64,
+  colour,
+}: {
+  pngBase64: string;
+  colour: readonly [number, number, number];
+}): Promise<number> {
+  const COLOUR_THRESHOLD_SQUARED = 400;
+
+  const image = new Image();
+  const loaded = new Promise<void>((resolve, reject) => {
+    image.onload = () => {
+      resolve();
+    };
+    image.onerror = () => {
+      reject(new Error("failed to decode captured screenshot"));
+    };
+  });
+  image.src = `data:image/png;base64,${pngBase64}`;
+  await loaded;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("2D canvas context unavailable");
+  }
+  context.drawImage(image, 0, 0);
+  const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+
+  let pixelCount = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const dr = data[i] - colour[0];
+    const dg = data[i + 1] - colour[1];
+    const db = data[i + 2] - colour[2];
+    if (dr * dr + dg * dg + db * db <= COLOUR_THRESHOLD_SQUARED) {
+      pixelCount++;
+    }
+  }
+  return pixelCount;
+}
+
 // Deliberately wrong ascent/descent — the app must compute its own via its
 // documented smoothing policy rather than trusting the provider's numbers
 // (see routing/normalizeOpenRouteServiceRoute.ts).
@@ -444,6 +498,54 @@ test("aligns the crosshair exactly with the map's own visual centre, and renders
   await expect(marker).toHaveText("1");
   await expect(marker).toHaveClass(/planning-waypoint-marker--start/);
   await expect(page.getByRole("img", { name: "Start waypoint 1" })).toBeVisible();
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("shows a visible current-location dot once geolocation resolves", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: 53.8, longitude: -1.5 });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Plan" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  // Force an explicit, verifiable success signal via Locate me rather than
+  // relying on the initial auto-frame, which stays silent on failure.
+  const locateButton = page.getByRole("button", { name: "Locate me" });
+  await expect(locateButton).toBeEnabled();
+  await locateButton.click();
+  await expect(locateButton).toBeEnabled();
+  await expect(
+    page.getByText("Your location could not be determined."),
+  ).not.toBeVisible();
+
+  // The genuinely fresh session's own initial auto-frame (see
+  // localAreaBounds.ts) centres the camera on this same resolved
+  // coordinate, so the dot should be visible somewhere on the canvas once
+  // MapLibre's paint/placement cycle settles.
+  const canvasLocator = page.locator('[data-testid="map-container"] canvas');
+  await page.waitForTimeout(500);
+  const pngBuffer = await canvasLocator.screenshot();
+  const pixelCount = await page.evaluate(countCurrentPositionDotPixels, {
+    pngBase64: pngBuffer.toString("base64"),
+    colour: CURRENT_POSITION_DOT_COLOUR,
+  });
+  expect(pixelCount).toBeGreaterThan(0);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);

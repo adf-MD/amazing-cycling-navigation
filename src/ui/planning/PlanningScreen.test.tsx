@@ -6,6 +6,10 @@ import { PlanningScreen } from "./PlanningScreen.tsx";
 import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
+import {
+  buildPositionFeatureCollection,
+  EMPTY_FEATURE_COLLECTION,
+} from "../../map/routeLayer.ts";
 import { cumulativeDistancesMetres } from "../../navigation/distance.ts";
 import { RoutingError } from "../../routing/openRouteServiceErrors.ts";
 import type { RoutingOptions, RoutingProvider } from "../../routing/provider.ts";
@@ -694,6 +698,9 @@ describe("PlanningScreen", () => {
       expect(map.fitBoundsSpy).toHaveBeenCalledWith(expectedBounds);
     });
     expect(map.setCameraSpy).not.toHaveBeenCalled();
+    expect(map.sources.get("acn-position")).toEqual(
+      buildPositionFeatureCollection([-1.5, 53.8]),
+    );
   });
 
   it("does not move the camera when the location request resolves to null", async () => {
@@ -712,6 +719,7 @@ describe("PlanningScreen", () => {
       expect(requestApproximateLocation).toHaveBeenCalled();
     });
     expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+    expect(map.sources.get("acn-position")).toEqual(EMPTY_FEATURE_COLLECTION);
   });
 
   it("never requests a location for a session restored from an existing draft", async () => {
@@ -939,6 +947,160 @@ describe("PlanningScreen", () => {
       await user.click(locateButton);
       await waitFor(() => {
         expect(map.fitBoundsSpy).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    it("shows a marker at the resolved coordinate after a successful tap", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      });
+      expect(map.sources.get("acn-position")).toEqual(EMPTY_FEATURE_COLLECTION);
+
+      requestApproximateLocation.mockResolvedValueOnce([-1.5, 53.8]);
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+
+      await waitFor(() => {
+        expect(map.sources.get("acn-position")).toEqual(
+          buildPositionFeatureCollection([-1.5, 53.8]),
+        );
+      });
+    });
+
+    it("a failed retry after a prior success keeps showing the last resolved marker", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      });
+
+      requestApproximateLocation.mockResolvedValueOnce([-1.5, 53.8]);
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+      await waitFor(() => {
+        expect(map.sources.get("acn-position")).toEqual(
+          buildPositionFeatureCollection([-1.5, 53.8]),
+        );
+      });
+
+      requestApproximateLocation.mockResolvedValueOnce(null);
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+
+      expect(
+        await screen.findByText("Your location could not be determined."),
+      ).toBeInTheDocument();
+      expect(map.sources.get("acn-position")).toEqual(
+        buildPositionFeatureCollection([-1.5, 53.8]),
+      );
+    });
+
+    it("two successive successful taps at different coordinates replace, not accumulate, the marker", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      });
+
+      requestApproximateLocation.mockResolvedValueOnce([-1.5, 53.8]);
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+      await waitFor(() => {
+        expect(map.sources.get("acn-position")).toEqual(
+          buildPositionFeatureCollection([-1.5, 53.8]),
+        );
+      });
+
+      requestApproximateLocation.mockResolvedValueOnce([-1.6, 53.9]);
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+
+      await waitFor(() => {
+        expect(map.sources.get("acn-position")).toEqual(
+          buildPositionFeatureCollection([-1.6, 53.9]),
+        );
+      });
+      expect(map.sources.get("acn-position")?.features).toHaveLength(1);
+    });
+
+    it("an out-of-range coordinate from the location request shows no marker", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      });
+
+      // computeLocalAreaBounds only range-checks latitude, not longitude, so
+      // an out-of-range longitude like 200 still produces a non-null box and
+      // moves the camera — this test's real point is that the marker's own
+      // isValidCoordinate guard rejects it independently of that.
+      requestApproximateLocation.mockResolvedValueOnce([200, 53.8]);
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledWith(
+          computeLocalAreaBounds([200, 53.8]),
+        );
+      });
+      expect(map.sources.get("acn-position")).toEqual(EMPTY_FEATURE_COLLECTION);
+    });
+
+    it("[0, 0] is shown as a genuine fix, not treated as no-location", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      });
+
+      requestApproximateLocation.mockResolvedValueOnce([0, 0]);
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+
+      await waitFor(() => {
+        expect(map.sources.get("acn-position")).toEqual(
+          buildPositionFeatureCollection([0, 0]),
+        );
       });
     });
   });
@@ -2065,6 +2227,9 @@ describe("PlanningScreen", () => {
 
       expect(roadBikeButton).toHaveAttribute("aria-pressed", "true");
       expect(generalCyclingButton).toHaveAttribute("aria-pressed", "false");
+      expect(roadBikeButton).toHaveClass("cycling-profile-button", "is-selected");
+      expect(generalCyclingButton).toHaveClass("cycling-profile-button");
+      expect(generalCyclingButton).not.toHaveClass("is-selected");
       expect(
         screen.getByText(/prefers roads suitable for a road bike/i),
       ).toBeInTheDocument();
@@ -2078,20 +2243,28 @@ describe("PlanningScreen", () => {
 
       await user.click(screen.getByRole("button", { name: "General cycling" }));
 
-      expect(screen.getByRole("button", { name: "Road bike" })).toHaveAttribute(
-        "aria-pressed",
-        "false",
-      );
-      expect(screen.getByRole("button", { name: "General cycling" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
+      const roadBikeButton = screen.getByRole("button", { name: "Road bike" });
+      const generalCyclingButton = screen.getByRole("button", {
+        name: "General cycling",
+      });
+      expect(roadBikeButton).toHaveAttribute("aria-pressed", "false");
+      expect(generalCyclingButton).toHaveAttribute("aria-pressed", "true");
+      expect(roadBikeButton).toHaveClass("cycling-profile-button");
+      expect(roadBikeButton).not.toHaveClass("is-selected");
+      expect(generalCyclingButton).toHaveClass("cycling-profile-button", "is-selected");
       expect(
         screen.getByText(/may use more cycling infrastructure/i),
       ).toBeInTheDocument();
       expect(
         screen.queryByText(/prefers roads suitable for a road bike/i),
       ).not.toBeInTheDocument();
+
+      await user.click(roadBikeButton);
+
+      expect(roadBikeButton).toHaveAttribute("aria-pressed", "true");
+      expect(roadBikeButton).toHaveClass("is-selected");
+      expect(generalCyclingButton).toHaveAttribute("aria-pressed", "false");
+      expect(generalCyclingButton).not.toHaveClass("is-selected");
     });
 
     it(
