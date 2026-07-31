@@ -371,6 +371,15 @@ export function RidingScreen({
 
   return (
     <section aria-label="Riding">
+      {isWakeLockSupported() && nav.geolocationStatus !== "idle" ? (
+        <RidingWakeLockControl
+          desired={nav.wakeLockDesired}
+          onToggleDesired={nav.setWakeLockDesired}
+          wakeLockSource={wakeLockSource}
+          clock={clock}
+        />
+      ) : null}
+
       <h2>{route.name}</h2>
       <p>
         {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
@@ -433,15 +442,6 @@ export function RidingScreen({
           isTrusted={isTrustedForNavigation}
           selection={nextManoeuvre}
           isFrozen={nav.isStale || nav.offRouteLevel === "off-route"}
-        />
-      ) : null}
-
-      {isWakeLockSupported() && nav.geolocationStatus !== "idle" ? (
-        <RidingWakeLockControl
-          desired={nav.wakeLockDesired}
-          onToggleDesired={nav.setWakeLockDesired}
-          wakeLockSource={wakeLockSource}
-          clock={clock}
         />
       ) : null}
 

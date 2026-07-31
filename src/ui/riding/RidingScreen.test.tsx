@@ -3234,6 +3234,54 @@ describe("RidingScreen", () => {
       ).not.toBeChecked();
     });
 
+    it("renders the compact wake-lock control before the route title in DOM order", async () => {
+      vi.stubGlobal("navigator", { onLine: true, wakeLock: { request: vi.fn() } });
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+
+      const checkbox = await screen.findByRole("checkbox", {
+        name: /keep screen awake/i,
+      });
+      const heading = screen.getByRole("heading", { name: route.name });
+
+      expect(
+        checkbox.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it("opens the information popover from the compact row", async () => {
+      vi.stubGlobal("navigator", { onLine: true, wakeLock: { request: vi.fn() } });
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      await screen.findByRole("checkbox", { name: /keep screen awake/i });
+
+      await user.click(screen.getByRole("button", { name: "About Keep screen awake" }));
+
+      expect(
+        screen.getByText(
+          "Keeps the display on while Riding mode is visible. This may increase battery use.",
+        ),
+      ).toBeInTheDocument();
+    });
+
     it("opening a different route than the one with a saved preference starts with the option off", async () => {
       await setActiveRideState({
         id: "active",
