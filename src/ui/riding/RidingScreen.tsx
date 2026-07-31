@@ -6,6 +6,7 @@ import type { MapFactory } from "../../map/mapAdapter.ts";
 import type { GeolocationError, GeolocationSource } from "../../platform/geolocation.ts";
 import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
 import { useOnlineStatus } from "../../platform/onlineStatus.ts";
+import { isWakeLockSupported, type WakeLockSource } from "../../platform/wakeLock.ts";
 import {
   analyzeRouteElevationProfile,
   clipClassifiedSegments,
@@ -37,6 +38,7 @@ import { RouteFeatureDetailsPanel } from "../shared/RouteFeatureDetailsPanel.tsx
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 import { RidingClimbSelector } from "./RidingClimbSelector.tsx";
 import { RidingNextManoeuvrePanel } from "./RidingNextManoeuvrePanel.tsx";
+import { RidingWakeLockControl } from "./RidingWakeLockControl.tsx";
 import { useRideCamera } from "./useRideCamera.ts";
 import { useRideNavigation } from "./useRideNavigation.ts";
 
@@ -45,6 +47,7 @@ export interface RidingScreenProps {
   geolocationSource?: GeolocationSource;
   mapFactory?: MapFactory;
   clock?: Clock;
+  wakeLockSource?: WakeLockSource;
 }
 
 const DEFAULT_CAMERA_STATE: StoredCameraState = {
@@ -101,6 +104,7 @@ export function RidingScreen({
   geolocationSource,
   mapFactory,
   clock = systemClock,
+  wakeLockSource,
 }: RidingScreenProps) {
   // Bridges useRideCamera's current camera state into useRideNavigation's
   // persistence. Both hooks are called in this same render, and
@@ -385,6 +389,15 @@ export function RidingScreen({
           isTrusted={isTrustedForNavigation}
           selection={nextManoeuvre}
           isFrozen={nav.isStale || nav.offRouteLevel === "off-route"}
+        />
+      ) : null}
+
+      {isWakeLockSupported() && nav.geolocationStatus !== "idle" ? (
+        <RidingWakeLockControl
+          desired={nav.wakeLockDesired}
+          onToggleDesired={nav.setWakeLockDesired}
+          wakeLockSource={wakeLockSource}
+          clock={clock}
         />
       ) : null}
 

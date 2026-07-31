@@ -333,6 +333,14 @@ header h1 {
   min-height: var(--touch-target-min);
 }
 
+/* Matches the global `button` touch-target rule — a native
+ * `<input type="checkbox">` has no equivalent default sizing rule of its
+ * own. */
+.wake-lock-checkbox {
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+}
+
 .distance-badge-marker {
   display: flex;
   align-items: center;

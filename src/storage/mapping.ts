@@ -59,6 +59,7 @@ export function toStoredRideState(
   core: RideNavigationCoreState,
   elevationViewMode: ElevationViewMode,
   cameraState: StoredCameraState,
+  wakeLockDesired: boolean,
 ): StoredRideState {
   return {
     id: "active",
@@ -83,6 +84,7 @@ export function toStoredRideState(
     cameraZoom: cameraState.zoom,
     cameraBearingDegrees: cameraState.bearingDegrees,
     cameraPitchDegrees: cameraState.pitchDegrees,
+    wakeLockDesired,
   };
 }
 
@@ -91,6 +93,7 @@ export interface RestoredRideState {
   core: RideNavigationCoreState;
   elevationViewMode: ElevationViewMode;
   cameraState: StoredCameraState;
+  wakeLockDesired: boolean;
 }
 
 export function fromStoredRideState(stored: StoredRideState): RestoredRideState {
@@ -136,6 +139,9 @@ export function fromStoredRideState(stored: StoredRideState): RestoredRideState 
       bearingDegrees: stored.cameraBearingDegrees ?? 0,
       pitchDegrees: stored.cameraPitchDegrees ?? 0,
     },
+    // Rows written before this field existed won't have it — off is the
+    // only safe default (this preference must never carry over silently).
+    wakeLockDesired: stored.wakeLockDesired ?? false,
   };
 }
 

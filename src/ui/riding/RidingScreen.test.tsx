@@ -14,6 +14,7 @@ import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import type { Coordinate, PlannedRoute, RoutePoint } from "../../domain/types.ts";
 import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry.ts";
 import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
+import { buildFakeWakeLockSource } from "../../test/fixtures/wakeLockSource.ts";
 import { OFF_ROUTE_BASE_METRES } from "../../navigation/offRoute.ts";
 import { routeTangentBearingDegrees } from "../../navigation/bearing.ts";
 import { FOLLOW_PITCH_DEGREES, NAVIGATION_ZOOM } from "./rideCamera.ts";
@@ -1222,6 +1223,78 @@ describe("RidingScreen", () => {
         await screen.findByRole("button", { name: "Start riding" }),
       ).toBeInTheDocument();
       expect(screen.queryByText(/Stale/)).toBeNull();
+    });
+
+    it("restores a checked wake-lock preference and attempts one acquisition once visible", async () => {
+      await setActiveRideState({
+        id: "active",
+        routeId: route.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: pointAt(5), accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 5,
+        matchedDistanceFromStartMetres: routePoints[5]?.distanceFromStartMetres ?? 0,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationWindowMetres: 5000,
+        wakeLockDesired: true,
+      });
+
+      vi.stubGlobal("navigator", { onLine: true, wakeLock: { request: vi.fn() } });
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const fakeWakeLock = buildFakeWakeLockSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          wakeLockSource={fakeWakeLock.source}
+        />,
+      );
+
+      // The wake-lock control (like the next-manoeuvre panel) only shows
+      // once riding is genuinely active, matching Resume riding's own
+      // existing "requires an explicit tap" behaviour above.
+      await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+
+      expect(
+        await screen.findByRole("checkbox", { name: /keep screen awake/i }),
+      ).toBeChecked();
+      expect(fakeWakeLock.requestSpy).toHaveBeenCalledOnce();
+      vi.unstubAllGlobals();
+    });
+
+    it("restores an unchecked wake-lock preference for a legacy row with no wakeLockDesired field", async () => {
+      await setActiveRideState({
+        id: "active",
+        routeId: route.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: pointAt(5), accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 5,
+        matchedDistanceFromStartMetres: routePoints[5]?.distanceFromStartMetres ?? 0,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationWindowMetres: 5000,
+      });
+
+      vi.stubGlobal("navigator", { onLine: true, wakeLock: { request: vi.fn() } });
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const fakeWakeLock = buildFakeWakeLockSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          wakeLockSource={fakeWakeLock.source}
+        />,
+      );
+
+      await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+
+      expect(
+        await screen.findByRole("checkbox", { name: /keep screen awake/i }),
+      ).not.toBeChecked();
+      expect(fakeWakeLock.requestSpy).not.toHaveBeenCalled();
+      vi.unstubAllGlobals();
     });
   });
 
@@ -2517,6 +2590,116 @@ describe("RidingScreen", () => {
         ),
       ).toBeInTheDocument();
       expect(screen.queryByText("Turn left onto Ridge Road")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("wake lock", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("does not render the wake-lock control before Start riding is tapped", () => {
+      vi.stubGlobal("navigator", { onLine: true, wakeLock: { request: vi.fn() } });
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
+      expect(
+        screen.queryByRole("checkbox", { name: /keep screen awake/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("does not render the wake-lock control, and issues no request, when navigator.wakeLock is absent", async () => {
+      // No navigator stub at all — jsdom's default navigator has no
+      // wakeLock property, matching a genuinely unsupported browser.
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const fakeWakeLock = buildFakeWakeLockSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          wakeLockSource={fakeWakeLock.source}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      expect(
+        screen.queryByRole("checkbox", { name: /keep screen awake/i }),
+      ).not.toBeInTheDocument();
+      expect(fakeWakeLock.requestSpy).not.toHaveBeenCalled();
+    });
+
+    it("renders the wake-lock control once riding starts when the API is supported", async () => {
+      vi.stubGlobal("navigator", { onLine: true, wakeLock: { request: vi.fn() } });
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("checkbox", { name: /keep screen awake/i }),
+      ).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+
+      expect(
+        await screen.findByRole("checkbox", { name: /keep screen awake/i }),
+      ).not.toBeChecked();
+    });
+
+    it("opening a different route than the one with a saved preference starts with the option off", async () => {
+      await setActiveRideState({
+        id: "active",
+        routeId: "some-other-route",
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: null,
+        lastMatchedPointIndex: 0,
+        matchedDistanceFromStartMetres: 0,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationWindowMetres: 5000,
+        wakeLockDesired: true,
+      });
+
+      vi.stubGlobal("navigator", { onLine: true, wakeLock: { request: vi.fn() } });
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const fakeWakeLock = buildFakeWakeLockSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          wakeLockSource={fakeWakeLock.source}
+        />,
+      );
+
+      await user.click(await screen.findByRole("button", { name: "Start riding" }));
+
+      expect(
+        await screen.findByRole("checkbox", { name: /keep screen awake/i }),
+      ).not.toBeChecked();
+      expect(fakeWakeLock.requestSpy).not.toHaveBeenCalled();
     });
   });
 });

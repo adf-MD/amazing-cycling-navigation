@@ -141,6 +141,13 @@ export interface StoredRideState {
    * missing value to 0, i.e. north-up/top-down). */
   cameraBearingDegrees?: number;
   cameraPitchDegrees?: number;
+  /** The rider's desired wake-lock state for the current active ride only
+   * — never a global setting, never the runtime sentinel itself (which is
+   * never serialised). Optional/non-indexed for the same reason as the
+   * camera fields above: rows written before this field existed simply
+   * lack it, and src/storage/mapping.ts's fromStoredRideState defaults a
+   * missing value to false — no Dexie version() bump required. */
+  wakeLockDesired?: boolean;
 }
 
 export class AcnDatabase extends Dexie {
@@ -161,8 +168,9 @@ export class AcnDatabase extends Dexie {
     // version bump; old rows simply lack them, handled by explicit
     // defaulting in mapping.ts. elevationViewMode/lastReliableMatchedPointIndex/
     // lastReliableMatchedDistanceFromStartMetres (added after
-    // elevationWindowMetres was widened to optional) are plain, non-indexed
-    // fields added the same way.
+    // elevationWindowMetres was widened to optional) and wakeLockDesired
+    // (Milestone 4's tenth slice) are plain, non-indexed fields added the
+    // same way.
     this.version(1).stores({
       routes: "id, name, createdAt",
       rideState: "id",

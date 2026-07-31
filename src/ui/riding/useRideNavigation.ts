@@ -58,6 +58,11 @@ export interface RideNavigationState {
   elevationViewMode: ElevationViewMode;
   elevationProfileDisplay: ElevationProfileDisplay;
   setElevationViewMode: (mode: ElevationViewMode) => void;
+  /** The rider's desired wake-lock preference for this active ride only —
+   * see storage/mapping.ts's wakeLockDesired field. Never a global
+   * setting; restored/persisted exactly like elevationViewMode above. */
+  wakeLockDesired: boolean;
+  setWakeLockDesired: (next: boolean) => void;
   start: () => void;
   /** Non-null only once a persisted camera state for this exact route has
    * actually been restored — a genuinely new ride has nothing to
@@ -114,6 +119,7 @@ export function useRideNavigation(
   );
   const [restoredCameraState, setRestoredCameraState] =
     useState<StoredCameraState | null>(null);
+  const [wakeLockDesired, setWakeLockDesired] = useState(false);
 
   const clearWatchRef = useRef<(() => void) | null>(null);
   // Bumped whenever a genuinely new native watch is created (start()) or
@@ -251,6 +257,7 @@ export function useRideNavigation(
         setIsStale(restored.lastFix !== null);
         setElevationViewMode(restored.elevationViewMode);
         setRestoredCameraState(restored.cameraState);
+        setWakeLockDesired(restored.wakeLockDesired);
       })
       .catch(() => {
         // No usable stored state; continue with a fresh session.
@@ -274,12 +281,20 @@ export function useRideNavigation(
         coreState,
         elevationViewMode,
         getCameraState(),
+        wakeLockDesired,
       ),
     ).catch(() => {
       // Persistence failure isn't fatal to an in-progress ride; the next
       // successful write will catch the state up.
     });
-  }, [route.id, currentFix, coreState, elevationViewMode, getCameraState]);
+  }, [
+    route.id,
+    currentFix,
+    coreState,
+    elevationViewMode,
+    getCameraState,
+    wakeLockDesired,
+  ]);
 
   // On visibilitychange/pageshow, mark the current fix stale and restart
   // the watch — but only if it was already running: a genuine reload
@@ -369,6 +384,8 @@ export function useRideNavigation(
     elevationViewMode,
     elevationProfileDisplay,
     setElevationViewMode,
+    wakeLockDesired,
+    setWakeLockDesired,
     start,
     restoredCameraState,
   };
