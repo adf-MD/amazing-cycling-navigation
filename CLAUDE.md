@@ -295,6 +295,7 @@ The following items are approved directions or confirmed bugs for future work. T
 
 10. **Optional wake lock — done**
     - Milestone 4's tenth slice completes this item: an off-by-default **Keep screen awake** control, shown only in active Riding and only when the Screen Wake Lock API is genuinely available. See Milestone 4's own tenth-slice paragraph above for full detail.
+    - Manually verified on the user's iPhone: the first real-device test worked as intended.
 
 ### Optional external-data feature
 
@@ -314,3 +315,30 @@ The following items are approved directions or confirmed bugs for future work. T
     - Preferred eventual architecture: global tile cache keyed by URL, per-route references, deduplication across routes, deletion only when no route references a tile.
     - Offer bounded detail presets and estimate storage before download.
     - Never bulk-prefetch from an OSMF community tile endpoint that prohibits offline download.
+
+### Riding elevation enhancement
+
+13. **Current-climb elevation view (Riding) — preferred next slice**
+    - Available only while the rider is currently inside an already-recognised climb from the existing shared route-feature analysis (`detectRouteFeatures`). Do not add a second climb-detection algorithm or reinterpret every short uphill as a climb.
+    - Add **Climb** as an elevation-view choice alongside the existing Full/2 km/5 km/10 km views only while an active recognised climb exists; hide it otherwise.
+    - Automatically select Climb view when the rider enters a new recognised climb. If the rider manually selects a different view, respect that choice for the remainder of the same climb rather than repeatedly forcing Climb view open; a later recognised climb may automatically select Climb view again.
+    - Progress uses the same reliable `presentationDistanceFromStartMetres` policy already driving the elevation marker and active-feature selection, and freezes under the same stale/strongly-off-route conditions.
+    - Show distance completed within the climb, distance remaining to the detected climb finish, current elevation, the detected climb-finish/summit elevation, elevation remaining, current local gradient, and the climb's existing number/category/summary where space permits. No percentage-completed value.
+    - Use the existing shared smoothed elevation profile for all displayed/interpolated values; define "elevation remaining" from that profile without a second ascent calculation, and document at implementation time which established climb metric it reuses.
+    - Keep the current-position vertical line and dot visible above all chart fills, preserving the existing stale/frozen visual distinction.
+    - Chart baseline is the lower bound of the existing padded vertical elevation domain (lowest displayed elevation minus the existing padding) — not sea level, and never labelled as literal ground elevation. Reuse the existing minimum-range/padding rules so near-flat sections are not exaggerated.
+    - Fill the area under the profile down to that baseline, in Climb view only — Full/2 km/5 km/10 km views keep their current unfilled presentation. Reuse the existing Garmin-inspired climb local-gradient bands, colour tokens and analysis (`classifyClimbGradientBand`, `routeFeaturePalette.ts`) with no second gradient calculation; divide the fill at the existing local-gradient segment boundaries; keep the profile line clearly visible over the fill; make the completed portion visually subordinate (e.g. dimmed/reduced saturation) to the remaining portion; avoid strong vertical boundary lines between fill colours — a subtle separator only if implementation testing proves one necessary, never a dense grid. Keep the existing non-colour legend/text cues.
+    - Presentation only: must not change route-feature detection thresholds, Garmin category scoring, map colouring, route progress or off-route classification, or stored raw elevations, and must remain useful offline once the route is saved/imported.
+
+### Planning routing profiles
+
+14. **Selectable Planning cycling profiles — follows the climb view**
+    - Origin: the user wanted cycling paths included, believing the road-bike profile avoided them; satisfied by exposing openrouteservice's existing general-cycling profile as an explicit alternative. This is a routing-profile choice, not a new cycling-path map overlay.
+    - Two profiles: **Road bike** (`cycling-road`, default for every genuinely new planning draft) and **General cycling** (`cycling-regular`) — described accurately as possibly more willing to use cycling infrastructure but also possibly including compacted, gravel, unpaved or otherwise questionable surfaces; never claim a guaranteed preference for every cycling path.
+    - No automatic fallback between profiles on failure, no silent profile change, no mixed-profile per-leg routing, and no mountain-bike/e-bike profiles in this slice.
+    - Store the selected profile in the planning draft (recovered after suspension/reload) and in the saved route's existing provider/source provenance; changing profile must trigger recalculation.
+    - Make leg-cache identity profile-aware, reusing the existing incremental-leg-calculation architecture: geometry cached for one profile must never be reused as the other's, and a profile change invalidates every leg cached under the previous profile.
+    - API key, provider adapter, endpoint isolation, and use of the provider's recommended routing preference are unchanged.
+    - Apply the existing surface/way-type/access/steps/ford/ferry analysis and warnings to both profiles. General cycling must never make questionable or unsuitable surfaces look approved for a road bike; unknown-surface data remains uncertainty under either profile; ferry avoidance stays configurable; never substitute straight lines for a failed profile calculation; on recalculation failure, retain the last successful route and clearly indicate which profile produced it.
+    - Optional, non-prerequisite extension: show total cycleway distance in the route summary if the existing normalised way-type data can support it truthfully — never inferred from map styling or geometry alone.
+    - Compatibility: saved/imported routes remain usable without openrouteservice; GPX export remains standards-compatible; if GPX provenance records the routing profile, older exports/imports without that value must remain compatible; no IndexedDB migration unless inspecting the actual stored shape proves one necessary.
