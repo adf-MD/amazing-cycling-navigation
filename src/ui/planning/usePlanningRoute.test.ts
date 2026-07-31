@@ -769,4 +769,209 @@ describe("usePlanningRoute", () => {
       expect(result.current.state.kind).not.toBe("routed");
     });
   });
+
+  describe("profile changes and isStale", () => {
+    it("is not stale before any calculation, and not stale immediately after a successful one", async () => {
+      const { adapter, calls } = buildQueuedAdapter();
+      const { result } = renderHook(() =>
+        usePlanningRoute({
+          waypoints: WAYPOINTS,
+          profile: "cycling-road",
+          avoidFerries: false,
+          adapter,
+        }),
+      );
+
+      expect(result.current.isStale).toBe(false);
+
+      act(() => {
+        result.current.calculateNow();
+      });
+      await act(async () => {
+        calls[0]?.resolve(buildRoute());
+        await flushMicrotasks();
+      });
+      await waitFor(() => {
+        expect(result.current.state.kind).toBe("routed");
+      });
+      expect(result.current.isStale).toBe(false);
+    });
+
+    it("becomes stale the instant the profile changes, before the debounced recalculation starts", async () => {
+      const { adapter, calls } = buildQueuedAdapter();
+      const { result, rerender } = renderHook(
+        (props: { profile: "cycling-road" | "cycling-regular" }) =>
+          usePlanningRoute({
+            waypoints: WAYPOINTS,
+            profile: props.profile,
+            avoidFerries: false,
+            adapter,
+          }),
+        { initialProps: { profile: "cycling-road" } },
+      );
+
+      act(() => {
+        result.current.calculateNow();
+      });
+      await act(async () => {
+        calls[0]?.resolve(buildRoute());
+        await flushMicrotasks();
+      });
+      await waitFor(() => {
+        expect(result.current.state.kind).toBe("routed");
+      });
+
+      rerender({ profile: "cycling-regular" });
+
+      expect(result.current.isStale).toBe(true);
+      // Still showing the previous (road) route while stale.
+      expect(result.current.state.kind).toBe("routed");
+    });
+
+    it("triggers a debounced recalculation using the new profile for every leg, and clears isStale on success", async () => {
+      const { adapter, calls } = buildQueuedAdapter();
+      const { result, rerender } = renderHook(
+        (props: { profile: "cycling-road" | "cycling-regular" }) =>
+          usePlanningRoute({
+            waypoints: WAYPOINTS,
+            profile: props.profile,
+            avoidFerries: false,
+            adapter,
+          }),
+        { initialProps: { profile: "cycling-road" } },
+      );
+
+      act(() => {
+        result.current.calculateNow();
+      });
+      await act(async () => {
+        calls[0]?.resolve(buildRoute("road"));
+        await flushMicrotasks();
+      });
+      await waitFor(() => {
+        expect(result.current.state.kind).toBe("routed");
+      });
+
+      rerender({ profile: "cycling-regular" });
+
+      await waitFor(() => {
+        expect(calls).toHaveLength(2);
+      });
+      expect(calls[1]?.options.profile).toBe("cycling-regular");
+
+      const generalCyclingRoute = buildRoute("general-cycling");
+      await act(async () => {
+        calls[1]?.resolve(generalCyclingRoute);
+        await flushMicrotasks();
+      });
+
+      await waitFor(() => {
+        expect(result.current.isStale).toBe(false);
+      });
+      expectRoutedStateMatching(result.current.state, {
+        route: generalCyclingRoute,
+        waypoints: WAYPOINTS,
+      });
+    });
+
+    it("never lets a superseded response from an earlier profile overwrite the latest one, after rapid profile changes", async () => {
+      const { adapter, calls } = buildQueuedAdapter();
+      const { result, rerender } = renderHook(
+        (props: { profile: "cycling-road" | "cycling-regular" }) =>
+          usePlanningRoute({
+            waypoints: WAYPOINTS,
+            profile: props.profile,
+            avoidFerries: false,
+            adapter,
+          }),
+        { initialProps: { profile: "cycling-road" } },
+      );
+
+      act(() => {
+        result.current.calculateNow();
+      });
+      await act(async () => {
+        calls[0]?.resolve(buildRoute("road"));
+        await flushMicrotasks();
+      });
+      await waitFor(() => {
+        expect(result.current.state.kind).toBe("routed");
+      });
+
+      rerender({ profile: "cycling-regular" });
+      await waitFor(() => {
+        expect(calls).toHaveLength(2);
+      });
+      // A manual retry while the debounced regular-profile request is
+      // in flight supersedes it with a fresh request for the same
+      // (current) profile — calculateNow() always uses the live profile.
+      act(() => {
+        result.current.calculateNow();
+      });
+      expect(calls).toHaveLength(3);
+      expect(calls[1]?.signal?.aborted).toBe(true);
+
+      const finalRoute = buildRoute("final");
+      await act(async () => {
+        // The stale (superseded) response resolving late must not win.
+        calls[1]?.resolve(buildRoute("stale-superseded"));
+        calls[2]?.resolve(finalRoute);
+        await flushMicrotasks();
+      });
+
+      await waitFor(() => {
+        expectRoutedStateMatching(result.current.state, {
+          route: finalRoute,
+          waypoints: WAYPOINTS,
+        });
+      });
+    });
+
+    it("resolves near-instantly with no new adapter call when switching back to a previously-used profile", async () => {
+      const { adapter, calls } = buildQueuedAdapter();
+      const { result, rerender } = renderHook(
+        (props: { profile: "cycling-road" | "cycling-regular" }) =>
+          usePlanningRoute({
+            waypoints: WAYPOINTS,
+            profile: props.profile,
+            avoidFerries: false,
+            adapter,
+          }),
+        { initialProps: { profile: "cycling-road" } },
+      );
+
+      act(() => {
+        result.current.calculateNow();
+      });
+      const roadRoute = buildRoute("road");
+      await act(async () => {
+        calls[0]?.resolve(roadRoute);
+        await flushMicrotasks();
+      });
+      await waitFor(() => {
+        expect(result.current.state.kind).toBe("routed");
+      });
+
+      rerender({ profile: "cycling-regular" });
+      await waitFor(() => {
+        expect(calls).toHaveLength(2);
+      });
+      await act(async () => {
+        calls[1]?.resolve(buildRoute("general-cycling"));
+        await flushMicrotasks();
+      });
+      await waitFor(() => {
+        expect(result.current.isStale).toBe(false);
+      });
+
+      // Switch back to cycling-road with the same waypoints: the leg
+      // cache already holds this exact profile/waypoint combination, so
+      // no third adapter call is made at all.
+      rerender({ profile: "cycling-road" });
+      await waitFor(() => {
+        expect(result.current.isStale).toBe(false);
+      });
+      expect(calls).toHaveLength(2);
+    });
+  });
 });

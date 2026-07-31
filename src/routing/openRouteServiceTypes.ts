@@ -48,7 +48,8 @@ export interface OrsExtraInfoEntry {
 
 /** The three extra_info categories this project requests and reads.
  * "roadaccessrestrictions" is deliberately absent: ORS does not document it
- * as available for the cycling-road profile, so it is never requested. */
+ * as available for either cycling profile this project uses, so it is
+ * never requested. */
 export interface OrsExtras {
   surface?: OrsExtraInfoEntry;
   waytype?: OrsExtraInfoEntry;

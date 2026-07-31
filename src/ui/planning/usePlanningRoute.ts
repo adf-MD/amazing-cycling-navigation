@@ -66,6 +66,13 @@ export interface UsePlanningRouteResult {
   /** The explicit first-calculation action; also usable as a manual
    * retry after a failure. */
   calculateNow: () => void;
+  /** True whenever `state`'s routed result no longer matches the live
+   * waypoints/profile/avoidFerries that would produce it — e.g. right
+   * after any of those change, until the matching recalculation lands.
+   * The caller must not let the rider save/export a stale result; see
+   * canSaveOrExportPlan.ts. False whenever `state.kind !== "routed"`,
+   * since there is no result to be stale. */
+  isStale: boolean;
 }
 
 function deriveBaseState(waypoints: readonly Waypoint[]): PlanningRouteState {
@@ -81,6 +88,21 @@ function isAbortError(error: unknown): boolean {
     "name" in error &&
     error.name === "AbortError"
   );
+}
+
+/** A deterministic, order-sensitive fingerprint of every route-affecting
+ * Planning input — coordinate-based, never waypoint id (matching
+ * routeLegs.ts's buildRouteLegKey convention exactly), so an edit that
+ * replaces a waypoint's coordinate without changing its id is still
+ * detected. Used only to detect whether the currently displayed routed
+ * result still matches the live inputs that would produce it — never
+ * exposed outside this hook. */
+function computeRouteCalculationFingerprint(
+  waypoints: readonly Waypoint[],
+  profile: RoutingProfile,
+  avoidFerries: boolean,
+): string {
+  return [profile, avoidFerries, ...waypoints.flatMap((w) => w.coordinate)].join("|");
 }
 
 /**
@@ -101,6 +123,10 @@ export function usePlanningRoute({
     route: PlannedRoute;
     waypoints: readonly Waypoint[];
     isFirstRouteForDraft: boolean;
+    /** The fingerprint of the exact inputs that produced `route` —
+     * compared against the hook's live props below to derive `isStale`.
+     * Never surfaced outside this hook. */
+    calculationFingerprint: string;
   } | null>(null);
   const [lastErrorMessage, setLastErrorMessage] = useState<string | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
@@ -201,7 +227,16 @@ export function usePlanningRoute({
         // first success for this draft, correct across any number of
         // earlier failed attempts, since a failure never reaches here.
         const isFirstRouteForDraft = !hasRoutedResultRef.current;
-        setRoutedResult({ route, waypoints: currentWaypoints, isFirstRouteForDraft });
+        setRoutedResult({
+          route,
+          waypoints: currentWaypoints,
+          isFirstRouteForDraft,
+          calculationFingerprint: computeRouteCalculationFingerprint(
+            currentWaypoints,
+            currentProfile,
+            currentAvoidFerries,
+          ),
+        });
         recordProviderKeyVerification("verified").catch((error: unknown) => {
           logError("planning-record-verification", error);
         });
@@ -272,5 +307,22 @@ export function usePlanningRoute({
       }
     : deriveBaseState(waypoints);
 
-  return { state, lastErrorMessage, isCalculating, updatingLegCount, calculateNow };
+  // Computed fresh every render off the hook's live props (never the
+  // lagging latestRef, which only updates via its own effect) — so a
+  // profile/avoidFerries/waypoint change is reflected as stale in the
+  // very same render that changed it, before the debounce timer even
+  // starts.
+  const isStale =
+    routedResult !== null &&
+    routedResult.calculationFingerprint !==
+      computeRouteCalculationFingerprint(waypoints, profile, avoidFerries);
+
+  return {
+    state,
+    lastErrorMessage,
+    isCalculating,
+    updatingLegCount,
+    calculateNow,
+    isStale,
+  };
 }

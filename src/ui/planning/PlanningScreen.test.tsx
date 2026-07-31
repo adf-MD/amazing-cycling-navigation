@@ -8,7 +8,7 @@ import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
 import { cumulativeDistancesMetres } from "../../navigation/distance.ts";
 import { RoutingError } from "../../routing/openRouteServiceErrors.ts";
-import type { RoutingProvider } from "../../routing/provider.ts";
+import type { RoutingOptions, RoutingProvider } from "../../routing/provider.ts";
 import { db } from "../../storage/db.ts";
 import { getDraft, saveDraft } from "../../storage/planningDraftRepository.ts";
 import { listRoutes } from "../../storage/routesRepository.ts";
@@ -390,6 +390,7 @@ function buildLegAwareResolvedAdapter(route: PlannedRoute): RoutingProvider {
 
 interface DeferredRouteCall {
   waypoints: Coordinate[];
+  options: RoutingOptions;
   resolve: (route: PlannedRoute) => void;
 }
 
@@ -403,9 +404,9 @@ function buildDeferredAdapter(): {
 } {
   const calls: DeferredRouteCall[] = [];
   const adapter: RoutingProvider = {
-    calculateRoute: (waypoints) =>
+    calculateRoute: (waypoints, options) =>
       new Promise<PlannedRoute>((resolve) => {
-        calls.push({ waypoints, resolve });
+        calls.push({ waypoints, options, resolve });
       }),
   };
   return { adapter, calls };
@@ -721,6 +722,7 @@ describe("PlanningScreen", () => {
       ],
       routeName: "Planned route",
       avoidFerries: true,
+      profile: "cycling-road",
     });
     const map = createMockMapFactory();
     const requestApproximateLocation = vi.fn().mockResolvedValue([-1.5, 53.8]);
@@ -2033,6 +2035,298 @@ describe("PlanningScreen", () => {
     expect(screen.getByLabelText("Avoid ferries")).not.toBeChecked();
   });
 
+  describe("cycling profile selector", () => {
+    // buildRoute(10)'s geometry is denser than the fixture's own 2
+    // waypoints (required for canSaveOrExportPlan's own "denser than
+    // waypoints" eligibility check) — unlike buildRouteForCall, which
+    // returns exactly one point per waypoint and so would never satisfy
+    // that check. Safe to ignore the requested leg endpoints here since
+    // every test in this block places exactly 2 waypoints (one leg).
+    function buildRouteForCallWithProfile(
+      _waypoints: Coordinate[],
+      profile: "cycling-road" | "cycling-regular",
+    ): PlannedRoute {
+      return {
+        ...buildRoute(10),
+        source: { kind: "planner", provider: "openrouteservice", profile },
+      };
+    }
+
+    it("shows the selector with the correct accessible group label, choices and Road bike selected by default", () => {
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      const group = screen.getByRole("group", { name: "Cycling profile" });
+      const roadBikeButton = within(group).getByRole("button", { name: "Road bike" });
+      const generalCyclingButton = within(group).getByRole("button", {
+        name: "General cycling",
+      });
+
+      expect(roadBikeButton).toHaveAttribute("aria-pressed", "true");
+      expect(generalCyclingButton).toHaveAttribute("aria-pressed", "false");
+      expect(
+        screen.getByText(/prefers roads suitable for a road bike/i),
+      ).toBeInTheDocument();
+    });
+
+    it("switches the pressed state and explanatory text when General cycling is selected", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "General cycling" }));
+
+      expect(screen.getByRole("button", { name: "Road bike" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      expect(screen.getByRole("button", { name: "General cycling" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(
+        screen.getByText(/may use more cycling infrastructure/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/prefers roads suitable for a road bike/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it(
+      "changing profile after a route exists recalculates every leg with the new profile, shows a " +
+        "stale-labelled previous result meanwhile, disables Save/Export, and clears once the new " +
+        "result lands",
+      async () => {
+        const user = userEvent.setup();
+        await saveProviderKey("dummy-test-key");
+        const map = createMockMapFactory();
+        const { adapter, calls } = buildDeferredAdapter();
+        render(
+          <PlanningScreen
+            onNavigateToSettings={vi.fn()}
+            mapFactory={map.factory}
+            routingProvider={adapter}
+          />,
+        );
+        map.triggerLoad();
+
+        await addWaypointViaCrosshair(map, user, [0, 51]);
+        await addWaypointViaCrosshair(map, user, [0.01, 51]);
+        const calculateButton = await waitFor(() => {
+          const button = screen.getByRole("button", { name: /calculate route/i });
+          expect(button).toBeEnabled();
+          return button;
+        });
+        await user.click(calculateButton);
+        await waitFor(() => {
+          expect(calls).toHaveLength(1);
+        });
+        expect(calls[0]?.options.profile).toBe("cycling-road");
+        calls[0]?.resolve(
+          buildRouteForCallWithProfile(calls[0].waypoints, "cycling-road"),
+        );
+
+        await waitFor(() => {
+          expect(
+            screen.getByText(/Routed via openrouteservice · Road bike \(cycling-road\)/),
+          ).toBeInTheDocument();
+        });
+        expect(screen.getByRole("button", { name: "Save route" })).toBeEnabled();
+
+        await user.click(screen.getByRole("button", { name: "General cycling" }));
+
+        // Stale immediately, before the debounced recalculation even starts.
+        await waitFor(() => {
+          expect(
+            screen.getByText(
+              "Recalculating for General cycling; showing the previous Road bike result below.",
+            ),
+          ).toBeInTheDocument();
+        });
+        expect(screen.getByRole("button", { name: "Save route" })).toBeDisabled();
+        expect(screen.getByRole("button", { name: "Export GPX" })).toBeDisabled();
+        // The retained result's own provenance is unchanged while stale.
+        expect(
+          screen.getByText(/Routed via openrouteservice · Road bike \(cycling-road\)/),
+        ).toBeInTheDocument();
+
+        await waitFor(() => {
+          expect(calls).toHaveLength(2);
+        });
+        expect(calls[1]?.options.profile).toBe("cycling-regular");
+        calls[1]?.resolve(
+          buildRouteForCallWithProfile(calls[1].waypoints, "cycling-regular"),
+        );
+
+        await waitFor(() => {
+          expect(
+            screen.getByText(
+              /Routed via openrouteservice · General cycling \(cycling-regular\)/,
+            ),
+          ).toBeInTheDocument();
+        });
+        expect(
+          screen.queryByText(/Recalculating for General cycling/),
+        ).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Save route" })).toBeEnabled();
+        expect(screen.getByRole("button", { name: "Export GPX" })).toBeEnabled();
+      },
+    );
+
+    it(
+      "never mixes profiles: General cycling always gets its own fresh request, and switching " +
+        "back to an already-cached Road bike result reuses it with no new adapter call",
+      async () => {
+        const user = userEvent.setup();
+        await saveProviderKey("dummy-test-key");
+        const map = createMockMapFactory();
+        const { adapter, calls } = buildDeferredAdapter();
+        render(
+          <PlanningScreen
+            onNavigateToSettings={vi.fn()}
+            mapFactory={map.factory}
+            routingProvider={adapter}
+          />,
+        );
+        map.triggerLoad();
+
+        await addWaypointViaCrosshair(map, user, [0, 51]);
+        await addWaypointViaCrosshair(map, user, [0.01, 51]);
+        const calculateButton = await waitFor(() => {
+          const button = screen.getByRole("button", { name: /calculate route/i });
+          expect(button).toBeEnabled();
+          return button;
+        });
+        await user.click(calculateButton);
+        await waitFor(() => {
+          expect(calls).toHaveLength(1);
+        });
+        expect(calls[0]?.options.profile).toBe("cycling-road");
+        calls[0]?.resolve(
+          buildRouteForCallWithProfile(calls[0].waypoints, "cycling-road"),
+        );
+        await waitFor(() => {
+          expect(screen.getByRole("button", { name: "Save route" })).toBeEnabled();
+        });
+
+        await user.click(screen.getByRole("button", { name: "General cycling" }));
+        await waitFor(() => {
+          expect(calls).toHaveLength(2);
+        });
+        expect(calls[1]?.options.profile).toBe("cycling-regular");
+        calls[1]?.resolve(
+          buildRouteForCallWithProfile(calls[1].waypoints, "cycling-regular"),
+        );
+        await waitFor(() => {
+          expect(
+            screen.getByText(/Routed via openrouteservice · General cycling/),
+          ).toBeInTheDocument();
+        });
+
+        // Switching back to Road bike with unchanged waypoints: the leg
+        // cache already holds this exact profile/waypoint combination, so
+        // it resolves with no third adapter call at all — the mechanism
+        // that also guarantees a General cycling leg is never silently
+        // reused as a Road bike one, or vice versa.
+        await user.click(screen.getByRole("button", { name: "Road bike" }));
+        await waitFor(() => {
+          expect(
+            screen.getByText(/Routed via openrouteservice · Road bike \(cycling-road\)/),
+          ).toBeInTheDocument();
+        });
+        expect(screen.getByRole("button", { name: "Save route" })).toBeEnabled();
+        expect(calls).toHaveLength(2);
+      },
+    );
+
+    it("restores a persisted cycling profile from an existing draft", async () => {
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Planned route",
+        avoidFerries: true,
+        profile: "cycling-regular",
+      });
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "General cycling" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+      });
+      expect(screen.getByRole("button", { name: "Road bike" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+
+    it("defaults a legacy draft with no stored profile to Road bike", async () => {
+      await db.planningDrafts.put({
+        id: "draft",
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      });
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Road bike" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+      });
+    });
+
+    it("persists the selected cycling profile into the draft and survives a reload", async () => {
+      const map = createMockMapFactory();
+      const { unmount } = render(
+        <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+      );
+      map.triggerLoad();
+
+      map.triggerMapTap([0, 51]);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+      });
+
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "General cycling" }));
+
+      await waitFor(
+        async () => {
+          const draft = await getDraft();
+          expect(draft?.profile).toBe("cycling-regular");
+        },
+        { timeout: 3000 },
+      );
+
+      unmount();
+
+      const map2 = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map2.factory} />);
+      map2.triggerLoad();
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "General cycling" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+      });
+    });
+  });
+
   it(
     "restores a draft, edits waypoints via select/insert-after/move, undoes and redoes, " +
       "calculates via the mocked provider, and recovers the full draft after a reload, " +
@@ -2048,6 +2342,7 @@ describe("PlanningScreen", () => {
         ],
         routeName: "Weekend loop",
         avoidFerries: false,
+        profile: "cycling-road",
       });
       const map = createMockMapFactory();
       const route = buildRoute(10);

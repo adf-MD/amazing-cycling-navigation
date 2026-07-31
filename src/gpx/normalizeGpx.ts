@@ -4,6 +4,7 @@ import type {
   ManoeuvreProvenance,
   PlannedRoute,
   RoutePoint,
+  RoutingProfile,
 } from "../domain/types.ts";
 import { cumulativeDistancesMetres } from "../navigation/distance.ts";
 import { analyzeElevation } from "../navigation/elevation.ts";
@@ -46,6 +47,12 @@ export function buildPlannedRouteFromGpx(
   rawPoints: readonly RawGpxPoint[],
   options: NormalizeGpxOptions,
   trustedManoeuvres?: TrustedGpxManoeuvres,
+  /** The routing profile recovered from a validated <acn:source> GPX
+   * extension (see parseAcnExtension.ts's readAcnSourceProfile), if any —
+   * purely informational, never trust-gated. Omitted (not `profile:
+   * undefined`) whenever absent, so an ordinary third-party GPX import's
+   * source stays exactly `{ kind: "gpx-import" }`. */
+  sourceProfile?: RoutingProfile,
 ): PlannedRoute {
   const { points, distanceMetres } = normalizeGpxPoints(rawPoints);
   const { ascentMetres, descentMetres } = analyzeElevation(points);
@@ -61,6 +68,9 @@ export function buildPlannedRouteFromGpx(
     ascentMetres,
     descentMetres,
     warnings: [],
-    source: { kind: "gpx-import" },
+    source: {
+      kind: "gpx-import",
+      ...(sourceProfile !== undefined ? { profile: sourceProfile } : {}),
+    },
   };
 }

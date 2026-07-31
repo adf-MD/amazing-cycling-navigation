@@ -76,6 +76,48 @@ describe("RouteSummaryPanel", () => {
     expect(screen.getByText(/not a guarantee of road quality/i)).toBeInTheDocument();
   });
 
+  it("shows the friendly profile label and raw provider/profile value from the route's own provenance", () => {
+    render(
+      <RouteSummaryPanel
+        route={buildRoute({
+          source: {
+            kind: "planner",
+            provider: "openrouteservice",
+            profile: "cycling-regular",
+          },
+        })}
+        waypointCount={2}
+        warnings={[]}
+        selectedWarningIndex={null}
+        onSelectWarning={vi.fn()}
+        onClearWarningSelection={vi.fn()}
+        revealToken={0}
+        gradientSegments={[]}
+      />,
+    );
+
+    expect(
+      screen.getByText("Routed via openrouteservice · General cycling (cycling-regular)"),
+    ).toBeInTheDocument();
+  });
+
+  it("renders no provenance line for a gpx-import route, even one with a recovered profile", () => {
+    render(
+      <RouteSummaryPanel
+        route={buildRoute({ source: { kind: "gpx-import", profile: "cycling-road" } })}
+        waypointCount={2}
+        warnings={[]}
+        selectedWarningIndex={null}
+        onSelectWarning={vi.fn()}
+        onClearWarningSelection={vi.fn()}
+        revealToken={0}
+        gradientSegments={[]}
+      />,
+    );
+
+    expect(screen.queryByText(/Routed via/)).not.toBeInTheDocument();
+  });
+
   it("renders each warning as an accessible, unpressed button showing kind, length and approximate range", () => {
     render(
       <RouteSummaryPanel

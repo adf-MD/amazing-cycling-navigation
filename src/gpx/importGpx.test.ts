@@ -126,7 +126,11 @@ describe("importGpxFile", () => {
         fixedClock,
       );
 
-      expect(route.source).toEqual({ kind: "gpx-import" });
+      // source.kind stays "gpx-import" (how the route entered this
+      // session), but the routing profile that originally produced it is
+      // recovered from the sibling <acn:source> extension, independent
+      // of the <acn:navigation> envelope this test primarily exercises.
+      expect(route.source).toEqual({ kind: "gpx-import", profile: "cycling-road" });
       expect(route.manoeuvres).toHaveLength(1);
       expect(route.manoeuvres[0]?.type).toBe("left");
       expect(route.manoeuvreProvenance).toEqual({
@@ -150,7 +154,12 @@ describe("importGpxFile", () => {
       expect(route.points).toHaveLength(3);
       expect(route.manoeuvres).toEqual([]);
       expect(route.manoeuvreProvenance).toBeUndefined();
-      expect(route.source).toEqual({ kind: "gpx-import" });
+      // <acn:source> is untouched by the corrupted geometrySha256 above —
+      // it carries no digest binding of its own and is a sibling, not a
+      // child, of the rejected <acn:navigation> envelope — so the
+      // recovered profile still survives even though manoeuvre trust does
+      // not.
+      expect(route.source).toEqual({ kind: "gpx-import", profile: "cycling-road" });
       expect(notices).toHaveLength(1);
       expect(notices[0]?.kind).toBe("acn-extension-rejected");
       expect(notices[0]?.message).toMatch(/did not match the route geometry/);

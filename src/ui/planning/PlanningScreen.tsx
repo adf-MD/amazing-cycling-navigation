@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
+import type { Coordinate, PlannedRoute, RoutingProfile } from "../../domain/types.ts";
 import { exportRouteToGpx } from "../../gpx/exportGpx.ts";
 import {
   MapView,
@@ -31,6 +31,11 @@ import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
 import { OpenRouteServiceAdapter } from "../../routing/openRouteServiceAdapter.ts";
 import type { RoutingProvider } from "../../routing/provider.ts";
 import {
+  DEFAULT_ROUTING_PROFILE,
+  ROUTING_PROFILES,
+  describeRoutingProfile,
+} from "../../routing/routingProfiles.ts";
+import {
   getProviderKey,
   getProviderKeyVerification,
 } from "../../storage/providerKeyRepository.ts";
@@ -44,6 +49,7 @@ import { downloadTextFile } from "../shared/downloadTextFile.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { describeProviderKeyStatus } from "../settings/providerKeyStatus.ts";
 import { canSaveOrExportPlan } from "./canSaveOrExportPlan.ts";
+import { describeStaleRouteStatus } from "./describeStaleRouteStatus.ts";
 import { NoApiKeyNotice } from "./NoApiKeyNotice.tsx";
 import {
   deriveInteractionMode,
@@ -124,6 +130,7 @@ export function PlanningScreen({
     INITIAL_WAYPOINT_HISTORY_STATE,
   );
   const [avoidFerries, setAvoidFerries] = useState(true);
+  const [profile, setProfile] = useState<RoutingProfile>(DEFAULT_ROUTING_PROFILE);
   const [routeName, setRouteName] = useState("Planned route");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -198,7 +205,7 @@ export function PlanningScreen({
 
   const routing = usePlanningRoute({
     waypoints: state.present,
-    profile: "cycling-road",
+    profile,
     avoidFerries,
     adapter,
   });
@@ -393,6 +400,7 @@ export function PlanningScreen({
           dispatch({ type: "reset", waypoints: draft.waypoints });
           setRouteName(draft.routeName);
           setAvoidFerries(draft.avoidFerries);
+          setProfile(draft.profile);
         }
         setIsDraftHydrated(true);
       })
@@ -407,15 +415,16 @@ export function PlanningScreen({
 
   // A separate 900ms debounce from usePlanningRoute's own recalculation
   // debounce below — this one persists the draft (waypoints, route name,
-  // avoid-ferries), so it deliberately DOES depend on routeName/
-  // avoidFerries, unlike the routing debounce, which never receives them.
+  // avoid-ferries, cycling profile), so it deliberately DOES depend on
+  // routeName/avoidFerries/profile, unlike the routing debounce, which
+  // never receives routeName.
   useEffect(() => {
     if (!isDraftHydrated) return;
     const timeoutId = window.setTimeout(() => {
       const persist =
         state.present.length === 0
           ? clearDraft()
-          : saveDraft({ waypoints: state.present, routeName, avoidFerries });
+          : saveDraft({ waypoints: state.present, routeName, avoidFerries, profile });
       persist.catch((error: unknown) => {
         logError("planning-save-draft", error);
       });
@@ -423,7 +432,7 @@ export function PlanningScreen({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [state.present, routeName, avoidFerries, isDraftHydrated]);
+  }, [state.present, routeName, avoidFerries, profile, isDraftHydrated]);
 
   // Read fresh inside the location effect below rather than depending on
   // state.present directly, so a waypoint added while the location request
@@ -604,7 +613,7 @@ export function PlanningScreen({
     !!last &&
     !sameCoordinate(first.coordinate, last.coordinate);
 
-  const canSaveOrExport = canSaveOrExportPlan(routing.state);
+  const canSaveOrExport = canSaveOrExportPlan(routing.state, routing.isStale);
 
   const handleSave = () => {
     if (routing.state.kind !== "routed") return;
@@ -872,6 +881,22 @@ export function PlanningScreen({
         }}
       />
 
+      <div role="group" aria-label="Cycling profile" className="cycling-profile-group">
+        {ROUTING_PROFILES.map((metadata) => (
+          <button
+            key={metadata.value}
+            type="button"
+            aria-pressed={profile === metadata.value}
+            onClick={() => {
+              setProfile(metadata.value);
+            }}
+          >
+            {metadata.label}
+          </button>
+        ))}
+      </div>
+      <p>{describeRoutingProfile(profile)}</p>
+
       <div>
         <label>
           <input
@@ -908,6 +933,16 @@ export function PlanningScreen({
       </p>
       {routing.lastErrorMessage ? <p role="alert">{routing.lastErrorMessage}</p> : null}
 
+      {routing.isStale && routing.state.kind === "routed" ? (
+        <p role="status">
+          {describeStaleRouteStatus({
+            previousProfile: routing.state.route.source.profile,
+            currentProfile: profile,
+            isCalculating: routing.isCalculating,
+          })}
+        </p>
+      ) : null}
+
       {routing.state.kind === "routed" ? (
         <RouteSummaryPanel
           route={routing.state.route}
@@ -942,7 +977,7 @@ export function PlanningScreen({
           }}
         />
       </div>
-      {!canSaveOrExport ? (
+      {!canSaveOrExport && !routing.isStale ? (
         <p>Calculate a complete routed result before saving or exporting.</p>
       ) : null}
       {saveError ? <p role="alert">{saveError}</p> : null}

@@ -231,6 +231,87 @@ test("configures a key, plans a route via a mocked ORS response, saves it, and r
   expect(consoleErrors).toEqual([]);
 });
 
+test("selecting General cycling routes via the cycling-regular endpoint, not the default cycling-road one", async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+  await page.addInitScript(() => {
+    const originalFetch = fetch;
+    globalThis.fetch = (...args: Parameters<typeof fetch>) => originalFetch(...args);
+  });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByLabel("OpenRouteService API key").fill(DUMMY_KEY);
+  await page.getByRole("button", { name: "Save on this device" }).click();
+  await expect(
+    page.getByText(/key saved on this device, not yet verified/i),
+  ).toBeVisible();
+
+  let capturedUrl: string | null = null;
+  await page.route(ORS_URL_GLOB, async (route) => {
+    const request = route.request();
+    if (request.method() === "POST") {
+      capturedUrl = request.url();
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify(MOCK_ORS_RESPONSE),
+    });
+  });
+
+  await page.getByRole("button", { name: "Plan" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  // Road bike is selected by default, before any waypoint is placed.
+  const roadBikeButton = page.getByRole("button", { name: "Road bike", exact: true });
+  const generalCyclingButton = page.getByRole("button", {
+    name: "General cycling",
+    exact: true,
+  });
+  await expect(roadBikeButton).toHaveAttribute("aria-pressed", "true");
+  await expect(generalCyclingButton).toHaveAttribute("aria-pressed", "false");
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await mapContainer.click({ position: { x: 100, y: 100 } });
+  await mapContainer.click({ position: { x: 200, y: 150 } });
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Waypoint 2", exact: true }),
+  ).toBeVisible();
+
+  await generalCyclingButton.click();
+  await expect(generalCyclingButton).toHaveAttribute("aria-pressed", "true");
+  await expect(roadBikeButton).toHaveAttribute("aria-pressed", "false");
+
+  const calculateButton = page.getByRole("button", { name: /calculate route/i });
+  await expect(calculateButton).toBeEnabled();
+  await calculateButton.click();
+
+  const summaryRegion = page.getByRole("region", { name: "Route summary" });
+  await expect(summaryRegion).toBeVisible({ timeout: 15_000 });
+
+  expect(capturedUrl).toContain("/directions/cycling-regular/geojson");
+  expect(capturedUrl).not.toContain("/directions/cycling-road/geojson");
+  await expect(
+    summaryRegion.getByText(/General cycling \(cycling-regular\)/),
+  ).toBeVisible();
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
 test("plans a route across three waypoints using exactly one routing request per section", async ({
   page,
 }) => {

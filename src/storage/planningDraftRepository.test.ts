@@ -13,6 +13,7 @@ const content: PlanningDraftContent = {
   waypoints,
   routeName: "Coastal loop",
   avoidFerries: false,
+  profile: "cycling-regular",
 };
 
 beforeEach(async () => {
@@ -24,7 +25,7 @@ describe("planningDraftRepository", () => {
     await expect(getDraft()).resolves.toBeUndefined();
   });
 
-  it("saves and retrieves a draft's waypoints, route name and avoid-ferries preference", async () => {
+  it("saves and retrieves a draft's waypoints, route name, avoid-ferries preference and cycling profile", async () => {
     await saveDraft(content);
 
     const draft = await getDraft();
@@ -44,6 +45,7 @@ describe("planningDraftRepository", () => {
       waypoints: [{ id: "c", coordinate: [0, 0] }],
       routeName: "Replacement",
       avoidFerries: true,
+      profile: "cycling-road",
     };
 
     await saveDraft(replacement);
@@ -60,9 +62,9 @@ describe("planningDraftRepository", () => {
     await expect(getDraft()).resolves.toBeUndefined();
   });
 
-  it("defaults route name and avoid-ferries for a draft written before those fields existed", async () => {
+  it("defaults route name, avoid-ferries and profile for a draft written before those fields existed", async () => {
     // A raw legacy row, written directly (not via saveDraft), which
-    // genuinely lacks routeName/avoidFerries.
+    // genuinely lacks routeName/avoidFerries/profile.
     await db.planningDrafts.put({
       id: "draft",
       waypoints,
@@ -75,6 +77,7 @@ describe("planningDraftRepository", () => {
       waypoints,
       routeName: "Planned route",
       avoidFerries: true,
+      profile: "cycling-road",
     });
   });
 
@@ -83,7 +86,7 @@ describe("planningDraftRepository", () => {
 
     const stored = await db.planningDrafts.get("draft");
     expect(Object.keys(stored ?? {}).sort()).toEqual(
-      ["id", "waypoints", "updatedAt", "routeName", "avoidFerries"].sort(),
+      ["id", "waypoints", "updatedAt", "routeName", "avoidFerries", "profile"].sort(),
     );
   });
 });

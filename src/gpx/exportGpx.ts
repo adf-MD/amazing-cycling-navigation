@@ -86,16 +86,23 @@ export async function exportRouteToGpx(route: PlannedRoute): Promise<string> {
     extensionChildren.push(navigationElement);
   }
 
-  if (
-    route.source.kind === "planner" &&
-    (route.source.provider !== undefined || route.source.profile !== undefined)
-  ) {
+  // provider is only ever meaningful for a planner-sourced route (only
+  // that arm of PlannedRouteSource has it); profile is read independently
+  // of kind, since a gpx-import route can itself legitimately carry a
+  // profile recovered from an earlier <acn:source> reimport (see
+  // parseAcnExtension.ts's readAcnSourceProfile) — without this, a
+  // re-exported reimport would silently lose the profile it had just
+  // recovered.
+  const sourceProvider =
+    route.source.kind === "planner" ? route.source.provider : undefined;
+  const sourceProfile = route.source.profile;
+  if (sourceProvider !== undefined || sourceProfile !== undefined) {
     const sourceElement = doc.createElementNS(ACN_NAMESPACE, "acn:source");
-    if (route.source.provider !== undefined) {
-      sourceElement.setAttribute("provider", route.source.provider);
+    if (sourceProvider !== undefined) {
+      sourceElement.setAttribute("provider", sourceProvider);
     }
-    if (route.source.profile !== undefined) {
-      sourceElement.setAttribute("profile", route.source.profile);
+    if (sourceProfile !== undefined) {
+      sourceElement.setAttribute("profile", sourceProfile);
     }
     extensionChildren.push(sourceElement);
   }

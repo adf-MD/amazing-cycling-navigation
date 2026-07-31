@@ -461,11 +461,12 @@ describe("toStoredPlanningDraft / fromStoredPlanningDraft", () => {
     { id: "b", coordinate: [-1.4, 53.8] },
   ];
 
-  it("round-trips waypoints, route name and avoid-ferries preference", () => {
+  it("round-trips waypoints, route name, avoid-ferries preference and cycling profile", () => {
     const stored = toStoredPlanningDraft({
       waypoints,
       routeName: "Coastal loop",
       avoidFerries: false,
+      profile: "cycling-regular",
     });
     const restored = fromStoredPlanningDraft({
       id: "draft",
@@ -477,14 +478,15 @@ describe("toStoredPlanningDraft / fromStoredPlanningDraft", () => {
       waypoints,
       routeName: "Coastal loop",
       avoidFerries: false,
+      profile: "cycling-regular",
     });
   });
 
-  it("defaults route name and avoid-ferries for a row written before those fields existed", () => {
+  it("defaults route name, avoid-ferries and profile for a row written before those fields existed", () => {
     // Simulates a real pre-existing row from before this feature shipped —
     // built by hand, not via toStoredPlanningDraft, so it genuinely lacks
-    // routeName/avoidFerries (rather than having them set to undefined
-    // explicitly).
+    // routeName/avoidFerries/profile (rather than having them set to
+    // undefined explicitly).
     const legacyRow: StoredPlanningDraft = {
       id: "draft",
       waypoints,
@@ -497,6 +499,20 @@ describe("toStoredPlanningDraft / fromStoredPlanningDraft", () => {
       waypoints,
       routeName: "Planned route",
       avoidFerries: true,
+      profile: "cycling-road",
     });
+  });
+
+  it("recovers safely to cycling-road for a corrupt or unrecognised stored profile value", () => {
+    const corruptRow: StoredPlanningDraft = {
+      id: "draft",
+      waypoints,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      profile: "cycling-mountain",
+    };
+
+    const restored = fromStoredPlanningDraft(corruptRow);
+
+    expect(restored.profile).toBe("cycling-road");
   });
 });

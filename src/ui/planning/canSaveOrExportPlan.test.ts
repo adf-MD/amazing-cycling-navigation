@@ -30,27 +30,27 @@ function buildRoute(pointCount: number): PlannedRoute {
 describe("canSaveOrExportPlan", () => {
   it("is false for no-waypoints", () => {
     const state: PlanningRouteState = { kind: "no-waypoints" };
-    expect(canSaveOrExportPlan(state)).toBe(false);
+    expect(canSaveOrExportPlan(state, false)).toBe(false);
   });
 
   it("is false for insufficient-waypoints", () => {
     const state: PlanningRouteState = { kind: "insufficient-waypoints" };
-    expect(canSaveOrExportPlan(state)).toBe(false);
+    expect(canSaveOrExportPlan(state, false)).toBe(false);
   });
 
   it("is false for unrouted-preview", () => {
     const state: PlanningRouteState = { kind: "unrouted-preview", waypoints };
-    expect(canSaveOrExportPlan(state)).toBe(false);
+    expect(canSaveOrExportPlan(state, false)).toBe(false);
   });
 
-  it("is true when routed with materially denser geometry than the waypoints", () => {
+  it("is true when routed with materially denser geometry than the waypoints, and not stale", () => {
     const state: PlanningRouteState = {
       kind: "routed",
       route: buildRoute(20),
       waypoints,
       isFirstRouteForDraft: true,
     };
-    expect(canSaveOrExportPlan(state)).toBe(true);
+    expect(canSaveOrExportPlan(state, false)).toBe(true);
   });
 
   it("is false when routed but the geometry is no denser than the raw waypoints", () => {
@@ -60,6 +60,16 @@ describe("canSaveOrExportPlan", () => {
       waypoints,
       isFirstRouteForDraft: true,
     };
-    expect(canSaveOrExportPlan(state)).toBe(false);
+    expect(canSaveOrExportPlan(state, false)).toBe(false);
+  });
+
+  it("is false when routed and otherwise eligible, but stale", () => {
+    const state: PlanningRouteState = {
+      kind: "routed",
+      route: buildRoute(20),
+      waypoints,
+      isFirstRouteForDraft: true,
+    };
+    expect(canSaveOrExportPlan(state, true)).toBe(false);
   });
 });

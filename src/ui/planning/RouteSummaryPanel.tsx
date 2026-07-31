@@ -9,6 +9,7 @@ import type { ClassifiedSegment } from "../../navigation/gradient.ts";
 import type { ClimbGradientBand, RouteFeature } from "../../navigation/routeFeatures.ts";
 import type { MicroDetailVisualKey } from "../../navigation/routeFeaturePalette.ts";
 import { prefersReducedMotion } from "../../platform/environmentContext.ts";
+import { formatRoutingProfileLabel } from "../../routing/routingProfiles.ts";
 import {
   ElevationChart,
   type ElevationChartSelectedRange,
@@ -211,7 +212,9 @@ export function RouteSummaryPanel({
       {route.source.kind === "planner" ? (
         <p>
           Routed via {route.source.provider ?? "unknown provider"}
-          {route.source.profile ? ` (${route.source.profile})` : ""}
+          {route.source.profile
+            ? ` · ${formatRoutingProfileLabel(route.source.profile)} (${route.source.profile})`
+            : ""}
         </p>
       ) : null}
       {surface ? (

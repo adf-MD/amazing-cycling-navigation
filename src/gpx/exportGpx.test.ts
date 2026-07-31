@@ -174,6 +174,18 @@ describe("exportRouteToGpx", () => {
     expect(doc.getElementsByTagNameNS("*", "source")).toHaveLength(0);
   });
 
+  it("writes only a profile attribute, no provider, for a gpx-import route that recovered a profile from an earlier reimport", async () => {
+    const xml = await exportRouteToGpx(
+      buildRoute({ source: { kind: "gpx-import", profile: "cycling-regular" } }),
+    );
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+
+    const sourceElements = doc.getElementsByTagNameNS("*", "source");
+    expect(sourceElements).toHaveLength(1);
+    expect(sourceElements[0]?.getAttribute("profile")).toBe("cycling-regular");
+    expect(sourceElements[0]?.getAttribute("provider")).toBeNull();
+  });
+
   it("nests the navigation envelope and provenance under one shared extensions element", async () => {
     const xml = await exportRouteToGpx(buildTrustedRoute());
     const doc = new DOMParser().parseFromString(xml, "application/xml");
@@ -273,5 +285,32 @@ describe("GPX round-trip", () => {
     expect(
       manoeuvreElements[0]?.getElementsByTagNameNS("*", "instruction")[0]?.textContent,
     ).toBe("Turn left");
+  });
+
+  it("preserves the routing profile through import -> export -> reimport -> export again", async () => {
+    const original = buildRoute({
+      source: {
+        kind: "planner",
+        provider: "openrouteservice",
+        profile: "cycling-regular",
+      },
+    });
+    const firstExportXml = await exportRouteToGpx(original);
+    const file = new File([firstExportXml], "planned.gpx", {
+      type: "application/gpx+xml",
+    });
+    const { route: reimported } = await importGpxFile(file);
+
+    // source.kind is "gpx-import" (this route entered the app via a GPX
+    // file), but the profile that originally produced it survives.
+    expect(reimported.source).toEqual({ kind: "gpx-import", profile: "cycling-regular" });
+
+    const secondExportXml = await exportRouteToGpx(reimported);
+    const doc = new DOMParser().parseFromString(secondExportXml, "application/xml");
+    const sourceElements = doc.getElementsByTagNameNS("*", "source");
+
+    expect(sourceElements).toHaveLength(1);
+    expect(sourceElements[0]?.getAttribute("profile")).toBe("cycling-regular");
+    expect(sourceElements[0]?.getAttribute("provider")).toBeNull();
   });
 });

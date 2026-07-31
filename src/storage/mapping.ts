@@ -1,4 +1,5 @@
-import type { Coordinate, Waypoint } from "../domain/types.ts";
+import type { Coordinate, RoutingProfile, Waypoint } from "../domain/types.ts";
+import { DEFAULT_ROUTING_PROFILE, isRoutingProfile } from "../domain/routingProfile.ts";
 import type { GeolocationFix } from "../platform/geolocation.ts";
 import type {
   ElevationViewMode,
@@ -161,6 +162,7 @@ export interface PlanningDraftContent {
   waypoints: readonly Waypoint[];
   routeName: string;
   avoidFerries: boolean;
+  profile: RoutingProfile;
 }
 
 export function toStoredPlanningDraft(
@@ -170,6 +172,7 @@ export function toStoredPlanningDraft(
     waypoints: content.waypoints,
     routeName: content.routeName,
     avoidFerries: content.avoidFerries,
+    profile: content.profile,
   };
 }
 
@@ -180,8 +183,13 @@ export function fromStoredPlanningDraft(
     waypoints: stored.waypoints,
     // Rows written before these fields existed won't have them — default
     // to the app's own existing defaults (PlanningScreen's initial
-    // routeName/avoidFerries state), never an arbitrary blank/false.
+    // routeName/avoidFerries/profile state), never an arbitrary blank/
+    // false/unvalidated value.
     routeName: stored.routeName ?? "Planned route",
     avoidFerries: stored.avoidFerries ?? true,
+    // A real validity check, not a bare `??` — a corrupt or future-
+    // unknown stored string must never flow through to the routing
+    // adapter, so it recovers to the app's original single profile.
+    profile: isRoutingProfile(stored.profile) ? stored.profile : DEFAULT_ROUTING_PROFILE,
   };
 }

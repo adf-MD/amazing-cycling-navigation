@@ -110,6 +110,35 @@ describe("OpenRouteServiceAdapter", () => {
     );
   });
 
+  it("posts to the cycling-regular endpoint when that profile is requested, with transport otherwise unchanged", async () => {
+    const fetchImpl = buildFetchMock({ ok: true });
+    const adapter = new OpenRouteServiceAdapter({
+      getApiKey: () => Promise.resolve(DUMMY_KEY),
+      fetchImpl,
+    });
+
+    await adapter.calculateRoute(WAYPOINTS, { profile: "cycling-regular" });
+
+    const request = firstRequest(fetchImpl);
+    expect(request.method).toBe("POST");
+    expect(request.url).not.toContain(DUMMY_KEY);
+    expect(request.url).toBe(
+      "https://api.heigit.org/openrouteservice/v2/directions/cycling-regular/geojson",
+    );
+    expect(request.headers.get("Authorization")).toBe(DUMMY_KEY);
+    expect(request.headers.get("Accept")).toBe("application/geo+json, application/json");
+    const body = (await request.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      coordinates: [
+        [-1.5, 53.8],
+        [-1.4, 53.8],
+      ],
+      elevation: true,
+      extra_info: ["surface", "waytype", "waycategory"],
+      instructions: true,
+    });
+  });
+
   it("sends an Accept header matching the two shapes the endpoint can return", async () => {
     const fetchImpl = buildFetchMock({ ok: true });
     const adapter = new OpenRouteServiceAdapter({
@@ -145,6 +174,17 @@ describe("OpenRouteServiceAdapter", () => {
       extra_info: ["surface", "waytype", "waycategory"],
       instructions: true,
     });
+  });
+
+  it("rejects an unrecognised profile at compile time, so it can never reach the endpoint path", () => {
+    const adapter = new OpenRouteServiceAdapter({
+      getApiKey: () => Promise.resolve(DUMMY_KEY),
+      fetchImpl: buildFetchMock({ ok: true }),
+    });
+    // @ts-expect-error — RoutingOptions.profile is RoutingProfile, a closed
+    // union; an arbitrary string must fail to typecheck here rather than
+    // silently flowing into `/directions/${profile}/geojson`.
+    void adapter.calculateRoute(WAYPOINTS, { profile: "cycling-mountain" });
   });
 
   it("includes avoid_features ferries only when avoidFerries is set", async () => {

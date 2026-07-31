@@ -1,7 +1,7 @@
 import type { PlannedRoute } from "../domain/types.ts";
 import { systemClock, type Clock } from "../platform/clock.ts";
 import { buildPlannedRouteFromGpx, type TrustedGpxManoeuvres } from "./normalizeGpx.ts";
-import { readAcnNavigationExtension } from "./parseAcnExtension.ts";
+import { readAcnNavigationExtension, readAcnSourceProfile } from "./parseAcnExtension.ts";
 import {
   extractRoutePoints,
   parseGpxDocument,
@@ -35,6 +35,12 @@ export async function importGpxFile(
   const acnOutcome = selectedTrackElement
     ? await readAcnNavigationExtension(selectedTrackElement, points)
     : ({ kind: "absent" } as const);
+  // Independent of acnOutcome above: <acn:source> carries no geometry
+  // digest of its own, so it is read regardless of whether the sibling
+  // <acn:navigation> envelope validated.
+  const sourceProfile = selectedTrackElement
+    ? readAcnSourceProfile(selectedTrackElement)
+    : undefined;
 
   const allNotices = [...notices];
   let trustedManoeuvres: TrustedGpxManoeuvres | undefined;
@@ -57,6 +63,7 @@ export async function importGpxFile(
       createdAt: new Date(clock.now()).toISOString(),
     },
     trustedManoeuvres,
+    sourceProfile,
   );
 
   return { route, notices: allNotices };

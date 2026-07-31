@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { MAX_ACN_MANOEUVRES, readAcnNavigationExtension } from "./parseAcnExtension.ts";
+import {
+  MAX_ACN_MANOEUVRES,
+  readAcnNavigationExtension,
+  readAcnSourceProfile,
+} from "./parseAcnExtension.ts";
 import { exportRouteToGpx } from "./exportGpx.ts";
 import { ACN_NAMESPACE } from "./acnNamespace.ts";
 import { canonicalizeTrackGeometry, computeGeometryDigestHex } from "./geometryDigest.ts";
@@ -64,6 +68,14 @@ function getManoeuvreElements(selectedTrackElement: Element): Element[] {
   return Array.from(
     selectedTrackElement.getElementsByTagNameNS(ACN_NAMESPACE, "manoeuvre"),
   );
+}
+
+function getSourceElement(selectedTrackElement: Element): Element {
+  const element = selectedTrackElement.getElementsByTagNameNS(ACN_NAMESPACE, "source")[0];
+  if (!element) {
+    throw new Error("expected a valid doc to contain an acn:source element");
+  }
+  return element;
 }
 
 // Approximate metres-per-degree of longitude at latitude 51.5, matching
@@ -354,5 +366,96 @@ describe("readAcnNavigationExtension", () => {
     });
     const outcome = await readAcnNavigationExtension(selectedTrackElement, points);
     expect(outcome.kind).toBe("accepted");
+  });
+});
+
+describe("readAcnSourceProfile", () => {
+  it("reads a valid profile attribute from a planner-sourced route's acn:source", async () => {
+    const { selectedTrackElement } = await buildValidDoc(
+      buildTrustedRoute({
+        source: {
+          kind: "planner",
+          provider: "openrouteservice",
+          profile: "cycling-regular",
+        },
+      }),
+    );
+    expect(readAcnSourceProfile(selectedTrackElement)).toBe("cycling-regular");
+  });
+
+  it("returns undefined when there is no extensions element at all", async () => {
+    const route = buildTrustedRoute({
+      manoeuvres: [],
+      manoeuvreProvenance: undefined,
+      source: { kind: "gpx-import" },
+    });
+    const { selectedTrackElement } = await buildValidDoc(route);
+    expect(readAcnSourceProfile(selectedTrackElement)).toBeUndefined();
+  });
+
+  it("returns undefined when extensions exist but there is no acn:source child", async () => {
+    // A trusted route (writes <acn:navigation>) with a gpx-import source
+    // and no recovered profile — no <acn:source> is written at all.
+    const route = buildTrustedRoute({ source: { kind: "gpx-import" } });
+    const { selectedTrackElement } = await buildValidDoc(route);
+    expect(readAcnSourceProfile(selectedTrackElement)).toBeUndefined();
+  });
+
+  it("returns undefined when acn:source exists but has no profile attribute", async () => {
+    // provider-only provenance (e.g. a route saved before profile
+    // selection existed) still writes <acn:source provider="..."> with no
+    // profile attribute.
+    const route = buildTrustedRoute({
+      source: { kind: "planner", provider: "openrouteservice" },
+    });
+    const { selectedTrackElement } = await buildValidDoc(route);
+    expect(readAcnSourceProfile(selectedTrackElement)).toBeUndefined();
+  });
+
+  it("returns undefined for a malformed or unrecognised profile value, without throwing", async () => {
+    const { selectedTrackElement } = await buildValidDoc();
+    getSourceElement(selectedTrackElement).setAttribute("profile", "cycling-mountain");
+    expect(readAcnSourceProfile(selectedTrackElement)).toBeUndefined();
+  });
+
+  it("ignores a namespace lookalike using the same local element/attribute names", () => {
+    const doc = parseGpxDocument(acnLookalikeWrongNamespaceGpx);
+    const { selectedTrackElement } = extractRoutePoints(doc);
+    if (!selectedTrackElement) throw new Error("test fixture must select a track");
+    expect(readAcnSourceProfile(selectedTrackElement)).toBeUndefined();
+  });
+
+  it("never applies an extension attached to a non-selected track", () => {
+    const doc = parseGpxDocument(acnExtensionOnSecondTrackGpx);
+    const { selectedTrackElement } = extractRoutePoints(doc);
+    if (!selectedTrackElement) throw new Error("test fixture must select a track");
+    expect(readAcnSourceProfile(selectedTrackElement)).toBeUndefined();
+  });
+
+  it("still reads a valid profile even when the sibling acn:navigation envelope is corrupted/rejected", async () => {
+    const { points, selectedTrackElement } = await buildValidDoc(
+      buildTrustedRoute({
+        source: {
+          kind: "planner",
+          provider: "openrouteservice",
+          profile: "cycling-road",
+        },
+      }),
+    );
+    // Corrupt the sibling <acn:navigation> envelope's digest, so
+    // readAcnNavigationExtension itself would reject it...
+    getNavigationElement(selectedTrackElement).setAttribute(
+      "geometrySha256",
+      "a".repeat(64),
+    );
+    const navigationOutcome = await readAcnNavigationExtension(
+      selectedTrackElement,
+      points,
+    );
+    expect(navigationOutcome).toEqual({ kind: "rejected" });
+
+    // ...but the unrelated, non-digest-bound <acn:source> sibling is
+    // unaffected.
+    expect(readAcnSourceProfile(selectedTrackElement)).toBe("cycling-road");
   });
 });

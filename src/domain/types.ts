@@ -113,8 +113,28 @@ export interface SurfaceSummary {
   unknownMetres: number;
 }
 
+/** The app's canonical cycling routing-profile vocabulary — currently
+ * identical to the two profile names openrouteservice's Directions API
+ * itself uses, since ORS is currently the only provider. Kept here (not
+ * in routing/) so PlannedRouteSource and gpx/ can reference it without
+ * routing/ and gpx/ depending on each other circularly (routing/ already
+ * imports from gpx/ for point normalisation) — mirrors ManoeuvreType's own
+ * domain ownership even though only routing/ code currently produces
+ * values of this type. A future second provider would translate between
+ * this vocabulary and its own profile naming inside its own adapter,
+ * exactly as routing/manoeuvreTypes.ts's decodeOrsManoeuvreType already
+ * does for manoeuvres. */
+export type RoutingProfile = "cycling-road" | "cycling-regular";
+
+/** profile is present on both arms: for "planner" it is always the profile
+ * that actually produced this session's route; for "gpx-import" it is
+ * present only when a validated <acn:source> GPX extension recovered it on
+ * reimport (see gpx/parseAcnExtension.ts's readAcnSourceProfile) and is
+ * purely informational — it never gates behaviour, unlike
+ * ManoeuvreProvenance below, since its only consumer is a display label. */
 export type PlannedRouteSource =
-  { kind: "gpx-import" } | { kind: "planner"; provider?: string; profile?: string };
+  | { kind: "gpx-import"; profile?: RoutingProfile }
+  | { kind: "planner"; provider?: string; profile?: RoutingProfile };
 
 /** Whether route.manoeuvres is safe to use for trusted next-manoeuvre
  * navigation — a separate concept from PlannedRouteSource: an ACN-GPX

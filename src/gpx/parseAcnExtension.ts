@@ -1,5 +1,6 @@
-import type { Manoeuvre, ManoeuvreType } from "../domain/types.ts";
+import type { Manoeuvre, ManoeuvreType, RoutingProfile } from "../domain/types.ts";
 import { MAX_MANOEUVRE_INSTRUCTION_LENGTH } from "../domain/manoeuvreLimits.ts";
+import { isRoutingProfile } from "../domain/routingProfile.ts";
 import { cumulativeDistancesMetres } from "../navigation/distance.ts";
 import { ACN_NAMESPACE, ACN_NAVIGATION_EXTENSION_VERSION } from "./acnNamespace.ts";
 import { canonicalizeTrackGeometry, computeGeometryDigestHex } from "./geometryDigest.ts";
@@ -197,4 +198,44 @@ export async function readAcnNavigationExtension(
   }
 
   return { kind: "accepted", manoeuvres };
+}
+
+/**
+ * Reads a project-owned <acn:source profile="..."> extension attached to
+ * `selectedTrackElement`, if present — the routing profile that produced
+ * this route before it was exported, restored on reimport purely for
+ * display (see PlannedRouteSource's own doc comment: this is never a
+ * trust-gated fact the way manoeuvres are). Deliberately synchronous and
+ * independent of readAcnNavigationExtension's own geometry-digest gate:
+ * <acn:source> carries no digest binding of its own, and the two elements
+ * are siblings inside the same <extensions>, not nested — a corrupted or
+ * rejected <acn:navigation> envelope must not suppress an otherwise-valid
+ * source read.
+ *
+ * Returns undefined — never throws, never signals a rejection notice —
+ * whenever the element or attribute is absent, or the attribute value
+ * isn't a profile this app currently recognises: a third-party GPX file
+ * with no ACN extension at all must never have a profile invented for it,
+ * and an unrecognised future value must be tolerated, not rejected.
+ */
+export function readAcnSourceProfile(
+  selectedTrackElement: Element,
+): RoutingProfile | undefined {
+  const extensionsElement = findDirectChild(
+    selectedTrackElement,
+    (element) => element.localName === "extensions",
+  );
+  if (!extensionsElement) {
+    return undefined;
+  }
+
+  const sourceElement = findDirectChild(extensionsElement, (element) =>
+    isAcnElement(element, "source"),
+  );
+  if (!sourceElement) {
+    return undefined;
+  }
+
+  const profileAttr = sourceElement.getAttribute("profile");
+  return isRoutingProfile(profileAttr) ? profileAttr : undefined;
 }

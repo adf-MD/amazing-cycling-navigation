@@ -239,6 +239,61 @@ describe("resolveRouteLegsInOrder — cache keying", () => {
 
     expect(calls).toHaveLength(3);
   });
+
+  it("re-requests every leg when profile changes, even with unchanged endpoints and avoidFerries", async () => {
+    const { adapter, calls } = buildImmediateAdapter();
+    const cache = new RouteLegCache();
+    const providerToken = getProviderInstanceToken(adapter);
+    const requirements = deriveLegRequirements([A, B, C, D]);
+
+    await resolveRouteLegsInOrder(
+      requirements,
+      { profile: "cycling-road", avoidFerries: false },
+      { adapter, cache, providerToken },
+    );
+    calls.length = 0;
+    await resolveRouteLegsInOrder(
+      requirements,
+      { profile: "cycling-regular", avoidFerries: false },
+      { adapter, cache, providerToken },
+    );
+
+    expect(calls).toHaveLength(3);
+    for (const call of calls) {
+      expect(call.options.profile).toBe("cycling-regular");
+    }
+  });
+
+  it("resolves entirely from cache, with no adapter calls, when switching back to a previously-used profile", async () => {
+    const { adapter, calls } = buildImmediateAdapter();
+    const cache = new RouteLegCache();
+    const providerToken = getProviderInstanceToken(adapter);
+    const requirements = deriveLegRequirements([A, B, C, D]);
+
+    await resolveRouteLegsInOrder(
+      requirements,
+      { profile: "cycling-road", avoidFerries: false },
+      { adapter, cache, providerToken },
+    );
+    await resolveRouteLegsInOrder(
+      requirements,
+      { profile: "cycling-regular", avoidFerries: false },
+      { adapter, cache, providerToken },
+    );
+    calls.length = 0;
+
+    // Switching back to cycling-road with the same waypoints: every leg
+    // is still cached under its own cycling-road key, so this resolves
+    // with zero further adapter calls — the mechanism Planning relies on
+    // to recognise a matching retained result without a new request.
+    await resolveRouteLegsInOrder(
+      requirements,
+      { profile: "cycling-road", avoidFerries: false },
+      { adapter, cache, providerToken },
+    );
+
+    expect(calls).toHaveLength(0);
+  });
 });
 
 describe("resolveRouteLegsInOrder — [A,B,C,D] edit scenarios request exactly the required legs", () => {

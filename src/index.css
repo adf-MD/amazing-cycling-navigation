@@ -125,6 +125,12 @@ header h1 {
   margin-top: 10px;
 }
 
+/* Planning's Road bike/General cycling selector, mirroring
+ * elevation-window-group's own spacing above. */
+.cycling-profile-group {
+  margin-top: 10px;
+}
+
 /* The Route warnings list has no other way to show which entry is
  * selected once aria-pressed is set — colour alone would fail
  * CLAUDE.md's "never colour alone" rule for anyone with reduced colour

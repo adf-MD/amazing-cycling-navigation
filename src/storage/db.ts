@@ -74,6 +74,15 @@ export interface StoredPlanningDraft {
    * indexed for the same reason as routeName — mapping.ts defaults a
    * missing value to true, the app's existing default. */
   avoidFerries?: boolean;
+  /** The rider's in-progress cycling-profile choice. A plain string, not
+   * RoutingProfile, at this storage boundary — Dexie never validates
+   * stored data, so mapping.ts's fromStoredPlanningDraft is where an
+   * unrecognised/corrupt value is actually rejected and defaulted, never
+   * passed through to the routing adapter. Optional/non-indexed for the
+   * same reason as routeName/avoidFerries — mapping.ts defaults a
+   * missing value to DEFAULT_ROUTING_PROFILE ("cycling-road"), the app's
+   * only profile before this field existed. */
+  profile?: string;
 }
 
 export interface StoredGpsFix {
