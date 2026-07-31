@@ -518,6 +518,166 @@ describe("ElevationChart", () => {
     });
   });
 
+  describe("climb area fill", () => {
+    function gradientSegment(
+      startDistanceMetres: number,
+      endDistanceMetres: number,
+      visualKey: MicroDetailVisualKey,
+    ): ClassifiedSegment<MicroDetailVisualKey> {
+      return {
+        startDistanceMetres,
+        endDistanceMetres,
+        averageGradientPercent: null,
+        visualKey,
+      };
+    }
+
+    const points = buildPoints([
+      [0, 0],
+      [500, 20],
+      [1000, 40],
+    ]);
+    const segments = [
+      gradientSegment(0, 500, "moderate-climb"),
+      gradientSegment(500, 1000, "hard-climb"),
+    ];
+    const marker = { distanceFromStartMetres: 500, elevationMetres: 20, stale: false };
+
+    it("renders no fill when areaFill is omitted, even with gradientSegments and a marker", () => {
+      const { container } = render(
+        <ElevationChart points={points} gradientSegments={segments} marker={marker} />,
+      );
+      expect(container.querySelector("path.elevation-chart-area-fill")).toBeNull();
+      expect(container.querySelector("line.elevation-chart-baseline")).toBeNull();
+    });
+
+    it("renders no fill when areaFill is set but gradientSegments is omitted", () => {
+      const { container } = render(
+        <ElevationChart points={points} areaFill marker={marker} />,
+      );
+      expect(container.querySelector("path.elevation-chart-area-fill")).toBeNull();
+    });
+
+    it("renders no fill when areaFill is set but marker is omitted", () => {
+      const { container } = render(
+        <ElevationChart points={points} areaFill gradientSegments={segments} />,
+      );
+      expect(container.querySelector("path.elevation-chart-area-fill")).toBeNull();
+    });
+
+    it("colours each fill piece per its own local-gradient band", () => {
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          areaFill
+          gradientSegments={segments}
+          marker={marker}
+        />,
+      );
+      const fills = Array.from(
+        container.querySelectorAll("path.elevation-chart-area-fill"),
+      );
+      const colours = fills.map((path) => path.getAttribute("fill"));
+      expect(colours).toContain(MICRO_DETAIL_COLOURS["moderate-climb"]);
+      expect(colours).toContain(MICRO_DETAIL_COLOURS["hard-climb"]);
+    });
+
+    it("gives the completed (ridden) portion a lower fill opacity than the remaining portion", () => {
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          areaFill
+          gradientSegments={segments}
+          marker={marker}
+        />,
+      );
+      const fills = Array.from(
+        container.querySelectorAll("path.elevation-chart-area-fill"),
+      );
+      const opacities = fills.map((path) => Number(path.getAttribute("fill-opacity")));
+      expect(Math.min(...opacities)).toBeLessThan(Math.max(...opacities));
+    });
+
+    it("paints every fill path before every profile stroke path, in DOM order", () => {
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          areaFill
+          gradientSegments={segments}
+          marker={marker}
+        />,
+      );
+      const fillPaths = Array.from(
+        container.querySelectorAll("path.elevation-chart-area-fill"),
+      );
+      const strokePaths = Array.from(
+        container.querySelectorAll(
+          "path.elevation-chart-completed, path.elevation-chart-remaining",
+        ),
+      );
+      expect(fillPaths.length).toBeGreaterThan(0);
+      expect(strokePaths.length).toBeGreaterThan(0);
+      for (const fillPath of fillPaths) {
+        for (const strokePath of strokePaths) {
+          // DOCUMENT_POSITION_FOLLOWING (4): strokePath comes after fillPath.
+          expect(fillPath.compareDocumentPosition(strokePath) & 4).toBe(4);
+        }
+      }
+    });
+
+    it("renders exactly one baseline line regardless of segment count", () => {
+      const gappedPoints = buildPoints([
+        [0, 0],
+        [400, 20],
+        [500, null],
+        [600, 20],
+        [1000, 40],
+      ]);
+      const { container } = render(
+        <ElevationChart
+          points={gappedPoints}
+          areaFill
+          gradientSegments={segments}
+          marker={marker}
+        />,
+      );
+      expect(container.querySelectorAll("line.elevation-chart-baseline")).toHaveLength(1);
+    });
+
+    it("renders the current-position marker line and dot above every fill path", () => {
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          areaFill
+          gradientSegments={segments}
+          marker={marker}
+        />,
+      );
+      const svgChildren = Array.from(container.querySelector("svg")?.children ?? []);
+      const markerGroupIndex = svgChildren.findIndex(
+        (child) => child.querySelector("line.elevation-chart-marker") !== null,
+      );
+      const lastSegmentGroupIndex = svgChildren.reduce(
+        (lastIndex, child, index) =>
+          child.querySelector("path.elevation-chart-area-fill") !== null
+            ? index
+            : lastIndex,
+        -1,
+      );
+      expect(markerGroupIndex).toBeGreaterThan(lastSegmentGroupIndex);
+    });
+
+    it("does not render the fill in a Full-mode-style call with gradientSegments but no areaFill (existing callers unaffected)", () => {
+      const { container } = render(
+        <ElevationChart points={points} gradientSegments={segments} marker={marker} />,
+      );
+      expect(container.querySelector("path.elevation-chart-area-fill")).toBeNull();
+      // Existing stroke-based completed/remaining split is untouched.
+      expect(container.querySelector("path.elevation-chart-completed")).not.toBeNull();
+      expect(container.querySelector("path.elevation-chart-remaining")).not.toBeNull();
+    });
+  });
+
   describe("chart tap interaction", () => {
     afterEach(() => {
       vi.restoreAllMocks();

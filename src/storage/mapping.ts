@@ -60,6 +60,7 @@ export function toStoredRideState(
   elevationViewMode: ElevationViewMode,
   cameraState: StoredCameraState,
   wakeLockDesired: boolean,
+  dismissedClimbFeatureId: string | null,
 ): StoredRideState {
   return {
     id: "active",
@@ -85,6 +86,7 @@ export function toStoredRideState(
     cameraBearingDegrees: cameraState.bearingDegrees,
     cameraPitchDegrees: cameraState.pitchDegrees,
     wakeLockDesired,
+    dismissedClimbFeatureId: dismissedClimbFeatureId ?? undefined,
   };
 }
 
@@ -94,6 +96,7 @@ export interface RestoredRideState {
   elevationViewMode: ElevationViewMode;
   cameraState: StoredCameraState;
   wakeLockDesired: boolean;
+  dismissedClimbFeatureId: string | null;
 }
 
 export function fromStoredRideState(stored: StoredRideState): RestoredRideState {
@@ -142,6 +145,11 @@ export function fromStoredRideState(stored: StoredRideState): RestoredRideState 
     // Rows written before this field existed won't have it — off is the
     // only safe default (this preference must never carry over silently).
     wakeLockDesired: stored.wakeLockDesired ?? false,
+    // Rows written before this field existed won't have it — not-dismissed
+    // is the only safe default, matching selectEffectiveElevationView's own
+    // "no dismissal recorded" behaviour (auto-open if currently in a
+    // recognised climb).
+    dismissedClimbFeatureId: stored.dismissedClimbFeatureId ?? null,
   };
 }
 

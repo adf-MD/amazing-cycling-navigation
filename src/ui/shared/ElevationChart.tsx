@@ -7,6 +7,7 @@ import {
   ROUTE_FEATURE_COLOURS,
   type MicroDetailVisualKey,
 } from "../../navigation/routeFeaturePalette.ts";
+import { areaPathFromRun, buildClimbFillRuns } from "./climbFillGeometry.ts";
 import { formatDistanceKm } from "./routeSummary.ts";
 import {
   buildElevationChartGeometry,
@@ -94,6 +95,14 @@ export interface ElevationChartProps {
    * resolves to a distance, even one that lands on an ordinary section;
    * it is the caller's job to decide that means no selection change. */
   onTapDistance?: (distanceMetres: number) => void;
+  /** Renders a filled area under the profile, down to the chart's own
+   * padded lower elevation bound, coloured per detailed local-gradient
+   * band — the Climb view's own presentation. Has no effect unless
+   * `gradientSegments` and `marker` are also supplied (the fill's colour
+   * and progress-split sources); every existing caller omits this and is
+   * rendered exactly as before. Full/2/5/10 km views and Planning must
+   * never set this. */
+  areaFill?: boolean;
   width?: number;
   height?: number;
 }
@@ -102,6 +111,12 @@ const DEFAULT_WIDTH = 320;
 const DEFAULT_HEIGHT = 96;
 const STALE_MARKER_DASHARRAY = "4 3";
 const COMPLETED_DASHARRAY = "5 4";
+/** Area-fill opacity for the ridden (completed) portion of a Climb view —
+ * deliberately lower than REMAINING_FILL_OPACITY so the completed part
+ * reads as visually subordinate to what's still ahead, while remaining
+ * legible enough to show what band was ridden. */
+const COMPLETED_FILL_OPACITY = 0.18;
+const REMAINING_FILL_OPACITY = 0.45;
 /** Base stroke width for the plain/macro-coloured line — unchanged from
  * this component's original single width, so ordinary and macro-feature
  * sections read as the same visual weight (colour is what distinguishes
@@ -138,6 +153,7 @@ export function ElevationChart({
   gradientSegments,
   selectedRangeMetres = null,
   onTapDistance,
+  areaFill = false,
   width = DEFAULT_WIDTH,
   height = DEFAULT_HEIGHT,
 }: ElevationChartProps) {
@@ -185,6 +201,15 @@ export function ElevationChart({
         height,
       )
     : null;
+
+  // Climb view only: detailRuns is already the exact gradient-band-
+  // coloured geometry the fill needs to close down to the baseline —
+  // further split at the rider's own progress (markerGeometry.x) so the
+  // completed/remaining treatment matches the profile line's own split.
+  const climbFillRuns =
+    areaFill && detailRuns && markerGeometry
+      ? buildClimbFillRuns(detailRuns, markerGeometry.x)
+      : null;
 
   function isSelected(runPoints: readonly ElevationChartPoint[]): boolean {
     if (!selectedRangeMetres || runPoints.length === 0) return false;
@@ -336,8 +361,30 @@ export function ElevationChart({
                   }))
               : [];
 
+          // Climb view only: painted first, so the base/overlay stroke
+          // paths below always render on top of the fill.
+          const fillRuns = climbFillRuns?.[index];
+
           return (
             <g key={index} pointerEvents="none">
+              {fillRuns?.map((run, runIndex) => {
+                if (run.visualKey === null) return null;
+                const d = areaPathFromRun(run.points, height);
+                if (d === "") return null;
+                return (
+                  <path
+                    key={`fill-${String(runIndex)}`}
+                    d={d}
+                    fill={MICRO_DETAIL_COLOURS[run.visualKey]}
+                    fillOpacity={
+                      run.completed ? COMPLETED_FILL_OPACITY : REMAINING_FILL_OPACITY
+                    }
+                    stroke="none"
+                    aria-hidden="true"
+                    className="elevation-chart-area-fill"
+                  />
+                );
+              })}
               {baseRuns.map((run, runIndex) =>
                 renderColouredRun(
                   run.points,
@@ -357,6 +404,19 @@ export function ElevationChart({
             </g>
           );
         })}
+        {climbFillRuns && (
+          <line
+            x1={0}
+            x2={width}
+            y1={height - 0.5}
+            y2={height - 0.5}
+            stroke="currentColor"
+            strokeWidth={1}
+            strokeOpacity={0.3}
+            aria-hidden="true"
+            className="elevation-chart-baseline"
+          />
+        )}
         {markerGeometry && (
           <g pointerEvents="none">
             <line

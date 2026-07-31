@@ -1044,6 +1044,572 @@ describe("RidingScreen", () => {
     });
   });
 
+  describe("current-climb elevation view", () => {
+    // Two distinct recognised climbs separated by a short reversal dip too
+    // brief to qualify as its own recognised descent (250 m, under
+    // routeFeatures.ts's 500 m MIN_FEATURE_LENGTH_METRES) but well past its
+    // reversal-confirmation thresholds (a 30 m drop, comfortably over the
+    // 10 m/200 m REVERSAL_BRIDGE thresholds) — so the two climbs are
+    // reliably detected as genuinely separate features. Boundaries below
+    // are the actual detectRouteFeatures output for this exact fixture
+    // (verified directly against the real analysis before writing these
+    // assertions), not hand-estimated from the keyframes, since smoothing
+    // shifts them slightly from the raw keyframe distances.
+    // Longitude-per-metre conversion at latitude 51°N, so each keyframe's
+    // own coordinate is genuinely consistent with its declared
+    // distanceFromStartMetres — projectFixOntoRoute measures matched
+    // distance from real (turf-computed) geometric distance along the
+    // polyline, not from these labels directly, so an inconsistent
+    // conversion would let matched distance silently drift away from the
+    // intended target the further along the route a fix is placed.
+    const LON_PER_METRE = 1 / (111_320 * Math.cos((51 * Math.PI) / 180));
+    function lonAt(distanceMetres: number): number {
+      return distanceMetres * LON_PER_METRE;
+    }
+    const twoClimbRoute: PlannedRoute = {
+      ...route,
+      id: "two-climb-route",
+      points: densifyElevationRoute(
+        [
+          { coordinate: [lonAt(0), 51], elevationMetres: 10, distanceFromStartMetres: 0 },
+          {
+            coordinate: [lonAt(500), 51],
+            elevationMetres: 10,
+            distanceFromStartMetres: 500,
+          },
+          {
+            coordinate: [lonAt(1200), 51],
+            elevationMetres: 52,
+            distanceFromStartMetres: 1200,
+          },
+          {
+            coordinate: [lonAt(1450), 51],
+            elevationMetres: 22,
+            distanceFromStartMetres: 1450,
+          },
+          {
+            coordinate: [lonAt(2450), 51],
+            elevationMetres: 222,
+            distanceFromStartMetres: 2450,
+          },
+          {
+            coordinate: [lonAt(2950), 51],
+            elevationMetres: 222,
+            distanceFromStartMetres: 2950,
+          },
+        ],
+        50,
+      ),
+      distanceMetres: 2950,
+    };
+    // Real detectRouteFeatures output for the fixture above: climb-460
+    // (460-1180 m, uncategorised) and climb-1440 (1440-2500 m, category-3).
+    const CLIMB_1_MID_METRES = 800; // inside [460, 1180]
+    const CLIMB_2_MID_METRES = 2000; // inside [1440, 2500]
+    const BETWEEN_CLIMBS_METRES = 1300; // inside the dip, outside both climbs
+
+    function coordinateAt(distanceMetres: number): Coordinate {
+      const point = twoClimbRoute.points.find(
+        (p) => Math.abs(p.distanceFromStartMetres - distanceMetres) < 1,
+      );
+      if (!point) {
+        throw new Error(`two-climb fixture has no point near ${String(distanceMetres)}m`);
+      }
+      return point.coordinate;
+    }
+
+    function emitFixAt(
+      stub: ReturnType<typeof buildStubGeolocationSource>,
+      distanceMetres: number,
+      timestampMs = 1000,
+    ): void {
+      stub.emitFix({
+        coordinate: coordinateAt(distanceMetres),
+        accuracyMetres: 5,
+        timestampMs,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+    }
+
+    it("shows no Climb option before the ride starts", () => {
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      expect(screen.queryByRole("button", { name: "Climb" })).toBeNull();
+    });
+
+    it("shows no Climb option while riding outside any recognised climb", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, BETWEEN_CLIMBS_METRES);
+
+      await screen.findByText("On route");
+      expect(screen.queryByRole("button", { name: "Climb" })).toBeNull();
+    });
+
+    it("auto-selects Climb view on entering the first recognised climb, showing climb-relative metrics with no percentage", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, CLIMB_1_MID_METRES);
+
+      const climbButton = await screen.findByRole("button", { name: "Climb" });
+      expect(climbButton).toHaveAttribute("aria-pressed", "true");
+      expect(
+        screen.getByRole("heading", { name: "Climb 1 · Uncategorised" }),
+      ).toBeInTheDocument();
+      const panel = screen.getByRole("region", { name: "Climb progress" });
+      expect(within(panel).getByText(/km completed/)).toBeInTheDocument();
+      expect(within(panel).getByText(/km remaining/)).toBeInTheDocument();
+      expect(within(panel).getByText(/Elevation remaining:/)).toBeInTheDocument();
+      expect(within(panel).queryByText(/%\s*(complete|done)/i)).toBeNull();
+    });
+
+    it("keeps Climb view showing without flicker across repeated fixes inside the same climb", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, CLIMB_1_MID_METRES - 100, 1000);
+      await screen.findByRole("button", { name: "Climb" });
+      emitFixAt(stub, CLIMB_1_MID_METRES, 2000);
+      emitFixAt(stub, CLIMB_1_MID_METRES + 100, 3000);
+
+      expect(await screen.findByRole("button", { name: "Climb" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    it("manually selecting a standard view dismisses Climb for the remainder of that climb, but it remains manually selectable", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
+      await screen.findByRole("button", { name: "Climb" });
+
+      await user.click(screen.getByRole("button", { name: "5 km" }));
+      expect(screen.getByRole("button", { name: "Climb" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      expect(screen.getByRole("button", { name: "5 km" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+
+      // A further fix still inside the same climb must not reopen it.
+      emitFixAt(stub, CLIMB_1_MID_METRES + 50, 2000);
+      expect(screen.getByRole("button", { name: "Climb" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+
+      // The rider can still manually reselect Climb view.
+      await user.click(screen.getByRole("button", { name: "Climb" }));
+      expect(screen.getByRole("button", { name: "Climb" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.getByRole("region", { name: "Climb progress" })).toBeInTheDocument();
+    });
+
+    it("returns to the rider's last standard view once they leave the climb", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
+      await screen.findByRole("button", { name: "Climb" });
+
+      emitFixAt(stub, BETWEEN_CLIMBS_METRES, 2000);
+      await waitFor(() => {
+        expect(screen.queryByRole("button", { name: "Climb" })).toBeNull();
+      });
+      // Falls back to the app's default 5 km view, never explicitly chosen.
+      expect(screen.getByRole("button", { name: "5 km" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    it("auto-selects Climb view again on entering a second, different climb, even though the first was dismissed", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
+      await user.click(await screen.findByRole("button", { name: "Full" }));
+      expect(screen.getByRole("button", { name: "Climb" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+
+      emitFixAt(stub, CLIMB_2_MID_METRES, 2000);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Climb" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+      });
+      expect(
+        screen.getByRole("heading", { name: "Climb 2 · Category 3" }),
+      ).toBeInTheDocument();
+    });
+
+    it("never activates Climb view for a recognised descent", async () => {
+      const user = userEvent.setup();
+      const descentRoute: PlannedRoute = {
+        ...route,
+        id: "descent-route",
+        points: Array.from({ length: 41 }, (_, index) => {
+          const distanceFromStartMetres = index * 100;
+          return {
+            coordinate: [0.0001 * index, 51] as const,
+            elevationMetres: 400 - (distanceFromStartMetres * 8) / 100,
+            distanceFromStartMetres,
+          };
+        }),
+        distanceMetres: 4000,
+      };
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={descentRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: [0.002, 51],
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      await screen.findByText("On route");
+      expect(
+        screen.getByRole("heading", { name: "Recognised descent" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Climb" })).toBeNull();
+    });
+
+    it("never activates Climb view for an ordinary uphill below recognised-climb thresholds", async () => {
+      const user = userEvent.setup();
+      const gentleRoute: PlannedRoute = {
+        ...route,
+        id: "gentle-route",
+        // 200 m at a 2.5% average grade — under both the 500 m length and
+        // 3% average-gradient recognised-climb thresholds.
+        points: Array.from({ length: 11 }, (_, index) => ({
+          coordinate: [0.0001 * index, 51] as const,
+          elevationMetres: index * 0.5,
+          distanceFromStartMetres: index * 20,
+        })),
+        distanceMetres: 200,
+      };
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={gentleRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: [0.0005, 51],
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      await screen.findByText("On route");
+      expect(screen.queryByRole("button", { name: "Climb" })).toBeNull();
+    });
+
+    it("freezes Climb view's metrics and marker at the last reliable position once strongly off-route", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
+      await screen.findByRole("button", { name: "Climb" });
+      const distanceTextBefore = screen.getByText(/completed/).textContent;
+
+      // Kept at the same route longitude as the on-route fix (so the
+      // nearest point on the line stays mid-segment, not clamped to an
+      // endpoint) — only the large latitude offset drives the lateral
+      // distance that triggers off-route classification, matching the
+      // established pattern above ("keeps the Full-mode elevation marker
+      // pinned...").
+      const farCoordinate: Coordinate = [
+        lonAt(CLIMB_1_MID_METRES),
+        51 + (OFF_ROUTE_BASE_METRES + 50) / 111_000,
+      ];
+      for (let i = 0; i < 3; i += 1) {
+        stub.emitFix({
+          coordinate: farCoordinate,
+          accuracyMetres: 5,
+          timestampMs: 2000 + i * 1000,
+          speedMetresPerSecond: null,
+          headingDegrees: null,
+        });
+      }
+      expect(await screen.findByRole("alert")).toHaveTextContent("Off route");
+
+      // Still showing Climb view, for the same climb, with unchanged
+      // distance metrics — frozen at the last reliable position, not the
+      // raw/live (now off-route) matched distance.
+      expect(screen.getByRole("button", { name: "Climb" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(
+        screen.getByRole("heading", { name: "Climb 1 · Uncategorised" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/completed/).textContent).toBe(distanceTextBefore);
+    });
+
+    it("renders the filled area beneath the profile with the current-position marker painted above every fill path", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, CLIMB_1_MID_METRES);
+
+      const chartSvg = await screen.findByRole("img", {
+        name: "Elevation profile chart",
+      });
+      const fillPaths = Array.from(
+        chartSvg.querySelectorAll("path.elevation-chart-area-fill"),
+      );
+      expect(fillPaths.length).toBeGreaterThan(0);
+      const markerLine = chartSvg.querySelector("line.elevation-chart-marker");
+      expect(markerLine).not.toBeNull();
+      if (!markerLine) throw new Error("expected a marker line");
+      for (const fillPath of fillPaths) {
+        expect(fillPath.compareDocumentPosition(markerLine) & 4).toBe(4);
+      }
+    });
+
+    it("does not add the detailed area fill to Full or windowed elevation views", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, CLIMB_1_MID_METRES);
+      await user.click(await screen.findByRole("button", { name: "Full" }));
+
+      const chartSvg = await screen.findByRole("img", {
+        name: "Elevation profile chart",
+      });
+      expect(chartSvg.querySelectorAll("path.elevation-chart-area-fill")).toHaveLength(0);
+    });
+
+    it("appends the Climb button after the four standard buttons, without disturbing their order", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, CLIMB_1_MID_METRES);
+
+      const group = await screen.findByRole("group", { name: "Elevation profile view" });
+      const labels = within(group)
+        .getAllByRole("button")
+        .map((button) => button.textContent);
+      expect(labels).toEqual(["Full", "2 km", "5 km", "10 km", "Climb"]);
+    });
+
+    it("restores a climb-view dismissal for the current climb id across suspension/reload", async () => {
+      await setActiveRideState({
+        id: "active",
+        routeId: twoClimbRoute.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: {
+          coordinate: coordinateAt(CLIMB_1_MID_METRES),
+          accuracyMetres: 5,
+          timestampMs: 1000,
+        },
+        lastMatchedPointIndex: CLIMB_1_MID_METRES / 50,
+        matchedDistanceFromStartMetres: CLIMB_1_MID_METRES,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationViewMode: { kind: "upcoming", windowMetres: 5000 },
+        lastReliableMatchedPointIndex: CLIMB_1_MID_METRES / 50,
+        lastReliableMatchedDistanceFromStartMetres: CLIMB_1_MID_METRES,
+        dismissedClimbFeatureId: "climb-460",
+      });
+
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      const climbButton = await screen.findByRole("button", { name: "Climb" });
+      expect(climbButton).toHaveAttribute("aria-pressed", "false");
+      expect(screen.getByRole("button", { name: "5 km" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    it("defaults to not-dismissed (auto-open) for a legacy restored row with no dismissedClimbFeatureId field", async () => {
+      await setActiveRideState({
+        id: "active",
+        routeId: twoClimbRoute.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: {
+          coordinate: coordinateAt(CLIMB_1_MID_METRES),
+          accuracyMetres: 5,
+          timestampMs: 1000,
+        },
+        lastMatchedPointIndex: CLIMB_1_MID_METRES / 50,
+        matchedDistanceFromStartMetres: CLIMB_1_MID_METRES,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationWindowMetres: 5000,
+        lastReliableMatchedPointIndex: CLIMB_1_MID_METRES / 50,
+        lastReliableMatchedDistanceFromStartMetres: CLIMB_1_MID_METRES,
+      });
+
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      const climbButton = await screen.findByRole("button", { name: "Climb" });
+      expect(climbButton).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("tapping the Climb chart drills into a local-gradient segment of the active climb, leaving the progress panel's own heading unaffected", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 320,
+        height: 96,
+        right: 320,
+        bottom: 96,
+        x: 0,
+        y: 0,
+        toJSON: () => "",
+      });
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, CLIMB_1_MID_METRES);
+      await screen.findByRole("button", { name: "Climb" });
+
+      const hitTarget = (
+        await screen.findByRole("img", { name: "Elevation profile chart" })
+      ).parentElement?.querySelector("rect.elevation-chart-tap-target");
+      expect(hitTarget).not.toBeNull();
+      if (!hitTarget) throw new Error("expected a tap-target rect");
+      fireEvent.click(hitTarget, { clientX: 160, clientY: 48 });
+
+      // Resolves to a local-gradient segment within the active climb
+      // (finer-grained than the feature itself), matching the existing
+      // tap-drill-down behaviour already proven for Full view — driven by
+      // activeClimb's own segments, not an unrelated feature. The
+      // progress panel's own heading is driven by activeClimb directly
+      // and stays put regardless of this tap-driven segment selection.
+      await waitFor(() => {
+        expect(
+          screen.getByRole("region", { name: "Gradient segment details" }),
+        ).toBeInTheDocument();
+      });
+      const progressPanel = screen.getByRole("region", { name: "Climb progress" });
+      expect(
+        within(progressPanel).getByRole("heading", { name: "Climb 1 · Uncategorised" }),
+      ).toBeInTheDocument();
+
+      vi.restoreAllMocks();
+    });
+  });
+
   it("keeps the Full-mode elevation marker pinned at the last reliable position once strongly off-route", async () => {
     const user = userEvent.setup();
     const stub = buildStubGeolocationSource();

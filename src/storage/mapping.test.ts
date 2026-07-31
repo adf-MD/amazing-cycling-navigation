@@ -50,6 +50,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       upcoming5km,
       overviewCamera,
       false,
+      null,
     );
     const restored = fromStoredRideState(stored);
 
@@ -69,6 +70,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       upcoming5km,
       overviewCamera,
       false,
+      null,
     );
     expect(stored.lastFix).not.toHaveProperty("speedMetresPerSecond");
     expect(stored.lastFix).not.toHaveProperty("headingDegrees");
@@ -83,6 +85,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       upcoming5km,
       overviewCamera,
       false,
+      null,
     );
     const restored = fromStoredRideState(stored);
     expect(restored.lastFix?.speedMetresPerSecond).toBeNull();
@@ -102,6 +105,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       { kind: "upcoming", windowMetres: 2000 },
       overviewCamera,
       false,
+      null,
     );
 
     expect(stored.lastFix).toBeNull();
@@ -128,6 +132,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         pitchDegrees: 0,
       },
       false,
+      null,
     );
     const restored = fromStoredRideState(stored);
 
@@ -156,6 +161,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       upcoming5km,
       freeCamera,
       false,
+      null,
     );
     const restored = fromStoredRideState(stored);
 
@@ -221,6 +227,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         { kind: "full" },
         overviewCamera,
         false,
+        null,
       );
       expect(fromStoredRideState(stored).elevationViewMode).toEqual({ kind: "full" });
     });
@@ -236,6 +243,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
           { kind: "upcoming", windowMetres },
           overviewCamera,
           false,
+          null,
         );
         expect(fromStoredRideState(stored).elevationViewMode).toEqual({
           kind: "upcoming",
@@ -316,6 +324,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         upcoming5km,
         overviewCamera,
         false,
+        null,
       );
       const restored = fromStoredRideState(stored);
 
@@ -365,6 +374,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         upcoming5km,
         overviewCamera,
         true,
+        null,
       );
 
       expect(stored.wakeLockDesired).toBe(true);
@@ -388,6 +398,59 @@ describe("toStoredRideState / fromStoredRideState", () => {
       };
 
       expect(fromStoredRideState(legacyRow).wakeLockDesired).toBe(false);
+    });
+  });
+
+  describe("dismissedClimbFeatureId", () => {
+    it("round-trips a set climb id", () => {
+      const stored = toStoredRideState(
+        "route-1",
+        "2026-01-01T00:00:00.000Z",
+        fix,
+        coreState,
+        upcoming5km,
+        overviewCamera,
+        false,
+        "climb-1200",
+      );
+
+      expect(stored.dismissedClimbFeatureId).toBe("climb-1200");
+      expect(fromStoredRideState(stored).dismissedClimbFeatureId).toBe("climb-1200");
+    });
+
+    it("round-trips a null (not dismissed) state, never writing a literal null", () => {
+      const stored = toStoredRideState(
+        "route-1",
+        "2026-01-01T00:00:00.000Z",
+        fix,
+        coreState,
+        upcoming5km,
+        overviewCamera,
+        false,
+        null,
+      );
+
+      expect(stored.dismissedClimbFeatureId).toBeUndefined();
+      expect(fromStoredRideState(stored).dismissedClimbFeatureId).toBeNull();
+    });
+
+    it("defaults to null for a row written before this field existed", () => {
+      // Simulates a real pre-existing row from before this feature
+      // shipped — built by hand, not via toStoredRideState, so it
+      // genuinely lacks dismissedClimbFeatureId (rather than having it
+      // set to undefined explicitly).
+      const legacyRow: StoredRideState = {
+        id: "active",
+        routeId: "route-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        lastFix: null,
+        lastMatchedPointIndex: 0,
+        matchedDistanceFromStartMetres: 0,
+        offRouteMachineState: coreState.offRouteMachineState,
+        elevationWindowMetres: 5000,
+      };
+
+      expect(fromStoredRideState(legacyRow).dismissedClimbFeatureId).toBeNull();
     });
   });
 });

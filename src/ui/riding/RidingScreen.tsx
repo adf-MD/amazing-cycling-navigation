@@ -17,10 +17,16 @@ import {
   listClimbsInRouteOrder,
   resolveElevationChartTap,
   type ClimbGradientBand,
+  type RouteFeature,
 } from "../../navigation/routeFeatures.ts";
 import { buildFeatureDetailSegments } from "../../navigation/routeFeatureDetail.ts";
 import type { MicroDetailVisualKey } from "../../navigation/routeFeaturePalette.ts";
 import type { ClassifiedSegment } from "../../navigation/gradient.ts";
+import {
+  computeClimbProgressMetrics,
+  selectClimbElevationWindow,
+  selectEffectiveElevationView,
+} from "../../navigation/climbElevationView.ts";
 import { selectNextManoeuvre } from "../../navigation/nextManoeuvre.ts";
 import type { ElevationViewMode, OffRouteLevel } from "../../navigation/types.ts";
 import {
@@ -36,6 +42,7 @@ import { GradientColoursDisclosure } from "../shared/GradientColoursDisclosure.t
 import { GradientSegmentDetailsPanel } from "../shared/GradientSegmentDetailsPanel.tsx";
 import { RouteFeatureDetailsPanel } from "../shared/RouteFeatureDetailsPanel.tsx";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
+import { RidingClimbProgressPanel } from "./RidingClimbProgressPanel.tsx";
 import { RidingClimbSelector } from "./RidingClimbSelector.tsx";
 import { RidingNextManoeuvrePanel } from "./RidingNextManoeuvrePanel.tsx";
 import { RidingWakeLockControl } from "./RidingWakeLockControl.tsx";
@@ -244,6 +251,43 @@ export function RidingScreen({
     () =>
       microDetailFeature ? buildFeatureDetailSegments(microDetailFeature, runs) : [],
     [microDetailFeature, runs],
+  );
+  // The climb the rider is actually riding through, independent of any
+  // unrelated explicit tap/dropdown selection elsewhere (microDetailFeature
+  // above) — Climb elevation view must always reflect live progress, never
+  // a merely-inspected feature. A descent or an ordinary (unrecognised)
+  // uphill never activates it, since activeFeature is null or a descent
+  // there.
+  const activeClimb = activeFeature?.kind === "climb" ? activeFeature : null;
+  // Reuses microDetailSegments in the common case (nothing else explicitly
+  // selected, so activeClimb === microDetailFeature) rather than always
+  // re-running buildFeatureDetailSegments — still correct either way, since
+  // both call sites reuse the exact same classify+merge+flicker-suppress
+  // pipeline over the same runs.
+  const activeClimbDetailSegments = useMemo(
+    () =>
+      activeClimb === null
+        ? []
+        : activeClimb === microDetailFeature
+          ? microDetailSegments
+          : buildFeatureDetailSegments(activeClimb, runs),
+    [activeClimb, microDetailFeature, microDetailSegments, runs],
+  );
+  const climbProgressMetrics = activeClimb
+    ? computeClimbProgressMetrics(
+        activeClimb,
+        displayPoints,
+        activeClimbDetailSegments,
+        nav.presentationDistanceFromStartMetres,
+      )
+    : null;
+  // The elevation view actually shown — see climbElevationView.ts's own
+  // doc comment for why this pure derivation needs no effect and no
+  // "already auto-shown" tracking state beyond dismissedClimbFeatureId.
+  const effectiveElevationView = selectEffectiveElevationView(
+    nav.elevationViewMode,
+    activeClimb,
+    nav.dismissedClimbFeatureId,
   );
   // Visual emphasis (the extra stroke-width bump) is reserved for an
   // explicit selection, never for a merely-active feature — mirrors the
@@ -505,14 +549,37 @@ export function RidingScreen({
             <button
               key={elevationViewModeKey(mode)}
               type="button"
-              aria-pressed={isSameElevationViewMode(nav.elevationViewMode, mode)}
+              aria-pressed={
+                effectiveElevationView.kind !== "climb" &&
+                isSameElevationViewMode(effectiveElevationView, mode)
+              }
               onClick={() => {
                 nav.setElevationViewMode(mode);
+                // Manually picking a standard view while inside a climb
+                // dismisses Climb view for the remainder of that climb —
+                // see climbElevationView.ts's selectEffectiveElevationView.
+                if (activeClimb !== null) {
+                  nav.setDismissedClimbFeatureId(activeClimb.id);
+                }
               }}
             >
               {elevationViewModeLabel(mode)}
             </button>
           ))}
+          {activeClimb !== null ? (
+            <button
+              type="button"
+              aria-pressed={effectiveElevationView.kind === "climb"}
+              onClick={() => {
+                // Un-dismisses the active climb — safe unconditionally,
+                // since a dismissal only ever matters when it matches the
+                // currently active climb's own id.
+                nav.setDismissedClimbFeatureId(null);
+              }}
+            >
+              Climb
+            </button>
+          ) : null}
         </div>
       ) : null}
       {/* Before any matched progress (live or restored), show the whole
@@ -526,7 +593,15 @@ export function RidingScreen({
        * isn't currently on screen. */}
       {(() => {
         let displayedMicroSegments = microDetailSegments;
+        // Defaults to microDetailFeature (the same feature
+        // displayedMicroSegments already reflects in every other branch);
+        // only the new Climb branch below ever reassigns this to a
+        // different feature (activeClimb), so GradientColoursDisclosure's
+        // climb-band gate stays correct even when a rider has an unrelated
+        // explicit selection elsewhere while also actively climbing.
+        let displayedMicroDetailFeature: RouteFeature | null = microDetailFeature;
         let chart: ReactNode;
+        let climbProgressPanel: ReactNode = null;
 
         if (nav.matchedDistanceFromStartMetres === null) {
           chart = (
@@ -536,6 +611,44 @@ export function RidingScreen({
               gradientSegments={microDetailSegments}
               selectedRangeMetres={chartSelectedRangeMetres}
               onTapDistance={handleChartTapDistance}
+            />
+          );
+        } else if (
+          activeClimb !== null &&
+          effectiveElevationView.kind === "climb" &&
+          climbProgressMetrics !== null
+        ) {
+          const climbWindow = selectClimbElevationWindow(
+            displayPoints,
+            activeClimb.startDistanceMetres,
+            activeClimb.endDistanceMetres,
+          );
+          displayedMicroSegments = activeClimbDetailSegments;
+          displayedMicroDetailFeature = activeClimb;
+          chart = (
+            <ElevationChart
+              points={climbWindow.points}
+              domain={{
+                startDistanceMetres: climbWindow.startDistanceMetres,
+                endDistanceMetres: climbWindow.endDistanceMetres,
+              }}
+              gradientSegments={activeClimbDetailSegments}
+              areaFill
+              selectedRangeMetres={chartSelectedRangeMetres}
+              onTapDistance={handleChartTapDistance}
+              marker={{
+                distanceFromStartMetres:
+                  climbProgressMetrics.clampedPresentationDistanceMetres,
+                elevationMetres: climbProgressMetrics.currentElevationMetres,
+                stale: nav.isStale,
+              }}
+            />
+          );
+          climbProgressPanel = (
+            <RidingClimbProgressPanel
+              climb={activeClimb}
+              climbNumber={climbs.findIndex((climb) => climb.id === activeClimb.id) + 1}
+              metrics={climbProgressMetrics}
             />
           );
         } else if (nav.elevationProfileDisplay.kind === "full") {
@@ -585,9 +698,10 @@ export function RidingScreen({
         return (
           <>
             {chart}
+            {climbProgressPanel}
             <GradientColoursDisclosure
               presentClimbBands={
-                microDetailFeature?.kind === "climb"
+                displayedMicroDetailFeature?.kind === "climb"
                   ? new Set(
                       displayedMicroSegments.map(
                         (segment) => segment.visualKey as ClimbGradientBand,

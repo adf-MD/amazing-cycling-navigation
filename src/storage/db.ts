@@ -148,6 +148,17 @@ export interface StoredRideState {
    * lack it, and src/storage/mapping.ts's fromStoredRideState defaults a
    * missing value to false — no Dexie version() bump required. */
   wakeLockDesired?: boolean;
+  /** The stable RouteFeature.id of the recognised climb the rider has
+   * manually left Climb elevation view for, so it doesn't automatically
+   * reopen for the remainder of that same climb (see
+   * src/navigation/climbElevationView.ts's selectEffectiveElevationView).
+   * Never the literal displayed elevation view itself — "climb" is never
+   * a stored elevationViewMode value, only this dismissal marker is
+   * persisted. Optional/non-indexed for the same reason as the camera
+   * fields above: rows written before this field existed simply lack it,
+   * and src/storage/mapping.ts's fromStoredRideState defaults a missing
+   * value to null (not dismissed) — no Dexie version() bump required. */
+  dismissedClimbFeatureId?: string;
 }
 
 export class AcnDatabase extends Dexie {
@@ -168,9 +179,10 @@ export class AcnDatabase extends Dexie {
     // version bump; old rows simply lack them, handled by explicit
     // defaulting in mapping.ts. elevationViewMode/lastReliableMatchedPointIndex/
     // lastReliableMatchedDistanceFromStartMetres (added after
-    // elevationWindowMetres was widened to optional) and wakeLockDesired
-    // (Milestone 4's tenth slice) are plain, non-indexed fields added the
-    // same way.
+    // elevationWindowMetres was widened to optional), wakeLockDesired
+    // (Milestone 4's tenth slice) and dismissedClimbFeatureId (Milestone
+    // 4's eleventh slice) are plain, non-indexed fields added the same
+    // way.
     this.version(1).stores({
       routes: "id, name, createdAt",
       rideState: "id",
