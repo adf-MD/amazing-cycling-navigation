@@ -564,7 +564,7 @@ test.describe("Riding", () => {
     expect(consoleErrors).toEqual([]);
   });
 
-  test("the pre-ride climb selector defaults to the route's first climb, lets the rider switch to All route and back, and disappears once riding starts", async ({
+  test("the pre-ride climb selector defaults to All route, lets the rider select the climb and switch back and forth, and disappears once riding starts", async ({
     page,
   }) => {
     const consoleErrors: string[] = [];
@@ -594,17 +594,13 @@ test.describe("Riding", () => {
     const startButton = page.getByRole("button", { name: "Start riding" });
     await expect(startButton).toBeVisible();
 
-    // The route's one recognised climb (see the fixture comment above:
-    // 1000 m at 20% from 1000-2000 m -> category-3) is selected by
-    // default, before any interaction — its details are already visible,
-    // and its detailed local-gradient colouring already shows. The macro
-    // category colour itself is not separately visible on the climb's own
-    // range while it's selected: micro is drawn on top at the same width,
-    // per the existing selected-feature layering (see the "Planning" test
-    // above) — only the flat lead-in (plain base route colour, not a
-    // macro feature) is unaffected by the selection.
+    // No climb is selected by default, before any interaction — the
+    // dropdown starts on "All route", no numbered details heading shows,
+    // and only the macro category colour renders (no detailed local-
+    // gradient overlay yet).
     const select = page.getByRole("combobox", { name: "Recognised climbs" });
     await expect(select).toBeVisible();
+    await expect(select).toHaveValue("all");
     // The exact start distance is smoothing-driven edge rounding (see
     // routeFeatureColouring.spec.ts's own comment on the same fixture
     // shape) — comfortably within 0.9-1.0 km, not exactly 1.0.
@@ -613,7 +609,29 @@ test.describe("Riding", () => {
     ).toBeAttached();
     await expect(
       page.getByRole("heading", { name: "Climb 1 · Category 3" }),
+    ).toBeHidden();
+    await expect(page.getByText("1 recognised climb on this route")).toBeVisible();
+
+    const defaultSample = await captureColourSample(page, {
+      macro: MACRO_CATEGORY_3_COLOUR,
+      micro: MICRO_EXTREMELY_STEEP_CLIMB_COLOUR,
+    });
+    expect(defaultSample.macro.pixelCount).toBeGreaterThan(0);
+    expect(defaultSample.micro.pixelCount).toBe(0);
+
+    // Selecting the route's one recognised climb shows its details and its
+    // detailed local-gradient colouring — index 1, since index 0 is always
+    // "All route" and this fixture has exactly one recognised climb. The
+    // macro category colour itself is not separately visible on the
+    // climb's own range while it's selected: micro is drawn on top at the
+    // same width, per the existing selected-feature layering (see the
+    // "Planning" test above) — only the flat lead-in (plain base route
+    // colour, not a macro feature) is unaffected by the selection.
+    await select.selectOption({ index: 1 });
+    await expect(
+      page.getByRole("heading", { name: "Climb 1 · Category 3" }),
     ).toBeVisible();
+    await expect(page.getByText("1 recognised climb on this route")).toBeHidden();
 
     const preSelectedSample = await captureColourSample(page, {
       base: BASE_ROUTE_COLOUR,
@@ -637,9 +655,7 @@ test.describe("Riding", () => {
     expect(allRouteSample.macro.pixelCount).toBeGreaterThan(0);
     expect(allRouteSample.micro.pixelCount).toBe(0);
 
-    // Selecting it again from the dropdown restores both — index 1, since
-    // index 0 is always "All route" and this fixture has exactly one
-    // recognised climb.
+    // Selecting it again from the dropdown restores both.
     await select.selectOption({ index: 1 });
     await expect(
       page.getByRole("heading", { name: "Climb 1 · Category 3" }),
@@ -684,6 +700,12 @@ test.describe("Riding: pre-ride climb chart layout", () => {
     await routeButton.click();
 
     await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    // No climb is selected by default — select the route's one recognised
+    // climb (index 1; index 0 is always "All route") to bring the new
+    // detailed chart on screen.
+    await page
+      .getByRole("combobox", { name: "Recognised climbs" })
+      .selectOption({ index: 1 });
     await expect(
       page.getByRole("heading", { name: "Climb 1 · Category 3" }),
     ).toBeVisible();

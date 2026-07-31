@@ -611,7 +611,7 @@ describe("RidingScreen", () => {
   });
 
   describe("gradient integration", () => {
-    it("auto-selects the route's first recognised climb pre-ride, showing its numbered details heading and detailed local-gradient overlay immediately", () => {
+    it("shows no climb selected by default pre-ride ('All route'), with the recognised-climb count and no numbered heading", () => {
       render(
         <RidingScreen
           route={climbRoute}
@@ -619,19 +619,16 @@ describe("RidingScreen", () => {
           mapFactory={buildStubMapFactory().factory}
         />,
       );
-      // 4000 m at 8% -> climbScore 32000 -> category-2 (32000 to <64000).
-      // The route's only climb auto-selects before any fix, so its
-      // numbered details heading (from the pre-ride selector, not a mere
-      // macro legend mention) is visible immediately.
-      expect(
-        screen.getByRole("heading", { name: "Climb 1 · Category 2" }),
-      ).toBeInTheDocument();
-      // With a climb selected, its detailed local-gradient overlay shows
-      // too — "Hard climb" is this constant-8%-grade climb's own class.
-      expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
+      // No climb is auto-selected before any fix — the rider must pick one
+      // explicitly from the dropdown.
+      expect(screen.getByRole("combobox", { name: "Recognised climbs" })).toHaveValue(
+        "all",
+      );
+      expect(screen.getByText("1 recognised climb on this route")).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: /Climb 1/ })).toBeNull();
     });
 
-    it("shows the pre-ride 'All route' summary and no numbered heading once the auto-selected climb is cleared", async () => {
+    it("shows the numbered details heading and detailed local-gradient overlay once a climb is explicitly selected from the dropdown", async () => {
       const user = userEvent.setup();
       render(
         <RidingScreen
@@ -642,10 +639,15 @@ describe("RidingScreen", () => {
       );
       await user.selectOptions(
         screen.getByRole("combobox", { name: "Recognised climbs" }),
-        "All route",
+        "climb-0",
       );
-      expect(screen.getByText("1 recognised climb on this route")).toBeInTheDocument();
-      expect(screen.queryByRole("heading", { name: /Climb 1/ })).toBeNull();
+      // 4000 m at 8% -> climbScore 32000 -> category-2 (32000 to <64000).
+      expect(
+        screen.getByRole("heading", { name: "Climb 1 · Category 2" }),
+      ).toBeInTheDocument();
+      // With a climb selected, its detailed local-gradient overlay shows
+      // too — "Hard climb" is this constant-8%-grade climb's own class.
+      expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
     });
 
     it("hides the pre-ride climb selector once riding starts, and does not let the stale pre-ride selection override the active climb", async () => {
@@ -684,7 +686,8 @@ describe("RidingScreen", () => {
       ).toBeInTheDocument();
     });
 
-    it("resets to the new route's first climb when the route changes", () => {
+    it("does not carry over an explicit climb selection when the route changes", async () => {
+      const user = userEvent.setup();
       const otherClimbRoute: PlannedRoute = {
         ...climbRoute,
         id: "other-climb-route",
@@ -696,6 +699,10 @@ describe("RidingScreen", () => {
           geolocationSource={buildStubGeolocationSource().source}
           mapFactory={buildStubMapFactory().factory}
         />,
+      );
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+        "climb-0",
       );
       expect(
         screen.getByRole("heading", { name: "Climb 1 · Category 2" }),
@@ -709,9 +716,13 @@ describe("RidingScreen", () => {
           mapFactory={buildStubMapFactory().factory}
         />,
       );
-      expect(
-        screen.getByRole("heading", { name: "Climb 1 · Category 2" }),
-      ).toBeInTheDocument();
+      // The new route's own id no longer matches the earlier explicit
+      // selection, so it falls back to "All route" rather than reusing the
+      // old route's selected climb.
+      expect(screen.getByRole("combobox", { name: "Recognised climbs" })).toHaveValue(
+        "all",
+      );
+      expect(screen.queryByRole("heading", { name: "Climb 1 · Category 2" })).toBeNull();
     });
 
     it("shows the same gradient class and macro feature category in both the default windowed view and Full view", async () => {
@@ -1118,13 +1129,18 @@ describe("RidingScreen", () => {
       distanceMetres: FLAT_DIP_TOTAL_METRES,
     };
 
-    it("renders a detailed elevation chart directly between the selected climb's heading and its facts", () => {
+    it("renders a detailed elevation chart directly between the selected climb's heading and its facts", async () => {
+      const user = userEvent.setup();
       const { container } = render(
         <RidingScreen
           route={climbRoute}
           geolocationSource={buildStubGeolocationSource().source}
           mapFactory={buildStubMapFactory().factory}
         />,
+      );
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+        "climb-0",
       );
       const heading = screen.getByRole("heading", { name: "Climb 1 · Category 2" });
       const chart = screen.getByRole("img", { name: "Elevation profile for Climb 1" });
@@ -1138,13 +1154,18 @@ describe("RidingScreen", () => {
       ).toBe(true);
     });
 
-    it("covers the selected climb's complete start-to-end interval", () => {
+    it("covers the selected climb's complete start-to-end interval", async () => {
+      const user = userEvent.setup();
       render(
         <RidingScreen
           route={climbRoute}
           geolocationSource={buildStubGeolocationSource().source}
           mapFactory={buildStubMapFactory().factory}
         />,
+      );
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+        "climb-0",
       );
       const chart = screen.getByRole("img", { name: "Elevation profile for Climb 1" });
       const path = chart.querySelector("path.elevation-chart-area-fill");
@@ -1162,6 +1183,10 @@ describe("RidingScreen", () => {
           geolocationSource={buildStubGeolocationSource().source}
           mapFactory={buildStubMapFactory().factory}
         />,
+      );
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+        "climb-0",
       );
       expect(
         screen.getByRole("heading", { name: "Climb 1 · Category 4" }),
@@ -1189,13 +1214,18 @@ describe("RidingScreen", () => {
       expect(screen.getByText(/Route position: 1\.3–2\.3 km/)).toBeInTheDocument();
     });
 
-    it("shows no rider-position marker, completed/remaining split, or progress text", () => {
+    it("shows no rider-position marker, completed/remaining split, or progress text", async () => {
+      const user = userEvent.setup();
       const { container } = render(
         <RidingScreen
           route={climbRoute}
           geolocationSource={buildStubGeolocationSource().source}
           mapFactory={buildStubMapFactory().factory}
         />,
+      );
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+        "climb-0",
       );
       const chart = screen.getByRole("img", { name: "Elevation profile for Climb 1" });
       expect(chart.querySelector("line.elevation-chart-marker")).toBeNull();
@@ -1208,7 +1238,8 @@ describe("RidingScreen", () => {
       expect(container.querySelectorAll("line.elevation-chart-marker")).toHaveLength(0);
     });
 
-    it("colours the pre-ride chart with the same authoritative MICRO_DETAIL_COLOURS as the active current-climb view", () => {
+    it("colours the pre-ride chart with the same authoritative MICRO_DETAIL_COLOURS as the active current-climb view", async () => {
+      const user = userEvent.setup();
       render(
         <RidingScreen
           route={climbRoute}
@@ -1216,18 +1247,27 @@ describe("RidingScreen", () => {
           mapFactory={buildStubMapFactory().factory}
         />,
       );
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+        "climb-0",
+      );
       const chart = screen.getByRole("img", { name: "Elevation profile for Climb 1" });
       const fill = chart.querySelector("path.elevation-chart-area-fill");
       expect(fill?.getAttribute("fill")).toBe(MICRO_DETAIL_COLOURS["hard-climb"]);
     });
 
-    it("retains the correct local-gradient treatment for a short flat section inside a recognised climb", () => {
+    it("retains the correct local-gradient treatment for a short flat section inside a recognised climb", async () => {
+      const user = userEvent.setup();
       render(
         <RidingScreen
           route={flatDipRoute}
           geolocationSource={buildStubGeolocationSource().source}
           mapFactory={buildStubMapFactory().factory}
         />,
+      );
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+        "climb-0",
       );
       expect(
         screen.getByRole("img", { name: "Elevation profile for Climb 1" }),
@@ -1263,7 +1303,8 @@ describe("RidingScreen", () => {
       expect(screen.getAllByRole("img")).toHaveLength(1);
     });
 
-    it("does not call geolocation or require an active ride to render the pre-ride preview", () => {
+    it("does not call geolocation or require an active ride to render the pre-ride preview", async () => {
+      const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
       render(
         <RidingScreen
@@ -1271,6 +1312,10 @@ describe("RidingScreen", () => {
           geolocationSource={stub.source}
           mapFactory={buildStubMapFactory().factory}
         />,
+      );
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+        "climb-0",
       );
       expect(
         screen.getByRole("img", { name: "Elevation profile for Climb 1" }),

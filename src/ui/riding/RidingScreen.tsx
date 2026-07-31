@@ -210,14 +210,17 @@ export function RidingScreen({
     setReachedManoeuvreIndex(nextReachedManoeuvreIndex);
   }
 
-  // Recognised climbs, in route order, for the pre-ride selector below
-  // and for the pre-ride default above.
+  // Recognised climbs, in route order, for the pre-ride selector below.
   const climbs = useMemo(() => listClimbsInRouteOrder(routeFeatures), [routeFeatures]);
 
+  // No feature is selected by default — the pre-ride dropdown starts on
+  // "All route" (and a fresh route never carries over a previous route's
+  // selection, since an explicit choice only counts while its own routeId
+  // still matches the current route).
   const selectedRouteFeatureId =
     explicitFeatureSelection?.routeId === route.id
       ? explicitFeatureSelection.featureId
-      : (climbs[0]?.id ?? null);
+      : null;
 
   const selectedFeature =
     routeFeatures.find((feature) => feature.id === selectedRouteFeatureId) ?? null;
