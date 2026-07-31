@@ -38,6 +38,7 @@ interface MockMapHandle {
    * route feature and falls through to warning hit-testing/placement. */
   setRouteFeatureHit: (routeFeatureId: string | null) => void;
   setCameraSpy: ReturnType<typeof vi.fn>;
+  centreOnSpy: ReturnType<typeof vi.fn>;
   fitBoundsSpy: ReturnType<typeof vi.fn>;
   addLineLayerSpy: ReturnType<typeof vi.fn>;
   sources: Map<string, GeoJSON.FeatureCollection>;
@@ -59,6 +60,7 @@ function createMockMapFactory(): MockMapHandle {
   let warningHitIndex: number | null = null;
   let routeFeatureHitId: string | null = null;
   const setCameraSpy = vi.fn();
+  const centreOnSpy = vi.fn();
   const fitBoundsSpy = vi.fn();
   const addLineLayerSpy = vi.fn();
   const sources = new Map<string, GeoJSON.FeatureCollection>();
@@ -98,6 +100,7 @@ function createMockMapFactory(): MockMapHandle {
         cameraSettledListener = listener;
       },
       setCamera: setCameraSpy,
+      centreOn: centreOnSpy,
       resize: () => undefined,
       onMapTap: (listener) => {
         mapTapListener = listener;
@@ -116,6 +119,7 @@ function createMockMapFactory(): MockMapHandle {
   return {
     factory,
     setCameraSpy,
+    centreOnSpy,
     fitBoundsSpy,
     addLineLayerSpy,
     sources,
@@ -917,7 +921,7 @@ describe("PlanningScreen", () => {
       expect(requestApproximateLocation).toHaveBeenCalledTimes(2);
     });
 
-    it("two separate, fully-resolved taps at the same coordinate both re-fit", async () => {
+    it("the session's first successful tap box-fits; a second tap at the same coordinate only recentres", async () => {
       const user = userEvent.setup();
       const map = createMockMapFactory();
       const requestApproximateLocation = vi.fn().mockResolvedValue(null);
@@ -942,12 +946,16 @@ describe("PlanningScreen", () => {
         expect(map.fitBoundsSpy).toHaveBeenCalledWith(expectedBounds);
       });
       expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+      expect(map.centreOnSpy).not.toHaveBeenCalled();
 
       requestApproximateLocation.mockResolvedValueOnce([-1.5, 53.8]);
       await user.click(locateButton);
       await waitFor(() => {
-        expect(map.fitBoundsSpy).toHaveBeenCalledTimes(2);
+        expect(map.centreOnSpy).toHaveBeenCalledWith([-1.5, 53.8], { animate: true });
       });
+      // The second tap must not repeat the box-fit, now that the session's
+      // initial regional framing has already happened once.
+      expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
     });
 
     it("shows a marker at the resolved coordinate after a successful tap", async () => {
@@ -1047,7 +1055,7 @@ describe("PlanningScreen", () => {
       expect(map.sources.get("acn-position")?.features).toHaveLength(1);
     });
 
-    it("an out-of-range coordinate from the location request shows no marker", async () => {
+    it("an out-of-range coordinate from the location request moves neither camera nor marker, and is treated as a failure", async () => {
       const user = userEvent.setup();
       const map = createMockMapFactory();
       const requestApproximateLocation = vi.fn().mockResolvedValue(null);
@@ -1063,18 +1071,17 @@ describe("PlanningScreen", () => {
         expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
       });
 
-      // computeLocalAreaBounds only range-checks latitude, not longitude, so
-      // an out-of-range longitude like 200 still produces a non-null box and
-      // moves the camera — this test's real point is that the marker's own
-      // isValidCoordinate guard rejects it independently of that.
+      // Camera movement and the marker now share exactly one validity gate
+      // (isValidCoordinate) — an out-of-range longitude like 200 fails it
+      // up front, so neither a box-fit nor a recentre is ever attempted.
       requestApproximateLocation.mockResolvedValueOnce([200, 53.8]);
       await user.click(screen.getByRole("button", { name: "Locate me" }));
 
-      await waitFor(() => {
-        expect(map.fitBoundsSpy).toHaveBeenCalledWith(
-          computeLocalAreaBounds([200, 53.8]),
-        );
-      });
+      expect(
+        await screen.findByText("Your location could not be determined."),
+      ).toBeInTheDocument();
+      expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+      expect(map.centreOnSpy).not.toHaveBeenCalled();
       expect(map.sources.get("acn-position")).toEqual(EMPTY_FEATURE_COLLECTION);
     });
 
@@ -1102,6 +1109,106 @@ describe("PlanningScreen", () => {
           buildPositionFeatureCollection([0, 0]),
         );
       });
+    });
+
+    it("a manual camera gesture before any successful geolocation makes the first successful Locate-me press recentre, not box-fit", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      });
+
+      map.triggerUserCameraInteraction();
+
+      requestApproximateLocation.mockResolvedValueOnce([-1.5, 53.8]);
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+
+      await waitFor(() => {
+        expect(map.centreOnSpy).toHaveBeenCalledWith([-1.5, 53.8], { animate: true });
+      });
+      expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+    });
+
+    it("once the automatic fresh-session framing itself succeeds, a following Locate-me press recentres, not box-fits", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue([-1.5, 53.8]);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledWith(
+          computeLocalAreaBounds([-1.5, 53.8]),
+        );
+      });
+      expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+
+      requestApproximateLocation.mockResolvedValueOnce([-1.6, 53.9]);
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+
+      await waitFor(() => {
+        expect(map.centreOnSpy).toHaveBeenCalledWith([-1.6, 53.9], { animate: true });
+      });
+      expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("a recentre-only Locate-me press preserves live zoom/bearing/pitch, never threading React's settled-camera state into the call", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      });
+
+      // Get past the session's first framing.
+      requestApproximateLocation.mockResolvedValueOnce([-1.5, 53.8]);
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+      });
+
+      // React state has now genuinely observed non-round camera values.
+      map.triggerCameraSettled([-1.5, 53.8], {
+        zoom: 15.25,
+        bearingDegrees: -42,
+        pitchDegrees: 23,
+      });
+
+      requestApproximateLocation.mockResolvedValueOnce([-1.6, 53.9]);
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+
+      await waitFor(() => {
+        expect(map.centreOnSpy).toHaveBeenCalledWith([-1.6, 53.9], { animate: true });
+      });
+      // Structurally incapable of carrying zoom/bearing/pitch: centreOn
+      // only ever takes a coordinate and an animate flag.
+      expect(map.centreOnSpy.mock.calls.at(-1)).toEqual([
+        [-1.6, 53.9],
+        { animate: true },
+      ]);
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -1216,6 +1323,30 @@ describe("PlanningScreen", () => {
       map.triggerCameraSettled([0.02, 51.02]);
 
       expect(northUpButton).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("pressing Northwards a second time after an intervening manual rotation re-applies the reset", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      const northUpButton = screen.getByRole("button", {
+        name: "North-up, top-down view",
+      });
+      await user.click(northUpButton);
+      expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+
+      // The rider manually rotates away from north between the two presses.
+      map.triggerCameraSettled([0, 51], { bearingDegrees: 45, pitchDegrees: 0 });
+
+      await user.click(northUpButton);
+
+      expect(map.setCameraSpy).toHaveBeenCalledTimes(2);
+      expect(map.setCameraSpy).toHaveBeenNthCalledWith(2, null, null, 0, 0, {
+        animate: true,
+        followOffset: false,
+      });
     });
   });
 

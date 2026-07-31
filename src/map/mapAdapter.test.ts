@@ -113,6 +113,33 @@ describe("MapLibreAdapter", () => {
     expect(fake.easeTo).not.toHaveBeenCalled();
   });
 
+  it("centreOn (animate) eases to the given centre only, never specifying zoom, bearing, pitch or offset", () => {
+    const fake = buildFakeMapLibreMap();
+    const adapter = buildAdapter(fake);
+
+    adapter.centreOn([1, 2], { animate: true });
+
+    expect(fake.easeTo).toHaveBeenCalledOnce();
+    const [options] = fake.easeTo.mock.calls[0] as [Record<string, unknown>];
+    expect(options.center).toEqual([1, 2]);
+    expect(options).not.toHaveProperty("zoom");
+    expect(options).not.toHaveProperty("bearing");
+    expect(options).not.toHaveProperty("pitch");
+    expect(options).not.toHaveProperty("offset");
+    expect(fake.jumpTo).not.toHaveBeenCalled();
+  });
+
+  it("centreOn (not animate) jumps to the given centre only, also never touching zoom, bearing or pitch", () => {
+    const fake = buildFakeMapLibreMap();
+    const adapter = buildAdapter(fake);
+
+    adapter.centreOn([1, 2], { animate: false });
+
+    expect(fake.jumpTo).toHaveBeenCalledOnce();
+    expect(fake.jumpTo).toHaveBeenCalledWith({ center: [1, 2] });
+    expect(fake.easeTo).not.toHaveBeenCalled();
+  });
+
   it("onCameraSettled reports centre, zoom, bearing and pitch together on moveend", () => {
     const fake = buildFakeMapLibreMap({ lng: 3, lat: 4 });
     const adapter = buildAdapter(fake);

@@ -205,6 +205,7 @@ function buildStubMapFactory(): {
         cameraSettledListener = listener;
       },
       setCamera: setCameraSpy,
+      centreOn: () => undefined,
       resize: () => undefined,
       onMapTap: () => undefined,
       queryTopWarningFeatureAt: () => null,

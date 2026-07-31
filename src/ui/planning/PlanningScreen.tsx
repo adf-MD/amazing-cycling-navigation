@@ -5,7 +5,8 @@ import { isValidLatitude, isValidLongitude } from "../../gpx/validateGpx.ts";
 import {
   MapView,
   type BoundsCameraTarget,
-  type CameraTarget,
+  type CentreCameraTarget,
+  type OrientNorthCameraTarget,
   type PlanningOverlay,
   type RouteFeatureOverlay,
   type WarningOverlay,
@@ -157,9 +158,9 @@ export function PlanningScreen({
   const [currentPosition, setCurrentPosition] = useState<Coordinate | null>(null);
   const [isDraftHydrated, setIsDraftHydrated] = useState(false);
   const [boundsTarget, setBoundsTarget] = useState<BoundsCameraTarget | null>(null);
-  const [northUpCameraTarget, setNorthUpCameraTarget] = useState<CameraTarget | null>(
-    null,
-  );
+  const [centreTarget, setCentreTarget] = useState<CentreCameraTarget | null>(null);
+  const [orientNorthTarget, setOrientNorthTarget] =
+    useState<OrientNorthCameraTarget | null>(null);
   // Null until the map's camera has genuinely settled at least once —
   // deliberately not defaulted to {bearingDegrees: 0, pitchDegrees: 0},
   // which would make the north-up control report pressed before the map
@@ -471,10 +472,28 @@ export function PlanningScreen({
   // has a view they care about" signal the way a pan or Locate-me tap
   // does.
   const hasManualCameraActionRef = useRef(false);
+  // Set true only by a genuine pan/pinch/rotate/pitch gesture — never by a
+  // Locate-me tap, successful or not, unlike hasManualCameraActionRef
+  // above. Used solely by handleLocateMe to decide whether the session's
+  // one-time regional box-fit is still available: a prior *failed*
+  // Locate-me attempt establishes no camera view at all (nothing moved),
+  // so it must not by itself force every later successful attempt into
+  // recentre-only mode — only an actual gesture, or a framing that has
+  // already genuinely been applied, should do that (see
+  // hasAppliedInitialFramingRef below).
+  const hasManualGestureRef = useRef(false);
   // Synchronous double-tap guard for handleLocateMe (see below) — a plain
   // locateStatus === "locating" check in the handler isn't enough on its
   // own, since React state updates aren't synchronous.
   const isLocatingRef = useRef(false);
+  // True once the session's one-time ~50 × 50 km regional box-fit has been
+  // applied — by *either* path: the automatic fresh-session framing effect
+  // below, or an explicit Locate-me press racing ahead of it (e.g. because
+  // the automatic attempt failed or is still pending). Once true, every
+  // subsequent Locate-me press only recentres (see handleLocateMe) —
+  // whichever path resolves the session's first successful geolocation
+  // gets to frame the area; every later one does not repeat it.
+  const hasAppliedInitialFramingRef = useRef(false);
 
   // Frames a genuinely fresh Planning session (no restored draft, no
   // waypoints yet) in an approximately 50 × 50 km box around the rider's
@@ -499,6 +518,7 @@ export function PlanningScreen({
         if (waypointsRef.current.length > 0 || hasManualCameraActionRef.current) return;
         const bounds = computeLocalAreaBounds(coordinate);
         if (!bounds) return;
+        hasAppliedInitialFramingRef.current = true;
         setBoundsTarget({ bounds, requestId: generateId() });
       })
       .catch((error: unknown) => {
@@ -509,19 +529,33 @@ export function PlanningScreen({
   const handleLocateMe = useCallback(() => {
     if (isLocatingRef.current) return;
     isLocatingRef.current = true;
+    const hadEstablishedViewFromGesture = hasManualGestureRef.current;
     hasManualCameraActionRef.current = true;
     setLocateStatus("locating");
     requestApproximateLocation()
       .then((coordinate) => {
-        if (coordinate && isValidCoordinate(coordinate)) {
-          setCurrentPosition(coordinate);
-        }
-        const bounds = coordinate ? computeLocalAreaBounds(coordinate) : null;
-        if (!bounds) {
+        if (!coordinate || !isValidCoordinate(coordinate)) {
           setLocateStatus("failed");
           return;
         }
-        setBoundsTarget({ bounds, requestId: generateId() });
+        setCurrentPosition(coordinate);
+        // Only the session's first successful geolocation resolution (from
+        // either this control or the automatic fresh-session effect above)
+        // performs the one-time regional box-fit; every later press only
+        // recentres, preserving whatever zoom/bearing/pitch the rider
+        // already has (see mapAdapter.ts's centreOn).
+        const shouldApplyInitialFraming =
+          !hadEstablishedViewFromGesture && !hasAppliedInitialFramingRef.current;
+        if (shouldApplyInitialFraming) {
+          const bounds = computeLocalAreaBounds(coordinate);
+          if (bounds) {
+            hasAppliedInitialFramingRef.current = true;
+            setBoundsTarget({ bounds, requestId: generateId() });
+            setLocateStatus("idle");
+            return;
+          }
+        }
+        setCentreTarget({ coordinate, requestId: generateId() });
         setLocateStatus("idle");
       })
       .catch((error: unknown) => {
@@ -534,14 +568,7 @@ export function PlanningScreen({
   }, [requestApproximateLocation]);
 
   const handleRequestNorthUp = useCallback(() => {
-    setNorthUpCameraTarget({
-      coordinate: null,
-      zoom: null,
-      bearingDegrees: 0,
-      pitchDegrees: 0,
-      animate: true,
-      followOffset: false,
-    });
+    setOrientNorthTarget({ requestId: generateId() });
   }, []);
 
   const isNorthUpTopDown =
@@ -779,11 +806,13 @@ export function PlanningScreen({
           warningOverlay={warningOverlay}
           routeFeatureOverlay={routeFeatureOverlay}
           gradientOverlay={{ segments: microDetailSegments }}
-          cameraTarget={northUpCameraTarget}
+          centreTarget={centreTarget}
+          orientNorthTarget={orientNorthTarget}
           boundsTarget={boundsTarget}
           suppressInitialOverviewFit={suppressInitialOverviewFit}
           onUserCameraInteraction={() => {
             hasManualCameraActionRef.current = true;
+            hasManualGestureRef.current = true;
             setIsCameraSettled(false);
           }}
           onCameraSettled={(camera) => {

@@ -241,6 +241,32 @@ export interface BoundsCameraTarget {
   requestId: string;
 }
 
+/** An explicit "recentre only" camera command — Planning's GPS-centre
+ * (Locate me) control, once the session's initial regional framing has
+ * already happened once (see BoundsCameraTarget). Deduped by `requestId`,
+ * not by value, exactly like BoundsCameraTarget — a repeated tap at an
+ * unchanged coordinate still re-applies. Distinct from CameraTarget: this
+ * never carries zoom/bearing/pitch at all, so mapAdapter.ts's centreOn
+ * leaves them genuinely untouched rather than needing an explicit "leave
+ * unchanged" null. Planning-only; Riding never supplies this. */
+export interface CentreCameraTarget {
+  coordinate: Coordinate;
+  requestId: string;
+}
+
+/** An explicit "reorient to north-up/top-down" camera command —
+ * Planning's Northwards control. Deduped by `requestId`, not by value,
+ * unlike the shared CameraTarget pipeline (see the fix this type exists
+ * for: CameraTarget's value-based dedup silently swallows a second
+ * identical request after an intervening manual rotation). Carries no
+ * fields beyond the request identity because the command itself is always
+ * the same fixed reset — see the orientNorthTarget effect below, which
+ * reuses setCamera's existing (null, null, 0, 0, ...) call. Planning-only;
+ * Riding keeps using CameraTarget for its own north-up control. */
+export interface OrientNorthCameraTarget {
+  requestId: string;
+}
+
 /** Planning's map chrome (waypoint markers, dashed unrouted-preview line,
  * tap-to-place), grouped into one prop rather than several unrelated
  * ones. Never used by Riding mode — when absent, the underlying sources
@@ -337,6 +363,12 @@ export interface MapViewProps {
    * re-applies (deduped by requestId, not value). Planning-only; Riding
    * never supplies this. */
   boundsTarget?: BoundsCameraTarget | null;
+  /** An explicit "recentre only" request — see CentreCameraTarget.
+   * Planning-only; Riding never supplies this. */
+  centreTarget?: CentreCameraTarget | null;
+  /** An explicit "reorient to north-up/top-down" request — see
+   * OrientNorthCameraTarget. Planning-only; Riding never supplies this. */
+  orientNorthTarget?: OrientNorthCameraTarget | null;
   /** Skips the automatic "fit to route" once the map is ready — used when
    * resuming a ride that wasn't in overview mode before suspension, so
    * the restored following/free camera isn't briefly overridden by a
@@ -405,6 +437,8 @@ export function MapView({
   mapFactory = createMapLibreMap,
   cameraTarget = null,
   boundsTarget = null,
+  centreTarget = null,
+  orientNorthTarget = null,
   suppressInitialOverviewFit = false,
   onUserCameraInteraction,
   onCameraSettled,
@@ -458,6 +492,11 @@ export function MapView({
   // Deduped by requestId, not by value — see the BoundsCameraTarget
   // effect below and its own doc comment.
   const lastAppliedBoundsRequestIdRef = useRef<string | null>(null);
+  // Deduped by requestId, not by value — see CentreCameraTarget/
+  // OrientNorthCameraTarget's own doc comments for why these two mirror
+  // lastAppliedBoundsRequestIdRef rather than lastAppliedCameraTargetRef.
+  const lastAppliedCentreRequestIdRef = useRef<string | null>(null);
+  const lastAppliedOrientNorthRequestIdRef = useRef<string | null>(null);
   const [loadState, setLoadState] = useState<MapLoadState>("loading");
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
@@ -465,6 +504,16 @@ export function MapView({
   const [usingFallbackStyle, setUsingFallbackStyle] = useState(false);
   const [routeSourceLoaded, setRouteSourceLoaded] = useState(false);
   const [cameraCenter, setCameraCenter] = useState<Coordinate | null>(null);
+  // The map's own zoom/bearing/pitch as of the last settle — diagnostic
+  // only (data-camera-zoom/-bearing/-pitch below), mirroring cameraCenter/
+  // data-camera-center's existing purpose: lets a test (or a human) read
+  // the map's actual live orientation rather than trusting React state
+  // that may have been set from a stale pre-gesture value.
+  const [cameraOrientation, setCameraOrientation] = useState<{
+    zoom: number;
+    bearingDegrees: number;
+    pitchDegrees: number;
+  } | null>(null);
   // The map's own zoom, rounded to the nearest whole level and updated
   // only when the camera settles (never per animation frame) — the sole
   // input, together with route length, to the adaptive distance-badge
@@ -517,10 +566,13 @@ export function MapView({
     setUsingFallbackStyle(false);
     setRouteSourceLoaded(false);
     setCameraCenter(null);
+    setCameraOrientation(null);
     setDistanceBadgeZoom(null);
     setStyleStructurallyReady(false);
     lastAppliedCameraTargetRef.current = null;
     lastAppliedBoundsRequestIdRef.current = null;
+    lastAppliedCentreRequestIdRef.current = null;
+    lastAppliedOrientNorthRequestIdRef.current = null;
 
     function recordAttempt(category: MapDiagnosticCategory, justResumed = false): void {
       recordMapAttempt({
@@ -774,6 +826,11 @@ export function MapView({
         // jump, free-mode panning), not just the initial overview fit,
         // which is the only thing that used to update it.
         setCameraCenter(camera.coordinate);
+        setCameraOrientation({
+          zoom: camera.zoom,
+          bearingDegrees: camera.bearingDegrees,
+          pitchDegrees: camera.pitchDegrees,
+        });
         // Quantised to the nearest whole zoom level, with a no-op guard
         // (skip the state update entirely when unchanged) — this, plus
         // only ever reading zoom here rather than per animation frame,
@@ -1150,6 +1207,39 @@ export function MapView({
     if (center) setCameraCenter(center);
   }, [boundsTarget, styleStructurallyReady]);
 
+  // Executes an explicit "recentre only" request (Planning's GPS-centre
+  // control, once the session's initial regional framing has already
+  // happened once) — deduped by requestId, like boundsTarget above, not by
+  // value like cameraTarget. Deliberately does NOT eagerly read back
+  // getCenter() the way the boundsTarget effect above does: that fit is
+  // always animate:false, so an immediate read is already correct, but
+  // centreOn eases, so an immediate read would capture the pre-transition
+  // centre — the existing onCameraSettled handler above catches up once
+  // the ease genuinely finishes, exactly like the animate:true cameraTarget
+  // effect above already relies on.
+  useEffect(() => {
+    if (!styleStructurallyReady || !centreTarget) return;
+    if (lastAppliedCentreRequestIdRef.current === centreTarget.requestId) return;
+    lastAppliedCentreRequestIdRef.current = centreTarget.requestId;
+    mapRef.current?.centreOn(centreTarget.coordinate, { animate: true });
+  }, [centreTarget, styleStructurallyReady]);
+
+  // Executes an explicit "reorient to north-up/top-down" request
+  // (Planning's Northwards control) — deduped by requestId, not by value,
+  // via a dedicated ref rather than the shared cameraTarget pipeline's
+  // lastAppliedCameraTargetRef. Reuses setCamera exactly as the shared
+  // cameraTarget pipeline would (same fixed (null, null, 0, 0, ...) call);
+  // only the dedup/delivery mechanism is different, so a second press after
+  // an intervening manual rotation still re-applies instead of being
+  // silently swallowed as a value-identical repeat.
+  useEffect(() => {
+    if (!styleStructurallyReady || !orientNorthTarget) return;
+    if (lastAppliedOrientNorthRequestIdRef.current === orientNorthTarget.requestId)
+      return;
+    lastAppliedOrientNorthRequestIdRef.current = orientNorthTarget.requestId;
+    mapRef.current?.setCamera(null, null, 0, 0, { animate: true, followOffset: false });
+  }, [orientNorthTarget, styleStructurallyReady]);
+
   useEffect(() => {
     if (!styleStructurallyReady) return;
     mapRef.current?.setGeoJsonSourceData(
@@ -1277,6 +1367,13 @@ export function MapView({
         data-route-loaded={routeSourceLoaded ? "true" : "false"}
         data-camera-center={
           cameraCenter ? `${String(cameraCenter[0])},${String(cameraCenter[1])}` : ""
+        }
+        data-camera-zoom={cameraOrientation ? String(cameraOrientation.zoom) : ""}
+        data-camera-bearing={
+          cameraOrientation ? String(cameraOrientation.bearingDegrees) : ""
+        }
+        data-camera-pitch={
+          cameraOrientation ? String(cameraOrientation.pitchDegrees) : ""
         }
         style={{ width: "100%", height: "100%" }}
       />

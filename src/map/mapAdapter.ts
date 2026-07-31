@@ -31,6 +31,12 @@ const FOLLOW_VERTICAL_OFFSET_PX = 60;
  * responsive to a fresh fix, long enough to avoid a visible jump. */
 const FOLLOW_EASE_DURATION_MS = 600;
 
+/** Duration of Planning's GPS-centre ease — a distinct constant from
+ * FOLLOW_EASE_DURATION_MS even though the value matches, since that one is
+ * documented as specifically about Riding's continuous GPS-follow ease,
+ * an unrelated camera-motion concern from this single one-shot recentre. */
+const CENTRE_EASE_DURATION_MS = 600;
+
 /** Half-width/height, in CSS pixels, of the small screen-space box used
  * to hit-test a tapped warning segment or route feature — independent of
  * geographic zoom, so a thin line stays comfortably tappable on a phone
@@ -287,6 +293,15 @@ export interface MapLibreLike {
     pitchDegrees: number,
     options: { animate: boolean; followOffset: boolean },
   ): void;
+  /** Moves only the camera's centre, leaving zoom, bearing and pitch
+   * genuinely untouched by never including them in the underlying
+   * easeTo/jumpTo call — MapLibre's own "omitted field = unchanged"
+   * semantics do the preserving, so this never reads-then-rewrites a
+   * possibly-stale value. Used by Planning's GPS-centre control, which
+   * must never disturb whatever zoom/bearing/pitch the rider already has
+   * (see setCamera, which always writes bearing/pitch explicitly and so
+   * cannot express "leave orientation alone"). */
+  centreOn(coordinate: Coordinate, options: { animate: boolean }): void;
   /** Recomputes the map's size from its container. Needed after the container's
    * on-screen size changes post-creation (e.g. iOS Safari/PWA chrome settling
    * after first paint) — otherwise fitBounds/camera maths use stale dimensions. */
@@ -623,6 +638,15 @@ export class MapLibreAdapter implements MapLibreLike {
         bearing: bearingDegrees,
         pitch: pitchDegrees,
       });
+    }
+  }
+
+  centreOn(coordinate: Coordinate, options: { animate: boolean }): void {
+    const center: [number, number] = [coordinate[0], coordinate[1]];
+    if (options.animate) {
+      this.map.easeTo({ center, duration: CENTRE_EASE_DURATION_MS, essential: true });
+    } else {
+      this.map.jumpTo({ center });
     }
   }
 

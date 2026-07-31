@@ -89,6 +89,7 @@ interface MockMapHandle {
   getCenterSpy: ReturnType<typeof vi.fn>;
   getZoomSpy: ReturnType<typeof vi.fn>;
   setCameraSpy: ReturnType<typeof vi.fn>;
+  centreOnSpy: ReturnType<typeof vi.fn>;
   addLineLayerSpy: ReturnType<typeof vi.fn>;
   addImageSpy: ReturnType<typeof vi.fn>;
   addSymbolLayerSpy: ReturnType<typeof vi.fn>;
@@ -142,6 +143,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
   const getCenterSpy = vi.fn(() => center);
   const getZoomSpy = vi.fn(() => 14);
   const setCameraSpy = vi.fn();
+  const centreOnSpy = vi.fn();
   const addLineLayerSpy = vi.fn();
   const addImageSpy = vi.fn();
   const addSymbolLayerSpy = vi.fn();
@@ -211,6 +213,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
         cameraSettledListener = listener;
       },
       setCamera: setCameraSpy,
+      centreOn: centreOnSpy,
       resize: resizeSpy,
       onMapTap: (listener) => {
         mapTapListener = listener;
@@ -231,6 +234,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
     getCenterSpy,
     getZoomSpy,
     setCameraSpy,
+    centreOnSpy,
     addLineLayerSpy,
     addImageSpy,
     addSymbolLayerSpy,
@@ -597,6 +601,30 @@ describe("MapView", () => {
     );
   });
 
+  it("exposes zoom/bearing/pitch as diagnostic attributes once the camera settles, empty before the first settle", () => {
+    const mock = createMockMapFactory();
+    render(
+      <MapView points={points} mapFactory={mock.factory} suppressInitialOverviewFit />,
+    );
+    mock.triggerLoad();
+
+    const container = screen.getByTestId("map-container");
+    expect(container).toHaveAttribute("data-camera-zoom", "");
+    expect(container).toHaveAttribute("data-camera-bearing", "");
+    expect(container).toHaveAttribute("data-camera-pitch", "");
+
+    mock.triggerCameraSettled({
+      coordinate: [-1.1, 52.2],
+      zoom: 15.25,
+      bearingDegrees: -42,
+      pitchDegrees: 23,
+    });
+
+    expect(container).toHaveAttribute("data-camera-zoom", "15.25");
+    expect(container).toHaveAttribute("data-camera-bearing", "-42");
+    expect(container).toHaveAttribute("data-camera-pitch", "23");
+  });
+
   it("applies an animated following cameraTarget via setCamera once ready, carrying centre/zoom/bearing/pitch/offset together", () => {
     const mock = createMockMapFactory();
     render(
@@ -879,6 +907,153 @@ describe("MapView", () => {
     );
 
     expect(mock.fitBoundsSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies a centreTarget via centreOn once ready", () => {
+    const mock = createMockMapFactory();
+    render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        centreTarget={{ coordinate: [-1.5, 53.8], requestId: "request-1" }}
+      />,
+    );
+
+    mock.triggerLoad();
+
+    expect(mock.centreOnSpy).toHaveBeenCalledWith([-1.5, 53.8], { animate: true });
+  });
+
+  it("does not re-apply a centreTarget with the same requestId, even as a new object", () => {
+    const mock = createMockMapFactory();
+    const centreTarget = {
+      coordinate: [-1.5, 53.8] as Coordinate,
+      requestId: "request-1",
+    };
+    const { rerender } = render(
+      <MapView points={points} mapFactory={mock.factory} centreTarget={centreTarget} />,
+    );
+    mock.triggerLoad();
+    expect(mock.centreOnSpy).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        centreTarget={{ ...centreTarget }}
+      />,
+    );
+
+    expect(mock.centreOnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-applies a centreTarget when only requestId changes, even with an identical coordinate", () => {
+    const mock = createMockMapFactory();
+    const coordinate: Coordinate = [-1.5, 53.8];
+    const { rerender } = render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        centreTarget={{ coordinate, requestId: "request-1" }}
+      />,
+    );
+    mock.triggerLoad();
+    expect(mock.centreOnSpy).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        centreTarget={{ coordinate, requestId: "request-2" }}
+      />,
+    );
+
+    expect(mock.centreOnSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies an orientNorthTarget via the existing setCamera reset once ready", () => {
+    const mock = createMockMapFactory();
+    render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        orientNorthTarget={{ requestId: "request-1" }}
+      />,
+    );
+
+    mock.triggerLoad();
+
+    expect(mock.setCameraSpy).toHaveBeenCalledWith(null, null, 0, 0, {
+      animate: true,
+      followOffset: false,
+    });
+  });
+
+  it("does not re-apply an orientNorthTarget with the same requestId, even as a new object", () => {
+    const mock = createMockMapFactory();
+    const { rerender } = render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        orientNorthTarget={{ requestId: "request-1" }}
+      />,
+    );
+    mock.triggerLoad();
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        orientNorthTarget={{ requestId: "request-1" }}
+      />,
+    );
+
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-applies setCamera on a second orientNorthTarget request even though the payload is byte-identical — the Northwards-pressed-twice regression", () => {
+    const mock = createMockMapFactory();
+    const { rerender } = render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        orientNorthTarget={{ requestId: "request-1" }}
+      />,
+    );
+    mock.triggerLoad();
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(1);
+    expect(mock.setCameraSpy).toHaveBeenNthCalledWith(1, null, null, 0, 0, {
+      animate: true,
+      followOffset: false,
+    });
+
+    // Simulates the rider manually rotating away from north between the
+    // two presses — a real gesture updates onCameraSettled state but never
+    // touches the requestId-dedup ref, unlike the shared cameraTarget
+    // pipeline's value-based dedup, which this second, differently-
+    // requestId'd command must NOT be swallowed by.
+    mock.triggerUserCameraInteraction();
+    mock.triggerCameraSettled({
+      coordinate: [0, 51],
+      zoom: 14,
+      bearingDegrees: 45,
+      pitchDegrees: 0,
+    });
+
+    rerender(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        orientNorthTarget={{ requestId: "request-2" }}
+      />,
+    );
+
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(2);
+    expect(mock.setCameraSpy).toHaveBeenNthCalledWith(2, null, null, 0, 0, {
+      animate: true,
+      followOffset: false,
+    });
   });
 
   it("sets the route coordinate-count once real, non-empty route data is submitted", () => {
@@ -1424,6 +1599,61 @@ describe("MapView", () => {
       expect(mock.fitBoundsSpy).toHaveBeenCalledWith({
         southWest: [-1.7, 53.6],
         northEast: [-1.3, 54.0],
+      });
+    });
+
+    it("retry preserves and re-applies a still-current centreTarget", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          centreTarget={{ coordinate: [-1.5, 53.8], requestId: "request-1" }}
+        />,
+      );
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+      expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+      mock.centreOnSpy.mockClear();
+
+      act(() => {
+        screen.getByTestId("retry-map-imagery-button").click();
+      });
+      mock.triggerLoad();
+
+      expect(mock.centreOnSpy).toHaveBeenCalledWith([-1.5, 53.8], { animate: true });
+    });
+
+    it("retry preserves and re-applies a still-current orientNorthTarget", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          orientNorthTarget={{ requestId: "request-1" }}
+        />,
+      );
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+      expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+      mock.setCameraSpy.mockClear();
+
+      act(() => {
+        screen.getByTestId("retry-map-imagery-button").click();
+      });
+      mock.triggerLoad();
+
+      expect(mock.setCameraSpy).toHaveBeenCalledWith(null, null, 0, 0, {
+        animate: true,
+        followOffset: false,
       });
     });
 

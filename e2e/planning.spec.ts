@@ -550,3 +550,139 @@ test("shows a visible current-location dot once geolocation resolves", async ({
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
+
+test("pressing Northwards twice, with a manual rotation in between, rotates back to north both times", async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Plan" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  const northButton = page.getByRole("button", { name: "North-up, top-down view" });
+
+  await northButton.click();
+  await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
+
+  const mapBox = await mapContainer.boundingBox();
+  if (!mapBox) {
+    throw new Error("expected the map container to lay out");
+  }
+  const centreX = mapBox.x + mapBox.width / 2;
+  const centreY = mapBox.y + mapBox.height / 2;
+
+  // MapLibre's default DragRotateHandler binds to a right-button drag
+  // (same gesture as distanceBadges.spec.ts/directionArrows.spec.ts).
+  await page.mouse.move(centreX, centreY);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(centreX + 150, centreY - 100, { steps: 10 });
+  await page.mouse.up({ button: "right" });
+
+  // Proves the drag genuinely rotated the map first — otherwise the second
+  // Northwards press below would prove nothing.
+  await expect.poll(() => mapContainer.getAttribute("data-camera-bearing")).not.toBe("0");
+
+  await northButton.click();
+  await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("Locate me recentres without disturbing live zoom, bearing or pitch", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: 53.8, longitude: -1.5 });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Plan" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  const locateButton = page.getByRole("button", { name: "Locate me" });
+
+  // Get past the session's first framing (the automatic fresh-session
+  // effect, or this press itself, whichever wins the race — either way
+  // the app-level result is the same) before isolating the recentre-only
+  // path this test targets.
+  await expect(locateButton).toBeEnabled();
+  await locateButton.click();
+  await expect(locateButton).toBeEnabled();
+  await expect(
+    page.getByText("Your location could not be determined."),
+  ).not.toBeVisible();
+
+  const mapBox = await mapContainer.boundingBox();
+  if (!mapBox) {
+    throw new Error("expected the map container to lay out");
+  }
+  const centreX = mapBox.x + mapBox.width / 2;
+  const centreY = mapBox.y + mapBox.height / 2;
+
+  // A real diagonal right-button drag rotates and pitches simultaneously
+  // (MapLibre's DragRotateHandler drives bearing from the horizontal
+  // component and pitch from the vertical one), reaching non-round live
+  // values — never ones Locate me could accidentally reproduce.
+  await page.mouse.move(centreX, centreY);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(centreX + 120, centreY - 100, { steps: 10 });
+  await page.mouse.up({ button: "right" });
+
+  // A left-button pan, moving the centre well away from the GPS fix —
+  // deterministic proof (independent of any wheel-zoom pivot behaviour)
+  // that the later recentre genuinely has something to correct.
+  await page.mouse.move(centreX, centreY);
+  await page.mouse.down();
+  await page.mouse.move(centreX + 150, centreY + 100, { steps: 10 });
+  await page.mouse.up();
+
+  const zoomBefore = await mapContainer.getAttribute("data-camera-zoom");
+  const bearingBefore = await mapContainer.getAttribute("data-camera-bearing");
+  const pitchBefore = await mapContainer.getAttribute("data-camera-pitch");
+  expect(bearingBefore).not.toBe("0");
+  expect(pitchBefore).not.toBe("0");
+
+  await locateButton.click();
+
+  // The fixed geolocation mock makes the recentred target deterministic —
+  // poll for the centre actually returning close to it, the canonical
+  // "transition genuinely completed" signal (mirrors smoke.spec.ts's own
+  // data-camera-center poll), rather than an arbitrary sleep.
+  await expect
+    .poll(async () => {
+      const raw = await mapContainer.getAttribute("data-camera-center");
+      if (!raw) return false;
+      const [lon, lat] = raw.split(",").map(Number);
+      return Math.abs(lon - -1.5) < 0.01 && Math.abs(lat - 53.8) < 0.01;
+    })
+    .toBe(true);
+
+  expect(await mapContainer.getAttribute("data-camera-zoom")).toBe(zoomBefore);
+  expect(await mapContainer.getAttribute("data-camera-bearing")).toBe(bearingBefore);
+  expect(await mapContainer.getAttribute("data-camera-pitch")).toBe(pitchBefore);
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
