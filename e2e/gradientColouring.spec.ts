@@ -649,10 +649,49 @@ test.describe("Riding", () => {
     });
     expect(reselectedSample.micro.pixelCount).toBeGreaterThan(0);
 
+    // The new detailed pre-ride climb chart, added alongside the dropdown,
+    // renders its own filled area with the same authoritative local-
+    // gradient colours as the active current-climb view, and — since this
+    // is a read-only preview, not an active ride — has no rider-position
+    // marker.
+    const detailChart = page.getByRole("img", { name: "Elevation profile for Climb 1" });
+    await expect(detailChart).toBeVisible();
+    expect(
+      await detailChart.locator(".elevation-chart-area-fill").count(),
+    ).toBeGreaterThan(0);
+    expect(await detailChart.locator(".elevation-chart-marker").count()).toBe(0);
+
     // Starting the ride hides the pre-ride selector entirely.
     await startButton.click();
     await expect(select).toBeHidden();
 
     expect(consoleErrors).toEqual([]);
+  });
+});
+
+test.describe("Riding: pre-ride climb chart layout", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("the pre-ride selected-climb chart introduces no horizontal overflow at the project's narrow mobile viewport", async ({
+    page,
+  }) => {
+    await forceMapStyleFailure(page);
+
+    await page.goto("/");
+    await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
+    const routeButton = page.getByRole("button", { name: "gradient-route" });
+    await expect(routeButton).toBeVisible();
+    await routeButton.click();
+
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    await expect(
+      page.getByRole("heading", { name: "Climb 1 · Category 3" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("img", { name: "Elevation profile for Climb 1" }),
+    ).toBeVisible();
+
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(390);
   });
 });

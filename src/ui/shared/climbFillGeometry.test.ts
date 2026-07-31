@@ -80,6 +80,22 @@ describe("buildClimbFillRuns", () => {
     expect(areaPathFromRun(result[0]?.at(-1)?.points ?? [], 200)).toBe("");
   });
 
+  it("treats every run as not-yet-completed and leaves points unsplit when markerX is null (no progress to split against)", () => {
+    const detailRuns: FeatureDetailChartRun[][] = [
+      [
+        { visualKey: "moderate-climb", points: points(0, 30) },
+        { visualKey: "hard-climb", points: points(30, 100) },
+      ],
+    ];
+
+    const result = buildClimbFillRuns(detailRuns, null);
+
+    expect(result[0]).toEqual([
+      { visualKey: "moderate-climb", completed: false, points: points(0, 30) },
+      { visualKey: "hard-climb", completed: false, points: points(30, 100) },
+    ]);
+  });
+
   it("preserves the outer per-geometry-segment shape and a null visualKey", () => {
     const detailRuns: FeatureDetailChartRun[][] = [
       [{ visualKey: null, points: points(0, 20) }],

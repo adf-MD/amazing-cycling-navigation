@@ -56,6 +56,40 @@ describe("ElevationChart", () => {
     expect(screen.getByText("10–40 m")).toBeInTheDocument();
   });
 
+  it("overrides both the figure and chart accessible names with ariaLabel when supplied", () => {
+    const points = buildPoints([
+      [0, 10],
+      [500, 40],
+      [1000, 25],
+    ]);
+    const { container } = render(
+      <ElevationChart points={points} ariaLabel="Elevation profile for Climb 2" />,
+    );
+
+    expect(
+      screen.getByRole("img", { name: "Elevation profile for Climb 2" }),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector('figure[aria-label="Elevation profile for Climb 2"]'),
+    ).not.toBeNull();
+  });
+
+  it("keeps the default generic accessible names when ariaLabel is omitted", () => {
+    const points = buildPoints([
+      [0, 10],
+      [500, 40],
+      [1000, 25],
+    ]);
+    const { container } = render(<ElevationChart points={points} />);
+
+    expect(
+      screen.getByRole("img", { name: "Elevation profile chart" }),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector('figure[aria-label="Elevation profile"]'),
+    ).not.toBeNull();
+  });
+
   it("notes that some sections have no elevation data for a partial route", () => {
     const points = buildPoints([
       [0, 10],
@@ -558,11 +592,21 @@ describe("ElevationChart", () => {
       expect(container.querySelector("path.elevation-chart-area-fill")).toBeNull();
     });
 
-    it("renders no fill when areaFill is set but marker is omitted", () => {
+    it("renders one uniform-opacity fill (no completed/remaining split) when areaFill and gradientSegments are set but marker is omitted — the pre-ride whole-climb preview case", () => {
       const { container } = render(
         <ElevationChart points={points} areaFill gradientSegments={segments} />,
       );
-      expect(container.querySelector("path.elevation-chart-area-fill")).toBeNull();
+      const fills = Array.from(
+        container.querySelectorAll("path.elevation-chart-area-fill"),
+      );
+      expect(fills.length).toBeGreaterThan(0);
+      const opacities = fills.map((path) => path.getAttribute("fill-opacity"));
+      expect(new Set(opacities).size).toBe(1);
+      // No rider progress means nothing is "completed" and the profile
+      // stroke is not split into completed/remaining either.
+      expect(container.querySelector("path.elevation-chart-completed")).toBeNull();
+      expect(container.querySelector("path.elevation-chart-marker")).toBeNull();
+      expect(container.querySelector("line.elevation-chart-baseline")).not.toBeNull();
     });
 
     it("colours each fill piece per its own local-gradient band", () => {

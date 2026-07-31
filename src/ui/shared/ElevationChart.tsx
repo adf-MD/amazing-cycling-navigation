@@ -98,11 +98,21 @@ export interface ElevationChartProps {
   /** Renders a filled area under the profile, down to the chart's own
    * padded lower elevation bound, coloured per detailed local-gradient
    * band — the Climb view's own presentation. Has no effect unless
-   * `gradientSegments` and `marker` are also supplied (the fill's colour
-   * and progress-split sources); every existing caller omits this and is
-   * rendered exactly as before. Full/2/5/10 km views and Planning must
-   * never set this. */
+   * `gradientSegments` is also supplied (the fill's colour source); every
+   * existing caller that omits both is rendered exactly as before.
+   * `marker`, when also supplied, additionally splits the fill into a
+   * lower-opacity completed portion and a prominent remaining portion; with
+   * no marker, the whole fill renders at one uniform (remaining-style)
+   * opacity — the pre-ride whole-climb preview's own presentation, which
+   * has no rider progress to split against. Full/2/5/10 km views and
+   * Planning must never set this. */
   areaFill?: boolean;
+  /** Overrides the default "Elevation profile"/"Elevation profile chart"
+   * figure and chart accessible names with this exact same string for
+   * both — used when a caller needs the name to identify which specific
+   * climb is shown (e.g. "Elevation profile for Climb 2"). Omitting
+   * preserves today's two generic names for every existing caller. */
+  ariaLabel?: string;
   width?: number;
   height?: number;
 }
@@ -154,6 +164,7 @@ export function ElevationChart({
   selectedRangeMetres = null,
   onTapDistance,
   areaFill = false,
+  ariaLabel,
   width = DEFAULT_WIDTH,
   height = DEFAULT_HEIGHT,
 }: ElevationChartProps) {
@@ -202,13 +213,16 @@ export function ElevationChart({
       )
     : null;
 
-  // Climb view only: detailRuns is already the exact gradient-band-
-  // coloured geometry the fill needs to close down to the baseline —
-  // further split at the rider's own progress (markerGeometry.x) so the
-  // completed/remaining treatment matches the profile line's own split.
+  // Climb view / pre-ride climb preview only: detailRuns is already the
+  // exact gradient-band-coloured geometry the fill needs to close down to
+  // the baseline — split at the rider's own progress (markerGeometry.x)
+  // when there is one, so the completed/remaining treatment matches the
+  // profile line's own split; with no marker (the pre-ride preview, which
+  // has no progress to split against), every run renders as one uniform
+  // fill instead.
   const climbFillRuns =
-    areaFill && detailRuns && markerGeometry
-      ? buildClimbFillRuns(detailRuns, markerGeometry.x)
+    areaFill && detailRuns
+      ? buildClimbFillRuns(detailRuns, markerGeometry?.x ?? null)
       : null;
 
   function isSelected(runPoints: readonly ElevationChartPoint[]): boolean {
@@ -283,13 +297,13 @@ export function ElevationChart({
   }
 
   return (
-    <figure aria-label="Elevation profile">
+    <figure aria-label={ariaLabel ?? "Elevation profile"}>
       <svg
         viewBox={`0 0 ${String(width)} ${String(height)}`}
         width="100%"
         height={height}
         role="img"
-        aria-label="Elevation profile chart"
+        aria-label={ariaLabel ?? "Elevation profile chart"}
       >
         {onTapDistance && (
           <rect

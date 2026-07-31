@@ -23,8 +23,8 @@ import { buildFeatureDetailSegments } from "../../navigation/routeFeatureDetail.
 import type { MicroDetailVisualKey } from "../../navigation/routeFeaturePalette.ts";
 import type { ClassifiedSegment } from "../../navigation/gradient.ts";
 import {
+  buildClimbChartViewModel,
   computeClimbProgressMetrics,
-  selectClimbElevationWindow,
   selectEffectiveElevationView,
 } from "../../navigation/climbElevationView.ts";
 import { selectNextManoeuvre } from "../../navigation/nextManoeuvre.ts";
@@ -252,6 +252,37 @@ export function RidingScreen({
       microDetailFeature ? buildFeatureDetailSegments(microDetailFeature, runs) : [],
     [microDetailFeature, runs],
   );
+  // A read-only, whole-climb preview of whatever's selected in the pre-ride
+  // dropdown — same gate as preRideClimbNumber above, so the heading, this
+  // chart, and RouteFeatureDetailsPanel's own facts always describe the
+  // same climb in the same render. Reuses microDetailSegments (already
+  // memoized above) rather than reclassifying. Built inline, unmemoized,
+  // matching how the active Climb-view branch below has always constructed
+  // its own equivalent window — this one is strictly cheaper, since it only
+  // changes on a dropdown-driven re-render, never per GPS tick.
+  const preRideClimbChart =
+    nav.geolocationStatus === "idle" &&
+    microDetailFeature?.kind === "climb" &&
+    preRideClimbNumber !== undefined
+      ? (() => {
+          const viewModel = buildClimbChartViewModel(
+            { kind: "pre-ride-selected-climb" },
+            microDetailFeature,
+            displayPoints,
+            microDetailSegments,
+          );
+          return (
+            <ElevationChart
+              points={viewModel.points}
+              domain={viewModel.domain}
+              gradientSegments={viewModel.gradientSegments}
+              areaFill={viewModel.areaFill}
+              marker={viewModel.marker}
+              ariaLabel={`Elevation profile for Climb ${String(preRideClimbNumber)}`}
+            />
+          );
+        })()
+      : undefined;
   // The climb the rider is actually riding through, independent of any
   // unrelated explicit tap/dropdown selection elsewhere (microDetailFeature
   // above) — Climb elevation view must always reflect live progress, never
@@ -618,30 +649,31 @@ export function RidingScreen({
           effectiveElevationView.kind === "climb" &&
           climbProgressMetrics !== null
         ) {
-          const climbWindow = selectClimbElevationWindow(
+          const climbViewModel = buildClimbChartViewModel(
+            {
+              kind: "active-current-climb",
+              marker: {
+                distanceFromStartMetres:
+                  climbProgressMetrics.clampedPresentationDistanceMetres,
+                elevationMetres: climbProgressMetrics.currentElevationMetres,
+                stale: nav.isStale,
+              },
+            },
+            activeClimb,
             displayPoints,
-            activeClimb.startDistanceMetres,
-            activeClimb.endDistanceMetres,
+            activeClimbDetailSegments,
           );
           displayedMicroSegments = activeClimbDetailSegments;
           displayedMicroDetailFeature = activeClimb;
           chart = (
             <ElevationChart
-              points={climbWindow.points}
-              domain={{
-                startDistanceMetres: climbWindow.startDistanceMetres,
-                endDistanceMetres: climbWindow.endDistanceMetres,
-              }}
-              gradientSegments={activeClimbDetailSegments}
-              areaFill
+              points={climbViewModel.points}
+              domain={climbViewModel.domain}
+              gradientSegments={climbViewModel.gradientSegments}
+              areaFill={climbViewModel.areaFill}
               selectedRangeMetres={chartSelectedRangeMetres}
               onTapDistance={handleChartTapDistance}
-              marker={{
-                distanceFromStartMetres:
-                  climbProgressMetrics.clampedPresentationDistanceMetres,
-                elevationMetres: climbProgressMetrics.currentElevationMetres,
-                stale: nav.isStale,
-              }}
+              marker={climbViewModel.marker}
             />
           );
           climbProgressPanel = (
@@ -720,6 +752,7 @@ export function RidingScreen({
             <RouteFeatureDetailsPanel
               feature={microDetailFeature}
               climbNumber={preRideClimbNumber}
+              detailChart={preRideClimbChart}
               onClear={selectedFeature ? handleClearRouteFeatureSelection : undefined}
             />
             <GradientSegmentDetailsPanel

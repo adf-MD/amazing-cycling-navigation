@@ -98,6 +98,32 @@ describe("RouteFeatureDetailsPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders detailChart directly between the heading and the fact list when supplied", () => {
+    const { container } = render(
+      <RouteFeatureDetailsPanel
+        feature={climb}
+        detailChart={<div data-testid="detail-chart">chart</div>}
+      />,
+    );
+    const section = container.querySelector("section.route-feature-details");
+    const children = Array.from(section?.children ?? []);
+    const headingIndex = children.findIndex((child) => child.tagName === "H3");
+    const chartIndex = children.findIndex(
+      (child) => child.getAttribute("data-testid") === "detail-chart",
+    );
+    const firstFactIndex = children.findIndex(
+      (child) => child.tagName === "P" && child.textContent.includes("Route position"),
+    );
+    expect(headingIndex).toBeGreaterThanOrEqual(0);
+    expect(chartIndex).toBe(headingIndex + 1);
+    expect(firstFactIndex).toBe(chartIndex + 1);
+  });
+
+  it("renders no extra chart element when detailChart is omitted", () => {
+    render(<RouteFeatureDetailsPanel feature={climb} />);
+    expect(screen.queryByTestId("detail-chart")).toBeNull();
+  });
+
   it("renders a visible category-colour line sample next to the heading", () => {
     render(<RouteFeatureDetailsPanel feature={climb} />);
     const swatch = document.querySelector(".gradient-colour-swatch");

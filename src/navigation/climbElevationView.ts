@@ -110,6 +110,102 @@ export function selectClimbElevationWindow(
   };
 }
 
+/**
+ * Which climb-chart presentation to build — the two contexts that reuse the
+ * same underlying rendering path (see `buildClimbChartViewModel`), made
+ * explicit rather than a loose collection of booleans:
+ *
+ * - `"active-current-climb"`: the live Climb elevation view shown during an
+ *   active ride, with the rider's own progress as a marker.
+ * - `"pre-ride-selected-climb"`: a read-only preview of whichever climb is
+ *   selected in the pre-ride dropdown — the whole climb, no marker.
+ */
+export type ClimbChartMode =
+  | { kind: "pre-ride-selected-climb" }
+  | {
+      kind: "active-current-climb";
+      marker: {
+        distanceFromStartMetres: number;
+        elevationMetres: number | null;
+        stale: boolean;
+      };
+    };
+
+export interface ClimbChartViewModel {
+  points: RoutePoint[];
+  domain: { startDistanceMetres: number; endDistanceMetres: number };
+  gradientSegments: ClassifiedSegment<MicroDetailVisualKey>[];
+  marker: {
+    distanceFromStartMetres: number;
+    elevationMetres: number | null;
+    stale: boolean;
+  } | null;
+  areaFill: boolean;
+}
+
+/**
+ * Builds everything `ElevationChart` needs to render either climb-chart
+ * presentation from the same recognised-climb data, so both contexts share
+ * one rendering path rather than each constructing their own points/domain.
+ * Deliberately returns plain object shapes (not `ElevationChartDomain`/
+ * `ElevationChartMarkerInput` from the `ui` layer) so this navigation-layer
+ * module never imports from `src/ui/` — the shapes match structurally, so a
+ * caller can still spread the result straight into `ElevationChart`'s props.
+ *
+ * For `"active-current-climb"`, `points`/`domain`/`gradientSegments` are the
+ * climb's own window in route-global metres, unchanged from how the active
+ * Climb view has always built them. For `"pre-ride-selected-climb"`, every
+ * point and segment is rebased so the climb's own start is distance 0 —
+ * `ElevationChart` renders no distance tick labels today, so this rebase is
+ * pixel-equivalent to leaving the domain route-global; its value is making
+ * this pure model's own output genuinely "local distance from climb start",
+ * which is what a unit test (and any future on-chart label) can rely on.
+ */
+export function buildClimbChartViewModel(
+  mode: ClimbChartMode,
+  climb: ClimbFeature,
+  displayPoints: readonly RoutePoint[],
+  detailSegments: readonly ClassifiedSegment<MicroDetailVisualKey>[],
+): ClimbChartViewModel {
+  const window = selectClimbElevationWindow(
+    displayPoints,
+    climb.startDistanceMetres,
+    climb.endDistanceMetres,
+  );
+
+  if (mode.kind === "active-current-climb") {
+    return {
+      points: window.points,
+      domain: {
+        startDistanceMetres: window.startDistanceMetres,
+        endDistanceMetres: window.endDistanceMetres,
+      },
+      gradientSegments: [...detailSegments],
+      marker: mode.marker,
+      areaFill: true,
+    };
+  }
+
+  const offsetMetres = window.startDistanceMetres;
+  return {
+    points: window.points.map((point) => ({
+      ...point,
+      distanceFromStartMetres: point.distanceFromStartMetres - offsetMetres,
+    })),
+    domain: {
+      startDistanceMetres: 0,
+      endDistanceMetres: window.endDistanceMetres - offsetMetres,
+    },
+    gradientSegments: detailSegments.map((segment) => ({
+      ...segment,
+      startDistanceMetres: segment.startDistanceMetres - offsetMetres,
+      endDistanceMetres: segment.endDistanceMetres - offsetMetres,
+    })),
+    marker: null,
+    areaFill: true,
+  };
+}
+
 export interface ClimbProgressMetrics {
   /** The presentation distance clamped to [climb.startDistanceMetres,
    * climb.endDistanceMetres] — used as the chart marker's own distance. */

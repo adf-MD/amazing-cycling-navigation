@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { RouteFeature } from "../../navigation/routeFeatures.ts";
 import {
   CLIMB_CATEGORY_NAMES,
@@ -23,6 +24,13 @@ export interface RouteFeatureDetailsPanelProps {
    * the plain "Category 3 climb" heading used everywhere else. Omitted
    * (or a descent feature) preserves the existing heading exactly. */
   climbNumber?: number;
+  /** An optional detailed chart for the shown feature, rendered directly
+   * below the heading and above the fact list. Currently only supplied by
+   * Riding's pre-ride climb preview (see RidingScreen.tsx); omitted by
+   * Planning and by Riding's own active-climb view (which shows its own
+   * chart separately, above this panel, via RidingClimbProgressPanel),
+   * leaving every other caller's layout unchanged. */
+  detailChart?: ReactNode;
   /** Omit to render no clear control (e.g. Riding might prefer the
    * feature to simply update as the rider progresses, with no explicit
    * "clear" action while merely active-not-selected). */
@@ -41,6 +49,7 @@ export interface RouteFeatureDetailsPanelProps {
 export function RouteFeatureDetailsPanel({
   feature,
   climbNumber,
+  detailChart,
   onClear,
 }: RouteFeatureDetailsPanelProps) {
   if (feature === null) {
@@ -60,6 +69,7 @@ export function RouteFeatureDetailsPanel({
       <h3>
         <GradientColourSwatch colour={ROUTE_FEATURE_COLOURS[visualKey]} /> {heading}
       </h3>
+      {detailChart}
       <p>
         Route position: {formatDistanceKmValue(feature.startDistanceMetres)}–
         {formatDistanceKmValue(feature.endDistanceMetres)} km

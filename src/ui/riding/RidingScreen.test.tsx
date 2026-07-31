@@ -16,6 +16,7 @@ import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry
 import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
 import { buildFakeWakeLockSource } from "../../test/fixtures/wakeLockSource.ts";
 import { OFF_ROUTE_BASE_METRES } from "../../navigation/offRoute.ts";
+import { MICRO_DETAIL_COLOURS } from "../../navigation/routeFeaturePalette.ts";
 import { routeTangentBearingDegrees } from "../../navigation/bearing.ts";
 import { FOLLOW_PITCH_DEGREES, NAVIGATION_ZOOM } from "./rideCamera.ts";
 
@@ -38,6 +39,28 @@ const route: PlannedRoute = {
   descentMetres: 0,
   warnings: [],
   source: { kind: "gpx-import" },
+};
+
+// A sustained, constant 8% climb, densely spaced (every 100 m, well under
+// gradient.ts's MAX_ELEVATION_GAP_METRES) and long enough to clear both
+// MIN_GRADE_WINDOW_METRES and GRADE_BASELINE_WINDOW_METRES — so every view
+// (pre-start, Full, windowed) should classify it identically as
+// "hard-climb" throughout. Shared by the "gradient integration" and
+// "pre-ride selected-climb chart" describe blocks below.
+const CLIMB_STEP_METRES = 100;
+const CLIMB_POINT_COUNT = 41; // 4000 m total
+const CLIMB_GRADE_PERCENT = 8;
+const climbRoute: PlannedRoute = {
+  ...route,
+  points: Array.from({ length: CLIMB_POINT_COUNT }, (_, index) => {
+    const distanceFromStartMetres = index * CLIMB_STEP_METRES;
+    return {
+      coordinate: [0.0001 * index, 51] as const,
+      elevationMetres: (distanceFromStartMetres * CLIMB_GRADE_PERCENT) / 100,
+      distanceFromStartMetres,
+    };
+  }),
+  distanceMetres: (CLIMB_POINT_COUNT - 1) * CLIMB_STEP_METRES,
 };
 
 function pointAt(index: number): Coordinate {
@@ -588,27 +611,6 @@ describe("RidingScreen", () => {
   });
 
   describe("gradient integration", () => {
-    // A sustained, constant 8% climb, densely spaced (every 100 m, well
-    // under gradient.ts's MAX_ELEVATION_GAP_METRES) and long enough to
-    // clear both MIN_GRADE_WINDOW_METRES and GRADE_BASELINE_WINDOW_METRES
-    // — so every view (pre-start, Full, windowed) should classify it
-    // identically as "hard-climb" throughout.
-    const CLIMB_STEP_METRES = 100;
-    const CLIMB_POINT_COUNT = 41; // 4000 m total
-    const CLIMB_GRADE_PERCENT = 8;
-    const climbRoute: PlannedRoute = {
-      ...route,
-      points: Array.from({ length: CLIMB_POINT_COUNT }, (_, index) => {
-        const distanceFromStartMetres = index * CLIMB_STEP_METRES;
-        return {
-          coordinate: [0.0001 * index, 51] as const,
-          elevationMetres: (distanceFromStartMetres * CLIMB_GRADE_PERCENT) / 100,
-          distanceFromStartMetres,
-        };
-      }),
-      distanceMetres: (CLIMB_POINT_COUNT - 1) * CLIMB_STEP_METRES,
-    };
-
     it("auto-selects the route's first recognised climb pre-ride, showing its numbered details heading and detailed local-gradient overlay immediately", () => {
       render(
         <RidingScreen
@@ -1041,6 +1043,282 @@ describe("RidingScreen", () => {
         screen.getByText("Elevation data is not available for this route."),
       ).toBeInTheDocument();
       expect(screen.queryByText("Gradient colours")).toBeNull();
+    });
+  });
+
+  describe("pre-ride selected-climb chart", () => {
+    // Two distinct recognised climbs (verified against the real
+    // detectRouteFeatures output before writing these assertions, since
+    // smoothing shifts boundaries slightly from the raw keyframes): climb-0
+    // (0-1000 m, category-4) and climb-1260 (1260-2250 m, category-4),
+    // separated by a short, brisk descent too short (990 m apart, well
+    // under nothing relevant here — the dip itself is only ~260 m) to
+    // register as its own recognised descent.
+    const twoClimbRoute: PlannedRoute = {
+      ...route,
+      id: "two-climb-route",
+      points: densifyElevationRoute(
+        [
+          { coordinate: [0, 51], elevationMetres: 0, distanceFromStartMetres: 0 },
+          { coordinate: [0.001, 51], elevationMetres: 85, distanceFromStartMetres: 1000 },
+          {
+            coordinate: [0.00125, 51],
+            elevationMetres: 55,
+            distanceFromStartMetres: 1250,
+          },
+          {
+            coordinate: [0.00225, 51],
+            elevationMetres: 140,
+            distanceFromStartMetres: 2250,
+          },
+        ],
+        100,
+      ),
+      distanceMetres: 2250,
+    };
+
+    // A single recognised climb (0-2000 m, category-4) with a genuine 300 m
+    // flat section in its middle (1000-1300 m) — verified via the real
+    // analysis to remain ONE climb feature (the flat stretch never splits
+    // it) while its own local-gradient segments classify in three pieces:
+    // hard-climb (0-980), gentle-or-descending (980-1300), hard-climb
+    // (1300-2000).
+    const FLAT_DIP_STEP_METRES = 100;
+    const FLAT_DIP_GRADE_PERCENT = 6;
+    const FLAT_START_METRES = 1000;
+    const FLAT_END_METRES = 1300;
+    const FLAT_DIP_TOTAL_METRES = 2000;
+    function flatDipElevationAt(distanceMetres: number): number {
+      const elevationAtFlatStart = (FLAT_START_METRES * FLAT_DIP_GRADE_PERCENT) / 100;
+      if (distanceMetres <= FLAT_START_METRES) {
+        return (distanceMetres * FLAT_DIP_GRADE_PERCENT) / 100;
+      }
+      if (distanceMetres <= FLAT_END_METRES) {
+        return elevationAtFlatStart;
+      }
+      return (
+        elevationAtFlatStart +
+        ((distanceMetres - FLAT_END_METRES) * FLAT_DIP_GRADE_PERCENT) / 100
+      );
+    }
+    const flatDipRoute: PlannedRoute = {
+      ...route,
+      id: "flat-dip-route",
+      points: Array.from(
+        { length: FLAT_DIP_TOTAL_METRES / FLAT_DIP_STEP_METRES + 1 },
+        (_, index) => {
+          const distanceFromStartMetres = index * FLAT_DIP_STEP_METRES;
+          return {
+            coordinate: [0.0001 * index, 51] as const,
+            elevationMetres: flatDipElevationAt(distanceFromStartMetres),
+            distanceFromStartMetres,
+          };
+        },
+      ),
+      distanceMetres: FLAT_DIP_TOTAL_METRES,
+    };
+
+    it("renders a detailed elevation chart directly between the selected climb's heading and its facts", () => {
+      const { container } = render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      const heading = screen.getByRole("heading", { name: "Climb 1 · Category 2" });
+      const chart = screen.getByRole("img", { name: "Elevation profile for Climb 1" });
+      const facts = screen.getByText(/Route position:/);
+
+      // DOCUMENT_POSITION_FOLLOWING (4).
+      expect(heading.compareDocumentPosition(chart) & 4).toBe(4);
+      expect(chart.compareDocumentPosition(facts) & 4).toBe(4);
+      expect(
+        container.querySelector("section.route-feature-details")?.contains(chart),
+      ).toBe(true);
+    });
+
+    it("covers the selected climb's complete start-to-end interval", () => {
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      const chart = screen.getByRole("img", { name: "Elevation profile for Climb 1" });
+      const path = chart.querySelector("path.elevation-chart-area-fill");
+      // Default chart width is 320; the climb's own start/finish map to the
+      // chart's own left/right edges.
+      expect(path?.getAttribute("d")).toMatch(/^M 0\.00 /);
+      expect(path?.getAttribute("d")).toContain("L 320.00 ");
+    });
+
+    it("updates heading, chart accessible name and facts together when the dropdown selection changes", async () => {
+      const user = userEvent.setup();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      expect(
+        screen.getByRole("heading", { name: "Climb 1 · Category 4" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("img", { name: "Elevation profile for Climb 1" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/Route position: 0\.0–1\.0 km/)).toBeInTheDocument();
+
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+        "climb-1260",
+      );
+
+      expect(
+        screen.getByRole("heading", { name: "Climb 2 · Category 4" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Climb 1 · Category 4" })).toBeNull();
+      expect(
+        screen.getByRole("img", { name: "Elevation profile for Climb 2" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("img", { name: "Elevation profile for Climb 1" }),
+      ).toBeNull();
+      expect(screen.getByText(/Route position: 1\.3–2\.3 km/)).toBeInTheDocument();
+    });
+
+    it("shows no rider-position marker, completed/remaining split, or progress text", () => {
+      const { container } = render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      const chart = screen.getByRole("img", { name: "Elevation profile for Climb 1" });
+      expect(chart.querySelector("line.elevation-chart-marker")).toBeNull();
+      expect(chart.querySelector("circle.elevation-chart-marker-dot")).toBeNull();
+      expect(chart.querySelector("path.elevation-chart-completed")).toBeNull();
+      expect(screen.queryByText(/Current route position:/)).toBeNull();
+      expect(screen.queryByText(/Last known position:/)).toBeNull();
+      // The full-route overview chart is the only other rendered chart —
+      // it also has no marker pre-ride, so this isn't double-counting.
+      expect(container.querySelectorAll("line.elevation-chart-marker")).toHaveLength(0);
+    });
+
+    it("colours the pre-ride chart with the same authoritative MICRO_DETAIL_COLOURS as the active current-climb view", () => {
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      const chart = screen.getByRole("img", { name: "Elevation profile for Climb 1" });
+      const fill = chart.querySelector("path.elevation-chart-area-fill");
+      expect(fill?.getAttribute("fill")).toBe(MICRO_DETAIL_COLOURS["hard-climb"]);
+    });
+
+    it("retains the correct local-gradient treatment for a short flat section inside a recognised climb", () => {
+      render(
+        <RidingScreen
+          route={flatDipRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      expect(
+        screen.getByRole("img", { name: "Elevation profile for Climb 1" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
+      expect(screen.getByText(/Gentle, flat or brief descent/)).toBeInTheDocument();
+    });
+
+    it("shows no additional chart alongside the existing empty state when the route has no recognised climbs", () => {
+      const gentleRoute: PlannedRoute = {
+        ...route,
+        points: Array.from({ length: 11 }, (_, index) => ({
+          coordinate: [0.0001 * index, 51] as const,
+          elevationMetres: index * 0.5,
+          distanceFromStartMetres: index * 20,
+        })),
+        distanceMetres: 200,
+      };
+      render(
+        <RidingScreen
+          route={gentleRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      expect(
+        screen.getByText(
+          "No recognised climbs. A recognised climb must be at least 500 m long and average at least 3%.",
+        ),
+      ).toBeInTheDocument();
+      // Only the full-route overview chart is rendered — no second,
+      // climb-specific chart.
+      expect(screen.getAllByRole("img")).toHaveLength(1);
+    });
+
+    it("does not call geolocation or require an active ride to render the pre-ride preview", () => {
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      expect(
+        screen.getByRole("img", { name: "Elevation profile for Climb 1" }),
+      ).toBeInTheDocument();
+      expect(stub.watchPositionSpy).not.toHaveBeenCalled();
+    });
+
+    it("renders the pre-ride chart without throwing when idle with a restored in-progress ride (geolocationStatus idle but progress already restored)", async () => {
+      await setActiveRideState({
+        id: "active",
+        routeId: climbRoute.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: [0.005, 51], accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 5,
+        matchedDistanceFromStartMetres: 500,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationViewMode: { kind: "full" },
+        lastReliableMatchedPointIndex: 5,
+        lastReliableMatchedDistanceFromStartMetres: 500,
+      });
+
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      // Still idle (the rider hasn't tapped "Resume riding" yet), so the
+      // pre-ride selector/panel/chart still show for the same dropdown-
+      // selected climb without throwing. In this specific restored state,
+      // the restored progress also makes the (unrelated, already-existing)
+      // top-of-screen chart show its own active Climb view/progress panel
+      // simultaneously — a pre-existing quirk of this exact combination,
+      // not something this slice changes or fixes — so more than one
+      // "Climb 1 · Category 2" heading can legitimately appear; the point
+      // of this test is that nothing throws and the pre-ride preview
+      // chart, specifically, still renders for the right climb.
+      expect(
+        await screen.findByRole("button", { name: "Resume riding" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getAllByRole("heading", { name: "Climb 1 · Category 2" }).length,
+      ).toBeGreaterThanOrEqual(1);
+      expect(
+        screen.getByRole("img", { name: "Elevation profile for Climb 1" }),
+      ).toBeInTheDocument();
     });
   });
 

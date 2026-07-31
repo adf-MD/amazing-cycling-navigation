@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildClimbChartViewModel,
   computeClimbProgressMetrics,
   selectClimbElevationWindow,
   selectEffectiveElevationView,
@@ -271,5 +272,117 @@ describe("computeClimbProgressMetrics", () => {
     expect(metrics?.currentElevationMetres).toBeCloseTo(100, 5);
     expect(metrics?.finishElevationMetres).toBeNull();
     expect(metrics?.elevationRemainingMetres).toBeNull();
+  });
+});
+
+describe("buildClimbChartViewModel", () => {
+  const points: RoutePoint[] = [
+    { coordinate: [0, 51], elevationMetres: 0, distanceFromStartMetres: 0 },
+    { coordinate: [0.01, 51], elevationMetres: 20, distanceFromStartMetres: 1000 },
+    { coordinate: [0.02, 51], elevationMetres: 60, distanceFromStartMetres: 2000 },
+    { coordinate: [0.03, 51], elevationMetres: 80, distanceFromStartMetres: 3000 },
+  ];
+  const climb = buildClimb({ startDistanceMetres: 1000, endDistanceMetres: 2000 });
+  const segments: ClassifiedSegment<MicroDetailVisualKey>[] = [
+    {
+      startDistanceMetres: 1000,
+      endDistanceMetres: 1500,
+      averageGradientPercent: 4,
+      visualKey: "moderate-climb",
+    },
+    {
+      startDistanceMetres: 1500,
+      endDistanceMetres: 2000,
+      averageGradientPercent: 8,
+      visualKey: "hard-climb",
+    },
+  ];
+
+  describe("pre-ride-selected-climb", () => {
+    it("rebases points so the climb's own start is distance 0", () => {
+      const model = buildClimbChartViewModel(
+        { kind: "pre-ride-selected-climb" },
+        climb,
+        points,
+        segments,
+      );
+      expect(model.points.map((p) => p.distanceFromStartMetres)).toEqual([0, 1000]);
+      expect(model.domain).toEqual({ startDistanceMetres: 0, endDistanceMetres: 1000 });
+    });
+
+    it("rebases gradient segment boundaries by the same offset", () => {
+      const model = buildClimbChartViewModel(
+        { kind: "pre-ride-selected-climb" },
+        climb,
+        points,
+        segments,
+      );
+      expect(model.gradientSegments).toEqual([
+        {
+          startDistanceMetres: 0,
+          endDistanceMetres: 500,
+          averageGradientPercent: 4,
+          visualKey: "moderate-climb",
+        },
+        {
+          startDistanceMetres: 500,
+          endDistanceMetres: 1000,
+          averageGradientPercent: 8,
+          visualKey: "hard-climb",
+        },
+      ]);
+    });
+
+    it("has no marker and enables area fill", () => {
+      const model = buildClimbChartViewModel(
+        { kind: "pre-ride-selected-climb" },
+        climb,
+        points,
+        segments,
+      );
+      expect(model.marker).toBeNull();
+      expect(model.areaFill).toBe(true);
+    });
+
+    it("does not throw for a climb whose bounds fall outside the given points, returning empty output", () => {
+      const model = buildClimbChartViewModel(
+        { kind: "pre-ride-selected-climb" },
+        climb,
+        [],
+        [],
+      );
+      expect(model.points).toEqual([]);
+      expect(model.gradientSegments).toEqual([]);
+    });
+  });
+
+  describe("active-current-climb", () => {
+    const marker = { distanceFromStartMetres: 1500, elevationMetres: 40, stale: false };
+
+    it("keeps points and domain in route-global metres, unchanged from the climb window", () => {
+      const model = buildClimbChartViewModel(
+        { kind: "active-current-climb", marker },
+        climb,
+        points,
+        segments,
+      );
+      expect(model.points.map((p) => p.distanceFromStartMetres)).toEqual([1000, 2000]);
+      expect(model.domain).toEqual({
+        startDistanceMetres: 1000,
+        endDistanceMetres: 2000,
+      });
+      expect(model.gradientSegments).toEqual(segments);
+    });
+
+    it("passes the mode's own marker through unchanged and enables area fill", () => {
+      const model = buildClimbChartViewModel(
+        { kind: "active-current-climb", marker },
+        climb,
+        points,
+        segments,
+      );
+      expect(model.marker).toEqual(marker);
+      expect(model.areaFill).toBe(true);
+    });
   });
 });

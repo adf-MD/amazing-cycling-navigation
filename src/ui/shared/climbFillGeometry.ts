@@ -23,11 +23,27 @@ export interface ClimbFillRun {
  * the outer per-geometry-segment shape of `detailRuns`. A run entirely
  * before or after `markerX` yields only one non-empty half; `splitSegmentAtX`
  * itself already guarantees no empty run is ever produced on either side.
+ *
+ * `markerX` is `null` for a context with no rider progress to split against
+ * (a pre-ride whole-climb preview) — every run is then returned unchanged,
+ * uniformly `completed: false`, so the caller renders one consistent fill
+ * treatment across the whole climb rather than a ridden/ahead distinction
+ * that doesn't apply there.
  */
 export function buildClimbFillRuns(
   detailRuns: readonly FeatureDetailChartRun[][],
-  markerX: number,
+  markerX: number | null,
 ): ClimbFillRun[][] {
+  if (markerX === null) {
+    return detailRuns.map((segmentRuns) =>
+      segmentRuns.map((run) => ({
+        visualKey: run.visualKey,
+        completed: false,
+        points: run.points,
+      })),
+    );
+  }
+
   return detailRuns.map((segmentRuns) =>
     segmentRuns.flatMap((run): ClimbFillRun[] => {
       const { completed, remaining } = splitSegmentAtX(run.points, markerX);
