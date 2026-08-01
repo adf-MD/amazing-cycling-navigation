@@ -226,6 +226,17 @@ export interface CameraTarget {
   animate: boolean;
   /** true only for a live GPS-follow ease — see mapAdapter.ts's setCamera. */
   followOffset: boolean;
+  /** Present only for an explicit Riding Northwards or Follow-location
+   * press (see rideCamera.ts's RideCameraCommand, which this field
+   * mirrors). When present, this cameraTarget application is deduped by
+   * requestId alone — a new id re-applies even with byte-identical
+   * values, fixing a repeated press being silently swallowed after an
+   * intervening manual gesture (the same class of bug OrientNorthCameraTarget
+   * exists to fix for Planning). When absent (every automatic fresh-fix/
+   * restore command, and every other existing caller), deduped by value
+   * exactly as before. Riding-only — Planning no longer supplies
+   * cameraTarget at all. Never persisted. */
+  requestId?: string;
 }
 
 /** An explicit "frame this area" camera command — Planning's fresh-session
@@ -488,6 +499,7 @@ export function MapView({
     pitchDegrees: number;
     animate: boolean;
     followOffset: boolean;
+    requestId?: string;
   } | null>(null);
   // Deduped by requestId, not by value — see the BoundsCameraTarget
   // effect below and its own doc comment.
@@ -1152,24 +1164,32 @@ export function MapView({
     }
   }, [points, styleStructurallyReady, suppressInitialOverviewFit, hasPlanningOverlay]);
 
-  // Executes the camera controller's current command (live "following" or
-  // a one-time restore) — deduped by value via a ref rather than object
-  // identity, so a rerender that produces a new but logically-identical
-  // cameraTarget object doesn't re-trigger setCamera.
+  // Executes the camera controller's current command (live "following", a
+  // one-time restore, or an explicit Riding Northwards/Follow-location
+  // press) — deduped by value via a ref rather than object identity, so a
+  // rerender that produces a new but logically-identical cameraTarget
+  // object doesn't re-trigger setCamera. An explicit command additionally
+  // carries a requestId (see CameraTarget's own doc comment): when
+  // present and different from the last-applied one, it forces
+  // reapplication even though the resulting values are byte-identical —
+  // otherwise a repeated press after an intervening manual gesture would
+  // be silently swallowed by the value check alone.
   useEffect(() => {
     if (!styleStructurallyReady || !cameraTarget) return;
     const lon = cameraTarget.coordinate ? cameraTarget.coordinate[0] : null;
     const lat = cameraTarget.coordinate ? cameraTarget.coordinate[1] : null;
     const last = lastAppliedCameraTargetRef.current;
-    if (
+    const sameValues =
       last?.lon === lon &&
       last.lat === lat &&
       last.zoom === cameraTarget.zoom &&
       last.bearingDegrees === cameraTarget.bearingDegrees &&
       last.pitchDegrees === cameraTarget.pitchDegrees &&
       last.animate === cameraTarget.animate &&
-      last.followOffset === cameraTarget.followOffset
-    ) {
+      last.followOffset === cameraTarget.followOffset;
+    const isNewExplicitRequest =
+      cameraTarget.requestId !== undefined && cameraTarget.requestId !== last?.requestId;
+    if (sameValues && !isNewExplicitRequest) {
       return;
     }
     lastAppliedCameraTargetRef.current = {
@@ -1180,6 +1200,7 @@ export function MapView({
       pitchDegrees: cameraTarget.pitchDegrees,
       animate: cameraTarget.animate,
       followOffset: cameraTarget.followOffset,
+      requestId: cameraTarget.requestId,
     };
     mapRef.current?.setCamera(
       cameraTarget.coordinate,

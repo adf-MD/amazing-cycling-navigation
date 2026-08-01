@@ -2419,6 +2419,68 @@ describe("RidingScreen", () => {
       );
     });
 
+    it("re-applies the follow camera on a second Follow press with an unchanged GPS fix, after an intervening manual gesture — the Follow-pressed-twice regression", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(map.setCameraSpy).toHaveBeenNthCalledWith(
+        1,
+        pointAt(0),
+        NAVIGATION_ZOOM,
+        expectedBearingAt(0),
+        FOLLOW_PITCH_DEGREES,
+        { animate: true, followOffset: true },
+      );
+
+      map.triggerUserCameraInteraction();
+      const followButton = await screen.findByRole("button", {
+        name: "Follow my location",
+      });
+      expect(followButton).toHaveAttribute("aria-pressed", "false");
+      expect(await screen.findByText("Map follow paused.")).toBeInTheDocument();
+
+      // Deliberately the SAME point as the first fix — unlike the sibling
+      // test above ("recentres and resumes following..."), which
+      // deliberately moves to pointAt(5) to sidestep this exact
+      // collision, no new/different fix is emitted before this second
+      // press. A stationary rider re-pressing Follow is exactly the
+      // scenario this task's fix targets.
+      await user.click(followButton);
+
+      expect(followButton).toHaveAttribute("aria-pressed", "true");
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(2);
+      });
+      expect(map.setCameraSpy).toHaveBeenNthCalledWith(
+        2,
+        pointAt(0),
+        NAVIGATION_ZOOM,
+        expectedBearingAt(0),
+        FOLLOW_PITCH_DEGREES,
+        { animate: true, followOffset: true },
+      );
+    });
+
     it("never moves the camera for a stale restored fix, even when the persisted camera mode was following", async () => {
       await setActiveRideState({
         id: "active",
@@ -2789,6 +2851,103 @@ describe("RidingScreen", () => {
         "aria-pressed",
         "false",
       );
+    });
+
+    it("re-applies north-up on a second Northwards press after an intervening manual rotation and tilt, with an unchanged target — the Northwards-pressed-twice regression", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+
+      const northButton = screen.getByRole("button", {
+        name: "North-up, top-down view",
+      });
+      await user.click(northButton);
+      expect(map.setCameraSpy).toHaveBeenCalledTimes(2);
+      expect(map.setCameraSpy).toHaveBeenNthCalledWith(2, null, null, 0, 0, {
+        animate: true,
+        followOffset: false,
+      });
+
+      // Simulates the map genuinely settling at the just-applied north-up
+      // target — isNorthUpTopDown only ever reflects the real settled
+      // readback (see useRideCamera.ts), never optimistic intent, so this
+      // is required before aria-pressed can meaningfully read "true".
+      map.triggerCameraSettled({
+        coordinate: pointAt(0),
+        zoom: 14,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      await waitFor(() => {
+        expect(northButton).toHaveAttribute("aria-pressed", "true");
+      });
+
+      // A genuine manual rotate-and-tilt gesture away from north —
+      // non-round fixture values so no accidental rounding coincidence
+      // could mask a failure to reset.
+      map.triggerUserCameraInteraction();
+      map.triggerCameraSettled({
+        coordinate: pointAt(0),
+        zoom: 14.35,
+        bearingDegrees: 67,
+        pitchDegrees: 31,
+      });
+
+      // Failure-layer checkpoint 1: camera-settled state must have
+      // propagated into isNorthUpTopDown before the second press even
+      // matters — a genuine transition from the "true" just proven above,
+      // not a vacuous check. If this fails, the defect is in
+      // onCameraSettled/reportCameraSettled's derivation, not in
+      // MapView's dedup, and must be reported as a distinct bug rather
+      // than papered over.
+      await waitFor(() => {
+        expect(northButton).toHaveAttribute("aria-pressed", "false");
+      });
+
+      await user.click(northButton);
+
+      // Failure-layer checkpoint 2 — the specific assertion expected to
+      // fail against pre-fix production code: the second press's target
+      // values are byte-identical to the first (null, null, 0, 0, ...),
+      // so pre-fix, MapView's value-only dedup silently swallows it.
+      expect(map.setCameraSpy).toHaveBeenCalledTimes(3);
+      expect(map.setCameraSpy).toHaveBeenNthCalledWith(3, null, null, 0, 0, {
+        animate: true,
+        followOffset: false,
+      });
+
+      // The map genuinely settling back at north-up/top-down a second
+      // time — confirms the reapplied command actually took effect, not
+      // just that setCamera was called with the right arguments.
+      map.triggerCameraSettled({
+        coordinate: pointAt(0),
+        zoom: 14.35,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      await waitFor(() => {
+        expect(northButton).toHaveAttribute("aria-pressed", "true");
+      });
     });
 
     it("keeps both switching controls visible together, with the location control waiting when no fresh fix is usable", async () => {

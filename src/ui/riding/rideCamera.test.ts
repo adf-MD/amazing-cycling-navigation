@@ -107,6 +107,35 @@ describe("rideCameraReducer", () => {
       expect(result.command?.bearingDegrees).toBe(200);
       expect(result.command?.pitchDegrees).toBe(FOLLOW_PITCH_DEGREES);
     });
+
+    it("copies a supplied requestId verbatim into the produced command, so an explicit re-press can be told apart from an automatic update", () => {
+      const result = rideCameraReducer(INITIAL_RIDE_CAMERA_STATE, {
+        type: "follow-requested",
+        freshCoordinate: START,
+        bearingContext: NEUTRAL_BEARING_CONTEXT,
+        requestId: "follow-request-1",
+      });
+      expect(result.command?.requestId).toBe("follow-request-1");
+    });
+
+    it("leaves the command's requestId undefined when none is supplied", () => {
+      const result = rideCameraReducer(INITIAL_RIDE_CAMERA_STATE, {
+        type: "follow-requested",
+        freshCoordinate: START,
+        bearingContext: NEUTRAL_BEARING_CONTEXT,
+      });
+      expect(result.command?.requestId).toBeUndefined();
+    });
+
+    it("without a fresh coordinate, produces no command regardless of requestId", () => {
+      const result = rideCameraReducer(INITIAL_RIDE_CAMERA_STATE, {
+        type: "follow-requested",
+        freshCoordinate: null,
+        bearingContext: NEUTRAL_BEARING_CONTEXT,
+        requestId: "follow-request-2",
+      });
+      expect(result.command).toBeNull();
+    });
   });
 
   describe("fresh-fix", () => {
@@ -191,6 +220,19 @@ describe("rideCameraReducer", () => {
       });
       expect(result.state.lastFollowedCoordinate).toEqual(SIGNIFICANT_MOVE);
       expect(result.state.lastCommandedBearingDegrees).toBe(0);
+    });
+
+    it("never carries a requestId — automatic GPS-driven commands stay value-deduped, never identity-deduped", () => {
+      const state = followingState({
+        lastFollowedCoordinate: START,
+        lastCommandedBearingDegrees: 0,
+      });
+      const result = rideCameraReducer(state, {
+        type: "fresh-fix",
+        coordinate: SIGNIFICANT_MOVE,
+        bearingContext: NEUTRAL_BEARING_CONTEXT,
+      });
+      expect(result.command?.requestId).toBeUndefined();
     });
 
     it("repeated stationary fixes never jitter the camera", () => {
@@ -370,6 +412,19 @@ describe("rideCameraReducer", () => {
       });
       expect(result.pausedToast).toBe(false);
     });
+
+    it("copies a supplied requestId verbatim into the produced command, so a repeated press after an intervening manual rotation can still be told apart from the first", () => {
+      const result = rideCameraReducer(followingState(), {
+        type: "north-up-requested",
+        requestId: "north-up-request-1",
+      });
+      expect(result.command?.requestId).toBe("north-up-request-1");
+    });
+
+    it("leaves the command's requestId undefined when none is supplied", () => {
+      const result = rideCameraReducer(followingState(), { type: "north-up-requested" });
+      expect(result.command?.requestId).toBeUndefined();
+    });
   });
 
   describe("restore", () => {
@@ -414,6 +469,7 @@ describe("rideCameraReducer", () => {
         animate: false,
         followOffset: false,
       });
+      expect(result.command?.requestId).toBeUndefined();
     });
 
     it("restores into free with no saved position and issues no command", () => {

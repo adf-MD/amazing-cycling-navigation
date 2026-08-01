@@ -56,6 +56,15 @@ export interface RideCameraCommand {
    * reset: a restored free camera can carry its own manually-set nonzero
    * pitch, which must never get a following-style offset bias. */
   followOffset: boolean;
+  /** Present only for an explicit Northwards or Follow-location press —
+   * copied verbatim from the triggering event so MapView can dedupe this
+   * command by identity instead of value (see MapView.tsx's CameraTarget:
+   * without this, a repeated press producing byte-identical values after
+   * an intervening manual gesture is silently swallowed). Always
+   * undefined for an automatic fresh-fix update or a one-time restore
+   * jump, which stay purely value-deduped. Transient UI identity — never
+   * persisted (see StoredCameraState). */
+  requestId?: string;
 }
 
 /** Everything the bearing-selection policy needs, pre-derived by
@@ -74,10 +83,13 @@ export type RideCameraEvent =
       type: "follow-requested";
       freshCoordinate: Coordinate | null;
       bearingContext: BearingContext;
+      /** See RideCameraCommand's own requestId doc comment — copied
+       * verbatim into the produced command, if any. */
+      requestId?: string;
     }
   | { type: "fresh-fix"; coordinate: Coordinate; bearingContext: BearingContext }
   | { type: "user-interaction" }
-  | { type: "north-up-requested" }
+  | { type: "north-up-requested"; requestId?: string }
   | {
       type: "restore";
       mode: RideCameraMode;
@@ -281,6 +293,7 @@ export function rideCameraReducer(
           pitchDegrees: 0,
           animate: true,
           followOffset: false,
+          requestId: event.requestId,
         },
         pausedToast: wasFollowing,
       };
@@ -299,7 +312,10 @@ export function rideCameraReducer(
             lastFollowedCoordinate: event.freshCoordinate,
             lastCommandedBearingDegrees: bearingDegrees,
           },
-          command: followCommand(event.freshCoordinate, bearingDegrees),
+          command: {
+            ...followCommand(event.freshCoordinate, bearingDegrees),
+            requestId: event.requestId,
+          },
           pausedToast: false,
         };
       }

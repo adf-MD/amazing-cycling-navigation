@@ -271,6 +271,21 @@ export function useRideCamera({
     };
   }, [currentFix, isStale, routePoints, matchedDistanceFromStartMetres, offRouteLevel]);
 
+  // Gives each explicit Northwards/Follow-location press its own request
+  // identity, so MapView can tell a genuine re-press (which must reapply
+  // even with byte-identical resulting camera values, e.g. after an
+  // intervening manual gesture) apart from an unrelated rerender. A plain
+  // monotonic counter — deliberately not a timestamp or crypto.randomUUID()
+  // — read and incremented only inside requestFollow/requestNorthUp below,
+  // each of which only actually runs once per real user click, so this
+  // stays safe under React 18 StrictMode's double-invoke of render/reducer
+  // code (which this ref is never read from). A remount resets this
+  // alongside MapView's own lastAppliedCameraTargetRef (freshly null), so
+  // no cross-remount collision is possible; an internal-only MapView
+  // remount (style retry/fallback) also resets only that side, which is
+  // equally harmless since the ref is null there too.
+  const nextCameraRequestIdRef = useRef(0);
+
   const requestFollow = useCallback(() => {
     const {
       currentFix: fix,
@@ -296,10 +311,12 @@ export function useRideCamera({
           routeTangentBearingDegrees: null,
           offRouteLevel: latestOffRouteLevel,
         };
+    nextCameraRequestIdRef.current += 1;
     dispatch({
       type: "follow-requested",
       freshCoordinate: freshFix ? freshFix.coordinate : null,
       bearingContext,
+      requestId: String(nextCameraRequestIdRef.current),
     });
   }, []);
 
@@ -308,7 +325,11 @@ export function useRideCamera({
   }, []);
 
   const requestNorthUp = useCallback(() => {
-    dispatch({ type: "north-up-requested" });
+    nextCameraRequestIdRef.current += 1;
+    dispatch({
+      type: "north-up-requested",
+      requestId: String(nextCameraRequestIdRef.current),
+    });
   }, []);
 
   const reportCameraSettled = useCallback(

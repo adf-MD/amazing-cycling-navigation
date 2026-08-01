@@ -810,6 +810,119 @@ describe("MapView", () => {
     });
   });
 
+  it("re-applies setCamera on a second cameraTarget request even though the payload is byte-identical, when it carries a new requestId — the Riding Northwards/Follow-location-pressed-twice regression", () => {
+    const mock = createMockMapFactory();
+    const target = {
+      coordinate: null,
+      zoom: null,
+      bearingDegrees: 0,
+      pitchDegrees: 0,
+      animate: true,
+      followOffset: false,
+      requestId: "request-1",
+    };
+    const { rerender } = render(
+      <MapView points={points} mapFactory={mock.factory} cameraTarget={target} />,
+    );
+    mock.triggerLoad();
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(1);
+    expect(mock.setCameraSpy).toHaveBeenNthCalledWith(1, null, null, 0, 0, {
+      animate: true,
+      followOffset: false,
+    });
+
+    // Simulates the rider manually rotating/tilting away between the two
+    // presses — a real gesture updates onCameraSettled state but never
+    // touches lastAppliedCameraTargetRef, unlike a genuinely new
+    // cameraTarget object with unchanged values, which the pre-fix
+    // value-only dedup would otherwise silently swallow.
+    mock.triggerUserCameraInteraction();
+    mock.triggerCameraSettled({
+      coordinate: [0, 51],
+      zoom: 14.35,
+      bearingDegrees: 67,
+      pitchDegrees: 31,
+    });
+
+    rerender(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        cameraTarget={{ ...target, requestId: "request-2" }}
+      />,
+    );
+
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(2);
+    expect(mock.setCameraSpy).toHaveBeenNthCalledWith(2, null, null, 0, 0, {
+      animate: true,
+      followOffset: false,
+    });
+  });
+
+  it("does not re-apply a cameraTarget with the same requestId, even as a new object", () => {
+    const mock = createMockMapFactory();
+    const target = {
+      coordinate: [0, 51] as Coordinate,
+      zoom: 16,
+      bearingDegrees: 90,
+      pitchDegrees: 35,
+      animate: true,
+      followOffset: true,
+      requestId: "request-1",
+    };
+    const { rerender } = render(
+      <MapView points={points} mapFactory={mock.factory} cameraTarget={target} />,
+    );
+    mock.triggerLoad();
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <MapView points={points} mapFactory={mock.factory} cameraTarget={{ ...target }} />,
+    );
+
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not re-apply an automatic (no requestId) cameraTarget whose values match a just-applied explicit (requestId-bearing) one", () => {
+    const mock = createMockMapFactory();
+    const explicitTarget = {
+      coordinate: [0, 51] as Coordinate,
+      zoom: 16,
+      bearingDegrees: 90,
+      pitchDegrees: 35,
+      animate: true,
+      followOffset: true,
+      requestId: "request-1",
+    };
+    const { rerender } = render(
+      <MapView points={points} mapFactory={mock.factory} cameraTarget={explicitTarget} />,
+    );
+    mock.triggerLoad();
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(1);
+
+    // A subsequent automatic fresh-fix target with matching values but no
+    // requestId at all — must stay deduped by value, not spuriously
+    // reapply just because an explicit request with the same values
+    // preceded it.
+    const automaticTarget = {
+      coordinate: explicitTarget.coordinate,
+      zoom: explicitTarget.zoom,
+      bearingDegrees: explicitTarget.bearingDegrees,
+      pitchDegrees: explicitTarget.pitchDegrees,
+      animate: explicitTarget.animate,
+      followOffset: explicitTarget.followOffset,
+    };
+    rerender(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        cameraTarget={automaticTarget}
+      />,
+    );
+
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("applies a boundsTarget via fitBounds once ready", () => {
     const mock = createMockMapFactory();
     render(
