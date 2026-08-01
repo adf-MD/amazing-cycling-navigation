@@ -650,6 +650,38 @@ test("Locate me recentres without disturbing live zoom, bearing or pitch", async
   await page.mouse.move(centreX + 120, centreY - 100, { steps: 10 });
   await page.mouse.up({ button: "right" });
 
+  // MapView only republishes data-camera-* once its onCameraSettled handler
+  // fires and React re-renders (see MapView.tsx) — reading these attributes
+  // immediately after mouse.up can race ahead of that publish and observe a
+  // stale pre-gesture value. Poll until both are genuinely away from zero,
+  // using a numeric tolerance rather than a string compare, before trusting
+  // them as this gesture's settled result. A longer-than-default poll
+  // timeout is deliberate here (not a global change — every other
+  // assertion in this file keeps Playwright's default): under heavy
+  // parallel load, real WebGL settling was observed to occasionally take
+  // longer than the default 5 s while still genuinely completing, so this
+  // widens the budget for that one observable condition rather than
+  // guessing at a fixed delay.
+  const AWAY_FROM_ZERO_TOLERANCE_DEGREES = 0.5;
+  const CAMERA_SETTLE_POLL_TIMEOUT_MS = 15_000;
+  const isAwayFromZero = (value: string | null): boolean => {
+    if (value === null) return false;
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) && Math.abs(parsed) > AWAY_FROM_ZERO_TOLERANCE_DEGREES;
+  };
+  await expect
+    .poll(
+      async () => {
+        const bearing = await mapContainer.getAttribute("data-camera-bearing");
+        const pitch = await mapContainer.getAttribute("data-camera-pitch");
+        return isAwayFromZero(bearing) && isAwayFromZero(pitch);
+      },
+      { timeout: CAMERA_SETTLE_POLL_TIMEOUT_MS },
+    )
+    .toBe(true);
+
+  const centreBeforePan = await mapContainer.getAttribute("data-camera-center");
+
   // A left-button pan, moving the centre well away from the GPS fix —
   // deterministic proof (independent of any wheel-zoom pivot behaviour)
   // that the later recentre genuinely has something to correct.
@@ -658,11 +690,33 @@ test("Locate me recentres without disturbing live zoom, bearing or pitch", async
   await page.mouse.move(centreX + 150, centreY + 100, { steps: 10 });
   await page.mouse.up();
 
+  // Same race as above, for the pan: wait for the published centre to
+  // genuinely move away from its pre-pan value, and confirm the rotate/
+  // pitch gesture's result is still present in that same settled read,
+  // before capturing the baseline Locate me must preserve. Same widened,
+  // per-assertion poll timeout as above, for the same reason.
+  const CENTRE_CHANGE_TOLERANCE_DEGREES = 1e-4; // ~11 m — far above Mercator round-trip noise, comfortably below a real pan
+  await expect
+    .poll(
+      async () => {
+        const centre = await mapContainer.getAttribute("data-camera-center");
+        const bearing = await mapContainer.getAttribute("data-camera-bearing");
+        const pitch = await mapContainer.getAttribute("data-camera-pitch");
+        if (!centre || !centreBeforePan) return false;
+        const [lon, lat] = centre.split(",").map(Number);
+        const [prevLon, prevLat] = centreBeforePan.split(",").map(Number);
+        const centreChanged =
+          Math.abs(lon - prevLon) > CENTRE_CHANGE_TOLERANCE_DEGREES ||
+          Math.abs(lat - prevLat) > CENTRE_CHANGE_TOLERANCE_DEGREES;
+        return centreChanged && isAwayFromZero(bearing) && isAwayFromZero(pitch);
+      },
+      { timeout: CAMERA_SETTLE_POLL_TIMEOUT_MS },
+    )
+    .toBe(true);
+
   const zoomBefore = await mapContainer.getAttribute("data-camera-zoom");
   const bearingBefore = await mapContainer.getAttribute("data-camera-bearing");
   const pitchBefore = await mapContainer.getAttribute("data-camera-pitch");
-  expect(bearingBefore).not.toBe("0");
-  expect(pitchBefore).not.toBe("0");
 
   await locateButton.click();
 
@@ -679,6 +733,11 @@ test("Locate me recentres without disturbing live zoom, bearing or pitch", async
     })
     .toBe(true);
 
+  // Exact-string equality is safe here (not just "close"): MapView's
+  // onCameraSettled sets cameraCenter and cameraOrientation together in one
+  // batch, so once the centre poll above has settled, zoom/bearing/pitch
+  // are read from that same published render — the values Locate me's
+  // recentre-only path is expected to leave completely untouched.
   expect(await mapContainer.getAttribute("data-camera-zoom")).toBe(zoomBefore);
   expect(await mapContainer.getAttribute("data-camera-bearing")).toBe(bearingBefore);
   expect(await mapContainer.getAttribute("data-camera-pitch")).toBe(pitchBefore);
