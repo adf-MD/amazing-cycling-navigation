@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouteLibrary } from "./RouteLibrary.tsx";
+import type { PlannedRoute } from "../../domain/types.ts";
 import { db } from "../../storage/db.ts";
+import * as routesRepository from "../../storage/routesRepository.ts";
 import { multiTrackGpx, trackWithElevationGpx } from "../../test/fixtures/gpx.ts";
 
 function buildGpxFile(name: string, content: string): File {
@@ -14,15 +16,28 @@ async function importFixture(
   name = "Evening Ride.gpx",
 ) {
   const file = buildGpxFile(name, trackWithElevationGpx);
+  const expectedName = name.replace(/\.gpx$/i, "");
   await user.upload(screen.getByLabelText("Import GPX file"), file);
   await waitFor(() => {
-    expect(screen.getByRole("button", { name: "Evening Ride" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: expectedName })).toBeInTheDocument();
   });
+}
+
+function getListItemByRouteId(id: string): HTMLElement {
+  const item = document.querySelector(`[data-route-id="${id}"]`);
+  if (!(item instanceof HTMLElement)) {
+    throw new Error(`No list item found for route id ${id}`);
+  }
+  return item;
 }
 
 beforeEach(async () => {
   await db.routes.clear();
   await db.rideState.clear();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("RouteLibrary", () => {
@@ -128,26 +143,203 @@ describe("RouteLibrary", () => {
     vi.unstubAllGlobals();
   });
 
-  it("deletes a route only after confirmation", async () => {
-    const user = userEvent.setup();
-    render(<RouteLibrary onOpenRoute={vi.fn()} />);
-    await importFixture(user);
+  describe("deleting a route", () => {
+    it("shows the confirmation inline inside the route's own list item, not as a detached dialog", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user);
 
-    await user.click(screen.getByRole("button", { name: "Delete" }));
-    const dialog = screen.getByRole("alertdialog");
-    expect(dialog).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Delete" }));
 
-    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(screen.getByRole("button", { name: "Evening Ride" })).toBeInTheDocument();
+      const [route] = (await db.routes.toArray()) as [PlannedRoute];
+      const listItem = getListItemByRouteId(route.id);
+      expect(within(listItem).getByRole("alertdialog")).toBeInTheDocument();
+      expect(within(listItem).getByText("Delete “Evening Ride”?")).toBeInTheDocument();
+    });
 
-    await user.click(screen.getByRole("button", { name: "Delete" }));
-    await user.click(
-      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete" }),
-    );
+    it("cancelling leaves the route, closes the confirmation and returns focus to the Delete button", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user);
 
-    await waitFor(() => {
-      expect(screen.getByText(/no routes saved yet/i)).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.getByRole("button", { name: "Evening Ride" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Delete" })).toHaveFocus();
+    });
+
+    it("Escape performs the same cancellation", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user);
+
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+      await user.keyboard("{Escape}");
+
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.getByRole("button", { name: "Evening Ride" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Delete" })).toHaveFocus();
+    });
+
+    it("confirms deletion, calls deleteRoute exactly once, and the live list removes the route", async () => {
+      const user = userEvent.setup();
+      const deleteSpy = vi.spyOn(routesRepository, "deleteRoute");
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user);
+      const [route] = (await db.routes.toArray()) as [PlannedRoute];
+
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+      await user.click(screen.getByRole("button", { name: "Delete route" }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/no routes saved yet/i)).toBeInTheDocument();
+      });
+      expect(deleteSpy).toHaveBeenCalledTimes(1);
+      expect(deleteSpy).toHaveBeenCalledWith(route.id);
+    });
+
+    it("repeated clicks cannot invoke deleteRoute twice while deletion is pending", async () => {
+      const user = userEvent.setup();
+      const deleteSpy = vi.spyOn(routesRepository, "deleteRoute");
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user);
+
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+      const confirmButton = screen.getByRole("button", { name: "Delete route" });
+      // fireEvent (not userEvent) so a second dispatch is attempted even
+      // though the button becomes disabled synchronously after the first
+      // click's state update — proving the disabled state, not test
+      // timing, is what prevents a second invocation.
+      fireEvent.click(confirmButton);
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/no routes saved yet/i)).toBeInTheDocument();
+      });
+      expect(deleteSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("opening a second route's delete confirmation replaces the first", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "First Ride.gpx");
+      await importFixture(user, "Second Ride.gpx");
+      const [routeA, routeB] = (await routesRepository.listRoutes()) as [
+        PlannedRoute,
+        PlannedRoute,
+      ];
+
+      await user.click(
+        within(getListItemByRouteId(routeA.id)).getByRole("button", { name: "Delete" }),
+      );
+      expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
+
+      await user.click(
+        within(getListItemByRouteId(routeB.id)).getByRole("button", { name: "Delete" }),
+      );
+
+      const dialogs = screen.getAllByRole("alertdialog");
+      expect(dialogs).toHaveLength(1);
+      expect(
+        within(getListItemByRouteId(routeB.id)).getByRole("alertdialog"),
+      ).toBeInTheDocument();
+      expect(
+        within(getListItemByRouteId(routeA.id)).queryByRole("alertdialog"),
+      ).toBeNull();
+    });
+
+    it("deleting one of two routes moves focus to the next surviving route's name button", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "First Ride.gpx");
+      await importFixture(user, "Second Ride.gpx");
+      const [topRoute, bottomRoute] = (await routesRepository.listRoutes()) as [
+        PlannedRoute,
+        PlannedRoute,
+      ];
+
+      await user.click(
+        within(getListItemByRouteId(topRoute.id)).getByRole("button", { name: "Delete" }),
+      );
+      await user.click(screen.getByRole("button", { name: "Delete route" }));
+
+      await waitFor(() => {
+        expect(document.querySelector(`[data-route-id="${topRoute.id}"]`)).toBeNull();
+      });
+      expect(
+        within(getListItemByRouteId(bottomRoute.id)).getByRole("button", {
+          name: bottomRoute.name,
+        }),
+      ).toHaveFocus();
+    });
+
+    it("deleting the last of two routes moves focus to the previous surviving route's name button", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "First Ride.gpx");
+      await importFixture(user, "Second Ride.gpx");
+      const [topRoute, bottomRoute] = (await routesRepository.listRoutes()) as [
+        PlannedRoute,
+        PlannedRoute,
+      ];
+
+      await user.click(
+        within(getListItemByRouteId(bottomRoute.id)).getByRole("button", {
+          name: "Delete",
+        }),
+      );
+      await user.click(screen.getByRole("button", { name: "Delete route" }));
+
+      await waitFor(() => {
+        expect(document.querySelector(`[data-route-id="${bottomRoute.id}"]`)).toBeNull();
+      });
+      expect(
+        within(getListItemByRouteId(topRoute.id)).getByRole("button", {
+          name: topRoute.name,
+        }),
+      ).toHaveFocus();
+    });
+
+    it("deleting the only remaining route moves focus to the Routes heading", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user);
+
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+      await user.click(screen.getByRole("button", { name: "Delete route" }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/no routes saved yet/i)).toBeInTheDocument();
+      });
+      expect(screen.getByRole("heading", { name: "Routes" })).toHaveFocus();
+    });
+
+    it("shows an inline error and keeps the confirmation open when deletion fails, allowing cancel or retry", async () => {
+      const user = userEvent.setup();
+      vi.spyOn(routesRepository, "deleteRoute").mockRejectedValueOnce(
+        new Error("Delete failed."),
+      );
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user);
+
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+      await user.click(screen.getByRole("button", { name: "Delete route" }));
+
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toHaveTextContent("Delete failed.");
+      });
+      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Evening Ride" })).toBeInTheDocument();
+
+      // Recoverable without reopening: the confirmation stayed open after
+      // the failure, so retrying now hits the real implementation
+      // (mockRejectedValueOnce only overrides the first call).
+      await user.click(screen.getByRole("button", { name: "Delete route" }));
+      await waitFor(() => {
+        expect(screen.getByText(/no routes saved yet/i)).toBeInTheDocument();
+      });
     });
   });
 });

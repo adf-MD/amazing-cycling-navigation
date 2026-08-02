@@ -181,6 +181,33 @@ header h1 {
   margin: 0.15rem 0;
 }
 
+.route-list-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Mounts/unmounts with the pending-delete state, exactly like
+ * .route-warning-detail above, so no transition/animation is needed here
+ * either. The left border is the first real use of --colour-danger in the
+ * app — paired with the button's own "Delete route"/"Cancel" text and this
+ * block's heading, never a colour-alone cue on its own. */
+.route-delete-confirm {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--colour-border);
+  border-left: 4px solid var(--colour-danger);
+  border-radius: 6px;
+  background: var(--colour-bg-elevated);
+}
+
+.route-delete-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
 /* Planning's own two map controls (Locate me, north-up) — top-right,
  * clear of the centred crosshair, the bottom-centre "Add waypoint here"
  * button, and .map-attribution's bottom-left corner. Riding's equivalent

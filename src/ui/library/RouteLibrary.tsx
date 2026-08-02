@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { PlannedRoute } from "../../domain/types.ts";
 import { exportRouteToGpx } from "../../gpx/exportGpx.ts";
 import type { GpxImportResult } from "../../gpx/importGpx.ts";
@@ -6,10 +6,10 @@ import type { GpxImportNotice } from "../../gpx/parseGpx.ts";
 import { logError } from "../../platform/errorLog.ts";
 import { deleteRoute, listRoutes, renameRoute } from "../../storage/routesRepository.ts";
 import { downloadTextFile } from "../shared/downloadTextFile.ts";
-import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { ImportGpxButton } from "./ImportGpxButton.tsx";
 import { RouteListItem } from "./RouteListItem.tsx";
+import { computeFocusRouteIdAfterDelete } from "./routeDeleteFocus.ts";
 
 export interface RouteLibraryProps {
   onOpenRoute: (route: PlannedRoute) => void;
@@ -20,9 +20,14 @@ export function RouteLibrary({ onOpenRoute }: RouteLibraryProps) {
   const routes = useLiveQuery(listRoutesQuery);
 
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [notices, setNotices] = useState<GpxImportNotice[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+
+  const nameButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   const handleImported = (result: GpxImportResult) => {
     setNotices(result.notices);
@@ -59,26 +64,44 @@ export function RouteLibrary({ onOpenRoute }: RouteLibraryProps) {
   };
 
   const handleDeleteRequest = (id: string) => {
+    if (isDeleting) return;
     setPendingDeleteId(id);
+    setDeleteError(null);
   };
 
-  const handleDeleteConfirm = () => {
-    const id = pendingDeleteId;
+  const handleDeleteCancel = (id: string) => {
+    if (isDeleting || id !== pendingDeleteId) return;
     setPendingDeleteId(null);
-    if (id) {
-      deleteRoute(id).catch((error: unknown) => {
+    setDeleteError(null);
+  };
+
+  const handleDeleteConfirm = (id: string) => {
+    if (isDeleting) return;
+    const focusTargetId = computeFocusRouteIdAfterDelete(routes ?? [], id);
+
+    setIsDeleting(true);
+    setDeleteError(null);
+    deleteRoute(id)
+      .then(() => {
+        setPendingDeleteId(null);
+        setIsDeleting(false);
+        const target = focusTargetId ? nameButtonRefs.current.get(focusTargetId) : null;
+        (target ?? headingRef.current)?.focus();
+      })
+      .catch((error: unknown) => {
+        setIsDeleting(false);
+        setDeleteError(
+          error instanceof Error ? error.message : "That route could not be deleted.",
+        );
         logError("route-delete", error);
       });
-    }
-  };
-
-  const handleDeleteCancel = () => {
-    setPendingDeleteId(null);
   };
 
   return (
     <section aria-label="Route library">
-      <h2>Routes</h2>
+      <h2 ref={headingRef} tabIndex={-1}>
+        Routes
+      </h2>
       <ImportGpxButton onImported={handleImported} onError={handleImportError} />
       {importError ? <p role="alert">{importError}</p> : null}
       {exportError ? <p role="alert">{exportError}</p> : null}
@@ -102,19 +125,22 @@ export function RouteLibrary({ onOpenRoute }: RouteLibraryProps) {
               onRename={handleRename}
               onExport={handleExport}
               onDeleteRequest={handleDeleteRequest}
+              onDeleteCancel={handleDeleteCancel}
+              onDeleteConfirm={handleDeleteConfirm}
+              isDeletePending={route.id === pendingDeleteId}
+              isDeleting={isDeleting}
+              deleteError={deleteError}
+              nameButtonRef={(element) => {
+                if (element) {
+                  nameButtonRefs.current.set(route.id, element);
+                } else {
+                  nameButtonRefs.current.delete(route.id);
+                }
+              }}
             />
           ))}
         </ul>
       )}
-
-      <ConfirmDialog
-        open={pendingDeleteId !== null}
-        title="Delete route"
-        message="This route will be permanently deleted from this device. This cannot be undone."
-        confirmLabel="Delete"
-        onConfirm={handleDeleteConfirm}
-        onCancel={handleDeleteCancel}
-      />
     </section>
   );
 }

@@ -280,10 +280,11 @@ The following items are approved directions or confirmed bugs for future work. T
    - Preferred direction: screen or route title becomes the single visible h1; product name remains in document title, manifest and Home Screen name.
    - Mark this as requiring a final design discussion before implementation, not as a settled UI requirement.
 
-7. **Inline route-deletion confirmation**
-   - Show Cancel/Delete confirmation directly beneath the affected route.
-   - Only one route pending deletion at a time.
-   - Preserve keyboard/focus behaviour and explicit irreversible-action wording.
+7. **Inline route-deletion confirmation — done**
+   - Pressing a route's Delete button now opens a non-modal, per-row confirmation (`role="alertdialog"`, no `aria-modal`) rendered inside that route's own `<li>`, directly beneath its Rename/Export/Delete row, replacing the previous screen-detached `ConfirmDialog`. `RouteLibrary` keeps single-source-of-truth ownership of `pendingDeleteId`/`isDeleting`/`deleteError` and the actual `deleteRoute` call; `RouteListItem` only ever renders its own row's confirmation, so at most one is open at a time and opening a second row's replaces the first.
+   - Opening the confirmation moves focus to Cancel; Cancel and Escape-within-the-confirmation both close it without touching storage and return focus to that row's own Delete button — both actions are disabled while a deletion is in flight so Cancel can never appear to undo a delete that storage is still carrying out. Clicking Rename while a delete confirmation is open on the same row cancels the pending delete first, rather than leaving it silently orphaned behind the rename form's existing early-return branch.
+   - On success the reactive `useLiveQuery`-backed list removes the row automatically; a small pure helper (`routeDeleteFocus.ts`) then moves focus to the next, else previous, else (empty library) the Routes heading — with no global selectors or route-name matching, since route names aren't guaranteed unique. A failed deletion keeps the route, shows an inline error, and leaves the confirmation open for cancel or retry; the destructive button reads "Deleting…" while in flight, to prevent double submission.
+   - `ConfirmDialog.tsx` itself is unchanged and still backs Settings' "Delete OpenRouteService key" confirmation — only `RouteLibrary`'s own usage of it was removed.
 
 ### Remaining Milestone 4 features
 

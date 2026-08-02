@@ -1,5 +1,5 @@
-import { useState } from "react";
-import type { SubmitEvent } from "react";
+import { useId, useRef, useState } from "react";
+import type { KeyboardEvent, SubmitEvent } from "react";
 import type { PlannedRoute } from "../../domain/types.ts";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 
@@ -9,6 +9,14 @@ export interface RouteListItemProps {
   onRename: (id: string, name: string) => void;
   onExport: (route: PlannedRoute) => void;
   onDeleteRequest: (id: string) => void;
+  onDeleteCancel: (id: string) => void;
+  onDeleteConfirm: (id: string) => void;
+  isDeletePending: boolean;
+  isDeleting: boolean;
+  deleteError: string | null;
+  /** Registers/unregisters this row's name button so RouteLibrary can move
+   * focus to it after a different route is deleted. */
+  nameButtonRef: (element: HTMLButtonElement | null) => void;
 }
 
 export function RouteListItem({
@@ -17,9 +25,18 @@ export function RouteListItem({
   onRename,
   onExport,
   onDeleteRequest,
+  onDeleteCancel,
+  onDeleteConfirm,
+  isDeletePending,
+  isDeleting,
+  deleteError,
+  nameButtonRef,
 }: RouteListItemProps) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [draftName, setDraftName] = useState(route.name);
+  const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const headingId = useId();
+  const descriptionId = useId();
 
   const handleRenameSubmit = (event: SubmitEvent) => {
     event.preventDefault();
@@ -30,9 +47,21 @@ export function RouteListItem({
     setIsRenaming(false);
   };
 
+  const handleCancelDelete = () => {
+    if (isDeleting) return;
+    onDeleteCancel(route.id);
+    deleteButtonRef.current?.focus();
+  };
+
+  const handleConfirmKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      handleCancelDelete();
+    }
+  };
+
   if (isRenaming) {
     return (
-      <li>
+      <li data-route-id={route.id}>
         <form onSubmit={handleRenameSubmit}>
           <label>
             Route name
@@ -59,10 +88,11 @@ export function RouteListItem({
   }
 
   return (
-    <li>
+    <li data-route-id={route.id}>
       <div>
         <button
           type="button"
+          ref={nameButtonRef}
           onClick={() => {
             onOpen(route);
           }}
@@ -73,10 +103,14 @@ export function RouteListItem({
       <div>
         {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
       </div>
-      <div>
+      <div className="route-list-item-actions">
         <button
           type="button"
           onClick={() => {
+            if (isDeletePending) {
+              onDeleteCancel(route.id);
+            }
+            setDraftName(route.name);
             setIsRenaming(true);
           }}
         >
@@ -92,6 +126,7 @@ export function RouteListItem({
         </button>
         <button
           type="button"
+          ref={deleteButtonRef}
           onClick={() => {
             onDeleteRequest(route.id);
           }}
@@ -99,6 +134,41 @@ export function RouteListItem({
           Delete
         </button>
       </div>
+      {isDeletePending ? (
+        <div
+          className="route-delete-confirm"
+          role="alertdialog"
+          aria-labelledby={headingId}
+          aria-describedby={descriptionId}
+          onKeyDown={handleConfirmKeyDown}
+        >
+          <h3 id={headingId}>Delete “{route.name}”?</h3>
+          <p id={descriptionId}>
+            This route will be permanently deleted from this device. This cannot be
+            undone.
+          </p>
+          {deleteError ? <p role="alert">{deleteError}</p> : null}
+          <div className="route-delete-confirm-actions">
+            <button
+              type="button"
+              autoFocus
+              disabled={isDeleting}
+              onClick={handleCancelDelete}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={isDeleting}
+              onClick={() => {
+                onDeleteConfirm(route.id);
+              }}
+            >
+              {isDeleting ? "Deleting…" : "Delete route"}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </li>
   );
 }
