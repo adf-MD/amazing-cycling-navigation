@@ -414,7 +414,7 @@ export function RidingScreen({
         />
       ) : null}
 
-      <h2>{route.name}</h2>
+      <h1 className="screen-title">{route.name}</h1>
       <p>
         {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
       </p>

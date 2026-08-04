@@ -98,11 +98,13 @@ export function RouteLibrary({ onOpenRoute }: RouteLibraryProps) {
   };
 
   return (
-    <section aria-label="Route library">
-      <h2 ref={headingRef} tabIndex={-1}>
-        Routes
-      </h2>
-      <ImportGpxButton onImported={handleImported} onError={handleImportError} />
+    <section className="screen" aria-label="Route library">
+      <div className="row">
+        <h1 className="screen-title" ref={headingRef} tabIndex={-1}>
+          Routes
+        </h1>
+        <ImportGpxButton onImported={handleImported} onError={handleImportError} />
+      </div>
       {importError ? <p role="alert">{importError}</p> : null}
       {exportError ? <p role="alert">{exportError}</p> : null}
       {notices.map((notice) => (
@@ -116,7 +118,7 @@ export function RouteLibrary({ onOpenRoute }: RouteLibraryProps) {
       ) : routes.length === 0 ? (
         <p>No routes saved yet. Import a GPX file to get started.</p>
       ) : (
-        <ul>
+        <ul className="route-list">
           {routes.map((route) => (
             <RouteListItem
               key={route.id}

@@ -3,11 +3,26 @@
   --colour-bg: #ffffff;
   --colour-bg-elevated: #f2f2f2;
   --colour-text: #101010;
+  --colour-text-muted: #55575a;
   --colour-accent: #0a5f38;
+  --colour-accent-soft: #e3f3ea;
+  --colour-on-accent: #ffffff;
+  --colour-info: #0958d9;
+  --colour-info-soft: #e6f0fd;
   --colour-warning: #8a5600;
   --colour-danger: #9b1c1c;
   --colour-border: #767676;
+  --colour-border-strong: #101010;
   --touch-target-min: 44px;
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 15%);
   font-family:
     system-ui,
     -apple-system,
@@ -21,10 +36,22 @@
     --colour-bg: #0d0d0d;
     --colour-bg-elevated: #1a1a1a;
     --colour-text: #f5f5f5;
+    --colour-text-muted: #b6b6b6;
     --colour-accent: #4ade91;
+    --colour-accent-soft: #163524;
+    /* Near-black green, not the light-mode #ffffff: --colour-accent itself
+     * flips to a light green in dark mode (to stay legible as foreground
+     * text on the dark page background), so a solid accent-filled button
+     * (.btn-primary) needs a dark foreground here instead of white to keep
+     * WCAG AA contrast — reusing white would fail against #4ade91. */
+    --colour-on-accent: #062e1c;
+    --colour-info: #66b3ff;
+    --colour-info-soft: #12253f;
     --colour-warning: #f0b429;
     --colour-danger: #ff6b6b;
     --colour-border: #8a8a8a;
+    --colour-border-strong: #f5f5f5;
+    --shadow-sm: 0 1px 3px rgb(0 0 0 / 55%);
   }
 }
 
@@ -78,17 +105,116 @@ body {
   }
 }
 
+/* Leaves a real, non-button dead zone in header's own top-left corner —
+ * needed as an unambiguous click-away target elsewhere in the app (e.g.
+ * closing the Riding wake-lock info popover) now that header no longer
+ * contains a product-name heading of its own. */
+header {
+  padding: var(--space-8) var(--space-8) 0 var(--space-8);
+}
+
+.main-nav {
+  display: flex;
+  gap: var(--space-4);
+  border-top: 1px solid var(--colour-border);
+}
+
+.main-nav-button {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-4);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--colour-text);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+/* Never colour alone: a soft accent surface plus an inset ring, mirroring
+ * the existing .cycling-profile-button.is-selected convention below.
+ * Keyed off aria-current directly rather than a parallel class, so there
+ * is exactly one source of truth for which destination is active. */
+.main-nav-button[aria-current="page"] {
+  background: var(--colour-accent-soft);
+  box-shadow: inset 0 0 0 2px var(--colour-accent);
+  color: var(--colour-accent);
+}
+
 button {
   min-height: var(--touch-target-min);
   min-width: var(--touch-target-min);
+  appearance: none;
+  font: inherit;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-md);
+  background: var(--colour-bg);
+  color: var(--colour-text);
+  padding: var(--space-8) var(--space-16);
+  cursor: pointer;
 }
 
-/* Sized to reliably fit "Amazing Cycling Navigation" on one line at
- * narrow phone viewports (e.g. iPhone 13, 390px CSS width) — the
- * default h1 size (2em) wraps there — while still scaling up sensibly
- * on wider screens. */
-header h1 {
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--colour-accent);
+  outline-offset: 2px;
+}
+
+.btn-primary {
+  background: var(--colour-accent);
+  border-color: var(--colour-accent);
+  color: var(--colour-on-accent);
+}
+
+.btn-secondary {
+  background: var(--colour-bg-elevated);
+  border-color: var(--colour-border);
+  color: var(--colour-text);
+}
+
+.btn-danger {
+  background: var(--colour-bg);
+  border-color: var(--colour-danger);
+  color: var(--colour-danger);
+}
+
+/* Sized to reliably fit a screen's own title on one line at narrow phone
+ * viewports (e.g. iPhone 13, 390px CSS width) — the default h1 size (2em)
+ * wraps there for longer titles — while still scaling up sensibly on wider
+ * screens. Applied to every screen's own top heading, including a route's
+ * name used as Riding's heading; a class (not a bare `h1` element rule) so
+ * a future nested heading can opt out if ever needed. */
+.screen-title {
+  margin: 0;
   font-size: clamp(1.1rem, 5.5vw, 1.6rem);
+}
+
+.screen {
+  padding: var(--space-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex-wrap: wrap;
 }
 
 /* Positioned overlay inside MapView's own (position: relative) root, so it
@@ -181,6 +307,48 @@ header h1 {
   margin: 0.15rem 0;
 }
 
+.route-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.route-card {
+  padding: var(--space-16);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-md);
+  background: var(--colour-bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+/* The route name is itself the "open route" affordance — styled as a
+ * full-width title rather than a pill button, but it's still a real
+ * <button> so focus-visible styling (from the global `button` rule) still
+ * applies. overflow-wrap lets a long imported/renamed route name wrap
+ * safely instead of overflowing the card or forcing horizontal scroll. */
+.route-card-title {
+  display: block;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--colour-text);
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.route-card-meta {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--colour-text-muted);
+}
+
 .route-list-item-actions {
   display: flex;
   flex-wrap: wrap;
@@ -199,6 +367,13 @@ header h1 {
   border-left: 4px solid var(--colour-danger);
   border-radius: 6px;
   background: var(--colour-bg-elevated);
+}
+
+/* The confirmation heading includes the route's own (possibly long) name
+ * in quotes — same long-name-wrapping need as .route-card-title above. */
+.route-delete-confirm h2 {
+  margin: 0 0 0.25rem;
+  overflow-wrap: anywhere;
 }
 
 .route-delete-confirm-actions {
@@ -241,6 +416,16 @@ header h1 {
   border: none;
   background: var(--colour-accent);
   color: #ffffff;
+}
+
+/* Overrides the global `button` rule's new horizontal padding: this is a
+ * fixed 48px circular icon button, so extra padding would enlarge it into
+ * an oval and risk e2e/layout.spec.ts's bounding-box assertions for the
+ * Locate-me/North-up/Follow-location controls. Every other property this
+ * class needs (border/background/colour/font) is already fully specified
+ * above, so padding is the only property that needs reasserting here. */
+.planning-map-control {
+  padding: 0;
 }
 
 /* Fixed at the exact visual/geographic centre of MapView's own container

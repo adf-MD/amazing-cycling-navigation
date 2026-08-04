@@ -72,9 +72,12 @@ export function RouteListItem({
               }}
             />
           </label>
-          <button type="submit">Save</button>
+          <button type="submit" className="btn-primary">
+            Save
+          </button>
           <button
             type="button"
+            className="btn-secondary"
             onClick={() => {
               setDraftName(route.name);
               setIsRenaming(false);
@@ -88,10 +91,11 @@ export function RouteListItem({
   }
 
   return (
-    <li data-route-id={route.id}>
+    <li className="route-card stack" data-route-id={route.id}>
       <div>
         <button
           type="button"
+          className="route-card-title"
           ref={nameButtonRef}
           onClick={() => {
             onOpen(route);
@@ -100,12 +104,13 @@ export function RouteListItem({
           {route.name}
         </button>
       </div>
-      <div>
+      <p className="route-card-meta">
         {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
-      </div>
+      </p>
       <div className="route-list-item-actions">
         <button
           type="button"
+          className="btn-secondary"
           onClick={() => {
             if (isDeletePending) {
               onDeleteCancel(route.id);
@@ -118,6 +123,7 @@ export function RouteListItem({
         </button>
         <button
           type="button"
+          className="btn-secondary"
           onClick={() => {
             onExport(route);
           }}
@@ -126,6 +132,7 @@ export function RouteListItem({
         </button>
         <button
           type="button"
+          className="btn-danger"
           ref={deleteButtonRef}
           onClick={() => {
             onDeleteRequest(route.id);
@@ -142,7 +149,7 @@ export function RouteListItem({
           aria-describedby={descriptionId}
           onKeyDown={handleConfirmKeyDown}
         >
-          <h3 id={headingId}>Delete “{route.name}”?</h3>
+          <h2 id={headingId}>Delete “{route.name}”?</h2>
           <p id={descriptionId}>
             This route will be permanently deleted from this device. This cannot be
             undone.
@@ -151,6 +158,7 @@ export function RouteListItem({
           <div className="route-delete-confirm-actions">
             <button
               type="button"
+              className="btn-secondary"
               autoFocus
               disabled={isDeleting}
               onClick={handleCancelDelete}
@@ -159,6 +167,7 @@ export function RouteListItem({
             </button>
             <button
               type="button"
+              className="btn-danger"
               disabled={isDeleting}
               onClick={() => {
                 onDeleteConfirm(route.id);

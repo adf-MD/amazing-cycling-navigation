@@ -6,8 +6,7 @@ import { RouteLibrary } from "./ui/library/RouteLibrary.tsx";
 import { PlanningScreen } from "./ui/planning/PlanningScreen.tsx";
 import { RidingScreen } from "./ui/riding/RidingScreen.tsx";
 import { SettingsScreen } from "./ui/settings/SettingsScreen.tsx";
-
-type Screen = "library" | "riding" | "diagnostics" | "planning" | "settings";
+import { MainNavigation, type Screen } from "./ui/shared/MainNavigation.tsx";
 
 function App() {
   const [screen, setScreen] = useState<Screen>("library");
@@ -31,54 +30,7 @@ function App() {
   return (
     <div className="app-shell">
       <header>
-        <h1>Amazing Cycling Navigation</h1>
-        <nav aria-label="Main">
-          <button
-            type="button"
-            aria-current={screen === "library" ? "page" : undefined}
-            onClick={() => {
-              setScreen("library");
-            }}
-          >
-            Routes
-          </button>
-          <button
-            type="button"
-            aria-current={screen === "riding" ? "page" : undefined}
-            onClick={() => {
-              setScreen("riding");
-            }}
-          >
-            Ride
-          </button>
-          <button
-            type="button"
-            aria-current={screen === "planning" ? "page" : undefined}
-            onClick={() => {
-              setScreen("planning");
-            }}
-          >
-            Plan
-          </button>
-          <button
-            type="button"
-            aria-current={screen === "diagnostics" ? "page" : undefined}
-            onClick={() => {
-              setScreen("diagnostics");
-            }}
-          >
-            Diagnostics
-          </button>
-          <button
-            type="button"
-            aria-current={screen === "settings" ? "page" : undefined}
-            onClick={() => {
-              setScreen("settings");
-            }}
-          >
-            Settings
-          </button>
-        </nav>
+        <MainNavigation screen={screen} onNavigate={setScreen} />
       </header>
 
       {needRefresh ? (
@@ -107,7 +59,19 @@ function App() {
           (selectedRoute ? (
             <RidingScreen route={selectedRoute} />
           ) : (
-            <p>Select a route from the library to start riding.</p>
+            <section className="screen" aria-label="Ride">
+              <h1 className="screen-title">Ride</h1>
+              <p>No route selected yet. Choose a route from Routes to start riding.</p>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  setScreen("library");
+                }}
+              >
+                Choose a route
+              </button>
+            </section>
           ))}
         {screen === "planning" && (
           <PlanningScreen

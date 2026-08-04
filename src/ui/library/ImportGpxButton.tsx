@@ -30,6 +30,7 @@ export function ImportGpxButton({ onImported, onError }: ImportGpxButtonProps) {
     <div>
       <button
         type="button"
+        className="btn-primary"
         onClick={() => {
           inputRef.current?.click();
         }}

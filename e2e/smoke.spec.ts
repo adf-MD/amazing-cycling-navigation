@@ -17,9 +17,8 @@ test("app shell loads with no console errors", async ({ page }) => {
 
   await page.goto("/");
 
-  await expect(
-    page.getByRole("heading", { name: "Amazing Cycling Navigation" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   expect(consoleErrors).toEqual([]);
 });
 

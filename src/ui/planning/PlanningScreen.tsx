@@ -793,7 +793,7 @@ export function PlanningScreen({
 
   return (
     <section aria-label="Planning">
-      <h2>Plan a route</h2>
+      <h1 className="screen-title">Plan a route</h1>
 
       {!hasKey ? <NoApiKeyNotice onOpenSettings={onNavigateToSettings} /> : null}
 

@@ -257,8 +257,10 @@ test.describe("compact control on a narrow phone viewport", () => {
     await infoButton.click();
     // The popover overlays the route title by design, so click a target
     // unambiguously outside the whole Riding section instead: the
-    // app-level header (App.tsx), which sits above <main> entirely.
-    await page.getByRole("heading", { name: "Amazing Cycling Navigation" }).click();
+    // app-level header's own top-left padding (index.css's `header`
+    // rule), which sits above <main> entirely and has no interactive
+    // element at this position.
+    await page.locator("header").click({ position: { x: 4, y: 4 } });
     await expect(popover).toBeHidden();
 
     await checkbox.check();

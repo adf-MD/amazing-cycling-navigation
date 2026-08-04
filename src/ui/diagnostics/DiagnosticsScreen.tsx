@@ -127,7 +127,7 @@ export function DiagnosticsScreen({
 
   return (
     <section aria-label="Diagnostics">
-      <h1>Diagnostics</h1>
+      <h1 className="screen-title">Diagnostics</h1>
       <dl>
         <dt>App version</dt>
         <dd>{__APP_VERSION__}</dd>

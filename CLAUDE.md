@@ -227,6 +227,7 @@ The first provider adapter should target openrouteservice, offering its `cycling
 - Use metric units throughout.
 - Use British spelling in user-facing text and documentation.
 - Make empty, loading, stale, offline, permission-denied, and provider-failure states explicit.
+- `src/index.css` carries a small shared visual foundation: spacing (`--space-4` through `--space-32`), two radius tokens and one restrained shadow token, and colour roles including a new `--colour-info`/`--colour-info-soft` for informational/location cues, independent of any map colour (map/route/gradient/warning colours are unchanged). A small button vocabulary (`.btn-primary`/`.btn-secondary`/`.btn-danger`, the latter deliberately quiet/outlined rather than a large solid red) and layout classes (`.screen`, `.stack`, `.row`) sit on top. Routes (`RouteLibrary`/`RouteListItem`) is the first screen migrated to this foundation, presented as route cards rather than a bullet list; other screens keep their existing internal layout for now and are expected to migrate incrementally in later slices, per this file's own smallest-coherent-vertical-slice discipline.
 
 ## Engineering standards
 
@@ -275,10 +276,10 @@ The following items are approved directions or confirmed bugs for future work. T
 
 ### Navigation and library interface
 
-6. **Header hierarchy**
-   - The persistent product name currently consumes space while screen/route titles are more relevant.
-   - Preferred direction: screen or route title becomes the single visible h1; product name remains in document title, manifest and Home Screen name.
-   - Mark this as requiring a final design discussion before implementation, not as a settled UI requirement.
+6. **Header hierarchy — done**
+   - The persistent visible "Amazing Cycling Navigation" heading was removed from the app shell; the product name remains, unchanged, in the document title, PWA manifest and Home Screen identity. Every screen now renders exactly one primary `<h1>` (`.screen-title`): `Routes`, `Ride` when no route is selected, the route's own name once one is, `Plan a route`, `Diagnostics`, or `Settings` — with Settings' nested "OpenRouteService" subsection bumped from `h3` to `h2` to keep a valid descending hierarchy beneath its new `h1`.
+   - The previous five unclassed `<nav>` buttons in `App.tsx` became `MainNavigation` (`src/ui/shared/MainNavigation.tsx`, with `src/ui/shared/NavIcon.tsx` supplying five small project-owned inline SVG glyphs, mirroring `ManoeuvreIcon.tsx`'s existing conventions exactly — `aria-hidden`, `fill="currentColor"`, inline `style` only, never a CSS class). It renders a compact, non-sticky, equal-width row of five icon-and-label destinations (`Routes`/`Ride`/`Plan`/`Diagnostics`/`Settings`, unchanged labels and order); the active destination is never colour alone — `aria-current="page"` is the single source of truth, paired with a soft accent surface plus an inset ring (`.main-nav-button[aria-current="page"]`), mirroring the existing `.cycling-profile-button.is-selected` convention. `Screen` (the app's own navigation-state union) now lives in `MainNavigation.tsx` and is exported from there rather than declared locally in `App.tsx`.
+   - Riding's own previously-untested Ride-with-no-selected-route state is now a proper empty screen (`Ride` heading, a short explanation, and a primary "Choose a route" action back to Routes) rather than a bare paragraph.
 
 7. **Inline route-deletion confirmation — done**
    - Pressing a route's Delete button now opens a non-modal, per-row confirmation (`role="alertdialog"`, no `aria-modal`) rendered inside that route's own `<li>`, directly beneath its Rename/Export/Delete row, replacing the previous screen-detached `ConfirmDialog`. `RouteLibrary` keeps single-source-of-truth ownership of `pendingDeleteId`/`isDeleting`/`deleteError` and the actual `deleteRoute` call; `RouteListItem` only ever renders its own row's confirmation, so at most one is open at a time and opening a second row's replaces the first.
@@ -331,3 +332,10 @@ The following items are approved directions or confirmed bugs for future work. T
 14. **Selectable Planning cycling profiles — done**
     - Milestone 3's fifth slice completes this item: an explicit Road bike (`cycling-road`, default)/General cycling (`cycling-regular`) profile selector, profile-aware leg caching (already supported by the existing cache-key design), draft and saved-route persistence, a stale-result indicator that gates Save/Export until a matching recalculation lands, and GPX round-tripping of the recorded profile via the existing `<acn:source>` extension. See Milestone 3's own fifth-slice paragraph above for full detail.
     - Total cycleway-distance or cycleway-percentage reporting is intentionally not planned. The user does not want this additional statistic, and a provider's cycleway classification is not equivalent to paved surface quality or road-bike suitability; the existing surface analysis remains the relevant measure for this app. Do not add this reporting unless the user explicitly changes the scope.
+
+### Settings defaults
+
+15. **Avoid ferries by default (not yet implemented)**
+    - Approved direction, not implemented in the visual-foundation slice: a Settings-level "Avoid ferries by default" preference (`Route planning` section), defaulting to on for a new installation, that seeds only a _fresh_ Planning draft's own initial "Avoid ferries" checkbox value.
+    - A restored draft always keeps its own already-stored `avoidFerries` value; changing the setting must never silently rewrite or recalculate an existing draft's route.
+    - Planning's existing per-draft "Avoid ferries" checkbox is unchanged and stays directly editable in Planning until this lands — do not remove or hide it before its Settings-level replacement exists.

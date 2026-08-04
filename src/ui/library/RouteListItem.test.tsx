@@ -244,4 +244,18 @@ describe("RouteListItem", () => {
 
     expect(onDeleteCancel).not.toHaveBeenCalled();
   });
+
+  it("renders a very long route name in full, in both the card title and the delete confirmation heading, rather than truncating it", () => {
+    const longName =
+      "The full loop around the reservoir via the old railway path and back through the woods and the village and the church and the bridge";
+    renderItem({
+      route: buildRoute({ name: longName }),
+      isDeletePending: true,
+    });
+
+    expect(screen.getByRole("button", { name: longName })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("alertdialog")).getByText(`Delete “${longName}”?`),
+    ).toBeInTheDocument();
+  });
 });

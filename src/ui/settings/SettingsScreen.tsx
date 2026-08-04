@@ -82,7 +82,7 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
 
   return (
     <section aria-label="Settings">
-      <h2>Settings</h2>
+      <h1 className="screen-title">Settings</h1>
 
       {!online ? (
         <p role="status">
@@ -92,7 +92,7 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
       ) : null}
 
       <section aria-labelledby="ors-settings-heading">
-        <h3 id="ors-settings-heading">OpenRouteService</h3>
+        <h2 id="ors-settings-heading">OpenRouteService</h2>
         <p>
           Road-bike route planning uses your own free key from{" "}
           <a href="https://account.heigit.org/signup" target="_blank" rel="noreferrer">
