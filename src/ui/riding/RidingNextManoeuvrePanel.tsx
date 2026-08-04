@@ -112,13 +112,17 @@ export function RidingNextManoeuvrePanel({
     if (!isTrusted) {
       if (sourceKind === "gpx-import") {
         return (
-          <p role="status">
+          <p role="status" className="status-row">
             No trusted turn information is available for this imported GPX. Follow the
             route line on the map.
           </p>
         );
       }
-      return <p role="status">Turn information is unavailable for this route.</p>;
+      return (
+        <p role="status" className="status-row">
+          Turn information is unavailable for this route.
+        </p>
+      );
     }
     // Every manoeuvre has been reliably passed — end of route.
     return null;
@@ -134,16 +138,18 @@ export function RidingNextManoeuvrePanel({
     genericManoeuvreLabel(selection.manoeuvre.type);
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-      <ManoeuvreIcon type={selection.manoeuvre.type} sizePx={32} />
-      <div>
-        <p role="status" style={{ margin: 0 }}>
+    <div className="ride-manoeuvre-card">
+      <div className="ride-manoeuvre-icon">
+        <ManoeuvreIcon type={selection.manoeuvre.type} sizePx={32} />
+      </div>
+      <div className="ride-manoeuvre-text">
+        <p role="status" className="ride-manoeuvre-instruction">
           {instructionText}
           {isFrozen ? " — based on your last known position" : ""}
         </p>
         <p
+          className="ride-manoeuvre-distance"
           style={{
-            margin: 0,
             fontSize: `${String(URGENCY_FONT_SIZE_REM[urgency])}rem`,
             fontWeight: URGENCY_FONT_WEIGHT[urgency],
           }}

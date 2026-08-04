@@ -79,7 +79,7 @@ export function RidingWakeLockControl({
   }, [isInfoOpen]);
 
   return (
-    <div ref={controlRef}>
+    <div ref={controlRef} className="ride-wake-lock-control">
       <div
         ref={rowRef}
         style={{

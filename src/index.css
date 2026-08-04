@@ -195,6 +195,7 @@ button:focus-visible {
 .screen-title {
   margin: 0;
   font-size: clamp(1.1rem, 5.5vw, 1.6rem);
+  overflow-wrap: anywhere;
 }
 
 .screen {
@@ -246,9 +247,14 @@ button:focus-visible {
 }
 
 /* A deliberate gap below the map, replacing the accidental spacing the
- * previously flow-positioned attribution used to leave behind. */
+ * previously flow-positioned attribution used to leave behind. Wraps so
+ * five buttons (Full/2 km/5 km/10 km/Climb) never force horizontal
+ * scroll on a narrow phone. */
 .elevation-window-group {
   margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
 }
 
 /* Planning's Road bike/General cycling selector, mirroring
@@ -681,4 +687,236 @@ button:focus-visible {
   pointer-events: none;
   box-shadow: 0 1px 2px rgb(0 0 0 / 35%);
   z-index: -1;
+}
+
+/* --- Riding: active-riding glance hierarchy (visual slice 3) --- */
+
+.ride-route-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Quieter than default so the wake-lock control's optional status/info
+ * text never competes with the route title beneath it. */
+.ride-wake-lock-control {
+  font-size: 0.85rem;
+  color: var(--colour-text-muted);
+}
+
+/* The combined live status strip: route status, remaining distance, GPS
+ * accuracy/staleness — one compact bordered row, never a table; wraps to
+ * two lines on a narrow phone rather than scrolling horizontally. */
+.ride-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-12);
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--colour-border);
+  background: var(--colour-bg);
+  font-size: 0.85rem;
+}
+
+.ride-status-strip-status {
+  font-weight: 700;
+}
+
+/* Never colour alone: wording ("Possibly off route"/"Off route") already
+ * distinguishes these — colour is a secondary reinforcement only, per
+ * CLAUDE.md's own "do not rely on green, amber or red alone" wording,
+ * which names all three as expected (not forbidden) secondary cues. */
+.ride-status-strip-status--possibly-off-route {
+  color: var(--colour-warning);
+}
+
+.ride-status-strip-status--off-route {
+  color: var(--colour-danger);
+}
+
+.ride-status-strip-detail {
+  color: var(--colour-text-muted);
+}
+
+/* The geolocation-error inline alert panel (message + Try again). */
+.ride-alert-panel {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--colour-danger);
+  color: var(--colour-danger);
+  background: var(--colour-bg);
+}
+
+.ride-alert-panel p {
+  margin: 0;
+}
+
+/* The next-manoeuvre glance card — a stable icon column plus an
+ * instruction/distance stack, replacing full inline styling. */
+.ride-manoeuvre-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-md);
+  background: var(--colour-bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.ride-manoeuvre-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+}
+
+.ride-manoeuvre-text {
+  /* Lets overflow-wrap below actually take effect inside a flex item,
+   * instead of the item refusing to shrink past its content's natural
+   * width. */
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ride-manoeuvre-instruction {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ride-manoeuvre-distance {
+  margin: var(--space-4) 0 0;
+}
+
+/* Riding's own map wrapper, replacing the previous inline
+ * {height:320,position:"relative"}. Base rule is the pre-ride/overview
+ * size (unchanged 320px); --active grows it once riding has genuinely
+ * started. */
+.ride-map-container {
+  position: relative;
+  height: 320px;
+}
+
+/* A plain px fallback first, then a dvh-aware override gated behind
+ * @supports — mirrors .app-shell's own documented minifier-safe
+ * dvh-fallback pattern (the production CSS minifier collapses duplicate
+ * same-property declarations within one rule, but not a separate
+ * @supports-gated rule). 46dvh keeps the map genuinely prominent on a
+ * 390x844 iPhone (~388px) without crowding the status strip/manoeuvre
+ * card/elevation section off screen; the clamp() floor (280px) protects
+ * short/landscape viewports, its ceiling (420px) stops the map
+ * dominating a taller iPhone or a wide desktop test viewport. The
+ * height is snapped to the nearest 20px step via round() rather than
+ * left as 46dvh's raw continuous result: direct real-browser
+ * investigation (dragging to rotate/pitch the follow camera, then
+ * checking whether MapLibre ever emits `moveend`/`rotateend`) found
+ * that a handful of specific, narrow container-height values —
+ * entirely unrelated to whether the value is fractional — leave
+ * MapLibre's own drag-rotate/drag-pitch gesture permanently "active"
+ * for this route/camera combination, so it never reports the gesture's
+ * end and the camera visibly never finishes rotating. Snapping to a
+ * coarse 20px grid is a pragmatic way to keep the map's height
+ * genuinely viewport-aware while reliably stepping over that
+ * unexplained narrow band, verified directly against both the default
+ * desktop e2e viewport and the project's 390x844 mobile viewport.
+ * round() itself needs its own narrower @supports gate, since it lands
+ * in browsers after plain dvh support. */
+.ride-map-container--active {
+  height: 340px;
+}
+
+@supports (height: 46dvh) {
+  .ride-map-container--active {
+    height: clamp(280px, 46dvh, 420px);
+  }
+}
+
+@supports (height: round(nearest, 46dvh, 20px)) {
+  .ride-map-container--active {
+    height: clamp(280px, round(nearest, 46dvh, 20px), 420px);
+  }
+}
+
+/* Riding's own two camera controls — bottom-right stack, mirroring
+ * .planning-map-control's shape/pressed-state swap but at Riding's own
+ * position (two buttons at different bottom offsets, not Planning's
+ * top-right stack). Pressed-state colours stay literal (not
+ * var(--colour-on-accent)/var(--colour-bg)) to reproduce today's inline
+ * styling exactly, not to silently change dark-mode contrast. */
+.ride-map-control {
+  position: absolute;
+  right: 12px;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--colour-text);
+  background: var(--colour-bg);
+  color: var(--colour-text);
+  line-height: 1.1;
+}
+
+.ride-map-control--north-up {
+  bottom: 72px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* Deliberately no font-weight here — today's inline Follow-location
+ * button never set one (only North-up did), so it inherits normal
+ * weight; a blanket weight on .ride-map-control would silently bold it. */
+.ride-map-control--follow {
+  bottom: 12px;
+  font-size: 0.75rem;
+}
+
+.ride-map-control.is-pressed {
+  border: none;
+  background: var(--colour-accent);
+  color: #ffffff;
+}
+
+/* Fills in the previously orphan .riding-climb-progress class (see
+ * RidingClimbProgressPanel.tsx) — a compact bordered/elevated card,
+ * mirroring .panel/.route-card's own treatment. No JSX change needed. */
+.riding-climb-progress {
+  padding: var(--space-12) var(--space-16);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-md);
+  background: var(--colour-bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.riding-climb-progress h3 {
+  margin: 0 0 var(--space-8);
+}
+
+.riding-climb-progress p {
+  margin: var(--space-4) 0;
+  font-size: 0.9rem;
+}
+
+/* The chart/climb-panel/disclosure/feature-detail secondary section
+ * below the map — a tighter gap than .screen's own 16px, since these
+ * pieces read as one cohesive group. Outer spacing only. */
+.ride-elevation-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+/* Mirrors .cycling-profile-button.is-selected/.route-warning-button.is-selected
+ * exactly: an explicit class driven by the same boolean already backing
+ * aria-pressed, never a second state variable and never an
+ * [aria-pressed="true"] attribute selector — kept consistent with this
+ * project's one existing convention for a selected button in a group. */
+.elevation-window-button.is-selected {
+  background-color: var(--colour-bg-elevated);
+  box-shadow: 0 0 0 2px var(--colour-border);
 }

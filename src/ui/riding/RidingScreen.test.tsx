@@ -424,6 +424,26 @@ describe("RidingScreen", () => {
     expect(screen.getByText("On route")).toBeInTheDocument();
   });
 
+  it("switches the map wrapper to the active-riding size class once riding starts", async () => {
+    const user = userEvent.setup();
+    const stub = buildStubGeolocationSource();
+    const { container } = render(
+      <RidingScreen
+        route={route}
+        geolocationSource={stub.source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+
+    const mapWrapper = container.querySelector(".ride-map-container");
+    expect(mapWrapper).not.toBeNull();
+    expect(mapWrapper).not.toHaveClass("ride-map-container--active");
+
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+
+    expect(mapWrapper).toHaveClass("ride-map-container--active");
+  });
+
   it("shows an explicit permission-denied state and lets the user retry", async () => {
     const user = userEvent.setup();
     const stub = buildStubGeolocationSource();

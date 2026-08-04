@@ -183,7 +183,9 @@ describe("RidingNextManoeuvrePanel", () => {
 
     const distanceParagraphs = [normalContainer, nearContainer, imminentContainer].map(
       (container) => {
-        const paragraph = container.querySelectorAll("p")[1];
+        const paragraph = container.querySelector<HTMLParagraphElement>(
+          ".ride-manoeuvre-distance",
+        );
         if (!paragraph) throw new Error("expected a distance paragraph");
         return paragraph;
       },

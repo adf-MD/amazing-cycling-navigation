@@ -106,3 +106,67 @@ test("map attribution stays inside the map and clear of the elevation controls a
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
+
+test("the map grows to a viewport-aware height once riding starts, and its canvas reflows to match", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await page.goto("/");
+  await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
+  await page.getByRole("button", { name: "smoke-route" }).click();
+
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await expect(mapContainer.locator("canvas")).toBeVisible();
+
+  const preRideBox = await mapContainer.boundingBox();
+  if (!preRideBox) throw new Error("expected the pre-ride map to have a bounding box");
+
+  await page.getByRole("button", { name: "Start riding" }).click();
+
+  // The wrapper's CSS height changes the instant the active class applies,
+  // but MapLibre's own canvas backing store only catches up once its
+  // ResizeObserver callback fires — poll rather than assume both happen in
+  // the same frame.
+  await expect
+    .poll(async () => {
+      const box = await mapContainer.boundingBox();
+      return box?.height ?? null;
+    })
+    .not.toBe(preRideBox.height);
+
+  const [activeBox, canvasBox] = await Promise.all([
+    mapContainer.boundingBox(),
+    mapContainer.locator("canvas").boundingBox(),
+  ]);
+  if (!activeBox || !canvasBox) {
+    throw new Error(
+      "expected the active-riding map and its canvas to have a bounding box",
+    );
+  }
+
+  // A real, deliberate increase, not pinned to an exact pixel value — this
+  // is what CSS alone would already prove.
+  expect(activeBox.height).toBeGreaterThan(preRideBox.height);
+  // This is what actually proves MapLibre's canvas backing store reflowed
+  // via MapView.tsx's existing ResizeObserver/resize() wiring, rather than
+  // the canvas being left stretched or clipped at its old pixel size while
+  // only the wrapper <div> around it grew.
+  expect(Math.abs(canvasBox.height - activeBox.height)).toBeLessThan(2);
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
