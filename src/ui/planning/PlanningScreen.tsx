@@ -46,6 +46,7 @@ import {
   getDraft,
   saveDraft,
 } from "../../storage/planningDraftRepository.ts";
+import { getPlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
 import { saveRoute } from "../../storage/routesRepository.ts";
 import { downloadTextFile } from "../shared/downloadTextFile.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
@@ -141,6 +142,11 @@ export function PlanningScreen({
     waypointHistoryReducer,
     INITIAL_WAYPOINT_HISTORY_STATE,
   );
+  // Pre-hydration placeholder only — overwritten before the first paint
+  // that matters by the draft-hydration effect below, either from a
+  // restored draft's own stored value or (for a genuinely fresh draft)
+  // from getPlanningPreferences()'s resolved default, which is also
+  // `true` when nothing has been saved in Settings.
   const [avoidFerries, setAvoidFerries] = useState(true);
   const [profile, setProfile] = useState<RoutingProfile>(DEFAULT_ROUTING_PROFILE);
   const [routeName, setRouteName] = useState("Planned route");
@@ -422,8 +428,32 @@ export function PlanningScreen({
           setRouteName(draft.routeName);
           setAvoidFerries(draft.avoidFerries);
           setProfile(draft.profile);
+          setIsDraftHydrated(true);
+          return;
         }
-        setIsDraftHydrated(true);
+        // Genuinely fresh: no draft row at all, or a draft row with zero
+        // waypoints — the exact boundary this effect already used before
+        // the Settings-level ferry default existed, and the same boundary
+        // the debounced autosave effect below relies on (it only ever
+        // writes once state.present is non-empty). Seed this session's
+        // ferries value once from the Settings default; from the draft's
+        // first autosave onward it is fully self-contained, and a later
+        // change to the Settings default never touches it again.
+        getPlanningPreferences()
+          .then((preferences) => {
+            if (cancelled) return;
+            setAvoidFerries(preferences.avoidFerriesByDefault);
+          })
+          .catch((error: unknown) => {
+            logError("planning-load-preferences", error);
+            // Leaves avoidFerries at its useState(true) initial value —
+            // the same value the Settings default itself resolves to
+            // when nothing has been saved, so a failed read here is
+            // never observably different from the ordinary case.
+          })
+          .finally(() => {
+            if (!cancelled) setIsDraftHydrated(true);
+          });
       })
       .catch((error: unknown) => {
         logError("planning-load-draft", error);
@@ -961,17 +991,14 @@ export function PlanningScreen({
       </div>
       <p>{describeRoutingProfile(profile)}</p>
 
-      <div>
-        <label>
-          <input
-            type="checkbox"
-            checked={avoidFerries}
-            onChange={(event) => {
-              setAvoidFerries(event.target.checked);
-            }}
-          />
-          Avoid ferries
-        </label>
+      <div className="row">
+        <p className="field-hint">
+          Ferries: {avoidFerries ? "avoided for this plan" : "allowed for this plan"}. Set
+          when this plan was created.
+        </p>
+        <button type="button" className="btn-secondary" onClick={onNavigateToSettings}>
+          Change default in Settings
+        </button>
       </div>
 
       <button

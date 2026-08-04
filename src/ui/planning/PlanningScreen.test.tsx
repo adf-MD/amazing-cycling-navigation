@@ -15,6 +15,7 @@ import { RoutingError } from "../../routing/openRouteServiceErrors.ts";
 import type { RoutingOptions, RoutingProvider } from "../../routing/provider.ts";
 import { db } from "../../storage/db.ts";
 import { getDraft, saveDraft } from "../../storage/planningDraftRepository.ts";
+import { savePlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
 import { listRoutes } from "../../storage/routesRepository.ts";
 import { saveProviderKey } from "../../storage/providerKeyRepository.ts";
 
@@ -471,6 +472,7 @@ beforeEach(async () => {
   await db.providerKeys.clear();
   await db.providerKeyVerifications.clear();
   await db.planningDrafts.clear();
+  await db.planningPreferences.clear();
   await db.routes.clear();
 });
 
@@ -2287,10 +2289,12 @@ describe("PlanningScreen", () => {
     });
     expect(screen.getByRole("button", { name: "Waypoint 2" })).toBeInTheDocument();
     expect(screen.getByLabelText("Route name")).toHaveValue("Planned route");
-    expect(screen.getByLabelText("Avoid ferries")).toBeChecked();
+    // Restored draft: avoidFerries comes from mapping.ts's pre-existing
+    // `?? true` legacy default, never from the Settings default.
+    expect(screen.getByText(/Ferries: avoided for this plan/i)).toBeInTheDocument();
   });
 
-  it("route name and avoid-ferries preference persist into the draft and survive a reload", async () => {
+  it("route name persists into the draft and survives a reload", async () => {
     const map = createMockMapFactory();
     const { unmount } = render(
       <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
@@ -2305,13 +2309,11 @@ describe("PlanningScreen", () => {
     fireEvent.change(screen.getByLabelText("Route name"), {
       target: { value: "Coastal loop" },
     });
-    fireEvent.click(screen.getByLabelText("Avoid ferries"));
 
     await waitFor(
       async () => {
         const draft = await getDraft();
         expect(draft?.routeName).toBe("Coastal loop");
-        expect(draft?.avoidFerries).toBe(false);
       },
       { timeout: 3000 },
     );
@@ -2325,7 +2327,139 @@ describe("PlanningScreen", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Route name")).toHaveValue("Coastal loop");
     });
-    expect(screen.getByLabelText("Avoid ferries")).not.toBeChecked();
+  });
+
+  it("a genuinely fresh draft (no prior draft row) seeds avoidFerries from the current Settings default", async () => {
+    await savePlanningPreferences({ avoidFerriesByDefault: false });
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    map.triggerMapTap([0, 51]);
+    map.triggerMapTap([0.01, 51]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Ferries: allowed for this plan/i)).toBeInTheDocument();
+    });
+  });
+
+  it("treats an existing empty-waypoints draft row as genuinely fresh for ferry-default seeding", async () => {
+    await savePlanningPreferences({ avoidFerriesByDefault: false });
+    await db.planningDrafts.put({
+      id: "draft",
+      waypoints: [],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    map.triggerMapTap([0, 51]);
+    map.triggerMapTap([0.01, 51]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Ferries: allowed for this plan/i)).toBeInTheDocument();
+    });
+  });
+
+  it("a fresh draft keeps its seeded value even after the Settings default later changes and the app reloads", async () => {
+    await savePlanningPreferences({ avoidFerriesByDefault: false });
+    const map = createMockMapFactory();
+    const { unmount } = render(
+      <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+    );
+    map.triggerLoad();
+
+    map.triggerMapTap([0, 51]);
+    map.triggerMapTap([0.01, 51]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Ferries: allowed for this plan/i)).toBeInTheDocument();
+    });
+    await waitFor(
+      async () => {
+        const draft = await getDraft();
+        expect(draft?.avoidFerries).toBe(false);
+      },
+      { timeout: 3000 },
+    );
+    unmount();
+
+    await savePlanningPreferences({ avoidFerriesByDefault: true });
+
+    const map2 = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map2.factory} />);
+    map2.triggerLoad();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Ferries: allowed for this plan/i)).toBeInTheDocument();
+    });
+  });
+
+  it("changing the Settings ferry default afterwards leaves an already-restored draft, its policy, and routing untouched", async () => {
+    await savePlanningPreferences({ avoidFerriesByDefault: true });
+    await saveDraft({
+      waypoints: [
+        { id: "a", coordinate: [0, 51] },
+        { id: "b", coordinate: [0.01, 51] },
+      ],
+      routeName: "Weekend loop",
+      avoidFerries: true,
+      profile: "cycling-road",
+    });
+    const calculateRouteSpy = vi.fn(() => Promise.resolve(buildRoute()));
+    const map = createMockMapFactory();
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={{ calculateRoute: calculateRouteSpy }}
+      />,
+    );
+    map.triggerLoad();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Ferries: avoided for this plan/i)).toBeInTheDocument();
+    });
+    const callCountBefore = calculateRouteSpy.mock.calls.length;
+
+    await savePlanningPreferences({ avoidFerriesByDefault: false });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(screen.getByText(/Ferries: avoided for this plan/i)).toBeInTheDocument();
+    const draft = await getDraft();
+    expect(draft?.avoidFerries).toBe(true);
+    expect(calculateRouteSpy.mock.calls.length).toBe(callCountBefore);
+  });
+
+  it("no longer exposes an editable Avoid ferries checkbox, and reports the draft's ferry policy as read-only text", async () => {
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Ferries: (avoided|allowed) for this plan/i),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByLabelText("Avoid ferries")).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /avoid ferries/i })).toBeNull();
+  });
+
+  it("the ferry-policy readout's Change default in Settings action calls onNavigateToSettings", async () => {
+    const handleNavigate = vi.fn();
+    const user = userEvent.setup();
+    const map = createMockMapFactory();
+    render(
+      <PlanningScreen onNavigateToSettings={handleNavigate} mapFactory={map.factory} />,
+    );
+    map.triggerLoad();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Change default in Settings" }),
+    );
+
+    expect(handleNavigate).toHaveBeenCalledTimes(1);
   });
 
   describe("cycling profile selector", () => {
@@ -2721,7 +2855,7 @@ describe("PlanningScreen", () => {
         expect(screen.getByRole("button", { name: "Waypoint 4" })).toBeInTheDocument();
       });
       expect(screen.getByLabelText("Route name")).toHaveValue("Weekend loop");
-      expect(screen.getByLabelText("Avoid ferries")).not.toBeChecked();
+      expect(screen.getByText(/Ferries: allowed for this plan/i)).toBeInTheDocument();
 
       // 8. No live network request was ever required.
       expect(fetchSpy).not.toHaveBeenCalled();

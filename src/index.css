@@ -569,6 +569,100 @@ button:focus-visible {
   min-height: var(--touch-target-min);
 }
 
+/* A neutral, bordered/elevated surface for a Settings section, mirroring
+ * .route-card's own treatment (border/background/radius/shadow) — reused
+ * as-is rather than introducing a second near-identical class, combined
+ * with the existing .stack class for internal vertical spacing. */
+.panel {
+  padding: var(--space-16);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-md);
+  background: var(--colour-bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+/* A compact labelled status block — the ORS verification headline and the
+ * masked saved-key state. Deliberately outcome-agnostic (no colour coding
+ * by rejected/quota/verified/unavailable): CLAUDE.md's "never rely on
+ * colour alone" rule already means outcome must be legible from the text
+ * itself, so a plain neutral treatment is sufficient. */
+.status-row {
+  margin: 0;
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--colour-border);
+  background: var(--colour-bg);
+  font-size: 0.9rem;
+}
+
+/* The one genuinely informational/location-adjacent status in Settings
+ * (connectivity, not key outcome) — the first real use of
+ * --colour-info/--colour-info-soft, reserved for exactly this per
+ * CLAUDE.md's own documented colour-role intent. */
+.status-row--info {
+  background: var(--colour-info-soft);
+  border-color: var(--colour-info);
+  color: var(--colour-info);
+}
+
+/* A labelled setting row whose entire label area (checkbox + text)
+ * activates the control, via the shared <label> wrapping the whole row. */
+.setting-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  cursor: pointer;
+}
+
+.setting-row-checkbox {
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  flex-shrink: 0;
+}
+
+.setting-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.setting-row-title {
+  font-weight: 600;
+}
+
+/* Small supporting/explanatory text — a setting row's own hint sentence, a
+ * transient "Saving…" note, and Planning's compact ferry-policy readout. */
+.field-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--colour-text-muted);
+}
+
+/* An inline persistence-failure message — paired with explicit wording
+ * ("could not be saved"), never colour alone. */
+.field-error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--colour-danger);
+}
+
+/* The "How the key and route data are used" disclosure — kept small and
+ * bordered so it reads as a deliberate, closed-by-default panel rather
+ * than plain trailing paragraphs. */
+.settings-disclosure {
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-8) var(--space-12);
+}
+
+.settings-disclosure summary {
+  cursor: pointer;
+  font-weight: 600;
+  min-height: var(--touch-target-min);
+  display: flex;
+  align-items: center;
+}
+
 .distance-badge-marker {
   display: flex;
   align-items: center;

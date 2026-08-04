@@ -22,15 +22,22 @@ export function ConfirmDialog({
   }
 
   return (
-    <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+    <div
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="confirm-dialog-title"
+      className="route-delete-confirm"
+    >
       <h2 id="confirm-dialog-title">{title}</h2>
       <p>{message}</p>
-      <button type="button" onClick={onCancel}>
-        {cancelLabel}
-      </button>
-      <button type="button" onClick={onConfirm}>
-        {confirmLabel}
-      </button>
+      <div className="route-delete-confirm-actions">
+        <button type="button" className="btn-secondary" onClick={onCancel}>
+          {cancelLabel}
+        </button>
+        <button type="button" className="btn-danger" onClick={onConfirm}>
+          {confirmLabel}
+        </button>
+      </div>
     </div>
   );
 }

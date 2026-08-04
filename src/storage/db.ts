@@ -85,6 +85,19 @@ export interface StoredPlanningDraft {
   profile?: string;
 }
 
+/**
+ * Singleton row (id is always "planning"): Settings-level Route planning
+ * defaults, applied only when seeding a genuinely fresh Planning draft —
+ * never a live, retroactively-applied switch (see
+ * planningPreferencesRepository.ts and PlanningScreen.tsx's draft-
+ * hydration effect). A new table, not a plain field on an existing row,
+ * so it needs the version(3) bump below.
+ */
+export interface StoredPlanningPreferences {
+  id: "planning";
+  avoidFerriesByDefault: boolean;
+}
+
 export interface StoredGpsFix {
   coordinate: Coordinate;
   accuracyMetres: number;
@@ -176,6 +189,7 @@ export class AcnDatabase extends Dexie {
   providerKeys!: EntityTable<StoredProviderKey, "id">;
   providerKeyVerifications!: EntityTable<StoredProviderKeyVerification, "id">;
   planningDrafts!: EntityTable<StoredPlanningDraft, "id">;
+  planningPreferences!: EntityTable<StoredPlanningPreferences, "id">;
 
   constructor(name = "amazing-cycling-navigation") {
     super(name);
@@ -213,6 +227,21 @@ export class AcnDatabase extends Dexie {
       providerKeys: "id",
       providerKeyVerifications: "id",
       planningDrafts: "id",
+    });
+    // v3: adds one brand-new, empty singleton-row table
+    // (planningPreferences) for the Settings-visual-migration/avoid-
+    // ferries-default slice — no .upgrade() callback needed, same purely-
+    // additive reasoning as v2 above (a new object store only, no
+    // transformation of existing data). v1 and v2's stores() are repeated
+    // verbatim; Dexie diffs consecutive version schemas, not just the
+    // latest one.
+    this.version(3).stores({
+      routes: "id, name, createdAt",
+      rideState: "id",
+      providerKeys: "id",
+      providerKeyVerifications: "id",
+      planningDrafts: "id",
+      planningPreferences: "id",
     });
   }
 }

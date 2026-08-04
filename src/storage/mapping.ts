@@ -11,7 +11,11 @@ import {
   DEFAULT_ELEVATION_VIEW_MODE,
   ELEVATION_WINDOW_OPTIONS_METRES,
 } from "../navigation/upcomingElevation.ts";
-import { type StoredPlanningDraft, type StoredRideState } from "./db.ts";
+import {
+  type StoredPlanningDraft,
+  type StoredPlanningPreferences,
+  type StoredRideState,
+} from "./db.ts";
 
 function isElevationWindowMetres(value: number): value is ElevationWindowMetres {
   return (ELEVATION_WINDOW_OPTIONS_METRES as readonly number[]).includes(value);
@@ -192,4 +196,31 @@ export function fromStoredPlanningDraft(
     // adapter, so it recovers to the app's original single profile.
     profile: isRoutingProfile(stored.profile) ? stored.profile : DEFAULT_ROUTING_PROFILE,
   };
+}
+
+/** Settings' persisted Route-planning defaults, resolved for use — unlike
+ * PlanningDraftContent's asymmetric fields, this has exactly one field
+ * today, so one shared shape is enough for both directions. */
+export interface PlanningPreferences {
+  avoidFerriesByDefault: boolean;
+}
+
+export function toStoredPlanningPreferences(
+  preferences: PlanningPreferences,
+): Omit<StoredPlanningPreferences, "id"> {
+  return { avoidFerriesByDefault: preferences.avoidFerriesByDefault };
+}
+
+/**
+ * Unlike fromStoredPlanningDraft (which never sees an absent row — its
+ * caller, getDraft(), returns undefined itself), "no row present" is
+ * itself the settled, meaningful default state for this preference (a new
+ * installation, or an installation upgrading from a schema version before
+ * this table existed) — so this accepts the possibly-absent row directly
+ * and always resolves it to a concrete value.
+ */
+export function fromStoredPlanningPreferences(
+  stored: StoredPlanningPreferences | undefined,
+): PlanningPreferences {
+  return { avoidFerriesByDefault: stored?.avoidFerriesByDefault ?? true };
 }

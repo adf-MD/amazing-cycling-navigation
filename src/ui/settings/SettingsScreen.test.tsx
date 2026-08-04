@@ -7,6 +7,7 @@ import {
   recordProviderKeyVerification,
   saveProviderKey,
 } from "../../storage/providerKeyRepository.ts";
+import { getPlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
 import type { Clock } from "../../platform/clock.ts";
 
 const DUMMY_KEY = "test-dummy-settings-key-0000";
@@ -18,6 +19,7 @@ function buildFixedClock(startMs: number): Clock {
 beforeEach(async () => {
   await db.providerKeys.clear();
   await db.providerKeyVerifications.clear();
+  await db.planningPreferences.clear();
 });
 
 afterEach(() => {
@@ -131,7 +133,7 @@ describe("SettingsScreen", () => {
     });
   });
 
-  it("shows a rejected-key status message after a failed verification", async () => {
+  it("shows a rejected-key status message after a failed verification, never concealed in a disclosure", async () => {
     await saveProviderKey(DUMMY_KEY);
     await recordProviderKeyVerification("rejected");
     render(<SettingsScreen />);
@@ -139,6 +141,9 @@ describe("SettingsScreen", () => {
     await waitFor(() => {
       expect(screen.getByText(/was rejected when last checked/i)).toBeInTheDocument();
     });
+    expect(
+      screen.getByText(/was rejected when last checked/i).closest("details"),
+    ).toBeNull();
   });
 
   it("shows a quota-limited status message with a fixed clock", async () => {
@@ -190,7 +195,7 @@ describe("SettingsScreen", () => {
     expect(screen.queryByText(/cannot be sent in a request header/i)).toBeNull();
   });
 
-  it("shows an offline indicator without hiding the form", async () => {
+  it("shows an offline indicator without hiding the form, never concealed in a disclosure", async () => {
     vi.stubGlobal("navigator", { onLine: false });
 
     render(<SettingsScreen />);
@@ -199,5 +204,105 @@ describe("SettingsScreen", () => {
       expect(screen.getByText(/offline/i)).toBeInTheDocument();
     });
     expect(screen.getByLabelText("OpenRouteService API key")).toBeInTheDocument();
+    expect(screen.getByText(/offline/i).closest("details")).toBeNull();
+  });
+
+  describe("visual hierarchy", () => {
+    it("has exactly one h1 and the expected panel headings", () => {
+      render(<SettingsScreen />);
+
+      expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Settings" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { level: 2, name: "Route planning" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { level: 2, name: "OpenRouteService" }),
+      ).toBeInTheDocument();
+    });
+
+    it("keeps the longer key/route-data explanation in a collapsed, keyboard-operable disclosure", () => {
+      render(<SettingsScreen />);
+
+      const details = screen.getByText(/not encrypted/i).closest("details");
+      expect(details).not.toBeNull();
+      expect(details).not.toHaveAttribute("open");
+      expect(
+        screen.getByText("How the key and route data are used").closest("summary"),
+      ).not.toBeNull();
+      // The HeiGIT data-flow sentence lives in the same disclosure.
+      expect(
+        screen
+          .getByText(
+            /your key and the waypoints you have placed are sent directly to heigit/i,
+          )
+          .closest("details"),
+      ).toBe(details);
+      // The sign-up sentence and link stay outside the disclosure.
+      expect(
+        screen.getByRole("link", { name: /openrouteservice key/i }).closest("details"),
+      ).toBeNull();
+    });
+  });
+
+  describe("Avoid ferries by default", () => {
+    it("is checked by default when no preferences row has been saved", async () => {
+      render(<SettingsScreen />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("checkbox", { name: "Avoid ferries by default" }),
+        ).toBeChecked();
+      });
+    });
+
+    it("unchecking then rechecking persists each value", async () => {
+      const user = userEvent.setup();
+      render(<SettingsScreen />);
+      const checkbox = await screen.findByRole("checkbox", {
+        name: "Avoid ferries by default",
+      });
+      await waitFor(() => expect(checkbox).toBeChecked());
+
+      await user.click(checkbox);
+      await waitFor(() => expect(checkbox).not.toBeChecked());
+      await waitFor(async () => {
+        await expect(getPlanningPreferences()).resolves.toEqual({
+          avoidFerriesByDefault: false,
+        });
+      });
+
+      await user.click(checkbox);
+      await waitFor(() => expect(checkbox).toBeChecked());
+      await waitFor(async () => {
+        await expect(getPlanningPreferences()).resolves.toEqual({
+          avoidFerriesByDefault: true,
+        });
+      });
+    });
+
+    it("shows an inline error and leaves the checkbox at its last persisted value when saving fails", async () => {
+      const putSpy = vi
+        .spyOn(db.planningPreferences, "put")
+        .mockRejectedValueOnce(new Error("simulated failure"));
+      const user = userEvent.setup();
+      render(<SettingsScreen />);
+      const checkbox = await screen.findByRole("checkbox", {
+        name: "Avoid ferries by default",
+      });
+      await waitFor(() => expect(checkbox).toBeChecked());
+
+      await user.click(checkbox);
+
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toHaveTextContent(/could not be saved/i);
+      });
+      expect(checkbox).toBeChecked();
+      expect(screen.getByRole("alert")).not.toHaveTextContent("simulated failure");
+
+      putSpy.mockRestore();
+    });
   });
 });

@@ -104,7 +104,7 @@ describe("DiagnosticsScreen", () => {
     expect(screen.getByText(/no errors recorded this session/i)).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(getDetailValue("Storage")).toHaveTextContent(/OK \(schema version 2\)/);
+      expect(getDetailValue("Storage")).toHaveTextContent(/OK \(schema version 3\)/);
     });
   });
 

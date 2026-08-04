@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   fromStoredPlanningDraft,
+  fromStoredPlanningPreferences,
   fromStoredRideState,
   toStoredPlanningDraft,
+  toStoredPlanningPreferences,
   toStoredRideState,
   type StoredCameraState,
 } from "./mapping.ts";
@@ -514,5 +516,33 @@ describe("toStoredPlanningDraft / fromStoredPlanningDraft", () => {
     const restored = fromStoredPlanningDraft(corruptRow);
 
     expect(restored.profile).toBe("cycling-road");
+  });
+});
+
+describe("toStoredPlanningPreferences / fromStoredPlanningPreferences", () => {
+  it("defaults avoidFerriesByDefault to true when no row has ever been saved", () => {
+    expect(fromStoredPlanningPreferences(undefined)).toEqual({
+      avoidFerriesByDefault: true,
+    });
+  });
+
+  it("round-trips an explicitly saved false value", () => {
+    const stored = toStoredPlanningPreferences({ avoidFerriesByDefault: false });
+    const restored = fromStoredPlanningPreferences({ id: "planning", ...stored });
+
+    expect(restored).toEqual({ avoidFerriesByDefault: false });
+  });
+
+  it("round-trips an explicitly saved true value, distinct from the no-row default", () => {
+    const stored = toStoredPlanningPreferences({ avoidFerriesByDefault: true });
+    const restored = fromStoredPlanningPreferences({ id: "planning", ...stored });
+
+    expect(restored).toEqual({ avoidFerriesByDefault: true });
+  });
+
+  it("never includes the row id in the stored shape", () => {
+    const stored = toStoredPlanningPreferences({ avoidFerriesByDefault: false });
+
+    expect(stored).not.toHaveProperty("id");
   });
 });
