@@ -424,7 +424,7 @@ describe("RidingScreen", () => {
     expect(screen.getByText("On route")).toBeInTheDocument();
   });
 
-  it("switches the map wrapper to the active-riding size class once riding starts", async () => {
+  it("switches the map wrapper from the pre-ride overview class to the active-riding size class once riding starts", async () => {
     const user = userEvent.setup();
     const stub = buildStubGeolocationSource();
     const { container } = render(
@@ -437,11 +437,90 @@ describe("RidingScreen", () => {
 
     const mapWrapper = container.querySelector(".ride-map-container");
     expect(mapWrapper).not.toBeNull();
+    expect(mapWrapper).toHaveClass("ride-map-container--overview");
     expect(mapWrapper).not.toHaveClass("ride-map-container--active");
 
     await user.click(screen.getByRole("button", { name: "Start riding" }));
 
     expect(mapWrapper).toHaveClass("ride-map-container--active");
+    expect(mapWrapper).not.toHaveClass("ride-map-container--overview");
+  });
+
+  it("renders exactly one h1 (the route name), before and after Start riding", async () => {
+    const stub = buildStubGeolocationSource();
+    render(
+      <RidingScreen
+        route={route}
+        geolocationSource={stub.source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(
+      screen.getByRole("heading", { level: 1, name: route.name }),
+    ).toBeInTheDocument();
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Start riding" }));
+    stub.emitFix({
+      coordinate: pointAt(0),
+      accuracyMetres: 5,
+      timestampMs: 1000,
+      speedMetresPerSecond: null,
+      headingDegrees: null,
+    });
+
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  });
+
+  it("renders the pre-ride Start/Resume prompt as a primary-button panel", () => {
+    const stub = buildStubGeolocationSource();
+    const { container } = render(
+      <RidingScreen
+        route={route}
+        geolocationSource={stub.source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Start riding" })).toHaveClass(
+      "btn-primary",
+    );
+    expect(container.querySelector(".ride-start-panel")).not.toBeNull();
+  });
+
+  it("wraps the elevation section in a visible 'Route profile' panel only before Start riding, without remounting its contents", async () => {
+    const user = userEvent.setup();
+    const stub = buildStubGeolocationSource();
+    const { container } = render(
+      <RidingScreen
+        route={route}
+        geolocationSource={stub.source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Route profile" }),
+    ).toBeInTheDocument();
+    expect(container.querySelector(".ride-profile-panel")).not.toBeNull();
+    const elevationSection = container.querySelector(".ride-elevation-section");
+    expect(elevationSection).not.toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+    stub.emitFix({
+      coordinate: pointAt(0),
+      accuracyMetres: 5,
+      timestampMs: 1000,
+      speedMetresPerSecond: null,
+      headingDegrees: null,
+    });
+
+    expect(screen.queryByRole("heading", { name: "Route profile" })).toBeNull();
+    expect(container.querySelector(".ride-profile-panel")).toBeNull();
+    // Same DOM node reference proves the elevation-section subtree was
+    // reconciled in place, not unmounted/remounted, across Start riding.
+    expect(container.querySelector(".ride-elevation-section")).toBe(elevationSection);
   });
 
   it("shows an explicit permission-denied state and lets the user retry", async () => {

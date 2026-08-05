@@ -716,4 +716,71 @@ test.describe("Riding: pre-ride climb chart layout", () => {
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(390);
   });
+
+  test("presents the pre-ride route briefing in reading order with no horizontal overflow, and starting the ride removes the pre-ride-only panels", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error" && !message.text().includes("net::ERR_FAILED")) {
+        consoleErrors.push(message.text());
+      }
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    await forceMapStyleFailure(page);
+
+    await page.goto("/");
+    await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
+    const routeButton = page.getByRole("button", { name: "gradient-route" });
+    await expect(routeButton).toBeVisible();
+    await routeButton.click();
+
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    const startButton = page.getByRole("button", { name: "Start riding" });
+    await expect(startButton).toBeVisible();
+    await expect(page.getByTestId("map-container")).toBeVisible();
+    await expect(page.locator(".ride-start-panel")).toBeVisible();
+    await expect(page.locator(".ride-profile-panel")).toBeVisible();
+
+    // Reading/keyboard order: the route's own h1, then the two top-level
+    // pre-ride h2 sections, in DOM order.
+    const headingTexts = await page.locator("h1, h2").allTextContents();
+    expect(headingTexts).toEqual([
+      "gradient-route",
+      "Recognised climbs",
+      "Route profile",
+    ]);
+
+    await page
+      .getByRole("combobox", { name: "Recognised climbs" })
+      .selectOption({ index: 1 });
+    await expect(
+      page.getByRole("heading", { name: "Climb 1 · Category 3" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("img", { name: "Elevation profile for Climb 1" }),
+    ).toBeVisible();
+
+    const scrollWidthWithClimbSelected = await page.evaluate(
+      () => document.documentElement.scrollWidth,
+    );
+    expect(scrollWidthWithClimbSelected).toBeLessThanOrEqual(390);
+
+    await startButton.click();
+    await expect(page.locator(".ride-start-panel")).toBeHidden();
+    await expect(page.getByRole("combobox", { name: "Recognised climbs" })).toBeHidden();
+    await expect(page.locator(".ride-profile-panel")).toBeHidden();
+    await expect(page.locator(".ride-elevation-section")).toBeVisible();
+
+    const scrollWidthActive = await page.evaluate(
+      () => document.documentElement.scrollWidth,
+    );
+    expect(scrollWidthActive).toBeLessThanOrEqual(390);
+
+    expect(consoleErrors).toEqual([]);
+  });
 });

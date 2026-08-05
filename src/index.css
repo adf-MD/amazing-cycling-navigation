@@ -570,9 +570,13 @@ button:focus-visible {
 }
 
 /* Matches the global `button` touch-target rule — a native `<select>` has
- * no equivalent default sizing rule of its own. */
+ * no equivalent default sizing rule of its own. width is explicit rather
+ * than relying on the parent .stack's default align-items: stretch,
+ * since a native <select>'s own UA sizing algorithm isn't reliably
+ * overridden by flex stretch alone across engines. */
 .recognised-climb-select {
   min-height: var(--touch-target-min);
+  width: 100%;
 }
 
 /* Matches the global `button` touch-target rule — a native
@@ -927,6 +931,35 @@ button:focus-visible {
 .elevation-window-button.is-selected {
   background-color: var(--colour-bg-elevated);
   box-shadow: 0 0 0 2px var(--colour-border);
+}
+
+/* --- Riding: pre-ride route briefing (visual slice 6) --- */
+
+/* Idle-only "overview" treatment for the pre-ride map: a restrained
+ * border/radius/shadow consistent with .panel, applied directly to
+ * .ride-map-container itself (never a second wrapping element).
+ * Deliberately no overflow: hidden — .map-attribution sits absolutely
+ * positioned inside this same container, and a status/alert banner or a
+ * focus ring could sit flush to an edge too; clipping any of them would
+ * be exactly the class of bug .map-attribution's own comment already
+ * warns against elsewhere in this file. Never combined with --active. */
+.ride-map-container--overview {
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+/* The pre-ride Start/Resume button: .stack's own default
+ * align-items: stretch already makes it fill .ride-start-panel's full
+ * width on a narrow phone, for free. Capped only once there's genuinely
+ * spare horizontal room, reusing .planning-section's own existing
+ * 900px desktop threshold rather than inventing a second breakpoint. */
+@media (min-width: 900px) {
+  .ride-start-panel-button {
+    align-self: flex-start;
+    min-width: 220px;
+    max-width: 320px;
+  }
 }
 
 /* --- Planning: workflow organisation (visual slice 4) --- */

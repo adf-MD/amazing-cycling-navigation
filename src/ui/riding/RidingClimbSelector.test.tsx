@@ -46,6 +46,31 @@ describe("RidingClimbSelector", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 
+  it("uses an h2 heading for the empty state", () => {
+    render(
+      <RidingClimbSelector climbs={[]} selectedClimbId={null} onSelectClimb={vi.fn()} />,
+    );
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Recognised climbs" }),
+    ).toBeInTheDocument();
+  });
+
+  it("uses an h2 heading (not h3) while keeping the select's accessible name", () => {
+    render(
+      <RidingClimbSelector
+        climbs={[climb1, climb2]}
+        selectedClimbId={null}
+        onSelectClimb={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Recognised climbs" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Recognised climbs" }),
+    ).toBeInTheDocument();
+  });
+
   it("lists climbs in route order, numbered from 1, with an All route option first", () => {
     render(
       <RidingClimbSelector

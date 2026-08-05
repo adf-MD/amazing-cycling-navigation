@@ -418,13 +418,17 @@ export function RidingScreen({
       ) : null}
 
       {nav.geolocationStatus === "idle" ? (
-        <div>
+        <div className="panel stack ride-start-panel">
           <p>
             {nav.currentFix
               ? "Resume riding to continue tracking your progress."
               : "Location access is needed to track your progress on this ride."}
           </p>
-          <button type="button" onClick={handleStart}>
+          <button
+            type="button"
+            className="btn-primary ride-start-panel-button"
+            onClick={handleStart}
+          >
             {nav.currentFix ? "Resume riding" : "Start riding"}
           </button>
         </div>
@@ -472,7 +476,9 @@ export function RidingScreen({
        * always frames the entire route regardless of ride progress. */}
       <div
         className={`ride-map-container${
-          nav.geolocationStatus !== "idle" ? " ride-map-container--active" : ""
+          nav.geolocationStatus !== "idle"
+            ? " ride-map-container--active"
+            : " ride-map-container--overview"
         }`}
       >
         <MapView
@@ -537,208 +543,217 @@ export function RidingScreen({
         />
       ) : null}
 
-      <div className="ride-elevation-section">
-        {nav.matchedDistanceFromStartMetres !== null ? (
-          <div
-            role="group"
-            aria-label="Elevation profile view"
-            className="elevation-window-group"
-          >
-            {ELEVATION_VIEW_MODE_OPTIONS.map((mode) => {
-              const isSelected =
-                effectiveElevationView.kind !== "climb" &&
-                isSameElevationViewMode(effectiveElevationView, mode);
-              return (
+      <div
+        className={
+          nav.geolocationStatus === "idle" ? "panel stack ride-profile-panel" : undefined
+        }
+      >
+        {nav.geolocationStatus === "idle" ? <h2>Route profile</h2> : null}
+        <div className="ride-elevation-section">
+          {nav.matchedDistanceFromStartMetres !== null ? (
+            <div
+              role="group"
+              aria-label="Elevation profile view"
+              className="elevation-window-group"
+            >
+              {ELEVATION_VIEW_MODE_OPTIONS.map((mode) => {
+                const isSelected =
+                  effectiveElevationView.kind !== "climb" &&
+                  isSameElevationViewMode(effectiveElevationView, mode);
+                return (
+                  <button
+                    key={elevationViewModeKey(mode)}
+                    type="button"
+                    className={`elevation-window-button${isSelected ? " is-selected" : ""}`}
+                    aria-pressed={isSelected}
+                    onClick={() => {
+                      nav.setElevationViewMode(mode);
+                      // Manually picking a standard view while inside a climb
+                      // dismisses Climb view for the remainder of that climb —
+                      // see climbElevationView.ts's selectEffectiveElevationView.
+                      if (activeClimb !== null) {
+                        nav.setDismissedClimbFeatureId(activeClimb.id);
+                      }
+                    }}
+                  >
+                    {elevationViewModeLabel(mode)}
+                  </button>
+                );
+              })}
+              {activeClimb !== null ? (
                 <button
-                  key={elevationViewModeKey(mode)}
                   type="button"
-                  className={`elevation-window-button${isSelected ? " is-selected" : ""}`}
-                  aria-pressed={isSelected}
+                  className={`elevation-window-button${
+                    effectiveElevationView.kind === "climb" ? " is-selected" : ""
+                  }`}
+                  aria-pressed={effectiveElevationView.kind === "climb"}
                   onClick={() => {
-                    nav.setElevationViewMode(mode);
-                    // Manually picking a standard view while inside a climb
-                    // dismisses Climb view for the remainder of that climb —
-                    // see climbElevationView.ts's selectEffectiveElevationView.
-                    if (activeClimb !== null) {
-                      nav.setDismissedClimbFeatureId(activeClimb.id);
-                    }
+                    // Un-dismisses the active climb — safe unconditionally,
+                    // since a dismissal only ever matters when it matches the
+                    // currently active climb's own id.
+                    nav.setDismissedClimbFeatureId(null);
                   }}
                 >
-                  {elevationViewModeLabel(mode)}
+                  Climb
                 </button>
+              ) : null}
+            </div>
+          ) : null}
+          {/* Before any matched progress (live or restored), show the whole
+           * route with no marker. Once there's matched progress, Full mode
+           * shows the whole route with a progress marker and Upcoming mode
+           * shows a rebased rolling window. Macro route-feature colouring
+           * (routeFeatures) always covers the whole route regardless of view;
+           * only the detailed micro overlay (gradientSegments, already
+           * narrowed to the selected-or-active feature) is further clipped to
+           * the current window, so the legend never lists a detail class that
+           * isn't currently on screen. */}
+          {(() => {
+            let displayedMicroSegments = microDetailSegments;
+            // Defaults to microDetailFeature (the same feature
+            // displayedMicroSegments already reflects in every other branch);
+            // only the new Climb branch below ever reassigns this to a
+            // different feature (activeClimb), so GradientColoursDisclosure's
+            // climb-band gate stays correct even when a rider has an unrelated
+            // explicit selection elsewhere while also actively climbing.
+            let displayedMicroDetailFeature: RouteFeature | null = microDetailFeature;
+            let chart: ReactNode;
+            let climbProgressPanel: ReactNode = null;
+
+            if (nav.matchedDistanceFromStartMetres === null) {
+              chart = (
+                <ElevationChart
+                  points={displayPoints}
+                  routeFeatures={routeFeatures}
+                  gradientSegments={microDetailSegments}
+                  selectedRangeMetres={chartSelectedRangeMetres}
+                  onTapDistance={handleChartTapDistance}
+                />
               );
-            })}
-            {activeClimb !== null ? (
-              <button
-                type="button"
-                className={`elevation-window-button${
-                  effectiveElevationView.kind === "climb" ? " is-selected" : ""
-                }`}
-                aria-pressed={effectiveElevationView.kind === "climb"}
-                onClick={() => {
-                  // Un-dismisses the active climb — safe unconditionally,
-                  // since a dismissal only ever matters when it matches the
-                  // currently active climb's own id.
-                  nav.setDismissedClimbFeatureId(null);
-                }}
-              >
-                Climb
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-        {/* Before any matched progress (live or restored), show the whole
-         * route with no marker. Once there's matched progress, Full mode
-         * shows the whole route with a progress marker and Upcoming mode
-         * shows a rebased rolling window. Macro route-feature colouring
-         * (routeFeatures) always covers the whole route regardless of view;
-         * only the detailed micro overlay (gradientSegments, already
-         * narrowed to the selected-or-active feature) is further clipped to
-         * the current window, so the legend never lists a detail class that
-         * isn't currently on screen. */}
-        {(() => {
-          let displayedMicroSegments = microDetailSegments;
-          // Defaults to microDetailFeature (the same feature
-          // displayedMicroSegments already reflects in every other branch);
-          // only the new Climb branch below ever reassigns this to a
-          // different feature (activeClimb), so GradientColoursDisclosure's
-          // climb-band gate stays correct even when a rider has an unrelated
-          // explicit selection elsewhere while also actively climbing.
-          let displayedMicroDetailFeature: RouteFeature | null = microDetailFeature;
-          let chart: ReactNode;
-          let climbProgressPanel: ReactNode = null;
-
-          if (nav.matchedDistanceFromStartMetres === null) {
-            chart = (
-              <ElevationChart
-                points={displayPoints}
-                routeFeatures={routeFeatures}
-                gradientSegments={microDetailSegments}
-                selectedRangeMetres={chartSelectedRangeMetres}
-                onTapDistance={handleChartTapDistance}
-              />
-            );
-          } else if (
-            activeClimb !== null &&
-            effectiveElevationView.kind === "climb" &&
-            climbProgressMetrics !== null
-          ) {
-            const climbViewModel = buildClimbChartViewModel(
-              {
-                kind: "active-current-climb",
-                marker: {
-                  distanceFromStartMetres:
-                    climbProgressMetrics.clampedPresentationDistanceMetres,
-                  elevationMetres: climbProgressMetrics.currentElevationMetres,
-                  stale: nav.isStale,
+            } else if (
+              activeClimb !== null &&
+              effectiveElevationView.kind === "climb" &&
+              climbProgressMetrics !== null
+            ) {
+              const climbViewModel = buildClimbChartViewModel(
+                {
+                  kind: "active-current-climb",
+                  marker: {
+                    distanceFromStartMetres:
+                      climbProgressMetrics.clampedPresentationDistanceMetres,
+                    elevationMetres: climbProgressMetrics.currentElevationMetres,
+                    stale: nav.isStale,
+                  },
                 },
-              },
-              activeClimb,
-              displayPoints,
-              activeClimbDetailSegments,
-            );
-            displayedMicroSegments = activeClimbDetailSegments;
-            displayedMicroDetailFeature = activeClimb;
-            chart = (
-              <ElevationChart
-                points={climbViewModel.points}
-                domain={climbViewModel.domain}
-                gradientSegments={climbViewModel.gradientSegments}
-                areaFill={climbViewModel.areaFill}
-                selectedRangeMetres={chartSelectedRangeMetres}
-                onTapDistance={handleChartTapDistance}
-                marker={climbViewModel.marker}
-              />
-            );
-            climbProgressPanel = (
-              <RidingClimbProgressPanel
-                climb={activeClimb}
-                climbNumber={climbs.findIndex((climb) => climb.id === activeClimb.id) + 1}
-                metrics={climbProgressMetrics}
-              />
-            );
-          } else if (nav.elevationProfileDisplay.kind === "full") {
-            chart = (
-              <ElevationChart
-                points={displayPoints}
-                routeFeatures={routeFeatures}
-                gradientSegments={microDetailSegments}
-                selectedRangeMetres={chartSelectedRangeMetres}
-                onTapDistance={handleChartTapDistance}
-                marker={
-                  nav.elevationProfileDisplay.marker
-                    ? {
-                        distanceFromStartMetres:
-                          nav.elevationProfileDisplay.marker
-                            .markerDistanceFromStartMetres,
-                        elevationMetres:
-                          nav.elevationProfileDisplay.marker.point.elevationMetres,
-                        stale: nav.isStale,
-                      }
-                    : null
-                }
-              />
-            );
-          } else {
-            const window = nav.elevationProfileDisplay.window;
-            const windowMicroSegments = clipClassifiedSegments(
-              microDetailSegments,
-              window.startDistanceMetres,
-              window.endDistanceMetres,
-            );
-            displayedMicroSegments = windowMicroSegments;
-            chart = (
-              <ElevationChart
-                points={window.points}
-                domain={{
-                  startDistanceMetres: window.startDistanceMetres,
-                  endDistanceMetres: window.endDistanceMetres,
-                }}
-                routeFeatures={routeFeatures}
-                gradientSegments={windowMicroSegments}
-                selectedRangeMetres={chartSelectedRangeMetres}
-                onTapDistance={handleChartTapDistance}
-              />
-            );
-          }
+                activeClimb,
+                displayPoints,
+                activeClimbDetailSegments,
+              );
+              displayedMicroSegments = activeClimbDetailSegments;
+              displayedMicroDetailFeature = activeClimb;
+              chart = (
+                <ElevationChart
+                  points={climbViewModel.points}
+                  domain={climbViewModel.domain}
+                  gradientSegments={climbViewModel.gradientSegments}
+                  areaFill={climbViewModel.areaFill}
+                  selectedRangeMetres={chartSelectedRangeMetres}
+                  onTapDistance={handleChartTapDistance}
+                  marker={climbViewModel.marker}
+                />
+              );
+              climbProgressPanel = (
+                <RidingClimbProgressPanel
+                  climb={activeClimb}
+                  climbNumber={
+                    climbs.findIndex((climb) => climb.id === activeClimb.id) + 1
+                  }
+                  metrics={climbProgressMetrics}
+                />
+              );
+            } else if (nav.elevationProfileDisplay.kind === "full") {
+              chart = (
+                <ElevationChart
+                  points={displayPoints}
+                  routeFeatures={routeFeatures}
+                  gradientSegments={microDetailSegments}
+                  selectedRangeMetres={chartSelectedRangeMetres}
+                  onTapDistance={handleChartTapDistance}
+                  marker={
+                    nav.elevationProfileDisplay.marker
+                      ? {
+                          distanceFromStartMetres:
+                            nav.elevationProfileDisplay.marker
+                              .markerDistanceFromStartMetres,
+                          elevationMetres:
+                            nav.elevationProfileDisplay.marker.point.elevationMetres,
+                          stale: nav.isStale,
+                        }
+                      : null
+                  }
+                />
+              );
+            } else {
+              const window = nav.elevationProfileDisplay.window;
+              const windowMicroSegments = clipClassifiedSegments(
+                microDetailSegments,
+                window.startDistanceMetres,
+                window.endDistanceMetres,
+              );
+              displayedMicroSegments = windowMicroSegments;
+              chart = (
+                <ElevationChart
+                  points={window.points}
+                  domain={{
+                    startDistanceMetres: window.startDistanceMetres,
+                    endDistanceMetres: window.endDistanceMetres,
+                  }}
+                  routeFeatures={routeFeatures}
+                  gradientSegments={windowMicroSegments}
+                  selectedRangeMetres={chartSelectedRangeMetres}
+                  onTapDistance={handleChartTapDistance}
+                />
+              );
+            }
 
-          return (
-            <>
-              {climbProgressPanel}
-              {chart}
-              <GradientColoursDisclosure
-                presentClimbBands={
-                  displayedMicroDetailFeature?.kind === "climb"
-                    ? new Set(
-                        displayedMicroSegments.map(
-                          (segment) => segment.visualKey as ClimbGradientBand,
-                        ),
-                      )
-                    : new Set()
-                }
-                presentVisualKeys={
-                  new Set(
-                    routeFeatures.map((feature) =>
-                      feature.kind === "climb" ? feature.category : feature.band,
-                    ),
-                  )
-                }
-              />
-              <RouteFeatureDetailsPanel
-                feature={microDetailFeature}
-                climbNumber={preRideClimbNumber}
-                detailChart={preRideClimbChart}
-                onClear={selectedFeature ? handleClearRouteFeatureSelection : undefined}
-              />
-              <GradientSegmentDetailsPanel
-                segment={selectedGradientSegment}
-                startElevationMetres={selectedSegmentStartElevationMetres}
-                endElevationMetres={selectedSegmentEndElevationMetres}
-                onClear={handleClearGradientSegmentSelection}
-              />
-            </>
-          );
-        })()}
+            return (
+              <>
+                {climbProgressPanel}
+                {chart}
+                <GradientColoursDisclosure
+                  presentClimbBands={
+                    displayedMicroDetailFeature?.kind === "climb"
+                      ? new Set(
+                          displayedMicroSegments.map(
+                            (segment) => segment.visualKey as ClimbGradientBand,
+                          ),
+                        )
+                      : new Set()
+                  }
+                  presentVisualKeys={
+                    new Set(
+                      routeFeatures.map((feature) =>
+                        feature.kind === "climb" ? feature.category : feature.band,
+                      ),
+                    )
+                  }
+                />
+                <RouteFeatureDetailsPanel
+                  feature={microDetailFeature}
+                  climbNumber={preRideClimbNumber}
+                  detailChart={preRideClimbChart}
+                  onClear={selectedFeature ? handleClearRouteFeatureSelection : undefined}
+                />
+                <GradientSegmentDetailsPanel
+                  segment={selectedGradientSegment}
+                  startElevationMetres={selectedSegmentStartElevationMetres}
+                  endElevationMetres={selectedSegmentEndElevationMetres}
+                  onClear={handleClearGradientSegmentSelection}
+                />
+              </>
+            );
+          })()}
+        </div>
       </div>
     </section>
   );

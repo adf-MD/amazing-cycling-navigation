@@ -31,8 +31,8 @@ export function RidingClimbSelector({
 }: RidingClimbSelectorProps) {
   if (climbs.length === 0) {
     return (
-      <section aria-label="Recognised climbs">
-        <h3>Recognised climbs</h3>
+      <section aria-label="Recognised climbs" className="panel stack">
+        <h2>Recognised climbs</h2>
         <p>
           No recognised climbs. A recognised climb must be at least 500 m long and average
           at least 3%.
@@ -42,8 +42,8 @@ export function RidingClimbSelector({
   }
 
   return (
-    <section aria-label="Recognised climbs">
-      <h3 id="recognised-climbs-heading">Recognised climbs</h3>
+    <section aria-label="Recognised climbs" className="panel stack">
+      <h2 id="recognised-climbs-heading">Recognised climbs</h2>
       <select
         className="recognised-climb-select"
         aria-labelledby="recognised-climbs-heading"
