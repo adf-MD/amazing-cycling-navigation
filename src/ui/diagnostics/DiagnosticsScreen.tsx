@@ -126,189 +126,303 @@ export function DiagnosticsScreen({
   const fixAgeMs = rideState?.lastFix ? now - rideState.lastFix.timestampMs : null;
 
   return (
-    <section aria-label="Diagnostics">
+    <section className="screen diagnostics-screen" aria-label="Diagnostics">
       <h1 className="screen-title">Diagnostics</h1>
-      <dl>
-        <dt>App version</dt>
-        <dd>{__APP_VERSION__}</dd>
 
-        <dt>Build</dt>
-        <dd>{__BUILD_ID__}</dd>
-
-        <dt>Network</dt>
-        <dd>{online ? "Online" : "Offline"}</dd>
-
-        <dt>Service worker</dt>
-        <dd>{SERVICE_WORKER_LABEL[serviceWorkerStatus]}</dd>
-
-        <dt>Storage</dt>
-        <dd>
-          {storageHealth.status === "checking" && "Checking…"}
-          {storageHealth.status === "ok" &&
-            `OK (schema version ${String(storageHealth.schemaVersion)})`}
-          {storageHealth.status === "error" && "Unavailable"}
-        </dd>
-
-        <dt>Map rendering support</dt>
-        <dd>
-          {isMapRenderingSupported() ? "Supported" : "Not supported by this browser"}
-        </dd>
-
-        <dt>Geolocation permission</dt>
-        <dd>{GEOLOCATION_PERMISSION_LABEL[geolocationPermission]}</dd>
-
-        <dt>Last known fix accuracy</dt>
-        <dd>
-          {rideState?.lastFix
-            ? `±${String(Math.round(rideState.lastFix.accuracyMetres))} m`
-            : "Not applicable yet"}
-        </dd>
-
-        <dt>Last known fix age</dt>
-        <dd>{fixAgeMs !== null ? formatFixAge(fixAgeMs) : "Not applicable yet"}</dd>
-
-        <dt>Active route</dt>
-        <dd>{rideState?.routeId ?? "None"}</dd>
-      </dl>
-
-      <h2>Recent errors</h2>
-      {recentErrors.length === 0 ? (
-        <p>No errors recorded this session.</p>
-      ) : (
-        <ul>
-          {recentErrors.map((entry) => (
-            <li key={`${String(entry.timestampMs)}-${entry.context}`}>
-              <strong>{entry.context}</strong>: {entry.message}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <h2>Recent routing attempts</h2>
-      <p>
-        Browsers may report a generic fetch failure instead of the real HTTP status (for
-        example 502) when the provider&apos;s error response is missing CORS headers — an
-        entry reading &quot;Fetch failed before an HTTP response was exposed to the
-        browser&quot; can mean a provider outage, a missing CORS header, a DNS or TLS
-        failure, or a local network restriction, and cannot be told apart from this
-        information alone.
-      </p>
-      {recentRoutingAttempts.length === 0 ? (
-        <p>No routing attempts recorded this session.</p>
-      ) : (
-        <ul>
-          {recentRoutingAttempts.map((entry) => (
-            <li key={entry.attemptId}>{describeRoutingAttempt(entry)}</li>
-          ))}
-        </ul>
-      )}
-
-      <h3>Test routing connection</h3>
-      <p>
-        This sends one real request to OpenRouteService, using fixed test coordinates
-        rather than any route you&apos;ve planned, and uses one API request.
-      </p>
-      {!hasKey ? <p>No OpenRouteService key configured.</p> : null}
-      <button
-        type="button"
-        onClick={runConnectionTest}
-        disabled={!hasKey || isTestingConnection}
+      <section
+        className="panel stack diagnostics-section"
+        aria-labelledby="diagnostics-system-status-heading"
       >
-        {isTestingConnection ? "Testing…" : "Test routing connection"}
-      </button>
-      {connectionTestResult ? (
-        <>
-          <p role="status">
-            {connectionTestResult.outcome === "success" ? "Succeeded" : "Failed"} —{" "}
-            {connectionTestResult.message} ({String(connectionTestResult.elapsedMs)} ms)
-          </p>
-          <dl>
-            <dt>Stage</dt>
-            <dd>
-              {connectionTestResult.stage} —{" "}
-              {CONNECTION_TEST_STAGE_DESCRIPTIONS[connectionTestResult.stage]}
+        <h2 id="diagnostics-system-status-heading">System status</h2>
+        <dl className="diagnostics-definition-grid">
+          <div className="diagnostics-definition-item">
+            <dt className="diagnostics-label">App version</dt>
+            <dd className="diagnostics-value">{__APP_VERSION__}</dd>
+          </div>
+
+          <div className="diagnostics-definition-item">
+            <dt className="diagnostics-label">Build</dt>
+            <dd className="diagnostics-value diagnostics-value--mono">{__BUILD_ID__}</dd>
+          </div>
+
+          <div className="diagnostics-definition-item">
+            <dt className="diagnostics-label">Network</dt>
+            <dd className="diagnostics-value">{online ? "Online" : "Offline"}</dd>
+          </div>
+
+          <div className="diagnostics-definition-item">
+            <dt className="diagnostics-label">Service worker</dt>
+            <dd className="diagnostics-value">
+              {SERVICE_WORKER_LABEL[serviceWorkerStatus]}
             </dd>
+          </div>
 
-            {connectionTestResult.errorName ? (
-              <>
-                <dt>Error</dt>
-                <dd>
-                  {connectionTestResult.errorName}
-                  {connectionTestResult.errorMessage
-                    ? `: ${connectionTestResult.errorMessage}`
-                    : ""}
-                </dd>
-              </>
-            ) : null}
+          <div className="diagnostics-definition-item">
+            <dt className="diagnostics-label">Storage</dt>
+            <dd className="diagnostics-value">
+              {storageHealth.status === "checking" && "Checking…"}
+              {storageHealth.status === "ok" &&
+                `OK (schema version ${String(storageHealth.schemaVersion)})`}
+              {storageHealth.status === "error" && "Unavailable"}
+            </dd>
+          </div>
 
-            {connectionTestResult.transportFailureReasonCode ? (
-              <>
-                <dt>Safe reason code</dt>
-                <dd>{connectionTestResult.transportFailureReasonCode}</dd>
-              </>
-            ) : null}
+          <div className="diagnostics-definition-item">
+            <dt className="diagnostics-label">Map rendering support</dt>
+            <dd className="diagnostics-value">
+              {isMapRenderingSupported() ? "Supported" : "Not supported by this browser"}
+            </dd>
+          </div>
 
-            {connectionTestResult.httpStatus !== undefined ? (
-              <>
-                <dt>HTTP status</dt>
-                <dd>{connectionTestResult.httpStatus}</dd>
-              </>
-            ) : null}
+          <div className="diagnostics-definition-item">
+            <dt className="diagnostics-label">Geolocation permission</dt>
+            <dd className="diagnostics-value">
+              {GEOLOCATION_PERMISSION_LABEL[geolocationPermission]}
+            </dd>
+          </div>
 
-            <dt>Headers constructed</dt>
-            <dd>{connectionTestResult.headersConstructed ? "Yes" : "No"}</dd>
+          <div className="diagnostics-definition-item">
+            <dt className="diagnostics-label">Last known fix accuracy</dt>
+            <dd className="diagnostics-value">
+              {rideState?.lastFix
+                ? `±${String(Math.round(rideState.lastFix.accuracyMetres))} m`
+                : "Not applicable yet"}
+            </dd>
+          </div>
 
-            <dt>Request constructed</dt>
-            <dd>{connectionTestResult.requestConstructed ? "Yes" : "No"}</dd>
+          <div className="diagnostics-definition-item">
+            <dt className="diagnostics-label">Last known fix age</dt>
+            <dd className="diagnostics-value">
+              {fixAgeMs !== null ? formatFixAge(fixAgeMs) : "Not applicable yet"}
+            </dd>
+          </div>
 
-            <dt>Fetch invoked</dt>
-            <dd>{connectionTestResult.fetchInvoked ? "Yes" : "No"}</dd>
+          <div className="diagnostics-definition-item">
+            <dt className="diagnostics-label">Active route</dt>
+            <dd className="diagnostics-value diagnostics-value--mono">
+              {rideState?.routeId ?? "None"}
+            </dd>
+          </div>
+        </dl>
+      </section>
 
-            <dt>Fetch returned a promise</dt>
-            <dd>{connectionTestResult.fetchReturnedPromise ? "Yes" : "No"}</dd>
+      <section
+        className="panel stack diagnostics-section"
+        aria-labelledby="diagnostics-errors-heading"
+      >
+        <h2 id="diagnostics-errors-heading">Recent errors</h2>
+        {recentErrors.length === 0 ? (
+          <p className="field-hint">No errors recorded this session.</p>
+        ) : (
+          <ul className="diagnostics-log-list">
+            {recentErrors.map((entry) => (
+              <li
+                key={`${String(entry.timestampMs)}-${entry.context}`}
+                className="diagnostics-log-row"
+              >
+                <strong>{entry.context}</strong>: {entry.message}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
-            <dt>HTTP response received</dt>
-            <dd>{connectionTestResult.responseReceived ? "Yes" : "No"}</dd>
+      <section
+        className="panel stack diagnostics-section"
+        aria-labelledby="diagnostics-routing-heading"
+      >
+        <h2 id="diagnostics-routing-heading">Routing diagnostics</h2>
 
-            <dt>Secure context</dt>
-            <dd>{connectionTestResult.isSecureContext ? "Yes" : "No"}</dd>
+        <h3>Recent routing attempts</h3>
+        <details className="settings-disclosure">
+          <summary>Why a fetch can fail before an HTTP response</summary>
+          <p>
+            Browsers may report a generic fetch failure instead of the real HTTP status
+            (for example 502) when the provider&apos;s error response is missing CORS
+            headers — an entry reading &quot;Fetch failed before an HTTP response was
+            exposed to the browser&quot; can mean a provider outage, a missing CORS
+            header, a DNS or TLS failure, or a local network restriction, and cannot be
+            told apart from this information alone.
+          </p>
+        </details>
+        {recentRoutingAttempts.length === 0 ? (
+          <p className="field-hint">No routing attempts recorded this session.</p>
+        ) : (
+          <ul className="diagnostics-log-list">
+            {recentRoutingAttempts.map((entry) => (
+              <li key={entry.attemptId} className="diagnostics-log-row">
+                {describeRoutingAttempt(entry)}
+              </li>
+            ))}
+          </ul>
+        )}
 
-            <dt>Service worker controlling this page</dt>
-            <dd>{connectionTestResult.isServiceWorkerControlled ? "Yes" : "No"}</dd>
-
-            <dt>Active service worker script</dt>
-            <dd>{connectionTestResult.activeServiceWorkerScriptUrl ?? "None"}</dd>
-
-            <dt>Installed/standalone display</dt>
-            <dd>{connectionTestResult.isStandalone ? "Yes" : "No"}</dd>
-          </dl>
-          <button type="button" onClick={copyConnectionTestReport}>
-            Copy diagnostic report
-          </button>
-          {copyStatus === "copied" ? <p>Copied to clipboard.</p> : null}
-          {copyStatus === "failed" ? (
-            <p>
-              Could not copy automatically — select and copy the report text manually:
-              <br />
-              <textarea
-                readOnly
-                value={`${formatDiagnosticsReportHeader()}\n${formatConnectionTestReport(connectionTestResult)}`}
-              />
+        <h3>Test routing connection</h3>
+        <p className="field-hint">
+          This sends one real request to OpenRouteService, using fixed test coordinates
+          rather than any route you&apos;ve planned, and uses one API request.
+        </p>
+        {!hasKey ? (
+          <p className="field-hint">No OpenRouteService key configured.</p>
+        ) : null}
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={runConnectionTest}
+          disabled={!hasKey || isTestingConnection}
+        >
+          {isTestingConnection ? "Testing…" : "Test routing connection"}
+        </button>
+        {connectionTestResult ? (
+          <>
+            <p className="status-row" role="status">
+              {connectionTestResult.outcome === "success" ? "Succeeded" : "Failed"} —{" "}
+              {connectionTestResult.message} ({String(connectionTestResult.elapsedMs)} ms)
             </p>
-          ) : null}
-        </>
-      ) : null}
+            <dl className="diagnostics-definition-grid">
+              <div className="diagnostics-definition-item">
+                <dt className="diagnostics-label">Stage</dt>
+                <dd className="diagnostics-value">
+                  {connectionTestResult.stage} —{" "}
+                  {CONNECTION_TEST_STAGE_DESCRIPTIONS[connectionTestResult.stage]}
+                </dd>
+              </div>
 
-      <h2>Recent map imagery attempts</h2>
-      {recentMapAttempts.length === 0 ? (
-        <p>No map imagery attempts recorded this session.</p>
-      ) : (
-        <ul>
-          {recentMapAttempts.map((entry) => (
-            <li key={entry.timestampIso}>{describeMapAttempt(entry)}</li>
-          ))}
-        </ul>
-      )}
+              {connectionTestResult.errorName ? (
+                <div className="diagnostics-definition-item">
+                  <dt className="diagnostics-label">Error</dt>
+                  <dd className="diagnostics-value">
+                    {connectionTestResult.errorName}
+                    {connectionTestResult.errorMessage
+                      ? `: ${connectionTestResult.errorMessage}`
+                      : ""}
+                  </dd>
+                </div>
+              ) : null}
+
+              {connectionTestResult.transportFailureReasonCode ? (
+                <div className="diagnostics-definition-item">
+                  <dt className="diagnostics-label">Safe reason code</dt>
+                  <dd className="diagnostics-value">
+                    {connectionTestResult.transportFailureReasonCode}
+                  </dd>
+                </div>
+              ) : null}
+
+              {connectionTestResult.httpStatus !== undefined ? (
+                <div className="diagnostics-definition-item">
+                  <dt className="diagnostics-label">HTTP status</dt>
+                  <dd className="diagnostics-value">{connectionTestResult.httpStatus}</dd>
+                </div>
+              ) : null}
+
+              <div className="diagnostics-definition-item">
+                <dt className="diagnostics-label">Headers constructed</dt>
+                <dd className="diagnostics-value">
+                  {connectionTestResult.headersConstructed ? "Yes" : "No"}
+                </dd>
+              </div>
+
+              <div className="diagnostics-definition-item">
+                <dt className="diagnostics-label">Request constructed</dt>
+                <dd className="diagnostics-value">
+                  {connectionTestResult.requestConstructed ? "Yes" : "No"}
+                </dd>
+              </div>
+
+              <div className="diagnostics-definition-item">
+                <dt className="diagnostics-label">Fetch invoked</dt>
+                <dd className="diagnostics-value">
+                  {connectionTestResult.fetchInvoked ? "Yes" : "No"}
+                </dd>
+              </div>
+
+              <div className="diagnostics-definition-item">
+                <dt className="diagnostics-label">Fetch returned a promise</dt>
+                <dd className="diagnostics-value">
+                  {connectionTestResult.fetchReturnedPromise ? "Yes" : "No"}
+                </dd>
+              </div>
+
+              <div className="diagnostics-definition-item">
+                <dt className="diagnostics-label">HTTP response received</dt>
+                <dd className="diagnostics-value">
+                  {connectionTestResult.responseReceived ? "Yes" : "No"}
+                </dd>
+              </div>
+
+              <div className="diagnostics-definition-item">
+                <dt className="diagnostics-label">Secure context</dt>
+                <dd className="diagnostics-value">
+                  {connectionTestResult.isSecureContext ? "Yes" : "No"}
+                </dd>
+              </div>
+
+              <div className="diagnostics-definition-item">
+                <dt className="diagnostics-label">
+                  Service worker controlling this page
+                </dt>
+                <dd className="diagnostics-value">
+                  {connectionTestResult.isServiceWorkerControlled ? "Yes" : "No"}
+                </dd>
+              </div>
+
+              <div className="diagnostics-definition-item">
+                <dt className="diagnostics-label">Active service worker script</dt>
+                <dd className="diagnostics-value">
+                  {connectionTestResult.activeServiceWorkerScriptUrl ?? "None"}
+                </dd>
+              </div>
+
+              <div className="diagnostics-definition-item">
+                <dt className="diagnostics-label">Installed/standalone display</dt>
+                <dd className="diagnostics-value">
+                  {connectionTestResult.isStandalone ? "Yes" : "No"}
+                </dd>
+              </div>
+            </dl>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={copyConnectionTestReport}
+            >
+              Copy diagnostic report
+            </button>
+            {copyStatus === "copied" ? (
+              <p className="field-hint">Copied to clipboard.</p>
+            ) : null}
+            {copyStatus === "failed" ? (
+              <p className="field-error">
+                Could not copy automatically — select and copy the report text manually:
+                <br />
+                <textarea
+                  readOnly
+                  className="field-input diagnostics-report-textarea"
+                  value={`${formatDiagnosticsReportHeader()}\n${formatConnectionTestReport(connectionTestResult)}`}
+                />
+              </p>
+            ) : null}
+          </>
+        ) : null}
+      </section>
+
+      <section
+        className="panel stack diagnostics-section"
+        aria-labelledby="diagnostics-map-heading"
+      >
+        <h2 id="diagnostics-map-heading">Recent map imagery attempts</h2>
+        {recentMapAttempts.length === 0 ? (
+          <p className="field-hint">No map imagery attempts recorded this session.</p>
+        ) : (
+          <ul className="diagnostics-log-list">
+            {recentMapAttempts.map((entry) => (
+              <li key={entry.timestampIso} className="diagnostics-log-row">
+                {describeMapAttempt(entry)}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </section>
   );
 }

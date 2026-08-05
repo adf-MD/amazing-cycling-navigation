@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import pkg from "../../../package.json" with { type: "json" };
 import { DiagnosticsScreen } from "./DiagnosticsScreen.tsx";
@@ -108,6 +108,31 @@ describe("DiagnosticsScreen", () => {
     });
   });
 
+  it("renders exactly one h1 and the four sections in order, with two h3s nested inside Routing diagnostics", () => {
+    render(<DiagnosticsScreen />);
+
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Diagnostics" }),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent),
+    ).toEqual([
+      "System status",
+      "Recent errors",
+      "Routing diagnostics",
+      "Recent map imagery attempts",
+    ]);
+
+    const routingRegion = screen.getByRole("region", { name: "Routing diagnostics" });
+    expect(
+      within(routingRegion)
+        .getAllByRole("heading", { level: 3 })
+        .map((h) => h.textContent),
+    ).toEqual(["Recent routing attempts", "Test routing connection"]);
+  });
+
   it("reflects a granted geolocation permission from the Permissions API", async () => {
     vi.stubGlobal("navigator", {
       onLine: true,
@@ -159,7 +184,8 @@ describe("DiagnosticsScreen", () => {
     ).toBeInTheDocument();
   });
 
-  it("distinguishes a received HTTP response, offline, timeout and an unexposed fetch failure, and explains the CORS/502 ambiguity", () => {
+  it("distinguishes a received HTTP response, offline, timeout and an unexposed fetch failure, and explains the CORS/502 ambiguity, once its disclosure is opened", async () => {
+    const user = userEvent.setup();
     recordRoutingAttempt(
       buildAttempt({
         timestampIso: "2026-01-01T00:00:00.000Z",
@@ -204,7 +230,21 @@ describe("DiagnosticsScreen", () => {
     expect(
       screen.getByText("Fetch promise rejected before an HTTP response was exposed"),
     ).toBeInTheDocument();
-    expect(screen.getByText(/missing CORS headers/i)).toBeInTheDocument();
+
+    const explanation = screen.getByText(/missing CORS headers/i);
+    expect(explanation).not.toBeVisible();
+    await user.click(screen.getByText("Why a fetch can fail before an HTTP response"));
+    expect(explanation).toBeVisible();
+  });
+
+  it("keeps the fetch-failure explanation collapsed by default and reveals it on demand", async () => {
+    const user = userEvent.setup();
+    render(<DiagnosticsScreen />);
+
+    const explanation = screen.getByText(/missing CORS headers/i);
+    expect(explanation).not.toBeVisible();
+    await user.click(screen.getByText("Why a fetch can fail before an HTTP response"));
+    expect(explanation).toBeVisible();
   });
 
   it("shows no map imagery attempts recorded this session by default", () => {
@@ -383,6 +423,44 @@ describe("DiagnosticsScreen", () => {
       expect(report).toContain("App version:");
       expect(report).toContain("Build:");
       expect(report).not.toContain("0.0.0");
+    });
+
+    it("shows a read-only fallback textarea with the same redacted report on copy failure", async () => {
+      await saveProviderKey("dummy-test-key");
+      const user = userEvent.setup();
+      const routingProvider = fakeRoutingProvider(() =>
+        Promise.resolve(buildFakeRoute()),
+      );
+      const writeText = vi.fn().mockRejectedValue(new Error("clipboard denied"));
+      vi.stubGlobal("navigator", {
+        onLine: true,
+        clipboard: { writeText },
+      });
+
+      render(<DiagnosticsScreen routingProvider={routingProvider} />);
+
+      const testButton = await screen.findByRole("button", {
+        name: "Test routing connection",
+      });
+      await waitFor(() => {
+        expect(testButton).toBeEnabled();
+      });
+      await user.click(testButton);
+      await waitFor(() => {
+        expect(screen.getByRole("status")).toHaveTextContent(/Succeeded/);
+      });
+
+      await user.click(screen.getByRole("button", { name: "Copy diagnostic report" }));
+      await waitFor(() => {
+        expect(screen.getByText(/could not copy automatically/i)).toBeInTheDocument();
+      });
+
+      const textarea = screen.getByRole<HTMLTextAreaElement>("textbox");
+      expect(textarea.readOnly).toBe(true);
+      expect(textarea.value).toContain("App version:");
+      expect(textarea.value).toContain("Build:");
+      expect(textarea.value).not.toContain("8.681495");
+      expect(textarea.value).not.toContain("dummy-test-key");
     });
   });
 });

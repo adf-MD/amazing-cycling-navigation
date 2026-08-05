@@ -1231,3 +1231,115 @@ button:focus-visible {
   background: var(--colour-bg);
   color: var(--colour-text);
 }
+
+/* Diagnostics' System status block and the nested connection-test result
+ * both use this one definition-grid treatment (never split into
+ * per-value cards). Each dt/dd pair is wrapped in its own child <div> —
+ * valid <dl> content per the HTML spec's div-grouped-terms model — which
+ * is what lets this become a CSS grid: a grid container's direct
+ * children become grid items regardless of tag. One column on a narrow
+ * phone; two columns behind the existing min-width: 900px breakpoint
+ * (see .diagnostics-section below), never a second breakpoint value. */
+.diagnostics-definition-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-12) var(--space-16);
+  margin: 0;
+}
+
+@media (min-width: 900px) {
+  .diagnostics-definition-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.diagnostics-definition-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.diagnostics-label {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--colour-text-muted);
+}
+
+.diagnostics-value {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Reserved for the two build-ID/route-UUID-shaped values on this screen
+ * (Build, Active route) — not a general-purpose text treatment. The
+ * app's first monospace font-family use. */
+.diagnostics-value--mono {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9rem;
+}
+
+/* Constrains each Diagnostics panel to a readable text measure on a wide
+ * desktop browser, reusing .planning-section's own 900px breakpoint
+ * value — but as its own class, since .planning-section is documented as
+ * Planning-specific and this codebase keeps separate class families per
+ * screen for the same visual idea (see .ride-start-panel-button's own
+ * identical precedent). */
+.diagnostics-section {
+  width: 100%;
+}
+
+@media (min-width: 900px) {
+  .diagnostics-section {
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* Recent errors/routing attempts/map imagery attempts are each one
+ * continuous chronological log, not independent library items, so this
+ * mirrors .waypoint-list/.waypoint-row's own hairline-separated-rows-in-
+ * one-bordered-container rationale (not .route-list/.route-card's
+ * independent-card treatment), reused across all three lists. */
+.diagnostics-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-md);
+  background: var(--colour-bg-elevated);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.diagnostics-log-row {
+  margin: 0;
+  padding: var(--space-8) var(--space-12);
+  border-bottom: 1px solid var(--colour-border);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.diagnostics-log-row:last-child {
+  border-bottom: none;
+}
+
+/* Composed with .field-input (declared above) for the shared
+ * border/padding/colour treatment; these rules win at equal specificity
+ * by appearing later in the file. A multi-line diagnostic report needs a
+ * taller box, a monospace font for its own line-based layout, and
+ * resize: vertical (never the browser default resize: both) plus
+ * overflow-wrap: anywhere so it can never be dragged, or forced by an
+ * unbroken long token, wider than the viewport. */
+.diagnostics-report-textarea {
+  min-height: 160px;
+  resize: vertical;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+}
