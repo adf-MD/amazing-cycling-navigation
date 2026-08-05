@@ -68,7 +68,7 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: End-to-end smoke test
+      - name: End-to-end test suite
         run: npm run e2e
 
       - name: Setup Pages

@@ -894,4 +894,80 @@ test.describe("phone viewport", () => {
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
     expect(consoleErrors).toEqual([]);
   });
+
+  // Visual slice 5 (corrective): the same manual-rotation contract as the
+  // desktop "pressing Northwards twice" test above, proven again at this
+  // narrower height/width — Planning's own .planning-map-container height
+  // is viewport-relative (44dvh), so a rotation regression could plausibly
+  // reproduce at one width and not another. Reuses this describe block's
+  // own 390×844 viewport rather than declaring a second one.
+  test("pressing Northwards twice on a phone viewport, with a manual rotation in between, rotates back to north both times without layout overflow", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Plan" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    const mapWrapper = page.locator(".planning-map-container");
+    const northButton = page.getByRole("button", { name: "North-up, top-down view" });
+    const locateButton = page.getByRole("button", { name: "Locate me" });
+
+    await northButton.click();
+    await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
+    await expect(mapContainer).toHaveAttribute("data-camera-pitch", "0");
+
+    const mapBox = await mapContainer.boundingBox();
+    if (!mapBox) {
+      throw new Error("expected the map container to lay out");
+    }
+    const centreX = mapBox.x + mapBox.width / 2;
+    const centreY = mapBox.y + mapBox.height / 2;
+
+    // Same real right-button drag gesture as the desktop test — never a
+    // shortcut that sets the diagnostic attributes directly.
+    await page.mouse.move(centreX, centreY);
+    await page.mouse.down({ button: "right" });
+    await page.mouse.move(centreX + 100, centreY - 70, { steps: 10 });
+    await page.mouse.up({ button: "right" });
+
+    await expect
+      .poll(() => mapContainer.getAttribute("data-camera-bearing"))
+      .not.toBe("0");
+
+    await northButton.click();
+    await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
+    await expect(mapContainer).toHaveAttribute("data-camera-pitch", "0");
+
+    const scrollWidths = await page.evaluate(() => ({
+      documentWidth: document.documentElement.scrollWidth,
+      bodyWidth: document.body.scrollWidth,
+    }));
+    expect(scrollWidths.documentWidth).toBeLessThanOrEqual(390);
+    expect(scrollWidths.bodyWidth).toBeLessThanOrEqual(390);
+
+    const [wrapperBox, northUpBox, locateBox] = await Promise.all([
+      mapWrapper.boundingBox(),
+      northButton.boundingBox(),
+      locateButton.boundingBox(),
+    ]);
+    if (!wrapperBox || !northUpBox || !locateBox) {
+      throw new Error("expected the map wrapper and its controls to have a bounding box");
+    }
+    expect(isFullyWithin(northUpBox, wrapperBox)).toBe(true);
+    expect(isFullyWithin(locateBox, wrapperBox)).toBe(true);
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
 });

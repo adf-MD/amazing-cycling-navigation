@@ -936,19 +936,28 @@ button:focus-visible {
  * primary workspace throughout the whole authoring flow — there is no
  * idle/active state transition to mirror with a second modifier class, so
  * this is one steady height. A plain px fallback first, then a dvh-aware
- * override gated behind @supports, mirroring .ride-map-container's own
- * documented minifier-safe pattern. 44dvh keeps the map genuinely
- * prominent on a 390x844 iPhone without crowding the toolbar/waypoint
- * list/route options below off screen; the clamp() floor (280px)
- * protects short/landscape viewports, its ceiling (460px) lets the map
- * read as the dominant workspace on a taller phone or a wide desktop
- * viewport. Deliberately does not add Riding's own round()-snapped 20px
- * grid tier: that exists only to step over a specific MapLibre
- * drag-rotate/drag-pitch stuck-gesture band Riding's own real-device
- * testing found at its particular height range. Re-verified directly for
- * Planning's own height range and not reproduced; if a future height
- * change reintroduces it, mirror .ride-map-container--active's exact
- * three-tier structure (see index.css history around line ~840). */
+ * override, then a round()-snapped override, each gated behind its own
+ * @supports check — mirroring .ride-map-container--active's exact
+ * three-tier structure and its own documented minifier-safety reason for
+ * using separate @supports-gated rules rather than stacked declarations.
+ * 44dvh keeps the map genuinely prominent on a 390x844 iPhone without
+ * crowding the toolbar/waypoint list/route options below off screen; the
+ * clamp() floor (280px) protects short/landscape viewports, its ceiling
+ * (460px) lets the map read as the dominant workspace on a taller phone
+ * or a wide desktop viewport. This slice originally shipped without
+ * Riding's own round()-snapped 20px grid tier, on the strength of direct
+ * real-browser drag-rotate testing that did not reproduce MapLibre's
+ * stuck-gesture bug at Planning's height range. A subsequent CI run of
+ * e2e/planning.spec.ts's "pressing Northwards twice" test failed exactly
+ * that way — data-camera-bearing stayed "0" after a genuine right-button
+ * drag, because MapLibre's drag-rotate handler never fired moveend — at
+ * the unsnapped 44dvh height (≈316.8px on the project's default 1280×720
+ * e2e viewport). That CI result is the real evidence: the earlier
+ * from-first-principles verification simply didn't happen to hit the bad
+ * band on the machine it ran on, which the repository's own existing
+ * Riding investigation already documents as narrow and specific rather
+ * than universally reproducible. The round()-snap tier below is
+ * reinstated for exactly the reason Riding already carries it. */
 .planning-map-container {
   position: relative;
   height: 340px;
@@ -957,6 +966,12 @@ button:focus-visible {
 @supports (height: 44dvh) {
   .planning-map-container {
     height: clamp(280px, 44dvh, 460px);
+  }
+}
+
+@supports (height: round(nearest, 44dvh, 20px)) {
+  .planning-map-container {
+    height: clamp(280px, round(nearest, 44dvh, 20px), 460px);
   }
 }
 
