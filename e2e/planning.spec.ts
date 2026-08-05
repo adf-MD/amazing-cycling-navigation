@@ -9,6 +9,33 @@ test.use({ serviceWorkers: "block" });
 const ORS_URL_GLOB = "https://api.heigit.org/**";
 const DUMMY_KEY = "dummy-e2e-key";
 
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// Mirrors layout.spec.ts's own identical helpers, duplicated locally
+// rather than shared — this project's established e2e-spec precedent.
+function isFullyWithin(inner: Box, outer: Box): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  );
+}
+
+function intersects(a: Box, b: Box): boolean {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
+
 // MapView.tsx's POSITION_LAYER_ID paint colour for the current-location dot.
 const CURRENT_POSITION_DOT_COLOUR: readonly [number, number, number] = [0x1a, 0x73, 0xe8];
 
@@ -744,4 +771,127 @@ test("Locate me recentres without disturbing live zoom, bearing or pitch", async
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
+});
+
+// Visual slice 4 ("Planning workflow organisation"): proves the
+// reorganised Planning screen behaves at a narrow iPhone width, not just
+// on this file's other tests' default desktop viewport.
+test.describe("phone viewport", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("phone layout: no horizontal overflow, map chrome stays contained, a route can still be calculated and its actions stay reachable", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+    await page.addInitScript(() => {
+      const originalFetch = fetch;
+      globalThis.fetch = (...args: Parameters<typeof fetch>) => originalFetch(...args);
+    });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByLabel("OpenRouteService API key").fill(DUMMY_KEY);
+    await page.getByRole("button", { name: "Save on this device" }).click();
+    await expect(
+      page.getByText(/key saved on this device, not yet verified/i),
+    ).toBeVisible();
+
+    await page.route(ORS_URL_GLOB, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify(MOCK_ORS_RESPONSE),
+      });
+    });
+
+    await page.getByRole("button", { name: "Plan" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    const readScrollWidths = () =>
+      page.evaluate(() => ({
+        documentWidth: document.documentElement.scrollWidth,
+        bodyWidth: document.body.scrollWidth,
+      }));
+
+    const initialScrollWidths = await readScrollWidths();
+    expect(initialScrollWidths.documentWidth).toBeLessThanOrEqual(390);
+    expect(initialScrollWidths.bodyWidth).toBeLessThanOrEqual(390);
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    const mapWrapper = page.locator(".planning-map-container");
+    const crosshair = page.getByTestId("planning-crosshair");
+    const attribution = page.getByTestId("map-attribution");
+    const locateButton = page.getByRole("button", { name: "Locate me" });
+    const northUpButton = page.getByRole("button", { name: "North-up, top-down view" });
+
+    await expect(mapContainer.locator("canvas")).toBeVisible();
+
+    const [wrapperBox, crosshairBox, attributionBox, locateBox, northUpBox] =
+      await Promise.all([
+        mapWrapper.boundingBox(),
+        crosshair.boundingBox(),
+        attribution.boundingBox(),
+        locateButton.boundingBox(),
+        northUpButton.boundingBox(),
+      ]);
+    if (!wrapperBox || !crosshairBox || !attributionBox || !locateBox || !northUpBox) {
+      throw new Error("expected all located map-chrome elements to have a bounding box");
+    }
+    expect(isFullyWithin(crosshairBox, wrapperBox)).toBe(true);
+    expect(isFullyWithin(attributionBox, wrapperBox)).toBe(true);
+    expect(isFullyWithin(locateBox, wrapperBox)).toBe(true);
+    expect(isFullyWithin(northUpBox, wrapperBox)).toBe(true);
+    expect(intersects(attributionBox, locateBox)).toBe(false);
+    expect(intersects(attributionBox, northUpBox)).toBe(false);
+
+    // Two waypoints placed via direct map taps, exactly like the desktop
+    // flow above.
+    await mapContainer.click({ position: { x: 100, y: 100 } });
+    await mapContainer.click({ position: { x: 150, y: 150 } });
+    await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Waypoint 2", exact: true }),
+    ).toBeVisible();
+
+    // Removing WaypointList's inline TOUCH_TARGET_STYLE (see CLAUDE.md's
+    // visual-slice-4 paragraph) must not shrink a real touch target below
+    // the accepted minimum — Vitest's css:false environment cannot verify
+    // this, so it is only ever provable here.
+    const deleteButton = page.getByRole("button", { name: "Delete Waypoint 2" });
+    const deleteBox = await deleteButton.boundingBox();
+    if (!deleteBox) throw new Error("expected the Delete button to have a bounding box");
+    expect(deleteBox.width).toBeGreaterThanOrEqual(44);
+    expect(deleteBox.height).toBeGreaterThanOrEqual(44);
+
+    const calculateButton = page.getByRole("button", { name: /calculate route/i });
+    await expect(calculateButton).toBeEnabled();
+    await calculateButton.click();
+
+    const summaryRegion = page.getByRole("region", { name: "Route summary" });
+    await expect(summaryRegion).toBeVisible({ timeout: 15_000 });
+
+    const saveButton = page.getByRole("button", { name: /save route/i });
+    const exportButton = page.getByRole("button", { name: /export gpx/i });
+    await saveButton.scrollIntoViewIfNeeded();
+    await expect(saveButton).toBeEnabled();
+    await exportButton.scrollIntoViewIfNeeded();
+    await expect(exportButton).toBeEnabled();
+
+    const finalScrollWidths = await readScrollWidths();
+    expect(finalScrollWidths.documentWidth).toBeLessThanOrEqual(390);
+    expect(finalScrollWidths.bodyWidth).toBeLessThanOrEqual(390);
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
 });

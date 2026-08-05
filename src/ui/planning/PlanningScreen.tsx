@@ -822,12 +822,12 @@ export function PlanningScreen({
   };
 
   return (
-    <section aria-label="Planning">
+    <section aria-label="Planning" className="screen planning-screen">
       <h1 className="screen-title">Plan a route</h1>
 
       {!hasKey ? <NoApiKeyNotice onOpenSettings={onNavigateToSettings} /> : null}
 
-      <div style={{ height: 320, position: "relative" }}>
+      <div className="planning-map-container">
         <MapView
           points={mapPoints}
           currentPosition={currentPosition ?? undefined}
@@ -893,20 +893,26 @@ export function PlanningScreen({
             N
           </button>
         </div>
-        {locateStatus === "failed" ? (
-          <p role="status">Your location could not be determined.</p>
-        ) : null}
-        {selectedWarningIndex !== null ? (
-          <p role="status">Clear the selected warning to place or move a waypoint.</p>
-        ) : null}
-        {selectedRouteFeatureId !== null ? (
-          <p role="status">
-            Clear the selected route feature to place or move a waypoint.
-          </p>
-        ) : null}
+        <div className="planning-map-status-overlay">
+          {locateStatus === "failed" ? (
+            <p role="status" className="planning-map-status-message">
+              Your location could not be determined.
+            </p>
+          ) : null}
+          {selectedWarningIndex !== null ? (
+            <p role="status" className="planning-map-status-message">
+              Clear the selected warning to place or move a waypoint.
+            </p>
+          ) : null}
+          {selectedRouteFeatureId !== null ? (
+            <p role="status" className="planning-map-status-message">
+              Clear the selected route feature to place or move a waypoint.
+            </p>
+          ) : null}
+        </div>
       </div>
 
-      <div role="group" aria-label="Waypoint actions">
+      <div role="group" aria-label="Waypoint actions" className="row planning-section">
         <button
           type="button"
           onClick={() => {
@@ -927,6 +933,7 @@ export function PlanningScreen({
         </button>
         <button
           type="button"
+          className="btn-secondary"
           onClick={() => {
             dispatchWaypointAction({ type: "returnToStart" });
           }}
@@ -946,93 +953,117 @@ export function PlanningScreen({
         ) : null}
       </div>
 
-      <WaypointList
-        waypoints={state.present}
-        interactionMode={interactionMode}
-        onSelect={(waypointId) => {
-          dispatchWaypointAction({ type: "select", waypointId });
-        }}
-        onStartMove={handleStartMove}
-        onStartInsertAfter={handleStartInsertAfter}
-        onMoveUp={(waypointId) => {
-          const index = state.present.findIndex((w) => w.id === waypointId);
-          dispatchWaypointAction({ type: "reorder", waypointId, toIndex: index - 1 });
-        }}
-        onMoveDown={(waypointId) => {
-          const index = state.present.findIndex((w) => w.id === waypointId);
-          dispatchWaypointAction({ type: "reorder", waypointId, toIndex: index + 1 });
-        }}
-        onDelete={(waypointId) => {
-          dispatchWaypointAction({ type: "delete", waypointId });
-        }}
-      />
-
-      <div role="group" aria-label="Cycling profile" className="cycling-profile-group">
-        {ROUTING_PROFILES.map((metadata) => {
-          const isSelected = profile === metadata.value;
-          return (
-            <button
-              key={metadata.value}
-              type="button"
-              className={
-                isSelected
-                  ? "cycling-profile-button is-selected"
-                  : "cycling-profile-button"
-              }
-              aria-pressed={isSelected}
-              onClick={() => {
-                setProfile(metadata.value);
-              }}
-            >
-              {metadata.label}
-            </button>
-          );
-        })}
-      </div>
-      <p>{describeRoutingProfile(profile)}</p>
-
-      <div className="row">
-        <p className="field-hint">
-          Ferries: {avoidFerries ? "avoided for this plan" : "allowed for this plan"}. Set
-          when this plan was created.
-        </p>
-        <button type="button" className="btn-secondary" onClick={onNavigateToSettings}>
-          Change default in Settings
-        </button>
+      <div className="stack planning-section">
+        <h2>Waypoints</h2>
+        <WaypointList
+          waypoints={state.present}
+          interactionMode={interactionMode}
+          onSelect={(waypointId) => {
+            dispatchWaypointAction({ type: "select", waypointId });
+          }}
+          onStartMove={handleStartMove}
+          onStartInsertAfter={handleStartInsertAfter}
+          onMoveUp={(waypointId) => {
+            const index = state.present.findIndex((w) => w.id === waypointId);
+            dispatchWaypointAction({ type: "reorder", waypointId, toIndex: index - 1 });
+          }}
+          onMoveDown={(waypointId) => {
+            const index = state.present.findIndex((w) => w.id === waypointId);
+            dispatchWaypointAction({ type: "reorder", waypointId, toIndex: index + 1 });
+          }}
+          onDelete={(waypointId) => {
+            dispatchWaypointAction({ type: "delete", waypointId });
+          }}
+        />
       </div>
 
-      <button
-        type="button"
-        onClick={routing.calculateNow}
-        disabled={state.present.length < 2 || !hasKey || routing.isCalculating}
-      >
-        {routing.isCalculating
-          ? routing.updatingLegCount !== null
-            ? `Calculating ${String(routing.updatingLegCount)} route sections…`
-            : "Calculating…"
-          : routing.lastErrorMessage
-            ? "Try again"
-            : "Calculate route"}
-      </button>
-      {hasKey ? (
-        <p role="status">{describeProviderKeyStatus(key, verification, now).headline}</p>
-      ) : null}
-      <p>
-        A route is calculated in sections between waypoints. The first calculation uses
-        one routing request per section; later edits normally recalculate only changed
-        sections.
-      </p>
-      {routing.lastErrorMessage ? <p role="alert">{routing.lastErrorMessage}</p> : null}
+      <div className="panel stack planning-section">
+        <h2>Route options</h2>
 
-      {routing.isStale && routing.state.kind === "routed" ? (
-        <p role="status">
-          {describeStaleRouteStatus({
-            previousProfile: routing.state.route.source.profile,
-            currentProfile: profile,
-            isCalculating: routing.isCalculating,
-          })}
-        </p>
-      ) : null}
+        <div>
+          <div
+            role="group"
+            aria-label="Cycling profile"
+            className="cycling-profile-group"
+          >
+            {ROUTING_PROFILES.map((metadata) => {
+              const isSelected = profile === metadata.value;
+              return (
+                <button
+                  key={metadata.value}
+                  type="button"
+                  className={
+                    isSelected
+                      ? "cycling-profile-button is-selected"
+                      : "cycling-profile-button"
+                  }
+                  aria-pressed={isSelected}
+                  onClick={() => {
+                    setProfile(metadata.value);
+                  }}
+                >
+                  {metadata.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="field-hint">{describeRoutingProfile(profile)}</p>
+        </div>
+
+        <div className="row">
+          <p className="field-hint">
+            Ferries: {avoidFerries ? "avoided for this plan" : "allowed for this plan"}.
+            Set when this plan was created.
+          </p>
+          <button type="button" className="btn-secondary" onClick={onNavigateToSettings}>
+            Change default in Settings
+          </button>
+        </div>
+
+        <div className="planning-calculate-actions">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={routing.calculateNow}
+            disabled={state.present.length < 2 || !hasKey || routing.isCalculating}
+          >
+            {routing.isCalculating
+              ? routing.updatingLegCount !== null
+                ? `Calculating ${String(routing.updatingLegCount)} route sections…`
+                : "Calculating…"
+              : routing.lastErrorMessage
+                ? "Try again"
+                : "Calculate route"}
+          </button>
+          {hasKey ? (
+            <p className="status-row" role="status">
+              {describeProviderKeyStatus(key, verification, now).headline}
+            </p>
+          ) : null}
+          {routing.lastErrorMessage ? (
+            <p className="field-error" role="alert">
+              {routing.lastErrorMessage}
+            </p>
+          ) : null}
+          {routing.isStale && routing.state.kind === "routed" ? (
+            <p className="status-row" role="status">
+              {describeStaleRouteStatus({
+                previousProfile: routing.state.route.source.profile,
+                currentProfile: profile,
+                isCalculating: routing.isCalculating,
+              })}
+            </p>
+          ) : null}
+          <details className="settings-disclosure">
+            <summary>How recalculation works</summary>
+            <p>
+              A route is calculated in sections between waypoints. The first calculation
+              uses one routing request per section; later edits normally recalculate only
+              changed sections.
+            </p>
+          </details>
+        </div>
+      </div>
 
       {routing.state.kind === "routed" ? (
         <RouteSummaryPanel
@@ -1057,28 +1088,54 @@ export function PlanningScreen({
         />
       ) : null}
 
-      <div>
-        <label htmlFor="planning-route-name">Route name</label>
-        <input
-          id="planning-route-name"
-          type="text"
-          value={routeName}
-          onChange={(event) => {
-            setRouteName(event.target.value);
-          }}
-        />
+      <div className="panel stack planning-section">
+        <h2>Save or export</h2>
+        <div className="stack">
+          <label htmlFor="planning-route-name">Route name</label>
+          <input
+            id="planning-route-name"
+            type="text"
+            className="field-input"
+            value={routeName}
+            onChange={(event) => {
+              setRouteName(event.target.value);
+            }}
+          />
+        </div>
+        {!canSaveOrExport && !routing.isStale ? (
+          <p className="field-hint">
+            Calculate a complete routed result before saving or exporting.
+          </p>
+        ) : null}
+        {saveError ? (
+          <p className="field-error" role="alert">
+            {saveError}
+          </p>
+        ) : null}
+        {exportError ? (
+          <p className="field-error" role="alert">
+            {exportError}
+          </p>
+        ) : null}
+        <div className="row">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleSave}
+            disabled={!canSaveOrExport}
+          >
+            Save route
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleExport}
+            disabled={!canSaveOrExport}
+          >
+            Export GPX
+          </button>
+        </div>
       </div>
-      {!canSaveOrExport && !routing.isStale ? (
-        <p>Calculate a complete routed result before saving or exporting.</p>
-      ) : null}
-      {saveError ? <p role="alert">{saveError}</p> : null}
-      {exportError ? <p role="alert">{exportError}</p> : null}
-      <button type="button" onClick={handleSave} disabled={!canSaveOrExport}>
-        Save route
-      </button>
-      <button type="button" onClick={handleExport} disabled={!canSaveOrExport}>
-        Export GPX
-      </button>
     </section>
   );
 }

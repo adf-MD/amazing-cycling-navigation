@@ -477,6 +477,34 @@ beforeEach(async () => {
 });
 
 describe("PlanningScreen", () => {
+  it("has one primary heading and the visible major section headings", () => {
+    const map = createMockMapFactory();
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={buildResolvedAdapter(buildRoute())}
+      />,
+    );
+    map.triggerLoad();
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Plan a route" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Waypoints" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Route options" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Save or export" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { level: 2, name: "Route overview" }),
+    ).toBeNull();
+  });
+
   it("keeps waypoint editing usable without a key, and shows the required notice", async () => {
     const user = userEvent.setup();
     const map = createMockMapFactory();
@@ -539,7 +567,11 @@ describe("PlanningScreen", () => {
     expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Undo" }));
-    expect(screen.getByText("No waypoints placed yet.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "No waypoints yet. Tap the map or use the crosshair button below to add one.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("persists a draft to storage after an edit", async () => {
@@ -684,7 +716,11 @@ describe("PlanningScreen", () => {
 
     const draft = await getDraft();
     expect(draft).toBeUndefined();
-    expect(screen.getByText("No waypoints placed yet.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "No waypoints yet. Tap the map or use the crosshair button below to add one.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("frames a fresh session in an approximately 50 × 50 km box around the rider's approximate location", async () => {
@@ -1366,7 +1402,11 @@ describe("PlanningScreen", () => {
 
       expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
-      expect(screen.queryByText("No waypoints placed yet.")).toBeNull();
+      expect(
+        screen.queryByText(
+          "No waypoints yet. Tap the map or use the crosshair button below to add one.",
+        ),
+      ).toBeNull();
     });
 
     it("a selected warning survives either control being used", async () => {

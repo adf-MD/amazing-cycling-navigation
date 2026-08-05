@@ -166,51 +166,61 @@ export function RouteSummaryPanel({
       : undefined;
 
   return (
-    <section aria-label="Route summary">
-      <p>
-        {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
-        {route.descentMetres !== null
-          ? ` · ${String(Math.round(route.descentMetres))} m descent`
-          : ""}
-      </p>
-      <p>
-        {waypointCount} waypoint{waypointCount === 1 ? "" : "s"}
-      </p>
-      <ElevationChart
-        points={displayPoints ?? route.points}
-        routeFeatures={routeFeatures}
-        gradientSegments={gradientSegments}
-        selectedRangeMetres={selectedRangeMetres}
-        onTapDistance={onTapDistance}
-      />
-      <GradientColoursDisclosure
-        presentClimbBands={
-          selectedRouteFeature?.kind === "climb"
-            ? new Set(
-                gradientSegments.map((segment) => segment.visualKey as ClimbGradientBand),
-              )
-            : new Set()
-        }
-        presentVisualKeys={
-          new Set(
-            routeFeatures.map((feature) =>
-              feature.kind === "climb" ? feature.category : feature.band,
-            ),
-          )
-        }
-      />
-      <RouteFeatureDetailsPanel
-        feature={selectedRouteFeature}
-        onClear={onClearRouteFeatureSelection}
-      />
-      <GradientSegmentDetailsPanel
-        segment={selectedGradientSegment}
-        startElevationMetres={selectedSegmentStartElevationMetres}
-        endElevationMetres={selectedSegmentEndElevationMetres}
-        onClear={onClearGradientSegmentSelection}
-      />
-      {route.source.kind === "planner" ? (
+    <section aria-label="Route summary" className="panel stack planning-section">
+      <h2>Route overview</h2>
+
+      <div className="route-summary-metrics">
         <p>
+          {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
+          {route.descentMetres !== null
+            ? ` · ${String(Math.round(route.descentMetres))} m descent`
+            : ""}
+        </p>
+        <p>
+          {waypointCount} waypoint{waypointCount === 1 ? "" : "s"}
+        </p>
+      </div>
+
+      <div className="route-overview-elevation-section">
+        <ElevationChart
+          points={displayPoints ?? route.points}
+          routeFeatures={routeFeatures}
+          gradientSegments={gradientSegments}
+          selectedRangeMetres={selectedRangeMetres}
+          onTapDistance={onTapDistance}
+        />
+        <GradientColoursDisclosure
+          presentClimbBands={
+            selectedRouteFeature?.kind === "climb"
+              ? new Set(
+                  gradientSegments.map(
+                    (segment) => segment.visualKey as ClimbGradientBand,
+                  ),
+                )
+              : new Set()
+          }
+          presentVisualKeys={
+            new Set(
+              routeFeatures.map((feature) =>
+                feature.kind === "climb" ? feature.category : feature.band,
+              ),
+            )
+          }
+        />
+        <RouteFeatureDetailsPanel
+          feature={selectedRouteFeature}
+          onClear={onClearRouteFeatureSelection}
+        />
+        <GradientSegmentDetailsPanel
+          segment={selectedGradientSegment}
+          startElevationMetres={selectedSegmentStartElevationMetres}
+          endElevationMetres={selectedSegmentEndElevationMetres}
+          onClear={onClearGradientSegmentSelection}
+        />
+      </div>
+
+      {route.source.kind === "planner" ? (
+        <p className="field-hint">
           Routed via {route.source.provider ?? "unknown provider"}
           {route.source.profile
             ? ` · ${formatRoutingProfileLabel(route.source.profile)} (${route.source.profile})`
@@ -219,20 +229,21 @@ export function RouteSummaryPanel({
       ) : null}
       {surface ? (
         <>
-          <ul aria-label="Surface breakdown">
+          <ul aria-label="Surface breakdown" className="surface-summary-grid">
             <li>Paved: {formatMetres(surface.pavedMetres)}</li>
             <li>Questionable: {formatMetres(surface.questionableMetres)}</li>
             <li>Unsuitable: {formatMetres(surface.unsuitableMetres)}</li>
             <li>Unknown: {formatMetres(surface.unknownMetres)}</li>
           </ul>
-          <p>
+          <p className="field-hint">
             Based on available data only — not a guarantee of road quality, legal access
             or current conditions.
           </p>
         </>
       ) : null}
       {warnings.length > 0 ? (
-        <>
+        <div className="stack">
+          <h3>Route warnings</h3>
           <ul aria-label="Route warnings">
             {warnings.map((warning, index) => {
               const isSelected = index === selectedWarningIndex;
@@ -302,11 +313,15 @@ export function RouteSummaryPanel({
             </p>
           ) : null}
           {selectedWarningIndex !== null ? (
-            <button type="button" onClick={onClearWarningSelection}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={onClearWarningSelection}
+            >
               Clear warning selection
             </button>
           ) : null}
-        </>
+        </div>
       ) : null}
     </section>
   );

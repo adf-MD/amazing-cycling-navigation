@@ -68,6 +68,9 @@ describe("RouteSummaryPanel", () => {
       />,
     );
 
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Route overview" }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/1\.0 km/)).toBeInTheDocument();
     expect(screen.getByText("Paved: 700 m")).toBeInTheDocument();
     expect(screen.getByText("Questionable: 200 m")).toBeInTheDocument();
@@ -132,6 +135,9 @@ describe("RouteSummaryPanel", () => {
       />,
     );
 
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Route warnings" }),
+    ).toBeInTheDocument();
     const buttons = screen.getAllByRole("button", { name: /surface for a road bike/i });
     expect(buttons).toHaveLength(2);
     expect(buttons[0]).toHaveTextContent("Questionable surface for a road bike.");
@@ -304,6 +310,9 @@ describe("RouteSummaryPanel", () => {
 
     expect(screen.queryByRole("list", { name: "Route warnings" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Clear warning selection" })).toBeNull();
+    expect(
+      screen.queryByRole("heading", { level: 3, name: "Route warnings" }),
+    ).toBeNull();
   });
 
   describe("map-originated reveal", () => {

@@ -45,7 +45,11 @@ describe("WaypointList", () => {
       />,
     );
 
-    expect(screen.getByText("No waypoints placed yet.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "No waypoints yet. Tap the map or use the crosshair button below to add one.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("marks no waypoint as pressed in append mode", () => {

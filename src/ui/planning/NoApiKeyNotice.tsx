@@ -9,9 +9,9 @@ export interface NoApiKeyNoticeProps {
  */
 export function NoApiKeyNotice({ onOpenSettings }: NoApiKeyNoticeProps) {
   return (
-    <div role="status">
+    <div role="status" className="status-row status-row--info row planning-section">
       <p>Road routing requires your personal OpenRouteService key.</p>
-      <button type="button" onClick={onOpenSettings}>
+      <button type="button" className="btn-secondary" onClick={onOpenSettings}>
         Open Settings
       </button>
     </div>

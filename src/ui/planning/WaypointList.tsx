@@ -12,8 +12,6 @@ export interface WaypointListProps {
   onDelete: (waypointId: string) => void;
 }
 
-const TOUCH_TARGET_STYLE = { minWidth: 44, minHeight: 44 };
-
 /**
  * The authoritative, always-reliable place to select, reorder or delete a
  * waypoint — deliberately plain text rows with "move up"/"move down"
@@ -37,7 +35,11 @@ export function WaypointList({
   onDelete,
 }: WaypointListProps) {
   if (waypoints.length === 0) {
-    return <p>No waypoints placed yet.</p>;
+    return (
+      <p className="field-hint">
+        No waypoints yet. Tap the map or use the crosshair button below to add one.
+      </p>
+    );
   }
 
   // "append" carries no waypointId; every other mode kind names exactly
@@ -47,7 +49,7 @@ export function WaypointList({
     interactionMode.kind === "append" ? null : interactionMode.waypointId;
 
   return (
-    <ol aria-label="Waypoints">
+    <ol aria-label="Waypoints" className="waypoint-list">
       {waypoints.map((waypoint, index) => {
         const isSelected = waypoint.id === activeWaypointId;
         const isPendingMove = isSelected && interactionMode.kind === "move";
@@ -55,23 +57,73 @@ export function WaypointList({
           isSelected && interactionMode.kind === "insert-after";
         const label = index === 0 ? "Start" : `Waypoint ${String(index + 1)}`;
         return (
-          <li key={waypoint.id}>
-            <button
-              type="button"
-              aria-pressed={isSelected}
-              style={TOUCH_TARGET_STYLE}
-              onClick={() => {
-                onSelect(waypoint.id);
-              }}
-            >
-              {label}
-            </button>
+          <li
+            key={waypoint.id}
+            className={isSelected ? "waypoint-row is-selected" : "waypoint-row"}
+          >
+            <div className="waypoint-row-main">
+              <button
+                type="button"
+                className="waypoint-row-select"
+                aria-pressed={isSelected}
+                onClick={() => {
+                  onSelect(waypoint.id);
+                }}
+              >
+                <span className="waypoint-row-ordinal" aria-hidden="true">
+                  {index + 1}
+                </span>
+                <span className="waypoint-row-label">{label}</span>
+              </button>
+              <div className="waypoint-row-reorder">
+                <button
+                  type="button"
+                  className="waypoint-row-icon-button"
+                  aria-label={`Move ${label} up`}
+                  disabled={index === 0}
+                  onClick={() => {
+                    onMoveUp(waypoint.id);
+                  }}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="waypoint-row-icon-button"
+                  aria-label={`Move ${label} down`}
+                  disabled={index === waypoints.length - 1}
+                  onClick={() => {
+                    onMoveDown(waypoint.id);
+                  }}
+                >
+                  ↓
+                </button>
+              </div>
+              <button
+                type="button"
+                className="waypoint-row-icon-button"
+                aria-label={`Delete ${label}`}
+                onClick={() => {
+                  onDelete(waypoint.id);
+                }}
+              >
+                Delete
+              </button>
+            </div>
             {isSelected ? (
-              <span role="group" aria-label={`${label} actions`}>
+              <div
+                role="group"
+                aria-label={`${label} actions`}
+                className="waypoint-row-relocate"
+              >
                 <button
                   type="button"
                   aria-pressed={isPendingMove}
-                  style={TOUCH_TARGET_STYLE}
+                  className={
+                    isPendingMove
+                      ? "waypoint-relocate-button is-pending"
+                      : "waypoint-relocate-button"
+                  }
                   onClick={() => {
                     onStartMove(waypoint.id);
                   }}
@@ -81,47 +133,19 @@ export function WaypointList({
                 <button
                   type="button"
                   aria-pressed={isPendingInsertAfter}
-                  style={TOUCH_TARGET_STYLE}
+                  className={
+                    isPendingInsertAfter
+                      ? "waypoint-relocate-button is-pending"
+                      : "waypoint-relocate-button"
+                  }
                   onClick={() => {
                     onStartInsertAfter(waypoint.id);
                   }}
                 >
                   Insert after
                 </button>
-              </span>
+              </div>
             ) : null}
-            <button
-              type="button"
-              aria-label={`Move ${label} up`}
-              style={TOUCH_TARGET_STYLE}
-              disabled={index === 0}
-              onClick={() => {
-                onMoveUp(waypoint.id);
-              }}
-            >
-              ↑
-            </button>
-            <button
-              type="button"
-              aria-label={`Move ${label} down`}
-              style={TOUCH_TARGET_STYLE}
-              disabled={index === waypoints.length - 1}
-              onClick={() => {
-                onMoveDown(waypoint.id);
-              }}
-            >
-              ↓
-            </button>
-            <button
-              type="button"
-              aria-label={`Delete ${label}`}
-              style={TOUCH_TARGET_STYLE}
-              onClick={() => {
-                onDelete(waypoint.id);
-              }}
-            >
-              Delete
-            </button>
           </li>
         );
       })}

@@ -258,9 +258,17 @@ button:focus-visible {
 }
 
 /* Planning's Road bike/General cycling selector, mirroring
- * elevation-window-group's own spacing above. */
+ * elevation-window-group's own spacing above. An equal-width segmented
+ * control (visual slice 4): the group lays its two buttons out in a row
+ * and each button claims an equal share via flex: 1 1 0 below. */
 .cycling-profile-group {
   margin-top: 10px;
+  display: flex;
+  gap: var(--space-8);
+}
+
+.cycling-profile-button {
+  flex: 1 1 0;
 }
 
 /* Mirrors .route-warning-button.is-selected below: a darker neutral fill
@@ -919,4 +927,259 @@ button:focus-visible {
 .elevation-window-button.is-selected {
   background-color: var(--colour-bg-elevated);
   box-shadow: 0 0 0 2px var(--colour-border);
+}
+
+/* --- Planning: workflow organisation (visual slice 4) --- */
+
+/* Replaces the previous inline {height:320,position:"relative"} wrapper.
+ * Unlike Riding's own equivalent, Planning's map is a single continuous
+ * primary workspace throughout the whole authoring flow — there is no
+ * idle/active state transition to mirror with a second modifier class, so
+ * this is one steady height. A plain px fallback first, then a dvh-aware
+ * override gated behind @supports, mirroring .ride-map-container's own
+ * documented minifier-safe pattern. 44dvh keeps the map genuinely
+ * prominent on a 390x844 iPhone without crowding the toolbar/waypoint
+ * list/route options below off screen; the clamp() floor (280px)
+ * protects short/landscape viewports, its ceiling (460px) lets the map
+ * read as the dominant workspace on a taller phone or a wide desktop
+ * viewport. Deliberately does not add Riding's own round()-snapped 20px
+ * grid tier: that exists only to step over a specific MapLibre
+ * drag-rotate/drag-pitch stuck-gesture band Riding's own real-device
+ * testing found at its particular height range. Re-verified directly for
+ * Planning's own height range and not reproduced; if a future height
+ * change reintroduces it, mirror .ride-map-container--active's exact
+ * three-tier structure (see index.css history around line ~840). */
+.planning-map-container {
+  position: relative;
+  height: 340px;
+}
+
+@supports (height: 44dvh) {
+  .planning-map-container {
+    height: clamp(280px, 44dvh, 460px);
+  }
+}
+
+/* Absorbs the three locate-failed/warning-selected/route-feature-selected
+ * blocking messages that used to sit in normal document flow inside the
+ * fixed-height map wrapper, where they could overflow below the visible
+ * map area exactly like .map-attribution's own comment already warns
+ * against for attribution text. right:64px clears
+ * .planning-map-controls' 48px button column plus its own 8px inset and
+ * the overlay's own 8px inset. */
+.planning-map-status-overlay {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 64px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Same fixed translucent-black/white pairing as .map-attribution, for the
+ * same reason: this sits over variable map imagery, not the app's own
+ * background, so it must not swap with the light/dark colour scheme. */
+.planning-map-status-message {
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background-color: rgb(0 0 0 / 60%);
+  color: #ffffff;
+  font-size: 0.8rem;
+}
+
+/* Constrains the non-map Planning sections to a readable text measure on
+ * a wide desktop browser while the map itself (a sibling, not a member
+ * of this class) stays full width. Auto inline margins centre the panel
+ * within .screen's flex column once max-width caps it below the
+ * container's own width. */
+.planning-section {
+  width: 100%;
+}
+
+@media (min-width: 900px) {
+  .planning-section {
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* The waypoint list itself: one bordered/elevated container (mirroring
+ * .panel) with hairline-separated rows inside, rather than a separate
+ * card per waypoint — waypoints are one continuous ordered sequence, not
+ * independent items like a route-library card. */
+.waypoint-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-md);
+  background: var(--colour-bg-elevated);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.waypoint-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  border-bottom: 1px solid var(--colour-border);
+}
+
+.waypoint-row:last-child {
+  border-bottom: none;
+}
+
+/* Never colour alone: an inset accent ring plus accent-coloured, bolder
+ * label text, mirroring .main-nav-button[aria-current="page"]'s own
+ * richer selected-state treatment (a soft accent surface, an inset ring
+ * and accent text) rather than the plainer neutral fill used elsewhere —
+ * a waypoint row is the single "you are working on this one" focus of
+ * the whole Waypoints list, closer in weight to "which screen is active"
+ * than to a lightweight toggle button. */
+.waypoint-row.is-selected {
+  background: var(--colour-accent-soft);
+  box-shadow: inset 0 0 0 2px var(--colour-accent);
+}
+
+.waypoint-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+
+.waypoint-row-select {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  text-align: left;
+}
+
+/* Purely decorative — aria-hidden in the markup, since the row's own
+ * label text ("Start"/"Waypoint 2") already encodes ordinal position in
+ * words for assistive technology. A sighted-only echo of the map's own
+ * numbered waypoint marker. */
+.waypoint-row-ordinal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 50%;
+  background: var(--colour-bg);
+  border: 1px solid var(--colour-border);
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.waypoint-row-label {
+  overflow-wrap: anywhere;
+}
+
+.waypoint-row.is-selected .waypoint-row-label {
+  color: var(--colour-accent);
+  font-weight: 700;
+}
+
+.waypoint-row-reorder {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Overrides only the global button rule's horizontal padding, exactly
+ * like .planning-map-control already does — min-height/min-width stay
+ * the global 44px touch-target minimum untouched. */
+.waypoint-row-icon-button {
+  padding: 0 var(--space-8);
+}
+
+/* The Move/Insert-after sub-row, shown only while its row is selected —
+ * a dashed top border visually separates "relocate" from "reorder" one
+ * row up, echoing WaypointList's own long-standing doc-comment rationale
+ * that the two concepts must never be visually or semantically
+ * confused. */
+.waypoint-row-relocate {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  padding-top: var(--space-8);
+  border-top: 1px dashed var(--colour-border);
+}
+
+/* The plain neutral variant already used by
+ * .cycling-profile-button.is-selected/.route-warning-button.is-selected/
+ * .elevation-window-button.is-selected — deliberately different from
+ * .waypoint-row.is-selected's richer accent treatment above, so a
+ * pending Move/Insert-after state never looks identical to row
+ * selection itself. */
+.waypoint-relocate-button.is-pending {
+  background-color: var(--colour-bg-elevated);
+  box-shadow: 0 0 0 2px var(--colour-border);
+}
+
+/* Tight vertical grouping for the Calculate button and the status/error/
+ * stale messages that explain it, mirroring .ride-elevation-section's
+ * own "reads as one cohesive group" rationale. */
+.planning-calculate-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.route-summary-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-16);
+  font-size: 0.95rem;
+}
+
+.route-summary-metrics p {
+  margin: 0;
+}
+
+/* Groups the elevation chart with its gradient-colour disclosure and the
+ * route-feature/gradient-segment detail panels immediately below it,
+ * mirroring .ride-elevation-section's own identical rationale for
+ * Riding. A distinct class (not a shared one) since Planning and Riding
+ * deliberately keep separate class families for visually similar
+ * concepts throughout this codebase. */
+.route-overview-elevation-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+/* Replaces the previous bare bullet list for the four surface
+ * categories. All four stay visible, including zero/unknown values. */
+.surface-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-12);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* The route-name text field — generically named for future reuse beyond
+ * Planning, but only applied here in this slice. */
+.field-input {
+  min-height: var(--touch-target-min);
+  width: 100%;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  background: var(--colour-bg);
+  color: var(--colour-text);
 }
