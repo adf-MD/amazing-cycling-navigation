@@ -383,3 +383,65 @@ describe("RouteLibrary", () => {
     });
   });
 });
+
+function installScrollToSpy() {
+  window.scrollY = 0;
+  return vi.spyOn(window, "scrollTo").mockImplementation((...args: unknown[]) => {
+    const [a, b] = args;
+    if (typeof a === "object" && a !== null && "top" in a) {
+      const top = (a as ScrollToOptions).top;
+      if (typeof top === "number") window.scrollY = top;
+    } else if (typeof b === "number") {
+      window.scrollY = b;
+    }
+  });
+}
+
+describe("RouteLibrary — scroll restoration", () => {
+  it("restores the given scrollY only once real route cards have rendered, never the Loading placeholder, and a later reactive update (rename) does not reapply it", async () => {
+    const user = userEvent.setup();
+    const scrollToSpy = installScrollToSpy();
+
+    // Seed a route through a throwaway mount first (real UI import, per this
+    // file's own convention), then unmount and remount — mirroring the real
+    // "return to an already-populated Routes" scenario a restoration is for,
+    // rather than importing after the restoring instance is already mounted
+    // (which would make the very first, real, non-"Loading" liveQuery
+    // emission be a genuinely empty array before the import lands).
+    const seeding = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user);
+    seeding.unmount();
+    expect(scrollToSpy).not.toHaveBeenCalled();
+
+    const restoreScrollYRef = { current: 1500 };
+    render(<RouteLibrary onOpenRoute={vi.fn()} restoreScrollYRef={restoreScrollYRef} />);
+
+    await waitFor(() => {
+      expect(scrollToSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(scrollToSpy).toHaveBeenCalledWith({ top: 1500, left: 0, behavior: "auto" });
+    expect(restoreScrollYRef.current).toBeNull();
+
+    // A genuine new useLiveQuery emission (rename) must not reapply it.
+    await user.click(screen.getByRole("button", { name: "Rename" }));
+    const input = screen.getByLabelText("Route name");
+    await user.clear(input);
+    await user.type(input, "Renamed loop");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Renamed loop" })).toBeInTheDocument();
+    });
+    expect(scrollToSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not scroll when there is nothing to restore", async () => {
+    const user = userEvent.setup();
+    const scrollToSpy = installScrollToSpy();
+
+    render(<RouteLibrary onOpenRoute={vi.fn()} restoreScrollYRef={{ current: null }} />);
+    await importFixture(user);
+
+    expect(scrollToSpy).not.toHaveBeenCalled();
+  });
+});

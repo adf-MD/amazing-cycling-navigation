@@ -1,4 +1,5 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import type { PlannedRoute } from "../../domain/types.ts";
 import { exportRouteToGpx } from "../../gpx/exportGpx.ts";
 import type { GpxImportResult } from "../../gpx/importGpx.ts";
@@ -13,9 +14,15 @@ import { computeFocusRouteIdAfterDelete } from "./routeDeleteFocus.ts";
 
 export interface RouteLibraryProps {
   onOpenRoute: (route: PlannedRoute) => void;
+  /** A ref (never a dereferenced value — reading `.current` during render
+   * would both trip react-hooks/refs and not pick up a later mutation)
+   * holding the document scrollY to restore once, the first time real
+   * route cards render after this component mounts. Consumed and nulled
+   * out after that one attempt, whether or not it actually scrolled. */
+  restoreScrollYRef?: RefObject<number | null>;
 }
 
-export function RouteLibrary({ onOpenRoute }: RouteLibraryProps) {
+export function RouteLibrary({ onOpenRoute, restoreScrollYRef }: RouteLibraryProps) {
   const listRoutesQuery = useCallback(() => listRoutes(), []);
   const routes = useLiveQuery(listRoutesQuery);
 
@@ -28,6 +35,20 @@ export function RouteLibrary({ onOpenRoute }: RouteLibraryProps) {
 
   const nameButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const hasAppliedScrollRestoreRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (hasAppliedScrollRestoreRef.current) return;
+    if (routes === undefined) return; // still "Loading routes…" — wait for real cards
+    hasAppliedScrollRestoreRef.current = true;
+    const restoreScrollY = restoreScrollYRef?.current ?? null;
+    if (restoreScrollY != null && routes.length > 0) {
+      window.scrollTo({ top: restoreScrollY, left: 0, behavior: "auto" });
+    }
+    if (restoreScrollYRef) {
+      restoreScrollYRef.current = null;
+    }
+  }, [routes, restoreScrollYRef]);
 
   const handleImported = (result: GpxImportResult) => {
     setNotices(result.notices);

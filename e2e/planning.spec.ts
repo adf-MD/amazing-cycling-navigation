@@ -289,8 +289,12 @@ test("configures a key, plans a route via a mocked ORS response, saves it, and r
   await nameInput.fill(routeName);
   await saveButton.click();
 
-  // Saving switches straight to Riding mode with the new route.
+  // Saving switches straight to Riding mode with the new route, from the
+  // top of the document — by this point Planning's own long form (map,
+  // waypoints, route options, overview, save/export) has scrolled the page
+  // well below 0.
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
 
   // Reopening a saved route must never need the provider — unroute the
   // mock and fail loudly if anything still tries to reach it.

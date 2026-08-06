@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { PlannedRoute } from "./domain/types.ts";
+import type { MapFactory } from "./map/mapAdapter.ts";
 import { usePwaUpdate } from "./pwa/registerSW.ts";
 import { DiagnosticsScreen } from "./ui/diagnostics/DiagnosticsScreen.tsx";
 import { RouteLibrary } from "./ui/library/RouteLibrary.tsx";
@@ -7,20 +8,33 @@ import { PlanningScreen } from "./ui/planning/PlanningScreen.tsx";
 import { RidingScreen } from "./ui/riding/RidingScreen.tsx";
 import { SettingsScreen } from "./ui/settings/SettingsScreen.tsx";
 import { MainNavigation, type Screen } from "./ui/shared/MainNavigation.tsx";
+import { useResetScrollForNewRideContent } from "./ui/shared/useResetScrollForNewRideContent.ts";
 
-function App() {
+export interface AppProps {
+  /** Injectable for tests, so opening a route into RidingScreen doesn't
+   * mount a real, unmocked MapView (jsdom has no WebGL2 support). Defaults
+   * to RidingScreen's own real MapLibre factory in production. */
+  mapFactory?: MapFactory;
+}
+
+function App({ mapFactory }: AppProps) {
   const [screen, setScreen] = useState<Screen>("library");
   const [selectedRoute, setSelectedRoute] = useState<PlannedRoute | null>(null);
   const { needRefresh, offlineReady, updateNow, dismiss } = usePwaUpdate();
+  const routesScrollYRef = useRef<number | null>(null);
+  const notifyNewRideContent = useResetScrollForNewRideContent(screen);
 
   const handleOpenRoute = (route: PlannedRoute) => {
+    routesScrollYRef.current = window.scrollY;
     setSelectedRoute(route);
     setScreen("riding");
+    notifyNewRideContent();
   };
 
   const handleRouteSaved = (route: PlannedRoute) => {
     setSelectedRoute(route);
     setScreen("riding");
+    notifyNewRideContent();
   };
 
   const handleNavigateToSettings = () => {
@@ -54,10 +68,15 @@ function App() {
       ) : null}
 
       <main>
-        {screen === "library" && <RouteLibrary onOpenRoute={handleOpenRoute} />}
+        {screen === "library" && (
+          <RouteLibrary
+            onOpenRoute={handleOpenRoute}
+            restoreScrollYRef={routesScrollYRef}
+          />
+        )}
         {screen === "riding" &&
           (selectedRoute ? (
-            <RidingScreen route={selectedRoute} />
+            <RidingScreen route={selectedRoute} mapFactory={mapFactory} />
           ) : (
             <section className="screen" aria-label="Ride">
               <h1 className="screen-title">Ride</h1>
