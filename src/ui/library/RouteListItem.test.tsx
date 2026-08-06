@@ -31,6 +31,10 @@ interface RenderOverrides {
   isDeletePending?: boolean;
   isDeleting?: boolean;
   deleteError?: string | null;
+  isPinned?: boolean;
+  isPinPending?: boolean;
+  pinError?: string | null;
+  onPinToggle?: ReturnType<typeof vi.fn<(route: PlannedRoute) => void>>;
 }
 
 function renderItem(overrides: RenderOverrides = {}) {
@@ -41,8 +45,9 @@ function renderItem(overrides: RenderOverrides = {}) {
   const onDeleteRequest = overrides.onDeleteRequest ?? vi.fn<(id: string) => void>();
   const onDeleteCancel = overrides.onDeleteCancel ?? vi.fn<(id: string) => void>();
   const onDeleteConfirm = overrides.onDeleteConfirm ?? vi.fn<(id: string) => void>();
+  const onPinToggle = overrides.onPinToggle ?? vi.fn<(route: PlannedRoute) => void>();
 
-  render(
+  const { unmount } = render(
     <RouteListItem
       route={route}
       onOpen={onOpen}
@@ -54,7 +59,12 @@ function renderItem(overrides: RenderOverrides = {}) {
       isDeletePending={overrides.isDeletePending ?? false}
       isDeleting={overrides.isDeleting ?? false}
       deleteError={overrides.deleteError ?? null}
+      isPinned={overrides.isPinned ?? false}
+      isPinPending={overrides.isPinPending ?? false}
+      pinError={overrides.pinError ?? null}
+      onPinToggle={onPinToggle}
       nameButtonRef={vi.fn()}
+      pinButtonRef={vi.fn()}
     />,
   );
 
@@ -63,9 +73,11 @@ function renderItem(overrides: RenderOverrides = {}) {
     onOpen,
     onRename,
     onExport,
+    unmount,
     onDeleteRequest,
     onDeleteCancel,
     onDeleteConfirm,
+    onPinToggle,
   };
 }
 
@@ -326,5 +338,96 @@ describe("RouteListItem", () => {
     expect(
       within(screen.getByRole("alertdialog")).getByText(`Delete “${longName}”?`),
     ).toBeInTheDocument();
+  });
+
+  describe("pin toggle", () => {
+    it("shows an unpinned toggle with a route-scoped Pin label and aria-pressed false", () => {
+      renderItem({ isPinned: false });
+
+      const button = screen.getByRole("button", { name: "Pin Evening loop" });
+      expect(button).toHaveAttribute("aria-pressed", "false");
+      expect(button).not.toHaveClass("is-pinned");
+    });
+
+    it("shows a pinned toggle with a route-scoped Unpin label and aria-pressed true", () => {
+      renderItem({ isPinned: true });
+
+      const button = screen.getByRole("button", { name: "Unpin Evening loop" });
+      expect(button).toHaveAttribute("aria-pressed", "true");
+      expect(button).toHaveClass("is-pinned");
+    });
+
+    it("is a real <button>, so it inherits the shared global button rule's 44x44 CSS pixel minimum touch target and focus-visible ring (index.css is not loaded in this test environment, so the touch-target size itself is verified by e2e/routeLibraryPinning.spec.ts instead)", () => {
+      renderItem({ isPinned: false });
+
+      const button = screen.getByRole("button", { name: "Pin Evening loop" });
+      expect(button.tagName).toBe("BUTTON");
+      expect(button).toHaveClass("route-pin-toggle");
+    });
+
+    it("clicking the toggle calls onPinToggle with the route", async () => {
+      const user = userEvent.setup();
+      const { route, onPinToggle } = renderItem({ isPinned: false });
+
+      await user.click(screen.getByRole("button", { name: "Pin Evening loop" }));
+
+      expect(onPinToggle).toHaveBeenCalledWith(route);
+    });
+
+    it("clicking the toggle while this route's delete confirmation is open cancels the pending delete first, then still calls onPinToggle", async () => {
+      const user = userEvent.setup();
+      const { route, onDeleteCancel, onPinToggle } = renderItem({
+        isDeletePending: true,
+        isPinned: false,
+      });
+
+      await user.click(screen.getByRole("button", { name: "Pin Evening loop" }));
+
+      expect(onDeleteCancel).toHaveBeenCalledWith(route.id);
+      expect(onPinToggle).toHaveBeenCalledWith(route);
+    });
+
+    it("is not disabled merely because a delete confirmation is open", () => {
+      renderItem({ isDeletePending: true, isPinned: false });
+
+      expect(screen.getByRole("button", { name: "Pin Evening loop" })).not.toBeDisabled();
+    });
+
+    it("is disabled while a pin write is pending or while deleting", () => {
+      const { unmount } = renderItem({ isPinPending: true, isPinned: false });
+      expect(screen.getByRole("button", { name: "Pin Evening loop" })).toBeDisabled();
+      unmount();
+
+      renderItem({ isDeletePending: true, isDeleting: true, isPinned: false });
+      expect(screen.getByRole("button", { name: "Pin Evening loop" })).toBeDisabled();
+    });
+
+    it("shows an inline pin error as an alert", () => {
+      renderItem({ pinError: "This route could not be pinned. Try again." });
+
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "This route could not be pinned. Try again.",
+      );
+    });
+
+    it("is hidden while renaming, alongside the rest of the title row", async () => {
+      const user = userEvent.setup();
+      renderItem({ isPinned: false });
+
+      await user.click(screen.getByRole("button", { name: "Rename" }));
+
+      expect(screen.queryByRole("button", { name: "Pin Evening loop" })).toBeNull();
+    });
+
+    it("wraps a very long route name without the title colliding with the pin toggle", () => {
+      const longName =
+        "The full loop around the reservoir via the old railway path and back through the woods and the village and the church and the bridge";
+      renderItem({ route: buildRoute({ name: longName }), isPinned: false });
+
+      const titleButton = screen.getByRole("button", { name: longName });
+      const pinButton = screen.getByRole("button", { name: `Pin ${longName}` });
+      expect(titleButton.parentElement).toHaveClass("route-card-title-row");
+      expect(pinButton.parentElement).toBe(titleButton.parentElement);
+    });
   });
 });

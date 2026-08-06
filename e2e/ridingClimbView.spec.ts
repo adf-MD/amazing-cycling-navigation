@@ -59,7 +59,10 @@ test("auto-selects Climb view on entering each recognised climb, respects a manu
 
   // The route library labels an imported route by its GPX filename (minus
   // extension), not the file's own <name> tag.
-  const routeButton = page.getByRole("button", { name: "two-climbs-route" });
+  const routeButton = page.getByRole("button", {
+    name: "two-climbs-route",
+    exact: true,
+  });
   await expect(routeButton).toBeVisible();
   await routeButton.click();
 

@@ -164,4 +164,10 @@ export interface PlannedRoute {
   surfaceSummary?: SurfaceSummary;
   warnings: RouteWarning[];
   source: PlannedRouteSource;
+  /** Local Route Library metadata: an ISO timestamp when this route was
+   * pinned, or null/absent when it is not. Not route geometry or
+   * provenance — never read by gpx/, routing/ or navigation/. A timestamp
+   * (not a boolean) so pin order is itself well-defined: pinned routes
+   * sort by this value descending. */
+  pinnedAt?: string | null;
 }

@@ -61,7 +61,7 @@ test("map attribution stays inside the map and clear of the elevation controls a
 
   await page.goto("/");
   await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
-  await page.getByRole("button", { name: "smoke-route" }).click();
+  await page.getByRole("button", { name: "smoke-route", exact: true }).click();
   await page.getByRole("button", { name: "Start riding" }).click();
 
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
@@ -126,7 +126,7 @@ test("the map grows to a viewport-aware height once riding starts, and its canva
 
   await page.goto("/");
   await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
-  await page.getByRole("button", { name: "smoke-route" }).click();
+  await page.getByRole("button", { name: "smoke-route", exact: true }).click();
 
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
   const mapContainer = page.locator('[data-testid="map-container"]');

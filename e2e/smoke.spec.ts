@@ -55,7 +55,7 @@ test.describe("Riding mode map", () => {
 
     await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
 
-    const routeButton = page.getByRole("button", { name: "smoke-route" });
+    const routeButton = page.getByRole("button", { name: "smoke-route", exact: true });
     await expect(routeButton).toBeVisible();
     await routeButton.click();
 

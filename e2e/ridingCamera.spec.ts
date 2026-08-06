@@ -15,7 +15,7 @@ const ROUTE_START = { latitude: 51.5, longitude: -0.1 };
 
 async function startRiding(page: Page) {
   await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
-  const routeButton = page.getByRole("button", { name: "smoke-route" });
+  const routeButton = page.getByRole("button", { name: "smoke-route", exact: true });
   await expect(routeButton).toBeVisible();
   await routeButton.click();
   await page.getByRole("button", { name: "Start riding" }).click();

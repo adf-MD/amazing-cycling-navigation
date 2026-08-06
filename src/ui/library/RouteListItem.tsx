@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent, SubmitEvent } from "react";
 import type { PlannedRoute } from "../../domain/types.ts";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
+import { PinIcon } from "./PinIcon.tsx";
 
 export interface RouteListItemProps {
   route: PlannedRoute;
@@ -14,9 +15,19 @@ export interface RouteListItemProps {
   isDeletePending: boolean;
   isDeleting: boolean;
   deleteError: string | null;
+  isPinned: boolean;
+  isPinPending: boolean;
+  pinError: string | null;
+  onPinToggle: (route: PlannedRoute) => void;
   /** Registers/unregisters this row's name button so RouteLibrary can move
    * focus to it after a different route is deleted. */
   nameButtonRef: (element: HTMLButtonElement | null) => void;
+  /** Registers/unregisters this row's pin toggle so RouteLibrary can move
+   * focus to it after a successful pin/unpin moves this card into its new
+   * group (pinned/unpinned render as two separate lists, so React does not
+   * carry the button's DOM identity — and hence focus — across that move
+   * on its own, even though the key is unchanged). */
+  pinButtonRef: (element: HTMLButtonElement | null) => void;
 }
 
 export function RouteListItem({
@@ -30,7 +41,12 @@ export function RouteListItem({
   isDeletePending,
   isDeleting,
   deleteError,
+  isPinned,
+  isPinPending,
+  pinError,
+  onPinToggle,
   nameButtonRef,
+  pinButtonRef,
 }: RouteListItemProps) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [draftName, setDraftName] = useState(route.name);
@@ -94,6 +110,16 @@ export function RouteListItem({
     deleteButtonRef.current?.focus();
   };
 
+  // Mirrors openRename's own "cancel a pending delete confirmation first"
+  // precedent above, so an open alertdialog never gets silently moved into
+  // a different group instead of being resolved.
+  const handlePinClick = () => {
+    if (isDeletePending) {
+      onDeleteCancel(route.id);
+    }
+    onPinToggle(route);
+  };
+
   const handleConfirmKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       handleCancelDelete();
@@ -132,7 +158,7 @@ export function RouteListItem({
         </form>
       ) : (
         <>
-          <div>
+          <div className="route-card-title-row">
             <button
               type="button"
               className="route-card-title"
@@ -143,10 +169,27 @@ export function RouteListItem({
             >
               {route.name}
             </button>
+            <button
+              type="button"
+              className={`route-pin-toggle${isPinned ? " is-pinned" : ""}`}
+              ref={pinButtonRef}
+              aria-pressed={isPinned}
+              aria-label={`${isPinned ? "Unpin" : "Pin"} ${route.name}`}
+              title={`${isPinned ? "Unpin" : "Pin"} ${route.name}`}
+              disabled={isPinPending || isDeleting}
+              onClick={handlePinClick}
+            >
+              <PinIcon filled={isPinned} />
+            </button>
           </div>
           <p className="route-card-meta">
             {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
           </p>
+          {pinError ? (
+            <p role="alert" className="field-error">
+              {pinError}
+            </p>
+          ) : null}
           <div className="route-list-item-actions">
             <button
               type="button"
@@ -184,7 +227,7 @@ export function RouteListItem({
               aria-describedby={descriptionId}
               onKeyDown={handleConfirmKeyDown}
             >
-              <h2 id={headingId}>Delete “{route.name}”?</h2>
+              <h3 id={headingId}>Delete “{route.name}”?</h3>
               <p id={descriptionId}>
                 This route will be permanently deleted from this device. This cannot be
                 undone.

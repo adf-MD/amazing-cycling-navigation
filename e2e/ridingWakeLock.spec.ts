@@ -97,7 +97,7 @@ test("no Keep screen awake control appears when navigator.wakeLock is unsupporte
   await page.goto("/");
   await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
 
-  const routeButton = page.getByRole("button", { name: "smoke-route" });
+  const routeButton = page.getByRole("button", { name: "smoke-route", exact: true });
   await expect(routeButton).toBeVisible();
   await routeButton.click();
 
@@ -134,7 +134,7 @@ test("enabling Keep screen awake requests a lock, releases while hidden, and rea
   await page.goto("/");
   await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
 
-  const routeButton = page.getByRole("button", { name: "smoke-route" });
+  const routeButton = page.getByRole("button", { name: "smoke-route", exact: true });
   await expect(routeButton).toBeVisible();
   await routeButton.click();
 
@@ -195,7 +195,7 @@ test.describe("compact control on a narrow phone viewport", () => {
     await page.goto("/");
     await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
 
-    const routeButton = page.getByRole("button", { name: "smoke-route" });
+    const routeButton = page.getByRole("button", { name: "smoke-route", exact: true });
     await expect(routeButton).toBeVisible();
     await routeButton.click();
 

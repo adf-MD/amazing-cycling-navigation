@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { RouteLibrary } from "./RouteLibrary.tsx";
 import type { PlannedRoute } from "../../domain/types.ts";
+import type { Clock } from "../../platform/clock.ts";
 import { db } from "../../storage/db.ts";
 import * as routeLibraryPreferencesRepository from "../../storage/routeLibraryPreferencesRepository.ts";
 import * as routesRepository from "../../storage/routesRepository.ts";
@@ -12,6 +13,27 @@ function getVisibleRouteNames(): string[] {
   return Array.from(document.querySelectorAll(".route-card-title")).map(
     (element) => element.textContent,
   );
+}
+
+function getGroupHeadings(): string[] {
+  return Array.from(document.querySelectorAll("h2")).map(
+    (element) => element.textContent,
+  );
+}
+
+type SteppingClock = Clock & { advance: (ms: number) => void };
+
+/** A Clock whose `now()` can be advanced between calls, so tests can prove
+ * a deterministic pin order without depending on real clicks landing in
+ * different wall-clock milliseconds. */
+function buildSteppingClock(startIso: string): SteppingClock {
+  let currentMs = Date.parse(startIso);
+  return {
+    now: () => currentMs,
+    advance(ms: number) {
+      currentMs += ms;
+    },
+  };
 }
 
 function buildGpxFile(name: string, content: string): File {
@@ -660,6 +682,290 @@ describe("RouteLibrary", () => {
       await waitFor(() => {
         expect(screen.getByText(/no routes saved yet/i)).toBeInTheDocument();
       });
+    });
+  });
+
+  describe("pinning", () => {
+    it("shows the plain ordinary list, with no group headings, when nothing is pinned", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+
+      expect(getGroupHeadings()).toEqual([]);
+      expect(screen.getByRole("button", { name: "Pin Alpine Climb" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+
+    it("pinning a route creates a Pinned group above the unpinned routes", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+
+      await user.click(screen.getByRole("button", { name: "Pin Zebra Loop" }));
+
+      await waitFor(() => {
+        expect(getGroupHeadings()).toEqual(["Pinned", "Other routes"]);
+      });
+      expect(screen.getByRole("button", { name: "Unpin Zebra Loop" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(getVisibleRouteNames()).toEqual(["Zebra Loop", "Alpine Climb"]);
+    });
+
+    it("pinning a second route places it above the first, using a deterministic clock rather than real click timing", async () => {
+      const user = userEvent.setup();
+      const clock = buildSteppingClock("2026-02-01T09:00:00.000Z");
+      render(<RouteLibrary onOpenRoute={vi.fn()} clock={clock} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+
+      await user.click(screen.getByRole("button", { name: "Pin Alpine Climb" }));
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Unpin Alpine Climb" }),
+        ).toHaveAttribute("aria-pressed", "true");
+      });
+
+      clock.advance(1000);
+      await user.click(screen.getByRole("button", { name: "Pin Zebra Loop" }));
+
+      await waitFor(() => {
+        const pinnedHeading = screen.getByRole("heading", { name: "Pinned" });
+        const pinnedList = pinnedHeading.nextElementSibling;
+        expect(pinnedList).not.toBeNull();
+        const names = Array.from(
+          pinnedList?.querySelectorAll(".route-card-title") ?? [],
+        ).map((el) => el.textContent);
+        expect(names).toEqual(["Zebra Loop", "Alpine Climb"]);
+      });
+    });
+
+    it("changing the sort order reorders only Other routes, leaving Pinned order unchanged", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      // Import order (oldest -> newest): Mountain Pass, Alpine Climb, Zebra
+      // Loop. Mountain Pass is pinned; the remaining unpinned pair (Alpine
+      // Climb, Zebra Loop) genuinely orders differently under Most recent
+      // (Zebra Loop is newer, so first) vs Name A-Z (Alpine Climb first) —
+      // mirroring the plain, unpinned "changing the sort order..." test
+      // above, so this test actually proves a reorder happened rather than
+      // two orders that coincide.
+      await importFixture(user, "Mountain Pass.gpx");
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+
+      await user.click(screen.getByRole("button", { name: "Pin Mountain Pass" }));
+      await waitFor(() => {
+        expect(getGroupHeadings()).toEqual(["Pinned", "Other routes"]);
+      });
+      expect(getVisibleRouteNames()).toEqual([
+        "Mountain Pass",
+        "Zebra Loop",
+        "Alpine Climb",
+      ]);
+
+      await user.selectOptions(screen.getByLabelText("Sort by"), "name-asc");
+
+      await waitFor(() => {
+        expect(getVisibleRouteNames()).toEqual([
+          "Mountain Pass",
+          "Alpine Climb",
+          "Zebra Loop",
+        ]);
+      });
+    });
+
+    it("unpinning returns a route to its correct position among unpinned routes", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+      await user.click(screen.getByRole("button", { name: "Pin Zebra Loop" }));
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Unpin Zebra Loop" }),
+        ).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole("button", { name: "Unpin Zebra Loop" }));
+
+      await waitFor(() => {
+        expect(getGroupHeadings()).toEqual([]);
+      });
+      expect(getVisibleRouteNames()).toEqual(["Zebra Loop", "Alpine Climb"]);
+      expect(screen.getByRole("button", { name: "Pin Zebra Loop" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+
+    it("pinning a route again after unpinning makes it the newest pinned route", async () => {
+      const user = userEvent.setup();
+      const clock = buildSteppingClock("2026-02-01T09:00:00.000Z");
+      render(<RouteLibrary onOpenRoute={vi.fn()} clock={clock} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+
+      await user.click(screen.getByRole("button", { name: "Pin Alpine Climb" }));
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Unpin Alpine Climb" }),
+        ).toBeInTheDocument();
+      });
+      clock.advance(1000);
+      await user.click(screen.getByRole("button", { name: "Pin Zebra Loop" }));
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Unpin Zebra Loop" }),
+        ).toBeInTheDocument();
+      });
+      clock.advance(1000);
+      await user.click(screen.getByRole("button", { name: "Unpin Alpine Climb" }));
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Pin Alpine Climb" }),
+        ).toBeInTheDocument();
+      });
+      clock.advance(1000);
+
+      await user.click(screen.getByRole("button", { name: "Pin Alpine Climb" }));
+
+      await waitFor(() => {
+        const pinnedHeading = screen.getByRole("heading", { name: "Pinned" });
+        const pinnedList = pinnedHeading.nextElementSibling;
+        const names = Array.from(
+          pinnedList?.querySelectorAll(".route-card-title") ?? [],
+        ).map((el) => el.textContent);
+        expect(names).toEqual(["Alpine Climb", "Zebra Loop"]);
+      });
+    });
+
+    it("search filters both groups and omits the empty group's own heading", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+      await user.click(screen.getByRole("button", { name: "Pin Alpine Climb" }));
+      await waitFor(() => {
+        expect(getGroupHeadings()).toEqual(["Pinned", "Other routes"]);
+      });
+
+      const search = screen.getByLabelText("Search routes");
+      await user.type(search, "alpine");
+
+      await waitFor(() => {
+        expect(getGroupHeadings()).toEqual(["Pinned"]);
+      });
+      expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
+    });
+
+    it("successful pin/unpin restores focus to the route's own toggle at its new position", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+
+      await user.click(screen.getByRole("button", { name: "Pin Alpine Climb" }));
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Unpin Alpine Climb" })).toHaveFocus();
+      });
+    });
+
+    it("a failed pin write keeps the previous order and shows an inline error", async () => {
+      const user = userEvent.setup();
+      vi.spyOn(routesRepository, "pinRoute").mockRejectedValueOnce(
+        new Error("Pin failed."),
+      );
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+
+      await user.click(screen.getByRole("button", { name: "Pin Alpine Climb" }));
+
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "This route could not be pinned. Try again.",
+        );
+      });
+      expect(getGroupHeadings()).toEqual([]);
+      expect(screen.getByRole("button", { name: "Pin Alpine Climb" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+
+    it("duplicate rapid clicks cannot invoke pinRoute twice while a write is pending", async () => {
+      const pinSpy = vi.spyOn(routesRepository, "pinRoute");
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+
+      const button = screen.getByRole("button", { name: "Pin Alpine Climb" });
+      // fireEvent (not userEvent) so a second dispatch is attempted even
+      // though the button becomes disabled synchronously after the first
+      // click's state update — proving the disabled state, not test
+      // timing, is what prevents a second invocation (mirrors the
+      // equivalent delete-button test above).
+      fireEvent.click(button);
+      fireEvent.click(button);
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Unpin Alpine Climb" }),
+        ).toBeInTheDocument();
+      });
+      expect(pinSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("clicking pin while this route's delete confirmation is open cancels the confirmation first", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Pin Alpine Climb" }));
+
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Unpin Alpine Climb" }),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("deletion focus uses the full displayed pinned-then-unpinned order", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+      await user.click(screen.getByRole("button", { name: "Pin Zebra Loop" }));
+      await waitFor(() => {
+        expect(getGroupHeadings()).toEqual(["Pinned", "Other routes"]);
+      });
+      const [climbRoute] = (await routesRepository.listRoutes()).filter(
+        (route) => route.name === "Alpine Climb",
+      );
+      if (!climbRoute) throw new Error("Alpine Climb route not found");
+
+      // Deleting the sole "Other routes" entry (the last displayed route,
+      // combined pinned-then-unpinned order) should fall back to the
+      // previous displayed route — Zebra Loop, at the top of Pinned.
+      await user.click(
+        within(getListItemByRouteId(climbRoute.id)).getByRole("button", {
+          name: "Delete",
+        }),
+      );
+      await user.click(screen.getByRole("button", { name: "Delete route" }));
+
+      await waitFor(() => {
+        expect(document.querySelector(`[data-route-id="${climbRoute.id}"]`)).toBeNull();
+      });
+      expect(screen.getByRole("button", { name: "Zebra Loop" })).toHaveFocus();
     });
   });
 });

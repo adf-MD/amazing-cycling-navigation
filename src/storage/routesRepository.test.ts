@@ -4,10 +4,13 @@ import {
   deleteRoute,
   getRoute,
   listRoutes,
+  pinRoute,
   renameRoute,
   saveRoute,
+  unpinRoute,
 } from "./routesRepository.ts";
 import type { PlannedRoute } from "../domain/types.ts";
+import type { Clock } from "../platform/clock.ts";
 
 function buildRoute(overrides: Partial<PlannedRoute> = {}): PlannedRoute {
   return {
@@ -152,5 +155,38 @@ describe("routesRepository", () => {
     await deleteRoute(route.id);
 
     await expect(getRoute(route.id)).resolves.toBeUndefined();
+  });
+
+  it("pins a route, writing pinnedAt and leaving every other field untouched", async () => {
+    const route = buildRoute();
+    await saveRoute(route);
+    const fixedClock: Clock = { now: () => Date.parse("2026-02-01T09:00:00.000Z") };
+
+    await pinRoute(route.id, fixedClock);
+
+    await expect(getRoute(route.id)).resolves.toEqual({
+      ...route,
+      pinnedAt: "2026-02-01T09:00:00.000Z",
+    });
+  });
+
+  it("unpins a route, clearing only pinnedAt", async () => {
+    const route = buildRoute();
+    await saveRoute(route);
+    const fixedClock: Clock = { now: () => Date.parse("2026-02-01T09:00:00.000Z") };
+    await pinRoute(route.id, fixedClock);
+
+    await unpinRoute(route.id);
+
+    await expect(getRoute(route.id)).resolves.toEqual({ ...route, pinnedAt: null });
+  });
+
+  it("loads a route saved without pinnedAt with the key absent (unpinned)", async () => {
+    const route = buildRoute();
+    await saveRoute(route);
+
+    const loaded = await getRoute(route.id);
+
+    expect(loaded).not.toHaveProperty("pinnedAt");
   });
 });

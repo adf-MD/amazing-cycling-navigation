@@ -11,6 +11,7 @@ import type { PlannedRoute } from "../../domain/types.ts";
 import { exportRouteToGpx } from "../../gpx/exportGpx.ts";
 import type { GpxImportResult } from "../../gpx/importGpx.ts";
 import type { GpxImportNotice } from "../../gpx/parseGpx.ts";
+import { systemClock, type Clock } from "../../platform/clock.ts";
 import { logError } from "../../platform/errorLog.ts";
 import {
   DEFAULT_ROUTE_LIBRARY_SORT_ORDER,
@@ -20,12 +21,18 @@ import {
   getRouteLibraryPreferences,
   saveRouteLibraryPreferences,
 } from "../../storage/routeLibraryPreferencesRepository.ts";
-import { deleteRoute, listRoutes, renameRoute } from "../../storage/routesRepository.ts";
+import {
+  deleteRoute,
+  listRoutes,
+  pinRoute,
+  renameRoute,
+  unpinRoute,
+} from "../../storage/routesRepository.ts";
 import { downloadTextFile } from "../shared/downloadTextFile.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { ImportGpxButton } from "./ImportGpxButton.tsx";
 import { computeFocusRouteIdAfterDelete } from "./routeDeleteFocus.ts";
-import { selectRouteLibraryView } from "./routeLibraryView.ts";
+import { isPinnedRoute, selectRouteLibraryGroups } from "./routeLibraryView.ts";
 import { RouteListItem } from "./RouteListItem.tsx";
 
 export interface RouteLibraryProps {
@@ -47,12 +54,18 @@ export interface RouteLibraryProps {
    * an effect below, never a lazy useState initializer, for the same
    * react-hooks/refs reason as restoreScrollYRef. */
   restoreSearchQueryRef?: RefObject<string>;
+  /** Injectable for tests, mirroring PlanningScreen's own clock prop
+   * convention — lets a test control pin-timestamp ordering deterministically
+   * instead of depending on real clicks landing in different milliseconds.
+   * Defaults to the real system clock in production. */
+  clock?: Clock;
 }
 
 export function RouteLibrary({
   onOpenRoute,
   restoreScrollYRef,
   restoreSearchQueryRef,
+  clock = systemClock,
 }: RouteLibraryProps) {
   const listRoutesQuery = useCallback(() => listRoutes(), []);
   const routes = useLiveQuery(listRoutesQuery);
@@ -69,18 +82,31 @@ export function RouteLibrary({
   const [exportError, setExportError] = useState<string | null>(null);
   const [isSavingSortPreference, setIsSavingSortPreference] = useState(false);
   const [sortPreferenceError, setSortPreferenceError] = useState<string | null>(null);
+  const [pinPendingIds, setPinPendingIds] = useState<ReadonlySet<string>>(new Set());
+  const [pinErrors, setPinErrors] = useState<Record<string, string>>({});
 
   const nameButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const pinButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const headingRef = useRef<HTMLHeadingElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const hasAppliedScrollRestoreRef = useRef(false);
   const lastRenamedIdRef = useRef<string | null>(null);
+  // Set on a successful pin/unpin, consumed by the focus-restoration effect
+  // below. Accepted, narrow gap (same class as lastRenamedIdRef's own
+  // documented one): pinning a second route before the first one's effect
+  // has fired overwrites this marker, so the first route's move goes
+  // focus-unrestored — sub-perceptible given how fast a local write+re-
+  // render round-trips.
+  const pendingPinFocusIdRef = useRef<string | null>(null);
 
-  const viewRoutes = useMemo(
+  const groups = useMemo(
     () =>
-      routes === undefined ? [] : selectRouteLibraryView(routes, searchQuery, sortOrder),
+      routes === undefined
+        ? { pinned: [], unpinned: [] }
+        : selectRouteLibraryGroups(routes, searchQuery, sortOrder),
     [routes, searchQuery, sortOrder],
   );
+  const viewRoutes = useMemo(() => [...groups.pinned, ...groups.unpinned], [groups]);
   const previousViewRoutesRef = useRef<readonly PlannedRoute[]>(viewRoutes);
 
   // Hydrates the search query from the session-lifetime ref exactly once
@@ -139,6 +165,23 @@ export function RouteLibrary({
     previousViewRoutesRef.current = viewRoutes;
   }, [viewRoutes, routes]);
 
+  // Restores focus to a route's own pin toggle after a successful pin/
+  // unpin moves it into its new group. Necessary, not optional: pinned and
+  // unpinned render as two separate `.map()`-produced arrays under two
+  // separate <ul> parents, so a route moving between them is an unmount+
+  // mount pair even though its key is unchanged — React does not carry a
+  // component's DOM identity (and hence focus) across that move the way it
+  // would for a plain reorder within one array. Fires once groups actually
+  // reflects the write (routes changed via the live query), by which point
+  // the new button has already registered itself into pinButtonRefs.
+  useEffect(() => {
+    const targetId = pendingPinFocusIdRef.current;
+    if (targetId) {
+      pinButtonRefs.current.get(targetId)?.focus();
+      pendingPinFocusIdRef.current = null;
+    }
+  }, [groups]);
+
   const handleImported = (result: GpxImportResult) => {
     setNotices(result.notices);
     setImportError(null);
@@ -171,6 +214,42 @@ export function RouteLibrary({
           error instanceof Error ? error.message : "That route could not be exported.",
         );
         logError("route-export", error);
+      });
+  };
+
+  const handlePinToggle = (route: PlannedRoute) => {
+    if (pinPendingIds.has(route.id)) return;
+    setPinPendingIds((previous) => new Set(previous).add(route.id));
+    setPinErrors((previous) => {
+      if (!(route.id in previous)) return previous;
+      return Object.fromEntries(
+        Object.entries(previous).filter(([id]) => id !== route.id),
+      );
+    });
+    const wasPinned = isPinnedRoute(route);
+    const operation = wasPinned ? unpinRoute(route.id) : pinRoute(route.id, clock);
+    operation
+      .then(() => {
+        setPinPendingIds((previous) => {
+          const next = new Set(previous);
+          next.delete(route.id);
+          return next;
+        });
+        pendingPinFocusIdRef.current = route.id;
+      })
+      .catch((error: unknown) => {
+        setPinPendingIds((previous) => {
+          const next = new Set(previous);
+          next.delete(route.id);
+          return next;
+        });
+        setPinErrors((previous) => ({
+          ...previous,
+          [route.id]: wasPinned
+            ? "This route could not be unpinned. Try again."
+            : "This route could not be pinned. Try again.",
+        }));
+        logError("route-pin-toggle", error);
       });
   };
 
@@ -239,6 +318,40 @@ export function RouteLibrary({
   };
 
   const trimmedQuery = searchQuery.trim();
+
+  const renderCard = (route: PlannedRoute) => (
+    <RouteListItem
+      key={route.id}
+      route={route}
+      onOpen={onOpenRoute}
+      onRename={handleRename}
+      onExport={handleExport}
+      onDeleteRequest={handleDeleteRequest}
+      onDeleteCancel={handleDeleteCancel}
+      onDeleteConfirm={handleDeleteConfirm}
+      isDeletePending={route.id === pendingDeleteId}
+      isDeleting={isDeleting}
+      deleteError={deleteError}
+      isPinned={isPinnedRoute(route)}
+      isPinPending={pinPendingIds.has(route.id)}
+      pinError={pinErrors[route.id] ?? null}
+      onPinToggle={handlePinToggle}
+      nameButtonRef={(element) => {
+        if (element) {
+          nameButtonRefs.current.set(route.id, element);
+        } else {
+          nameButtonRefs.current.delete(route.id);
+        }
+      }}
+      pinButtonRef={(element) => {
+        if (element) {
+          pinButtonRefs.current.set(route.id, element);
+        } else {
+          pinButtonRefs.current.delete(route.id);
+        }
+      }}
+    />
+  );
 
   return (
     <section className="screen" aria-label="Route library">
@@ -316,30 +429,20 @@ export function RouteLibrary({
       ) : viewRoutes.length === 0 ? (
         <p role="status">No routes match “{trimmedQuery}”.</p>
       ) : (
-        <ul className="route-list">
-          {viewRoutes.map((route) => (
-            <RouteListItem
-              key={route.id}
-              route={route}
-              onOpen={onOpenRoute}
-              onRename={handleRename}
-              onExport={handleExport}
-              onDeleteRequest={handleDeleteRequest}
-              onDeleteCancel={handleDeleteCancel}
-              onDeleteConfirm={handleDeleteConfirm}
-              isDeletePending={route.id === pendingDeleteId}
-              isDeleting={isDeleting}
-              deleteError={deleteError}
-              nameButtonRef={(element) => {
-                if (element) {
-                  nameButtonRefs.current.set(route.id, element);
-                } else {
-                  nameButtonRefs.current.delete(route.id);
-                }
-              }}
-            />
-          ))}
-        </ul>
+        <>
+          {groups.pinned.length > 0 ? (
+            <>
+              <h2>Pinned</h2>
+              <ul className="route-list">{groups.pinned.map(renderCard)}</ul>
+            </>
+          ) : null}
+          {groups.pinned.length > 0 && groups.unpinned.length > 0 ? (
+            <h2>Other routes</h2>
+          ) : null}
+          {groups.unpinned.length > 0 ? (
+            <ul className="route-list">{groups.unpinned.map(renderCard)}</ul>
+          ) : null}
+        </>
       )}
     </section>
   );

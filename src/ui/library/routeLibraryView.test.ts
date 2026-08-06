@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { PlannedRoute } from "../../domain/types.ts";
 import {
   filterRoutesByName,
+  isPinnedRoute,
   normalizeSearchText,
-  selectRouteLibraryView,
+  selectRouteLibraryGroups,
   sortRoutesForLibrary,
 } from "./routeLibraryView.ts";
 
@@ -11,6 +12,7 @@ function buildRoute(
   id: string,
   name: string,
   createdAt = "2026-01-01T00:00:00.000Z",
+  pinnedAt?: string | null,
 ): PlannedRoute {
   return {
     id,
@@ -23,6 +25,7 @@ function buildRoute(
     descentMetres: null,
     warnings: [],
     source: { kind: "gpx-import" },
+    ...(pinnedAt !== undefined ? { pinnedAt } : {}),
   };
 }
 
@@ -137,25 +140,126 @@ describe("sortRoutesForLibrary", () => {
   });
 });
 
-describe("selectRouteLibraryView", () => {
-  it("filters then sorts", () => {
-    const routes = [
-      buildRoute("a", "Zebra Loop", "2026-01-01T00:00:00.000Z"),
-      buildRoute("b", "Alpine Climb", "2026-01-02T00:00:00.000Z"),
-      buildRoute("c", "Mountain Pass", "2026-01-03T00:00:00.000Z"),
-    ];
-
-    const result = selectRouteLibraryView(routes, "loop", "name-asc");
-
-    expect(result.map((r) => r.id)).toEqual(["a"]);
+describe("isPinnedRoute", () => {
+  it("is false when pinnedAt is absent", () => {
+    expect(isPinnedRoute(buildRoute("a", "Route"))).toBe(false);
   });
 
-  it("applies sort to the full list when the query is empty", () => {
-    const routes = [buildRoute("a", "Zebra"), buildRoute("b", "Alpine")];
+  it("is false when pinnedAt is null", () => {
+    expect(isPinnedRoute(buildRoute("a", "Route", undefined, null))).toBe(false);
+  });
 
-    expect(selectRouteLibraryView(routes, "", "name-asc").map((r) => r.id)).toEqual([
-      "b",
-      "a",
-    ]);
+  it("is false when pinnedAt is a malformed string", () => {
+    expect(isPinnedRoute(buildRoute("a", "Route", undefined, "not-a-date"))).toBe(false);
+  });
+
+  it("is true when pinnedAt is a valid ISO timestamp", () => {
+    expect(
+      isPinnedRoute(buildRoute("a", "Route", undefined, "2026-02-01T00:00:00.000Z")),
+    ).toBe(true);
+  });
+});
+
+describe("selectRouteLibraryGroups", () => {
+  it("groups matching pinned routes above matching unpinned routes", () => {
+    const routes = [
+      buildRoute("a", "Alpine Climb", "2026-01-01T00:00:00.000Z"),
+      buildRoute(
+        "b",
+        "Zebra Loop",
+        "2026-01-02T00:00:00.000Z",
+        "2026-02-01T00:00:00.000Z",
+      ),
+    ];
+
+    const result = selectRouteLibraryGroups(routes, "", "most-recent");
+
+    expect(result.pinned.map((r) => r.id)).toEqual(["b"]);
+    expect(result.unpinned.map((r) => r.id)).toEqual(["a"]);
+  });
+
+  it("orders pinned routes by pinnedAt descending", () => {
+    const routes = [
+      buildRoute("a", "First pinned", undefined, "2026-02-01T00:00:00.000Z"),
+      buildRoute("b", "Second pinned", undefined, "2026-02-03T00:00:00.000Z"),
+      buildRoute("c", "Third pinned", undefined, "2026-02-02T00:00:00.000Z"),
+    ];
+
+    const result = selectRouteLibraryGroups(routes, "", "most-recent");
+
+    expect(result.pinned.map((r) => r.id)).toEqual(["b", "c", "a"]);
+  });
+
+  it("breaks pinned ties deterministically by id", () => {
+    const routes = [
+      buildRoute("b", "Second", undefined, "2026-02-01T00:00:00.000Z"),
+      buildRoute("a", "First", undefined, "2026-02-01T00:00:00.000Z"),
+    ];
+
+    const result = selectRouteLibraryGroups(routes, "", "most-recent");
+
+    expect(result.pinned.map((r) => r.id)).toEqual(["a", "b"]);
+  });
+
+  it("changing sortOrder reorders only the unpinned group", () => {
+    const routes = [
+      buildRoute("a", "Zebra pinned", undefined, "2026-02-01T00:00:00.000Z"),
+      buildRoute("b", "Alpine pinned", undefined, "2026-02-02T00:00:00.000Z"),
+      buildRoute("c", "Zebra plain", "2026-01-03T00:00:00.000Z"),
+      buildRoute("d", "Alpine plain", "2026-01-01T00:00:00.000Z"),
+    ];
+
+    const mostRecent = selectRouteLibraryGroups(routes, "", "most-recent");
+    const nameAsc = selectRouteLibraryGroups(routes, "", "name-asc");
+
+    expect(mostRecent.pinned.map((r) => r.id)).toEqual(["b", "a"]);
+    expect(nameAsc.pinned.map((r) => r.id)).toEqual(["b", "a"]);
+    expect(mostRecent.unpinned.map((r) => r.id)).toEqual(["c", "d"]);
+    expect(nameAsc.unpinned.map((r) => r.id)).toEqual(["d", "c"]);
+  });
+
+  it("filters both groups by name", () => {
+    const routes = [
+      buildRoute("a", "Alpine pinned", undefined, "2026-02-01T00:00:00.000Z"),
+      buildRoute("b", "Zebra pinned", undefined, "2026-02-02T00:00:00.000Z"),
+      buildRoute("c", "Alpine plain"),
+      buildRoute("d", "Zebra plain"),
+    ];
+
+    const result = selectRouteLibraryGroups(routes, "alpine", "most-recent");
+
+    expect(result.pinned.map((r) => r.id)).toEqual(["a"]);
+    expect(result.unpinned.map((r) => r.id)).toEqual(["c"]);
+  });
+
+  it("every matching route appears in exactly one group, with no route in both", () => {
+    const routes = [
+      buildRoute("a", "Pinned one", undefined, "2026-02-01T00:00:00.000Z"),
+      buildRoute("b", "Pinned two", undefined, "2026-02-02T00:00:00.000Z"),
+      buildRoute("c", "Plain one"),
+      buildRoute("d", "Plain two", undefined, null),
+      buildRoute("e", "Malformed pin", undefined, "not-a-date"),
+    ];
+
+    const result = selectRouteLibraryGroups(routes, "", "most-recent");
+    const pinnedIds = new Set(result.pinned.map((r) => r.id));
+    const unpinnedIds = new Set(result.unpinned.map((r) => r.id));
+
+    expect(pinnedIds.size + unpinnedIds.size).toBe(routes.length);
+    for (const id of pinnedIds) {
+      expect(unpinnedIds.has(id)).toBe(false);
+    }
+  });
+
+  it("never mutates or aliases the input array", () => {
+    const routes = [
+      buildRoute("a", "Alpine", undefined, "2026-02-01T00:00:00.000Z"),
+      buildRoute("b", "Zebra"),
+    ];
+    const copy = [...routes];
+
+    selectRouteLibraryGroups(routes, "", "most-recent");
+
+    expect(routes).toEqual(copy);
   });
 });

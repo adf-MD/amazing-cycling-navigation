@@ -53,7 +53,13 @@ describe("AcnDatabase schema migration (v1 -> v4)", () => {
     await upgraded.open();
 
     expect(upgraded.verno).toBe(4);
-    await expect(upgraded.routes.get("route-1")).resolves.toEqual(route);
+    const upgradedRoute = await upgraded.routes.get("route-1");
+    expect(upgradedRoute).toEqual(route);
+    // pinnedAt is a plain, non-indexed field added after this fixture was
+    // written (no version(5) bump) — a legacy route simply lacks the key,
+    // and is therefore treated as unpinned (see routeLibraryView.ts's
+    // isPinnedRoute).
+    expect(upgradedRoute).not.toHaveProperty("pinnedAt");
     await expect(upgraded.rideState.get("active")).resolves.toEqual(rideState);
 
     await expect(upgraded.providerKeys.toArray()).resolves.toEqual([]);

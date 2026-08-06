@@ -287,6 +287,18 @@ describe("GPX round-trip", () => {
     ).toBe("Turn left");
   });
 
+  it("does not serialise pinnedAt, and a reimported route is unpinned", async () => {
+    const original = buildRoute({ pinnedAt: "2026-02-01T09:00:00.000Z" });
+
+    const exportedXml = await exportRouteToGpx(original);
+    expect(exportedXml).not.toContain("pinnedAt");
+    expect(exportedXml).not.toContain("2026-02-01T09:00:00.000Z");
+
+    const file = new File([exportedXml], "pinned.gpx", { type: "application/gpx+xml" });
+    const { route: reimported } = await importGpxFile(file);
+    expect(reimported.pinnedAt).toBeUndefined();
+  });
+
   it("preserves the routing profile through import -> export -> reimport -> export again", async () => {
     const original = buildRoute({
       source: {

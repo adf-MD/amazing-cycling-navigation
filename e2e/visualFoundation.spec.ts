@@ -56,7 +56,9 @@ test("a long route name wraps inside its card without causing horizontal scroll,
   await page.goto("/");
 
   await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
-  await expect(page.getByRole("button", { name: "smoke-route" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "smoke-route", exact: true }),
+  ).toBeVisible();
 
   const longName =
     "The full loop around the reservoir via the old railway path and back " +
@@ -66,7 +68,7 @@ test("a long route name wraps inside its card without causing horizontal scroll,
   await page.getByLabel("Route name").fill(longName);
   await page.getByRole("button", { name: "Save" }).click();
 
-  await expect(page.getByRole("button", { name: longName })).toBeVisible();
+  await expect(page.getByRole("button", { name: longName, exact: true })).toBeVisible();
 
   const hasNoHorizontalScroll = await page.evaluate(
     () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
@@ -101,9 +103,13 @@ test.describe("route rename keeps the card mounted in place", () => {
     await page.goto("/");
 
     await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
-    await expect(page.getByRole("button", { name: "smoke-route" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "smoke-route", exact: true }),
+    ).toBeVisible();
     await page.getByLabel("Import GPX file").setInputFiles(SECOND_FIXTURE_GPX_PATH);
-    await expect(page.getByRole("button", { name: "gradient-route" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "gradient-route", exact: true }),
+    ).toBeVisible();
 
     const cards = page.locator(".route-card");
     await expect(cards).toHaveCount(2);
@@ -131,7 +137,10 @@ test.describe("route rename keeps the card mounted in place", () => {
     );
     await expect(page.locator("li:not(.route-card)")).toHaveCount(0);
 
-    await cards.nth(1).getByRole("button", { name: "Renamed second route" }).click();
+    await cards
+      .nth(1)
+      .getByRole("button", { name: "Renamed second route", exact: true })
+      .click();
     await expect(
       page.getByRole("heading", { name: "Renamed second route" }),
     ).toBeVisible();

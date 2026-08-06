@@ -525,7 +525,10 @@ test.describe("Riding", () => {
 
     // The route library labels an imported route by its GPX filename
     // (minus extension), not the file's own <name> tag.
-    const routeButton = page.getByRole("button", { name: "gradient-route" });
+    const routeButton = page.getByRole("button", {
+      name: "gradient-route",
+      exact: true,
+    });
     await expect(routeButton).toBeVisible();
     await routeButton.click();
 
@@ -585,7 +588,10 @@ test.describe("Riding", () => {
 
     await page.goto("/");
     await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
-    const routeButton = page.getByRole("button", { name: "gradient-route" });
+    const routeButton = page.getByRole("button", {
+      name: "gradient-route",
+      exact: true,
+    });
     await expect(routeButton).toBeVisible();
     await routeButton.click();
 
@@ -695,7 +701,10 @@ test.describe("Riding: pre-ride climb chart layout", () => {
 
     await page.goto("/");
     await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
-    const routeButton = page.getByRole("button", { name: "gradient-route" });
+    const routeButton = page.getByRole("button", {
+      name: "gradient-route",
+      exact: true,
+    });
     await expect(routeButton).toBeVisible();
     await routeButton.click();
 
@@ -734,7 +743,10 @@ test.describe("Riding: pre-ride climb chart layout", () => {
 
     await page.goto("/");
     await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
-    const routeButton = page.getByRole("button", { name: "gradient-route" });
+    const routeButton = page.getByRole("button", {
+      name: "gradient-route",
+      exact: true,
+    });
     await expect(routeButton).toBeVisible();
     await routeButton.click();
 

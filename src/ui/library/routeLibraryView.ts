@@ -68,11 +68,53 @@ function compareIds(a: string, b: string): number {
   return 0;
 }
 
-/** The full Route Library pipeline: normalise query -> filter -> sort. */
-export function selectRouteLibraryView(
+export interface RouteLibraryGroups {
+  pinned: readonly PlannedRoute[];
+  unpinned: readonly PlannedRoute[];
+}
+
+/** A route counts as pinned only when pinnedAt is a string that parses to
+ * a finite timestamp — missing, null, or malformed local data is treated
+ * as unpinned rather than destabilising ordering. */
+export function isPinnedRoute(
+  route: PlannedRoute,
+): route is PlannedRoute & { pinnedAt: string } {
+  return (
+    typeof route.pinnedAt === "string" && Number.isFinite(Date.parse(route.pinnedAt))
+  );
+}
+
+/** Sorts a copy of `routes` by pinnedAt descending (most recently pinned
+ * first), tie-broken by id; never mutates the input. Takes the type
+ * `isPinnedRoute` narrows to, rather than plain `PlannedRoute`, so
+ * `pinnedAt` is known to be a `string` here with no assertion needed. */
+function sortPinnedRoutes(
+  routes: readonly (PlannedRoute & { pinnedAt: string })[],
+): (PlannedRoute & { pinnedAt: string })[] {
+  const copy = [...routes];
+  copy.sort((a, b) => {
+    const timeDifference = Date.parse(b.pinnedAt) - Date.parse(a.pinnedAt);
+    return timeDifference !== 0 ? timeDifference : compareIds(a.id, b.id);
+  });
+  return copy;
+}
+
+/** The full Route Library pipeline: normalise query -> filter by name ->
+ * partition pinned/unpinned -> sort pinned by pin recency (never by
+ * sortOrder) -> sort unpinned via the rider's chosen order -> return as two
+ * explicit groups so a caller can render/heading them separately. Neither
+ * group mutates or aliases `routes`; the partition is exhaustive and
+ * disjoint by construction, so no route can appear in both groups. */
+export function selectRouteLibraryGroups(
   routes: readonly PlannedRoute[],
   query: string,
   sortOrder: RouteLibrarySortOrder,
-): PlannedRoute[] {
-  return sortRoutesForLibrary(filterRoutesByName(routes, query), sortOrder);
+): RouteLibraryGroups {
+  const filtered = filterRoutesByName(routes, query);
+  const pinned = sortPinnedRoutes(filtered.filter(isPinnedRoute));
+  const unpinned = sortRoutesForLibrary(
+    filtered.filter((route) => !isPinnedRoute(route)),
+    sortOrder,
+  );
+  return { pinned, unpinned };
 }

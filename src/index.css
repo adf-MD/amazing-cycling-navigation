@@ -365,6 +365,7 @@ button:focus-visible {
 .route-card-title {
   display: block;
   width: 100%;
+  min-width: 0;
   min-height: var(--touch-target-min);
   padding: 0;
   border: none;
@@ -374,6 +375,44 @@ button:focus-visible {
   font-weight: 700;
   text-align: left;
   overflow-wrap: anywhere;
+}
+
+/* Wraps the route title button and the pin toggle so a long/wrapping name
+ * never collides with or pushes out the fixed-size toggle. minmax(0, 1fr)
+ * lets the title column shrink below its content's intrinsic width (paired
+ * with .route-card-title's own min-width: 0 above); auto sizes the toggle
+ * column to its own content. */
+.route-card-title-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-8);
+}
+
+/* Icon-only pin/unpin toggle — min-width/min-height/border already come
+ * from the global `button` rule above, so only the real deltas are
+ * redeclared here, mirroring .waypoint-row-icon-button's own
+ * override-only-the-delta convention. */
+.route-pin-toggle {
+  padding: 0;
+  border-radius: var(--radius-sm);
+  background: var(--colour-bg-elevated);
+  color: var(--colour-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Never colour alone: PinIcon itself switches from an outline to a filled
+ * glyph, reinforced here by a pale accent surface and a stronger accent
+ * ring, mirroring .main-nav-button[aria-current="page"]'s own soft-
+ * surface-plus-ring convention. */
+.route-pin-toggle.is-pinned {
+  background: var(--colour-accent-soft);
+  border-color: var(--colour-accent);
+  box-shadow: inset 0 0 0 1px var(--colour-accent);
+  color: var(--colour-accent);
 }
 
 .route-card-meta {
@@ -403,8 +442,11 @@ button:focus-visible {
 }
 
 /* The confirmation heading includes the route's own (possibly long) name
- * in quotes — same long-name-wrapping need as .route-card-title above. */
-.route-delete-confirm h2 {
+ * in quotes — same long-name-wrapping need as .route-card-title above.
+ * h3, not h2: the Route Library slice's own "Pinned"/"Other routes" group
+ * headings are real h2s, so this per-card dialog heading is one level
+ * deeper to keep the outline non-flat. */
+.route-delete-confirm h3 {
   margin: 0 0 0.25rem;
   overflow-wrap: anywhere;
 }

@@ -254,7 +254,10 @@ test.describe("Riding", () => {
     await page.goto("/");
     await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
 
-    const routeButton = page.getByRole("button", { name: "distance-badges-route" });
+    const routeButton = page.getByRole("button", {
+      name: "distance-badges-route",
+      exact: true,
+    });
     await expect(routeButton).toBeVisible();
     await routeButton.click();
 
