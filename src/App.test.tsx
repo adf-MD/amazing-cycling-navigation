@@ -139,6 +139,7 @@ describe("App — document scroll around Ride content", () => {
   beforeEach(async () => {
     await db.routes.clear();
     await db.rideState.clear();
+    await db.routeLibraryPreferences.clear();
   });
 
   afterEach(() => {
@@ -219,5 +220,79 @@ describe("App — document scroll around Ride content", () => {
 
     expect(screen.getByRole("heading", { name: "Route A" })).toBeInTheDocument();
     expect(scrollToSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("App — Route Library search restoration across navigation", () => {
+  beforeEach(async () => {
+    await db.routes.clear();
+    await db.rideState.clear();
+    await db.routeLibraryPreferences.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("typing a search query, navigating away, and returning to Routes restores the search and filtered list", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Zebra Loop.gpx");
+
+    await user.type(screen.getByLabelText("Search routes"), "alpine");
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Diagnostics" }));
+    expect(screen.getByRole("heading", { name: "Diagnostics" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Routes" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Search routes")).toHaveValue("alpine");
+    });
+    expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
+  });
+
+  it("a full App remount (simulating reload) does not restore the search query", async () => {
+    const user = userEvent.setup();
+    const first = render(<App />);
+
+    await importFixture(user, "Alpine Climb.gpx");
+    await user.type(screen.getByLabelText("Search routes"), "alpine");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Search routes")).toHaveValue("alpine");
+    });
+    first.unmount();
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Search routes")).toHaveValue("");
+    });
+    expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+  });
+
+  it("a full App remount (simulating reload) still restores a persisted sort order", async () => {
+    const user = userEvent.setup();
+    const first = render(<App />);
+
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Zebra Loop.gpx");
+    await user.selectOptions(screen.getByLabelText("Sort by"), "name-asc");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Sort by")).toHaveValue("name-asc");
+    });
+    first.unmount();
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Sort by")).toHaveValue("name-asc");
+    });
   });
 });

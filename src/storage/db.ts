@@ -98,6 +98,22 @@ export interface StoredPlanningPreferences {
   avoidFerriesByDefault: boolean;
 }
 
+/**
+ * Singleton row (id is always "route-library"): the Route Library screen's
+ * persisted sort choice. A new table, not a plain field on an existing
+ * row, so it needs the version(4) bump below. `sortOrder` is a plain
+ * string at this storage boundary — Dexie never validates stored data, so
+ * src/storage/mapping.ts's fromStoredRouteLibraryPreferences is where an
+ * unrecognised/corrupt value is actually rejected and defaulted, never
+ * passed through to the UI. The search query itself is deliberately never
+ * persisted here — it's session-only view state, restored via an in-memory
+ * ref in App.tsx instead (see RouteLibrary.tsx's restoreSearchQueryRef).
+ */
+export interface StoredRouteLibraryPreferences {
+  id: "route-library";
+  sortOrder: string;
+}
+
 export interface StoredGpsFix {
   coordinate: Coordinate;
   accuracyMetres: number;
@@ -190,6 +206,7 @@ export class AcnDatabase extends Dexie {
   providerKeyVerifications!: EntityTable<StoredProviderKeyVerification, "id">;
   planningDrafts!: EntityTable<StoredPlanningDraft, "id">;
   planningPreferences!: EntityTable<StoredPlanningPreferences, "id">;
+  routeLibraryPreferences!: EntityTable<StoredRouteLibraryPreferences, "id">;
 
   constructor(name = "amazing-cycling-navigation") {
     super(name);
@@ -242,6 +259,21 @@ export class AcnDatabase extends Dexie {
       providerKeyVerifications: "id",
       planningDrafts: "id",
       planningPreferences: "id",
+    });
+    // v4: adds one brand-new, empty singleton-row table
+    // (routeLibraryPreferences) for the Route Library search/sort slice —
+    // no .upgrade() callback needed, same purely-additive reasoning as v2
+    // and v3 above (a new object store only, no transformation of
+    // existing data). v1, v2 and v3's stores() are repeated verbatim;
+    // Dexie diffs consecutive version schemas, not just the latest one.
+    this.version(4).stores({
+      routes: "id, name, createdAt",
+      rideState: "id",
+      providerKeys: "id",
+      providerKeyVerifications: "id",
+      planningDrafts: "id",
+      planningPreferences: "id",
+      routeLibraryPreferences: "id",
     });
   }
 }

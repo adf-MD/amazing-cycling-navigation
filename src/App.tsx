@@ -22,6 +22,7 @@ function App({ mapFactory }: AppProps) {
   const [selectedRoute, setSelectedRoute] = useState<PlannedRoute | null>(null);
   const { needRefresh, offlineReady, updateNow, dismiss } = usePwaUpdate();
   const routesScrollYRef = useRef<number | null>(null);
+  const routesSearchQueryRef = useRef<string>("");
   const notifyNewRideContent = useResetScrollForNewRideContent(screen);
 
   const handleOpenRoute = (route: PlannedRoute) => {
@@ -72,6 +73,7 @@ function App({ mapFactory }: AppProps) {
           <RouteLibrary
             onOpenRoute={handleOpenRoute}
             restoreScrollYRef={routesScrollYRef}
+            restoreSearchQueryRef={routesSearchQueryRef}
           />
         )}
         {screen === "riding" &&

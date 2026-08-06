@@ -321,6 +321,25 @@ button:focus-visible {
   margin: 0.15rem 0;
 }
 
+/* A label+control column group shared by Route Library's search and sort
+ * toolbar fields — a tight label-to-control gap, matching
+ * .setting-row-text's own gap value but kept as a distinct class since
+ * .setting-row-text is specifically the checkbox-row title/hint pairing,
+ * not a generic labelled-field column. */
+.route-library-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Matches the global `button` touch-target rule and mirrors
+ * .recognised-climb-select's own identical treatment — a native `<select>`
+ * has no equivalent default sizing rule of its own. */
+.route-library-sort-select {
+  min-height: var(--touch-target-min);
+  width: 100%;
+}
+
 .route-list {
   list-style: none;
   margin: 0;

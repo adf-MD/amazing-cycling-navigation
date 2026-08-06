@@ -3,16 +3,22 @@ import {
   fromStoredPlanningDraft,
   fromStoredPlanningPreferences,
   fromStoredRideState,
+  fromStoredRouteLibraryPreferences,
   toStoredPlanningDraft,
   toStoredPlanningPreferences,
   toStoredRideState,
+  toStoredRouteLibraryPreferences,
   type StoredCameraState,
 } from "./mapping.ts";
 import type { RideNavigationCoreState } from "../navigation/rideNavigationCore.ts";
 import type { GeolocationFix } from "../platform/geolocation.ts";
 import type { ElevationViewMode } from "../navigation/types.ts";
 import type { Waypoint } from "../domain/types.ts";
-import type { StoredPlanningDraft, StoredRideState } from "./db.ts";
+import type {
+  StoredPlanningDraft,
+  StoredRideState,
+  StoredRouteLibraryPreferences,
+} from "./db.ts";
 
 const coreState: RideNavigationCoreState = {
   lastMatch: { pointIndex: 4, distanceFromStartMetres: 321.5 },
@@ -542,6 +548,51 @@ describe("toStoredPlanningPreferences / fromStoredPlanningPreferences", () => {
 
   it("never includes the row id in the stored shape", () => {
     const stored = toStoredPlanningPreferences({ avoidFerriesByDefault: false });
+
+    expect(stored).not.toHaveProperty("id");
+  });
+});
+
+describe("toStoredRouteLibraryPreferences / fromStoredRouteLibraryPreferences", () => {
+  it("defaults sortOrder to most-recent when no row has ever been saved", () => {
+    expect(fromStoredRouteLibraryPreferences(undefined)).toEqual({
+      sortOrder: "most-recent",
+    });
+  });
+
+  it("round-trips an explicitly saved name-asc value", () => {
+    const stored = toStoredRouteLibraryPreferences({ sortOrder: "name-asc" });
+    const restored = fromStoredRouteLibraryPreferences({
+      id: "route-library",
+      ...stored,
+    });
+
+    expect(restored).toEqual({ sortOrder: "name-asc" });
+  });
+
+  it("round-trips an explicitly saved most-recent value, distinct from the no-row default", () => {
+    const stored = toStoredRouteLibraryPreferences({ sortOrder: "most-recent" });
+    const restored = fromStoredRouteLibraryPreferences({
+      id: "route-library",
+      ...stored,
+    });
+
+    expect(restored).toEqual({ sortOrder: "most-recent" });
+  });
+
+  it("recovers safely to most-recent for a corrupt or unrecognised stored sort order value", () => {
+    const corruptRow: StoredRouteLibraryPreferences = {
+      id: "route-library",
+      sortOrder: "date-descending",
+    };
+
+    const restored = fromStoredRouteLibraryPreferences(corruptRow);
+
+    expect(restored).toEqual({ sortOrder: "most-recent" });
+  });
+
+  it("never includes the row id in the stored shape", () => {
+    const stored = toStoredRouteLibraryPreferences({ sortOrder: "name-asc" });
 
     expect(stored).not.toHaveProperty("id");
   });

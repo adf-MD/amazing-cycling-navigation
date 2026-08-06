@@ -4,8 +4,15 @@ import userEvent from "@testing-library/user-event";
 import { RouteLibrary } from "./RouteLibrary.tsx";
 import type { PlannedRoute } from "../../domain/types.ts";
 import { db } from "../../storage/db.ts";
+import * as routeLibraryPreferencesRepository from "../../storage/routeLibraryPreferencesRepository.ts";
 import * as routesRepository from "../../storage/routesRepository.ts";
 import { multiTrackGpx, trackWithElevationGpx } from "../../test/fixtures/gpx.ts";
+
+function getVisibleRouteNames(): string[] {
+  return Array.from(document.querySelectorAll(".route-card-title")).map(
+    (element) => element.textContent,
+  );
+}
 
 function buildGpxFile(name: string, content: string): File {
   return new File([content], name, { type: "application/gpx+xml" });
@@ -34,6 +41,7 @@ function getListItemByRouteId(id: string): HTMLElement {
 beforeEach(async () => {
   await db.routes.clear();
   await db.rideState.clear();
+  await db.routeLibraryPreferences.clear();
 });
 
 afterEach(() => {
@@ -41,11 +49,13 @@ afterEach(() => {
 });
 
 describe("RouteLibrary", () => {
-  it("shows an empty state before any route is imported", async () => {
+  it("shows an empty state before any route is imported, with no search/sort toolbar", async () => {
     render(<RouteLibrary onOpenRoute={vi.fn()} />);
     await waitFor(() => {
       expect(screen.getByText(/no routes saved yet/i)).toBeInTheDocument();
     });
+    expect(screen.queryByLabelText("Search routes")).toBeNull();
+    expect(screen.queryByLabelText("Sort by")).toBeNull();
   });
 
   it("imports a GPX file and lists it with its distance", async () => {
@@ -181,6 +191,276 @@ describe("RouteLibrary", () => {
 
     clickSpy.mockRestore();
     vi.unstubAllGlobals();
+  });
+
+  describe("search", () => {
+    it("filters the rendered list by name, case- and diacritic-insensitively", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Hütte Loop.gpx");
+
+      const search = screen.getByLabelText("Search routes");
+      await user.type(search, "HUTTE");
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Hütte Loop" })).toBeInTheDocument();
+      });
+      expect(screen.queryByRole("button", { name: "Alpine Climb" })).toBeNull();
+    });
+
+    it("clearing search restores the full list", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+
+      const search = screen.getByLabelText("Search routes");
+      await user.type(search, "alpine");
+      await waitFor(() => {
+        expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
+      });
+
+      await user.click(screen.getByRole("button", { name: "Clear search" }));
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Zebra Loop" })).toBeInTheDocument();
+      });
+      expect(search).toHaveValue("");
+    });
+
+    it("shows a distinct no-match message rather than the empty-library message", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+
+      const search = screen.getByLabelText("Search routes");
+      await user.type(search, "mountain");
+
+      await waitFor(() => {
+        expect(screen.getByText("No routes match “mountain”.")).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/no routes saved yet/i)).toBeNull();
+    });
+  });
+
+  describe("sort", () => {
+    it("Most recent is the default order", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+
+      await waitFor(() => {
+        expect(getVisibleRouteNames()).toEqual(["Zebra Loop", "Alpine Climb"]);
+      });
+      expect(screen.getByLabelText("Sort by")).toHaveValue("most-recent");
+    });
+
+    it("changing the sort order reorders the rendered route cards", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+      await waitFor(() => {
+        expect(getVisibleRouteNames()).toEqual(["Zebra Loop", "Alpine Climb"]);
+      });
+
+      await user.selectOptions(screen.getByLabelText("Sort by"), "name-asc");
+
+      await waitFor(() => {
+        expect(getVisibleRouteNames()).toEqual(["Alpine Climb", "Zebra Loop"]);
+      });
+    });
+
+    it("the sort choice persists across a remount, reading from IndexedDB rather than local state", async () => {
+      const user = userEvent.setup();
+      const first = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+
+      await user.selectOptions(screen.getByLabelText("Sort by"), "name-asc");
+      await waitFor(() => {
+        expect(getVisibleRouteNames()).toEqual(["Alpine Climb", "Zebra Loop"]);
+      });
+      first.unmount();
+
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Sort by")).toHaveValue("name-asc");
+      });
+      expect(getVisibleRouteNames()).toEqual(["Alpine Climb", "Zebra Loop"]);
+    });
+
+    it("shows a transient Saving indicator while a sort-preference write is in flight, then clears it", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user);
+
+      let resolveSave: () => void = () => undefined;
+      const deferred = new Promise<void>((resolve) => {
+        resolveSave = resolve;
+      });
+      vi.spyOn(
+        routeLibraryPreferencesRepository,
+        "saveRouteLibraryPreferences",
+      ).mockReturnValue(deferred);
+
+      await user.selectOptions(screen.getByLabelText("Sort by"), "name-asc");
+
+      await waitFor(() => {
+        expect(screen.getByText("Saving…")).toBeInTheDocument();
+      });
+
+      resolveSave();
+
+      await waitFor(() => {
+        expect(screen.queryByText("Saving…")).toBeNull();
+      });
+    });
+
+    it("shows an inline error and reverts to the last-persisted value when saving a sort preference fails", async () => {
+      const user = userEvent.setup();
+      vi.spyOn(
+        routeLibraryPreferencesRepository,
+        "saveRouteLibraryPreferences",
+      ).mockRejectedValueOnce(new Error("Save failed."));
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user);
+
+      const sortSelect = screen.getByLabelText("Sort by");
+      await user.selectOptions(sortSelect, "name-asc");
+
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "This preference could not be saved on this device. Try again.",
+        );
+      });
+      await waitFor(() => {
+        expect(sortSelect).toHaveValue("most-recent");
+      });
+    });
+
+    it("shows Loading until both routes and the sort preference have resolved, never a flash of the wrong order", async () => {
+      const user = userEvent.setup();
+      const seeding = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user);
+      seeding.unmount();
+
+      let resolvePreferences: (value: { sortOrder: "most-recent" }) => void = () =>
+        undefined;
+      const deferred = new Promise<{ sortOrder: "most-recent" }>((resolve) => {
+        resolvePreferences = resolve;
+      });
+      vi.spyOn(
+        routeLibraryPreferencesRepository,
+        "getRouteLibraryPreferences",
+      ).mockReturnValue(deferred);
+
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+
+      expect(screen.getByText(/loading routes/i)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Evening Ride" })).toBeNull();
+      expect(screen.queryByLabelText("Sort by")).toBeNull();
+
+      resolvePreferences({ sortOrder: "most-recent" });
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Evening Ride" })).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("focus adaptations under an active search filter", () => {
+    it("deleting the last route visible under an active search filter focuses the search input, not the heading", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+
+      const search = screen.getByLabelText("Search routes");
+      await user.type(search, "alpine");
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+      await user.click(screen.getByRole("button", { name: "Delete route" }));
+
+      await waitFor(() => {
+        expect(screen.getByText("No routes match “alpine”.")).toBeInTheDocument();
+      });
+      expect(screen.getByLabelText("Search routes")).toHaveFocus();
+    });
+
+    it("renaming a route out of the active filter moves focus to the next surviving visible route", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Ridge.gpx");
+      await importFixture(user, "Alpine Climb.gpx");
+      // listRoutes() returns newest-first, and Alpine Climb was imported
+      // last (more recent), so it's index 0.
+      const [climbRoute, ridgeRoute] = (await routesRepository.listRoutes()) as [
+        PlannedRoute,
+        PlannedRoute,
+      ];
+
+      const search = screen.getByLabelText("Search routes");
+      await user.type(search, "alpine");
+      await waitFor(() => {
+        expect(getVisibleRouteNames()).toEqual(["Alpine Climb", "Alpine Ridge"]);
+      });
+
+      // Alpine Climb (climbRoute) is imported later, so it renders first
+      // under the default Most recent order.
+      await user.click(
+        within(getListItemByRouteId(climbRoute.id)).getByRole("button", {
+          name: "Rename",
+        }),
+      );
+      const input = within(getListItemByRouteId(climbRoute.id)).getByLabelText(
+        "Route name",
+      );
+      await user.clear(input);
+      await user.type(input, "Mountain Pass");
+      await user.click(
+        within(getListItemByRouteId(climbRoute.id)).getByRole("button", { name: "Save" }),
+      );
+
+      await waitFor(() => {
+        expect(document.querySelector(`[data-route-id="${climbRoute.id}"]`)).toBeNull();
+      });
+      expect(
+        within(getListItemByRouteId(ridgeRoute.id)).getByRole("button", {
+          name: "Alpine Ridge",
+        }),
+      ).toHaveFocus();
+    });
+
+    it("renaming the only route matching the active filter moves focus to the search field", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+
+      const search = screen.getByLabelText("Search routes");
+      await user.type(search, "alpine");
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole("button", { name: "Rename" }));
+      const input = screen.getByLabelText("Route name");
+      await user.clear(input);
+      await user.type(input, "Mountain Pass");
+      await user.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        expect(screen.getByText("No routes match “alpine”.")).toBeInTheDocument();
+      });
+      expect(screen.getByLabelText("Search routes")).toHaveFocus();
+    });
   });
 
   describe("deleting a route", () => {

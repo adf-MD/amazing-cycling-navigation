@@ -15,6 +15,7 @@ import {
   type StoredPlanningDraft,
   type StoredPlanningPreferences,
   type StoredRideState,
+  type StoredRouteLibraryPreferences,
 } from "./db.ts";
 
 function isElevationWindowMetres(value: number): value is ElevationWindowMetres {
@@ -223,4 +224,46 @@ export function fromStoredPlanningPreferences(
   stored: StoredPlanningPreferences | undefined,
 ): PlanningPreferences {
   return { avoidFerriesByDefault: stored?.avoidFerriesByDefault ?? true };
+}
+
+/** The Route Library screen's persisted sort choice. "Most recent" keeps
+ * today's exact PlannedRoute.createdAt-descending meaning; "Name A-Z" is
+ * locale-aware, case-insensitive and numeric (see routeLibraryView.ts). */
+export type RouteLibrarySortOrder = "most-recent" | "name-asc";
+
+export const DEFAULT_ROUTE_LIBRARY_SORT_ORDER: RouteLibrarySortOrder = "most-recent";
+
+export function isRouteLibrarySortOrder(value: unknown): value is RouteLibrarySortOrder {
+  return value === "most-recent" || value === "name-asc";
+}
+
+/** Route Library's persisted sort preference, resolved for use. The
+ * search query is deliberately not part of this shape — it's transient
+ * view state, never written to IndexedDB (see RouteLibrary.tsx). */
+export interface RouteLibraryPreferences {
+  sortOrder: RouteLibrarySortOrder;
+}
+
+export function toStoredRouteLibraryPreferences(
+  preferences: RouteLibraryPreferences,
+): Omit<StoredRouteLibraryPreferences, "id"> {
+  return { sortOrder: preferences.sortOrder };
+}
+
+/**
+ * Unlike fromStoredPlanningDraft (which never sees an absent row), "no row
+ * present" is itself the settled, meaningful default state for this
+ * preference — so this accepts the possibly-absent row directly and
+ * always resolves it to a concrete value. A real validity check, not a
+ * bare `??` — a corrupt or future-unknown stored string must never flow
+ * through to the sort logic, so it recovers to the app's default order.
+ */
+export function fromStoredRouteLibraryPreferences(
+  stored: StoredRouteLibraryPreferences | undefined,
+): RouteLibraryPreferences {
+  return {
+    sortOrder: isRouteLibrarySortOrder(stored?.sortOrder)
+      ? stored.sortOrder
+      : DEFAULT_ROUTE_LIBRARY_SORT_ORDER,
+  };
 }

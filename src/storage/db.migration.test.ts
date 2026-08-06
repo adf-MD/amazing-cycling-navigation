@@ -36,7 +36,7 @@ afterEach(async () => {
   await Dexie.delete(TEST_DB_NAME);
 });
 
-describe("AcnDatabase schema migration (v1 -> v3)", () => {
+describe("AcnDatabase schema migration (v1 -> v4)", () => {
   it("preserves existing routes and ride state, and adds the later empty tables", async () => {
     // Simulates a real browser that only ever saw the v1 schema: a bare
     // Dexie instance with just the v1 stores(), seeded and closed.
@@ -47,12 +47,12 @@ describe("AcnDatabase schema migration (v1 -> v3)", () => {
     await v1Db.table("rideState").put(rideState);
     v1Db.close();
 
-    // The real, current (v3) database opening against that same name is
+    // The real, current (v4) database opening against that same name is
     // exactly what happens when an existing installation upgrades.
     const upgraded = new AcnDatabase(TEST_DB_NAME);
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(3);
+    expect(upgraded.verno).toBe(4);
     await expect(upgraded.routes.get("route-1")).resolves.toEqual(route);
     await expect(upgraded.rideState.get("active")).resolves.toEqual(rideState);
 
@@ -60,15 +60,16 @@ describe("AcnDatabase schema migration (v1 -> v3)", () => {
     await expect(upgraded.providerKeyVerifications.toArray()).resolves.toEqual([]);
     await expect(upgraded.planningDrafts.toArray()).resolves.toEqual([]);
     await expect(upgraded.planningPreferences.toArray()).resolves.toEqual([]);
+    await expect(upgraded.routeLibraryPreferences.toArray()).resolves.toEqual([]);
 
     upgraded.close();
   });
 
-  it("a fresh install (no prior database) opens directly at v3 with all tables usable", async () => {
+  it("a fresh install (no prior database) opens directly at v4 with all tables usable", async () => {
     const fresh = new AcnDatabase(TEST_DB_NAME);
     await fresh.open();
 
-    expect(fresh.verno).toBe(3);
+    expect(fresh.verno).toBe(4);
     await expect(fresh.routes.toArray()).resolves.toEqual([]);
     await fresh.providerKeys.put({
       id: "openrouteservice",
@@ -84,12 +85,22 @@ describe("AcnDatabase schema migration (v1 -> v3)", () => {
       avoidFerriesByDefault: false,
     });
 
+    await fresh.routeLibraryPreferences.put({
+      id: "route-library",
+      sortOrder: "name-asc",
+    });
+    await expect(
+      fresh.routeLibraryPreferences.get("route-library"),
+    ).resolves.toMatchObject({
+      sortOrder: "name-asc",
+    });
+
     fresh.close();
   });
 });
 
-describe("AcnDatabase schema migration (v2 -> v3)", () => {
-  it("preserves all existing v2 tables and records, and adds planningPreferences empty", async () => {
+describe("AcnDatabase schema migration (v2 -> v4)", () => {
+  it("preserves all existing v2 tables and records, and adds later tables empty", async () => {
     // Simulates a real browser that only ever saw the v2 schema (i.e. an
     // installation from before this slice): a bare Dexie instance with
     // just the v1+v2 stores(), seeded across every v2 table, and closed.
@@ -123,12 +134,12 @@ describe("AcnDatabase schema migration (v2 -> v3)", () => {
     });
     v2Db.close();
 
-    // The real, current (v3) database opening against that same name is
+    // The real, current (v4) database opening against that same name is
     // exactly what happens when a v2 installation upgrades.
     const upgraded = new AcnDatabase(TEST_DB_NAME);
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(3);
+    expect(upgraded.verno).toBe(4);
     await expect(upgraded.routes.get("route-1")).resolves.toEqual(route);
     await expect(upgraded.rideState.get("active")).resolves.toEqual(rideState);
     await expect(upgraded.providerKeys.get("openrouteservice")).resolves.toMatchObject({
@@ -142,6 +153,82 @@ describe("AcnDatabase schema migration (v2 -> v3)", () => {
     });
 
     await expect(upgraded.planningPreferences.toArray()).resolves.toEqual([]);
+    await expect(upgraded.routeLibraryPreferences.toArray()).resolves.toEqual([]);
+
+    upgraded.close();
+  });
+});
+
+describe("AcnDatabase schema migration (v3 -> v4)", () => {
+  it("preserves all existing v3 tables and records, and adds routeLibraryPreferences empty", async () => {
+    // Simulates a real browser that only ever saw the v3 schema (i.e. an
+    // installation from before the Route Library search/sort slice): a
+    // bare Dexie instance with the v1+v2+v3 stores(), seeded across every
+    // v3 table, and closed.
+    const v3Db = new Dexie(TEST_DB_NAME);
+    v3Db.version(1).stores({ routes: "id, name, createdAt", rideState: "id" });
+    v3Db.version(2).stores({
+      routes: "id, name, createdAt",
+      rideState: "id",
+      providerKeys: "id",
+      providerKeyVerifications: "id",
+      planningDrafts: "id",
+    });
+    v3Db.version(3).stores({
+      routes: "id, name, createdAt",
+      rideState: "id",
+      providerKeys: "id",
+      providerKeyVerifications: "id",
+      planningDrafts: "id",
+      planningPreferences: "id",
+    });
+    await v3Db.open();
+    await v3Db.table("routes").put(route);
+    await v3Db.table("rideState").put(rideState);
+    await v3Db.table("providerKeys").put({
+      id: "openrouteservice",
+      apiKey: "dummy-test-key",
+      savedAt: "2026-01-01T00:00:00.000Z",
+    });
+    await v3Db.table("providerKeyVerifications").put({
+      id: "openrouteservice",
+      outcome: "verified",
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      rateLimitResetAt: null,
+    });
+    await v3Db.table("planningDrafts").put({
+      id: "draft",
+      waypoints: [{ id: "wp-1", coordinate: [-1.5, 53.8] }],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    await v3Db.table("planningPreferences").put({
+      id: "planning",
+      avoidFerriesByDefault: false,
+    });
+    v3Db.close();
+
+    // The real, current (v4) database opening against that same name is
+    // exactly what happens when a v3 installation upgrades.
+    const upgraded = new AcnDatabase(TEST_DB_NAME);
+    await upgraded.open();
+
+    expect(upgraded.verno).toBe(4);
+    await expect(upgraded.routes.get("route-1")).resolves.toEqual(route);
+    await expect(upgraded.rideState.get("active")).resolves.toEqual(rideState);
+    await expect(upgraded.providerKeys.get("openrouteservice")).resolves.toMatchObject({
+      apiKey: "dummy-test-key",
+    });
+    await expect(
+      upgraded.providerKeyVerifications.get("openrouteservice"),
+    ).resolves.toMatchObject({ outcome: "verified" });
+    await expect(upgraded.planningDrafts.get("draft")).resolves.toMatchObject({
+      waypoints: [{ id: "wp-1", coordinate: [-1.5, 53.8] }],
+    });
+    await expect(upgraded.planningPreferences.get("planning")).resolves.toMatchObject({
+      avoidFerriesByDefault: false,
+    });
+
+    await expect(upgraded.routeLibraryPreferences.toArray()).resolves.toEqual([]);
 
     upgraded.close();
   });
