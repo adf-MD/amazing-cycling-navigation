@@ -1115,19 +1115,52 @@ button:focus-visible {
 /* Purely decorative — aria-hidden in the markup, since the row's own
  * label text ("Start"/"Waypoint 2") already encodes ordinal position in
  * words for assistive technology. A sighted-only echo of the map's own
- * numbered waypoint marker. */
+ * numbered waypoint marker (.planning-waypoint-marker, above), mirroring
+ * its ordinary/base colours and the three role modifiers below with the
+ * same literal hex values rather than CSS custom properties — the map
+ * marker's own colours never respond to prefers-color-scheme, so a
+ * variable-driven badge would only match it in light mode. Intentionally
+ * smaller than the map marker (24px vs 26px): a decorative list badge
+ * beside row text, not a map marker, so only colour/border/shape are
+ * mirrored, not size. */
 .waypoint-row-ordinal {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 24px;
   min-height: 24px;
+  padding: 0 4px;
   border-radius: 50%;
-  background: var(--colour-bg);
-  border: 1px solid var(--colour-border);
+  background-color: #f2a900;
+  border: 2px solid #ffffff;
+  color: #101010;
   font-size: 0.75rem;
   font-weight: 700;
   flex-shrink: 0;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 45%);
+}
+
+.waypoint-row-ordinal--start {
+  background-color: #0a5f38;
+  color: #ffffff;
+}
+
+.waypoint-row-ordinal--finish {
+  background-color: #ffffff;
+  color: #101010;
+  border: 3px solid #101010;
+}
+
+/* Shape only, mirroring .planning-waypoint-marker--start-finish's own
+ * rounded-square treatment — unlike the map's combined "1/n" marker, this
+ * badge always shows one row's own individual ordinal number, so the
+ * map's extra horizontal padding for that longer label is deliberately
+ * not copied here. */
+.waypoint-row-ordinal--start-finish {
+  background-color: #0a5f38;
+  color: #ffffff;
+  border: 3px solid #101010;
+  border-radius: 40%;
 }
 
 .waypoint-row-label {

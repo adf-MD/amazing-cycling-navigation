@@ -1,6 +1,6 @@
 import type { Coordinate } from "../domain/types.ts";
 import { haversineDistanceMetres } from "../navigation/distance.ts";
-import type { MapMarkerSpec } from "./mapAdapter.ts";
+import type { MapMarkerSpec, WaypointRole } from "./mapAdapter.ts";
 
 export interface PlanningOverlayWaypoint {
   id: string;
@@ -20,7 +20,7 @@ function toGeoJsonCoordinate(coordinate: Coordinate): [number, number] {
  * the "Return to start" button's enabled state) — this is about whether
  * two deliberately-placed waypoint markers would be unreadable drawn
  * separately, which a manually-dragged near-but-not-exact coincidence
- * should still satisfy. */
+ * should still satisfy. Sole usage site is deriveWaypointRoles below. */
 const WAYPOINT_COINCIDENCE_THRESHOLD_METRES = 3;
 
 function ordinaryMarker(
@@ -37,6 +37,45 @@ function ordinaryMarker(
     selected: selectedIndex === index,
     ariaLabel: `Waypoint ${String(ordinal)}`,
   };
+}
+
+/**
+ * Derives each waypoint's role — ordinary/start/finish/combined
+ * start-finish for a closed loop — purely from position, index-aligned
+ * with the input coordinates. Shared by buildWaypointMarkerSpecs (the
+ * map marker, below) and WaypointList (the Planning list's ordinal
+ * badge, via PlanningScreen.tsx) so both surfaces are provably driven by
+ * one derivation, never two hand-synced guesses from index === 0 /
+ * index === last. Unlike buildWaypointMarkerSpecs's own marker output, a
+ * closed loop's first AND last coordinate both get their own
+ * "start-finish" entry here — never collapsed into one — because the
+ * list keeps two separate rows with their own individual ordinal
+ * numbers, sharing only the visual role. A lone waypoint is "start",
+ * never "start-finish": there is no second endpoint to combine with,
+ * matching buildWaypointMarkerSpecs's own existing single-waypoint
+ * special case.
+ */
+export function deriveWaypointRoles(coordinates: readonly Coordinate[]): WaypointRole[] {
+  const count = coordinates.length;
+  if (count === 0) return [];
+  if (count === 1) return ["start"];
+
+  const lastIndex = count - 1;
+  const first = coordinates[0];
+  const last = coordinates[lastIndex];
+  // Both indices are always in range once count >= 2 — this guard exists
+  // only to satisfy noUncheckedIndexedAccess.
+  const isClosedLoop =
+    !!first &&
+    !!last &&
+    haversineDistanceMetres(first, last) <= WAYPOINT_COINCIDENCE_THRESHOLD_METRES;
+
+  return coordinates.map((_coordinate, index) => {
+    if (isClosedLoop && (index === 0 || index === lastIndex)) return "start-finish";
+    if (index === 0) return "start";
+    if (index === lastIndex) return "finish";
+    return "ordinary";
+  });
 }
 
 /**
@@ -74,9 +113,10 @@ export function buildWaypointMarkerSpecs(
   const last = waypoints[lastIndex];
   if (!last) return [];
 
-  const isClosedLoop =
-    haversineDistanceMetres(first.coordinate, last.coordinate) <=
-    WAYPOINT_COINCIDENCE_THRESHOLD_METRES;
+  // Shared derivation with WaypointList's own role badges — see
+  // deriveWaypointRoles's own doc comment.
+  const roles = deriveWaypointRoles(waypoints.map((waypoint) => waypoint.coordinate));
+  const isClosedLoop = roles[0] === "start-finish";
 
   if (isClosedLoop) {
     const waypointCount = waypoints.length;
@@ -99,7 +139,8 @@ export function buildWaypointMarkerSpecs(
   }
 
   return waypoints.map((waypoint, index) => {
-    if (index === 0) {
+    const role = roles[index];
+    if (role === "start") {
       return {
         id: waypoint.id,
         coordinate: waypoint.coordinate,
@@ -110,7 +151,7 @@ export function buildWaypointMarkerSpecs(
       };
     }
     const ordinal = index + 1;
-    if (index === lastIndex) {
+    if (role === "finish") {
       return {
         id: waypoint.id,
         coordinate: waypoint.coordinate,

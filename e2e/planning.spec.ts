@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 
 // Requests handled by the app's own service worker never reach
@@ -966,6 +966,139 @@ test.describe("phone viewport", () => {
     }
     expect(isFullyWithin(northUpBox, wrapperBox)).toBe(true);
     expect(isFullyWithin(locateBox, wrapperBox)).toBe(true);
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
+
+  // Future-backlog item 17: the waypoint list's ordinal badge must
+  // visually communicate the same start/ordinary/finish/loop role as the
+  // map's own marker for that waypoint (see WaypointList.tsx's
+  // waypointRoles prop, sourced from planningLayer.ts's
+  // deriveWaypointRoles — the same derivation buildWaypointMarkerSpecs
+  // uses for the map). Colour, border-width and border-radius are all
+  // compared as literal computed-style equality — both surfaces share the
+  // exact same hardcoded hex/px/percentage literals, and this Chromium
+  // build's getComputedStyle leaves a percentage border-radius
+  // unresolved (returns "50%"/"40%" as specified, not a pixel value), so
+  // comparing the literal strings directly is both correct and simpler
+  // than normalising against each element's differing absolute box size
+  // (badge 24px vs marker 26px+).
+  test("waypoint list badges visually match the map's own start/ordinary/finish/loop marker roles", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Plan" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    await mapContainer.click({ position: { x: 80, y: 80 } });
+    await mapContainer.click({ position: { x: 180, y: 120 } });
+    await mapContainer.click({ position: { x: 280, y: 160 } });
+    await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Waypoint 2", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Waypoint 3", exact: true }),
+    ).toBeVisible();
+
+    // borderTopLeftRadius is compared as its own literal computed-style
+    // string (e.g. "50%"/"40%"), not resolved against each element's own
+    // pixel width — this Chromium build's getComputedStyle leaves a
+    // percentage border-radius unresolved, so dividing by the badge's
+    // (24px) and marker's (26px+) differing absolute widths would produce
+    // different ratios even for two elements sharing the exact same CSS
+    // rule. Literal string equality is both correct and simpler here,
+    // since badge and marker are styled from the same hardcoded literals.
+    const readVisualStyle = (locator: Locator) =>
+      locator.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          backgroundColor: style.backgroundColor,
+          borderTopWidth: style.borderTopWidth,
+          borderRadius: style.borderTopLeftRadius,
+        };
+      });
+
+    // Open route: Start / ordinary / Finish, each row's badge compared
+    // against its own corresponding map marker.
+    const openRouteRoles: { rowName: string; markerLabel: string }[] = [
+      { rowName: "Start", markerLabel: "Start waypoint 1" },
+      { rowName: "Waypoint 2", markerLabel: "Waypoint 2" },
+      { rowName: "Waypoint 3", markerLabel: "Finish waypoint 3" },
+    ];
+    for (const { rowName, markerLabel } of openRouteRoles) {
+      const badge = page
+        .getByRole("button", { name: rowName, exact: true })
+        .locator(".waypoint-row-ordinal");
+      const marker = page.getByRole("img", { name: markerLabel });
+      await expect(badge).toBeVisible();
+      await expect(marker).toBeVisible();
+      const [badgeStyle, markerStyle] = await Promise.all([
+        readVisualStyle(badge),
+        readVisualStyle(marker),
+      ]);
+      expect(badgeStyle.backgroundColor).toBe(markerStyle.backgroundColor);
+      expect(badgeStyle.borderTopWidth).toBe(markerStyle.borderTopWidth);
+      expect(badgeStyle.borderRadius).toBe(markerStyle.borderRadius);
+    }
+
+    // Close the loop — appends a 4th waypoint at the same coordinate as
+    // the first (see waypointHistory.ts's returnToStart reducer case).
+    const returnToStartButton = page.getByRole("button", { name: "Return to start" });
+    await expect(returnToStartButton).toBeEnabled();
+    await returnToStartButton.click();
+    await expect(
+      page.getByRole("button", { name: "Waypoint 4", exact: true }),
+    ).toBeVisible();
+
+    const loopMarker = page.getByRole("img", {
+      name: "Start and finish waypoints 1 and 4",
+    });
+    await expect(loopMarker).toBeVisible();
+    const loopMarkerStyle = await readVisualStyle(loopMarker);
+
+    for (const rowName of ["Start", "Waypoint 4"]) {
+      const badge = page
+        .getByRole("button", { name: rowName, exact: true })
+        .locator(".waypoint-row-ordinal");
+      await expect(badge).toHaveClass(/waypoint-row-ordinal--start-finish/);
+      const badgeStyle = await readVisualStyle(badge);
+      expect(badgeStyle.backgroundColor).toBe(loopMarkerStyle.backgroundColor);
+      expect(badgeStyle.borderTopWidth).toBe(loopMarkerStyle.borderTopWidth);
+      expect(badgeStyle.borderRadius).toBe(loopMarkerStyle.borderRadius);
+    }
+
+    // Each row still shows its own individual ordinal, never the map's
+    // combined "1/4" label.
+    await expect(
+      page
+        .getByRole("button", { name: "Start", exact: true })
+        .locator(".waypoint-row-ordinal"),
+    ).toHaveText("1");
+    await expect(
+      page
+        .getByRole("button", { name: "Waypoint 4", exact: true })
+        .locator(".waypoint-row-ordinal"),
+    ).toHaveText("4");
+
+    const scrollWidths = await page.evaluate(() => ({
+      documentWidth: document.documentElement.scrollWidth,
+      bodyWidth: document.body.scrollWidth,
+    }));
+    expect(scrollWidths.documentWidth).toBeLessThanOrEqual(390);
+    expect(scrollWidths.bodyWidth).toBeLessThanOrEqual(390);
 
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
     expect(consoleErrors).toEqual([]);

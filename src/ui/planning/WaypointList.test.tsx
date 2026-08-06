@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { WaypointList } from "./WaypointList.tsx";
 import type { Coordinate, Waypoint } from "../../domain/types.ts";
+import type { WaypointRole } from "../../map/mapAdapter.ts";
 import type { PlanningInteractionMode } from "./planningInteractionMode.ts";
 
 const WAYPOINTS: Waypoint[] = [
@@ -11,7 +12,12 @@ const WAYPOINTS: Waypoint[] = [
   { id: "c", coordinate: [0.002, 51] as Coordinate },
 ];
 
-function renderList(interactionMode: PlanningInteractionMode) {
+const OPEN_ROUTE_ROLES: WaypointRole[] = ["start", "ordinary", "finish"];
+
+function renderList(
+  interactionMode: PlanningInteractionMode,
+  waypointRoles: readonly WaypointRole[] = OPEN_ROUTE_ROLES,
+) {
   const handlers = {
     onSelect: vi.fn<(waypointId: string) => void>(),
     onStartMove: vi.fn<(waypointId: string) => void>(),
@@ -23,6 +29,7 @@ function renderList(interactionMode: PlanningInteractionMode) {
   render(
     <WaypointList
       waypoints={WAYPOINTS}
+      waypointRoles={waypointRoles}
       interactionMode={interactionMode}
       {...handlers}
     />,
@@ -35,6 +42,7 @@ describe("WaypointList", () => {
     render(
       <WaypointList
         waypoints={[]}
+        waypointRoles={[]}
         interactionMode={{ kind: "append" }}
         onSelect={vi.fn()}
         onStartMove={vi.fn()}
@@ -162,5 +170,95 @@ describe("WaypointList", () => {
 
     await user.click(screen.getByRole("button", { name: "Delete Waypoint 2" }));
     expect(handlers.onDelete).toHaveBeenCalledWith("b");
+  });
+
+  describe("ordinal badge role", () => {
+    it("applies the map-mirroring role class to each row's badge for an open route", () => {
+      renderList({ kind: "append" });
+
+      expect(
+        screen
+          .getByRole("button", { name: "Start" })
+          .querySelector(".waypoint-row-ordinal"),
+      ).toHaveClass("waypoint-row-ordinal--start");
+
+      const ordinaryBadge = screen
+        .getByRole("button", { name: "Waypoint 2" })
+        .querySelector(".waypoint-row-ordinal");
+      expect(ordinaryBadge).not.toHaveClass("waypoint-row-ordinal--start");
+      expect(ordinaryBadge).not.toHaveClass("waypoint-row-ordinal--finish");
+      expect(ordinaryBadge).not.toHaveClass("waypoint-row-ordinal--start-finish");
+
+      expect(
+        screen
+          .getByRole("button", { name: "Waypoint 3" })
+          .querySelector(".waypoint-row-ordinal"),
+      ).toHaveClass("waypoint-row-ordinal--finish");
+    });
+
+    it("keeps the badge decorative and aria-hidden regardless of role", () => {
+      renderList({ kind: "append" });
+
+      const badge = screen
+        .getByRole("button", { name: "Start" })
+        .querySelector(".waypoint-row-ordinal");
+      expect(badge).toHaveAttribute("aria-hidden", "true");
+    });
+
+    it("preserves existing text, accessible names, selection and endpoint-disabling behaviour once role classes are applied", () => {
+      renderList({ kind: "selected", waypointId: "a" });
+
+      expect(screen.getByRole("button", { name: "Start" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.getByRole("group", { name: "Start actions" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Move Start up" })).toBeDisabled();
+      expect(
+        screen
+          .getByRole("button", { name: "Start" })
+          .querySelector(".waypoint-row-ordinal"),
+      ).toHaveTextContent("1");
+    });
+
+    it("gives both endpoints the combined start-finish role for a closed loop, while each row keeps its own individual ordinal text", () => {
+      const loopWaypoints: Waypoint[] = [
+        ...WAYPOINTS,
+        { id: "d", coordinate: [0, 51] as Coordinate },
+      ];
+      const loopRoles: WaypointRole[] = [
+        "start-finish",
+        "ordinary",
+        "ordinary",
+        "start-finish",
+      ];
+      render(
+        <WaypointList
+          waypoints={loopWaypoints}
+          waypointRoles={loopRoles}
+          interactionMode={{ kind: "append" }}
+          onSelect={vi.fn()}
+          onStartMove={vi.fn()}
+          onStartInsertAfter={vi.fn()}
+          onMoveUp={vi.fn()}
+          onMoveDown={vi.fn()}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      const startButton = screen.getByRole("button", { name: "Start" });
+      const finishButton = screen.getByRole("button", { name: "Waypoint 4" });
+
+      expect(startButton.querySelector(".waypoint-row-ordinal")).toHaveClass(
+        "waypoint-row-ordinal--start-finish",
+      );
+      expect(finishButton.querySelector(".waypoint-row-ordinal")).toHaveClass(
+        "waypoint-row-ordinal--start-finish",
+      );
+      // Each row keeps its own single ordinal — never the map's combined
+      // "1/4" label.
+      expect(startButton.querySelector(".waypoint-row-ordinal")).toHaveTextContent("1");
+      expect(finishButton.querySelector(".waypoint-row-ordinal")).toHaveTextContent("4");
+    });
   });
 });

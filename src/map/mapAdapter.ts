@@ -165,13 +165,17 @@ export interface SymbolLayerOptions {
   spacingPixels: number;
 }
 
-/** A Planning waypoint marker's role in the route — distinguishes visual
- * treatment (shape/border, never colour alone) and drives its accessible
- * label. "start-finish" is the single combined marker for a closed loop
- * where the first and final waypoint coincide (see planningLayer.ts's
- * buildWaypointMarkerSpecs) — the final waypoint gets no marker of its own
- * in that case. */
-export type MapMarkerRole = "ordinary" | "start" | "finish" | "start-finish";
+/** A waypoint's role in its route — distinguishes visual treatment
+ * (shape/border, never colour alone) and drives the map marker's
+ * accessible label. Shared by the map marker (see MapMarkerSpec below)
+ * and the Planning list's ordinal badge (WaypointList.tsx, via
+ * planningLayer.ts's deriveWaypointRoles) — one vocabulary, not two
+ * independently-guessed role concepts. "start-finish" is the map's
+ * single combined marker for a closed loop where the first and final
+ * waypoint coincide (see planningLayer.ts's buildWaypointMarkerSpecs) —
+ * the final waypoint gets no marker of its own in that case, though the
+ * list still shows both endpoints with this same role. */
+export type WaypointRole = "ordinary" | "start" | "finish" | "start-finish";
 
 /** A Planning waypoint marker to render — plain structured data, never
  * raw HTML, so the adapter builds the DOM node itself (see
@@ -183,7 +187,7 @@ export interface MapMarkerSpec {
   id: string;
   coordinate: Coordinate;
   label: string;
-  role: MapMarkerRole;
+  role: WaypointRole;
   selected: boolean;
   ariaLabel: string;
 }

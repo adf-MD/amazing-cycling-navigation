@@ -13,6 +13,7 @@ import {
 } from "../../map/MapView.tsx";
 import type { MapFactory } from "../../map/mapAdapter.ts";
 import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
+import { deriveWaypointRoles } from "../../map/planningLayer.ts";
 import { shortestAngularDifferenceDegrees } from "../../navigation/bearing.ts";
 import {
   analyzeRouteElevationProfile,
@@ -688,6 +689,12 @@ export function PlanningScreen({
     : -1;
   const selectedWaypointIndex = selectedIndex === -1 ? null : selectedIndex;
 
+  // Shared with the map's own waypoint markers — see
+  // planningLayer.ts's deriveWaypointRoles doc comment.
+  const waypointRoles = deriveWaypointRoles(
+    state.present.map((waypoint) => waypoint.coordinate),
+  );
+
   const first = state.present[0];
   const last = state.present.at(-1);
   const canReturnToStart =
@@ -957,6 +964,7 @@ export function PlanningScreen({
         <h2>Waypoints</h2>
         <WaypointList
           waypoints={state.present}
+          waypointRoles={waypointRoles}
           interactionMode={interactionMode}
           onSelect={(waypointId) => {
             dispatchWaypointAction({ type: "select", waypointId });

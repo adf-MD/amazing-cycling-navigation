@@ -1,8 +1,25 @@
 import type { Waypoint } from "../../domain/types.ts";
+import type { WaypointRole } from "../../map/mapAdapter.ts";
 import type { PlanningInteractionMode } from "./planningInteractionMode.ts";
+
+/** Mirrors waypointMarkerElement.ts's own ROLE_MODIFIER_CLASS pattern for
+ * the map marker, but for the list's .waypoint-row-ordinal badge —
+ * "ordinary" needs no modifier since the base class already carries its
+ * treatment (see index.css). */
+const ROW_ORDINAL_ROLE_CLASS: Readonly<Record<WaypointRole, string | null>> = {
+  ordinary: null,
+  start: "waypoint-row-ordinal--start",
+  finish: "waypoint-row-ordinal--finish",
+  "start-finish": "waypoint-row-ordinal--start-finish",
+};
 
 export interface WaypointListProps {
   waypoints: readonly Waypoint[];
+  /** Index-parallel with `waypoints`, from the same shared derivation
+   * that drives the map's own waypoint markers (see
+   * planningLayer.ts's deriveWaypointRoles) — never guessed separately
+   * from index === 0 / index === last here. */
+  waypointRoles: readonly WaypointRole[];
   interactionMode: PlanningInteractionMode;
   onSelect: (waypointId: string) => void;
   onStartMove: (waypointId: string) => void;
@@ -26,6 +43,7 @@ export interface WaypointListProps {
  */
 export function WaypointList({
   waypoints,
+  waypointRoles,
   interactionMode,
   onSelect,
   onStartMove,
@@ -56,6 +74,11 @@ export function WaypointList({
         const isPendingInsertAfter =
           isSelected && interactionMode.kind === "insert-after";
         const label = index === 0 ? "Start" : `Waypoint ${String(index + 1)}`;
+        const role = waypointRoles[index] ?? "ordinary";
+        const roleClass = ROW_ORDINAL_ROLE_CLASS[role];
+        const ordinalClassName = roleClass
+          ? `waypoint-row-ordinal ${roleClass}`
+          : "waypoint-row-ordinal";
         return (
           <li
             key={waypoint.id}
@@ -70,7 +93,7 @@ export function WaypointList({
                   onSelect(waypoint.id);
                 }}
               >
-                <span className="waypoint-row-ordinal" aria-hidden="true">
+                <span className={ordinalClassName} aria-hidden="true">
                   {index + 1}
                 </span>
                 <span className="waypoint-row-label">{label}</span>
