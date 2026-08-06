@@ -271,6 +271,27 @@ Implement in milestones and keep each milestone deployable:
 
 Do not start a later milestone by weakening or bypassing earlier reliability requirements.
 
+## Manual acceptance status (6 August 2026)
+
+This is the authoritative manual-test ledger. It records verification evidence only; the behaviour contracts remain defined by the sections above and are not restated here.
+
+### Manually verified on the deployed iPhone PWA
+
+- **Routes:** long route names wrap and remain usable; GPX export works; inline route deletion and its confirmation work. Route renaming now happens inside the existing route card, preserves the card and route summary while editing, and persists the changed name correctly.
+- **Planning:** waypoint placement/editing, waypoint identification and map controls work; both Road bike (`cycling-road`) and General cycling (`cycling-regular`) profiles work and produce viable, meaningfully different routes; route warnings work; saving and GPX export work.
+- **Pre-ride:** a newly opened route is framed correctly; recognised-climb selection works; the selected climb's detailed elevation profile works; Start riding and Resume riding have suitable prominence. The restored **Resume riding** state now reliably shows the route overview instead of occasionally remaining at MapLibre's whole-world default while restored follow mode awaits a fresh GPS fix.
+- **Current-climb interaction:** automatic entry into Climb view, manual exit, and manually returning to Climb view work.
+- **Diagnostics and Settings:** layout, wrapping, disclosures and touch targets are satisfactory.
+- **PWA recovery:** ordinary reload and suspension recovery work.
+- **Wake lock:** previously verified separately on the user's iPhone and working as intended.
+
+### Preliminarily checked, bicycle field test still pending
+
+- **Active Riding:** location/map readability, the next-manoeuvre panel, camera controls, wake lock and elevation-window selection look correct during walking and car tests, but still require a normal road-bike field test.
+- **Current-climb progress:** entering/leaving the view is verified, but the live distance/elevation progress while actually cycling through a climb still needs a field test.
+
+Do not treat either preliminarily-checked item above as fully verified until it has been tested on a moving road bicycle.
+
 ## Future backlog
 
 The following items are approved directions or confirmed bugs for future work. They are recorded here for continuity across sessions and must not be implemented until a future slice explicitly scopes them in.
@@ -326,7 +347,7 @@ The following items are approved directions or confirmed bugs for future work. T
 13. **Current-climb elevation view (Riding) — done**
     - Milestone 4's eleventh slice completes this item exactly as scoped: Climb view is offered only while the rider is inside an already-recognised climb, auto-opens once per distinct climb, respects a manual dismissal for the remainder of that climb, and reopens automatically on a different climb — see Milestone 4's own eleventh-slice paragraph above for full detail (state machine, metrics, chart fill).
     - One accepted deviation from the original brief's own open question: the heading's "announce meaningful transitions" requirement is implemented via `aria-live="polite"` rather than `role="status"`, since an explicit `role` would have overridden the heading's implicit accessible role.
-    - Manual real-device phone acceptance (per this feature's own acceptance-test checklist) is still outstanding — flag this to the user before treating it as fully verified in the field.
+    - Manual real-device phone acceptance: automatic entry into Climb view, manual exit, and manually returning to it are now manually verified on the user's iPhone (see "Manual acceptance status" above), but the live distance/elevation progress while actually cycling through a climb is still outstanding — flag this to the user before treating that part as fully verified in the field.
     - Milestone 4's thirteenth slice extends this item: the pre-ride climb selector now also shows a detailed, read-only preview of the selected climb's whole elevation profile (same colours, fill and ground-line as the active view above, no rider marker), reusing one shared pure view-model rather than a second chart implementation — see Milestone 4's own thirteenth-slice paragraph above for full detail. Manually verified on the user's iPhone across multiple climbs (colours, no GPS marker, survives a reload). A fourteenth slice changed the dropdown's own default to "All route" (see the fourteenth-slice paragraph above) after this same real-device check.
 
 ### Planning routing profiles
