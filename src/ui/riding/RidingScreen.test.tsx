@@ -2605,10 +2605,23 @@ describe("RidingScreen", () => {
       );
       map.triggerLoad();
 
+      // The map style becomes ready before restoration resolves in this
+      // ordering — the full-route overview fit must still happen, since
+      // there's no actionable camera command yet to show instead (see
+      // useRideCamera's hasActionableCameraTarget). Without this, the map
+      // would be left at MapLibre's raw default world view.
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+      });
+
       expect(
         await screen.findByRole("button", { name: "Resume riding" }),
       ).toBeInTheDocument();
       expect(map.setCameraSpy).not.toHaveBeenCalled();
+      // Restoration resolving into "following" (awaiting a fresh fix)
+      // must not trigger a second fit — the one overview fit from above
+      // is still all that's happened.
+      expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
 
       await user.click(screen.getByRole("button", { name: "Resume riding" }));
 
@@ -2616,6 +2629,106 @@ describe("RidingScreen", () => {
       expect(followButton).toHaveAttribute("aria-pressed", "true");
       expect(followButton).toHaveTextContent("Waiting…");
       expect(map.setCameraSpy).not.toHaveBeenCalled();
+      expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("shows the route overview (not a fit skipped for nothing) when restoration resolves into a pending follow before the map style is ready", async () => {
+      await setActiveRideState({
+        id: "active",
+        routeId: route.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: pointAt(5), accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 5,
+        matchedDistanceFromStartMetres: routePoints[5]?.distanceFromStartMetres ?? 0,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationWindowMetres: 5000,
+        cameraMode: "following",
+      });
+
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+
+      // Restoration settles first in this ordering — deliberately not
+      // calling map.triggerLoad() yet. By the time "Resume riding"
+      // appears, the camera is already restored to "following" +
+      // awaitingFreshFix, with no actionable target.
+      expect(
+        await screen.findByRole("button", { name: "Resume riding" }),
+      ).toBeInTheDocument();
+      expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+
+      map.triggerLoad();
+
+      // The overview fit must still happen once the style becomes ready,
+      // even though the camera mode was already "following" before this
+      // point — proving the fix is independent of which side of the race
+      // wins.
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
+    });
+
+    it("hands off from the route overview to the normal follow camera once a fresh fix arrives after Resume riding", async () => {
+      await setActiveRideState({
+        id: "active",
+        routeId: route.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: pointAt(5), accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 5,
+        matchedDistanceFromStartMetres: routePoints[5]?.distanceFromStartMetres ?? 0,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationWindowMetres: 5000,
+        cameraMode: "following",
+      });
+
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
+
+      stub.emitFix({
+        coordinate: pointAt(5),
+        accuracyMetres: 5,
+        timestampMs: 2000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(map.setCameraSpy).toHaveBeenCalledWith(
+        pointAt(5),
+        NAVIGATION_ZOOM,
+        expectedBearingAt(5),
+        FOLLOW_PITCH_DEGREES,
+        { animate: true, followOffset: true },
+      );
+
+      const followButton = screen.getByRole("button", { name: "Follow my location" });
+      expect(followButton).toHaveAttribute("aria-pressed", "true");
+      expect(followButton).not.toHaveTextContent("Waiting…");
+      // The camera latch flipping true must not trigger a second overview
+      // fit — only the one from before restoration/style-ready settled.
+      expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
     });
 
     it("restores a free-panned camera position, bearing and pitch instantly, without an animated following ease", async () => {
@@ -2654,6 +2767,58 @@ describe("RidingScreen", () => {
         });
       });
       expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("restores a free-panned camera with no route-overview flash when restoration resolves before the map style is ready", async () => {
+      const freeCoordinate = pointAt(3);
+      await setActiveRideState({
+        id: "active",
+        routeId: route.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: pointAt(5), accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 5,
+        matchedDistanceFromStartMetres: routePoints[5]?.distanceFromStartMetres ?? 0,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationWindowMetres: 5000,
+        cameraMode: "free",
+        cameraCoordinate: freeCoordinate,
+        cameraZoom: 14,
+        cameraBearingDegrees: 231,
+        cameraPitchDegrees: 18,
+      });
+
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+
+      // Restoration settles first — deliberately not calling
+      // map.triggerLoad() yet.
+      expect(
+        await screen.findByRole("button", { name: "Resume riding" }),
+      ).toBeInTheDocument();
+      expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
+
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledWith(freeCoordinate, 14, 231, 18, {
+          animate: false,
+          followOffset: false,
+        });
+      });
+      expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      // Unlike the style-ready-first ordering above, restoration having
+      // already produced an actionable camera target before the style was
+      // ever ready means the overview fit is skipped from its very first
+      // opportunity — no flash at all.
+      expect(map.fitBoundsSpy).not.toHaveBeenCalled();
     });
 
     it("resets the camera to overview when a genuinely different route is opened", async () => {

@@ -128,6 +128,75 @@ describe("RouteListItem", () => {
     expect(screen.getByRole("button", { name: "Evening loop" })).toBeInTheDocument();
   });
 
+  it("pressing Escape while renaming discards the draft, does not call onRename, and restores the ordinary card", async () => {
+    const user = userEvent.setup();
+    const { onRename } = renderItem();
+
+    await user.click(screen.getByRole("button", { name: "Rename" }));
+    await user.type(screen.getByLabelText("Route name"), " extra");
+    await user.keyboard("{Escape}");
+
+    expect(onRename).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Evening loop" })).toBeInTheDocument();
+  });
+
+  it("keeps the same route-card element mounted, with distance and ascent still visible, while renaming", async () => {
+    const user = userEvent.setup();
+    renderItem({ route: buildRoute({ ascentMetres: 144.6 }) });
+
+    const card = document.querySelector('[data-route-id="route-1"]');
+    expect(card).toHaveClass("route-card", "stack");
+
+    await user.click(screen.getByRole("button", { name: "Rename" }));
+
+    const cardWhileRenaming = document.querySelector('[data-route-id="route-1"]');
+    expect(cardWhileRenaming).toBe(card);
+    expect(cardWhileRenaming).toHaveClass("route-card", "stack");
+    expect(screen.getByText("12.3 km · 145 m ascent")).toBeInTheDocument();
+  });
+
+  it("removes Export and Delete from the document while renaming, rather than merely disabling them", async () => {
+    const user = userEvent.setup();
+    renderItem();
+
+    await user.click(screen.getByRole("button", { name: "Rename" }));
+
+    expect(screen.queryByRole("button", { name: "Export" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("focuses the name input and selects its existing text on entering rename mode", async () => {
+    const user = userEvent.setup();
+    renderItem();
+
+    await user.click(screen.getByRole("button", { name: "Rename" }));
+
+    const input = screen.getByLabelText<HTMLInputElement>("Route name");
+    expect(input).toHaveFocus();
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(input.value.length);
+  });
+
+  it("returns focus to the Rename button after saving", async () => {
+    const user = userEvent.setup();
+    renderItem();
+
+    await user.click(screen.getByRole("button", { name: "Rename" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.getByRole("button", { name: "Rename" })).toHaveFocus();
+  });
+
+  it("returns focus to the Rename button after cancelling", async () => {
+    const user = userEvent.setup();
+    renderItem();
+
+    await user.click(screen.getByRole("button", { name: "Rename" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.getByRole("button", { name: "Rename" })).toHaveFocus();
+  });
+
   it("triggers export and delete-request callbacks", async () => {
     const user = userEvent.setup();
     const { route, onExport, onDeleteRequest } = renderItem();

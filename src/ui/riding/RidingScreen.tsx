@@ -490,7 +490,7 @@ export function RidingScreen({
           routeFeatureOverlay={routeFeatureOverlay}
           gradientOverlay={{ segments: microDetailSegments }}
           cameraTarget={camera.cameraTarget}
-          suppressInitialOverviewFit={camera.mode !== "overview"}
+          suppressInitialOverviewFit={camera.hasActionableCameraTarget}
           onUserCameraInteraction={camera.reportUserInteraction}
           onCameraSettled={(settled) => {
             camera.reportCameraSettled(

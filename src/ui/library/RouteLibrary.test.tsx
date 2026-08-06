@@ -106,6 +106,46 @@ describe("RouteLibrary", () => {
     });
   });
 
+  it("renaming one of two routes leaves the other route's own list item and actions untouched, with no stray list item", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "First Ride.gpx");
+    await importFixture(user, "Second Ride.gpx");
+    const [routeA, routeB] = (await routesRepository.listRoutes()) as [
+      PlannedRoute,
+      PlannedRoute,
+    ];
+
+    await user.click(
+      within(getListItemByRouteId(routeB.id)).getByRole("button", { name: "Rename" }),
+    );
+    const input = within(getListItemByRouteId(routeB.id)).getByLabelText("Route name");
+    await user.clear(input);
+    await user.type(input, "Renamed second");
+    await user.click(
+      within(getListItemByRouteId(routeB.id)).getByRole("button", { name: "Save" }),
+    );
+
+    await waitFor(() => {
+      expect(
+        within(getListItemByRouteId(routeB.id)).getByRole("button", {
+          name: "Renamed second",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    const itemA = getListItemByRouteId(routeA.id);
+    expect(itemA).toHaveClass("route-card");
+    expect(within(itemA).getByRole("button", { name: routeA.name })).toBeInTheDocument();
+    expect(within(itemA).getByRole("button", { name: "Rename" })).toBeInTheDocument();
+    expect(within(itemA).getByRole("button", { name: "Export" })).toBeInTheDocument();
+    expect(within(itemA).getByRole("button", { name: "Delete" })).toBeInTheDocument();
+
+    // No stray <li> anywhere in the document beyond the two known routes —
+    // the old bare, detached rename <li> would have shown up as a third.
+    expect(document.querySelectorAll("li")).toHaveLength(2);
+  });
+
   it("opens a route when its name is clicked", async () => {
     const user = userEvent.setup();
     const onOpenRoute = vi.fn();

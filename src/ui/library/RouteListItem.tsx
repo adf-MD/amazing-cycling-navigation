@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent, SubmitEvent } from "react";
 import type { PlannedRoute } from "../../domain/types.ts";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
@@ -35,8 +35,38 @@ export function RouteListItem({
   const [isRenaming, setIsRenaming] = useState(false);
   const [draftName, setDraftName] = useState(route.name);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const renameButtonRef = useRef<HTMLButtonElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const wasRenamingRef = useRef(false);
   const headingId = useId();
   const descriptionId = useId();
+  const nameFieldId = useId();
+
+  // Autofocuses (and selects the existing name in) the input on entering
+  // rename mode, and returns focus to the Rename button on leaving it —
+  // mirroring handleCancelDelete's own Cancel/Escape-returns-focus-to-
+  // Delete precedent below. A ref (rather than a second render) tracks
+  // whether this is a genuine exit rather than the initial mount, so the
+  // Rename button isn't focused on first render. Both Save and Cancel/
+  // Escape go through the same setIsRenaming(false), so this single
+  // effect covers all three exits without duplicating focus logic.
+  useEffect(() => {
+    if (isRenaming) {
+      nameInputRef.current?.focus();
+      nameInputRef.current?.select();
+    } else if (wasRenamingRef.current) {
+      renameButtonRef.current?.focus();
+    }
+    wasRenamingRef.current = isRenaming;
+  }, [isRenaming]);
+
+  const openRename = () => {
+    if (isDeletePending) {
+      onDeleteCancel(route.id);
+    }
+    setDraftName(route.name);
+    setIsRenaming(true);
+  };
 
   const handleRenameSubmit = (event: SubmitEvent) => {
     event.preventDefault();
@@ -45,6 +75,17 @@ export function RouteListItem({
       onRename(route.id, trimmed);
     }
     setIsRenaming(false);
+  };
+
+  const handleCancelRename = () => {
+    setDraftName(route.name);
+    setIsRenaming(false);
+  };
+
+  const handleRenameKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
+    if (event.key === "Escape") {
+      handleCancelRename();
+    }
   };
 
   const handleCancelDelete = () => {
@@ -59,125 +100,121 @@ export function RouteListItem({
     }
   };
 
-  if (isRenaming) {
-    return (
-      <li data-route-id={route.id}>
-        <form onSubmit={handleRenameSubmit}>
-          <label>
-            Route name
-            <input
-              value={draftName}
-              onChange={(event) => {
-                setDraftName(event.target.value);
-              }}
-            />
-          </label>
-          <button type="submit" className="btn-primary">
-            Save
-          </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => {
-              setDraftName(route.name);
-              setIsRenaming(false);
-            }}
-          >
-            Cancel
-          </button>
-        </form>
-      </li>
-    );
-  }
-
   return (
     <li className="route-card stack" data-route-id={route.id}>
-      <div>
-        <button
-          type="button"
-          className="route-card-title"
-          ref={nameButtonRef}
-          onClick={() => {
-            onOpen(route);
-          }}
+      {isRenaming ? (
+        <form
+          className="stack"
+          onSubmit={handleRenameSubmit}
+          onKeyDown={handleRenameKeyDown}
         >
-          {route.name}
-        </button>
-      </div>
-      <p className="route-card-meta">
-        {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
-      </p>
-      <div className="route-list-item-actions">
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => {
-            if (isDeletePending) {
-              onDeleteCancel(route.id);
-            }
-            setDraftName(route.name);
-            setIsRenaming(true);
-          }}
-        >
-          Rename
-        </button>
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => {
-            onExport(route);
-          }}
-        >
-          Export
-        </button>
-        <button
-          type="button"
-          className="btn-danger"
-          ref={deleteButtonRef}
-          onClick={() => {
-            onDeleteRequest(route.id);
-          }}
-        >
-          Delete
-        </button>
-      </div>
-      {isDeletePending ? (
-        <div
-          className="route-delete-confirm"
-          role="alertdialog"
-          aria-labelledby={headingId}
-          aria-describedby={descriptionId}
-          onKeyDown={handleConfirmKeyDown}
-        >
-          <h2 id={headingId}>Delete “{route.name}”?</h2>
-          <p id={descriptionId}>
-            This route will be permanently deleted from this device. This cannot be
-            undone.
+          <label htmlFor={nameFieldId}>Route name</label>
+          <input
+            id={nameFieldId}
+            ref={nameInputRef}
+            className="field-input"
+            value={draftName}
+            onChange={(event) => {
+              setDraftName(event.target.value);
+            }}
+          />
+          <p className="route-card-meta">
+            {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
           </p>
-          {deleteError ? <p role="alert">{deleteError}</p> : null}
-          <div className="route-delete-confirm-actions">
+          <div className="row">
+            <button type="submit" className="btn-primary">
+              Save
+            </button>
+            <button type="button" className="btn-secondary" onClick={handleCancelRename}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <div>
+            <button
+              type="button"
+              className="route-card-title"
+              ref={nameButtonRef}
+              onClick={() => {
+                onOpen(route);
+              }}
+            >
+              {route.name}
+            </button>
+          </div>
+          <p className="route-card-meta">
+            {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
+          </p>
+          <div className="route-list-item-actions">
             <button
               type="button"
               className="btn-secondary"
-              autoFocus
-              disabled={isDeleting}
-              onClick={handleCancelDelete}
+              ref={renameButtonRef}
+              onClick={openRename}
             >
-              Cancel
+              Rename
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                onExport(route);
+              }}
+            >
+              Export
             </button>
             <button
               type="button"
               className="btn-danger"
-              disabled={isDeleting}
+              ref={deleteButtonRef}
               onClick={() => {
-                onDeleteConfirm(route.id);
+                onDeleteRequest(route.id);
               }}
             >
-              {isDeleting ? "Deleting…" : "Delete route"}
+              Delete
             </button>
           </div>
-        </div>
-      ) : null}
+          {isDeletePending ? (
+            <div
+              className="route-delete-confirm"
+              role="alertdialog"
+              aria-labelledby={headingId}
+              aria-describedby={descriptionId}
+              onKeyDown={handleConfirmKeyDown}
+            >
+              <h2 id={headingId}>Delete “{route.name}”?</h2>
+              <p id={descriptionId}>
+                This route will be permanently deleted from this device. This cannot be
+                undone.
+              </p>
+              {deleteError ? <p role="alert">{deleteError}</p> : null}
+              <div className="route-delete-confirm-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  autoFocus
+                  disabled={isDeleting}
+                  onClick={handleCancelDelete}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn-danger"
+                  disabled={isDeleting}
+                  onClick={() => {
+                    onDeleteConfirm(route.id);
+                  }}
+                >
+                  {isDeleting ? "Deleting…" : "Delete route"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
     </li>
   );
 }

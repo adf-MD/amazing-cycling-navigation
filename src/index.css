@@ -1219,8 +1219,9 @@ button:focus-visible {
   padding: 0;
 }
 
-/* The route-name text field — generically named for future reuse beyond
- * Planning, but only applied here in this slice. */
+/* The route-name text field — generically named for reuse; besides
+ * Planning's own route-name field, also backs RouteListItem's inline
+ * rename input. */
 .field-input {
   min-height: var(--touch-target-min);
   width: 100%;

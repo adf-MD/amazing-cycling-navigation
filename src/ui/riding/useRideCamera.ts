@@ -52,6 +52,21 @@ interface HookState {
    * control's pressed-state can tell "free and still north-up" apart from
    * "free and rotated away". Cleared whenever mode leaves "free". */
   freeCameraPosition: FreeCameraPosition | null;
+  /** Sticky/monotonic within a route-open session: true once a real
+   * camera command has ever been produced (a live follow ease or a
+   * restore jump), so a suspended-then-restored "following" ride that is
+   * still awaiting its first fresh fix reports false — see
+   * RidingScreen.tsx's suppressInitialOverviewFit, which must show the
+   * route overview exactly while this is false, and never re-fit once
+   * it's true. Deliberately NOT derived as a plain `cameraTarget !==
+   * null` on every render: cameraTarget itself goes back to null the
+   * moment an active following session is manually paused into "free"
+   * (see below), and un-latching then would make MapView's overview-fit
+   * effect re-run and incorrectly re-fit the whole route mid-ride. Only
+   * resets to false when the camera genuinely returns to "overview" —
+   * a new route ("route-opened") or an overview-mode restore — both of
+   * which legitimately want a fresh fit. */
+  hasActionableCameraTarget: boolean;
 }
 
 const INITIAL_HOOK_STATE: HookState = {
@@ -59,6 +74,7 @@ const INITIAL_HOOK_STATE: HookState = {
   cameraTarget: null,
   toastToken: 0,
   freeCameraPosition: null,
+  hasActionableCameraTarget: false,
 };
 
 function hookReducer(state: HookState, event: HookEvent): HookState {
@@ -77,11 +93,12 @@ function hookReducer(state: HookState, event: HookEvent): HookState {
 
   const transition = rideCameraReducer(state.camera, event);
   const nextMode = transition.state.mode;
+  const nextCameraTarget =
+    transition.command ?? (nextMode === "following" ? state.cameraTarget : null);
 
   return {
     camera: transition.state,
-    cameraTarget:
-      transition.command ?? (nextMode === "following" ? state.cameraTarget : null),
+    cameraTarget: nextCameraTarget,
     toastToken: transition.pausedToast ? state.toastToken + 1 : state.toastToken,
     freeCameraPosition:
       event.type === "restore" && event.mode === "free" && event.coordinate
@@ -94,6 +111,10 @@ function hookReducer(state: HookState, event: HookEvent): HookState {
         : nextMode === "free"
           ? state.freeCameraPosition
           : null,
+    hasActionableCameraTarget:
+      nextMode === "overview"
+        ? false
+        : state.hasActionableCameraTarget || nextCameraTarget !== null,
   };
 }
 
@@ -134,6 +155,13 @@ export interface UseRideCameraResult {
   mode: RideCameraMode;
   awaitingFreshFix: boolean;
   cameraTarget: RideCameraCommand | null;
+  /** See HookState's own doc comment — true once a real camera command
+   * has ever been produced this route-open session, sticky through a
+   * later manual pause to "free". Intended for RidingScreen's own
+   * MapView `suppressInitialOverviewFit` prop, so a restored "following"
+   * ride still awaiting its first fresh fix shows the route overview
+   * instead of MapLibre's default view. */
+  hasActionableCameraTarget: boolean;
   showPausedToast: boolean;
   requestFollow: () => void;
   reportUserInteraction: () => void;
@@ -388,6 +416,7 @@ export function useRideCamera({
     mode: state.camera.mode,
     awaitingFreshFix: state.camera.awaitingFreshFix,
     cameraTarget: state.cameraTarget,
+    hasActionableCameraTarget: state.hasActionableCameraTarget,
     showPausedToast,
     requestFollow,
     reportUserInteraction,
