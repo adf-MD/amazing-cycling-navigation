@@ -967,7 +967,20 @@ export function PlanningScreen({
           waypointRoles={waypointRoles}
           interactionMode={interactionMode}
           onSelect={(waypointId) => {
-            dispatchWaypointAction({ type: "select", waypointId });
+            // Tapping the already-selected waypoint again deselects it —
+            // but only when no relocation is active for it, mirroring
+            // Move/Insert-after's own toggle idiom above. Suspending on
+            // effectivePendingAction (rather than pendingWaypointAction
+            // directly) keeps this consistent with interactionMode's own
+            // derivation: a stale pending action for a waypoint that is no
+            // longer selected already reads as "no relocation active"
+            // everywhere else in this file.
+            const shouldDeselect =
+              effectivePendingAction === null && waypointId === state.selectedWaypointId;
+            dispatchWaypointAction({
+              type: "select",
+              waypointId: shouldDeselect ? null : waypointId,
+            });
           }}
           onStartMove={handleStartMove}
           onStartInsertAfter={handleStartInsertAfter}

@@ -1573,6 +1573,77 @@ describe("PlanningScreen", () => {
     expect(screen.queryByRole("button", { name: "Waypoint 3" })).toBeNull();
   });
 
+  it("tapping the selected waypoint again deselects it; tapping a different waypoint transfers selection instead", async () => {
+    const user = userEvent.setup();
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+    await addWaypointViaCrosshair(map, user, [0.02, 51]);
+
+    const beforeDraft = await waitFor(async () => {
+      const draft = await getDraft();
+      expect(draft?.waypoints).toHaveLength(3);
+      return draft;
+    });
+
+    await user.click(screen.getByRole("button", { name: "Waypoint 2" }));
+    expect(screen.getByRole("button", { name: "Waypoint 2" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Start" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Waypoint 3" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Add waypoint here" })).toBeDisabled();
+
+    // Tapping the already-selected waypoint again deselects it.
+    await user.click(screen.getByRole("button", { name: "Waypoint 2" }));
+    expect(screen.getByRole("button", { name: "Waypoint 2" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Start" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Waypoint 3" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Add waypoint here" })).toBeEnabled();
+    // The relocate group (Move/Insert after) only renders for a selected row.
+    expect(screen.queryByRole("button", { name: "Move" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Insert after" })).toBeNull();
+
+    // Selecting a different waypoint transfers selection rather than
+    // merely re-toggling the previous one back on.
+    await user.click(screen.getByRole("button", { name: "Waypoint 2" }));
+    await user.click(screen.getByRole("button", { name: "Waypoint 3" }));
+    expect(screen.getByRole("button", { name: "Waypoint 3" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Waypoint 2" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+
+    // None of this selection/deselection/transfer touched a single
+    // coordinate, id, or the waypoint order.
+    await waitFor(async () => {
+      const draft = await getDraft();
+      expect(draft?.waypoints).toEqual(beforeDraft?.waypoints);
+    });
+  });
+
   it("disables placement while a genuine camera gesture is in flight, and re-enables once it settles", () => {
     const map = createMockMapFactory();
     render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
@@ -1656,6 +1727,102 @@ describe("PlanningScreen", () => {
       "aria-pressed",
       "true",
     );
+  });
+
+  it("tapping the waypoint again during an active relocation leaves the relocation active", async () => {
+    const user = userEvent.setup();
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    await user.click(screen.getByRole("button", { name: "Move" }));
+    expect(
+      screen.getByRole("button", { name: "Move the start here" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Move" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // Re-tapping the waypoint being relocated must not cancel, commit or
+    // transfer the relocation — only the explicit Move toggle or a
+    // placement action may end it.
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    expect(
+      screen.getByRole("button", { name: "Move the start here" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Move" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Start" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Waypoint 2" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Waypoint 3" })).toBeNull();
+
+    // The relocation can still be completed normally afterwards.
+    map.triggerCameraSettled([0.5, 51]);
+    await user.click(screen.getByRole("button", { name: "Move the start here" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Add waypoint here" }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Move" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("selecting then deselecting a waypoint triggers no routing request and adds no undo history entry", async () => {
+    const user = userEvent.setup();
+    await saveProviderKey("dummy-test-key");
+    const map = createMockMapFactory();
+    const route = buildRoute(10);
+    const calculateRouteSpy = vi.fn(() => Promise.resolve(route));
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={{ calculateRoute: calculateRouteSpy }}
+      />,
+    );
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+    const calculateButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /calculate route/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+    await user.click(calculateButton);
+    await waitFor(() => {
+      expect(calculateRouteSpy).toHaveBeenCalledTimes(1);
+    });
+    calculateRouteSpy.mockClear();
+
+    expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Waypoint 2" }));
+    await user.click(screen.getByRole("button", { name: "Waypoint 2" }));
+
+    // Long enough to clear both the draft-save and recalculation debounces.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    expect(calculateRouteSpy).not.toHaveBeenCalled();
+
+    // Exactly one Undo removes the most recently *added* waypoint, proving
+    // select/deselect pushed no history entry of their own.
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.queryByRole("button", { name: "Waypoint 2" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
   });
 
   it("selection, pending move/insert-after mode and route-name edits never trigger a provider request", async () => {

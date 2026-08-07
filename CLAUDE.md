@@ -184,6 +184,7 @@ Improve these types as implementation knowledge grows, but preserve provider ind
 ## Planning behaviour
 
 - Add, insert, drag, reorder, and delete waypoints with undo/redo.
+- Tapping the currently selected waypoint again deselects it, leaving its coordinate, order and the routed result unchanged and triggering no recalculation or undo/redo entry; tapping a different waypoint transfers selection instead. While an explicit Move or Insert-after relocation is active for that waypoint, re-tapping it leaves the relocation active — only the existing Move/Insert-after toggle-off or the placement/confirmation action ends it.
 - Include an explicit “return to start” action for closing a loop. Do not generate a loop automatically.
 - Recalculate only changed route legs and debounce drag completion.
 - Retain the last successful route when a provider request fails.
@@ -407,11 +408,12 @@ The following items are approved directions or confirmed bugs for future work. T
 
 ### Planning waypoint interaction
 
-22. **Deselect a waypoint on a repeat tap**
-    - Amends the existing waypoint-selection and relocation behaviour rather than introducing a new movement architecture: placing, dragging, moving, inserting, reordering and deleting waypoints (see "## Planning behaviour" above and Future-backlog item 17's `WaypointList` work) are already implemented and unchanged by this item. Today, `waypointHistory.ts`'s `"select"` action always sets `selectedWaypointId` to the tapped waypoint, with no toggle-off case — this item adds one.
+22. **Deselect a waypoint on a repeat tap — done**
+    - Amends the existing waypoint-selection and relocation behaviour rather than introducing a new movement architecture: placing, dragging, moving, inserting, reordering and deleting waypoints (see "## Planning behaviour" above and Future-backlog item 17's `WaypointList` work) are already implemented and unchanged by this item. Before this item, `waypointHistory.ts`'s `"select"` action always set `selectedWaypointId` to the tapped waypoint, with no toggle-off case.
     - In the normal selected state, tapping the already-selected waypoint again deselects it (`selectedWaypointId` returns to `null`). Selecting a different waypoint continues to transfer selection to that waypoint, exactly as today.
     - Once an active relocation (Move/Insert-after) operation has begun, tapping the waypoint again must not silently cancel or commit the move — the explicit Cancel action remains the only way to cancel a relocation in progress.
     - Preserve the existing route recalculation, undo/redo and stale-result (`isStale`/`canSaveOrExportPlan`) protections unchanged.
+    - Implemented as a single-call-site change: `PlanningScreen.tsx`'s `onSelect` handler passed to `WaypointList` now dispatches `{ type: "select", waypointId: null }` instead of the tapped id when the tapped waypoint is already `state.selectedWaypointId` **and** no Move/Insert-after relocation is currently pending for it (`effectivePendingAction === null`) — otherwise it dispatches the tapped id unchanged, exactly as before. `waypointHistory.ts`'s `"select"` reducer case already accepted a `null` id, already excluded selection from undo/redo, and `usePlanningRoute` already never read `selectedWaypointId`, so no reducer, staleness, `WaypointList`, `MapView` or map-marker code changed — list-row `aria-pressed`/`.is-selected` and the map marker's `--selected` ring already reacted correctly to a cleared selection via existing plumbing. Real-device iPhone verification is still outstanding — do not treat this item as manually verified until that check has actually been done.
 
 ### Map zoom-dependent route and waypoint presentation
 
