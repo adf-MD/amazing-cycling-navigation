@@ -600,31 +600,94 @@ test("pressing Northwards twice, with a manual rotation in between, rotates back
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
   const mapContainer = page.locator('[data-testid="map-container"]');
+  const canvas = mapContainer.locator("canvas");
   const northButton = page.getByRole("button", { name: "North-up, top-down view" });
 
   await northButton.click();
   await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
+  await expect(mapContainer).toHaveAttribute("data-camera-pitch", "0");
+  await expect(northButton).toHaveAttribute("aria-pressed", "true");
 
-  const mapBox = await mapContainer.boundingBox();
-  if (!mapBox) {
-    throw new Error("expected the map container to lay out");
+  // Baseline for the centre/zoom-preservation check below. onCameraSettled
+  // (MapView.tsx) publishes centre, zoom, bearing and pitch together in one
+  // batch, so by the time the bearing/pitch assertions above have passed,
+  // centre and zoom are already settled and non-empty too — no extra wait
+  // needed.
+  const centreBaseline = await mapContainer.getAttribute("data-camera-center");
+  const zoomBaseline = await mapContainer.getAttribute("data-camera-zoom");
+  if (!centreBaseline || !zoomBaseline) {
+    throw new Error(
+      "expected the map's camera to have settled after the first Northwards press",
+    );
   }
-  const centreX = mapBox.x + mapBox.width / 2;
-  const centreY = mapBox.y + mapBox.height / 2;
 
-  // MapLibre's default DragRotateHandler binds to a right-button drag
-  // (same gesture as distanceBadges.spec.ts/directionArrows.spec.ts).
-  await page.mouse.move(centreX, centreY);
-  await page.mouse.down({ button: "right" });
-  await page.mouse.move(centreX + 150, centreY - 100, { steps: 10 });
-  await page.mouse.up({ button: "right" });
+  await expect(canvas).toBeVisible();
 
-  // Proves the drag genuinely rotated the map first — otherwise the second
-  // Northwards press below would prove nothing.
+  // Deterministically establishes a genuine intervening manual rotation and
+  // tilt via MapLibre's own built-in KeyboardHandler rather than a synthetic
+  // pointer drag through DragRotateHandler. MapLibre sets tabindex="0" on
+  // the <canvas> itself (map.ts's _setupContainer), not the container div,
+  // so focus the canvas specifically; there is no isTrusted gating anywhere
+  // in this path, so a plain programmatic focus() is enough to make it
+  // document.activeElement. Shift+ArrowRight/Shift+ArrowUp each dispatch
+  // exactly one trusted keydown+keyup, which KeyboardHandler.keydown() turns
+  // into a single fixed +15°/+10° map.easeTo() call through MapLibre's own
+  // ordinary camera-animation pipeline (_prepareEase -> movestart/
+  // rotatestart -> per-frame move/rotate -> _afterEase -> rotateend ->
+  // moveend) — the same pipeline a real drag, or this app's own North-up
+  // reset above, already uses. There is no drag/inertia state machine in
+  // this path, so it cannot reproduce the DragRotateHandler stuck-gesture
+  // failure mode this test used to hit in CI (see CLAUDE.md future-backlog
+  // item 21).
+  await canvas.focus();
+  await page.keyboard.press("Shift+ArrowRight");
   await expect.poll(() => mapContainer.getAttribute("data-camera-bearing")).not.toBe("0");
+
+  // Sent only once the bearing rotation above has fully settled. Both key
+  // presses share the keyboard handler's fixed easeId ("keyboardHandler");
+  // camera.ts's easeTo/_stop/_afterEase suppress an in-flight ease's own end
+  // events when a same-id ease interrupts it, so sending this before the
+  // first one settles would make the resulting bearing/pitch
+  // non-deterministic.
+  await page.keyboard.press("Shift+ArrowUp");
+  await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).not.toBe("0");
+
+  // Real end-to-end proof of the same contract PlanningScreen.test.tsx
+  // already covers at the mock level ("a manual rotation unpresses the
+  // control") — through the real onCameraSettled production path, not a
+  // mocked map.
+  await expect(northButton).toHaveAttribute("aria-pressed", "false");
 
   await northButton.click();
   await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
+  await expect(mapContainer).toHaveAttribute("data-camera-pitch", "0");
+  await expect(northButton).toHaveAttribute("aria-pressed", "true");
+
+  // New coverage: pressing North-up preserves centre and zoom across BOTH
+  // presses (setCamera(null, null, 0, 0, ...)'s contract) — the existing
+  // "Locate me" test above only proves centre/zoom preservation for a
+  // different action.
+  const CENTRE_PRESERVED_TOLERANCE_DEGREES = 1e-4; // ~11 m — matches this file's own CENTRE_CHANGE_TOLERANCE_DEGREES magnitude, reused here as a "no meaningful change" bound
+  const centreAfter = await mapContainer.getAttribute("data-camera-center");
+  if (!centreAfter) {
+    throw new Error(
+      "expected the map's camera to have settled after the second Northwards press",
+    );
+  }
+  const [lonBaseline, latBaseline] = centreBaseline.split(",").map(Number);
+  const [lonAfter, latAfter] = centreAfter.split(",").map(Number);
+  expect(Math.abs(lonAfter - lonBaseline)).toBeLessThan(
+    CENTRE_PRESERVED_TOLERANCE_DEGREES,
+  );
+  expect(Math.abs(latAfter - latBaseline)).toBeLessThan(
+    CENTRE_PRESERVED_TOLERANCE_DEGREES,
+  );
+  // Exact-string equality is safe for zoom here, mirroring the "Locate me"
+  // test's own justification: onCameraSettled batches
+  // centre/zoom/bearing/pitch together in one publish, so once bearing/
+  // pitch have already been asserted back to "0" above, zoom is read from
+  // that same settled render.
+  expect(await mapContainer.getAttribute("data-camera-zoom")).toBe(zoomBaseline);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
@@ -899,12 +962,18 @@ test.describe("phone viewport", () => {
     expect(consoleErrors).toEqual([]);
   });
 
-  // Visual slice 5 (corrective): the same manual-rotation contract as the
+  // Visual slice 5 (corrective) + deterministic-precondition hardening
+  // (future-backlog item 21): the same manual-rotation contract as the
   // desktop "pressing Northwards twice" test above, proven again at this
   // narrower height/width — Planning's own .planning-map-container height
   // is viewport-relative (44dvh), so a rotation regression could plausibly
   // reproduce at one width and not another. Reuses this describe block's
-  // own 390×844 viewport rather than declaring a second one.
+  // own 390×844 viewport rather than declaring a second one, and the same
+  // MapLibre KeyboardHandler precondition mechanism as the desktop test
+  // (see its comments for the full rationale) rather than a synthetic
+  // pointer drag — this test's own distinguishing purpose stays the
+  // layout/overflow assertions at the end, not re-proving the centre/
+  // zoom-preservation numeric check the desktop test already covers.
   test("pressing Northwards twice on a phone viewport, with a manual rotation in between, rotates back to north both times without layout overflow", async ({
     page,
   }) => {
@@ -924,34 +993,34 @@ test.describe("phone viewport", () => {
 
     const mapContainer = page.locator('[data-testid="map-container"]');
     const mapWrapper = page.locator(".planning-map-container");
+    const canvas = mapContainer.locator("canvas");
     const northButton = page.getByRole("button", { name: "North-up, top-down view" });
     const locateButton = page.getByRole("button", { name: "Locate me" });
 
     await northButton.click();
     await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
     await expect(mapContainer).toHaveAttribute("data-camera-pitch", "0");
+    await expect(northButton).toHaveAttribute("aria-pressed", "true");
 
-    const mapBox = await mapContainer.boundingBox();
-    if (!mapBox) {
-      throw new Error("expected the map container to lay out");
-    }
-    const centreX = mapBox.x + mapBox.width / 2;
-    const centreY = mapBox.y + mapBox.height / 2;
+    await expect(canvas).toBeVisible();
 
-    // Same real right-button drag gesture as the desktop test — never a
-    // shortcut that sets the diagnostic attributes directly.
-    await page.mouse.move(centreX, centreY);
-    await page.mouse.down({ button: "right" });
-    await page.mouse.move(centreX + 100, centreY - 70, { steps: 10 });
-    await page.mouse.up({ button: "right" });
-
+    // Same deterministic MapLibre KeyboardHandler mechanism as the desktop
+    // "pressing Northwards twice" test above — see its comments for the
+    // full mechanism/root-cause-elimination rationale. Never a shortcut
+    // that sets the diagnostic attributes directly.
+    await canvas.focus();
+    await page.keyboard.press("Shift+ArrowRight");
     await expect
       .poll(() => mapContainer.getAttribute("data-camera-bearing"))
       .not.toBe("0");
+    await page.keyboard.press("Shift+ArrowUp");
+    await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).not.toBe("0");
+    await expect(northButton).toHaveAttribute("aria-pressed", "false");
 
     await northButton.click();
     await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
     await expect(mapContainer).toHaveAttribute("data-camera-pitch", "0");
+    await expect(northButton).toHaveAttribute("aria-pressed", "true");
 
     const scrollWidths = await page.evaluate(() => ({
       documentWidth: document.documentElement.scrollWidth,
