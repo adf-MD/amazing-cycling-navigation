@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 
 // Requests handled by the app's own service worker never reach
@@ -34,6 +34,90 @@ function intersects(a: Box, b: Box): boolean {
     a.y < b.y + b.height &&
     a.y + a.height > b.y
   );
+}
+
+/** Deterministically drives the map to a zoom comfortably within
+ * routeWidthPolicy.ts's "close" band (>= ROUTE_WIDTH_CLOSE_ZOOM) via
+ * MapLibre's own real, deterministic KeyboardHandler — mirrors this
+ * file's own "pressing Northwards twice" test's choice of the keyboard
+ * handler over a synthetic pointer/wheel gesture, and
+ * lowZoomLegibility.spec.ts's own near-identical zoomToBand helper
+ * (duplicated here rather than shared, matching this file's established
+ * precedent of not sharing e2e interaction helpers across spec files).
+ * Needed because a fresh session's own initial framing zoom is not
+ * guaranteed to already be in the "close" band, and the caller's own
+ * claim — that a waypoint's list badge and its map marker visually
+ * match — is only made for that band: the map marker's own *size* (never
+ * its colour) is intentionally zoom-responsive (backlog item 23), while
+ * the list badge deliberately is not.
+ *
+ * Waits for data-camera-zoom to genuinely change between presses, not
+ * merely to be non-empty: under heavy parallel CI load, sending the next
+ * Shift+= before the previous one's easeTo has actually settled reads a
+ * mid-flight tr.zoom (both presses share the fixed "keyboardHandler"
+ * easeId), under-compounding the nominal +2-per-press increment enough
+ * that 15 presses can land short of the close band — reproduced locally
+ * under sustained worker contention. Capturing the value immediately
+ * before each press and polling for a genuine change (rather than a
+ * longer timeout, a retry, or fewer/looser attempts) makes each press
+ * count its full increment before the next is sent. */
+async function zoomToCloseRange(page: Page, mapContainer: Locator): Promise<void> {
+  const canvas = mapContainer.locator("canvas");
+  await canvas.focus();
+  for (let attempt = 0; attempt < 15; attempt += 1) {
+    const band = await mapContainer.getAttribute("data-marker-zoom-band");
+    if (band === "close") return;
+    const zoomBefore = await mapContainer.getAttribute("data-camera-zoom");
+    await page.keyboard.press("Shift+=");
+    await expect
+      .poll(() => mapContainer.getAttribute("data-camera-zoom"), { timeout: 2_000 })
+      .not.toBe(zoomBefore);
+  }
+  await expect(mapContainer).toHaveAttribute("data-marker-zoom-band", "close");
+}
+
+/**
+ * Deterministically establishes a genuine manual rotation and tilt via
+ * MapLibre's own built-in KeyboardHandler rather than a synthetic pointer
+ * drag through DragRotateHandler — shared by this file's "pressing
+ * Northwards twice" test and its "Locate me" test below, both of which
+ * need the identical deterministic precondition (a plain local e2e
+ * helper, not a production test seam).
+ *
+ * MapLibre sets tabindex="0" on the <canvas> itself (map.ts's
+ * _setupContainer), not the container div, so focus the canvas
+ * specifically; there is no isTrusted gating anywhere in this path, so a
+ * plain programmatic focus() is enough to make it document.activeElement.
+ * Shift+ArrowRight/Shift+ArrowUp each dispatch exactly one trusted
+ * keydown+keyup, which KeyboardHandler.keydown() turns into a single
+ * fixed +15°/+10° map.easeTo() call through MapLibre's own ordinary
+ * camera-animation pipeline (_prepareEase -> movestart/rotatestart ->
+ * per-frame move/rotate -> _afterEase -> rotateend -> moveend) — the same
+ * pipeline a real drag, or this app's own North-up reset, already uses.
+ * There is no drag/inertia state machine in this path, so it cannot
+ * reproduce the DragRotateHandler stuck-gesture failure mode this file's
+ * own tests have hit in CI (see CLAUDE.md future-backlog item 21) —
+ * including, previously, the "Locate me" test's own former right-button
+ * diagonal drag, which used the flaky gesture for the exact same purpose
+ * this helper now serves deterministically.
+ *
+ * Shift+ArrowUp is sent only once the bearing rotation above has fully
+ * settled: both key presses share the keyboard handler's fixed easeId
+ * ("keyboardHandler"), and camera.ts's easeTo/_stop/_afterEase suppress
+ * an in-flight ease's own end events when a same-id ease interrupts it,
+ * so sending it earlier would make the resulting bearing/pitch
+ * non-deterministic.
+ */
+async function establishManualRotationAndPitch(
+  page: Page,
+  mapContainer: Locator,
+): Promise<void> {
+  const canvas = mapContainer.locator("canvas");
+  await canvas.focus();
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect.poll(() => mapContainer.getAttribute("data-camera-bearing")).not.toBe("0");
+  await page.keyboard.press("Shift+ArrowUp");
+  await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).not.toBe("0");
 }
 
 // MapView.tsx's POSITION_LAYER_ID paint colour for the current-location dot.
@@ -624,33 +708,11 @@ test("pressing Northwards twice, with a manual rotation in between, rotates back
   await expect(canvas).toBeVisible();
 
   // Deterministically establishes a genuine intervening manual rotation and
-  // tilt via MapLibre's own built-in KeyboardHandler rather than a synthetic
-  // pointer drag through DragRotateHandler. MapLibre sets tabindex="0" on
-  // the <canvas> itself (map.ts's _setupContainer), not the container div,
-  // so focus the canvas specifically; there is no isTrusted gating anywhere
-  // in this path, so a plain programmatic focus() is enough to make it
-  // document.activeElement. Shift+ArrowRight/Shift+ArrowUp each dispatch
-  // exactly one trusted keydown+keyup, which KeyboardHandler.keydown() turns
-  // into a single fixed +15°/+10° map.easeTo() call through MapLibre's own
-  // ordinary camera-animation pipeline (_prepareEase -> movestart/
-  // rotatestart -> per-frame move/rotate -> _afterEase -> rotateend ->
-  // moveend) — the same pipeline a real drag, or this app's own North-up
-  // reset above, already uses. There is no drag/inertia state machine in
-  // this path, so it cannot reproduce the DragRotateHandler stuck-gesture
-  // failure mode this test used to hit in CI (see CLAUDE.md future-backlog
-  // item 21).
-  await canvas.focus();
-  await page.keyboard.press("Shift+ArrowRight");
-  await expect.poll(() => mapContainer.getAttribute("data-camera-bearing")).not.toBe("0");
-
-  // Sent only once the bearing rotation above has fully settled. Both key
-  // presses share the keyboard handler's fixed easeId ("keyboardHandler");
-  // camera.ts's easeTo/_stop/_afterEase suppress an in-flight ease's own end
-  // events when a same-id ease interrupts it, so sending this before the
-  // first one settles would make the resulting bearing/pitch
-  // non-deterministic.
-  await page.keyboard.press("Shift+ArrowUp");
-  await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).not.toBe("0");
+  // tilt via MapLibre's own built-in KeyboardHandler — see
+  // establishManualRotationAndPitch's own doc comment for the full
+  // mechanism and why it cannot reproduce DragRotateHandler's CI-only
+  // stuck-gesture failure mode (CLAUDE.md future-backlog item 21).
+  await establishManualRotationAndPitch(page, mapContainer);
 
   // Real end-to-end proof of the same contract PlanningScreen.test.tsx
   // already covers at the mock level ("a manual rotation unpresses the
@@ -728,84 +790,45 @@ test("Locate me recentres without disturbing live zoom, bearing or pitch", async
     page.getByText("Your location could not be determined."),
   ).not.toBeVisible();
 
-  const mapBox = await mapContainer.boundingBox();
-  if (!mapBox) {
-    throw new Error("expected the map container to lay out");
-  }
-  const centreX = mapBox.x + mapBox.width / 2;
-  const centreY = mapBox.y + mapBox.height / 2;
-
-  // A real diagonal right-button drag rotates and pitches simultaneously
-  // (MapLibre's DragRotateHandler drives bearing from the horizontal
-  // component and pitch from the vertical one), reaching non-round live
-  // values — never ones Locate me could accidentally reproduce.
-  await page.mouse.move(centreX, centreY);
-  await page.mouse.down({ button: "right" });
-  await page.mouse.move(centreX + 120, centreY - 100, { steps: 10 });
-  await page.mouse.up({ button: "right" });
-
-  // MapView only republishes data-camera-* once its onCameraSettled handler
-  // fires and React re-renders (see MapView.tsx) — reading these attributes
-  // immediately after mouse.up can race ahead of that publish and observe a
-  // stale pre-gesture value. Poll until both are genuinely away from zero,
-  // using a numeric tolerance rather than a string compare, before trusting
-  // them as this gesture's settled result. A longer-than-default poll
-  // timeout is deliberate here (not a global change — every other
-  // assertion in this file keeps Playwright's default): under heavy
-  // parallel load, real WebGL settling was observed to occasionally take
-  // longer than the default 5 s while still genuinely completing, so this
-  // widens the budget for that one observable condition rather than
-  // guessing at a fixed delay.
-  const AWAY_FROM_ZERO_TOLERANCE_DEGREES = 0.5;
-  const CAMERA_SETTLE_POLL_TIMEOUT_MS = 15_000;
-  const isAwayFromZero = (value: string | null): boolean => {
-    if (value === null) return false;
-    const parsed = Number.parseFloat(value);
-    return Number.isFinite(parsed) && Math.abs(parsed) > AWAY_FROM_ZERO_TOLERANCE_DEGREES;
-  };
-  await expect
-    .poll(
-      async () => {
-        const bearing = await mapContainer.getAttribute("data-camera-bearing");
-        const pitch = await mapContainer.getAttribute("data-camera-pitch");
-        return isAwayFromZero(bearing) && isAwayFromZero(pitch);
-      },
-      { timeout: CAMERA_SETTLE_POLL_TIMEOUT_MS },
-    )
-    .toBe(true);
+  // Deterministically establishes a genuine manual rotation and tilt via
+  // MapLibre's own built-in KeyboardHandler — see
+  // establishManualRotationAndPitch's own doc comment. Replaces a former
+  // synthetic right-button diagonal drag through DragRotateHandler, which
+  // was this test's own instance of the documented CI-only stuck-gesture
+  // flake (CLAUDE.md future-backlog item 21): a real drag can, rarely and
+  // environment-sensitively, never fire the rotate/pitch end events the
+  // poll below waited on, timing the whole test out.
+  await establishManualRotationAndPitch(page, mapContainer);
 
   const centreBeforePan = await mapContainer.getAttribute("data-camera-center");
 
-  // A left-button pan, moving the centre well away from the GPS fix —
-  // deterministic proof (independent of any wheel-zoom pivot behaviour)
-  // that the later recentre genuinely has something to correct.
-  await page.mouse.move(centreX, centreY);
-  await page.mouse.down();
-  await page.mouse.move(centreX + 150, centreY + 100, { steps: 10 });
-  await page.mouse.up();
+  // Deterministically pans the centre via MapLibre's own KeyboardHandler
+  // (an unmodified arrow key) instead of a synthetic left-button pointer
+  // drag — the same rationale as establishManualRotationAndPitch, and it
+  // removes this test's second, independent gesture-state dependency
+  // while retaining the same real purpose: moving the centre well away
+  // from the GPS fix, so the later recentre genuinely has something to
+  // correct. An unmodified ArrowRight leaves bearingDir/pitchDir/zoomDir
+  // all at 0 (only Shift sets bearingDir/pitchDir, only +/- sets zoomDir
+  // — keyboard.ts's keydown()), so its easeTo call pans via a 100px
+  // screen-space offset while carrying tr.bearing/tr.pitch/tr.zoom
+  // straight through unchanged — exactly the rotation/tilt
+  // establishManualRotationAndPitch just settled, still intact once this
+  // pan itself settles.
+  await page.keyboard.press("ArrowRight");
 
-  // Same race as above, for the pan: wait for the published centre to
-  // genuinely move away from its pre-pan value, and confirm the rotate/
-  // pitch gesture's result is still present in that same settled read,
-  // before capturing the baseline Locate me must preserve. Same widened,
-  // per-assertion poll timeout as above, for the same reason.
   const CENTRE_CHANGE_TOLERANCE_DEGREES = 1e-4; // ~11 m — far above Mercator round-trip noise, comfortably below a real pan
   await expect
-    .poll(
-      async () => {
-        const centre = await mapContainer.getAttribute("data-camera-center");
-        const bearing = await mapContainer.getAttribute("data-camera-bearing");
-        const pitch = await mapContainer.getAttribute("data-camera-pitch");
-        if (!centre || !centreBeforePan) return false;
-        const [lon, lat] = centre.split(",").map(Number);
-        const [prevLon, prevLat] = centreBeforePan.split(",").map(Number);
-        const centreChanged =
-          Math.abs(lon - prevLon) > CENTRE_CHANGE_TOLERANCE_DEGREES ||
-          Math.abs(lat - prevLat) > CENTRE_CHANGE_TOLERANCE_DEGREES;
-        return centreChanged && isAwayFromZero(bearing) && isAwayFromZero(pitch);
-      },
-      { timeout: CAMERA_SETTLE_POLL_TIMEOUT_MS },
-    )
+    .poll(async () => {
+      const centre = await mapContainer.getAttribute("data-camera-center");
+      if (!centre || !centreBeforePan) return false;
+      const [lon, lat] = centre.split(",").map(Number);
+      const [prevLon, prevLat] = centreBeforePan.split(",").map(Number);
+      return (
+        Math.abs(lon - prevLon) > CENTRE_CHANGE_TOLERANCE_DEGREES ||
+        Math.abs(lat - prevLat) > CENTRE_CHANGE_TOLERANCE_DEGREES
+      );
+    })
     .toBe(true);
 
   const zoomBefore = await mapContainer.getAttribute("data-camera-zoom");
@@ -1085,6 +1108,12 @@ test.describe("phone viewport", () => {
     await expect(
       page.getByRole("button", { name: "Waypoint 3", exact: true }),
     ).toBeVisible();
+
+    // This test's own claim (badge visually matches marker) holds only in
+    // the map marker's "close" zoom band — see zoomToCloseRange's own doc
+    // comment. A fresh session's initial framing zoom is not guaranteed to
+    // already be in that band.
+    await zoomToCloseRange(page, mapContainer);
 
     // borderTopLeftRadius is compared as its own literal computed-style
     // string (e.g. "50%"/"40%"), not resolved against each element's own

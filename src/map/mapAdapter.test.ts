@@ -393,6 +393,47 @@ describe("MapLibreAdapter", () => {
     });
   });
 
+  describe("addLineLayer with a zoom-interpolated line width", () => {
+    it("builds a linear zoom-interpolate expression from the given stops", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+
+      adapter.addLineLayer("route", "route-source", {
+        lineColor: "#0a5f38",
+        lineWidth: {
+          stops: [
+            { zoom: 6, width: 2 },
+            { zoom: 11, width: 3.25 },
+            { zoom: 15, width: 5 },
+          ],
+        },
+      });
+
+      const [call] = fake.addLayer.mock.calls as [[{ paint: Record<string, unknown> }]];
+      expect(call[0].paint["line-width"]).toEqual([
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        6,
+        2,
+        11,
+        3.25,
+        15,
+        5,
+      ]);
+    });
+
+    it("leaves every existing plain-number lineWidth call site unaffected", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+
+      adapter.addLineLayer("solid", "source-a", { lineColor: "#0a5f38", lineWidth: 5 });
+
+      const [call] = fake.addLayer.mock.calls as [[{ paint: Record<string, unknown> }]];
+      expect(call[0].paint["line-width"]).toBe(5);
+    });
+  });
+
   describe("addImage", () => {
     it("passes the image through unchanged with a default pixelRatio of 1 and sdf false", () => {
       const fake = buildFakeMapLibreMap();

@@ -116,9 +116,28 @@ export interface DataDrivenLineColor {
   fallback: string;
 }
 
+/** One (zoom, width) stop of a zoom-`interpolate` line-width expression.
+ * Zoom values must be strictly ascending across a given
+ * ZoomInterpolatedLineWidth's stops. */
+export interface ZoomWidthStop {
+  zoom: number;
+  width: number;
+}
+
+/** A MapLibre zoom-`interpolate` line-width expression: linear
+ * interpolation over an ordered list of ≥2 (zoom, width) stops.
+ * Deliberately only linear interpolation over explicit stops, not
+ * MapLibre's full expression language — mirrors DataDrivenLineColor's own
+ * narrow, purpose-built convention above. See src/map/routeWidthPolicy.ts
+ * for the actual stop values used by every route/warning layer; this type
+ * is policy-free. */
+export interface ZoomInterpolatedLineWidth {
+  stops: readonly ZoomWidthStop[];
+}
+
 export interface LineLayerPaint {
   lineColor: string | DataDrivenLineColor;
-  lineWidth: number;
+  lineWidth: number | ZoomInterpolatedLineWidth;
   lineOpacity?: number;
   /** Omit for a solid line (the existing route layers never pass this —
    * their rendering is unaffected). Used for Planning's unrouted-preview
@@ -497,6 +516,20 @@ export class MapLibreAdapter implements MapLibreLike {
             ...Object.entries(paint.lineColor.cases).flat(),
             paint.lineColor.fallback,
           ];
+    // Same loosely-typed-cast convention as lineColor above: a
+    // ZoomInterpolatedLineWidth becomes a native MapLibre `interpolate`
+    // expression, evaluated by MapLibre itself on every render frame — no
+    // React state or effect is involved in route width at all (see
+    // routeWidthPolicy.ts).
+    const lineWidth: number | unknown[] =
+      typeof paint.lineWidth === "number"
+        ? paint.lineWidth
+        : [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            ...paint.lineWidth.stops.flatMap((stop) => [stop.zoom, stop.width]),
+          ];
     this.map.addLayer({
       id,
       type: "line",
@@ -504,7 +537,7 @@ export class MapLibreAdapter implements MapLibreLike {
       layout: { "line-join": "round", "line-cap": "round" },
       paint: {
         "line-color": lineColor as string,
-        "line-width": paint.lineWidth,
+        "line-width": lineWidth as number,
         "line-opacity": paint.lineOpacity ?? 1,
         ...(paint.lineDasharray ? { "line-dasharray": paint.lineDasharray } : {}),
       },

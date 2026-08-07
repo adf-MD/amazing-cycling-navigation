@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   buildUnroutedPreviewFeatureCollection,
   buildWaypointMarkerSpecs,
+  deriveMarkerZoomBand,
   deriveWaypointRoles,
   type PlanningOverlayWaypoint,
 } from "./planningLayer.ts";
 import type { Coordinate } from "../domain/types.ts";
 import { haversineDistanceMetres } from "../navigation/distance.ts";
+import { ROUTE_WIDTH_CLOSE_ZOOM, ROUTE_WIDTH_REGIONAL_ZOOM } from "./routeWidthPolicy.ts";
 
 const waypoints: PlanningOverlayWaypoint[] = [
   { id: "a", coordinate: [0, 51] },
@@ -241,5 +243,27 @@ describe("buildUnroutedPreviewFeatureCollection", () => {
   it("returns no features for fewer than two coordinates", () => {
     expect(buildUnroutedPreviewFeatureCollection([]).features).toEqual([]);
     expect(buildUnroutedPreviewFeatureCollection([[0, 51]]).features).toEqual([]);
+  });
+});
+
+describe("deriveMarkerZoomBand", () => {
+  it("resolves to close at and above ROUTE_WIDTH_CLOSE_ZOOM", () => {
+    expect(deriveMarkerZoomBand(ROUTE_WIDTH_CLOSE_ZOOM)).toBe("close");
+    expect(deriveMarkerZoomBand(ROUTE_WIDTH_CLOSE_ZOOM + 3)).toBe("close");
+  });
+
+  it("resolves to regional just below ROUTE_WIDTH_CLOSE_ZOOM, down to ROUTE_WIDTH_REGIONAL_ZOOM", () => {
+    expect(deriveMarkerZoomBand(ROUTE_WIDTH_CLOSE_ZOOM - 0.1)).toBe("regional");
+    expect(deriveMarkerZoomBand(ROUTE_WIDTH_REGIONAL_ZOOM)).toBe("regional");
+  });
+
+  it("resolves to overview below ROUTE_WIDTH_REGIONAL_ZOOM", () => {
+    expect(deriveMarkerZoomBand(ROUTE_WIDTH_REGIONAL_ZOOM - 0.1)).toBe("overview");
+    expect(deriveMarkerZoomBand(0)).toBe("overview");
+  });
+
+  it("resolves a non-finite zoom (no camera settle yet) to close — today's unchanged full-size appearance", () => {
+    expect(deriveMarkerZoomBand(Number.NaN)).toBe("close");
+    expect(deriveMarkerZoomBand(Number.POSITIVE_INFINITY)).toBe("close");
   });
 });

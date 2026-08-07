@@ -17,13 +17,25 @@ import { clearErrorLog, getRecentErrors } from "../platform/errorLog.ts";
 import { clearMapDiagnostics, getRecentMapAttempts } from "./mapDiagnostics.ts";
 import type { Coordinate, RoutePoint, RouteWarning } from "../domain/types.ts";
 import type { ClassifiedSegment } from "../navigation/gradient.ts";
-import type { ClimbFeature, RouteFeature } from "../navigation/routeFeatures.ts";
+import type {
+  ClimbFeature,
+  DescentFeature,
+  RouteFeature,
+} from "../navigation/routeFeatures.ts";
 import {
   MICRO_DETAIL_COLOURS,
   ROUTE_FEATURE_COLOURS,
   UNREACHABLE_FALLBACK_COLOUR,
   type MicroDetailVisualKey,
 } from "../navigation/routeFeaturePalette.ts";
+import type { ZoomInterpolatedLineWidth } from "./mapAdapter.ts";
+import {
+  legibleWidthStops,
+  recedingWidthStops,
+  ROUTE_WIDTH_CLOSE_ZOOM,
+  ROUTE_WIDTH_OVERVIEW_ZOOM,
+  ROUTE_WIDTH_REGIONAL_ZOOM,
+} from "./routeWidthPolicy.ts";
 
 const points: RoutePoint[] = [
   { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
@@ -311,6 +323,35 @@ function lastCallFirstArg<T>(spy: { mock: { calls: [T][] } }): T {
     throw new Error("expected the spy to have been called at least once");
   }
   return lastCall[0];
+}
+
+/** Every route/warning/preview lineWidth is now a ZoomInterpolatedLineWidth
+ * (routeWidthPolicy.ts) rather than a plain number — this extracts the
+ * close-zoom (ROUTE_WIDTH_CLOSE_ZOOM) stop, which by construction always
+ * equals the width this layer used before backlog item 23, so every
+ * existing "compare today's widths" assertion keeps working unchanged in
+ * spirit. Throws for a plain number (every real call site is now
+ * zoom-interpolated) or a stop list missing the close-zoom stop. */
+function closeZoomWidth(lineWidth: number | ZoomInterpolatedLineWidth): number {
+  if (typeof lineWidth === "number") {
+    throw new Error("expected a ZoomInterpolatedLineWidth, got a plain number");
+  }
+  const closeStop = lineWidth.stops.find((stop) => stop.zoom === ROUTE_WIDTH_CLOSE_ZOOM);
+  if (!closeStop) {
+    throw new Error("expected a stop at ROUTE_WIDTH_CLOSE_ZOOM");
+  }
+  return closeStop.width;
+}
+
+function widthAt(lineWidth: number | ZoomInterpolatedLineWidth, zoom: number): number {
+  if (typeof lineWidth === "number") {
+    throw new Error("expected a ZoomInterpolatedLineWidth, got a plain number");
+  }
+  const stop = lineWidth.stops.find((candidate) => candidate.zoom === zoom);
+  if (!stop) {
+    throw new Error(`expected a stop at zoom ${String(zoom)}`);
+  }
+  return stop.width;
 }
 
 beforeEach(() => {
@@ -2854,6 +2895,292 @@ describe("MapView", () => {
     });
   });
 
+  describe("zoom-responsive route width policy (backlog item 23)", () => {
+    function climbFeature(
+      startDistanceMetres: number,
+      endDistanceMetres: number,
+    ): ClimbFeature {
+      return {
+        id: `climb-${String(startDistanceMetres)}`,
+        kind: "climb",
+        startDistanceMetres,
+        endDistanceMetres,
+        lengthMetres: endDistanceMetres - startDistanceMetres,
+        elevationGainMetres: 40,
+        averageGradientPercent: 6,
+        maxGradientPercent: 8,
+        climbScore: 20000,
+        category: "category-3",
+      };
+    }
+
+    function descentFeature(
+      startDistanceMetres: number,
+      endDistanceMetres: number,
+    ): DescentFeature {
+      return {
+        id: `descent-${String(startDistanceMetres)}`,
+        kind: "descent",
+        startDistanceMetres,
+        endDistanceMetres,
+        lengthMetres: endDistanceMetres - startDistanceMetres,
+        elevationLossMetres: 40,
+        averageGradientPercent: -7,
+        maxGradientPercent: -9,
+        band: "steep",
+      };
+    }
+
+    function paintFor(mock: MockMapHandle, layerId: string) {
+      const call = mock.addLineLayerSpy.mock.calls.find(([id]) => id === layerId) as
+        [string, string, { lineWidth: number | ZoomInterpolatedLineWidth }] | undefined;
+      const lineWidth = call?.[2].lineWidth;
+      if (lineWidth === undefined) {
+        throw new Error(`expected addLineLayer to have been called for ${layerId}`);
+      }
+      return lineWidth;
+    }
+
+    it("every route/warning/preview layer's paint uses the real routeWidthPolicy stops, not a hardcoded value", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      expect(paintFor(mock, "acn-route-remaining-line")).toEqual(legibleWidthStops(5));
+      expect(paintFor(mock, "acn-route-completed-line")).toEqual(legibleWidthStops(5));
+      expect(paintFor(mock, "acn-route-feature-selected-line")).toEqual(
+        legibleWidthStops(9),
+      );
+      expect(paintFor(mock, "acn-route-feature-line")).toEqual(recedingWidthStops(5));
+      expect(paintFor(mock, "acn-route-gradient-line")).toEqual(recedingWidthStops(5));
+      expect(paintFor(mock, "acn-warning-selected-line")).toEqual(legibleWidthStops(13));
+      expect(paintFor(mock, "acn-warning-unknown-surface-line")).toEqual(
+        legibleWidthStops(8),
+      );
+      expect(paintFor(mock, "acn-warning-other-line")).toEqual(legibleWidthStops(9));
+      expect(paintFor(mock, "acn-warning-ferry-line")).toEqual(legibleWidthStops(9));
+      expect(paintFor(mock, "acn-warning-questionable-surface-line")).toEqual(
+        legibleWidthStops(9),
+      );
+      expect(paintFor(mock, "acn-warning-unsuitable-surface-line")).toEqual(
+        legibleWidthStops(10),
+      );
+      expect(paintFor(mock, "acn-warning-obstacle-line")).toEqual(legibleWidthStops(10));
+      expect(paintFor(mock, "acn-planning-preview-line")).toEqual(legibleWidthStops(4));
+    });
+
+    it("resolves the unchanged, close-zoom-only width at ROUTE_WIDTH_CLOSE_ZOOM for the base route casing", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      expect(closeZoomWidth(paintFor(mock, "acn-route-remaining-line"))).toBe(5);
+      expect(closeZoomWidth(paintFor(mock, "acn-route-feature-line"))).toBe(5);
+    });
+
+    it("the base casing stays wider than or equal to the macro overlay at every stop, and strictly wider at overview/regional", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      const casing = paintFor(mock, "acn-route-remaining-line");
+      const overlay = paintFor(mock, "acn-route-feature-line");
+      expect(widthAt(casing, ROUTE_WIDTH_OVERVIEW_ZOOM)).toBeGreaterThan(
+        widthAt(overlay, ROUTE_WIDTH_OVERVIEW_ZOOM),
+      );
+      expect(widthAt(casing, ROUTE_WIDTH_REGIONAL_ZOOM)).toBeGreaterThan(
+        widthAt(overlay, ROUTE_WIDTH_REGIONAL_ZOOM),
+      );
+      // Close zoom: the two families coincide exactly — today's unchanged
+      // appearance, no visible casing ring.
+      expect(widthAt(casing, ROUTE_WIDTH_CLOSE_ZOOM)).toBe(
+        widthAt(overlay, ROUTE_WIDTH_CLOSE_ZOOM),
+      );
+    });
+
+    it("resolves identical route/warning/preview widths for Planning and Riding at the same zoom, by construction", () => {
+      const planningMock = createMockMapFactory();
+      render(
+        <MapView
+          points={points}
+          mapFactory={planningMock.factory}
+          planningOverlay={{
+            waypoints: [
+              { id: "a", coordinate: [0, 51] },
+              { id: "b", coordinate: [0.001, 51] },
+            ],
+            previewCoordinates: [],
+            selectedWaypointIndex: null,
+            onMapTap: vi.fn(),
+          }}
+        />,
+      );
+      planningMock.triggerLoad();
+
+      const ridingMock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={ridingMock.factory} />);
+      ridingMock.triggerLoad();
+
+      for (const layerId of [
+        "acn-route-remaining-line",
+        "acn-route-completed-line",
+        "acn-route-feature-line",
+        "acn-route-gradient-line",
+        "acn-warning-selected-line",
+        "acn-planning-preview-line",
+      ]) {
+        expect(paintFor(planningMock, layerId)).toEqual(paintFor(ridingMock, layerId));
+      }
+    });
+
+    it("never alters classified route-feature/gradient source data across a zoom change", () => {
+      const mock = createMockMapFactory();
+      const features: RouteFeature[] = [climbFeature(0, 200), descentFeature(200, 400)];
+      render(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          routeFeatureOverlay={{
+            features,
+            selectedFeatureId: features[0]?.id ?? null,
+            onSelectRouteFeature: vi.fn(),
+          }}
+        />,
+      );
+      mock.triggerLoad();
+
+      const atClose = JSON.stringify(mock.sources.get("acn-route-feature"));
+      const selectedAtClose = JSON.stringify(
+        mock.sources.get("acn-route-feature-selected"),
+      );
+
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: ROUTE_WIDTH_REGIONAL_ZOOM,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: ROUTE_WIDTH_OVERVIEW_ZOOM,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      expect(JSON.stringify(mock.sources.get("acn-route-feature"))).toBe(atClose);
+      expect(JSON.stringify(mock.sources.get("acn-route-feature-selected"))).toBe(
+        selectedAtClose,
+      );
+    });
+
+    it("retains both a recognised climb and a recognised descent at full-route (overview) zoom", () => {
+      const mock = createMockMapFactory();
+      const features: RouteFeature[] = [climbFeature(0, 200), descentFeature(200, 400)];
+      render(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          routeFeatureOverlay={{
+            features,
+            selectedFeatureId: null,
+            onSelectRouteFeature: vi.fn(),
+          }}
+        />,
+      );
+      mock.triggerLoad();
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: ROUTE_WIDTH_OVERVIEW_ZOOM,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      const collectionFeatures = mock.sources.get("acn-route-feature")?.features ?? [];
+      expect(collectionFeatures).toHaveLength(2);
+      expect(
+        collectionFeatures.map(
+          (feature) => (feature.properties as { visualKey?: string } | null)?.visualKey,
+        ),
+      ).toEqual(["category-3", "steep"]);
+    });
+
+    it("still adds every route/warning/preview layer, with the same zoom-interpolated paint, on the local fallback style", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+
+      expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+      expect(paintFor(mock, "acn-route-remaining-line")).toEqual(legibleWidthStops(5));
+      expect(paintFor(mock, "acn-route-feature-line")).toEqual(recedingWidthStops(5));
+    });
+
+    it("scales the map container's own data-marker-zoom-band attribute across close, regional and overview zoom, and back", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      const container = screen.getByTestId("map-container");
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: ROUTE_WIDTH_CLOSE_ZOOM,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      expect(container).toHaveAttribute("data-marker-zoom-band", "close");
+
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: ROUTE_WIDTH_OVERVIEW_ZOOM,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      expect(container).toHaveAttribute("data-marker-zoom-band", "overview");
+
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: ROUTE_WIDTH_CLOSE_ZOOM,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      expect(container).toHaveAttribute("data-marker-zoom-band", "close");
+    });
+
+    it("does not rebuild waypoint markers on a zoom-only camera settle", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          planningOverlay={{
+            waypoints: [
+              { id: "a", coordinate: [0, 51] },
+              { id: "b", coordinate: [0.001, 51] },
+            ],
+            previewCoordinates: [],
+            selectedWaypointIndex: null,
+            onMapTap: vi.fn(),
+          }}
+        />,
+      );
+      mock.triggerLoad();
+
+      const callCountBeforeZoom = mock.setMarkersSpy.mock.calls.length;
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: ROUTE_WIDTH_OVERVIEW_ZOOM,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      expect(mock.setMarkersSpy.mock.calls.length).toBe(callCountBeforeZoom);
+    });
+  });
+
   describe("warningOverlay", () => {
     const warnings: RouteWarning[] = [
       {
@@ -2905,7 +3232,11 @@ describe("MapView", () => {
       const calls = mock.addLineLayerSpy.mock.calls as [
         string,
         string,
-        { lineColor: string; lineWidth: number; lineDasharray?: number[] },
+        {
+          lineColor: string;
+          lineWidth: number | ZoomInterpolatedLineWidth;
+          lineDasharray?: number[];
+        },
       ][];
       const paintFor = (layerId: string) => calls.find(([id]) => id === layerId)?.[2];
 
@@ -2915,12 +3246,17 @@ describe("MapView", () => {
         JSON.stringify(paintFor(id)?.lineDasharray),
       );
       expect(new Set(dasharrays).size).toBe(layerIds.length);
-      // Selected is solid (no dasharray) and wider than every category.
+      // Selected is solid (no dasharray) and wider than every category, at
+      // the unchanged close-zoom width (see closeZoomWidth's own doc
+      // comment) — the zoom-responsive width policy (backlog item 23)
+      // scales every warning layer by the same shared multiplier family,
+      // so this relative ordering holds at every zoom, not just close.
       const selectedPaint = paintFor("acn-warning-selected-line");
       expect(selectedPaint?.lineDasharray).toBeUndefined();
       for (const categoryLayerId of layerIds.slice(0, -1)) {
-        expect(selectedPaint?.lineWidth).toBeGreaterThan(
-          paintFor(categoryLayerId)?.lineWidth ?? 0,
+        const categoryWidth = paintFor(categoryLayerId)?.lineWidth;
+        expect(closeZoomWidth(selectedPaint?.lineWidth ?? 0)).toBeGreaterThan(
+          categoryWidth === undefined ? 0 : closeZoomWidth(categoryWidth),
         );
       }
     });

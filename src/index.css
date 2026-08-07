@@ -592,6 +592,59 @@ button:focus-visible {
     0 1px 3px rgb(0 0 0 / 45%);
 }
 
+/* Zoom-responsive visual size (CLAUDE.md backlog item 23) — driven purely
+ * by the map container's own data-marker-zoom-band attribute (MapView.tsx,
+ * fed from the same settled/quantised zoom as the distance badges;
+ * planningLayer.ts's deriveMarkerZoomBand chooses the band), never a
+ * per-marker React re-render, effect or DOM rebuild — only this
+ * attribute changes on zoom, and the cascade does the rest. Visual size
+ * only: pointer-events stays none at every band exactly as above, so
+ * this purely decorative marker never doubles as a shrinking touch
+ * target — WaypointList's own rows remain the sole, unaffected >=44x44px
+ * waypoint-selection surface at every zoom. Start, selected and every
+ * ordinal number stay individually legible and shape-distinguishable at
+ * both reduced bands — nothing is clustered or replaced with an
+ * aggregate marker. */
+.map-canvas-host[data-marker-zoom-band="regional"] .planning-waypoint-marker {
+  min-width: 20px;
+  min-height: 20px;
+  padding: 0 3px;
+  font-size: 0.62rem;
+}
+
+.map-canvas-host[data-marker-zoom-band="regional"]
+  .planning-waypoint-marker--start-finish {
+  padding: 0 4px;
+}
+
+.map-canvas-host[data-marker-zoom-band="overview"] .planning-waypoint-marker {
+  min-width: 16px;
+  min-height: 16px;
+  padding: 0 2px;
+  font-size: 0.55rem;
+  border-width: 1px;
+}
+
+.map-canvas-host[data-marker-zoom-band="overview"] .planning-waypoint-marker--finish,
+.map-canvas-host[data-marker-zoom-band="overview"]
+  .planning-waypoint-marker--start-finish {
+  border-width: 2px;
+}
+
+.map-canvas-host[data-marker-zoom-band="overview"]
+  .planning-waypoint-marker--start-finish {
+  padding: 0 3px;
+}
+
+/* A narrower ring at the smallest band, so the selection cue stays
+ * proportionate rather than dominating a marker this small — still a
+ * distinct outer ring, never a colour-only change. */
+.map-canvas-host[data-marker-zoom-band="overview"] .planning-waypoint-marker--selected {
+  box-shadow:
+    0 0 0 2px #d32f2f,
+    0 1px 3px rgb(0 0 0 / 45%);
+}
+
 /* Route-distance kilometre badges — plain DOM elements (see
  * src/map/distanceBadgeMarkerElement.ts), never a MapLibre symbol/text
  * layer, so the numeric label has no glyph/sprite dependency and still

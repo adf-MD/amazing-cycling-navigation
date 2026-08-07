@@ -821,10 +821,19 @@ describe("PlanningScreen", () => {
         />,
       );
       map.triggerLoad();
-      await addWaypointViaCrosshair(map, user, [0, 51]);
+
+      // Wait for the initial automatic location request (fired only for a
+      // genuinely fresh session with zero waypoints) to have actually
+      // occurred and resolved before adding a waypoint. Without this,
+      // adding the waypoint could race the effect that gates on "no
+      // waypoints yet", non-deterministically suppressing the automatic
+      // call altogether and leaving toHaveBeenCalledTimes(1) below flaky
+      // under load.
       await waitFor(() => {
         expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
       });
+
+      await addWaypointViaCrosshair(map, user, [0, 51]);
 
       requestApproximateLocation.mockResolvedValueOnce([-1.5, 53.8]);
       await user.click(screen.getByRole("button", { name: "Locate me" }));

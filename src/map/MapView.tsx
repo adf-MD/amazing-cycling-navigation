@@ -41,12 +41,14 @@ import {
 import {
   buildUnroutedPreviewFeatureCollection,
   buildWaypointMarkerSpecs,
+  deriveMarkerZoomBand,
   type PlanningOverlayWaypoint,
 } from "./planningLayer.ts";
 import {
   buildDistanceBadgeMarkerSpecs,
   selectDistanceBadgeIntervalMetres,
 } from "./distanceBadgeLayer.ts";
+import { legibleWidthStops, recedingWidthStops } from "./routeWidthPolicy.ts";
 import {
   buildSelectedWarningFeatureCollection,
   buildWarningFeatureCollectionsByCategory,
@@ -79,7 +81,9 @@ const ROUTE_FEATURE_SELECTED_LAYER_ID = "acn-route-feature-selected-line";
  * GRADIENT_LINE_WIDTH — see the layer-order comment in
  * addRouteAndPositionLayers for why this is added before (and is
  * overridden within its own range by) the micro gradient layer, and
- * before the whole warning group. */
+ * before the whole warning group. Kept as a plain close-zoom reference
+ * value; recedingWidthStops (routeWidthPolicy.ts) is applied at the
+ * addLineLayer call site below. */
 const ROUTE_FEATURE_LAYER_WIDTH = 5;
 /** Reuses the same "black = selected" visual language as
  * WARNING_SELECTED_PAINT, at a width between the climb/descent layers'
@@ -88,7 +92,7 @@ const ROUTE_FEATURE_LAYER_WIDTH = 5;
  * stay visually secondary to an actual selected warning. */
 const ROUTE_FEATURE_SELECTED_PAINT: LineLayerPaint = {
   lineColor: "#000000",
-  lineWidth: 9,
+  lineWidth: legibleWidthStops(9),
 };
 /** The only layer id ever passed to queryTopRouteFeatureAt — mirrors
  * WARNING_CATEGORY_LAYER_IDS's own array-of-queryable-ids convention,
@@ -143,20 +147,44 @@ const WARNING_CATEGORY_LAYER_IDS: readonly string[] =
  * of them (see addRouteAndPositionLayers), so a warned section's dashed
  * edges stay visible on both sides of the centre. */
 const WARNING_CATEGORY_PAINT: Readonly<Record<WarningCategory, LineLayerPaint>> = {
-  "unknown-surface": { lineColor: "#5f6368", lineWidth: 8, lineDasharray: [1, 3] },
-  other: { lineColor: "#455a64", lineWidth: 9, lineDasharray: [2, 2, 6, 2] },
-  ferry: { lineColor: "#0d47a1", lineWidth: 9, lineDasharray: [8, 4] },
-  "questionable-surface": { lineColor: "#f2a900", lineWidth: 9, lineDasharray: [4, 2] },
-  "unsuitable-surface": { lineColor: "#d32f2f", lineWidth: 10, lineDasharray: [6, 2] },
-  obstacle: { lineColor: "#7b1fa2", lineWidth: 10, lineDasharray: [1, 1, 5, 1] },
+  "unknown-surface": {
+    lineColor: "#5f6368",
+    lineWidth: legibleWidthStops(8),
+    lineDasharray: [1, 3],
+  },
+  other: {
+    lineColor: "#455a64",
+    lineWidth: legibleWidthStops(9),
+    lineDasharray: [2, 2, 6, 2],
+  },
+  ferry: { lineColor: "#0d47a1", lineWidth: legibleWidthStops(9), lineDasharray: [8, 4] },
+  "questionable-surface": {
+    lineColor: "#f2a900",
+    lineWidth: legibleWidthStops(9),
+    lineDasharray: [4, 2],
+  },
+  "unsuitable-surface": {
+    lineColor: "#d32f2f",
+    lineWidth: legibleWidthStops(10),
+    lineDasharray: [6, 2],
+  },
+  obstacle: {
+    lineColor: "#7b1fa2",
+    lineWidth: legibleWidthStops(10),
+    lineDasharray: [1, 1, 5, 1],
+  },
 };
 /** Solid (no dash) and wider than any category above — an outer focus
  * halo around the casing, contrasting with every dashed category rather
  * than just repeating one of their colours. */
-const WARNING_SELECTED_PAINT: LineLayerPaint = { lineColor: "#000000", lineWidth: 13 };
+const WARNING_SELECTED_PAINT: LineLayerPaint = {
+  lineColor: "#000000",
+  lineWidth: legibleWidthStops(13),
+};
 /** Matches the existing route-line width — the gradient layer recolours
  * the same visual footprint the route already had, rather than adding a
- * new one. */
+ * new one. Kept as a plain close-zoom reference value; recedingWidthStops
+ * is applied at the addLineLayer call site below. */
 const GRADIENT_LINE_WIDTH = 5;
 
 /** Every GeoJSON source this app itself creates — used to tell a genuine
@@ -531,7 +559,11 @@ export function MapView({
   // input, together with route length, to the adaptive distance-badge
   // interval. null until the first camera settle on this instance;
   // selectDistanceBadgeIntervalMetres treats a non-finite zoom as needing
-  // the safest, coarsest interval.
+  // the safest, coarsest interval. Also feeds deriveMarkerZoomBand
+  // (planningLayer.ts) for Planning's waypoint-marker CSS size band (see
+  // the map-canvas-host data-marker-zoom-band attribute below) — reused
+  // as-is rather than duplicated into a second settle-quantised state,
+  // since both consumers want the same "how zoomed out am I" signal.
   const [distanceBadgeZoom, setDistanceBadgeZoom] = useState<number | null>(null);
   // True once the style document itself is structurally ready (MapLibre's
   // "style.load"), independent of whether any tile has finished loading —
@@ -615,12 +647,12 @@ export function MapView({
       map.addGeoJsonSource(REMAINING_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
       map.addLineLayer(REMAINING_LAYER_ID, REMAINING_SOURCE_ID, {
         lineColor: "#0a5f38",
-        lineWidth: 5,
+        lineWidth: legibleWidthStops(5),
       });
       map.addGeoJsonSource(COMPLETED_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
       map.addLineLayer(COMPLETED_LAYER_ID, COMPLETED_SOURCE_ID, {
         lineColor: "#8a8f8c",
-        lineWidth: 5,
+        lineWidth: legibleWidthStops(5),
         lineOpacity: 0.7,
       });
       // Recognised climbs/descents (macro), the selected/active feature's
@@ -646,6 +678,23 @@ export function MapView({
       // the onMapTap handler below, not by this paint order. A setup
       // failure here must never break the rest of this function — an
       // uncoloured route is always safe to fall back to.
+      //
+      // Zoom-responsive width (routeWidthPolicy.ts): every width above is
+      // its own unchanged close-zoom (zoom >= 15) value, so this add-order/
+      // ring relationship still governs presentation exactly as before at
+      // close zoom — no visible ring, since the base casing and the
+      // always-on macro overlay share the same width there, matching
+      // today's appearance exactly. Below that, the macro/micro colour
+      // overlays (recedingWidthStops) recede faster than the neutral
+      // casing and warning casings (legibleWidthStops), so at regional and
+      // overview zoom the wider neutral casing begins to peek out as a
+      // visible ring around the narrower coloured overlay — this is what
+      // stops a route with a long recognised descent from reading as a
+      // solid, geometry-obscuring block of colour once zoomed out. Both
+      // families resolve identically for Planning and Riding, since this
+      // function has no mode branch and none was added — MapLibre itself
+      // evaluates the `interpolate` expression per render frame, so none
+      // of this triggers a React state update or effect on zoom.
       try {
         map.addGeoJsonSource(ROUTE_FEATURE_SELECTED_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
         map.addLineLayer(
@@ -660,7 +709,7 @@ export function MapView({
             cases: ROUTE_FEATURE_COLOURS,
             fallback: UNREACHABLE_FALLBACK_COLOUR,
           },
-          lineWidth: ROUTE_FEATURE_LAYER_WIDTH,
+          lineWidth: recedingWidthStops(ROUTE_FEATURE_LAYER_WIDTH),
         });
         map.addGeoJsonSource(GRADIENT_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
         map.addLineLayer(GRADIENT_LAYER_ID, GRADIENT_SOURCE_ID, {
@@ -669,7 +718,7 @@ export function MapView({
             cases: MICRO_DETAIL_COLOURS,
             fallback: UNREACHABLE_FALLBACK_COLOUR,
           },
-          lineWidth: GRADIENT_LINE_WIDTH,
+          lineWidth: recedingWidthStops(GRADIENT_LINE_WIDTH),
         });
       } catch (error) {
         logError("map", error);
@@ -766,7 +815,7 @@ export function MapView({
       map.addGeoJsonSource(PLANNING_PREVIEW_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
       map.addLineLayer(PLANNING_PREVIEW_LAYER_ID, PLANNING_PREVIEW_SOURCE_ID, {
         lineColor: "#1a73e8",
-        lineWidth: 4,
+        lineWidth: legibleWidthStops(4),
         lineOpacity: 0.85,
         lineDasharray: [2, 2],
       });
@@ -1383,6 +1432,15 @@ export function MapView({
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <div
         ref={containerRef}
+        // map-canvas-host: distinct from the unrelated screen-level
+        // .ride-map-container/.planning-map-container wrapper classes in
+        // RidingScreen.tsx/PlanningScreen.tsx. MapLibre appends every
+        // marker (including Planning's waypoint markers) as a descendant
+        // of this element, so data-marker-zoom-band cascades a CSS-only
+        // size band to every marker with no per-marker JS work and no
+        // marker rebuild on zoom — see index.css's descendant rules and
+        // planningLayer.ts's deriveMarkerZoomBand.
+        className="map-canvas-host"
         data-testid="map-container"
         data-route-coordinate-count={routeCoordinateCount}
         data-route-loaded={routeSourceLoaded ? "true" : "false"}
@@ -1396,6 +1454,7 @@ export function MapView({
         data-camera-pitch={
           cameraOrientation ? String(cameraOrientation.pitchDegrees) : ""
         }
+        data-marker-zoom-band={deriveMarkerZoomBand(distanceBadgeZoom ?? Number.NaN)}
         style={{ width: "100%", height: "100%" }}
       />
       {loadState === "loading" && !styleStructurallyReady ? (

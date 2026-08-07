@@ -1,6 +1,7 @@
 import type { Coordinate } from "../domain/types.ts";
 import { haversineDistanceMetres } from "../navigation/distance.ts";
 import type { MapMarkerSpec, WaypointRole } from "./mapAdapter.ts";
+import { ROUTE_WIDTH_CLOSE_ZOOM, ROUTE_WIDTH_REGIONAL_ZOOM } from "./routeWidthPolicy.ts";
 
 export interface PlanningOverlayWaypoint {
   id: string;
@@ -76,6 +77,32 @@ export function deriveWaypointRoles(coordinates: readonly Coordinate[]): Waypoin
     if (index === lastIndex) return "finish";
     return "ordinary";
   });
+}
+
+/** A waypoint marker's visual size band, driven purely by the map's own
+ * settled zoom — never by waypoint count or any other state. Consumed
+ * entirely through CSS (see MapView.tsx's map-canvas-host
+ * data-marker-zoom-band attribute and index.css's descendant rules), not
+ * through MapMarkerSpec — markers are never rebuilt/re-rendered on zoom,
+ * only the map container's own attribute changes, so this never triggers
+ * a per-marker DOM update. Shares its zoom boundaries with
+ * routeWidthPolicy.ts's route-width policy (ROUTE_WIDTH_CLOSE_ZOOM /
+ * ROUTE_WIDTH_REGIONAL_ZOOM), since both represent the same
+ * rider-perceived "how zoomed out am I" concept. */
+export type MarkerZoomBand = "close" | "regional" | "overview";
+
+/** Pure zoom -> band lookup, mirroring distanceBadgeLayer.ts's own
+ * zoomToBandIndex shape and doc-comment convention: stabilisation against
+ * zoom jitter (rounding, no-op guarding) is deliberately NOT this
+ * function's job — callers must only ever pass an already-settled,
+ * already-rounded zoom value. A non-finite zoom (no settle yet) resolves
+ * to "close", matching this marker's current, unchanged full-size
+ * appearance before the map's first camera settle. */
+export function deriveMarkerZoomBand(zoom: number): MarkerZoomBand {
+  if (!Number.isFinite(zoom)) return "close";
+  if (zoom >= ROUTE_WIDTH_CLOSE_ZOOM) return "close";
+  if (zoom >= ROUTE_WIDTH_REGIONAL_ZOOM) return "regional";
+  return "overview";
 }
 
 /**
