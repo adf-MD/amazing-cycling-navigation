@@ -223,6 +223,54 @@ describe("App — document scroll around Ride content", () => {
   });
 });
 
+describe("App — sticky/static main navigation", () => {
+  beforeEach(async () => {
+    await db.routes.clear();
+    await db.rideState.clear();
+    await db.routeLibraryPreferences.clear();
+  });
+
+  it("renders MainNavigation sticky on the initial Routes screen", () => {
+    render(<App />);
+    expect(screen.getByRole("navigation", { name: "Main" })).toHaveClass(
+      "main-nav--sticky",
+    );
+  });
+
+  it("keeps the nav sticky on every top-level screen reachable without GPS, including the empty Ride state", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    for (const label of ["Ride", "Diagnostics", "Settings", "Routes"]) {
+      await user.click(screen.getByRole("button", { name: label }));
+      expect(screen.getByRole("navigation", { name: "Main" })).toHaveClass(
+        "main-nav--sticky",
+      );
+    }
+  });
+
+  it("keeps the nav sticky on the pre-ride Riding screen (idle, route selected, Start riding not tapped)", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    await user.click(screen.getByRole("button", { name: "Route A" }));
+
+    expect(screen.getByRole("heading", { name: "Route A" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Main" })).toHaveClass(
+      "main-nav--sticky",
+    );
+  });
+
+  it("renders exactly one <nav aria-label='Main'>, regardless of screen", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    for (const label of ["Ride", "Diagnostics", "Settings", "Routes"]) {
+      await user.click(screen.getByRole("button", { name: label }));
+      expect(screen.getAllByRole("navigation", { name: "Main" })).toHaveLength(1);
+    }
+  });
+});
+
 describe("App — Route Library search restoration across navigation", () => {
   beforeEach(async () => {
     await db.routes.clear();

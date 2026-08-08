@@ -710,6 +710,104 @@ describe("RidingScreen", () => {
     });
   });
 
+  describe("onRidingActiveChange", () => {
+    it("reports false before Start riding, true once the GPS watch genuinely starts, and false again on unmount", () => {
+      const stub = buildStubGeolocationSource();
+      const onRidingActiveChange = vi.fn();
+      const { unmount } = render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          onRidingActiveChange={onRidingActiveChange}
+        />,
+      );
+
+      expect(onRidingActiveChange).toHaveBeenLastCalledWith(false);
+
+      fireEvent.click(screen.getByRole("button", { name: "Start riding" }));
+      expect(onRidingActiveChange).toHaveBeenLastCalledWith(true);
+
+      unmount();
+      expect(onRidingActiveChange).toHaveBeenLastCalledWith(false);
+    });
+
+    it("stays false (awaiting Resume riding) when mounting with a restored fix, and only switches true once Resume riding is tapped", async () => {
+      await setActiveRideState({
+        id: "active",
+        routeId: route.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: pointAt(5), accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 5,
+        matchedDistanceFromStartMetres: routePoints[5]?.distanceFromStartMetres ?? 0,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationViewMode: { kind: "full" },
+        lastReliableMatchedPointIndex: 5,
+        lastReliableMatchedDistanceFromStartMetres:
+          routePoints[5]?.distanceFromStartMetres ?? 0,
+      });
+
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const onRidingActiveChange = vi.fn();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          onRidingActiveChange={onRidingActiveChange}
+        />,
+      );
+
+      expect(
+        await screen.findByRole("button", { name: "Resume riding" }),
+      ).toBeInTheDocument();
+      expect(onRidingActiveChange).toHaveBeenLastCalledWith(false);
+
+      await user.click(screen.getByRole("button", { name: "Resume riding" }));
+      expect(onRidingActiveChange).toHaveBeenLastCalledWith(true);
+    });
+
+    it("keeps reporting true through a transient GPS error mid-ride", async () => {
+      const stub = buildStubGeolocationSource();
+      const onRidingActiveChange = vi.fn();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          onRidingActiveChange={onRidingActiveChange}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Start riding" }));
+      onRidingActiveChange.mockClear();
+
+      stub.emitError({ reason: "position-unavailable", message: "unavailable" });
+
+      // The status genuinely changes ("watching" -> "error"), so the
+      // effect's cleanup fires an intermediate, harmless `false` before
+      // its body re-fires `true` for the new status — what matters is
+      // that the settled value stays `true` throughout a mid-ride error.
+      await screen.findByRole("alert");
+      expect(onRidingActiveChange).toHaveBeenLastCalledWith(true);
+    });
+
+    it("never throws when onRidingActiveChange is omitted", () => {
+      const stub = buildStubGeolocationSource();
+      expect(() => {
+        const { unmount } = render(
+          <RidingScreen
+            route={route}
+            geolocationSource={stub.source}
+            mapFactory={buildStubMapFactory().factory}
+          />,
+        );
+        fireEvent.click(screen.getByRole("button", { name: "Start riding" }));
+        unmount();
+      }).not.toThrow();
+    });
+  });
+
   describe("gradient integration", () => {
     it("shows no climb selected by default pre-ride ('All route'), with the recognised-climb count and no numbered heading", () => {
       render(

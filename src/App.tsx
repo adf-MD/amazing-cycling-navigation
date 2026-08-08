@@ -8,6 +8,7 @@ import { PlanningScreen } from "./ui/planning/PlanningScreen.tsx";
 import { RidingScreen } from "./ui/riding/RidingScreen.tsx";
 import { SettingsScreen } from "./ui/settings/SettingsScreen.tsx";
 import { MainNavigation, type Screen } from "./ui/shared/MainNavigation.tsx";
+import { deriveNavPositionMode } from "./ui/shared/navPositionMode.ts";
 import { useResetScrollForNewRideContent } from "./ui/shared/useResetScrollForNewRideContent.ts";
 
 export interface AppProps {
@@ -20,10 +21,12 @@ export interface AppProps {
 function App({ mapFactory }: AppProps) {
   const [screen, setScreen] = useState<Screen>("library");
   const [selectedRoute, setSelectedRoute] = useState<PlannedRoute | null>(null);
+  const [isRidingActive, setIsRidingActive] = useState(false);
   const { needRefresh, offlineReady, updateNow, dismiss } = usePwaUpdate();
   const routesScrollYRef = useRef<number | null>(null);
   const routesSearchQueryRef = useRef<string>("");
   const notifyNewRideContent = useResetScrollForNewRideContent(screen);
+  const positionMode = deriveNavPositionMode(screen, isRidingActive);
 
   const handleOpenRoute = (route: PlannedRoute) => {
     routesScrollYRef.current = window.scrollY;
@@ -45,7 +48,11 @@ function App({ mapFactory }: AppProps) {
   return (
     <div className="app-shell">
       <header>
-        <MainNavigation screen={screen} onNavigate={setScreen} />
+        <MainNavigation
+          screen={screen}
+          onNavigate={setScreen}
+          positionMode={positionMode}
+        />
       </header>
 
       {needRefresh ? (
@@ -78,7 +85,11 @@ function App({ mapFactory }: AppProps) {
         )}
         {screen === "riding" &&
           (selectedRoute ? (
-            <RidingScreen route={selectedRoute} mapFactory={mapFactory} />
+            <RidingScreen
+              route={selectedRoute}
+              mapFactory={mapFactory}
+              onRidingActiveChange={setIsRidingActive}
+            />
           ) : (
             <section className="screen" aria-label="Ride">
               <h1 className="screen-title">Ride</h1>

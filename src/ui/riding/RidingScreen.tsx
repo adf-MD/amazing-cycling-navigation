@@ -56,6 +56,7 @@ export interface RidingScreenProps {
   mapFactory?: MapFactory;
   clock?: Clock;
   wakeLockSource?: WakeLockSource;
+  onRidingActiveChange?: (active: boolean) => void;
 }
 
 const DEFAULT_CAMERA_STATE: StoredCameraState = {
@@ -101,6 +102,7 @@ export function RidingScreen({
   mapFactory,
   clock = systemClock,
   wakeLockSource,
+  onRidingActiveChange,
 }: RidingScreenProps) {
   // Bridges useRideCamera's current camera state into useRideNavigation's
   // persistence. Both hooks are called in this same render, and
@@ -125,6 +127,32 @@ export function RidingScreen({
   useEffect(() => {
     cameraStateRef.current = camera.persistableCameraState;
   }, [camera.persistableCameraState]);
+
+  // Reports whether this ride is genuinely GPS-active back to App, purely
+  // so the sticky/static main-navigation contract (navPositionMode.ts)
+  // can react to it. nav.geolocationStatus is the app's own authoritative
+  // ride-tracking state and is already used for this exact "is riding
+  // genuinely under way" boundary elsewhere in this file — the wake-lock
+  // gate, the next-manoeuvre panel, and the map's active/overview class
+  // all key off the identical `!== "idle"` predicate — so this is a
+  // pass-through of an existing concept, not a newly-derived boolean.
+  // "error" counts as active: the underlying watch is deliberately never
+  // torn down for a transient GPS error (see the "Try again" comment
+  // above), so a mid-ride error stays part of one continuous ride
+  // session. This is App's first use of a callback prop to receive state
+  // back from a child screen — mirrors the existing
+  // onOpenRoute/onRouteSaved/onNavigateToSettings convention rather than
+  // introducing React context. The cleanup path resets App's copy to
+  // false the instant the rider navigates away from Riding entirely:
+  // this screen always fully unmounts on every screen switch (no `key`
+  // anywhere in App.tsx's conditional rendering), so unmount is the only
+  // other place this can change, and needs no separate handling.
+  useEffect(() => {
+    onRidingActiveChange?.(nav.geolocationStatus !== "idle");
+    return () => {
+      onRidingActiveChange?.(false);
+    };
+  }, [nav.geolocationStatus, onRidingActiveChange]);
 
   const now = useNow(clock);
   const fixAgeMs = nav.currentFix ? now - nav.currentFix.timestampMs : null;

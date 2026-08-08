@@ -119,6 +119,28 @@ header {
   border-top: 1px solid var(--colour-border);
 }
 
+/* Pins the nav to the top of the viewport while scrolling. `top` reuses
+ * .app-shell's own env(safe-area-inset-top, 0px) idiom exactly, so the
+ * resting position (established by .app-shell's padding-top) and the
+ * stuck position agree exactly — position: sticky is continuous by
+ * construction, so there is no jump on first appearance; no @supports
+ * gate is needed here, unlike this file's dvh/round() fallbacks, since
+ * env()'s second argument is already a native per-property fallback.
+ * z-index: 10 is comfortably above every other z-index in this file
+ * (max 5, all scoped inside map containers). .main-nav had no background
+ * before — an opaque one is required now so scrolled-under content
+ * doesn't show through once pinned; border-bottom reuses the same
+ * --colour-border token .main-nav's own border-top already uses, to
+ * separate the pinned bar from scrolling content beneath it without a
+ * new colour or shadow. */
+.main-nav--sticky {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 10;
+  background: var(--colour-bg);
+  border-bottom: 1px solid var(--colour-border);
+}
+
 .main-nav-button {
   flex: 1 1 0;
   display: flex;
