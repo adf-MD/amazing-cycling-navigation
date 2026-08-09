@@ -47,12 +47,8 @@ function App({ mapFactory }: AppProps) {
 
   return (
     <div className="app-shell">
-      <header>
-        <MainNavigation
-          screen={screen}
-          onNavigate={setScreen}
-          positionMode={positionMode}
-        />
+      <header className={positionMode === "sticky" ? "app-header--sticky" : undefined}>
+        <MainNavigation screen={screen} onNavigate={setScreen} />
       </header>
 
       {needRefresh ? (

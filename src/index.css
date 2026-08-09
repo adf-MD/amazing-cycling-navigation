@@ -113,13 +113,17 @@ header {
   padding: var(--space-8) var(--space-8) 0 var(--space-8);
 }
 
-.main-nav {
-  display: flex;
-  gap: var(--space-4);
-  border-top: 1px solid var(--colour-border);
-}
-
-/* Pins the nav to the top of the viewport while scrolling. `top` reuses
+/* Pins header (not .main-nav) to the top of the viewport while
+ * scrolling. This must sit on header, not on the nav it wraps: a sticky
+ * element's stuck range is bounded by its own containing block, and
+ * header is only ever as tall as the nav plus its own thin padding — put
+ * directly on .main-nav, sticky positioning would run out of room within
+ * that short containing block almost immediately and the nav would
+ * scroll away with header regardless of the sticky declaration (a real,
+ * confirmed field bug on the deployed iPhone PWA — see CLAUDE.md item 24
+ * for the incident and root-cause detail). header's own containing block
+ * is .app-shell, which spans the full page height, giving it the room a
+ * sticky element needs to actually remain stuck. `top` reuses
  * .app-shell's own env(safe-area-inset-top, 0px) idiom exactly, so the
  * resting position (established by .app-shell's padding-top) and the
  * stuck position agree exactly — position: sticky is continuous by
@@ -127,18 +131,24 @@ header {
  * gate is needed here, unlike this file's dvh/round() fallbacks, since
  * env()'s second argument is already a native per-property fallback.
  * z-index: 10 is comfortably above every other z-index in this file
- * (max 5, all scoped inside map containers). .main-nav had no background
+ * (max 5, all scoped inside map containers). header had no background
  * before — an opaque one is required now so scrolled-under content
  * doesn't show through once pinned; border-bottom reuses the same
  * --colour-border token .main-nav's own border-top already uses, to
  * separate the pinned bar from scrolling content beneath it without a
  * new colour or shadow. */
-.main-nav--sticky {
+.app-header--sticky {
   position: sticky;
   top: env(safe-area-inset-top, 0px);
   z-index: 10;
   background: var(--colour-bg);
   border-bottom: 1px solid var(--colour-border);
+}
+
+.main-nav {
+  display: flex;
+  gap: var(--space-4);
+  border-top: 1px solid var(--colour-border);
 }
 
 .main-nav-button {

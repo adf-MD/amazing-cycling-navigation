@@ -230,25 +230,28 @@ describe("App — sticky/static main navigation", () => {
     await db.routeLibraryPreferences.clear();
   });
 
-  it("renders MainNavigation sticky on the initial Routes screen", () => {
+  function stickyHeader(): Element {
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    const header = nav.closest("header");
+    if (!header) throw new Error("expected the nav to be wrapped in a header");
+    return header;
+  }
+
+  it("renders the wrapping header sticky on the initial Routes screen", () => {
     render(<App />);
-    expect(screen.getByRole("navigation", { name: "Main" })).toHaveClass(
-      "main-nav--sticky",
-    );
+    expect(stickyHeader()).toHaveClass("app-header--sticky");
   });
 
-  it("keeps the nav sticky on every top-level screen reachable without GPS, including the empty Ride state", async () => {
+  it("keeps the header sticky on every top-level screen reachable without GPS, including the empty Ride state", async () => {
     const user = userEvent.setup();
     render(<App />);
     for (const label of ["Ride", "Diagnostics", "Settings", "Routes"]) {
       await user.click(screen.getByRole("button", { name: label }));
-      expect(screen.getByRole("navigation", { name: "Main" })).toHaveClass(
-        "main-nav--sticky",
-      );
+      expect(stickyHeader()).toHaveClass("app-header--sticky");
     }
   });
 
-  it("keeps the nav sticky on the pre-ride Riding screen (idle, route selected, Start riding not tapped)", async () => {
+  it("keeps the header sticky on the pre-ride Riding screen (idle, route selected, Start riding not tapped)", async () => {
     const user = userEvent.setup();
     render(<App mapFactory={buildNoopMapFactory()} />);
 
@@ -256,9 +259,7 @@ describe("App — sticky/static main navigation", () => {
     await user.click(screen.getByRole("button", { name: "Route A" }));
 
     expect(screen.getByRole("heading", { name: "Route A" })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Main" })).toHaveClass(
-      "main-nav--sticky",
-    );
+    expect(stickyHeader()).toHaveClass("app-header--sticky");
   });
 
   it("renders exactly one <nav aria-label='Main'>, regardless of screen", async () => {
