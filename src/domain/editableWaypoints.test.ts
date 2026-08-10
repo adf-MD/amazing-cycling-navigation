@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   canDeriveEditableWaypoints,
   resolveEditableWaypoints,
+  reverseEditableWaypoints,
 } from "./editableWaypoints.ts";
 import * as deriveModule from "../navigation/deriveWaypointsFromRoute.ts";
 import type { Coordinate, PlannedRoute, RoutePoint } from "./types.ts";
@@ -137,5 +138,76 @@ describe("resolveEditableWaypoints", () => {
   it("returns null when there is not enough geometry to derive from", () => {
     const route = buildRoute({ points: [buildPoint([0, 51])] });
     expect(resolveEditableWaypoints(route, { avoidFerries: true })).toBeNull();
+  });
+});
+
+describe("reverseEditableWaypoints", () => {
+  it("reverses a two-waypoint list", () => {
+    const a: Coordinate = [0, 51];
+    const b: Coordinate = [0.05, 51.05];
+    expect(reverseEditableWaypoints([a, b])).toEqual([b, a]);
+  });
+
+  it("reverses a multi-waypoint open list, preserving all coordinates and count", () => {
+    const waypoints: Coordinate[] = [
+      [0, 51],
+      [0.01, 51.01],
+      [0.02, 51.02],
+      [0.03, 51.03],
+      [0.04, 51.04],
+    ];
+    const result = reverseEditableWaypoints(waypoints);
+    expect(result).toHaveLength(waypoints.length);
+    expect(result).toEqual([...waypoints].reverse());
+  });
+
+  it("reverses a closed loop [A,B,C,A] to exactly [A,C,B,A]", () => {
+    const a: Coordinate = [0, 51];
+    const b: Coordinate = [0.01, 51.01];
+    const c: Coordinate = [0.02, 51.02];
+    // Mirrors deriveWaypointsFromRoute's own loop-closure behaviour: the
+    // final waypoint is value-equal to the first but a distinct tuple
+    // object, never the same reference.
+    const aClosing: Coordinate = [a[0], a[1]];
+    const result = reverseEditableWaypoints([a, b, c, aClosing]);
+    expect(result).toEqual([a, c, b, a]);
+    expect(result[0]).toEqual(a);
+    expect(result[3]).toEqual(a);
+  });
+
+  it("never mutates the input array or its elements", () => {
+    const waypoints: Coordinate[] = [
+      [0, 51],
+      [0.01, 51.01],
+      [0.02, 51.02],
+    ];
+    const snapshot = waypoints.map((coordinate) => [...coordinate]);
+    reverseEditableWaypoints(waypoints);
+    expect(waypoints).toEqual(snapshot);
+  });
+
+  it("never shares a tuple reference between input and output", () => {
+    const waypoints: Coordinate[] = [
+      [0, 51],
+      [0.01, 51.01],
+      [0.02, 51.02],
+    ];
+    const result = reverseEditableWaypoints(waypoints);
+    for (let i = 0; i < result.length; i += 1) {
+      expect(result[i]).not.toBe(waypoints[waypoints.length - 1 - i]);
+    }
+  });
+
+  it("is a pure permutation — output length always equals input length", () => {
+    const twoPoints: Coordinate[] = [
+      [0, 51],
+      [0.05, 51.05],
+    ];
+    const cappedDerivedLike: Coordinate[] = Array.from({ length: 20 }, (_, i) => [
+      i * 0.001,
+      51 + i * 0.001,
+    ]);
+    expect(reverseEditableWaypoints(twoPoints)).toHaveLength(2);
+    expect(reverseEditableWaypoints(cappedDerivedLike)).toHaveLength(20);
   });
 });

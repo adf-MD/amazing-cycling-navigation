@@ -55,6 +55,7 @@ import {
 } from "../../storage/planningDraftRepository.ts";
 import { getPlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
 import { saveRoute } from "../../storage/routesRepository.ts";
+import type { EditCopyOperation } from "../../storage/mapping.ts";
 import { downloadTextFile } from "../shared/downloadTextFile.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { describeProviderKeyStatus } from "../settings/providerKeyStatus.ts";
@@ -142,6 +143,26 @@ function buildPlanningProvenance(
   };
 }
 
+/** The read-only Planning notice text for a hydrated/autosaved edit-copy
+ * draft — one of exactly four combinations of operation ("forward" from
+ * Edit copy in Planning, "reverse" from Reverse route) and origin ("exact"
+ * recovered planning waypoints, or "derived" from route geometry). Never
+ * shows more than one notice: this function always returns exactly one
+ * string. */
+function describeEditCopyNotice(meta: {
+  origin: "exact" | "derived";
+  operation: EditCopyOperation;
+}): string {
+  if (meta.operation === "reverse") {
+    return meta.origin === "exact"
+      ? "Reversed editable copy created. Recalculate before saving; one-way restrictions may make the new route differ from the original. The saved route remains unchanged."
+      : "Reversed waypoints were estimated from this route. Recalculation may follow different roads, especially around one-way restrictions. The saved route remains unchanged.";
+  }
+  return meta.origin === "exact"
+    ? "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged."
+    : "Editable waypoints were estimated from this route. Recalculation may follow different roads. The saved route will remain unchanged.";
+}
+
 /**
  * Orchestrates waypoint editing, debounced route calculation, draft
  * persistence and save/export — the map's own lifecycle, sources and
@@ -186,6 +207,7 @@ export function PlanningScreen({
   const [editCopyMeta, setEditCopyMeta] = useState<{
     sourceRouteId: string;
     origin: "exact" | "derived";
+    operation: EditCopyOperation;
   } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -473,6 +495,14 @@ export function PlanningScreen({
             setEditCopyMeta({
               sourceRouteId: draft.editCopySourceRouteId,
               origin: draft.editCopyWaypointsOrigin,
+              // mapping.ts's fromStoredPlanningDraft already resolves
+              // this to a concrete "forward"/"reverse" (defaulting a
+              // pre-Reverse-route draft, which never had this field, to
+              // "forward") — the `?? "forward"` here only satisfies
+              // PlanningDraftContent's optional type, which stays
+              // optional because the *write* side must still be able to
+              // omit it for an ordinary, non-edit-copy draft.
+              operation: draft.editCopyOperation ?? "forward",
             });
           }
           setIsDraftHydrated(true);
@@ -535,6 +565,7 @@ export function PlanningScreen({
                 ? {
                     editCopySourceRouteId: editCopyMeta.sourceRouteId,
                     editCopyWaypointsOrigin: editCopyMeta.origin,
+                    editCopyOperation: editCopyMeta.operation,
                   }
                 : {}),
             });
@@ -903,9 +934,7 @@ export function PlanningScreen({
 
       {editCopyMeta ? (
         <p className="status-row status-row--info" role="status">
-          {editCopyMeta.origin === "exact"
-            ? "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged."
-            : "Editable waypoints were estimated from this route. Recalculation may follow different roads. The saved route will remain unchanged."}
+          {describeEditCopyNotice(editCopyMeta)}
         </p>
       ) : null}
 

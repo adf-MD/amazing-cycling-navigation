@@ -168,6 +168,16 @@ function isEditCopyWaypointsOrigin(value: unknown): value is EditCopyWaypointsOr
   return value === "exact" || value === "derived";
 }
 
+/** Which "editable copy" operation seeded a Planning draft — "forward"
+ * (Edit copy in Planning) or "reverse" (Reverse route). See
+ * StoredPlanningDraft.editCopyOperation's own doc comment for the
+ * compatibility rationale. */
+export type EditCopyOperation = "forward" | "reverse";
+
+function isEditCopyOperation(value: unknown): value is EditCopyOperation {
+  return value === "forward" || value === "reverse";
+}
+
 /** A Planning draft's provider-independent content — deliberately one
  * shared shape for both directions (unlike ride state's asymmetric
  * to/Restored pair), since a draft's shape is identical whether it's
@@ -183,6 +193,7 @@ export interface PlanningDraftContent {
    * Save/Export or routing behaviour. */
   editCopySourceRouteId?: string;
   editCopyWaypointsOrigin?: EditCopyWaypointsOrigin;
+  editCopyOperation?: EditCopyOperation;
 }
 
 export function toStoredPlanningDraft(
@@ -200,6 +211,9 @@ export function toStoredPlanningDraft(
       : {}),
     ...(content.editCopyWaypointsOrigin !== undefined
       ? { editCopyWaypointsOrigin: content.editCopyWaypointsOrigin }
+      : {}),
+    ...(content.editCopyOperation !== undefined
+      ? { editCopyOperation: content.editCopyOperation }
       : {}),
   };
 }
@@ -226,6 +240,17 @@ export function fromStoredPlanningDraft(
     editCopyWaypointsOrigin: isEditCopyWaypointsOrigin(stored.editCopyWaypointsOrigin)
       ? stored.editCopyWaypointsOrigin
       : undefined,
+    // Unlike editCopyWaypointsOrigin above, this always resolves to a
+    // concrete value: "forward" is the objectively correct reading of "no
+    // operation marker recorded" for every draft written before Reverse
+    // route existed, and this field is only ever consulted once the two
+    // fields above have already gated a genuine edit-copy draft — so
+    // there is no separate "absent" state worth preserving here the way
+    // there is for origin. A real membership check, not a bare `??`,
+    // still guards against a corrupt stored value.
+    editCopyOperation: isEditCopyOperation(stored.editCopyOperation)
+      ? stored.editCopyOperation
+      : "forward",
   };
 }
 

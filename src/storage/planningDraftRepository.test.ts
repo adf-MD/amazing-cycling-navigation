@@ -29,7 +29,7 @@ describe("planningDraftRepository", () => {
     await saveDraft(content);
 
     const draft = await getDraft();
-    expect(draft).toEqual(content);
+    expect(draft).toEqual({ ...content, editCopyOperation: "forward" });
   });
 
   it("stamps an updatedAt timestamp on the underlying stored row", async () => {
@@ -51,7 +51,7 @@ describe("planningDraftRepository", () => {
     await saveDraft(replacement);
 
     const draft = await getDraft();
-    expect(draft).toEqual(replacement);
+    expect(draft).toEqual({ ...replacement, editCopyOperation: "forward" });
   });
 
   it("clears the draft", async () => {
@@ -78,6 +78,7 @@ describe("planningDraftRepository", () => {
       routeName: "Planned route",
       avoidFerries: true,
       profile: "cycling-road",
+      editCopyOperation: "forward",
     });
   });
 

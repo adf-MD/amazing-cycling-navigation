@@ -63,3 +63,23 @@ export function resolveEditableWaypoints(
     origin: "derived",
   };
 }
+
+/**
+ * Returns a new array holding the same coordinates in reverse order, for
+ * the "Reverse route" action. Never mutates `waypoints`, and every output
+ * tuple is a freshly constructed [lon, lat] pair — no shared references
+ * with the input.
+ *
+ * A plain positional reversal, with no loop-aware special-casing, is
+ * already correct for a closed loop: deriveWaypointsFromRoute's own
+ * loop-closure step produces a *value*-equal (not reference-equal) final
+ * waypoint when it detects one, so for [A, B, C, A] a positional reversal
+ * (swap index 0<->3, 1<->2) yields [A, C, B, A] exactly, understood the
+ * only way any code in this app ever compares a coordinate — by value,
+ * never by object identity.
+ */
+export function reverseEditableWaypoints(waypoints: readonly Coordinate[]): Coordinate[] {
+  return waypoints
+    .map(([longitude, latitude]): Coordinate => [longitude, latitude])
+    .reverse();
+}

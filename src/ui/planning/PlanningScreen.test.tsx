@@ -3490,6 +3490,153 @@ describe("PlanningScreen", () => {
       });
     });
 
+    it("shows the reverse+exact notice for a draft restored with editCopyOperation reverse and exact origin", async () => {
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Coastal loop (reversed)",
+        avoidFerries: true,
+        profile: "cycling-road",
+        editCopySourceRouteId: "route-1",
+        editCopyWaypointsOrigin: "exact",
+        editCopyOperation: "reverse",
+      });
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            "Reversed editable copy created. Recalculate before saving; one-way restrictions may make the new route differ from the original. The saved route remains unchanged.",
+          ),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("shows the reverse+derived notice for a draft restored with editCopyOperation reverse and derived origin", async () => {
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Coastal loop (reversed)",
+        avoidFerries: true,
+        profile: "cycling-road",
+        editCopySourceRouteId: "route-1",
+        editCopyWaypointsOrigin: "derived",
+        editCopyOperation: "reverse",
+      });
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            "Reversed waypoints were estimated from this route. Recalculation may follow different roads, especially around one-way restrictions. The saved route remains unchanged.",
+          ),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("treats a legacy draft with no editCopyOperation field at all as an ordinary forward edit copy", async () => {
+      // Simulates a real draft written by the "Edit copy in Planning"
+      // slice before Reverse route (and editCopyOperation) existed — no
+      // editCopyOperation key at all, not merely undefined.
+      await db.planningDrafts.put({
+        id: "draft",
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        routeName: "Coastal loop",
+        avoidFerries: true,
+        profile: "cycling-road",
+        editCopySourceRouteId: "route-1",
+        editCopyWaypointsOrigin: "exact",
+      });
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.",
+          ),
+        ).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/reversed/i)).not.toBeInTheDocument();
+    });
+
+    it("keeps the reverse notice, and the underlying editCopyOperation, after an unrelated waypoint edit (autosave regression)", async () => {
+      const user = userEvent.setup();
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Coastal loop (reversed)",
+        avoidFerries: true,
+        profile: "cycling-road",
+        editCopySourceRouteId: "route-1",
+        editCopyWaypointsOrigin: "exact",
+        editCopyOperation: "reverse",
+      });
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(screen.getByText(/reversed editable copy created/i)).toBeInTheDocument();
+      });
+
+      await addWaypointViaCrosshair(map, user, [0.02, 51]);
+
+      await waitFor(
+        async () => {
+          const draft = await getDraft();
+          expect(draft?.waypoints).toHaveLength(3);
+        },
+        { timeout: 3000 },
+      );
+
+      const draft = await getDraft();
+      expect(draft?.editCopySourceRouteId).toBe("route-1");
+      expect(draft?.editCopyWaypointsOrigin).toBe("exact");
+      expect(draft?.editCopyOperation).toBe("reverse");
+      expect(screen.getByText(/reversed editable copy created/i)).toBeInTheDocument();
+    });
+
+    it("shows no notice for an ordinary hand-built draft, regardless of editCopyOperation's resolved default", async () => {
+      // The two-field gate (editCopySourceRouteId + editCopyWaypointsOrigin)
+      // is what suppresses the notice, not editCopyOperation — this draft
+      // has neither field, so getDraft() resolves editCopyOperation to
+      // "forward" internally, but no notice must appear.
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Planned route",
+        avoidFerries: true,
+        profile: "cycling-road",
+      });
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/editable copy/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/reversed/i)).not.toBeInTheDocument();
+    });
+
     it("stamps planningProvenance from live waypoints, profile and avoid-ferries when saving", async () => {
       const user = userEvent.setup();
       await saveProviderKey("dummy-test-key");

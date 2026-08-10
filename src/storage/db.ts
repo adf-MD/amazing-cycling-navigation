@@ -100,6 +100,19 @@ export interface StoredPlanningDraft {
    * membership check before use. Optional/non-indexed for the same reason
    * as the field above. */
   editCopyWaypointsOrigin?: string;
+  /** Which "editable copy" operation seeded this draft — "forward" (Edit
+   * copy in Planning) or "reverse" (Reverse route). Optional/non-indexed,
+   * added the same purely-additive way as the two fields above — no
+   * schema version bump needed. Only meaningful alongside
+   * editCopySourceRouteId/editCopyWaypointsOrigin (all three set, or
+   * none). Absent on every draft written before the Reverse route
+   * feature existed, which could only ever have meant "forward" —
+   * mapping.ts's fromStoredPlanningDraft defaults an absent or corrupt
+   * value to "forward", never rejecting the row or losing the existing
+   * forward notice for a pre-existing draft. A plain string, not the
+   * narrower union, at this storage boundary — same Dexie-never-
+   * validates convention as editCopyWaypointsOrigin. */
+  editCopyOperation?: string;
 }
 
 /**
@@ -293,10 +306,11 @@ export class AcnDatabase extends Dexie {
       routeLibraryPreferences: "id",
     });
     // planningDrafts' later editCopySourceRouteId/editCopyWaypointsOrigin
-    // fields (the "Edit copy in Planning" slice), and routes' later
-    // planningProvenance field, are plain, non-indexed data fields added
-    // the same way as everything else documented above — no version(5)
-    // needed for them.
+    // fields (the "Edit copy in Planning" slice), planningDrafts' later
+    // editCopyOperation field (the "Reverse route" slice), and routes'
+    // later planningProvenance field, are plain, non-indexed data fields
+    // added the same way as everything else documented above — no
+    // version(5) needed for them.
   }
 }
 

@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
   canDeriveEditableWaypoints,
   resolveEditableWaypoints,
+  reverseEditableWaypoints,
 } from "../../domain/editableWaypoints.ts";
 import { createWaypointId } from "../../domain/id.ts";
 import { hasTrustedManoeuvres } from "../../domain/manoeuvreTrust.ts";
-import type { PlannedRoute, Waypoint } from "../../domain/types.ts";
+import { suggestReversedRouteName } from "../../domain/routeNaming.ts";
+import type { Coordinate, PlannedRoute, Waypoint } from "../../domain/types.ts";
 import { MapView, type RouteFeatureOverlay } from "../../map/MapView.tsx";
 import type { MapFactory } from "../../map/mapAdapter.ts";
 import type { GeolocationError, GeolocationSource } from "../../platform/geolocation.ts";
@@ -41,7 +43,7 @@ import {
 } from "../../navigation/upcomingElevation.ts";
 import { getDraft, saveDraft } from "../../storage/planningDraftRepository.ts";
 import { getPlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
-import type { StoredCameraState } from "../../storage/mapping.ts";
+import type { EditCopyOperation, StoredCameraState } from "../../storage/mapping.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
 import {
   ElevationChart,
@@ -66,10 +68,11 @@ export interface RidingScreenProps {
   clock?: Clock;
   wakeLockSource?: WakeLockSource;
   onRidingActiveChange?: (active: boolean) => void;
-  /** Called once an "Edit copy in Planning" draft has been seeded and
-   * persisted successfully — the caller (App.tsx) is responsible only for
-   * switching screens, mirroring onNavigateToSettings's exact shape; all
-   * the actual draft-seeding work happens in this component. */
+  /** Called once an "Edit copy in Planning" or "Reverse route" draft has
+   * been seeded and persisted successfully — the caller (App.tsx) is
+   * responsible only for switching screens, mirroring
+   * onNavigateToSettings's exact shape; all the actual draft-seeding work
+   * happens in this component. */
   onNavigateToPlanning?: () => void;
 }
 
@@ -79,6 +82,65 @@ const DEFAULT_CAMERA_STATE: StoredCameraState = {
   zoom: null,
   bearingDegrees: 0,
   pitchDegrees: 0,
+};
+
+/**
+ * "Edit copy in Planning" and "Reverse route" share every part of their
+ * flow (source-route eligibility, waypoint resolution, meaningful-draft
+ * detection, confirmation, persistence, storage-failure handling,
+ * navigation, rapid-action guards) except for a small, fixed set of
+ * per-operation inputs, captured here rather than duplicated as two
+ * near-identical async implementations — see performCopyOperation below.
+ */
+type CopyOperationKind = "edit-copy" | "reverse";
+
+interface CopyOperationConfig {
+  kind: CopyOperationKind;
+  triggerLabel: string;
+  pendingLabel: string;
+  dialogTitle: string;
+  dialogMessage: string;
+  confirmLabel: string;
+  genericErrorMessage: string;
+  logTag: string;
+  checkDraftLogTag: string;
+  transformWaypoints: (waypoints: readonly Coordinate[]) => readonly Coordinate[];
+  suggestedName: (sourceName: string) => string;
+  operationMarker: EditCopyOperation;
+}
+
+const EDIT_COPY_CONFIG: CopyOperationConfig = {
+  kind: "edit-copy",
+  triggerLabel: "Edit copy in Planning",
+  pendingLabel: "Creating editable copy…",
+  dialogTitle: "Replace your current plan?",
+  dialogMessage:
+    "Editing this route will replace your unsaved plan in Planning. This route itself will remain unchanged.",
+  confirmLabel: "Replace and edit",
+  genericErrorMessage:
+    "The editable copy could not be created on this device. Try again.",
+  logTag: "riding-edit-copy-in-planning",
+  checkDraftLogTag: "riding-edit-copy-check-draft",
+  transformWaypoints: (waypoints) => waypoints,
+  suggestedName: (sourceName) => sourceName,
+  operationMarker: "forward",
+};
+
+const REVERSE_ROUTE_CONFIG: CopyOperationConfig = {
+  kind: "reverse",
+  triggerLabel: "Reverse route",
+  pendingLabel: "Reversing route…",
+  dialogTitle: "Replace your current plan to reverse this route?",
+  dialogMessage:
+    "Reversing this route will replace your unsaved plan in Planning. This route itself will remain unchanged.",
+  confirmLabel: "Replace and reverse",
+  genericErrorMessage:
+    "The reversed copy could not be created on this device. Try again.",
+  logTag: "riding-reverse-route",
+  checkDraftLogTag: "riding-reverse-check-draft",
+  transformWaypoints: reverseEditableWaypoints,
+  suggestedName: suggestReversedRouteName,
+  operationMarker: "reverse",
 };
 
 function formatGeolocationError(error: GeolocationError): string {
@@ -416,93 +478,130 @@ export function RidingScreen({
     onSelectRouteFeature: selectRouteFeature,
   };
 
-  // "Edit copy in Planning" — opens the pre-ride route overview's action
-  // that seeds a new Planning draft from this route's recovered or derived
-  // waypoints (see domain/editableWaypoints.ts) and hands off navigation to
-  // App.tsx via onNavigateToPlanning. Entirely self-contained: this screen
-  // owns the meaningful-draft check, the confirmation, waypoint resolution
-  // and persistence; App.tsx only ever switches screens once told to.
+  // "Edit copy in Planning" and "Reverse route" — two pre-ride actions
+  // that both seed a new Planning draft from this route's recovered or
+  // derived waypoints (see domain/editableWaypoints.ts), differing only
+  // in whether the waypoints are kept forward or reversed and in the
+  // suggested draft name — see performCopyOperation and the two
+  // CopyOperationConfig constants above. Both actions read/write the same
+  // singleton Planning draft, so they deliberately share one guard: the
+  // pendingConfirmKind/isActionPendingRef pair below serialises each
+  // action against itself (rapid double-click) and against the other
+  // action (they must never run concurrently) with no extra coupling
+  // code. Entirely self-contained: this screen owns the meaningful-draft
+  // check, the confirmation, waypoint resolution and persistence;
+  // App.tsx only ever switches screens once told to via
+  // onNavigateToPlanning.
   const editCopyButtonRef = useRef<HTMLButtonElement>(null);
-  const [isEditCopyDialogOpen, setIsEditCopyDialogOpen] = useState(false);
-  const [isEditCopyPending, setIsEditCopyPending] = useState(false);
-  const [editCopyError, setEditCopyError] = useState<string | null>(null);
+  const reverseButtonRef = useRef<HTMLButtonElement>(null);
+  const [pendingConfirmKind, setPendingConfirmKind] = useState<CopyOperationKind | null>(
+    null,
+  );
+  const [activeOperationKind, setActiveOperationKind] =
+    useState<CopyOperationKind | null>(null);
+  const [copyOperationError, setCopyOperationError] = useState<{
+    kind: CopyOperationKind;
+    message: string;
+  } | null>(null);
   // Synchronous guard against a rapid double Confirm click, mirroring
-  // PlanningScreen.tsx's own isLocatingRef idiom — isEditCopyPending state
-  // alone isn't reliably readable synchronously across the same tick.
-  const isEditCopyPendingRef = useRef(false);
+  // PlanningScreen.tsx's own isLocatingRef idiom — activeOperationKind
+  // state alone isn't reliably readable synchronously across the same
+  // tick.
+  const isActionPendingRef = useRef(false);
 
-  const performEditCopy = useCallback(async () => {
-    if (isEditCopyPendingRef.current) return;
-    isEditCopyPendingRef.current = true;
-    setIsEditCopyPending(true);
-    setEditCopyError(null);
-    try {
-      const preferences = await getPlanningPreferences();
-      const resolved = resolveEditableWaypoints(route, {
-        avoidFerries: preferences.avoidFerriesByDefault,
-      });
-      if (!resolved) {
-        // Defensive only — canDeriveEditableWaypoints already disables the
-        // triggering button for this case, so this should be unreachable.
-        setEditCopyError(
-          "This route doesn't have enough distinct geometry to create an editable copy.",
-        );
-        setIsEditCopyDialogOpen(false);
-        return;
-      }
-      const waypoints: Waypoint[] = resolved.waypoints.map((coordinate) => ({
-        id: createWaypointId(),
-        coordinate,
-      }));
-      await saveDraft({
-        waypoints,
-        routeName: route.name,
-        avoidFerries: resolved.avoidFerries,
-        profile: resolved.profile,
-        editCopySourceRouteId: route.id,
-        editCopyWaypointsOrigin: resolved.origin,
-      });
-      setIsEditCopyDialogOpen(false);
-      onNavigateToPlanning?.();
-    } catch (error) {
-      logError("riding-edit-copy-in-planning", error);
-      setEditCopyError(
-        "The editable copy could not be created on this device. Try again.",
-      );
-      setIsEditCopyDialogOpen(false);
-      editCopyButtonRef.current?.focus();
-    } finally {
-      isEditCopyPendingRef.current = false;
-      setIsEditCopyPending(false);
-    }
-  }, [route, onNavigateToPlanning]);
-
-  const handleEditCopyClick = useCallback(() => {
-    if (isEditCopyDialogOpen || isEditCopyPendingRef.current) return;
-    setEditCopyError(null);
-    getDraft()
-      .then((draft) => {
-        const hasMeaningfulDraft = !!draft && draft.waypoints.length > 0;
-        if (hasMeaningfulDraft) {
-          setIsEditCopyDialogOpen(true);
-          return;
-        }
-        void performEditCopy();
-      })
-      .catch((error: unknown) => {
-        logError("riding-edit-copy-check-draft", error);
-        setEditCopyError("Your existing plan could not be checked. Try again.");
-      });
-  }, [isEditCopyDialogOpen, performEditCopy]);
-
-  const handleEditCopyCancel = useCallback(() => {
-    setIsEditCopyDialogOpen(false);
-    editCopyButtonRef.current?.focus();
+  const triggerRefForKind = useCallback((kind: CopyOperationKind) => {
+    return kind === "reverse" ? reverseButtonRef : editCopyButtonRef;
   }, []);
 
-  const handleEditCopyConfirm = useCallback(() => {
-    void performEditCopy();
-  }, [performEditCopy]);
+  const performCopyOperation = useCallback(
+    async (config: CopyOperationConfig) => {
+      if (isActionPendingRef.current) return;
+      isActionPendingRef.current = true;
+      setActiveOperationKind(config.kind);
+      setCopyOperationError(null);
+      try {
+        const preferences = await getPlanningPreferences();
+        const resolved = resolveEditableWaypoints(route, {
+          avoidFerries: preferences.avoidFerriesByDefault,
+        });
+        if (!resolved) {
+          // Defensive only — canDeriveEditableWaypoints already disables
+          // both triggering buttons for this case, so this should be
+          // unreachable.
+          setCopyOperationError({
+            kind: config.kind,
+            message:
+              "This route doesn't have enough distinct geometry to create an editable copy.",
+          });
+          setPendingConfirmKind(null);
+          return;
+        }
+        const orderedCoordinates = config.transformWaypoints(resolved.waypoints);
+        const waypoints: Waypoint[] = orderedCoordinates.map((coordinate) => ({
+          id: createWaypointId(),
+          coordinate,
+        }));
+        await saveDraft({
+          waypoints,
+          routeName: config.suggestedName(route.name),
+          avoidFerries: resolved.avoidFerries,
+          profile: resolved.profile,
+          editCopySourceRouteId: route.id,
+          editCopyWaypointsOrigin: resolved.origin,
+          editCopyOperation: config.operationMarker,
+        });
+        setPendingConfirmKind(null);
+        onNavigateToPlanning?.();
+      } catch (error) {
+        logError(config.logTag, error);
+        setCopyOperationError({ kind: config.kind, message: config.genericErrorMessage });
+        setPendingConfirmKind(null);
+        triggerRefForKind(config.kind).current?.focus();
+      } finally {
+        isActionPendingRef.current = false;
+        setActiveOperationKind(null);
+      }
+    },
+    [route, onNavigateToPlanning, triggerRefForKind],
+  );
+
+  const handleCopyOperationClick = useCallback(
+    (config: CopyOperationConfig) => {
+      if (pendingConfirmKind !== null || isActionPendingRef.current) return;
+      setCopyOperationError(null);
+      getDraft()
+        .then((draft) => {
+          const hasMeaningfulDraft = !!draft && draft.waypoints.length > 0;
+          if (hasMeaningfulDraft) {
+            setPendingConfirmKind(config.kind);
+            return;
+          }
+          void performCopyOperation(config);
+        })
+        .catch((error: unknown) => {
+          logError(config.checkDraftLogTag, error);
+          setCopyOperationError({
+            kind: config.kind,
+            message: "Your existing plan could not be checked. Try again.",
+          });
+        });
+    },
+    [pendingConfirmKind, performCopyOperation],
+  );
+
+  const handleCopyOperationCancel = useCallback(() => {
+    if (pendingConfirmKind !== null) {
+      triggerRefForKind(pendingConfirmKind).current?.focus();
+    }
+    setPendingConfirmKind(null);
+  }, [pendingConfirmKind, triggerRefForKind]);
+
+  const pendingCopyOperationConfig =
+    pendingConfirmKind === "reverse"
+      ? REVERSE_ROUTE_CONFIG
+      : pendingConfirmKind === "edit-copy"
+        ? EDIT_COPY_CONFIG
+        : null;
 
   const handleStart = () => {
     // Only clear a pre-ride selection when genuinely transitioning out of
@@ -566,29 +665,50 @@ export function RidingScreen({
             type="button"
             className="btn-secondary"
             ref={editCopyButtonRef}
-            onClick={handleEditCopyClick}
-            disabled={!canDeriveEditableWaypoints(route) || isEditCopyPending}
+            onClick={() => {
+              handleCopyOperationClick(EDIT_COPY_CONFIG);
+            }}
+            disabled={!canDeriveEditableWaypoints(route) || activeOperationKind !== null}
           >
-            {isEditCopyPending ? "Creating editable copy…" : "Edit copy in Planning"}
+            {activeOperationKind === "edit-copy"
+              ? EDIT_COPY_CONFIG.pendingLabel
+              : EDIT_COPY_CONFIG.triggerLabel}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            ref={reverseButtonRef}
+            onClick={() => {
+              handleCopyOperationClick(REVERSE_ROUTE_CONFIG);
+            }}
+            disabled={!canDeriveEditableWaypoints(route) || activeOperationKind !== null}
+          >
+            {activeOperationKind === "reverse"
+              ? REVERSE_ROUTE_CONFIG.pendingLabel
+              : REVERSE_ROUTE_CONFIG.triggerLabel}
           </button>
           {!canDeriveEditableWaypoints(route) ? (
             <p className="field-hint">
               This route doesn't have enough distinct geometry to create an editable copy.
             </p>
           ) : null}
-          {editCopyError ? (
+          {copyOperationError ? (
             <p className="field-error" role="alert">
-              {editCopyError}
+              {copyOperationError.message}
             </p>
           ) : null}
           <ConfirmDialog
-            open={isEditCopyDialogOpen}
-            title="Replace your current plan?"
-            message="Editing this route will replace your unsaved plan in Planning. This route itself will remain unchanged."
-            confirmLabel="Replace and edit"
+            open={pendingCopyOperationConfig !== null}
+            title={pendingCopyOperationConfig?.dialogTitle ?? ""}
+            message={pendingCopyOperationConfig?.dialogMessage ?? ""}
+            confirmLabel={pendingCopyOperationConfig?.confirmLabel ?? "Confirm"}
             cancelLabel="Cancel"
-            onConfirm={handleEditCopyConfirm}
-            onCancel={handleEditCopyCancel}
+            onConfirm={() => {
+              if (pendingCopyOperationConfig) {
+                void performCopyOperation(pendingCopyOperationConfig);
+              }
+            }}
+            onCancel={handleCopyOperationCancel}
           />
         </div>
       ) : null}

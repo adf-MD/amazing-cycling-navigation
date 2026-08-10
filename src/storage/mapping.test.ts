@@ -487,6 +487,7 @@ describe("toStoredPlanningDraft / fromStoredPlanningDraft", () => {
       routeName: "Coastal loop",
       avoidFerries: false,
       profile: "cycling-regular",
+      editCopyOperation: "forward",
     });
   });
 
@@ -508,6 +509,7 @@ describe("toStoredPlanningDraft / fromStoredPlanningDraft", () => {
       routeName: "Planned route",
       avoidFerries: true,
       profile: "cycling-road",
+      editCopyOperation: "forward",
     });
   });
 
@@ -583,6 +585,70 @@ describe("toStoredPlanningDraft / fromStoredPlanningDraft", () => {
     };
     const restored = fromStoredPlanningDraft(corruptRow);
     expect(restored.editCopyWaypointsOrigin).toBeUndefined();
+  });
+
+  it('round-trips editCopyOperation "reverse"', () => {
+    const stored = toStoredPlanningDraft({
+      waypoints,
+      routeName: "Coastal loop (reversed)",
+      avoidFerries: false,
+      profile: "cycling-regular",
+      editCopySourceRouteId: "route-1",
+      editCopyWaypointsOrigin: "exact",
+      editCopyOperation: "reverse",
+    });
+    const restored = fromStoredPlanningDraft({
+      id: "draft",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...stored,
+    });
+
+    expect(restored.editCopyOperation).toBe("reverse");
+  });
+
+  it('defaults editCopyOperation to "forward" for a legacy row with editCopySourceRouteId/editCopyWaypointsOrigin but no editCopyOperation at all', () => {
+    // Simulates a real draft written by the "Edit copy in Planning" slice
+    // before Reverse route (and editCopyOperation) existed.
+    const legacyEditCopyRow: StoredPlanningDraft = {
+      id: "draft",
+      waypoints,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      editCopySourceRouteId: "route-1",
+      editCopyWaypointsOrigin: "derived",
+    };
+    const restored = fromStoredPlanningDraft(legacyEditCopyRow);
+    expect(restored.editCopySourceRouteId).toBe("route-1");
+    expect(restored.editCopyWaypointsOrigin).toBe("derived");
+    expect(restored.editCopyOperation).toBe("forward");
+  });
+
+  it('recovers safely to "forward" for a corrupt or unrecognised editCopyOperation value', () => {
+    const corruptRow: StoredPlanningDraft = {
+      id: "draft",
+      waypoints,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      editCopySourceRouteId: "route-1",
+      editCopyWaypointsOrigin: "exact",
+      editCopyOperation: "backwards",
+    };
+    const restored = fromStoredPlanningDraft(corruptRow);
+    expect(restored.editCopyOperation).toBe("forward");
+  });
+
+  it('resolves editCopyOperation to "forward" even for an ordinary draft with no edit-copy fields at all, without that leaking a false notice', () => {
+    const legacyRow: StoredPlanningDraft = {
+      id: "draft",
+      waypoints,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const restored = fromStoredPlanningDraft(legacyRow);
+    // The two-field gate (editCopySourceRouteId + editCopyWaypointsOrigin),
+    // not editCopyOperation, is what suppresses PlanningScreen's notice —
+    // this field alone resolving to "forward" must never be read as "this
+    // is an edit copy".
+    expect(restored.editCopySourceRouteId).toBeUndefined();
+    expect(restored.editCopyWaypointsOrigin).toBeUndefined();
+    expect(restored.editCopyOperation).toBe("forward");
   });
 });
 
