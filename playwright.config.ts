@@ -21,5 +21,27 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+      // Android-emulated specs (see the "android-chrome" project below)
+      // run once each, not twice — excluded here so this project and
+      // that one never both execute the same file.
+      testIgnore: /android.*\.spec\.ts$/,
+    },
+    {
+      name: "android-chrome",
+      // Chromium-based mobile viewport/UA/touch/device-scale-factor
+      // emulation of a current mainstream Android phone (Android 10+,
+      // per this preset) — this is still Chromium, not real Android
+      // Chrome or WebView, and needs no separate browser download
+      // (devices["Pixel 7"].defaultBrowserType is "chromium", already
+      // installed by `playwright install chromium`). See
+      // docs/android-chrome-acceptance.md for what this can and cannot
+      // prove versus a real installed Android device.
+      use: { ...devices["Pixel 7"] },
+      testMatch: /android.*\.spec\.ts$/,
+    },
+  ],
 });
