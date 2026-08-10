@@ -149,6 +149,31 @@ export type ManoeuvreProvenance =
   | { kind: "routing-provider"; provider: string }
   | { kind: "acn-gpx-extension"; version: 1 };
 
+/** The original Planning waypoints that produced this route, when known
+ * exactly — either stamped at Planning save/export time ("planning-session")
+ * or recovered from a validated, geometry-digest-bound <acn:planning> GPX
+ * extension on reimport ("acn-gpx-extension"). Both kinds are equally
+ * trustworthy as exact waypoint data; the kind only records provenance for
+ * diagnostics. Absent on a route saved before this field existed, on a
+ * route whose GPX had no (or an invalid) <acn:planning> extension, or on a
+ * route not sourced from Planning at all — domain/editableWaypoints.ts's
+ * resolveEditableWaypoints falls back to deriving a capped, approximate
+ * waypoint set from `points` in every one of those cases. */
+export type PlanningProvenance =
+  | {
+      kind: "planning-session";
+      waypoints: readonly Coordinate[];
+      profile: RoutingProfile;
+      avoidFerries: boolean;
+    }
+  | {
+      kind: "acn-gpx-extension";
+      version: 1;
+      waypoints: readonly Coordinate[];
+      profile: RoutingProfile;
+      avoidFerries: boolean;
+    };
+
 export interface PlannedRoute {
   id: string;
   name: string;
@@ -158,6 +183,8 @@ export interface PlannedRoute {
   /** Present only when manoeuvres is non-empty. See ManoeuvreProvenance's
    * own doc comment and domain/manoeuvreTrust.ts. */
   manoeuvreProvenance?: ManoeuvreProvenance;
+  /** See PlanningProvenance's own doc comment. */
+  planningProvenance?: PlanningProvenance;
   distanceMetres: number;
   ascentMetres: number | null;
   descentMetres: number | null;

@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  canDeriveEditableWaypoints,
+  resolveEditableWaypoints,
+} from "../../domain/editableWaypoints.ts";
+import { createWaypointId } from "../../domain/id.ts";
 import { hasTrustedManoeuvres } from "../../domain/manoeuvreTrust.ts";
-import type { PlannedRoute } from "../../domain/types.ts";
+import type { PlannedRoute, Waypoint } from "../../domain/types.ts";
 import { MapView, type RouteFeatureOverlay } from "../../map/MapView.tsx";
 import type { MapFactory } from "../../map/mapAdapter.ts";
 import type { GeolocationError, GeolocationSource } from "../../platform/geolocation.ts";
 import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
+import { logError } from "../../platform/errorLog.ts";
 import { useOnlineStatus } from "../../platform/onlineStatus.ts";
 import { isWakeLockSupported, type WakeLockSource } from "../../platform/wakeLock.ts";
 import {
@@ -33,7 +39,10 @@ import {
   ELEVATION_VIEW_MODE_OPTIONS,
   interpolateRoutePointAt,
 } from "../../navigation/upcomingElevation.ts";
+import { getDraft, saveDraft } from "../../storage/planningDraftRepository.ts";
+import { getPlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
+import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
 import {
   ElevationChart,
   type ElevationChartSelectedRange,
@@ -57,6 +66,11 @@ export interface RidingScreenProps {
   clock?: Clock;
   wakeLockSource?: WakeLockSource;
   onRidingActiveChange?: (active: boolean) => void;
+  /** Called once an "Edit copy in Planning" draft has been seeded and
+   * persisted successfully — the caller (App.tsx) is responsible only for
+   * switching screens, mirroring onNavigateToSettings's exact shape; all
+   * the actual draft-seeding work happens in this component. */
+  onNavigateToPlanning?: () => void;
 }
 
 const DEFAULT_CAMERA_STATE: StoredCameraState = {
@@ -103,6 +117,7 @@ export function RidingScreen({
   clock = systemClock,
   wakeLockSource,
   onRidingActiveChange,
+  onNavigateToPlanning,
 }: RidingScreenProps) {
   // Bridges useRideCamera's current camera state into useRideNavigation's
   // persistence. Both hooks are called in this same render, and
@@ -401,6 +416,94 @@ export function RidingScreen({
     onSelectRouteFeature: selectRouteFeature,
   };
 
+  // "Edit copy in Planning" — opens the pre-ride route overview's action
+  // that seeds a new Planning draft from this route's recovered or derived
+  // waypoints (see domain/editableWaypoints.ts) and hands off navigation to
+  // App.tsx via onNavigateToPlanning. Entirely self-contained: this screen
+  // owns the meaningful-draft check, the confirmation, waypoint resolution
+  // and persistence; App.tsx only ever switches screens once told to.
+  const editCopyButtonRef = useRef<HTMLButtonElement>(null);
+  const [isEditCopyDialogOpen, setIsEditCopyDialogOpen] = useState(false);
+  const [isEditCopyPending, setIsEditCopyPending] = useState(false);
+  const [editCopyError, setEditCopyError] = useState<string | null>(null);
+  // Synchronous guard against a rapid double Confirm click, mirroring
+  // PlanningScreen.tsx's own isLocatingRef idiom — isEditCopyPending state
+  // alone isn't reliably readable synchronously across the same tick.
+  const isEditCopyPendingRef = useRef(false);
+
+  const performEditCopy = useCallback(async () => {
+    if (isEditCopyPendingRef.current) return;
+    isEditCopyPendingRef.current = true;
+    setIsEditCopyPending(true);
+    setEditCopyError(null);
+    try {
+      const preferences = await getPlanningPreferences();
+      const resolved = resolveEditableWaypoints(route, {
+        avoidFerries: preferences.avoidFerriesByDefault,
+      });
+      if (!resolved) {
+        // Defensive only — canDeriveEditableWaypoints already disables the
+        // triggering button for this case, so this should be unreachable.
+        setEditCopyError(
+          "This route doesn't have enough distinct geometry to create an editable copy.",
+        );
+        setIsEditCopyDialogOpen(false);
+        return;
+      }
+      const waypoints: Waypoint[] = resolved.waypoints.map((coordinate) => ({
+        id: createWaypointId(),
+        coordinate,
+      }));
+      await saveDraft({
+        waypoints,
+        routeName: route.name,
+        avoidFerries: resolved.avoidFerries,
+        profile: resolved.profile,
+        editCopySourceRouteId: route.id,
+        editCopyWaypointsOrigin: resolved.origin,
+      });
+      setIsEditCopyDialogOpen(false);
+      onNavigateToPlanning?.();
+    } catch (error) {
+      logError("riding-edit-copy-in-planning", error);
+      setEditCopyError(
+        "The editable copy could not be created on this device. Try again.",
+      );
+      setIsEditCopyDialogOpen(false);
+      editCopyButtonRef.current?.focus();
+    } finally {
+      isEditCopyPendingRef.current = false;
+      setIsEditCopyPending(false);
+    }
+  }, [route, onNavigateToPlanning]);
+
+  const handleEditCopyClick = useCallback(() => {
+    if (isEditCopyDialogOpen || isEditCopyPendingRef.current) return;
+    setEditCopyError(null);
+    getDraft()
+      .then((draft) => {
+        const hasMeaningfulDraft = !!draft && draft.waypoints.length > 0;
+        if (hasMeaningfulDraft) {
+          setIsEditCopyDialogOpen(true);
+          return;
+        }
+        void performEditCopy();
+      })
+      .catch((error: unknown) => {
+        logError("riding-edit-copy-check-draft", error);
+        setEditCopyError("Your existing plan could not be checked. Try again.");
+      });
+  }, [isEditCopyDialogOpen, performEditCopy]);
+
+  const handleEditCopyCancel = useCallback(() => {
+    setIsEditCopyDialogOpen(false);
+    editCopyButtonRef.current?.focus();
+  }, []);
+
+  const handleEditCopyConfirm = useCallback(() => {
+    void performEditCopy();
+  }, [performEditCopy]);
+
   const handleStart = () => {
     // Only clear a pre-ride selection when genuinely transitioning out of
     // the pre-ride (idle) state — this same handler also backs the
@@ -459,6 +562,34 @@ export function RidingScreen({
           >
             {nav.currentFix ? "Resume riding" : "Start riding"}
           </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            ref={editCopyButtonRef}
+            onClick={handleEditCopyClick}
+            disabled={!canDeriveEditableWaypoints(route) || isEditCopyPending}
+          >
+            {isEditCopyPending ? "Creating editable copy…" : "Edit copy in Planning"}
+          </button>
+          {!canDeriveEditableWaypoints(route) ? (
+            <p className="field-hint">
+              This route doesn't have enough distinct geometry to create an editable copy.
+            </p>
+          ) : null}
+          {editCopyError ? (
+            <p className="field-error" role="alert">
+              {editCopyError}
+            </p>
+          ) : null}
+          <ConfirmDialog
+            open={isEditCopyDialogOpen}
+            title="Replace your current plan?"
+            message="Editing this route will replace your unsaved plan in Planning. This route itself will remain unchanged."
+            confirmLabel="Replace and edit"
+            cancelLabel="Cancel"
+            onConfirm={handleEditCopyConfirm}
+            onCancel={handleEditCopyCancel}
+          />
         </div>
       ) : null}
 

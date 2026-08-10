@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_ACN_MANOEUVRES,
+  MAX_ACN_PLANNING_WAYPOINTS,
   readAcnNavigationExtension,
+  readAcnPlanningExtension,
   readAcnSourceProfile,
 } from "./parseAcnExtension.ts";
 import { exportRouteToGpx } from "./exportGpx.ts";
@@ -77,6 +79,34 @@ function getSourceElement(selectedTrackElement: Element): Element {
   }
   return element;
 }
+
+function getPlanningElement(selectedTrackElement: Element): Element {
+  const element = selectedTrackElement.getElementsByTagNameNS(
+    ACN_NAMESPACE,
+    "planning",
+  )[0];
+  if (!element) {
+    throw new Error("expected a valid doc to contain an acn:planning element");
+  }
+  return element;
+}
+
+function getWaypointElements(selectedTrackElement: Element): Element[] {
+  return Array.from(
+    selectedTrackElement.getElementsByTagNameNS(ACN_NAMESPACE, "waypoint"),
+  );
+}
+
+const PLANNING_PROVENANCE: PlannedRoute["planningProvenance"] = {
+  kind: "planning-session",
+  waypoints: [
+    [0, 51],
+    [0.0015, 51.0005],
+    [0.003, 51.002],
+  ],
+  profile: "cycling-regular",
+  avoidFerries: false,
+};
 
 // Approximate metres-per-degree of longitude at latitude 51.5, matching
 // the conversion used by e2e fixtures elsewhere in this repo — only
@@ -457,5 +487,195 @@ describe("readAcnSourceProfile", () => {
     // ...but the unrelated, non-digest-bound <acn:source> sibling is
     // unaffected.
     expect(readAcnSourceProfile(selectedTrackElement)).toBe("cycling-road");
+  });
+});
+
+describe("readAcnPlanningExtension", () => {
+  it("accepts a valid extension and returns the encoded waypoints/options", async () => {
+    const { points, selectedTrackElement } = await buildValidDoc(
+      buildTrustedRoute({ planningProvenance: PLANNING_PROVENANCE }),
+    );
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+
+    expect(outcome.kind).toBe("accepted");
+    if (outcome.kind !== "accepted") return;
+    expect(outcome.waypoints).toEqual(PLANNING_PROVENANCE.waypoints);
+    expect(outcome.profile).toBe("cycling-regular");
+    expect(outcome.avoidFerries).toBe(false);
+  });
+
+  it("returns absent when the route has no planning provenance at all", async () => {
+    const { points, selectedTrackElement } = await buildValidDoc();
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(outcome).toEqual({ kind: "absent" });
+  });
+
+  it("returns absent when the route has no extensions element at all", async () => {
+    const route = buildTrustedRoute({
+      manoeuvres: [],
+      manoeuvreProvenance: undefined,
+      source: { kind: "gpx-import" },
+    });
+    const { points, selectedTrackElement } = await buildValidDoc(route);
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(outcome).toEqual({ kind: "absent" });
+  });
+
+  it("rejects when the version attribute does not match", async () => {
+    const { points, selectedTrackElement } = await buildValidDoc(
+      buildTrustedRoute({ planningProvenance: PLANNING_PROVENANCE }),
+    );
+    getPlanningElement(selectedTrackElement).setAttribute("version", "2");
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(outcome).toEqual({ kind: "rejected" });
+  });
+
+  it("rejects when the profile attribute is invalid", async () => {
+    const { points, selectedTrackElement } = await buildValidDoc(
+      buildTrustedRoute({ planningProvenance: PLANNING_PROVENANCE }),
+    );
+    getPlanningElement(selectedTrackElement).setAttribute("profile", "cycling-mountain");
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(outcome).toEqual({ kind: "rejected" });
+  });
+
+  it("rejects when the avoidFerries attribute is not a literal true/false", async () => {
+    const { points, selectedTrackElement } = await buildValidDoc(
+      buildTrustedRoute({ planningProvenance: PLANNING_PROVENANCE }),
+    );
+    getPlanningElement(selectedTrackElement).setAttribute("avoidFerries", "yes");
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(outcome).toEqual({ kind: "rejected" });
+  });
+
+  it("rejects when the waypointCount attribute does not match the actual number of waypoint elements", async () => {
+    const { points, selectedTrackElement } = await buildValidDoc(
+      buildTrustedRoute({ planningProvenance: PLANNING_PROVENANCE }),
+    );
+    getPlanningElement(selectedTrackElement).setAttribute("waypointCount", "99");
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(outcome).toEqual({ kind: "rejected" });
+  });
+
+  it("rejects when fewer than two waypoints are present", async () => {
+    const { points, selectedTrackElement } = await buildValidDoc(
+      buildTrustedRoute({
+        planningProvenance: {
+          ...PLANNING_PROVENANCE,
+          waypoints: [[0, 51]],
+        },
+      }),
+    );
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(outcome).toEqual({ kind: "rejected" });
+  });
+
+  it("rejects when the waypoint count exceeds MAX_ACN_PLANNING_WAYPOINTS", async () => {
+    const { points, selectedTrackElement } = await buildValidDoc(
+      buildTrustedRoute({ planningProvenance: PLANNING_PROVENANCE }),
+    );
+    const planningElement = getPlanningElement(selectedTrackElement);
+    const template = getWaypointElements(selectedTrackElement)[0];
+    if (!template) throw new Error("expected at least one waypoint element");
+    for (let i = 0; i < MAX_ACN_PLANNING_WAYPOINTS; i += 1) {
+      planningElement.appendChild(template.cloneNode(true));
+    }
+    planningElement.setAttribute(
+      "waypointCount",
+      String(getWaypointElements(selectedTrackElement).length),
+    );
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(outcome).toEqual({ kind: "rejected" });
+  });
+
+  it("rejects an out-of-range waypoint coordinate", async () => {
+    const { points, selectedTrackElement } = await buildValidDoc(
+      buildTrustedRoute({ planningProvenance: PLANNING_PROVENANCE }),
+    );
+    getWaypointElements(selectedTrackElement)[0]?.setAttribute("lat", "999");
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(outcome).toEqual({ kind: "rejected" });
+  });
+
+  it("rejects a missing waypoint coordinate attribute", async () => {
+    const { points, selectedTrackElement } = await buildValidDoc(
+      buildTrustedRoute({ planningProvenance: PLANNING_PROVENANCE }),
+    );
+    getWaypointElements(selectedTrackElement)[0]?.removeAttribute("lon");
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(outcome).toEqual({ kind: "rejected" });
+  });
+
+  it("rejects a malformed geometrySha256 without computing a real digest", async () => {
+    const { points, selectedTrackElement } = await buildValidDoc(
+      buildTrustedRoute({ planningProvenance: PLANNING_PROVENANCE }),
+    );
+    getPlanningElement(selectedTrackElement).setAttribute("geometrySha256", "not-hex");
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(outcome).toEqual({ kind: "rejected" });
+  });
+
+  it("rejects when the track geometry has been tampered with since export", async () => {
+    const xml = await exportRouteToGpx(
+      buildTrustedRoute({ planningProvenance: PLANNING_PROVENANCE }),
+    );
+    const doc = parseGpxDocument(xml);
+    // Move one track point in the raw doc, then re-extract points from the
+    // tampered doc — the <acn:planning> digest attribute still reflects
+    // the original, now-mismatched geometry.
+    const trkpt = doc.getElementsByTagNameNS("*", "trkpt")[1];
+    trkpt?.setAttribute("lat", "52");
+    const { points, selectedTrackElement } = extractRoutePoints(doc);
+    if (!selectedTrackElement) throw new Error("test fixture must select a track");
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(outcome).toEqual({ kind: "rejected" });
+  });
+
+  it("accepts a geometrySha256 given in upper-case hex", async () => {
+    const { points, selectedTrackElement } = await buildValidDoc(
+      buildTrustedRoute({ planningProvenance: PLANNING_PROVENANCE }),
+    );
+    const planningElement = getPlanningElement(selectedTrackElement);
+    const original = planningElement.getAttribute("geometrySha256") ?? "";
+    planningElement.setAttribute("geometrySha256", original.toUpperCase());
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(outcome.kind).toBe("accepted");
+  });
+
+  it("is independent of a rejected sibling acn:navigation outcome", async () => {
+    const { points, selectedTrackElement } = await buildValidDoc(
+      buildTrustedRoute({ planningProvenance: PLANNING_PROVENANCE }),
+    );
+    // Corrupt the sibling <acn:navigation> envelope so it would reject...
+    getNavigationElement(selectedTrackElement).setAttribute(
+      "geometrySha256",
+      "a".repeat(64),
+    );
+    const navigationOutcome = await readAcnNavigationExtension(
+      selectedTrackElement,
+      points,
+    );
+    expect(navigationOutcome).toEqual({ kind: "rejected" });
+
+    // ...but the unrelated <acn:planning> sibling, with its own separately
+    // computed digest, is unaffected.
+    const planningOutcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(planningOutcome.kind).toBe("accepted");
+  });
+
+  it("ignores a namespace lookalike using the same local element/attribute names", async () => {
+    const doc = parseGpxDocument(acnLookalikeWrongNamespaceGpx);
+    const { points, selectedTrackElement } = extractRoutePoints(doc);
+    if (!selectedTrackElement) throw new Error("test fixture must select a track");
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(outcome).toEqual({ kind: "absent" });
+  });
+
+  it("never applies an extension attached to a non-selected track", async () => {
+    const doc = parseGpxDocument(acnExtensionOnSecondTrackGpx);
+    const { points, selectedTrackElement } = extractRoutePoints(doc);
+    if (!selectedTrackElement) throw new Error("test fixture must select a track");
+    const outcome = await readAcnPlanningExtension(selectedTrackElement, points);
+    expect(outcome).toEqual({ kind: "absent" });
   });
 });

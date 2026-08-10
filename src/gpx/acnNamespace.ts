@@ -11,3 +11,10 @@ export const ACN_NAMESPACE =
  * accepts. An unrecognised future version must be ignored (geometry/
  * elevation import still succeeds), never treated as a parse failure. */
 export const ACN_NAVIGATION_EXTENSION_VERSION = "1";
+
+/** The only <acn:planning> envelope version this app currently writes or
+ * accepts — see PlanningProvenance's own doc comment in domain/types.ts. An
+ * unrecognised future version must be ignored (geometry/elevation import
+ * still succeeds; the route simply falls back to deriving waypoints from
+ * its geometry), never treated as a parse failure. */
+export const ACN_PLANNING_EXTENSION_VERSION = "1";

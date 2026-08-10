@@ -523,6 +523,67 @@ describe("toStoredPlanningDraft / fromStoredPlanningDraft", () => {
 
     expect(restored.profile).toBe("cycling-road");
   });
+
+  it("round-trips edit-copy source route id and waypoints origin", () => {
+    const stored = toStoredPlanningDraft({
+      waypoints,
+      routeName: "Coastal loop",
+      avoidFerries: false,
+      profile: "cycling-regular",
+      editCopySourceRouteId: "route-1",
+      editCopyWaypointsOrigin: "derived",
+    });
+    const restored = fromStoredPlanningDraft({
+      id: "draft",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...stored,
+    });
+
+    expect(restored.editCopySourceRouteId).toBe("route-1");
+    expect(restored.editCopyWaypointsOrigin).toBe("derived");
+  });
+
+  it("leaves edit-copy fields undefined for an ordinary draft never opened as an edit copy", () => {
+    const stored = toStoredPlanningDraft({
+      waypoints,
+      routeName: "Coastal loop",
+      avoidFerries: false,
+      profile: "cycling-regular",
+    });
+    expect(stored).not.toHaveProperty("editCopySourceRouteId");
+    expect(stored).not.toHaveProperty("editCopyWaypointsOrigin");
+
+    const restored = fromStoredPlanningDraft({
+      id: "draft",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...stored,
+    });
+    expect(restored.editCopySourceRouteId).toBeUndefined();
+    expect(restored.editCopyWaypointsOrigin).toBeUndefined();
+  });
+
+  it("defaults edit-copy fields for a legacy row written before they existed", () => {
+    const legacyRow: StoredPlanningDraft = {
+      id: "draft",
+      waypoints,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const restored = fromStoredPlanningDraft(legacyRow);
+    expect(restored.editCopySourceRouteId).toBeUndefined();
+    expect(restored.editCopyWaypointsOrigin).toBeUndefined();
+  });
+
+  it("recovers safely to undefined for a corrupt or unrecognised stored waypoints-origin value", () => {
+    const corruptRow: StoredPlanningDraft = {
+      id: "draft",
+      waypoints,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      editCopySourceRouteId: "route-1",
+      editCopyWaypointsOrigin: "approximate",
+    };
+    const restored = fromStoredPlanningDraft(corruptRow);
+    expect(restored.editCopyWaypointsOrigin).toBeUndefined();
+  });
 });
 
 describe("toStoredPlanningPreferences / fromStoredPlanningPreferences", () => {

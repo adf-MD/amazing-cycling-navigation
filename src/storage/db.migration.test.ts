@@ -239,3 +239,44 @@ describe("AcnDatabase schema migration (v3 -> v4)", () => {
     upgraded.close();
   });
 });
+
+describe("planningDrafts editCopySourceRouteId/editCopyWaypointsOrigin (no schema version bump)", () => {
+  it("a legacy v4 planningDrafts row written before these fields existed loads cleanly", async () => {
+    // Simulates a real installation already on v4 before the "Edit copy in
+    // Planning" slice — the schema itself (planningDrafts: "id") is
+    // unchanged, so this is a plain field addition, not a new Dexie
+    // version; no upgrade path is exercised here at all.
+    const db = new AcnDatabase(TEST_DB_NAME);
+    await db.open();
+    await db.planningDrafts.put({
+      id: "draft",
+      waypoints: [{ id: "wp-1", coordinate: [-1.5, 53.8] }],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const stored = await db.planningDrafts.get("draft");
+    expect(stored).not.toHaveProperty("editCopySourceRouteId");
+    expect(stored).not.toHaveProperty("editCopyWaypointsOrigin");
+
+    db.close();
+  });
+
+  it("round-trips a planningDrafts row with the new edit-copy fields set", async () => {
+    const db = new AcnDatabase(TEST_DB_NAME);
+    await db.open();
+    await db.planningDrafts.put({
+      id: "draft",
+      waypoints: [{ id: "wp-1", coordinate: [-1.5, 53.8] }],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      editCopySourceRouteId: "route-1",
+      editCopyWaypointsOrigin: "exact",
+    });
+
+    await expect(db.planningDrafts.get("draft")).resolves.toMatchObject({
+      editCopySourceRouteId: "route-1",
+      editCopyWaypointsOrigin: "exact",
+    });
+
+    db.close();
+  });
+});

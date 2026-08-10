@@ -1,10 +1,20 @@
-import type { Manoeuvre, ManoeuvreType, RoutingProfile } from "../domain/types.ts";
+import type {
+  Coordinate,
+  Manoeuvre,
+  ManoeuvreType,
+  RoutingProfile,
+} from "../domain/types.ts";
 import { MAX_MANOEUVRE_INSTRUCTION_LENGTH } from "../domain/manoeuvreLimits.ts";
 import { isRoutingProfile } from "../domain/routingProfile.ts";
 import { cumulativeDistancesMetres } from "../navigation/distance.ts";
-import { ACN_NAMESPACE, ACN_NAVIGATION_EXTENSION_VERSION } from "./acnNamespace.ts";
+import {
+  ACN_NAMESPACE,
+  ACN_NAVIGATION_EXTENSION_VERSION,
+  ACN_PLANNING_EXTENSION_VERSION,
+} from "./acnNamespace.ts";
 import { canonicalizeTrackGeometry, computeGeometryDigestHex } from "./geometryDigest.ts";
 import type { RawGpxPoint } from "./parseGpx.ts";
+import { isValidLatitude, isValidLongitude } from "./validateGpx.ts";
 
 /** A defensive sanity cap on manoeuvre count, well above any plausible real
  * route (a 300 km route with a turn every 50 m is 6,000 manoeuvres) — not
@@ -238,4 +248,118 @@ export function readAcnSourceProfile(
 
   const profileAttr = sourceElement.getAttribute("profile");
   return isRoutingProfile(profileAttr) ? profileAttr : undefined;
+}
+
+/** A defensive sanity cap on planning-waypoint count for a validated
+ * <acn:planning> extension — far more than a realistic manual Planning
+ * session would use (a long multi-day touring plan with a waypoint every
+ * 1-2km over several hundred km would still stay well under this), while
+ * bounding a corrupted or malicious import. Independent of, and much larger
+ * than, navigation/deriveWaypointsFromRoute.ts's own MAX_DERIVED_WAYPOINTS
+ * (20), which bounds only the unrelated fallback derivation used when no
+ * valid provenance exists at all. */
+export const MAX_ACN_PLANNING_WAYPOINTS = 300;
+
+export type AcnPlanningExtensionOutcome =
+  | { kind: "absent" }
+  | {
+      kind: "accepted";
+      waypoints: Coordinate[];
+      profile: RoutingProfile;
+      avoidFerries: boolean;
+    }
+  | { kind: "rejected" };
+
+/**
+ * Reads and validates a project-owned <acn:planning> extension attached to
+ * `selectedTrackElement` — the original Planning waypoints that produced
+ * this route, plus the routing profile and avoid-ferries preference used at
+ * the time (see PlanningProvenance's own doc comment in domain/types.ts).
+ * Scoped and namespace-aware identically to readAcnNavigationExtension
+ * (never a second, non-selected track; never an extension nested inside a
+ * per-point <extensions>; the `acn:` prefix itself is never trusted, only
+ * the namespace URI).
+ *
+ * All-or-nothing and geometry-digest-bound, exactly like
+ * readAcnNavigationExtension: any single structural or geometry-binding
+ * failure discards the entire envelope ("rejected") rather than a partial
+ * waypoint list, so a caller can safely fall back to deterministic
+ * derivation from route geometry instead. "absent" (no notice needed) is
+ * distinct from "rejected" (caller should surface a non-blocking notice).
+ */
+export async function readAcnPlanningExtension(
+  selectedTrackElement: Element,
+  points: readonly RawGpxPoint[],
+): Promise<AcnPlanningExtensionOutcome> {
+  const extensionsElement = findDirectChild(
+    selectedTrackElement,
+    (element) => element.localName === "extensions",
+  );
+  if (!extensionsElement) {
+    return { kind: "absent" };
+  }
+
+  const planningElement = findDirectChild(extensionsElement, (element) =>
+    isAcnElement(element, "planning"),
+  );
+  if (!planningElement) {
+    return { kind: "absent" };
+  }
+
+  if (planningElement.getAttribute("version") !== ACN_PLANNING_EXTENSION_VERSION) {
+    return { kind: "rejected" };
+  }
+
+  const profileAttr = planningElement.getAttribute("profile");
+  if (!isRoutingProfile(profileAttr)) {
+    return { kind: "rejected" };
+  }
+  const profile = profileAttr;
+
+  const avoidFerriesAttr = planningElement.getAttribute("avoidFerries");
+  if (avoidFerriesAttr !== "true" && avoidFerriesAttr !== "false") {
+    return { kind: "rejected" };
+  }
+  const avoidFerries = avoidFerriesAttr === "true";
+
+  const waypointElements = Array.from(planningElement.children).filter((element) =>
+    isAcnElement(element, "waypoint"),
+  );
+  if (
+    waypointElements.length < 2 ||
+    waypointElements.length > MAX_ACN_PLANNING_WAYPOINTS
+  ) {
+    return { kind: "rejected" };
+  }
+
+  const waypointCountAttr = planningElement.getAttribute("waypointCount");
+  const waypointCount = waypointCountAttr === null ? NaN : Number(waypointCountAttr);
+  if (!Number.isInteger(waypointCount) || waypointCount !== waypointElements.length) {
+    return { kind: "rejected" };
+  }
+
+  const waypoints: Coordinate[] = [];
+  for (const element of waypointElements) {
+    const lonAttr = element.getAttribute("lon");
+    const latAttr = element.getAttribute("lat");
+    const longitude = lonAttr === null ? NaN : Number(lonAttr);
+    const latitude = latAttr === null ? NaN : Number(latAttr);
+    if (!isValidLongitude(longitude) || !isValidLatitude(latitude)) {
+      return { kind: "rejected" };
+    }
+    waypoints.push([longitude, latitude]);
+  }
+
+  const geometrySha256Attr = planningElement.getAttribute("geometrySha256");
+  if (!geometrySha256Attr || !/^[0-9a-f]{64}$/i.test(geometrySha256Attr)) {
+    return { kind: "rejected" };
+  }
+
+  const canonical = canonicalizeTrackGeometry(points.map((point) => point.coordinate));
+  const computedDigest = await computeGeometryDigestHex(canonical);
+  if (computedDigest !== geometrySha256Attr.toLowerCase()) {
+    return { kind: "rejected" };
+  }
+
+  return { kind: "accepted", waypoints, profile, avoidFerries };
 }

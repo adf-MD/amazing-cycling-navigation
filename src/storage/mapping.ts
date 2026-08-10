@@ -159,6 +159,15 @@ export function fromStoredRideState(stored: StoredRideState): RestoredRideState 
   };
 }
 
+/** The origin of the waypoints an "Edit copy in Planning" draft was seeded
+ * with — see domain/editableWaypoints.ts's EditableWaypointsResult.origin,
+ * which this mirrors exactly for storage. */
+export type EditCopyWaypointsOrigin = "exact" | "derived";
+
+function isEditCopyWaypointsOrigin(value: unknown): value is EditCopyWaypointsOrigin {
+  return value === "exact" || value === "derived";
+}
+
 /** A Planning draft's provider-independent content — deliberately one
  * shared shape for both directions (unlike ride state's asymmetric
  * to/Restored pair), since a draft's shape is identical whether it's
@@ -168,6 +177,12 @@ export interface PlanningDraftContent {
   routeName: string;
   avoidFerries: boolean;
   profile: RoutingProfile;
+  /** Set together, or neither set at all — present only when this draft
+   * was created via "Edit copy in Planning" (see RidingScreen.tsx). Purely
+   * informational: drives PlanningScreen's read-only notice, never gates
+   * Save/Export or routing behaviour. */
+  editCopySourceRouteId?: string;
+  editCopyWaypointsOrigin?: EditCopyWaypointsOrigin;
 }
 
 export function toStoredPlanningDraft(
@@ -178,6 +193,14 @@ export function toStoredPlanningDraft(
     routeName: content.routeName,
     avoidFerries: content.avoidFerries,
     profile: content.profile,
+    // Spread conditionally, never writing a literal `undefined` — mirrors
+    // exportGpx.ts's own convention for optional attributes/fields.
+    ...(content.editCopySourceRouteId !== undefined
+      ? { editCopySourceRouteId: content.editCopySourceRouteId }
+      : {}),
+    ...(content.editCopyWaypointsOrigin !== undefined
+      ? { editCopyWaypointsOrigin: content.editCopyWaypointsOrigin }
+      : {}),
   };
 }
 
@@ -196,6 +219,13 @@ export function fromStoredPlanningDraft(
     // unknown stored string must never flow through to the routing
     // adapter, so it recovers to the app's original single profile.
     profile: isRoutingProfile(stored.profile) ? stored.profile : DEFAULT_ROUTING_PROFILE,
+    editCopySourceRouteId: stored.editCopySourceRouteId,
+    // A real membership check, not a bare `??` — an unrecognised/corrupt
+    // stored value simply means "no known origin", which suppresses the
+    // notice rather than showing a wrong one.
+    editCopyWaypointsOrigin: isEditCopyWaypointsOrigin(stored.editCopyWaypointsOrigin)
+      ? stored.editCopyWaypointsOrigin
+      : undefined,
   };
 }
 

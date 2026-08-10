@@ -92,4 +92,40 @@ describe("buildPlannedRouteFromGpx", () => {
     });
     expect(route.manoeuvreProvenance).toBeUndefined();
   });
+
+  it("sets planningProvenance when trustedPlanningWaypoints is given", () => {
+    const route = buildPlannedRouteFromGpx(
+      rawPoints,
+      { name: "Recovered plan", createdAt: "2026-01-01T00:00:00.000Z" },
+      undefined,
+      undefined,
+      {
+        waypoints: [
+          [0, 51],
+          [0.002, 51.001],
+        ],
+        profile: "cycling-regular",
+        avoidFerries: false,
+      },
+    );
+
+    expect(route.planningProvenance).toEqual({
+      kind: "acn-gpx-extension",
+      version: 1,
+      waypoints: [
+        [0, 51],
+        [0.002, 51.001],
+      ],
+      profile: "cycling-regular",
+      avoidFerries: false,
+    });
+  });
+
+  it("leaves planningProvenance unset when trustedPlanningWaypoints is omitted", () => {
+    const route = buildPlannedRouteFromGpx(rawPoints, {
+      name: "Evening loop",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(route.planningProvenance).toBeUndefined();
+  });
 });

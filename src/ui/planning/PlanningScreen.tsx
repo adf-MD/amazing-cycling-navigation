@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { Coordinate, PlannedRoute, RoutingProfile } from "../../domain/types.ts";
+import type {
+  Coordinate,
+  PlannedRoute,
+  PlanningProvenance,
+  RoutingProfile,
+  Waypoint,
+} from "../../domain/types.ts";
 import { exportRouteToGpx } from "../../gpx/exportGpx.ts";
 import { isValidLatitude, isValidLongitude } from "../../gpx/validateGpx.ts";
 import {
@@ -118,6 +124,24 @@ function isValidCoordinate(coordinate: Coordinate): boolean {
   return isValidLongitude(coordinate[0]) && isValidLatitude(coordinate[1]);
 }
 
+/** Stamps the live Planning waypoints onto a route about to be saved or
+ * exported, so a future "Edit copy in Planning" (or GPX round-trip) can
+ * recover them exactly — see domain/editableWaypoints.ts and
+ * PlanningProvenance's own doc comment. Used by both handleSave and
+ * handleExport so the two never disagree about what was actually planned. */
+function buildPlanningProvenance(
+  waypoints: readonly Waypoint[],
+  profile: RoutingProfile,
+  avoidFerries: boolean,
+): PlanningProvenance {
+  return {
+    kind: "planning-session",
+    waypoints: waypoints.map((waypoint) => waypoint.coordinate),
+    profile,
+    avoidFerries,
+  };
+}
+
 /**
  * Orchestrates waypoint editing, debounced route calculation, draft
  * persistence and save/export — the map's own lifecycle, sources and
@@ -151,6 +175,18 @@ export function PlanningScreen({
   const [avoidFerries, setAvoidFerries] = useState(true);
   const [profile, setProfile] = useState<RoutingProfile>(DEFAULT_ROUTING_PROFILE);
   const [routeName, setRouteName] = useState("Planned route");
+  // Set together, or neither — present only when this draft was created via
+  // "Edit copy in Planning" (see RidingScreen.tsx), restored from the
+  // hydrated draft below or set fresh by the debounced autosave effect.
+  // Held as one nullable object, not two separate booleans/strings, so the
+  // two fields can never drift out of sync. Drives only the read-only
+  // informational notice below — never gates Save/Export, recalculation or
+  // routing behaviour, all of which are already governed by the existing
+  // waypoint/profile/avoidFerries fingerprint.
+  const [editCopyMeta, setEditCopyMeta] = useState<{
+    sourceRouteId: string;
+    origin: "exact" | "derived";
+  } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [crosshairCoordinate, setCrosshairCoordinate] = useState<Coordinate | null>(null);
@@ -429,6 +465,16 @@ export function PlanningScreen({
           setRouteName(draft.routeName);
           setAvoidFerries(draft.avoidFerries);
           setProfile(draft.profile);
+          // Both fields, or neither — see editCopyMeta's own doc comment.
+          if (
+            draft.editCopySourceRouteId !== undefined &&
+            draft.editCopyWaypointsOrigin !== undefined
+          ) {
+            setEditCopyMeta({
+              sourceRouteId: draft.editCopySourceRouteId,
+              origin: draft.editCopyWaypointsOrigin,
+            });
+          }
           setIsDraftHydrated(true);
           return;
         }
@@ -476,7 +522,22 @@ export function PlanningScreen({
       const persist =
         state.present.length === 0
           ? clearDraft()
-          : saveDraft({ waypoints: state.present, routeName, avoidFerries, profile });
+          : saveDraft({
+              waypoints: state.present,
+              routeName,
+              avoidFerries,
+              profile,
+              // Carried through on every autosave, not just the initial
+              // hydration — saveDraft fully replaces the stored row, so
+              // omitting this here would silently drop it on the very
+              // first autosave after a fresh "Edit copy in Planning" open.
+              ...(editCopyMeta
+                ? {
+                    editCopySourceRouteId: editCopyMeta.sourceRouteId,
+                    editCopyWaypointsOrigin: editCopyMeta.origin,
+                  }
+                : {}),
+            });
       persist.catch((error: unknown) => {
         logError("planning-save-draft", error);
       });
@@ -484,7 +545,7 @@ export function PlanningScreen({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [state.present, routeName, avoidFerries, profile, isDraftHydrated]);
+  }, [state.present, routeName, avoidFerries, profile, editCopyMeta, isDraftHydrated]);
 
   // Read fresh inside the location effect below rather than depending on
   // state.present directly, so a waypoint added while the location request
@@ -710,6 +771,7 @@ export function PlanningScreen({
     const routeToSave: PlannedRoute = {
       ...routing.state.route,
       name: routeName.trim() || "Planned route",
+      planningProvenance: buildPlanningProvenance(state.present, profile, avoidFerries),
     };
     setSaveError(null);
     saveRoute(routeToSave)
@@ -717,6 +779,7 @@ export function PlanningScreen({
       .then(() => {
         dispatchWaypointAction({ type: "reset", waypoints: [] });
         setRouteName("Planned route");
+        setEditCopyMeta(null);
         onRouteSaved?.(routeToSave);
       })
       .catch((error: unknown) => {
@@ -729,7 +792,11 @@ export function PlanningScreen({
     if (routing.state.kind !== "routed") return;
     setExportError(null);
     const trimmedName = routeName.trim() || "Planned route";
-    const routeToExport: PlannedRoute = { ...routing.state.route, name: trimmedName };
+    const routeToExport: PlannedRoute = {
+      ...routing.state.route,
+      name: trimmedName,
+      planningProvenance: buildPlanningProvenance(state.present, profile, avoidFerries),
+    };
     exportRouteToGpx(routeToExport)
       .then((xml) => {
         downloadTextFile(`${trimmedName}.gpx`, xml, "application/gpx+xml");
@@ -833,6 +900,14 @@ export function PlanningScreen({
       <h1 className="screen-title">Plan a route</h1>
 
       {!hasKey ? <NoApiKeyNotice onOpenSettings={onNavigateToSettings} /> : null}
+
+      {editCopyMeta ? (
+        <p className="status-row status-row--info" role="status">
+          {editCopyMeta.origin === "exact"
+            ? "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged."
+            : "Editable waypoints were estimated from this route. Recalculation may follow different roads. The saved route will remain unchanged."}
+        </p>
+      ) : null}
 
       <div className="planning-map-container">
         <MapView

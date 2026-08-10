@@ -3329,4 +3329,260 @@ describe("PlanningScreen", () => {
       screen.getByText(/calculated in sections between waypoints/i),
     ).toBeInTheDocument();
   });
+
+  describe("edit-copy notice and planning provenance", () => {
+    it("shows no edit-copy notice for an ordinary restored draft", async () => {
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Planned route",
+        avoidFerries: true,
+        profile: "cycling-road",
+      });
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/editable copy/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/editable waypoints were estimated/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows the exact-provenance notice for a draft restored with exact edit-copy waypoints", async () => {
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Coastal loop",
+        avoidFerries: true,
+        profile: "cycling-road",
+        editCopySourceRouteId: "route-1",
+        editCopyWaypointsOrigin: "exact",
+      });
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.",
+          ),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("shows the derived-provenance notice for a draft restored with derived edit-copy waypoints", async () => {
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Coastal loop",
+        avoidFerries: true,
+        profile: "cycling-road",
+        editCopySourceRouteId: "route-1",
+        editCopyWaypointsOrigin: "derived",
+      });
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            "Editable waypoints were estimated from this route. Recalculation may follow different roads. The saved route will remain unchanged.",
+          ),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("keeps the edit-copy notice, and the underlying draft fields, after an unrelated waypoint edit (autosave regression)", async () => {
+      const user = userEvent.setup();
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Coastal loop",
+        avoidFerries: true,
+        profile: "cycling-road",
+        editCopySourceRouteId: "route-1",
+        editCopyWaypointsOrigin: "exact",
+      });
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(screen.getByText(/editable copy created/i)).toBeInTheDocument();
+      });
+
+      // An unrelated edit (adding a third waypoint) triggers the debounced
+      // autosave effect. Without threading editCopyMeta through every
+      // saveDraft call, this would silently drop the edit-copy fields.
+      await addWaypointViaCrosshair(map, user, [0.02, 51]);
+
+      await waitFor(
+        async () => {
+          const draft = await getDraft();
+          expect(draft?.waypoints).toHaveLength(3);
+        },
+        { timeout: 3000 },
+      );
+
+      const draft = await getDraft();
+      expect(draft?.editCopySourceRouteId).toBe("route-1");
+      expect(draft?.editCopyWaypointsOrigin).toBe("exact");
+      expect(screen.getByText(/editable copy created/i)).toBeInTheDocument();
+    });
+
+    it("clears the edit-copy notice once the copy is saved", async () => {
+      const user = userEvent.setup();
+      await saveProviderKey("dummy-test-key");
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Coastal loop",
+        avoidFerries: true,
+        profile: "cycling-road",
+        editCopySourceRouteId: "route-1",
+        editCopyWaypointsOrigin: "exact",
+      });
+      const map = createMockMapFactory();
+      const route = buildRoute(10);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          routingProvider={buildResolvedAdapter(route)}
+        />,
+      );
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(screen.getByText(/editable copy created/i)).toBeInTheDocument();
+      });
+
+      const calculateButton = await waitFor(() => {
+        const button = screen.getByRole("button", { name: /calculate route/i });
+        expect(button).toBeEnabled();
+        return button;
+      });
+      await user.click(calculateButton);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /save route/i })).toBeEnabled();
+      });
+
+      await user.click(screen.getByRole("button", { name: /save route/i }));
+
+      await waitFor(() => {
+        expect(screen.queryByText(/editable copy created/i)).not.toBeInTheDocument();
+      });
+    });
+
+    it("stamps planningProvenance from live waypoints, profile and avoid-ferries when saving", async () => {
+      const user = userEvent.setup();
+      await saveProviderKey("dummy-test-key");
+      const map = createMockMapFactory();
+      const route = buildRoute(10);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          routingProvider={buildResolvedAdapter(route)}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "General cycling" }));
+      await addWaypointViaCrosshair(map, user, [0, 51]);
+      await addWaypointViaCrosshair(map, user, [0.01, 51]);
+      const calculateButton = await waitFor(() => {
+        const button = screen.getByRole("button", { name: /calculate route/i });
+        expect(button).toBeEnabled();
+        return button;
+      });
+      await user.click(calculateButton);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /save route/i })).toBeEnabled();
+      });
+
+      await user.click(screen.getByRole("button", { name: /save route/i }));
+
+      await waitFor(async () => {
+        const routes = await listRoutes();
+        expect(routes).toHaveLength(1);
+      });
+      const [saved] = await listRoutes();
+      expect(saved?.planningProvenance).toEqual({
+        kind: "planning-session",
+        waypoints: [
+          [0, 51],
+          [0.01, 51],
+        ],
+        profile: "cycling-regular",
+        avoidFerries: true,
+      });
+    });
+
+    it("stamps planningProvenance from live waypoints when exporting", async () => {
+      const user = userEvent.setup();
+      await saveProviderKey("dummy-test-key");
+      const map = createMockMapFactory();
+      const route = buildRoute(10);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          routingProvider={buildResolvedAdapter(route)}
+        />,
+      );
+      map.triggerLoad();
+
+      await addWaypointViaCrosshair(map, user, [0, 51]);
+      await addWaypointViaCrosshair(map, user, [0.01, 51]);
+      const calculateButton = await waitFor(() => {
+        const button = screen.getByRole("button", { name: /calculate route/i });
+        expect(button).toBeEnabled();
+        return button;
+      });
+      await user.click(calculateButton);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /export gpx/i })).toBeEnabled();
+      });
+
+      let capturedBlob: Blob | null = null;
+      const originalCreateObjectURL = URL.createObjectURL.bind(URL);
+      const originalRevokeObjectURL = URL.revokeObjectURL.bind(URL);
+      URL.createObjectURL = vi.fn((blob: Blob) => {
+        capturedBlob = blob;
+        return "blob:mock-url";
+      });
+      URL.revokeObjectURL = vi.fn();
+
+      try {
+        await user.click(screen.getByRole("button", { name: /export gpx/i }));
+        await waitFor(() => {
+          expect(capturedBlob).not.toBeNull();
+        });
+        const text = await (capturedBlob as unknown as Blob).text();
+        expect(text).toContain("acn:planning");
+        expect(text).toContain('lon="0"');
+        expect(text).toContain('profile="cycling-road"');
+      } finally {
+        URL.createObjectURL = originalCreateObjectURL;
+        URL.revokeObjectURL = originalRevokeObjectURL;
+      }
+    });
+  });
 });

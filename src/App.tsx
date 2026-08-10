@@ -45,6 +45,10 @@ function App({ mapFactory }: AppProps) {
     setScreen("settings");
   };
 
+  const handleNavigateToPlanning = () => {
+    setScreen("planning");
+  };
+
   return (
     <div className="app-shell">
       <header className={positionMode === "sticky" ? "app-header--sticky" : undefined}>
@@ -85,6 +89,7 @@ function App({ mapFactory }: AppProps) {
               route={selectedRoute}
               mapFactory={mapFactory}
               onRidingActiveChange={setIsRidingActive}
+              onNavigateToPlanning={handleNavigateToPlanning}
             />
           ) : (
             <section className="screen" aria-label="Ride">

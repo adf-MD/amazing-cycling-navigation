@@ -1,7 +1,15 @@
 import type { PlannedRoute } from "../domain/types.ts";
 import { systemClock, type Clock } from "../platform/clock.ts";
-import { buildPlannedRouteFromGpx, type TrustedGpxManoeuvres } from "./normalizeGpx.ts";
-import { readAcnNavigationExtension, readAcnSourceProfile } from "./parseAcnExtension.ts";
+import {
+  buildPlannedRouteFromGpx,
+  type TrustedGpxManoeuvres,
+  type TrustedGpxPlanningWaypoints,
+} from "./normalizeGpx.ts";
+import {
+  readAcnNavigationExtension,
+  readAcnPlanningExtension,
+  readAcnSourceProfile,
+} from "./parseAcnExtension.ts";
 import {
   extractRoutePoints,
   parseGpxDocument,
@@ -11,6 +19,9 @@ import { validateGpxFile } from "./validateGpx.ts";
 
 const ACN_EXTENSION_REJECTED_MESSAGE =
   "This GPX contained turn information, but it did not match the route geometry and was ignored.";
+
+const ACN_PLANNING_EXTENSION_REJECTED_MESSAGE =
+  "This GPX contained planning waypoints, but they did not match the route geometry and were ignored. Editing this route as a copy will use estimated waypoints instead.";
 
 export interface GpxImportResult {
   route: PlannedRoute;
@@ -32,12 +43,15 @@ export async function importGpxFile(
   const doc = parseGpxDocument(xmlText);
   const { points, notices, selectedTrackElement } = extractRoutePoints(doc);
 
-  const acnOutcome = selectedTrackElement
-    ? await readAcnNavigationExtension(selectedTrackElement, points)
-    : ({ kind: "absent" } as const);
-  // Independent of acnOutcome above: <acn:source> carries no geometry
-  // digest of its own, so it is read regardless of whether the sibling
-  // <acn:navigation> envelope validated.
+  const [acnOutcome, acnPlanningOutcome] = selectedTrackElement
+    ? await Promise.all([
+        readAcnNavigationExtension(selectedTrackElement, points),
+        readAcnPlanningExtension(selectedTrackElement, points),
+      ])
+    : ([{ kind: "absent" }, { kind: "absent" }] as const);
+  // Independent of acnOutcome/acnPlanningOutcome above: <acn:source> carries
+  // no geometry digest of its own, so it is read regardless of whether
+  // either sibling envelope validated.
   const sourceProfile = selectedTrackElement
     ? readAcnSourceProfile(selectedTrackElement)
     : undefined;
@@ -56,6 +70,20 @@ export async function importGpxFile(
     });
   }
 
+  let trustedPlanningWaypoints: TrustedGpxPlanningWaypoints | undefined;
+  if (acnPlanningOutcome.kind === "accepted") {
+    trustedPlanningWaypoints = {
+      waypoints: acnPlanningOutcome.waypoints,
+      profile: acnPlanningOutcome.profile,
+      avoidFerries: acnPlanningOutcome.avoidFerries,
+    };
+  } else if (acnPlanningOutcome.kind === "rejected") {
+    allNotices.push({
+      kind: "acn-planning-extension-rejected",
+      message: ACN_PLANNING_EXTENSION_REJECTED_MESSAGE,
+    });
+  }
+
   const route = buildPlannedRouteFromGpx(
     points,
     {
@@ -64,6 +92,7 @@ export async function importGpxFile(
     },
     trustedManoeuvres,
     sourceProfile,
+    trustedPlanningWaypoints,
   );
 
   return { route, notices: allNotices };

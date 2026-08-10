@@ -208,11 +208,101 @@ describe("exportRouteToGpx", () => {
       await expect(exportRouteToGpx(buildTrustedRoute())).rejects.toThrow(GpxExportError);
     });
 
-    it("exports geometry-only without throwing when crypto is unavailable and there are no manoeuvres", async () => {
+    it("throws GpxExportError when planning provenance exists but crypto.subtle is unavailable, even with no manoeuvres", async () => {
+      vi.stubGlobal("crypto", {});
+      const route = buildRoute({
+        planningProvenance: {
+          kind: "planning-session",
+          waypoints: [
+            [0, 51],
+            [0.002, 51.001],
+          ],
+          profile: "cycling-road",
+          avoidFerries: true,
+        },
+      });
+      await expect(exportRouteToGpx(route)).rejects.toThrow(GpxExportError);
+    });
+
+    it("exports geometry-only without throwing when crypto is unavailable and there are no manoeuvres or planning provenance", async () => {
       vi.stubGlobal("crypto", {});
       const xml = await exportRouteToGpx(buildRoute());
       const doc = new DOMParser().parseFromString(xml, "application/xml");
       expect(doc.getElementsByTagName("parsererror")).toHaveLength(0);
+    });
+  });
+
+  describe("acn:planning extension", () => {
+    it("writes a geometry-bound acn:planning envelope when planning provenance is present", async () => {
+      const route = buildRoute({
+        planningProvenance: {
+          kind: "planning-session",
+          waypoints: [
+            [0, 51],
+            [0.001, 51],
+            [0.002, 51.001],
+          ],
+          profile: "cycling-regular",
+          avoidFerries: false,
+        },
+      });
+      const xml = await exportRouteToGpx(route);
+      const doc = new DOMParser().parseFromString(xml, "application/xml");
+
+      expect(doc.getElementsByTagName("parsererror")).toHaveLength(0);
+      const planningElements = doc.getElementsByTagNameNS("*", "planning");
+      expect(planningElements).toHaveLength(1);
+      const planning = planningElements[0];
+      expect(planning?.getAttribute("version")).toBe("1");
+      expect(planning?.getAttribute("profile")).toBe("cycling-regular");
+      expect(planning?.getAttribute("avoidFerries")).toBe("false");
+      expect(planning?.getAttribute("waypointCount")).toBe("3");
+      expect(planning?.getAttribute("geometrySha256")).toMatch(/^[0-9a-f]{64}$/);
+
+      const waypointElements = doc.getElementsByTagNameNS("*", "waypoint");
+      expect(waypointElements).toHaveLength(3);
+      expect(waypointElements[0]?.getAttribute("lon")).toBe("0");
+      expect(waypointElements[0]?.getAttribute("lat")).toBe("51");
+
+      // A plain-GPX reader ignoring unknown extensions still sees exactly
+      // the track points, nothing from the extension.
+      const { points } = extractRoutePoints(doc);
+      expect(points).toHaveLength(3);
+    });
+
+    it("omits acn:planning when there is no planning provenance", async () => {
+      const xml = await exportRouteToGpx(buildRoute());
+      const doc = new DOMParser().parseFromString(xml, "application/xml");
+      expect(doc.getElementsByTagNameNS("*", "planning")).toHaveLength(0);
+    });
+
+    it("writes acn:navigation and acn:planning as siblings under one shared extensions element, with an identical digest", async () => {
+      const route = buildTrustedRoute({
+        planningProvenance: {
+          kind: "planning-session",
+          waypoints: [
+            [0, 51],
+            [0.002, 51.001],
+          ],
+          profile: "cycling-road",
+          avoidFerries: true,
+        },
+      });
+      const xml = await exportRouteToGpx(route);
+      const doc = new DOMParser().parseFromString(xml, "application/xml");
+
+      const extensionsElements = doc.getElementsByTagNameNS("*", "extensions");
+      expect(extensionsElements).toHaveLength(1);
+      const navigation = extensionsElements[0]?.getElementsByTagNameNS(
+        "*",
+        "navigation",
+      )[0];
+      const planning = extensionsElements[0]?.getElementsByTagNameNS("*", "planning")[0];
+      expect(navigation).toBeDefined();
+      expect(planning).toBeDefined();
+      expect(planning?.getAttribute("geometrySha256")).toBe(
+        navigation?.getAttribute("geometrySha256"),
+      );
     });
   });
 });

@@ -11,7 +11,8 @@ export interface GpxImportNotice {
   kind:
     | "multiple-tracks-first-used"
     | "multiple-routes-first-used"
-    | "acn-extension-rejected";
+    | "acn-extension-rejected"
+    | "acn-planning-extension-rejected";
   message: string;
 }
 

@@ -1,5 +1,6 @@
 import { createRouteId } from "../domain/id.ts";
 import type {
+  Coordinate,
   Manoeuvre,
   ManoeuvreProvenance,
   PlannedRoute,
@@ -21,6 +22,15 @@ export interface NormalizeGpxOptions {
 export interface TrustedGpxManoeuvres {
   manoeuvres: Manoeuvre[];
   provenance: ManoeuvreProvenance;
+}
+
+/** A validated ACN GPX planning extension's waypoints/options, ready to
+ * stamp onto the resulting route's planningProvenance. Passed only when
+ * readAcnPlanningExtension accepted the file's extension. */
+export interface TrustedGpxPlanningWaypoints {
+  waypoints: Coordinate[];
+  profile: RoutingProfile;
+  avoidFerries: boolean;
 }
 
 export interface NormalizedGpxPoints {
@@ -53,6 +63,13 @@ export function buildPlannedRouteFromGpx(
    * undefined`) whenever absent, so an ordinary third-party GPX import's
    * source stays exactly `{ kind: "gpx-import" }`. */
   sourceProfile?: RoutingProfile,
+  /** A validated <acn:planning> GPX extension's recovered waypoints, if
+   * any (see parseAcnExtension.ts's readAcnPlanningExtension). Omitted
+   * whenever absent or rejected, so an ordinary import — or one whose
+   * planning extension didn't validate — gets no planningProvenance at
+   * all, and domain/editableWaypoints.ts falls back to deriving waypoints
+   * from geometry when this route is later opened as an editable copy. */
+  trustedPlanningWaypoints?: TrustedGpxPlanningWaypoints,
 ): PlannedRoute {
   const { points, distanceMetres } = normalizeGpxPoints(rawPoints);
   const { ascentMetres, descentMetres } = analyzeElevation(points);
@@ -64,6 +81,17 @@ export function buildPlannedRouteFromGpx(
     points,
     manoeuvres: trustedManoeuvres?.manoeuvres ?? [],
     ...(trustedManoeuvres ? { manoeuvreProvenance: trustedManoeuvres.provenance } : {}),
+    ...(trustedPlanningWaypoints
+      ? {
+          planningProvenance: {
+            kind: "acn-gpx-extension" as const,
+            version: 1 as const,
+            waypoints: trustedPlanningWaypoints.waypoints,
+            profile: trustedPlanningWaypoints.profile,
+            avoidFerries: trustedPlanningWaypoints.avoidFerries,
+          },
+        }
+      : {}),
     distanceMetres,
     ascentMetres,
     descentMetres,

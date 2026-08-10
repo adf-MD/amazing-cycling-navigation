@@ -83,6 +83,23 @@ export interface StoredPlanningDraft {
    * missing value to DEFAULT_ROUTING_PROFILE ("cycling-road"), the app's
    * only profile before this field existed. */
   profile?: string;
+  /** Marks this draft as an "Edit copy in Planning" seeded from an
+   * existing saved route — that route's id, purely informational (drives
+   * PlanningScreen's read-only "editable copy" notice; never gates Save/
+   * Export, never implies updating that route in place). Optional/non-
+   * indexed, so adding it needs no schema version bump, matching
+   * routeName/avoidFerries/profile above. Absent for an ordinary
+   * hand-built draft. */
+  editCopySourceRouteId?: string;
+  /** Whether the waypoints this draft was seeded with were the source
+   * route's exact recovered planning waypoints, or a derived approximation
+   * — see domain/editableWaypoints.ts's EditableWaypointsResult.origin.
+   * Only meaningful alongside editCopySourceRouteId (both are set, or
+   * neither is). A plain string, not the narrower union, at this storage
+   * boundary — mapping.ts's fromStoredPlanningDraft guards it with a real
+   * membership check before use. Optional/non-indexed for the same reason
+   * as the field above. */
+  editCopyWaypointsOrigin?: string;
 }
 
 /**
@@ -275,6 +292,11 @@ export class AcnDatabase extends Dexie {
       planningPreferences: "id",
       routeLibraryPreferences: "id",
     });
+    // planningDrafts' later editCopySourceRouteId/editCopyWaypointsOrigin
+    // fields (the "Edit copy in Planning" slice), and routes' later
+    // planningProvenance field, are plain, non-indexed data fields added
+    // the same way as everything else documented above — no version(5)
+    // needed for them.
   }
 }
 

@@ -176,4 +176,110 @@ describe("importGpxFile", () => {
       expect(notices).toEqual([]);
     });
   });
+
+  describe("ACN planning extension", () => {
+    function buildRouteWithPlanningProvenance(): PlannedRoute {
+      return {
+        id: "test-route",
+        name: "Planned route",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        points: [
+          { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
+          { coordinate: [0.001, 51], elevationMetres: 12, distanceFromStartMetres: 111 },
+          {
+            coordinate: [0.002, 51.001],
+            elevationMetres: null,
+            distanceFromStartMetres: 230,
+          },
+        ],
+        manoeuvres: [],
+        distanceMetres: 230,
+        ascentMetres: 2,
+        descentMetres: 0,
+        warnings: [],
+        source: {
+          kind: "planner",
+          provider: "openrouteservice",
+          profile: "cycling-road",
+        },
+        planningProvenance: {
+          kind: "planning-session",
+          waypoints: [
+            [0, 51],
+            [0.002, 51.001],
+          ],
+          profile: "cycling-regular",
+          avoidFerries: false,
+        },
+      };
+    }
+
+    it("recovers planning waypoints when the ACN planning extension validates", async () => {
+      const xml = await exportRouteToGpx(buildRouteWithPlanningProvenance());
+      const { route, notices } = await importGpxFile(
+        buildGpxFile("planned.gpx", xml),
+        fixedClock,
+      );
+
+      expect(route.planningProvenance).toEqual({
+        kind: "acn-gpx-extension",
+        version: 1,
+        waypoints: [
+          [0, 51],
+          [0.002, 51.001],
+        ],
+        profile: "cycling-regular",
+        avoidFerries: false,
+      });
+      expect(notices).toEqual([]);
+    });
+
+    it("discards a corrupted ACN planning extension, keeps the route, and adds a rejection notice", async () => {
+      const xml = await exportRouteToGpx(buildRouteWithPlanningProvenance());
+      const corrupted = xml.replace(
+        /(<acn:planning[^>]*geometrySha256=")[0-9a-f]{64}(")/,
+        `$1${"a".repeat(64)}$2`,
+      );
+      const { route, notices } = await importGpxFile(
+        buildGpxFile("corrupted-planning.gpx", corrupted),
+        fixedClock,
+      );
+
+      expect(route.points).toHaveLength(3);
+      expect(route.planningProvenance).toBeUndefined();
+      expect(notices).toHaveLength(1);
+      expect(notices[0]?.kind).toBe("acn-planning-extension-rejected");
+      expect(notices[0]?.message).toMatch(/planning waypoints/);
+    });
+
+    it("leaves an ordinary GPX file with no extension unaffected", async () => {
+      const { route, notices } = await importGpxFile(
+        buildGpxFile("plain.gpx", trackWithElevationGpx),
+        fixedClock,
+      );
+
+      expect(route.planningProvenance).toBeUndefined();
+      expect(notices).toEqual([]);
+    });
+
+    it("recovers both trusted manoeuvres and planning waypoints from the same file independently", async () => {
+      const route: PlannedRoute = {
+        ...buildRouteWithPlanningProvenance(),
+        manoeuvres: [{ distanceFromStartMetres: 50, type: "left" }],
+        manoeuvreProvenance: { kind: "routing-provider", provider: "openrouteservice" },
+      };
+      const xml = await exportRouteToGpx(route);
+      const { route: reimported, notices } = await importGpxFile(
+        buildGpxFile("both.gpx", xml),
+        fixedClock,
+      );
+
+      expect(reimported.manoeuvreProvenance).toEqual({
+        kind: "acn-gpx-extension",
+        version: 1,
+      });
+      expect(reimported.planningProvenance?.kind).toBe("acn-gpx-extension");
+      expect(notices).toEqual([]);
+    });
+  });
 });

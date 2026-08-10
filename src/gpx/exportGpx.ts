@@ -1,7 +1,11 @@
 import { hasTrustedManoeuvres } from "../domain/manoeuvreTrust.ts";
 import type { PlannedRoute } from "../domain/types.ts";
 import { nearestPointIndexForDistance } from "../navigation/distance.ts";
-import { ACN_NAMESPACE, ACN_NAVIGATION_EXTENSION_VERSION } from "./acnNamespace.ts";
+import {
+  ACN_NAMESPACE,
+  ACN_NAVIGATION_EXTENSION_VERSION,
+  ACN_PLANNING_EXTENSION_VERSION,
+} from "./acnNamespace.ts";
 import { GpxExportError } from "./exportErrors.ts";
 import { canonicalizeTrackGeometry, computeGeometryDigestHex } from "./geometryDigest.ts";
 
@@ -11,15 +15,19 @@ const GPX_NAMESPACE = "http://www.topografix.com/GPX/1/1";
  * Serialises a PlannedRoute as a standards-compatible GPX 1.1 track,
  * including full geometry and elevation. When the route has trusted
  * manoeuvres (hasTrustedManoeuvres), they are written as a namespaced
- * <acn:navigation> extension — geometry-bound via a point count and a
- * SHA-256 digest, so a re-import can detect whether the file's track was
- * modified since export — that other GPX readers can safely ignore. Built
- * via the DOM/XMLSerializer rather than string templating so text content
- * and attribute values are always escaped correctly.
+ * <acn:navigation> extension; when it has recovered planning-waypoint
+ * provenance (route.planningProvenance), the original Planning waypoints
+ * are written as a namespaced <acn:planning> extension. Both are
+ * geometry-bound via a point/waypoint count and a shared SHA-256 digest, so
+ * a re-import can detect whether the file's track was modified since
+ * export — that other GPX readers can safely ignore. Built via the
+ * DOM/XMLSerializer rather than string templating so text content and
+ * attribute values are always escaped correctly.
  *
  * Async only because computing the geometry digest requires
- * crypto.subtle.digest, which has no synchronous form. A route with no
- * trusted manoeuvres never touches Web Crypto and always resolves.
+ * crypto.subtle.digest, which has no synchronous form. A route with neither
+ * trusted manoeuvres nor planning provenance never touches Web Crypto and
+ * always resolves.
  */
 export async function exportRouteToGpx(route: PlannedRoute): Promise<string> {
   const doc = document.implementation.createDocument(GPX_NAMESPACE, "gpx", null);
@@ -35,28 +43,39 @@ export async function exportRouteToGpx(route: PlannedRoute): Promise<string> {
   nameElement.textContent = route.name;
   trk.appendChild(nameElement);
 
-  // Manoeuvres and routing provenance share one <extensions> element
-  // rather than risking two sibling <extensions> blocks, which some
-  // readers tolerate poorly. Collected as plain child elements first, so
-  // the wrapping <extensions> element itself is only created (and only
-  // appended to the document) when there's genuinely something to hold.
+  // Manoeuvres, planning-waypoint provenance and routing provenance share
+  // one <extensions> element rather than risking multiple sibling
+  // <extensions> blocks, which some readers tolerate poorly. Collected as
+  // plain child elements first, so the wrapping <extensions> element itself
+  // is only created (and only appended to the document) when there's
+  // genuinely something to hold.
   const extensionChildren: Element[] = [];
 
-  if (hasTrustedManoeuvres(route)) {
+  const needsGeometryDigest =
+    hasTrustedManoeuvres(route) || route.planningProvenance !== undefined;
+  let geometrySha256: string | undefined;
+  if (needsGeometryDigest) {
     if (typeof crypto === "undefined" || typeof crypto.subtle === "undefined") {
       throw new GpxExportError(
         "crypto-unavailable",
-        "This route's turn information could not be preserved in the GPX export because " +
-          "this browser does not support the cryptography needed to bind it to the route " +
-          "geometry. Export was cancelled rather than silently dropping the turn data.",
+        "This route's turn information and/or planning waypoints could not be preserved " +
+          "in the GPX export because this browser does not support the cryptography " +
+          "needed to bind them to the route geometry. Export was cancelled rather than " +
+          "silently dropping that data.",
       );
     }
 
-    const pointDistances = route.points.map((point) => point.distanceFromStartMetres);
     const canonical = canonicalizeTrackGeometry(
       route.points.map((point) => point.coordinate),
     );
-    const geometrySha256 = await computeGeometryDigestHex(canonical);
+    // Computed once and reused by both <acn:navigation> and <acn:planning>
+    // below when both are present — they bind to the same route.points
+    // geometry, so hashing it twice would be redundant.
+    geometrySha256 = await computeGeometryDigestHex(canonical);
+  }
+
+  if (hasTrustedManoeuvres(route) && geometrySha256 !== undefined) {
+    const pointDistances = route.points.map((point) => point.distanceFromStartMetres);
 
     const navigationElement = doc.createElementNS(ACN_NAMESPACE, "acn:navigation");
     navigationElement.setAttribute("version", ACN_NAVIGATION_EXTENSION_VERSION);
@@ -84,6 +103,26 @@ export async function exportRouteToGpx(route: PlannedRoute): Promise<string> {
     }
 
     extensionChildren.push(navigationElement);
+  }
+
+  if (route.planningProvenance && geometrySha256 !== undefined) {
+    const { waypoints, profile, avoidFerries } = route.planningProvenance;
+
+    const planningElement = doc.createElementNS(ACN_NAMESPACE, "acn:planning");
+    planningElement.setAttribute("version", ACN_PLANNING_EXTENSION_VERSION);
+    planningElement.setAttribute("profile", profile);
+    planningElement.setAttribute("avoidFerries", String(avoidFerries));
+    planningElement.setAttribute("waypointCount", String(waypoints.length));
+    planningElement.setAttribute("geometrySha256", geometrySha256);
+
+    for (const [longitude, latitude] of waypoints) {
+      const waypointElement = doc.createElementNS(ACN_NAMESPACE, "acn:waypoint");
+      waypointElement.setAttribute("lon", String(longitude));
+      waypointElement.setAttribute("lat", String(latitude));
+      planningElement.appendChild(waypointElement);
+    }
+
+    extensionChildren.push(planningElement);
   }
 
   // provider is only ever meaningful for a planner-sourced route (only

@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { RidingScreen } from "./RidingScreen.tsx";
 import { db } from "../../storage/db.ts";
+import * as planningDraftRepository from "../../storage/planningDraftRepository.ts";
+import { getDraft, saveDraft } from "../../storage/planningDraftRepository.ts";
 import { setActiveRideState } from "../../storage/rideStateRepository.ts";
 import type {
   GeolocationError,
@@ -242,6 +244,8 @@ function buildFixedClock(startMs: number): Clock {
 beforeEach(async () => {
   await db.routes.clear();
   await db.rideState.clear();
+  await db.planningDrafts.clear();
+  await db.planningPreferences.clear();
 });
 
 describe("RidingScreen", () => {
@@ -4159,6 +4163,226 @@ describe("RidingScreen", () => {
         await screen.findByRole("checkbox", { name: /keep screen awake/i }),
       ).not.toBeChecked();
       expect(fakeWakeLock.requestSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Edit copy in Planning", () => {
+    it("renders enabled, pre-ride only, for a route with usable geometry", async () => {
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      const button = await screen.findByRole("button", { name: "Edit copy in Planning" });
+      expect(button).toBeEnabled();
+    });
+
+    it("disables the action and shows an inline reason for a route with insufficient geometry", async () => {
+      const shortRoute: PlannedRoute = {
+        ...route,
+        points: [
+          { coordinate: [0, 51], elevationMetres: null, distanceFromStartMetres: 0 },
+        ],
+      };
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={shortRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      const button = await screen.findByRole("button", { name: "Edit copy in Planning" });
+      expect(button).toBeDisabled();
+      expect(
+        screen.getByText(
+          "This route doesn't have enough distinct geometry to create an editable copy.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("seeds a Planning draft with derived waypoints and navigates when there is no existing meaningful draft", async () => {
+      const user = userEvent.setup();
+      const onNavigateToPlanning = vi.fn();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          onNavigateToPlanning={onNavigateToPlanning}
+        />,
+      );
+
+      await user.click(
+        await screen.findByRole("button", { name: "Edit copy in Planning" }),
+      );
+
+      await waitFor(() => {
+        expect(onNavigateToPlanning).toHaveBeenCalledTimes(1);
+      });
+
+      const draft = await getDraft();
+      expect(draft?.routeName).toBe("Evening loop");
+      expect(draft?.editCopySourceRouteId).toBe("route-1");
+      expect(draft?.editCopyWaypointsOrigin).toBe("derived");
+      expect(draft?.waypoints.length).toBeGreaterThanOrEqual(2);
+      expect(draft?.waypoints.length).toBeLessThanOrEqual(20);
+      expect(draft?.waypoints[0]?.coordinate).toEqual(route.points[0]?.coordinate);
+    });
+
+    it("recovers exact waypoints when the route has planningProvenance", async () => {
+      const user = userEvent.setup();
+      const onNavigateToPlanning = vi.fn();
+      const exactWaypoints: Coordinate[] = [
+        [0, 51],
+        [0.005, 51.002],
+        [0.01, 51],
+      ];
+      const routeWithProvenance: PlannedRoute = {
+        ...route,
+        planningProvenance: {
+          kind: "planning-session",
+          waypoints: exactWaypoints,
+          profile: "cycling-regular",
+          avoidFerries: false,
+        },
+      };
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={routeWithProvenance}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          onNavigateToPlanning={onNavigateToPlanning}
+        />,
+      );
+
+      await user.click(
+        await screen.findByRole("button", { name: "Edit copy in Planning" }),
+      );
+
+      await waitFor(() => {
+        expect(onNavigateToPlanning).toHaveBeenCalledTimes(1);
+      });
+
+      const draft = await getDraft();
+      expect(draft?.editCopyWaypointsOrigin).toBe("exact");
+      expect(draft?.waypoints.map((w) => w.coordinate)).toEqual(exactWaypoints);
+      expect(draft?.profile).toBe("cycling-regular");
+      expect(draft?.avoidFerries).toBe(false);
+    });
+
+    it("shows a confirmation before replacing a meaningful existing draft; Cancel preserves it and restores focus", async () => {
+      const user = userEvent.setup();
+      const onNavigateToPlanning = vi.fn();
+      await saveDraft({
+        waypoints: [
+          { id: "existing-a", coordinate: [1, 52] },
+          { id: "existing-b", coordinate: [1.01, 52] },
+        ],
+        routeName: "Unsaved plan",
+        avoidFerries: true,
+        profile: "cycling-road",
+      });
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          onNavigateToPlanning={onNavigateToPlanning}
+        />,
+      );
+
+      const editCopyButton = await screen.findByRole("button", {
+        name: "Edit copy in Planning",
+      });
+      await user.click(editCopyButton);
+
+      const dialog = await screen.findByRole("alertdialog");
+      expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+
+      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+      expect(onNavigateToPlanning).not.toHaveBeenCalled();
+      expect(editCopyButton).toHaveFocus();
+
+      const draft = await getDraft();
+      expect(draft?.routeName).toBe("Unsaved plan");
+      expect(draft?.editCopySourceRouteId).toBeUndefined();
+    });
+
+    it("Confirm replaces the existing draft and navigates", async () => {
+      const user = userEvent.setup();
+      const onNavigateToPlanning = vi.fn();
+      await saveDraft({
+        waypoints: [
+          { id: "existing-a", coordinate: [1, 52] },
+          { id: "existing-b", coordinate: [1.01, 52] },
+        ],
+        routeName: "Unsaved plan",
+        avoidFerries: true,
+        profile: "cycling-road",
+      });
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          onNavigateToPlanning={onNavigateToPlanning}
+        />,
+      );
+
+      await user.click(
+        await screen.findByRole("button", { name: "Edit copy in Planning" }),
+      );
+      const dialog = await screen.findByRole("alertdialog");
+      await user.click(within(dialog).getByRole("button", { name: "Replace and edit" }));
+
+      await waitFor(() => {
+        expect(onNavigateToPlanning).toHaveBeenCalledTimes(1);
+      });
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+
+      const draft = await getDraft();
+      expect(draft?.routeName).toBe("Evening loop");
+      expect(draft?.editCopySourceRouteId).toBe("route-1");
+    });
+
+    it("shows an inline error and does not navigate when saving the draft fails", async () => {
+      const user = userEvent.setup();
+      const onNavigateToPlanning = vi.fn();
+      const saveDraftSpy = vi
+        .spyOn(planningDraftRepository, "saveDraft")
+        .mockRejectedValueOnce(new Error("boom"));
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          onNavigateToPlanning={onNavigateToPlanning}
+        />,
+      );
+
+      await user.click(
+        await screen.findByRole("button", { name: "Edit copy in Planning" }),
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toBeInTheDocument();
+      });
+      expect(onNavigateToPlanning).not.toHaveBeenCalled();
+
+      saveDraftSpy.mockRestore();
     });
   });
 });
