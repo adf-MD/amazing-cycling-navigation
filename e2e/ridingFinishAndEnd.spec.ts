@@ -138,7 +138,13 @@ test("conservatively confirms route completion only after consecutive fixes, and
 
   // Well short of the finish — substantial remaining distance, so the
   // completion panel must not appear regardless of how many fixes land
-  // here.
+  // here. These two consecutive interior fixes (40%/42% progress, both
+  // well outside the arming departure radius around the finish) also
+  // happen to be exactly the evidence that arms the ride — see
+  // rideCompletion.test.ts/RidingScreen.completionArming.test.tsx for
+  // arming-specific unit/component coverage; this e2e path proves the same
+  // real geolocation-driven progression arms and then completes correctly
+  // end-to-end, without needing a third deliberate arming step.
   await context.setGeolocation({ latitude: ROUTE_LAT, longitude: lonAtMetres(400) });
   await expect(page.getByText("On route")).toBeVisible();
   await context.setGeolocation({ latitude: ROUTE_LAT, longitude: lonAtMetres(420) });

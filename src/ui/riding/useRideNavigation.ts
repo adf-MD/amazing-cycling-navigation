@@ -73,6 +73,15 @@ export interface RideNavigationState {
    * exactly like elevationViewMode/wakeLockDesired above. */
   dismissedClimbFeatureId: string | null;
   setDismissedClimbFeatureId: (next: string | null) => void;
+  /** True once this active ride has demonstrated genuine departure and
+   * interior route progress — see navigation/rideCompletion.ts and
+   * storage/mapping.ts's completionArmed field. Never a global setting;
+   * restored/persisted exactly like wakeLockDesired above. One-way within
+   * a ride: only ever set true here (by RidingScreen, once
+   * useRouteCompletionCandidate reports arming) and reset to false by
+   * finish(). */
+  completionArmed: boolean;
+  setCompletionArmed: (next: boolean) => void;
   start: () => void;
   /** The shared End ride/Finish ride finaliser: clears the persisted
    * active ride via clearActiveRideState() first — if that rejects,
@@ -143,6 +152,7 @@ export function useRideNavigation(
   const [dismissedClimbFeatureId, setDismissedClimbFeatureId] = useState<string | null>(
     null,
   );
+  const [completionArmed, setCompletionArmed] = useState(false);
 
   const clearWatchRef = useRef<(() => void) | null>(null);
   // Bumped whenever a genuinely new native watch is created (start()) or
@@ -296,6 +306,7 @@ export function useRideNavigation(
     setWakeLockDesired(false);
     setDismissedClimbFeatureId(null);
     setRestoredCameraState(null);
+    setCompletionArmed(false);
     isFinalizingRef.current = false;
   }, [stop]);
 
@@ -323,6 +334,7 @@ export function useRideNavigation(
         setRestoredCameraState(restored.cameraState);
         setWakeLockDesired(restored.wakeLockDesired);
         setDismissedClimbFeatureId(restored.dismissedClimbFeatureId);
+        setCompletionArmed(restored.completionArmed);
       })
       .catch(() => {
         // No usable stored state; continue with a fresh session.
@@ -349,6 +361,7 @@ export function useRideNavigation(
         getCameraState(),
         wakeLockDesired,
         dismissedClimbFeatureId,
+        completionArmed,
       ),
     ).catch(() => {
       // Persistence failure isn't fatal to an in-progress ride; the next
@@ -362,6 +375,7 @@ export function useRideNavigation(
     getCameraState,
     wakeLockDesired,
     dismissedClimbFeatureId,
+    completionArmed,
   ]);
 
   // On visibilitychange/pageshow, mark the current fix stale and restart
@@ -456,6 +470,8 @@ export function useRideNavigation(
     setWakeLockDesired,
     dismissedClimbFeatureId,
     setDismissedClimbFeatureId,
+    completionArmed,
+    setCompletionArmed,
     start,
     finish,
     restoredCameraState,

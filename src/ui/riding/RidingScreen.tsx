@@ -543,7 +543,24 @@ export function RidingScreen({
     reliableDistanceFromStartMetres: nav.presentationDistanceFromStartMetres,
     routeTotalDistanceMetres: route.distanceMetres,
     routeFinalCoordinate: route.points.at(-1)?.coordinate ?? null,
+    armed: nav.completionArmed,
   });
+
+  // Persists the moment arming evidence is first detected, conditionally
+  // during render — mirroring reachedManoeuvreIndex's own "adjust state
+  // during render" idiom. Safe here even though nav.setCompletionArmed
+  // belongs to a different custom hook's useState: useRideNavigation(route,
+  // ...) executes synchronously inside this component's own render body, so
+  // the setState closure it returns is bound to this component's own fiber
+  // — indistinguishable, at the React-internals level, from a useState
+  // called directly here. (This is not "safe because it's lint-clean" —
+  // ESLint's set-state-in-render rule only traces setters back to a
+  // useState/useReducer call in the same function body, so it can neither
+  // confirm nor deny a setter reached through a custom hook's return
+  // object; its silence here isn't evidence either way.)
+  if (completion.isArmed && !nav.completionArmed) {
+    nav.setCompletionArmed(true);
+  }
 
   const performFinalizeRide = async (source: "end" | "finish") => {
     if (isFinalizeActionPendingRef.current) return;

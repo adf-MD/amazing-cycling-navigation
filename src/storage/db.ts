@@ -227,6 +227,17 @@ export interface StoredRideState {
    * and src/storage/mapping.ts's fromStoredRideState defaults a missing
    * value to null (not dismissed) — no Dexie version() bump required. */
   dismissedClimbFeatureId?: string;
+  /** True once this active ride has demonstrated genuine departure from
+   * the finish area and credible interior route progress — the
+   * prerequisite for any fix to count towards route completion (see
+   * src/navigation/rideCompletion.ts's isRouteArmingFixEligible and
+   * RouteCompletionTrackerState.isArmed). Optional/non-indexed for the
+   * same reason as the fields above: rows written before this field
+   * existed simply lack it, and src/storage/mapping.ts's
+   * fromStoredRideState defaults a missing value to false — a legacy row
+   * is never inferred as armed merely because it happens to store
+   * near-total progress. No Dexie version() bump required. */
+  completionArmed?: boolean;
 }
 
 export class AcnDatabase extends Dexie {
@@ -250,9 +261,10 @@ export class AcnDatabase extends Dexie {
     // defaulting in mapping.ts. elevationViewMode/lastReliableMatchedPointIndex/
     // lastReliableMatchedDistanceFromStartMetres (added after
     // elevationWindowMetres was widened to optional), wakeLockDesired
-    // (Milestone 4's tenth slice) and dismissedClimbFeatureId (Milestone
-    // 4's eleventh slice) are plain, non-indexed fields added the same
-    // way.
+    // (Milestone 4's tenth slice), dismissedClimbFeatureId (Milestone
+    // 4's eleventh slice) and completionArmed (the ride-completion-arming
+    // follow-up to the Finish/End ride lifecycle) are plain, non-indexed
+    // fields added the same way.
     this.version(1).stores({
       routes: "id, name, createdAt",
       rideState: "id",

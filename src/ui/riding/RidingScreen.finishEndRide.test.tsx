@@ -308,6 +308,12 @@ describe("RidingScreen Finish/End ride", () => {
     });
     expect(await getActiveRideState()).toBeDefined();
     expect(screen.queryByText("Route complete")).toBeNull();
+    // A second consecutive interior fix arms the ride (see
+    // RidingScreen.completionArming.test.tsx for arming-specific
+    // coverage) — required before any completion evidence counts.
+    act(() => {
+      fake.watches[0]?.emitFix(midpointFix(1500));
+    });
 
     act(() => {
       fake.watches[0]?.emitFix(nearEndFix(2000));
@@ -343,6 +349,9 @@ describe("RidingScreen Finish/End ride", () => {
       fake.watches[0]?.emitFix(midpointFix(1000));
     });
     act(() => {
+      fake.watches[0]?.emitFix(midpointFix(1500));
+    });
+    act(() => {
       fake.watches[0]?.emitFix(nearEndFix(2000));
     });
     act(() => {
@@ -369,6 +378,9 @@ describe("RidingScreen Finish/End ride", () => {
     await user.click(screen.getByRole("button", { name: "Start riding" }));
     act(() => {
       fake.watches[0]?.emitFix(midpointFix(1000));
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(midpointFix(1500));
     });
     act(() => {
       fake.watches[0]?.emitFix(nearEndFix(2000));

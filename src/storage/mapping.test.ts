@@ -59,6 +59,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       overviewCamera,
       false,
       null,
+      false,
     );
     const restored = fromStoredRideState(stored);
 
@@ -79,6 +80,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       overviewCamera,
       false,
       null,
+      false,
     );
     expect(stored.lastFix).not.toHaveProperty("speedMetresPerSecond");
     expect(stored.lastFix).not.toHaveProperty("headingDegrees");
@@ -94,6 +96,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       overviewCamera,
       false,
       null,
+      false,
     );
     const restored = fromStoredRideState(stored);
     expect(restored.lastFix?.speedMetresPerSecond).toBeNull();
@@ -114,6 +117,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       overviewCamera,
       false,
       null,
+      false,
     );
 
     expect(stored.lastFix).toBeNull();
@@ -141,6 +145,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       },
       false,
       null,
+      false,
     );
     const restored = fromStoredRideState(stored);
 
@@ -170,6 +175,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       freeCamera,
       false,
       null,
+      false,
     );
     const restored = fromStoredRideState(stored);
 
@@ -236,6 +242,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         overviewCamera,
         false,
         null,
+        false,
       );
       expect(fromStoredRideState(stored).elevationViewMode).toEqual({ kind: "full" });
     });
@@ -252,6 +259,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
           overviewCamera,
           false,
           null,
+          false,
         );
         expect(fromStoredRideState(stored).elevationViewMode).toEqual({
           kind: "upcoming",
@@ -333,6 +341,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         overviewCamera,
         false,
         null,
+        false,
       );
       const restored = fromStoredRideState(stored);
 
@@ -383,6 +392,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         overviewCamera,
         true,
         null,
+        false,
       );
 
       expect(stored.wakeLockDesired).toBe(true);
@@ -420,6 +430,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         overviewCamera,
         false,
         "climb-1200",
+        false,
       );
 
       expect(stored.dismissedClimbFeatureId).toBe("climb-1200");
@@ -436,6 +447,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         overviewCamera,
         false,
         null,
+        false,
       );
 
       expect(stored.dismissedClimbFeatureId).toBeUndefined();
@@ -459,6 +471,66 @@ describe("toStoredRideState / fromStoredRideState", () => {
       };
 
       expect(fromStoredRideState(legacyRow).dismissedClimbFeatureId).toBeNull();
+    });
+  });
+
+  describe("completionArmed", () => {
+    it("round-trips a true armed state", () => {
+      const stored = toStoredRideState(
+        "route-1",
+        "2026-01-01T00:00:00.000Z",
+        fix,
+        coreState,
+        upcoming5km,
+        overviewCamera,
+        false,
+        null,
+        true,
+      );
+
+      expect(stored.completionArmed).toBe(true);
+      expect(fromStoredRideState(stored).completionArmed).toBe(true);
+    });
+
+    it("defaults to false for a row written before this field existed", () => {
+      // Simulates a real pre-existing row from before this feature
+      // shipped — built by hand, not via toStoredRideState, so it
+      // genuinely lacks completionArmed (rather than having it set to
+      // undefined explicitly).
+      const legacyRow: StoredRideState = {
+        id: "active",
+        routeId: "route-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        lastFix: null,
+        lastMatchedPointIndex: 0,
+        matchedDistanceFromStartMetres: 0,
+        offRouteMachineState: coreState.offRouteMachineState,
+        elevationWindowMetres: 5000,
+      };
+
+      expect(fromStoredRideState(legacyRow).completionArmed).toBe(false);
+    });
+
+    it("defaults to false even when the legacy row's own stored progress looks near-total", () => {
+      // A legacy row must never be inferred as armed merely because it
+      // happens to store near-total progress — completionArmed is only
+      // ever set true by explicit evidence, never derived from other
+      // fields on read.
+      const legacyRowWithNearTotalProgress: StoredRideState = {
+        id: "active",
+        routeId: "route-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        lastFix: { coordinate: [-1.5, 53.8], accuracyMetres: 8, timestampMs: 1_700_000 },
+        lastMatchedPointIndex: 20,
+        matchedDistanceFromStartMetres: 995,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        lastReliableMatchedPointIndex: 20,
+        lastReliableMatchedDistanceFromStartMetres: 995,
+      };
+
+      expect(fromStoredRideState(legacyRowWithNearTotalProgress).completionArmed).toBe(
+        false,
+      );
     });
   });
 });

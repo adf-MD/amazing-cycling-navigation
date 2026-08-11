@@ -67,6 +67,7 @@ export function toStoredRideState(
   cameraState: StoredCameraState,
   wakeLockDesired: boolean,
   dismissedClimbFeatureId: string | null,
+  completionArmed: boolean,
 ): StoredRideState {
   return {
     id: "active",
@@ -93,6 +94,7 @@ export function toStoredRideState(
     cameraPitchDegrees: cameraState.pitchDegrees,
     wakeLockDesired,
     dismissedClimbFeatureId: dismissedClimbFeatureId ?? undefined,
+    completionArmed,
   };
 }
 
@@ -103,6 +105,7 @@ export interface RestoredRideState {
   cameraState: StoredCameraState;
   wakeLockDesired: boolean;
   dismissedClimbFeatureId: string | null;
+  completionArmed: boolean;
 }
 
 export function fromStoredRideState(stored: StoredRideState): RestoredRideState {
@@ -156,6 +159,10 @@ export function fromStoredRideState(stored: StoredRideState): RestoredRideState 
     // "no dismissal recorded" behaviour (auto-open if currently in a
     // recognised climb).
     dismissedClimbFeatureId: stored.dismissedClimbFeatureId ?? null,
+    // Rows written before this field existed won't have it — unarmed is
+    // the only safe default; never inferred true merely from a stored
+    // near-total progress value.
+    completionArmed: stored.completionArmed ?? false,
   };
 }
 
