@@ -77,4 +77,49 @@ describe("ConfirmDialog", () => {
     expect(onCancel).toHaveBeenCalledOnce();
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  it("confirmDisabled disables Confirm and blocks its click handler", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+
+    render(
+      <ConfirmDialog
+        open
+        title="Delete route"
+        message="Are you sure?"
+        confirmLabel="Delete"
+        confirmDisabled
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />,
+    );
+
+    const confirmButton = screen.getByRole("button", { name: "Delete" });
+    expect(confirmButton).toBeDisabled();
+    await user.click(confirmButton);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("cancelDisabled disables Cancel and blocks its click handler", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+
+    render(
+      <ConfirmDialog
+        open
+        title="Delete route"
+        message="Are you sure?"
+        cancelDisabled
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />,
+    );
+
+    const cancelButton = screen.getByRole("button", { name: "Cancel" });
+    expect(cancelButton).toBeDisabled();
+    await user.click(cancelButton);
+    expect(onCancel).not.toHaveBeenCalled();
+  });
 });

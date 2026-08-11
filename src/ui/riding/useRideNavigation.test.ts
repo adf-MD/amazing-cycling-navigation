@@ -11,6 +11,9 @@ import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSourc
 import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry.ts";
 import type { PlannedRoute } from "../../domain/types.ts";
 import { db } from "../../storage/db.ts";
+import { getActiveRideState } from "../../storage/rideStateRepository.ts";
+import * as rideStateRepository from "../../storage/rideStateRepository.ts";
+import { DEFAULT_ELEVATION_VIEW_MODE } from "../../navigation/upcomingElevation.ts";
 
 const routePoints = buildRoutePointsFromWaypoints(
   [
@@ -503,5 +506,153 @@ describe("useRideNavigation geolocation watch lifecycle", () => {
       fake.watches[1]?.emitFix(LATER_FIX);
     });
     expect(result.current.currentFix).toEqual(LATER_FIX);
+  });
+});
+
+describe("useRideNavigation finish()", () => {
+  it("clears persisted state, resets every field to fresh-ride defaults, and disposes the watch", async () => {
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(SAMPLE_FIX);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(await getActiveRideState()).toBeDefined();
+
+    await act(async () => {
+      await result.current.finish();
+    });
+
+    expect(await getActiveRideState()).toBeUndefined();
+    expect(result.current.currentFix).toBeNull();
+    expect(result.current.geolocationStatus).toBe("idle");
+    expect(result.current.isStale).toBe(false);
+    expect(result.current.geolocationError).toBeNull();
+    expect(result.current.matchedDistanceFromStartMetres).toBeNull();
+    expect(result.current.presentationDistanceFromStartMetres).toBeNull();
+    expect(result.current.elevationViewMode).toEqual(DEFAULT_ELEVATION_VIEW_MODE);
+    expect(result.current.wakeLockDesired).toBe(false);
+    expect(result.current.dismissedClimbFeatureId).toBeNull();
+    expect(result.current.restoredCameraState).toBeNull();
+    expect(fake.watches[0]?.disposed).toBe(true);
+  });
+
+  it("a storage-clear failure leaves the ride completely untouched and re-arms persistence", async () => {
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(SAMPLE_FIX);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const clearSpy = vi
+      .spyOn(rideStateRepository, "clearActiveRideState")
+      .mockRejectedValueOnce(new Error("boom"));
+
+    await expect(
+      act(async () => {
+        await result.current.finish();
+      }),
+    ).rejects.toThrow("boom");
+
+    // Nothing else changed: the ride is still fully active/resumable.
+    expect(result.current.currentFix).toEqual(SAMPLE_FIX);
+    expect(result.current.geolocationStatus).toBe("watching");
+    expect(fake.watches[0]?.disposed).toBe(false);
+    expect(await getActiveRideState()).toBeDefined();
+
+    clearSpy.mockRestore();
+
+    // The ref must have been re-armed: an ordinary fix persists normally.
+    act(() => {
+      fake.watches[0]?.emitFix(LATER_FIX);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const stored = await getActiveRideState();
+    expect(stored?.lastFix?.coordinate).toEqual(LATER_FIX.coordinate);
+  });
+
+  it("a redundant concurrent call is a silent no-op", async () => {
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(SAMPLE_FIX);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+
+    await act(async () => {
+      await Promise.all([result.current.finish(), result.current.finish()]);
+    });
+
+    expect(clearSpy).toHaveBeenCalledTimes(1);
+    clearSpy.mockRestore();
+  });
+
+  it("a fix arriving while the clear is still pending cannot recreate the row afterwards", async () => {
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(SAMPLE_FIX);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(await getActiveRideState()).toBeDefined();
+
+    let finishPromise: Promise<void> = Promise.resolve();
+    act(() => {
+      finishPromise = result.current.finish();
+    });
+
+    // The clear's own IndexedDB transaction is still pending here — the
+    // watch has not been stopped yet, so a genuine fix is still accepted
+    // into in-memory state (proving handleFix isn't blocked)...
+    act(() => {
+      fake.watches[0]?.emitFix(LATER_FIX);
+    });
+    expect(result.current.currentFix).toEqual(LATER_FIX);
+
+    await act(async () => {
+      await finishPromise;
+    });
+
+    // ...but the persistence effect must never have written it, so the
+    // row stays cleared once finish() actually resolves.
+    expect(await getActiveRideState()).toBeUndefined();
+    expect(result.current.currentFix).toBeNull();
   });
 });

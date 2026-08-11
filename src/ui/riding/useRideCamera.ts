@@ -188,6 +188,12 @@ export interface UseRideCameraResult {
   /** For useRideNavigation's persistence — folded into its existing
    * write path (src/storage/mapping.ts), not a second one. */
   persistableCameraState: StoredCameraState;
+  /** Resets the camera to its clean, pre-ride "overview" state — for the
+   * shared End ride/Finish ride finaliser, since ending a ride never
+   * changes routeId and so would never trigger the existing automatic
+   * route-opened reset above on its own. Dispatches the same
+   * "route-opened" event that reset already uses; no new reducer branch. */
+  resetCamera: () => void;
 }
 
 /**
@@ -360,6 +366,10 @@ export function useRideCamera({
     });
   }, []);
 
+  const resetCamera = useCallback(() => {
+    dispatch({ type: "route-opened" });
+  }, []);
+
   const reportCameraSettled = useCallback(
     (
       coordinate: Coordinate,
@@ -424,5 +434,6 @@ export function useRideCamera({
     isNorthUpTopDown,
     reportCameraSettled,
     persistableCameraState,
+    resetCamera,
   };
 }

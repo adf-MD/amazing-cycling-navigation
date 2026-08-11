@@ -56,10 +56,12 @@ import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 import { RidingClimbProgressPanel } from "./RidingClimbProgressPanel.tsx";
 import { RidingClimbSelector } from "./RidingClimbSelector.tsx";
 import { RidingNextManoeuvrePanel } from "./RidingNextManoeuvrePanel.tsx";
+import { RidingRouteCompletionPanel } from "./RidingRouteCompletionPanel.tsx";
 import { RidingStatusStrip } from "./RidingStatusStrip.tsx";
 import { RidingWakeLockControl } from "./RidingWakeLockControl.tsx";
 import { useRideCamera } from "./useRideCamera.ts";
 import { useRideNavigation } from "./useRideNavigation.ts";
+import { useRouteCompletionCandidate } from "./useRouteCompletionCandidate.ts";
 
 export interface RidingScreenProps {
   route: PlannedRoute;
@@ -509,6 +511,107 @@ export function RidingScreen({
   // tick.
   const isActionPendingRef = useRef(false);
 
+  // End ride / Finish ride — the shared ride-finalisation lifecycle. Both
+  // actions converge on one performFinalizeRide, mirroring
+  // performCopyOperation's own catch-block shape (logError, a source-tagged
+  // accessible error message, focus restored to whichever button triggered
+  // the action). endRideTriggerRef is shared across the two mutually
+  // exclusive render sites the End-ride button can appear at (the
+  // Resume-riding idle panel, and the active-tracking slot below the map) —
+  // exactly one is ever mounted at a time.
+  const endRideTriggerRef = useRef<HTMLButtonElement>(null);
+  const finishRideButtonRef = useRef<HTMLButtonElement>(null);
+  const [isEndRideConfirmOpen, setIsEndRideConfirmOpen] = useState(false);
+  const [activeFinalizeSource, setActiveFinalizeSource] = useState<
+    "end" | "finish" | null
+  >(null);
+  const [finalizeError, setFinalizeError] = useState<{
+    source: "end" | "finish";
+    message: string;
+  } | null>(null);
+  // Synchronous guard against a rapid double End/Finish submission,
+  // mirroring isActionPendingRef above — the primary UX guard;
+  // useRideNavigation's own finish() also guards re-entrancy defensively.
+  const isFinalizeActionPendingRef = useRef(false);
+
+  const completion = useRouteCompletionCandidate({
+    routeId: route.id,
+    isRideActive: nav.geolocationStatus === "watching",
+    currentFix: nav.currentFix,
+    isStale: nav.isStale,
+    offRouteLevel: nav.offRouteLevel,
+    reliableDistanceFromStartMetres: nav.presentationDistanceFromStartMetres,
+    routeTotalDistanceMetres: route.distanceMetres,
+    routeFinalCoordinate: route.points.at(-1)?.coordinate ?? null,
+  });
+
+  const performFinalizeRide = async (source: "end" | "finish") => {
+    if (isFinalizeActionPendingRef.current) return;
+    isFinalizeActionPendingRef.current = true;
+    setActiveFinalizeSource(source);
+    setFinalizeError(null);
+    try {
+      await nav.finish();
+      camera.resetCamera();
+      completion.reset();
+      // handleStart never resets this (correct for Resume riding); a
+      // fresh ride following a finalisation must not inherit it.
+      setReachedManoeuvreIndex(0);
+      setIsEndRideConfirmOpen(false);
+    } catch (error) {
+      logError(source === "end" ? "riding-end-ride" : "riding-finish-ride", error);
+      setFinalizeError({
+        source,
+        message:
+          source === "end"
+            ? "The ride could not be ended on this device. Try again."
+            : "Finish ride could not be completed on this device. Try again.",
+      });
+      setIsEndRideConfirmOpen(false);
+      // Focus restoration is handled by an effect (below), not directly
+      // here: the trigger button is still disabled in the DOM at this
+      // exact point (activeFinalizeSource only resets to null in the
+      // finally block below, and React doesn't commit that until this
+      // synchronous catch/finally sequence finishes) — a disabled button
+      // can't receive focus, so calling .focus() here would silently
+      // no-op and lose focus to <body> once the dialog unmounts.
+    } finally {
+      isFinalizeActionPendingRef.current = false;
+      setActiveFinalizeSource(null);
+    }
+  };
+
+  // Restores focus to whichever trigger a failed finalisation belongs to,
+  // once the DOM has actually committed the button being re-enabled — an
+  // effect (not an imperative call inside performFinalizeRide's catch
+  // block) is required here because the trigger is still disabled in the
+  // DOM at the moment the catch block runs (activeFinalizeSource only
+  // resets to null in the same synchronous finally block, and React
+  // doesn't apply that to the DOM until this render commits); a disabled
+  // button can't receive focus. Keyed on finalizeError's own object
+  // identity, which is fresh only for a genuinely new error, so this never
+  // re-fires on an unrelated re-render while the same error is still shown.
+  useEffect(() => {
+    if (!finalizeError) return;
+    (finalizeError.source === "end"
+      ? endRideTriggerRef
+      : finishRideButtonRef
+    ).current?.focus();
+  }, [finalizeError]);
+
+  const handleEndRideClick = () => {
+    if (isEndRideConfirmOpen || isFinalizeActionPendingRef.current) return;
+    setFinalizeError(null);
+    setIsEndRideConfirmOpen(true);
+  };
+
+  const handleEndRideCancel = () => {
+    // Escape can bypass a disabled Cancel button, so guard here too.
+    if (isFinalizeActionPendingRef.current) return;
+    setIsEndRideConfirmOpen(false);
+    endRideTriggerRef.current?.focus();
+  };
+
   const triggerRefForKind = useCallback((kind: CopyOperationKind) => {
     return kind === "reverse" ? reverseButtonRef : editCopyButtonRef;
   }, []);
@@ -710,8 +813,40 @@ export function RidingScreen({
             }}
             onCancel={handleCopyOperationCancel}
           />
+          {nav.currentFix ? (
+            <>
+              <button
+                type="button"
+                className="btn-danger"
+                ref={endRideTriggerRef}
+                onClick={handleEndRideClick}
+                disabled={activeFinalizeSource !== null}
+              >
+                End ride
+              </button>
+              {finalizeError?.source === "end" ? (
+                <p className="field-error" role="alert">
+                  {finalizeError.message}
+                </p>
+              ) : null}
+            </>
+          ) : null}
         </div>
       ) : null}
+
+      <ConfirmDialog
+        open={isEndRideConfirmOpen}
+        title="End this ride?"
+        message="Navigation progress for this ride will be cleared. The saved route will remain in your library."
+        confirmLabel={activeFinalizeSource === "end" ? "Ending ride…" : "End ride"}
+        cancelLabel="Cancel"
+        confirmDisabled={activeFinalizeSource === "end"}
+        cancelDisabled={activeFinalizeSource === "end"}
+        onConfirm={() => {
+          void performFinalizeRide("end");
+        }}
+        onCancel={handleEndRideCancel}
+      />
 
       {nav.geolocationStatus === "error" && nav.geolocationError ? (
         <div role="alert" className="ride-alert-panel">
@@ -744,6 +879,18 @@ export function RidingScreen({
           isTrusted={isTrustedForNavigation}
           selection={nextManoeuvre}
           isFrozen={nav.isStale || nav.offRouteLevel === "off-route"}
+        />
+      ) : null}
+
+      {completion.isConfirmed ? (
+        <RidingRouteCompletionPanel
+          onFinish={() => {
+            void performFinalizeRide("finish");
+          }}
+          onKeepRiding={completion.dismiss}
+          isFinishing={activeFinalizeSource === "finish"}
+          error={finalizeError?.source === "finish" ? finalizeError.message : null}
+          finishButtonRef={finishRideButtonRef}
         />
       ) : null}
 
@@ -820,7 +967,24 @@ export function RidingScreen({
             }
           }}
         />
-      ) : null}
+      ) : (
+        <div className="ride-end-ride-row">
+          <button
+            type="button"
+            className="btn-danger"
+            ref={endRideTriggerRef}
+            onClick={handleEndRideClick}
+            disabled={activeFinalizeSource !== null}
+          >
+            End ride
+          </button>
+          {finalizeError?.source === "end" ? (
+            <p className="field-error" role="alert">
+              {finalizeError.message}
+            </p>
+          ) : null}
+        </div>
+      )}
 
       <div
         className={

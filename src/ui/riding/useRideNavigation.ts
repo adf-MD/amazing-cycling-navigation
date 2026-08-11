@@ -22,6 +22,7 @@ import {
   type StoredCameraState,
 } from "../../storage/mapping.ts";
 import {
+  clearActiveRideState,
   getActiveRideState,
   setActiveRideState,
 } from "../../storage/rideStateRepository.ts";
@@ -73,6 +74,16 @@ export interface RideNavigationState {
   dismissedClimbFeatureId: string | null;
   setDismissedClimbFeatureId: (next: string | null) => void;
   start: () => void;
+  /** The shared End ride/Finish ride finaliser: clears the persisted
+   * active ride via clearActiveRideState() first — if that rejects,
+   * nothing else changes and the ride remains fully active/resumable, so
+   * the caller can show a retryable error — then, only on success, stops
+   * the geolocation watch and resets every piece of in-memory session
+   * state to fresh-ride defaults (currentFix back to null is what makes
+   * the existing Start/Resume label logic correct for free). Guards its
+   * own re-entrancy as a silent no-op; RidingScreen owns the primary
+   * duplicate-submission UX guard. */
+  finish: () => Promise<void>;
   /** Non-null only once a persisted camera state for this exact route has
    * actually been restored — a genuinely new ride has nothing to
    * restore, so useRideCamera's own default "overview" state is already
@@ -149,6 +160,17 @@ export function useRideNavigation(
   // React state updates aren't applied mid-callback.
   const statusRef = useRef<GeolocationWatchStatus>("idle");
   const startedAtRef = useRef<string | null>(null);
+  // Set synchronously as the first statement of finish(), before any
+  // await — closes the window where a genuine fix arriving while
+  // clearActiveRideState()'s own IndexedDB transaction is still pending
+  // could otherwise issue a NEW setActiveRideState() write after the
+  // clear's transaction, recreating the just-cleared row (same-object-store
+  // Dexie transactions commit in creation order). Checked only by the
+  // persistence effect below, never by handleFix/handleError themselves: a
+  // genuine fix arriving mid-finalisation should still update in-memory
+  // state normally — harmless on success (overwritten by finish()'s own
+  // reset) and exactly the correct live state to show on failure.
+  const isFinalizingRef = useRef(false);
   const routePoints = route.points;
 
   const setStatus = useCallback((next: GeolocationWatchStatus) => {
@@ -247,6 +269,36 @@ export function useRideNavigation(
     setStatus("idle");
   }, [setStatus]);
 
+  // The shared End ride/Finish ride finaliser — see RideNavigationState's
+  // own doc comment and isFinalizingRef's above for the full race-safety
+  // rationale. clearActiveRideState() is called first, before anything
+  // else changes: if it fails, the ride is left completely untouched
+  // (still live/resumable), matching "never optimistically discard the
+  // in-memory session before storage is proven cleared". Only on success
+  // does this stop the watch (reusing stop()) and reset every piece of
+  // in-memory session state a fresh ride should start clean from.
+  const finish = useCallback(async () => {
+    if (isFinalizingRef.current) return;
+    isFinalizingRef.current = true;
+    try {
+      await clearActiveRideState();
+    } catch (error) {
+      isFinalizingRef.current = false;
+      throw error;
+    }
+    stop();
+    startedAtRef.current = null;
+    setCurrentFix(null);
+    setCoreState(INITIAL_RIDE_NAVIGATION_CORE_STATE);
+    setIsStale(false);
+    setGeolocationError(null);
+    setElevationViewMode(DEFAULT_ELEVATION_VIEW_MODE);
+    setWakeLockDesired(false);
+    setDismissedClimbFeatureId(null);
+    setRestoredCameraState(null);
+    isFinalizingRef.current = false;
+  }, [stop]);
+
   useEffect(() => {
     return () => {
       watchGenerationRef.current += 1;
@@ -285,6 +337,7 @@ export function useRideNavigation(
   // needed. Reads the camera state fresh via getCameraState() rather
   // than depending on it directly (see the option's doc comment).
   useEffect(() => {
+    if (isFinalizingRef.current) return;
     if (currentFix === null || startedAtRef.current === null) return;
     setActiveRideState(
       toStoredRideState(
@@ -404,6 +457,7 @@ export function useRideNavigation(
     dismissedClimbFeatureId,
     setDismissedClimbFeatureId,
     start,
+    finish,
     restoredCameraState,
   };
 }
