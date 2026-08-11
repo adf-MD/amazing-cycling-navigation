@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
 import { forceMapStyleFailure, installLocalMapStyle } from "./support/localMapStyle.ts";
 
@@ -54,6 +55,78 @@ function buildMockOrsResponse() {
       },
     ],
   };
+}
+
+// Must match src/storage/db.ts's AcnDatabase constructor default — there's
+// nothing to import across the app/e2e boundary here, so this is a
+// deliberate local literal, not a shared constant.
+const INDEXED_DB_NAME = "amazing-cycling-navigation";
+
+function toIndexedDbError(error: DOMException | null): Error {
+  return error ?? new Error("IndexedDB request failed");
+}
+
+// Deterministic replacements for a fixed sleep: rather than guessing how
+// long the persistence effect's async Dexie write (src/ui/riding/
+// useRideNavigation.ts) takes to commit, read the real IndexedDB rows it
+// writes to and poll on them directly.
+
+async function readSavedRouteId(page: Page, name: string): Promise<string | null> {
+  return page.evaluate<string | null, { dbName: string; routeName: string }>(
+    ({ dbName, routeName }) =>
+      new Promise((resolve, reject) => {
+        const openRequest = indexedDB.open(dbName);
+        openRequest.onerror = () => {
+          reject(toIndexedDbError(openRequest.error));
+        };
+        openRequest.onsuccess = () => {
+          const database = openRequest.result;
+          const transaction = database.transaction("routes", "readonly");
+          const store = transaction.objectStore("routes");
+          const getRequest = store.index("name").get(routeName);
+          getRequest.onsuccess = () => {
+            const result = getRequest.result as { id: string } | undefined;
+            database.close();
+            resolve(result?.id ?? null);
+          };
+          getRequest.onerror = () => {
+            database.close();
+            reject(toIndexedDbError(getRequest.error));
+          };
+        };
+      }),
+    { dbName: INDEXED_DB_NAME, routeName: name },
+  );
+}
+
+async function readActiveRideStateRow(
+  page: Page,
+): Promise<Record<string, unknown> | null> {
+  return page.evaluate<Record<string, unknown> | null, string>(
+    (dbName) =>
+      new Promise((resolve, reject) => {
+        const openRequest = indexedDB.open(dbName);
+        openRequest.onerror = () => {
+          reject(toIndexedDbError(openRequest.error));
+        };
+        openRequest.onsuccess = () => {
+          const database = openRequest.result;
+          const transaction = database.transaction("rideState", "readonly");
+          const store = transaction.objectStore("rideState");
+          const getRequest = store.get("active");
+          getRequest.onsuccess = () => {
+            const result = getRequest.result as Record<string, unknown> | undefined;
+            database.close();
+            resolve(result ?? null);
+          };
+          getRequest.onerror = () => {
+            database.close();
+            reject(toIndexedDbError(getRequest.error));
+          };
+        };
+      }),
+    INDEXED_DB_NAME,
+  );
 }
 
 test("a genuine reload lands back on Routes, not Riding; reopening the same route offers Resume riding with restored progress and makes no further OpenRouteService request", async ({
@@ -121,11 +194,31 @@ test("a genuine reload lands back on Routes, not Riding; reopening the same rout
   await page.getByRole("button", { name: "Start riding" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-  // Lets the last accepted fix's persistence effect (an async IndexedDB
-  // write with no UI signal to poll on) actually complete before
-  // navigating away — mirrors ridingNextManoeuvre.spec.ts's identical
-  // reload precondition.
-  await page.waitForTimeout(300);
+  // A deterministic replacement for a fixed sleep. First prove a fix was
+  // actually accepted and off-route-classified (not merely that the watch
+  // started), then poll the real committed IndexedDB row rather than
+  // assume any fixed delay is long enough for its async, un-throttled
+  // Dexie write (useRideNavigation.ts's persistence effect) to land. A
+  // fixed 300ms wait here previously reloaded before that write committed
+  // under load, silently reopening the route with no persisted fix and
+  // permanently showing "Start riding" instead of "Resume riding".
+  await expect(page.getByText(/On route|Possibly off route|Off route/)).toBeVisible();
+
+  const savedRouteId = await readSavedRouteId(page, routeName);
+  expect(savedRouteId).not.toBeNull();
+
+  await expect
+    .poll(() => readActiveRideStateRow(page), { timeout: 10_000 })
+    .toMatchObject({
+      routeId: savedRouteId,
+      lastFix: expect.anything(),
+      lastMatchedPointIndex: expect.any(Number),
+      matchedDistanceFromStartMetres: expect.any(Number),
+      // The injected fix stays fixed at the route's own start coordinate
+      // for the whole test, so it never satisfies rideCompletion.ts's
+      // arming departure-radius condition — this can only be false.
+      completionArmed: false,
+    });
 
   await page.unroute(ORS_URL_GLOB);
   let unexpectedOrsRequest = false;
