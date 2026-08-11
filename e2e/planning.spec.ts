@@ -400,6 +400,82 @@ test("configures a key, plans a route via a mocked ORS response, saves it, and r
   expect(consoleErrors).toEqual([]);
 });
 
+// The one reload-recovery path not already covered elsewhere: every other
+// e2e reload test (e.g. reverseRoute.spec.ts's "reloading after creating
+// the reverse draft...") goes through RidingScreen's edit-copy/reverse
+// draft-seeding flow. This proves a plain, hand-built Planning draft — no
+// key, no calculation, no save — survives an ordinary reload too, exactly
+// the invariant the hydration/autosave race fix (see CLAUDE.md) protects.
+test("reloading Planning after placing waypoints and a route name recovers the same draft with no automatic routing request", async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  let orsRequestCount = 0;
+  await page.route(ORS_URL_GLOB, async (route) => {
+    if (route.request().method() === "POST") orsRequestCount += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify(MOCK_ORS_RESPONSE),
+    });
+  });
+
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Plan" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await mapContainer.click({ position: { x: 100, y: 100 } });
+  await mapContainer.click({ position: { x: 200, y: 150 } });
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Waypoint 2", exact: true }),
+  ).toBeVisible();
+
+  const routeName = "E2E Reload Draft";
+  await page.getByLabel("Route name").fill(routeName);
+
+  // Past the draft-autosave debounce, so the placed waypoints and typed
+  // name are genuinely persisted before reloading.
+  await page.waitForTimeout(1_200);
+  expect(orsRequestCount).toBe(0);
+
+  await page.reload();
+  await page.getByRole("button", { name: "Plan" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  await expect(page.getByLabel("Route name")).toHaveValue(routeName);
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Waypoint 2", exact: true }),
+  ).toBeVisible();
+  // The reload and re-hydration themselves must not issue any routing
+  // request — the mocked count is unchanged from before the reload.
+  expect(orsRequestCount).toBe(0);
+
+  // The draft remains editable after reload — a third waypoint placed now
+  // is accepted normally, proving hydration completed and autosave is
+  // live again, not stuck blocking further edits.
+  await mapContainer.click({ position: { x: 300, y: 200 } });
+  await expect(
+    page.getByRole("button", { name: "Waypoint 3", exact: true }),
+  ).toBeVisible();
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
 test("selecting General cycling routes via the cycling-regular endpoint, not the default cycling-road one", async ({
   page,
 }) => {

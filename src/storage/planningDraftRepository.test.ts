@@ -90,4 +90,32 @@ describe("planningDraftRepository", () => {
       ["id", "waypoints", "updatedAt", "routeName", "avoidFerries", "profile"].sort(),
     );
   });
+
+  // Characterization test, not a fix: proves the requirement-#7 audit's
+  // finding from PlanningScreen.tsx's own hydration/autosave race fix (see
+  // CLAUDE.md) — same-store IndexedDB readwrite transactions commit in the
+  // order they were requested, not the order their JS promises happen to
+  // resolve, so two saveDraft calls issued back-to-back with zero awaited
+  // gap between them still leave the later call's content as the final
+  // stored state. This does not address the separate, still-open race
+  // documented in CLAUDE.md's own backlog item 30 (handleSave's direct
+  // clearDraft() racing a still-pending autosave timer).
+  it("commits saveDraft calls in call order even when not awaited between them", async () => {
+    const first = saveDraft({ ...content, routeName: "First" });
+    const second = saveDraft({ ...content, routeName: "Second" });
+
+    await Promise.all([first, second]);
+
+    const draft = await getDraft();
+    expect(draft?.routeName).toBe("Second");
+  });
+
+  it("commits a saveDraft followed by a clearDraft in call order even when not awaited between them", async () => {
+    const saved = saveDraft(content);
+    const cleared = clearDraft();
+
+    await Promise.all([saved, cleared]);
+
+    await expect(getDraft()).resolves.toBeUndefined();
+  });
 });

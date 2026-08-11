@@ -95,6 +95,14 @@ export interface PlanningScreenProps {
  * recalculation, so a rapid burst of edits writes once, not per edit. */
 const DRAFT_DEBOUNCE_MS = 900;
 
+/** "loading" until the initial draft read resolves (successfully or not);
+ * "ready" once either a restored draft, or genuinely-fresh defaults, have
+ * been applied as the authoritative in-memory state — the only condition
+ * that may ever enable autosave; "failed" when the read itself rejected,
+ * meaning nothing was read or applied at all. A rider action taken before
+ * "ready" jumps straight to it — see noteHydrationOverriddenByUserEdit. */
+type PlanningDraftHydrationStatus = "loading" | "ready" | "failed";
+
 /** How close a settled bearing must be to 0° (via
  * shortestAngularDifferenceDegrees, so the 0°/360° wrap is handled
  * correctly — e.g. a settled 359.7° is genuinely only 0.3° from north) to
@@ -221,7 +229,34 @@ export function PlanningScreen({
   // deliberately leaves the previous marker in place rather than clearing
   // it (see handleLocateMe below).
   const [currentPosition, setCurrentPosition] = useState<Coordinate | null>(null);
-  const [isDraftHydrated, setIsDraftHydrated] = useState(false);
+  // Three-state hydration lifecycle (extends this file's own existing
+  // locateStatus tri-state convention below) plus a numeric generation ref
+  // (mirroring useRideNavigation.ts's watchGenerationRef idiom) — the one
+  // authoritative "is this async draft-read attempt still relevant" check,
+  // guarding against a result from a superseded (unmounted/retried) attempt.
+  // Autosave and the fresh-session location-framing effect below both gate
+  // on hydrationStatus === "ready"; see the hydration effect's own doc
+  // comment for the full invariant.
+  const [hydrationStatus, setHydrationStatus] =
+    useState<PlanningDraftHydrationStatus>("loading");
+  const hydrationGenerationRef = useRef(0);
+  const [hydrationRetryToken, setHydrationRetryToken] = useState(0);
+  // Set true by a genuine rider edit to a restorable field (waypoints,
+  // route name or cycling profile) made before hydration has applied a
+  // restored draft — tells the eventual restore (if a real draft exists)
+  // to skip re-applying its fields over what the rider has already
+  // changed, rather than silently overwriting them. Deliberately does NOT
+  // affect the separate genuinely-fresh branch's own avoid-ferries
+  // seeding (see the hydration effect below): that path touches none of
+  // these three fields, so it can never conflict with them, and skipping
+  // it merely because the rider tapped the map first would deny a fast
+  // session its correct Settings default for no data-integrity benefit —
+  // confirmed necessary by real, pre-existing tests that place waypoints
+  // immediately after mount, before any read has had a chance to resolve.
+  // Monotonic: once true, stays true for the rest of this mount's life —
+  // once the rider has taken direct action, no later-arriving restore
+  // (including after a failed hydration's retry) should ever overwrite it.
+  const hasUserModifiedDraftFieldsRef = useRef(false);
   const [boundsTarget, setBoundsTarget] = useState<BoundsCameraTarget | null>(null);
   const [centreTarget, setCentreTarget] = useState<CentreCameraTarget | null>(null);
   const [orientNorthTarget, setOrientNorthTarget] =
@@ -367,20 +402,46 @@ export function PlanningScreen({
     effectivePendingAction,
   );
 
+  // Records that the rider has taken direct action on a restorable field
+  // (see hasUserModifiedDraftFieldsRef's own doc comment above) — consulted
+  // by the hydration effect's restore branch, never by its fresh-session
+  // branch. Also unblocks autosave immediately if hydration had already
+  // reached a permanent dead end ("failed"): the read already rejected, so
+  // there is no pending promise left to ever move it to "ready" on its
+  // own, and the rider has now started fresh work that deserves saving.
+  // While still "loading", this deliberately leaves hydrationStatus alone
+  // — the in-flight read's own resolution (which consults the ref above)
+  // is what decides the transition to "ready", not this call site.
+  const noteHydrationOverriddenByUserEdit = useCallback(() => {
+    hasUserModifiedDraftFieldsRef.current = true;
+    setHydrationStatus((current) => (current === "failed" ? "ready" : current));
+  }, []);
+
   // Every waypoint-history dispatch also clears any active warning
   // selection ("selecting or editing a waypoint clears the warning
   // selection") — centralised here so no call site (including undo/redo)
   // can forget it. Without this, a stale warning selection could keep
   // wrongly blocking placement for the ~900ms-plus-network gap until the
   // next recalculation lands (see handlePlacementAt's own guard below).
+  // Also the single place that "a rider edit wins over hydration" is
+  // enforced for every waypoint mutation — including the post-save reset
+  // below, which is already a no-op there by construction, since handleSave
+  // is only reachable once routing.state.kind === "routed", which itself
+  // requires hydrationStatus to already be "ready".
   const dispatchWaypointAction = useCallback(
     (action: WaypointAction) => {
+      noteHydrationOverriddenByUserEdit();
       if (selectedWarningIndex !== null) setSelectedWarningIndex(null);
       if (selectedRouteFeatureId !== null) setSelectedRouteFeatureId(null);
       if (selectedGradientSegment !== null) setSelectedGradientSegment(null);
       dispatch(action);
     },
-    [selectedWarningIndex, selectedRouteFeatureId, selectedGradientSegment],
+    [
+      selectedWarningIndex,
+      selectedRouteFeatureId,
+      selectedGradientSegment,
+      noteHydrationOverriddenByUserEdit,
+    ],
   );
 
   // Central warning-selection path, shared by both origins — the *only*
@@ -474,38 +535,68 @@ export function PlanningScreen({
     [selectedWarningIndex, selectedRouteFeatureId, selectedGradientSegment],
   );
 
-  // Loads any previously saved draft exactly once, before draft-persisting
-  // starts below — otherwise the persist effect's first run (an empty
-  // array, before the load resolves) could overwrite a real saved draft.
+  // Loads any previously saved draft exactly once per attempt (initial
+  // mount, or a retry after a failed read), before draft-persisting starts
+  // below — otherwise the persist effect's first run (an empty array,
+  // before the load resolves) could overwrite a real saved draft.
+  //
+  // Invariant: Planning must not autosave until the initial draft read has
+  // completed successfully and the resolved draft, or the deliberate
+  // fresh-plan defaults when no draft exists, has been applied as the
+  // authoritative in-memory state. Enforced here via a single generation
+  // check (hydrationGenerationRef) that gates the *entire* continuation —
+  // both the restored-draft branch and the nested fresh-session
+  // getPlanningPreferences() read — so a result from a superseded attempt
+  // (after unmount, or after a retry has started a new attempt) can never
+  // apply stale data or enable autosave. The cleanup below bumps the
+  // generation on every unmount/re-run (including React StrictMode's
+  // mount->cleanup->mount double-invocation — getDraft() is a read, so a
+  // duplicate call is harmless; only the winning generation's result is
+  // ever applied). Separately, the restore branch also consults
+  // hasUserModifiedDraftFieldsRef (see its own doc comment above) to skip
+  // re-applying fields the rider has already directly changed themselves.
+  // Deliberately does not itself set hydrationStatus to "loading" (which
+  // would be a synchronous setState-in-effect, an anti-pattern this
+  // codebase avoids elsewhere too) — the initial "loading" default already
+  // covers the first mount, and the Retry button's own onClick below sets
+  // it directly before bumping hydrationRetryToken, mirroring
+  // handleLocateMe's existing convention of setting status in the
+  // triggering event handler, not inside the effect it kicks off.
   useEffect(() => {
-    let cancelled = false;
+    const generation = ++hydrationGenerationRef.current;
+
     getDraft()
       .then((draft) => {
-        if (cancelled) return;
+        if (hydrationGenerationRef.current !== generation) return;
         if (draft && draft.waypoints.length > 0) {
-          dispatch({ type: "reset", waypoints: draft.waypoints });
-          setRouteName(draft.routeName);
-          setAvoidFerries(draft.avoidFerries);
-          setProfile(draft.profile);
-          // Both fields, or neither — see editCopyMeta's own doc comment.
-          if (
-            draft.editCopySourceRouteId !== undefined &&
-            draft.editCopyWaypointsOrigin !== undefined
-          ) {
-            setEditCopyMeta({
-              sourceRouteId: draft.editCopySourceRouteId,
-              origin: draft.editCopyWaypointsOrigin,
-              // mapping.ts's fromStoredPlanningDraft already resolves
-              // this to a concrete "forward"/"reverse" (defaulting a
-              // pre-Reverse-route draft, which never had this field, to
-              // "forward") — the `?? "forward"` here only satisfies
-              // PlanningDraftContent's optional type, which stays
-              // optional because the *write* side must still be able to
-              // omit it for an ordinary, non-edit-copy draft.
-              operation: draft.editCopyOperation ?? "forward",
-            });
+          if (!hasUserModifiedDraftFieldsRef.current) {
+            dispatch({ type: "reset", waypoints: draft.waypoints });
+            setRouteName(draft.routeName);
+            setAvoidFerries(draft.avoidFerries);
+            setProfile(draft.profile);
+            // Both fields, or neither — see editCopyMeta's own doc comment.
+            if (
+              draft.editCopySourceRouteId !== undefined &&
+              draft.editCopyWaypointsOrigin !== undefined
+            ) {
+              setEditCopyMeta({
+                sourceRouteId: draft.editCopySourceRouteId,
+                origin: draft.editCopyWaypointsOrigin,
+                // mapping.ts's fromStoredPlanningDraft already resolves
+                // this to a concrete "forward"/"reverse" (defaulting a
+                // pre-Reverse-route draft, which never had this field, to
+                // "forward") — the `?? "forward"` here only satisfies
+                // PlanningDraftContent's optional type, which stays
+                // optional because the *write* side must still be able to
+                // omit it for an ordinary, non-edit-copy draft.
+                operation: draft.editCopyOperation ?? "forward",
+              });
+            }
           }
-          setIsDraftHydrated(true);
+          // Reached "ready" either way: if the rider already edited, their
+          // own in-memory state (not this draft's) is now authoritative,
+          // and autosave must still be unblocked for it.
+          setHydrationStatus("ready");
           return;
         }
         // Genuinely fresh: no draft row at all, or a draft row with zero
@@ -516,9 +607,15 @@ export function PlanningScreen({
         // ferries value once from the Settings default; from the draft's
         // first autosave onward it is fully self-contained, and a later
         // change to the Settings default never touches it again.
+        // Deliberately unconditional on hasUserModifiedDraftFieldsRef: this
+        // branch never restores waypoints/routeName/profile, so a rider
+        // who has already tapped the map to place a waypoint has nothing
+        // here for that edit to conflict with — confirmed necessary by
+        // pre-existing tests that place waypoints immediately on mount and
+        // still expect the Settings default to apply.
         getPlanningPreferences()
           .then((preferences) => {
-            if (cancelled) return;
+            if (hydrationGenerationRef.current !== generation) return;
             setAvoidFerries(preferences.avoidFerriesByDefault);
           })
           .catch((error: unknown) => {
@@ -529,17 +626,31 @@ export function PlanningScreen({
             // never observably different from the ordinary case.
           })
           .finally(() => {
-            if (!cancelled) setIsDraftHydrated(true);
+            if (hydrationGenerationRef.current === generation) {
+              setHydrationStatus("ready");
+            }
           });
       })
       .catch((error: unknown) => {
+        if (hydrationGenerationRef.current !== generation) return;
         logError("planning-load-draft", error);
-        setIsDraftHydrated(true);
+        // Never "ready" — nothing was read or applied, so autosave must
+        // stay blocked (otherwise the debounced effect below would soon
+        // see zero waypoints and silently clearDraft() the real, unread
+        // row). Surfaces an accessible retry state instead; see the
+        // failure UI below and the Retry button's hydrationRetryToken. A
+        // rider edit made after this still recovers — see
+        // noteHydrationOverriddenByUserEdit's own "failed" -> "ready"
+        // transition.
+        setHydrationStatus("failed");
       });
+
     return () => {
-      cancelled = true;
+      if (hydrationGenerationRef.current === generation) {
+        hydrationGenerationRef.current += 1;
+      }
     };
-  }, []);
+  }, [hydrationRetryToken]);
 
   // A separate 900ms debounce from usePlanningRoute's own recalculation
   // debounce below — this one persists the draft (waypoints, route name,
@@ -547,7 +658,7 @@ export function PlanningScreen({
   // routeName/avoidFerries/profile, unlike the routing debounce, which
   // never receives routeName.
   useEffect(() => {
-    if (!isDraftHydrated) return;
+    if (hydrationStatus !== "ready") return;
     const timeoutId = window.setTimeout(() => {
       const persist =
         state.present.length === 0
@@ -576,7 +687,7 @@ export function PlanningScreen({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [state.present, routeName, avoidFerries, profile, editCopyMeta, isDraftHydrated]);
+  }, [state.present, routeName, avoidFerries, profile, editCopyMeta, hydrationStatus]);
 
   // Read fresh inside the location effect below rather than depending on
   // state.present directly, so a waypoint added while the location request
@@ -629,7 +740,7 @@ export function PlanningScreen({
   // and owns its own separate loading/failure UI.
   const hasRequestedInitialLocationRef = useRef(false);
   useEffect(() => {
-    if (!isDraftHydrated || hasRequestedInitialLocationRef.current) return;
+    if (hydrationStatus !== "ready" || hasRequestedInitialLocationRef.current) return;
     hasRequestedInitialLocationRef.current = true;
     if (waypointsRef.current.length > 0) return;
     requestApproximateLocation()
@@ -647,7 +758,7 @@ export function PlanningScreen({
       .catch((error: unknown) => {
         logError("planning-initial-location", error);
       });
-  }, [isDraftHydrated, requestApproximateLocation]);
+  }, [hydrationStatus, requestApproximateLocation]);
 
   const handleLocateMe = useCallback(() => {
     if (isLocatingRef.current) return;
@@ -932,6 +1043,30 @@ export function PlanningScreen({
 
       {!hasKey ? <NoApiKeyNotice onOpenSettings={onNavigateToSettings} /> : null}
 
+      {hydrationStatus === "loading" ? (
+        <p className="status-row" role="status">
+          Loading your plan…
+        </p>
+      ) : null}
+
+      {hydrationStatus === "failed" ? (
+        <div className="row">
+          <p className="field-error" role="alert">
+            Your saved plan could not be loaded. Nothing in storage has been changed.
+          </p>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              setHydrationStatus("loading");
+              setHydrationRetryToken((token) => token + 1);
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
+
       {editCopyMeta ? (
         <p className="status-row status-row--info" role="status">
           {describeEditCopyNotice(editCopyMeta)}
@@ -1124,6 +1259,7 @@ export function PlanningScreen({
                   }
                   aria-pressed={isSelected}
                   onClick={() => {
+                    noteHydrationOverriddenByUserEdit();
                     setProfile(metadata.value);
                   }}
                 >
@@ -1223,6 +1359,7 @@ export function PlanningScreen({
             className="field-input"
             value={routeName}
             onChange={(event) => {
+              noteHydrationOverriddenByUserEdit();
               setRouteName(event.target.value);
             }}
           />
