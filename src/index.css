@@ -475,10 +475,11 @@ button:focus-visible {
 
 /* The confirmation heading includes the route's own (possibly long) name
  * in quotes — same long-name-wrapping need as .route-card-title above.
- * h3, not h2: the Route Library slice's own "Pinned"/"Other routes" group
- * headings are real h2s, so this per-card dialog heading is one level
- * deeper to keep the outline non-flat. */
-.route-delete-confirm h3 {
+ * h2, not h3: the Route Library screen's own "Pinned"/"Other routes" group
+ * headings were removed (see CLAUDE.md item 33), so this per-card dialog
+ * heading now sits directly beneath the page's own single h1 ("Routes")
+ * with no intervening heading level. */
+.route-delete-confirm h2 {
   margin: 0 0 0.25rem;
   overflow-wrap: anywhere;
 }

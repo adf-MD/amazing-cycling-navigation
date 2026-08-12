@@ -23,10 +23,13 @@ export interface RouteListItemProps {
    * focus to it after a different route is deleted. */
   nameButtonRef: (element: HTMLButtonElement | null) => void;
   /** Registers/unregisters this row's pin toggle so RouteLibrary can move
-   * focus to it after a successful pin/unpin moves this card into its new
-   * group (pinned/unpinned render as two separate lists, so React does not
-   * carry the button's DOM identity — and hence focus — across that move
-   * on its own, even though the key is unchanged). */
+   * focus back to it after a successful pin/unpin. Needed even though
+   * pinned and unpinned routes render as one continuous, single-keyed
+   * list: this button is `disabled` for the duration of the write (to
+   * block a duplicate submission), and a real browser automatically blurs
+   * a focused control the instant it becomes disabled — confirmed in a
+   * real browser, not merely suspected, via this component's own e2e
+   * pinning coverage. */
   pinButtonRef: (element: HTMLButtonElement | null) => void;
 }
 
@@ -227,7 +230,7 @@ export function RouteListItem({
               aria-describedby={descriptionId}
               onKeyDown={handleConfirmKeyDown}
             >
-              <h3 id={headingId}>Delete “{route.name}”?</h3>
+              <h2 id={headingId}>Delete “{route.name}”?</h2>
               <p id={descriptionId}>
                 This route will be permanently deleted from this device. This cannot be
                 undone.

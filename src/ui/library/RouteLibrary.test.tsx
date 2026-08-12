@@ -15,12 +15,6 @@ function getVisibleRouteNames(): string[] {
   );
 }
 
-function getGroupHeadings(): string[] {
-  return Array.from(document.querySelectorAll("h2")).map(
-    (element) => element.textContent,
-  );
-}
-
 type SteppingClock = Clock & { advance: (ms: number) => void };
 
 /** A Clock whose `now()` can be advanced between calls, so tests can prove
@@ -686,19 +680,20 @@ describe("RouteLibrary", () => {
   });
 
   describe("pinning", () => {
-    it("shows the plain ordinary list, with no group headings, when nothing is pinned", async () => {
+    it("shows one continuous list, with no group headings, when nothing is pinned", async () => {
       const user = userEvent.setup();
       render(<RouteLibrary onOpenRoute={vi.fn()} />);
       await importFixture(user, "Alpine Climb.gpx");
 
-      expect(getGroupHeadings()).toEqual([]);
+      expect(document.querySelectorAll("h2")).toHaveLength(0);
+      expect(document.querySelectorAll(".route-list")).toHaveLength(1);
       expect(screen.getByRole("button", { name: "Pin Alpine Climb" })).toHaveAttribute(
         "aria-pressed",
         "false",
       );
     });
 
-    it("pinning a route creates a Pinned group above the unpinned routes", async () => {
+    it("pinning a route moves it above the unpinned routes, in one continuous list", async () => {
       const user = userEvent.setup();
       render(<RouteLibrary onOpenRoute={vi.fn()} />);
       await importFixture(user, "Alpine Climb.gpx");
@@ -707,12 +702,13 @@ describe("RouteLibrary", () => {
       await user.click(screen.getByRole("button", { name: "Pin Zebra Loop" }));
 
       await waitFor(() => {
-        expect(getGroupHeadings()).toEqual(["Pinned", "Other routes"]);
+        expect(screen.getByRole("button", { name: "Unpin Zebra Loop" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
       });
-      expect(screen.getByRole("button", { name: "Unpin Zebra Loop" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
+      expect(document.querySelectorAll("h2")).toHaveLength(0);
+      expect(document.querySelectorAll(".route-list")).toHaveLength(1);
       expect(getVisibleRouteNames()).toEqual(["Zebra Loop", "Alpine Climb"]);
     });
 
@@ -733,18 +729,14 @@ describe("RouteLibrary", () => {
       clock.advance(1000);
       await user.click(screen.getByRole("button", { name: "Pin Zebra Loop" }));
 
+      // Both routes are pinned at this point, so the full flattened order
+      // already is the pinned order — no separate sublist to locate.
       await waitFor(() => {
-        const pinnedHeading = screen.getByRole("heading", { name: "Pinned" });
-        const pinnedList = pinnedHeading.nextElementSibling;
-        expect(pinnedList).not.toBeNull();
-        const names = Array.from(
-          pinnedList?.querySelectorAll(".route-card-title") ?? [],
-        ).map((el) => el.textContent);
-        expect(names).toEqual(["Zebra Loop", "Alpine Climb"]);
+        expect(getVisibleRouteNames()).toEqual(["Zebra Loop", "Alpine Climb"]);
       });
     });
 
-    it("changing the sort order reorders only Other routes, leaving Pinned order unchanged", async () => {
+    it("changing the sort order reorders only the unpinned routes, leaving pinned order unchanged", async () => {
       const user = userEvent.setup();
       render(<RouteLibrary onOpenRoute={vi.fn()} />);
       // Import order (oldest -> newest): Mountain Pass, Alpine Climb, Zebra
@@ -760,7 +752,9 @@ describe("RouteLibrary", () => {
 
       await user.click(screen.getByRole("button", { name: "Pin Mountain Pass" }));
       await waitFor(() => {
-        expect(getGroupHeadings()).toEqual(["Pinned", "Other routes"]);
+        expect(
+          screen.getByRole("button", { name: "Unpin Mountain Pass" }),
+        ).toHaveAttribute("aria-pressed", "true");
       });
       expect(getVisibleRouteNames()).toEqual([
         "Mountain Pass",
@@ -794,13 +788,13 @@ describe("RouteLibrary", () => {
       await user.click(screen.getByRole("button", { name: "Unpin Zebra Loop" }));
 
       await waitFor(() => {
-        expect(getGroupHeadings()).toEqual([]);
+        expect(screen.getByRole("button", { name: "Pin Zebra Loop" })).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        );
       });
+      expect(document.querySelectorAll("h2")).toHaveLength(0);
       expect(getVisibleRouteNames()).toEqual(["Zebra Loop", "Alpine Climb"]);
-      expect(screen.getByRole("button", { name: "Pin Zebra Loop" })).toHaveAttribute(
-        "aria-pressed",
-        "false",
-      );
     });
 
     it("pinning a route again after unpinning makes it the newest pinned route", async () => {
@@ -834,32 +828,30 @@ describe("RouteLibrary", () => {
 
       await user.click(screen.getByRole("button", { name: "Pin Alpine Climb" }));
 
+      // Both routes are pinned at this point, so the full flattened order
+      // already is the pinned order — no separate sublist to locate.
       await waitFor(() => {
-        const pinnedHeading = screen.getByRole("heading", { name: "Pinned" });
-        const pinnedList = pinnedHeading.nextElementSibling;
-        const names = Array.from(
-          pinnedList?.querySelectorAll(".route-card-title") ?? [],
-        ).map((el) => el.textContent);
-        expect(names).toEqual(["Alpine Climb", "Zebra Loop"]);
+        expect(getVisibleRouteNames()).toEqual(["Alpine Climb", "Zebra Loop"]);
       });
     });
 
-    it("search filters both groups and omits the empty group's own heading", async () => {
+    it("search filters across pinned and unpinned routes", async () => {
       const user = userEvent.setup();
       render(<RouteLibrary onOpenRoute={vi.fn()} />);
       await importFixture(user, "Alpine Climb.gpx");
       await importFixture(user, "Zebra Loop.gpx");
       await user.click(screen.getByRole("button", { name: "Pin Alpine Climb" }));
       await waitFor(() => {
-        expect(getGroupHeadings()).toEqual(["Pinned", "Other routes"]);
+        expect(getVisibleRouteNames()).toEqual(["Alpine Climb", "Zebra Loop"]);
       });
 
       const search = screen.getByLabelText("Search routes");
       await user.type(search, "alpine");
 
       await waitFor(() => {
-        expect(getGroupHeadings()).toEqual(["Pinned"]);
+        expect(getVisibleRouteNames()).toEqual(["Alpine Climb"]);
       });
+      expect(document.querySelectorAll("h2")).toHaveLength(0);
       expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
     });
 
@@ -873,6 +865,59 @@ describe("RouteLibrary", () => {
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Unpin Alpine Climb" })).toHaveFocus();
       });
+    });
+
+    it("pinning a route while both pinned and unpinned routes already exist keeps focus on its own toggle", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+      await user.click(screen.getByRole("button", { name: "Pin Alpine Climb" }));
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Unpin Alpine Climb" }),
+        ).toBeInTheDocument();
+      });
+
+      // Pinned (Alpine Climb) and unpinned (Zebra Loop) are both non-empty;
+      // pinning Zebra Loop moves it from the unpinned tail to the front of
+      // the pinned group, crossing a boundary that used to sit between two
+      // separate <ul> parents.
+      await user.click(screen.getByRole("button", { name: "Pin Zebra Loop" }));
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Unpin Zebra Loop" })).toHaveFocus();
+      });
+      expect(getVisibleRouteNames()).toEqual(["Zebra Loop", "Alpine Climb"]);
+    });
+
+    it("unpinning a route while both pinned and unpinned routes remain keeps focus on its own toggle", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+      await user.click(screen.getByRole("button", { name: "Pin Alpine Climb" }));
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Unpin Alpine Climb" }),
+        ).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole("button", { name: "Pin Zebra Loop" }));
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Unpin Zebra Loop" }),
+        ).toBeInTheDocument();
+      });
+
+      // Both routes are pinned; unpinning Zebra Loop moves it out of the
+      // still-non-empty pinned group (Alpine Climb remains) into the
+      // unpinned tail.
+      await user.click(screen.getByRole("button", { name: "Unpin Zebra Loop" }));
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Pin Zebra Loop" })).toHaveFocus();
+      });
+      expect(getVisibleRouteNames()).toEqual(["Alpine Climb", "Zebra Loop"]);
     });
 
     it("a failed pin write keeps the previous order and shows an inline error", async () => {
@@ -890,7 +935,7 @@ describe("RouteLibrary", () => {
           "This route could not be pinned. Try again.",
         );
       });
-      expect(getGroupHeadings()).toEqual([]);
+      expect(document.querySelectorAll("h2")).toHaveLength(0);
       expect(screen.getByRole("button", { name: "Pin Alpine Climb" })).toHaveAttribute(
         "aria-pressed",
         "false",
@@ -945,7 +990,10 @@ describe("RouteLibrary", () => {
       await importFixture(user, "Zebra Loop.gpx");
       await user.click(screen.getByRole("button", { name: "Pin Zebra Loop" }));
       await waitFor(() => {
-        expect(getGroupHeadings()).toEqual(["Pinned", "Other routes"]);
+        expect(screen.getByRole("button", { name: "Unpin Zebra Loop" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
       });
       const [climbRoute] = (await routesRepository.listRoutes()).filter(
         (route) => route.name === "Alpine Climb",

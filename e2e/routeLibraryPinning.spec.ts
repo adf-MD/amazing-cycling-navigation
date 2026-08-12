@@ -26,17 +26,12 @@ async function importRoute(page: Page, name: string) {
   await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
 }
 
-// Route cards render in one continuous document order — the Pinned group's
-// <ul> always precedes Other routes' <ul> when both are present — so this
-// single helper's return order already reflects the combined
-// pinned-then-unpinned contract, without needing a separate per-group
-// locator.
+// Route cards render in one continuous document order — pinned routes
+// (newest-pinned-first) always precede unpinned routes — so this single
+// helper's return order already reflects the combined pinned-then-unpinned
+// contract, without needing a separate per-group locator.
 function visibleCardTitles(page: Page) {
   return page.locator(".route-card-title").allInnerTexts();
-}
-
-function groupHeadings(page: Page) {
-  return page.locator("h2").allInnerTexts();
 }
 
 /**
@@ -61,7 +56,7 @@ async function unpinAndWait(page: Page, name: string) {
   ).toHaveAttribute("aria-pressed", "false");
 }
 
-test("pinning creates a Pinned group above unpinned routes, orders newest-pinned-first, sort affects only Other routes, search filters both groups, and reload preserves pin state and order", async ({
+test("pinning moves a route above unpinned routes in one continuous list, orders newest-pinned-first, sort affects only unpinned routes, search filters across both, focus survives crossing the pinned/unpinned boundary, and reload preserves pin state and order", async ({
   page,
 }) => {
   const consoleErrors: string[] = [];
@@ -78,8 +73,10 @@ test("pinning creates a Pinned group above unpinned routes, orders newest-pinned
   await importRoute(page, "Alpine Climb");
   await importRoute(page, "Zebra Loop");
 
-  // Initial Most recent order, no pins yet.
-  await expect(groupHeadings(page)).resolves.toEqual([]);
+  // Initial Most recent order, no pins yet — no group headings anywhere,
+  // and exactly one continuous route list.
+  await expect(page.locator("h2")).toHaveCount(0);
+  await expect(page.locator(".route-list")).toHaveCount(1);
   await expect(async () => {
     expect(await visibleCardTitles(page)).toEqual([
       "Zebra Loop",
@@ -88,12 +85,12 @@ test("pinning creates a Pinned group above unpinned routes, orders newest-pinned
     ]);
   }).toPass();
 
-  // Pin Alpine Climb -> a Pinned group appears above Other routes; the
-  // remaining unpinned pair still orders by Most recent (Zebra Loop newer).
+  // Pin Alpine Climb -> it moves above the unpinned routes; the remaining
+  // unpinned pair still orders by Most recent (Zebra Loop newer). Still no
+  // group headings, still one continuous list.
   await pinAndWait(page, "Alpine Climb");
-  await expect(async () => {
-    expect(await groupHeadings(page)).toEqual(["Pinned", "Other routes"]);
-  }).toPass();
+  await expect(page.locator("h2")).toHaveCount(0);
+  await expect(page.locator(".route-list")).toHaveCount(1);
   await expect(async () => {
     expect(await visibleCardTitles(page)).toEqual([
       "Alpine Climb",
@@ -104,8 +101,8 @@ test("pinning creates a Pinned group above unpinned routes, orders newest-pinned
 
   // Changing the sort order genuinely reorders the two remaining unpinned
   // routes (Mountain Pass alphabetically precedes Zebra Loop, the reverse
-  // of their Most recent order), while Pinned's own single entry stays put
-  // — proving the selector affects only Other routes, not a coincidence.
+  // of their Most recent order), while the pinned route stays put — proving
+  // the selector affects only unpinned routes, not a coincidence.
   await page.getByLabel("Sort by").selectOption("name-asc");
   await expect(async () => {
     expect(await visibleCardTitles(page)).toEqual([
@@ -115,8 +112,16 @@ test("pinning creates a Pinned group above unpinned routes, orders newest-pinned
     ]);
   }).toPass();
 
-  // Pinning a second route lands it above the first.
+  // Pinning a second route lands it above the first, crossing from a
+  // non-empty unpinned set into a non-empty pinned set — the exact boundary
+  // that used to sit between two separate <ul> parents. Focus must survive
+  // this move with no imperative refocus code: a real click naturally
+  // focuses the clicked toggle, and it must still be focused once the
+  // write round-trips and the route reorders to its new position.
   await pinAndWait(page, "Zebra Loop");
+  await expect(
+    page.getByRole("button", { name: "Unpin Zebra Loop", exact: true }),
+  ).toBeFocused();
   await expect(async () => {
     expect(await visibleCardTitles(page)).toEqual([
       "Zebra Loop",
@@ -125,14 +130,12 @@ test("pinning creates a Pinned group above unpinned routes, orders newest-pinned
     ]);
   }).toPass();
 
-  // Search filters across both groups; the empty group's heading is
-  // omitted (only Zebra Loop, in Pinned, matches "zebra").
+  // Search filters across pinned and unpinned routes alike (only Zebra
+  // Loop, pinned, matches "zebra").
   const search = page.getByLabel("Search routes");
   await search.fill("zebra");
-  await expect(async () => {
-    expect(await groupHeadings(page)).toEqual(["Pinned"]);
-  }).toPass();
   await expect(page.locator(".route-card-title")).toHaveCount(1);
+  await expect(page.locator("h2")).toHaveCount(0);
   await page.getByRole("button", { name: "Clear search" }).click();
   await expect(search).toHaveValue("");
 
@@ -140,9 +143,7 @@ test("pinning creates a Pinned group above unpinned routes, orders newest-pinned
   // choice are both persisted; the transient search query is not, per the
   // existing search/sort contract).
   await page.reload();
-  await expect(async () => {
-    expect(await groupHeadings(page)).toEqual(["Pinned", "Other routes"]);
-  }).toPass();
+  await expect(page.locator("h2")).toHaveCount(0);
   await expect(async () => {
     expect(await visibleCardTitles(page)).toEqual([
       "Zebra Loop",
@@ -151,10 +152,15 @@ test("pinning creates a Pinned group above unpinned routes, orders newest-pinned
     ]);
   }).toPass();
 
-  // Unpinning Zebra Loop moves it into the unpinned group at the position
+  // Unpinning Zebra Loop moves it into the unpinned routes at the position
   // dictated by the currently selected sort order (name-asc: Mountain Pass
-  // before Zebra Loop).
+  // before Zebra Loop) — crossing back from a non-empty pinned set (Alpine
+  // Climb remains) into a non-empty unpinned set (Mountain Pass). Focus
+  // must again survive the move.
   await unpinAndWait(page, "Zebra Loop");
+  await expect(
+    page.getByRole("button", { name: "Pin Zebra Loop", exact: true }),
+  ).toBeFocused();
   await expect(async () => {
     expect(await visibleCardTitles(page)).toEqual([
       "Alpine Climb",
@@ -181,7 +187,7 @@ test("pinning creates a Pinned group above unpinned routes, orders newest-pinned
   expect(consoleErrors).toEqual([]);
 });
 
-test("opening a pinned route and returning restores the pinned/unpinned grouping alongside the existing search, sort and scroll contract", async ({
+test("opening a pinned route and returning restores the pinned-first order alongside the existing search, sort and scroll contract", async ({
   page,
 }) => {
   const consoleErrors: string[] = [];
@@ -199,7 +205,7 @@ test("opening a pinned route and returning restores the pinned/unpinned grouping
   await importRoute(page, "Zebra Loop");
   await pinAndWait(page, "Zebra Loop");
   await expect(async () => {
-    expect(await groupHeadings(page)).toEqual(["Pinned", "Other routes"]);
+    expect(await visibleCardTitles(page)).toEqual(["Zebra Loop", "Alpine Climb"]);
   }).toPass();
 
   await page.getByRole("button", { name: "Zebra Loop", exact: true }).click();
@@ -208,13 +214,11 @@ test("opening a pinned route and returning restores the pinned/unpinned grouping
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
 
   await page.getByRole("button", { name: "Routes" }).click();
-  // exact: true — "Other routes" is itself an h2 heading once a route is
-  // pinned, and would otherwise match this locator's default substring
-  // matching alongside the screen's own top-level "Routes" h1.
   await expect(page.getByRole("heading", { name: "Routes", exact: true })).toBeVisible();
 
+  await expect(page.locator("h2")).toHaveCount(0);
   await expect(async () => {
-    expect(await groupHeadings(page)).toEqual(["Pinned", "Other routes"]);
+    expect(await visibleCardTitles(page)).toEqual(["Zebra Loop", "Alpine Climb"]);
   }).toPass();
   await expect(
     page.getByRole("button", { name: "Unpin Zebra Loop", exact: true }),

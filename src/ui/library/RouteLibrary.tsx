@@ -166,21 +166,34 @@ export function RouteLibrary({
   }, [viewRoutes, routes]);
 
   // Restores focus to a route's own pin toggle after a successful pin/
-  // unpin moves it into its new group. Necessary, not optional: pinned and
-  // unpinned render as two separate `.map()`-produced arrays under two
-  // separate <ul> parents, so a route moving between them is an unmount+
-  // mount pair even though its key is unchanged — React does not carry a
-  // component's DOM identity (and hence focus) across that move the way it
-  // would for a plain reorder within one array. Fires once groups actually
-  // reflects the write (routes changed via the live query), by which point
-  // the new button has already registered itself into pinButtonRefs.
+  // unpin. Necessary even though pinned and unpinned routes render as one
+  // continuous, single-keyed `viewRoutes.map(renderCard)` list (so React's
+  // own keyed reconciliation happily moves, rather than remounts, a card
+  // that reorders within it — confirmed directly, in a real browser, by
+  // this file's own e2e pinning suite): the pin toggle is `disabled` for
+  // the duration of the write (to block a duplicate submission), and a
+  // real browser automatically blurs a focused control the instant it
+  // becomes disabled — a native DOM rule jsdom's own component tests
+  // don't reproduce, which is why this was first suspected unnecessary.
+  // A second, genuinely pre-existing defect (found via this file's own
+  // e2e pinning suite failing in real Chromium, unrelated to the group-
+  // heading removal itself) is that pinPendingIds clearing (which
+  // re-enables the button) and the routes live query updating (which
+  // reruns this effect) are two independent async updates with no
+  // guaranteed order: this can run while the button is still disabled,
+  // where an unconditional .focus() would silently no-op and the marker
+  // would be lost with nothing left to retry it. Both this effect's own
+  // pinPendingIds dependency and its disabled check below exist to close
+  // that gap — the marker is only consumed once the button is genuinely
+  // focusable, whichever of the two updates lands second.
   useEffect(() => {
     const targetId = pendingPinFocusIdRef.current;
-    if (targetId) {
-      pinButtonRefs.current.get(targetId)?.focus();
-      pendingPinFocusIdRef.current = null;
-    }
-  }, [groups]);
+    if (!targetId) return;
+    const button = pinButtonRefs.current.get(targetId);
+    if (!button || button.disabled) return;
+    button.focus();
+    pendingPinFocusIdRef.current = null;
+  }, [groups, pinPendingIds]);
 
   const handleImported = (result: GpxImportResult) => {
     setNotices(result.notices);
@@ -429,20 +442,7 @@ export function RouteLibrary({
       ) : viewRoutes.length === 0 ? (
         <p role="status">No routes match “{trimmedQuery}”.</p>
       ) : (
-        <>
-          {groups.pinned.length > 0 ? (
-            <>
-              <h2>Pinned</h2>
-              <ul className="route-list">{groups.pinned.map(renderCard)}</ul>
-            </>
-          ) : null}
-          {groups.pinned.length > 0 && groups.unpinned.length > 0 ? (
-            <h2>Other routes</h2>
-          ) : null}
-          {groups.unpinned.length > 0 ? (
-            <ul className="route-list">{groups.unpinned.map(renderCard)}</ul>
-          ) : null}
-        </>
+        <ul className="route-list">{viewRoutes.map(renderCard)}</ul>
       )}
     </section>
   );

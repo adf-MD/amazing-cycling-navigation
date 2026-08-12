@@ -102,7 +102,9 @@ function sortPinnedRoutes(
 /** The full Route Library pipeline: normalise query -> filter by name ->
  * partition pinned/unpinned -> sort pinned by pin recency (never by
  * sortOrder) -> sort unpinned via the rider's chosen order -> return as two
- * explicit groups so a caller can render/heading them separately. Neither
+ * explicit groups, since each still needs its own sort policy — the caller
+ * (RouteLibrary.tsx) flattens them into one combined, pinned-first render
+ * order rather than rendering them as separate visual groups. Neither
  * group mutates or aliases `routes`; the partition is exhaustive and
  * disjoint by construction, so no route can appear in both groups. */
 export function selectRouteLibraryGroups(
