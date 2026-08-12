@@ -88,3 +88,45 @@ export async function readActiveRideStateRow(
     INDEXED_DB_NAME,
   );
 }
+
+/**
+ * Reads the singleton `planningDrafts` "draft" row directly from
+ * IndexedDB, bypassing the UI entirely. Returns null when no draft row
+ * exists (including once handleSave's own clearDraft() has resolved) —
+ * used to prove the Save-versus-autosave draft race (CLAUDE.md backlog
+ * item 30) stays closed: a resurrected draft would show up here as a
+ * non-null row even when the UI has already navigated away from Planning.
+ *
+ * A deterministic building block only — no assertions or polling policy
+ * here; mirrors readActiveRideStateRow exactly, extended for a third store
+ * per this file's own established precedent (see CLAUDE.md item 25).
+ */
+export async function readPlanningDraftRow(
+  page: Page,
+): Promise<Record<string, unknown> | null> {
+  return page.evaluate<Record<string, unknown> | null, string>(
+    (dbName) =>
+      new Promise((resolve, reject) => {
+        const openRequest = indexedDB.open(dbName);
+        openRequest.onerror = () => {
+          reject(toIndexedDbError(openRequest.error));
+        };
+        openRequest.onsuccess = () => {
+          const database = openRequest.result;
+          const transaction = database.transaction("planningDrafts", "readonly");
+          const store = transaction.objectStore("planningDrafts");
+          const getRequest = store.get("draft");
+          getRequest.onsuccess = () => {
+            const result = getRequest.result as Record<string, unknown> | undefined;
+            database.close();
+            resolve(result ?? null);
+          };
+          getRequest.onerror = () => {
+            database.close();
+            reject(toIndexedDbError(getRequest.error));
+          };
+        };
+      }),
+    INDEXED_DB_NAME,
+  );
+}

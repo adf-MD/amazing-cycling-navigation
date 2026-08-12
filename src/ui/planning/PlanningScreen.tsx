@@ -652,14 +652,46 @@ export function PlanningScreen({
     };
   }, [hydrationRetryToken]);
 
+  // Synchronous, timing-independent protection for the "stale-timer
+  // resurrects a just-cleared draft" race (CLAUDE.md future-backlog item
+  // 30): handleSave below disables its own button (isSaving) AND, mirroring
+  // isLocatingRef's own established rationale above ("React state updates
+  // aren't synchronous"), checks isSavingRef synchronously as a
+  // belt-and-suspenders guard against a second click slipping through.
+  // saveTimeoutRef is the one synchronously-reachable handle for whichever
+  // autosave timer is currently scheduled, shared by this effect and
+  // handleSave, so handleSave can cancel a pending timer the instant Save is
+  // pressed rather than waiting for a render. saveGenerationRef additionally
+  // guards handleSave's own async continuations against a resolution
+  // arriving after unmount, mirroring hydrationGenerationRef's identical
+  // idiom above.
+  const [isSaving, setIsSaving] = useState(false);
+  const isSavingRef = useRef(false);
+  const saveGenerationRef = useRef(0);
+  const saveTimeoutRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    return () => {
+      saveGenerationRef.current += 1;
+    };
+  }, []);
+
   // A separate 900ms debounce from usePlanningRoute's own recalculation
   // debounce below — this one persists the draft (waypoints, route name,
   // avoid-ferries, cycling profile), so it deliberately DOES depend on
   // routeName/avoidFerries/profile, unlike the routing debounce, which
-  // never receives routeName.
+  // never receives routeName. Also gated on isSaving, and included in the
+  // dependency array, so no new timer is ever scheduled while an explicit
+  // Save attempt is in flight (see handleSave below).
   useEffect(() => {
-    if (hydrationStatus !== "ready") return;
-    const timeoutId = window.setTimeout(() => {
+    if (hydrationStatus !== "ready" || isSaving) return;
+    const generation = saveGenerationRef.current;
+    saveTimeoutRef.current = window.setTimeout(() => {
+      saveTimeoutRef.current = undefined;
+      // Defence in depth: the pending timer that could ever race a Save is
+      // always cancelled synchronously by handleSave before this could fire
+      // (see the "Why this closes the race" comment there); this check
+      // guards against a future refactor weakening that primary guard.
+      if (saveGenerationRef.current !== generation) return;
       const persist =
         state.present.length === 0
           ? clearDraft()
@@ -685,9 +717,17 @@ export function PlanningScreen({
       });
     }, DRAFT_DEBOUNCE_MS);
     return () => {
-      window.clearTimeout(timeoutId);
+      window.clearTimeout(saveTimeoutRef.current);
     };
-  }, [state.present, routeName, avoidFerries, profile, editCopyMeta, hydrationStatus]);
+  }, [
+    state.present,
+    routeName,
+    avoidFerries,
+    profile,
+    editCopyMeta,
+    hydrationStatus,
+    isSaving,
+  ]);
 
   // Read fresh inside the location effect below rather than depending on
   // state.present directly, so a waypoint added while the location request
@@ -909,24 +949,56 @@ export function PlanningScreen({
   const canSaveOrExport = canSaveOrExportPlan(routing.state, routing.isStale);
 
   const handleSave = () => {
-    if (routing.state.kind !== "routed") return;
+    if (routing.state.kind !== "routed" || isSavingRef.current) return;
+    isSavingRef.current = true;
+
+    // Synchronously cancel any pending autosave timer and invalidate its
+    // generation before any async work begins, so it cannot fire and write
+    // stale pre-save waypoints back into the draft row after clearDraft()
+    // below has cleared it — the documented Save-versus-autosave race
+    // (CLAUDE.md future-backlog item 30). This is the only pending timer
+    // that could ever race this Save: the autosave effect's own deps don't
+    // change synchronously during the async gap below (nothing else writes
+    // to them until the post-clearDraft reset), and it's additionally gated
+    // on isSaving, so no *new* timer can be scheduled while this attempt is
+    // in flight either.
+    window.clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = undefined;
+    saveGenerationRef.current += 1;
+    const attemptGeneration = saveGenerationRef.current;
+
     const routeToSave: PlannedRoute = {
       ...routing.state.route,
       name: routeName.trim() || "Planned route",
       planningProvenance: buildPlanningProvenance(state.present, profile, avoidFerries),
     };
     setSaveError(null);
+    setIsSaving(true);
     saveRoute(routeToSave)
       .then(() => clearDraft())
       .then(() => {
+        // Superseded only by unmount (isSavingRef already blocks a second
+        // concurrent attempt) — skip applying state after that.
+        if (saveGenerationRef.current !== attemptGeneration) return;
         dispatchWaypointAction({ type: "reset", waypoints: [] });
         setRouteName("Planned route");
         setEditCopyMeta(null);
         onRouteSaved?.(routeToSave);
       })
       .catch((error: unknown) => {
+        if (saveGenerationRef.current !== attemptGeneration) return;
         logError("planning-save-route", error);
         setSaveError("The route could not be saved on this device. Try again.");
+      })
+      .finally(() => {
+        isSavingRef.current = false;
+        // Re-establishes normal debounced autosave for the current
+        // in-memory plan on failure — the autosave effect's own isSaving
+        // dependency picks this up and re-arms against live render state,
+        // with nothing snapshotted here.
+        if (saveGenerationRef.current === attemptGeneration) {
+          setIsSaving(false);
+        }
       });
   };
 
@@ -1384,9 +1456,9 @@ export function PlanningScreen({
             type="button"
             className="btn-primary"
             onClick={handleSave}
-            disabled={!canSaveOrExport}
+            disabled={!canSaveOrExport || isSaving}
           >
-            Save route
+            {isSaving ? "Saving…" : "Save route"}
           </button>
           <button
             type="button"

@@ -703,13 +703,21 @@ describe("PlanningScreen", () => {
       expect(screen.getByRole("button", { name: /save route/i })).toBeEnabled();
     });
 
+    // Edits the route name immediately before Save, re-arming the 900ms
+    // draft-autosave debounce, then clicks Save right away rather than
+    // waiting it out — the exact Save-versus-autosave race regression
+    // (CLAUDE.md backlog item 30): a still-pending autosave timer must not
+    // resurrect the draft after clearDraft() below has cleared it.
+    fireEvent.change(screen.getByLabelText("Route name"), {
+      target: { value: "Renamed right before Save" },
+    });
     await user.click(screen.getByRole("button", { name: /save route/i }));
 
     await waitFor(() => {
       expect(onRouteSaved).toHaveBeenCalledTimes(1);
     });
     const saved = onRouteSaved.mock.calls[0]?.[0] as PlannedRoute;
-    expect(saved.name).toBe("Planned route");
+    expect(saved.name).toBe("Renamed right before Save");
 
     const routes = await listRoutes();
     expect(routes).toHaveLength(1);
@@ -721,6 +729,14 @@ describe("PlanningScreen", () => {
         "No waypoints yet. Tap the map or use the crosshair button below to add one.",
       ),
     ).toBeInTheDocument();
+
+    // Past the 900ms debounce the pre-save name edit would have armed —
+    // the pending timer must have been cancelled synchronously at Save, so
+    // the draft stays cleared rather than being resurrected with the
+    // stale, pre-save waypoints/name.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const draftAfterDebounce = await getDraft();
+    expect(draftAfterDebounce).toBeUndefined();
   });
 
   it("frames a fresh session in an approximately 50 × 50 km box around the rider's approximate location", async () => {
@@ -3483,11 +3499,24 @@ describe("PlanningScreen", () => {
         expect(screen.getByRole("button", { name: /save route/i })).toBeEnabled();
       });
 
+      // Re-arms the draft-autosave debounce immediately before Save, then
+      // clicks Save right away — see the identical comment in "saving
+      // clears the draft, resets waypoints and notifies the caller" above
+      // for the exact race (CLAUDE.md backlog item 30) this proves closed.
+      fireEvent.change(screen.getByLabelText("Route name"), {
+        target: { value: "Coastal loop, renamed before Save" },
+      });
       await user.click(screen.getByRole("button", { name: /save route/i }));
 
       await waitFor(() => {
         expect(screen.queryByText(/editable copy created/i)).not.toBeInTheDocument();
       });
+
+      const draft = await getDraft();
+      expect(draft).toBeUndefined();
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      const draftAfterDebounce = await getDraft();
+      expect(draftAfterDebounce).toBeUndefined();
     });
 
     it("shows the reverse+exact notice for a draft restored with editCopyOperation reverse and exact origin", async () => {

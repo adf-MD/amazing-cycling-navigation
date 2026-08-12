@@ -2,6 +2,7 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
+import { readPlanningDraftRow } from "./support/rideStateDb.ts";
 
 // Proves "Edit copy in Planning" (CLAUDE.md future-backlog item 26): a
 // saved or imported route can be reopened as an editable Planning copy,
@@ -170,17 +171,14 @@ async function planAndSaveTwoWaypointRoute(page: Page, routeName: string): Promi
   });
 
   await page.getByLabel("Route name").fill(routeName);
-  // Waits past the 900ms draft-autosave debounce before Save: PlanningScreen's
-  // own autosave timer (rescheduled by the name fill above) and handleSave's
-  // clearDraft() both write to the same singleton draft row independently —
-  // under heavy parallel test load, a still-pending autosave timer can fire
-  // after clearDraft() resolves but before the post-save waypoint reset
-  // commits, briefly resurrecting a "meaningful" draft that the next test
-  // step doesn't expect. A pre-existing PlanningScreen timing characteristic,
-  // unrelated to this feature; waiting here avoids relying on that race.
-  await page.waitForTimeout(1_200);
   await page.getByRole("button", { name: /save route/i }).click();
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+  // Proves the Save-versus-autosave draft race (CLAUDE.md backlog item 30)
+  // stays closed: the name fill above re-arms the 900ms draft-autosave
+  // debounce, and PlanningScreen now synchronously cancels it at Save, so
+  // the singleton draft row must stay cleared rather than being
+  // resurrected once that timer would otherwise have fired.
+  await expect.poll(() => readPlanningDraftRow(page), { timeout: 5_000 }).toBeNull();
 }
 
 /** Exports a route directly from its own Route Library card's "Export"
