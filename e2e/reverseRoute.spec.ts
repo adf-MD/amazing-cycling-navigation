@@ -2,6 +2,7 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
+import { readPlanningDraftRow } from "./support/rideStateDb.ts";
 
 // Proves "Reverse route" (CLAUDE.md future-backlog item 27): a saved or
 // imported route can be reversed into a new editable Planning draft,
@@ -152,13 +153,9 @@ async function planAndSaveTwoWaypointRoute(page: Page, routeName: string): Promi
   });
 
   await page.getByLabel("Route name").fill(routeName);
-  // See editRouteAsPlanningCopy.spec.ts's identical comment: waits past the
-  // 900ms draft-autosave debounce before Save, working around the
-  // pre-existing, separately-tracked autosave race (CLAUDE.md backlog item
-  // 30) rather than depending on its absence.
-  await page.waitForTimeout(1_200);
   await page.getByRole("button", { name: /save route/i }).click();
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+  await assertPlanningDraftStaysCleared(page);
 }
 
 /** Builds a closed loop (3 waypoints, then "Return to start" appends a 4th
@@ -191,9 +188,9 @@ async function planAndSaveClosedLoopRoute(page: Page, routeName: string): Promis
   });
 
   await page.getByLabel("Route name").fill(routeName);
-  await page.waitForTimeout(1_200);
   await page.getByRole("button", { name: /save route/i }).click();
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+  await assertPlanningDraftStaysCleared(page);
 }
 
 /** Exports a route directly from its own Route Library card — see
@@ -205,6 +202,40 @@ async function exportRouteFromLibrary(page: Page, routeName: string) {
   const downloadPromise = page.waitForEvent("download");
   await routeCard.getByRole("button", { name: "Export" }).click();
   return downloadPromise;
+}
+
+// Mirrors PlanningScreen.tsx's own DRAFT_DEBOUNCE_MS; not imported across
+// the app/e2e boundary, sized only to bound this file's own regression
+// window below.
+const DRAFT_AUTOSAVE_DEBOUNCE_MS = 900;
+
+/**
+ * Proves the singleton Planning draft row stays cleared for the whole
+ * window in which a stale pre-Save autosave timer could fire, not merely
+ * once immediately after Save's own clearDraft() resolves. CLAUDE.md
+ * backlog item 30's fix (PlanningScreen.tsx's handleSave) cancels any
+ * pending autosave timer synchronously, before any async work begins, so
+ * by the time this is called the race is already closed — but a single
+ * immediate expect.poll(...).toBeNull() would very likely still pass even
+ * if that synchronous cancellation regressed, since the "route saved"
+ * heading assertion each caller awaits first already proves clearDraft()
+ * has resolved (handleSave's own promise chain calls clearDraft() before
+ * the callback that makes that heading visible fires), well before a
+ * stale timer scheduled ~900ms after the route name was last edited would
+ * ever fire. This instead keeps sampling the real committed row across
+ * that whole window, so a future regression that resurrects the draft
+ * only later is still caught, mirroring editRouteAsPlanningCopy.spec.ts's
+ * own readPlanningDraftRow-based proof but strengthened per this file's
+ * own established no-shared-e2e-helpers-across-specs convention.
+ */
+async function assertPlanningDraftStaysCleared(page: Page): Promise<void> {
+  await expect.poll(() => readPlanningDraftRow(page), { timeout: 5_000 }).toBeNull();
+  const sampleIntervalMs = 150;
+  const sampleCount = Math.ceil((DRAFT_AUTOSAVE_DEBOUNCE_MS + 300) / sampleIntervalMs);
+  for (let i = 0; i < sampleCount; i += 1) {
+    await page.waitForTimeout(sampleIntervalMs);
+    expect(await readPlanningDraftRow(page)).toBeNull();
+  }
 }
 
 const EXACT_REVERSE_NOTICE =
@@ -260,11 +291,11 @@ test("Reverse route issues zero requests until Calculate, seeds exact reversed w
   expect(requestedCoordinatePairs).toHaveLength(2);
   expect(requestedCoordinatePairs[1]).toEqual([...requestedCoordinatePairs[0]].reverse());
 
-  await page.waitForTimeout(1_200);
   await page.getByRole("button", { name: /save route/i }).click();
   await expect(
     page.getByRole("heading", { name: `${originalName} (reversed)` }),
   ).toBeVisible();
+  await assertPlanningDraftStaysCleared(page);
 
   // The original route remains unchanged and independently reopenable —
   // two distinct routes now exist in the library, with different ids.
@@ -309,9 +340,9 @@ test("exporting and offline re-importing the reversed route, then Edit copy in P
   });
 
   const reversedName = `${originalName} (reversed)`;
-  await page.waitForTimeout(1_200);
   await page.getByRole("button", { name: /save route/i }).click();
   await expect(page.getByRole("heading", { name: reversedName })).toBeVisible();
+  await assertPlanningDraftStaysCleared(page);
 
   await page.getByRole("button", { name: "Routes" }).click();
   const download = await exportRouteFromLibrary(page, reversedName);
@@ -537,11 +568,17 @@ test("reloading after creating the reverse draft recovers the draft and notice w
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
   await expect(page.getByText(EXACT_REVERSE_NOTICE)).toBeVisible();
   await expect(page.getByLabel("Route name")).toHaveValue(`${originalName} (reversed)`);
-  // Past the draft-autosave debounce, so the seeded draft's own fields are
-  // genuinely settled before reloading (the seeding write itself already
-  // happened synchronously in RidingScreen before navigation, but this
-  // guards against relying on that timing implicitly).
-  await page.waitForTimeout(1_200);
+  // Confirms the seeded draft's own fields are genuinely persisted before
+  // reloading, via a deterministic IndexedDB postcondition rather than a
+  // fixed wait. The seeding write itself already happened synchronously in
+  // RidingScreen (performCopyOperation) before navigation; this proves the
+  // same row PlanningScreen is about to re-read after reload already
+  // carries the reversed name. Distinct from the Save-versus-autosave race
+  // (CLAUDE.md backlog item 30) this file's other waits used to guard
+  // against — no Save button is pressed anywhere near this point.
+  await expect
+    .poll(() => readPlanningDraftRow(page), { timeout: 5_000 })
+    .toMatchObject({ routeName: `${originalName} (reversed)` });
   expect(requestedCoordinatePairs).toHaveLength(1);
 
   await page.reload();
