@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
+import { readActiveRideStateRow } from "./support/rideStateDb.ts";
 
 const ROUTE_LAT = 51.5;
 const ROUTE_START_LON = -0.1;
@@ -12,6 +14,16 @@ const ROUTE_SEGMENTS = 10;
 
 function lonAtMetres(distanceMetres: number): number {
   return ROUTE_START_LON + distanceMetres / METRES_PER_DEGREE_LON;
+}
+
+// Deterministic replacement for a fixed sleep: finish() (useRideNavigation.ts,
+// the sole caller of clearActiveRideState() in the app) awaits the storage
+// clear FIRST, before any in-memory state change — so the persisted
+// rideState row's absence is a race-free signal that finalisation has
+// actually committed, strictly stronger than the pre-reload clean-UI
+// assertions already in place above.
+async function waitForClearedRideState(page: Page): Promise<void> {
+  await expect.poll(() => readActiveRideStateRow(page), { timeout: 10_000 }).toBeNull();
 }
 
 /** A simple, straight, densely-sampled GPX track — deliberately independent
@@ -90,8 +102,10 @@ test("ends a ride, returns to a clean pre-ride overview, and survives a reload w
   await expect(page.getByRole("button", { name: "Resume riding" })).toBeHidden();
   await expect(page.getByRole("button", { name: "End ride" })).toBeHidden();
 
-  // Let the finalisation's own storage clear settle before reloading.
-  await page.waitForTimeout(300);
+  // Deterministic replacement for a fixed sleep before reload — see
+  // waitForClearedRideState's own doc comment for why polling for the
+  // row's absence is race-free here.
+  await waitForClearedRideState(page);
   await page.reload();
 
   await page.getByRole("button", { name: routeName, exact: true }).click();
@@ -180,7 +194,10 @@ test("conservatively confirms route completion only after consecutive fixes, and
   await expect(page.getByText("Route complete")).toBeHidden();
   await expect(page.getByRole("button", { name: "End ride" })).toBeHidden();
 
-  await page.waitForTimeout(300);
+  // Deterministic replacement for a fixed sleep before reload — see
+  // waitForClearedRideState's own doc comment for why polling for the
+  // row's absence is race-free here.
+  await waitForClearedRideState(page);
   await page.reload();
   await page.getByRole("button", { name: routeName, exact: true }).click();
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();

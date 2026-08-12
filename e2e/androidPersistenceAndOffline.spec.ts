@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
-import type { Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
 import { forceMapStyleFailure, installLocalMapStyle } from "./support/localMapStyle.ts";
+import { readActiveRideStateRow, readSavedRouteId } from "./support/rideStateDb.ts";
 
 // Proves persistence/reload/offline saved-route use (CLAUDE.md backlog
 // item 25) under Android device emulation (this file's own
@@ -55,78 +55,6 @@ function buildMockOrsResponse() {
       },
     ],
   };
-}
-
-// Must match src/storage/db.ts's AcnDatabase constructor default — there's
-// nothing to import across the app/e2e boundary here, so this is a
-// deliberate local literal, not a shared constant.
-const INDEXED_DB_NAME = "amazing-cycling-navigation";
-
-function toIndexedDbError(error: DOMException | null): Error {
-  return error ?? new Error("IndexedDB request failed");
-}
-
-// Deterministic replacements for a fixed sleep: rather than guessing how
-// long the persistence effect's async Dexie write (src/ui/riding/
-// useRideNavigation.ts) takes to commit, read the real IndexedDB rows it
-// writes to and poll on them directly.
-
-async function readSavedRouteId(page: Page, name: string): Promise<string | null> {
-  return page.evaluate<string | null, { dbName: string; routeName: string }>(
-    ({ dbName, routeName }) =>
-      new Promise((resolve, reject) => {
-        const openRequest = indexedDB.open(dbName);
-        openRequest.onerror = () => {
-          reject(toIndexedDbError(openRequest.error));
-        };
-        openRequest.onsuccess = () => {
-          const database = openRequest.result;
-          const transaction = database.transaction("routes", "readonly");
-          const store = transaction.objectStore("routes");
-          const getRequest = store.index("name").get(routeName);
-          getRequest.onsuccess = () => {
-            const result = getRequest.result as { id: string } | undefined;
-            database.close();
-            resolve(result?.id ?? null);
-          };
-          getRequest.onerror = () => {
-            database.close();
-            reject(toIndexedDbError(getRequest.error));
-          };
-        };
-      }),
-    { dbName: INDEXED_DB_NAME, routeName: name },
-  );
-}
-
-async function readActiveRideStateRow(
-  page: Page,
-): Promise<Record<string, unknown> | null> {
-  return page.evaluate<Record<string, unknown> | null, string>(
-    (dbName) =>
-      new Promise((resolve, reject) => {
-        const openRequest = indexedDB.open(dbName);
-        openRequest.onerror = () => {
-          reject(toIndexedDbError(openRequest.error));
-        };
-        openRequest.onsuccess = () => {
-          const database = openRequest.result;
-          const transaction = database.transaction("rideState", "readonly");
-          const store = transaction.objectStore("rideState");
-          const getRequest = store.get("active");
-          getRequest.onsuccess = () => {
-            const result = getRequest.result as Record<string, unknown> | undefined;
-            database.close();
-            resolve(result ?? null);
-          };
-          getRequest.onerror = () => {
-            database.close();
-            reject(toIndexedDbError(getRequest.error));
-          };
-        };
-      }),
-    INDEXED_DB_NAME,
-  );
 }
 
 test("a genuine reload lands back on Routes, not Riding; reopening the same route offers Resume riding with restored progress and makes no further OpenRouteService request", async ({

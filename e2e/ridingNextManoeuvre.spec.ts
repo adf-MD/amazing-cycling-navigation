@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
+import { readActiveRideStateRow, readSavedRouteId } from "./support/rideStateDb.ts";
 
 // Requests handled by the app's own service worker never reach
 // page.route()'s interception (a documented Playwright limitation) — see
@@ -23,6 +25,37 @@ const LEFT_TURN_DISTANCE_METRES = 700;
 
 function lonAtMetres(distanceMetres: number): number {
   return ROUTE_START_LON + distanceMetres / METRES_PER_DEGREE_LON;
+}
+
+// Deterministic replacement for a fixed sleep before a reload: poll the
+// real committed IndexedDB rideState row for the route's own persisted,
+// presentation-driving progress — lastReliableMatchedDistanceFromStartMetres,
+// the exact field nextManoeuvre.ts's selectNextManoeuvre reads, never the
+// live/raw matchedDistanceFromStartMetres — reaching the last accepted
+// fix's own along-route distance, rather than assume any fixed delay is
+// long enough for the persistence effect's async, un-throttled Dexie write
+// (useRideNavigation.ts) to land.
+async function waitForCommittedRideProgress(
+  page: Page,
+  routeId: string,
+  minimumMatchedDistanceMetres: number,
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const row = await readActiveRideStateRow(page);
+        const reliableMatchedDistance = row?.lastReliableMatchedDistanceFromStartMetres;
+        return {
+          routeId: typeof row?.routeId === "string" ? row.routeId : null,
+          hasLastFix: row?.lastFix != null,
+          reachedThreshold:
+            typeof reliableMatchedDistance === "number" &&
+            reliableMatchedDistance >= minimumMatchedDistanceMetres,
+        };
+      },
+      { timeout: 10_000 },
+    )
+    .toEqual({ routeId, hasLastFix: true, reachedThreshold: true });
 }
 
 /**
@@ -191,10 +224,14 @@ test("shows the next trusted manoeuvre in Riding, advances with progress, become
   );
 
   // Reload: the saved route's manoeuvres must remain available without any
-  // further routing request. A short pause first lets the last accepted
-  // fix's persistence effect (an async IndexedDB write with no UI signal
-  // to poll on) actually complete before navigating away.
-  await page.waitForTimeout(300);
+  // further routing request. The "50 m" assertion above already proves
+  // the last fix was UI-accepted; poll the real committed rideState row
+  // for the same progress before reloading, rather than assume a fixed
+  // delay is long enough for the persistence effect's async, un-throttled
+  // Dexie write to land.
+  const savedRouteId = await readSavedRouteId(page, routeName);
+  if (!savedRouteId) throw new Error("expected the saved route to have a persisted id");
+  await waitForCommittedRideProgress(page, savedRouteId, ROUTE_LENGTH_METRES - 100);
   await page.unroute(ORS_URL_GLOB);
   let unexpectedOrsRequest = false;
   await page.route(ORS_URL_GLOB, async (route) => {
@@ -332,8 +369,14 @@ test("preserves trusted manoeuvres through export and re-import, entirely offlin
   await expect(page.getByText("Turn left onto Church Lane")).toBeHidden();
 
   // Reload to prove the re-imported route's manoeuvres survive suspension/
-  // reload, still without any routing request.
-  await page.waitForTimeout(300);
+  // reload, still without any routing request. The "Arrive at your
+  // destination" assertion above already proves the last fix was
+  // UI-accepted; poll the real committed rideState row for the same
+  // progress before reloading — same rationale as the first test above.
+  const savedRouteId = await readSavedRouteId(page, routeName);
+  if (!savedRouteId)
+    throw new Error("expected the imported route to have a persisted id");
+  await waitForCommittedRideProgress(page, savedRouteId, LEFT_TURN_DISTANCE_METRES);
   await page.reload();
   await page.getByRole("button", { name: routeName, exact: true }).click();
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
