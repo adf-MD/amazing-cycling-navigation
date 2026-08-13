@@ -14,6 +14,13 @@
   --colour-border: #767676;
   --colour-border-strong: #101010;
   --touch-target-min: 44px;
+  /* A project-owned indirection over env(safe-area-inset-top, 0px), shared
+   * by .app-shell and .app-header--sticky's own calculations below so the
+   * two always agree, and independently overridable in a test: an inline
+   * style on the root element (higher specificity than this rule) can set
+   * this to a synthetic non-zero value without needing real safe-area
+   * emulation from the browser under test. */
+  --safe-area-inset-top: env(safe-area-inset-top, 0px);
   --space-4: 4px;
   --space-8: 8px;
   --space-12: 12px;
@@ -87,11 +94,24 @@ body {
  * that itself via the safe-area insets, on all four sides so it also
  * holds up in landscape (where the notch sits left or right). box-sizing
  * is already border-box globally, so this padding doesn't add to the
- * shell's own height. */
+ * shell's own height.
+ *
+ * The top component is cancelled (see the :has() rule immediately below)
+ * whenever a sticky header is present: that header incorporates the same
+ * inset into its own padding instead (see .app-header--sticky), so its
+ * own opaque box can cover the strip continuously while scrolling —
+ * see that rule's own comment for the full root-cause and fix
+ * derivation (item 34). Active Riding's static header has no opaque box
+ * of its own for this strip, so .app-shell's own padding-top keeps doing
+ * this job unchanged there, exactly as before. */
 .app-shell {
   min-height: 100vh;
-  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+  padding: var(--safe-area-inset-top) env(safe-area-inset-right, 0px)
     env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+
+.app-shell:has(> .app-header--sticky) {
+  padding-top: 0;
 }
 
 /* A duplicate `min-height` declaration (100vh then 100dvh) is the usual
@@ -123,23 +143,55 @@ header {
  * confirmed field bug on the deployed iPhone PWA — see CLAUDE.md item 24
  * for the incident and root-cause detail). header's own containing block
  * is .app-shell, which spans the full page height, giving it the room a
- * sticky element needs to actually remain stuck. `top` reuses
- * .app-shell's own env(safe-area-inset-top, 0px) idiom exactly, so the
- * resting position (established by .app-shell's padding-top) and the
- * stuck position agree exactly — position: sticky is continuous by
- * construction, so there is no jump on first appearance; no @supports
- * gate is needed here, unlike this file's dvh/round() fallbacks, since
- * env()'s second argument is already a native per-property fallback.
- * z-index: 10 is comfortably above every other z-index in this file
- * (max 5, all scoped inside map containers). header had no background
- * before — an opaque one is required now so scrolled-under content
- * doesn't show through once pinned; border-bottom reuses the same
- * --colour-border token .main-nav's own border-top already uses, to
- * separate the pinned bar from scrolling content beneath it without a
- * new colour or shadow. */
+ * sticky element needs to actually remain stuck. z-index: 10 is
+ * comfortably above every other z-index in this file (max 5, all scoped
+ * inside map containers).
+ *
+ * A second real, confirmed field bug (item 34): header's own opaque
+ * background previously only covered its own box, which — because `top`
+ * equalled .app-shell's padding-top (the safe-area inset) — began
+ * *below* the status-bar strip, not at it. .app-shell's own padding-top
+ * only reserves that strip once, at the very start of the document flow;
+ * once scrolled past it, nothing protected viewport-y ∈ [0, inset) any
+ * more, so ordinary scrolled page content became visible through it.
+ *
+ * The fix extends this element's own box to cover the strip, rather than
+ * adding a second overlay — but not via a negative margin cancelling the
+ * ancestor's padding, which was tried first and empirically disproven: a
+ * dedicated minimal repro (position: sticky, first child, ancestor
+ * padding-top: 59px, margin-top: -59px, top: 59px) rendered the box
+ * pinned at y = 59 at every scroll position, never y = 0 — Chromium does
+ * not fold a sticky element's own negative margin into the "flow
+ * position" its stickiness offset is computed from, unlike an ordinary
+ * static/relative box (confirmed by the same repro with
+ * position: static, which correctly rendered at y = 0). Fixed instead by
+ * removing .app-shell's own top padding entirely whenever this class is
+ * present (see the .app-shell:has() rule above) and folding that same
+ * inset into this element's own padding-top: with no ancestor padding
+ * left to overcome, this element's natural flow position already sits at
+ * the true viewport top, so `top: 0` needs no offsetting trick and is
+ * continuous by construction — re-verified with the same minimal repro
+ * (zero ancestor padding, sticky top: 0, the inset folded into this
+ * element's own padding-top instead) staying pinned at y = 0 across every
+ * scroll position tested. The matching padding-top keeps .main-nav's own
+ * visual position unchanged (the same total offset as before, just
+ * sourced entirely from this element's own box instead of split between
+ * the ancestor and header), while the background now paints across the
+ * whole strip. padding-bottom is new: a small opaque buffer between
+ * .main-nav and the border-bottom, sticky-only per its own requirement —
+ * the base `header` rule (used by active Riding's static header) is
+ * untouched, so that header keeps its original zero bottom padding. On a
+ * non-notched device/browser, --safe-area-inset-top resolves to 0px, so
+ * the padding-top below reduces to plain --space-8, matching the base
+ * header rule exactly — a complete no-op there. border-bottom reuses the
+ * same --colour-border token .main-nav's own border-top already uses, to
+ * separate the pinned bar from scrolling content beneath it without a new
+ * colour or shadow. */
 .app-header--sticky {
   position: sticky;
-  top: env(safe-area-inset-top, 0px);
+  top: 0;
+  padding-top: calc(var(--safe-area-inset-top) + var(--space-8));
+  padding-bottom: var(--space-8);
   z-index: 10;
   background: var(--colour-bg);
   border-bottom: 1px solid var(--colour-border);
@@ -1243,11 +1295,26 @@ button:focus-visible {
   box-shadow: inset 0 0 0 2px var(--colour-accent);
 }
 
+/* A deterministic three-column grid, not flex-wrap: with exactly three
+ * fixed children (select/label, the reorder group, Delete) mapped 1:1
+ * onto three explicit columns, there is no wrapping mechanism left to
+ * trigger at all — Delete can never move to its own line, regardless of
+ * waypoint count or selection state (a real, confirmed field bug on the
+ * deployed iPhone PWA — see CLAUDE.md item 34). flex-wrap previously let
+ * this row wrap once its content's natural width exceeded the available
+ * width, most easily crossed by a selected row's bolder, wider label.
+ * Column 1 (minmax(0, 1fr)) absorbs available width and can shrink the
+ * badge+label group down to nothing if needed, same as its previous
+ * `flex: 1 1 auto` — .waypoint-row-select's own min-width: 0 (unchanged,
+ * below) still does the necessary work of letting it shrink below its
+ * content's automatic minimum size, exactly as it did for flexbox.
+ * Columns 2/3 (auto) size to the reorder group's and Delete's own natural
+ * (>= 44px touch-target) content width. */
 .waypoint-row-main {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: var(--space-8);
-  flex-wrap: wrap;
 }
 
 .waypoint-row-select {

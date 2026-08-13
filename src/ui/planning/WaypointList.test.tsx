@@ -37,6 +37,46 @@ function renderList(
   return handlers;
 }
 
+// A separate, double-digit fixture (12 waypoints) for CLAUDE.md item 34's
+// waypoint-row layout coverage — kept independent of WAYPOINTS/OPEN_ROUTE_ROLES
+// above so every existing test using those stays untouched. Covers the
+// ordinals ("Waypoint 10", the final "Waypoint 12") that exposed the real
+// deployed-iPhone-PWA Delete-button-wraps-onto-its-own-line bug: the fix
+// itself (.waypoint-row-main becoming a CSS grid) is not observable in
+// Vitest's css: false environment, so these tests only extend the existing
+// accessible-name/endpoint-disabled coverage to those ordinals — the actual
+// no-wrap layout proof lives in e2e/planning.spec.ts's phone-viewport test.
+const MANY_WAYPOINTS: Waypoint[] = Array.from({ length: 12 }, (_, index) => ({
+  id: `wp-${String(index)}`,
+  coordinate: [index * 0.001, 51] as Coordinate,
+}));
+
+const MANY_WAYPOINT_ROLES: WaypointRole[] = [
+  "start",
+  ...Array.from({ length: 10 }, (): WaypointRole => "ordinary"),
+  "finish",
+];
+
+function renderManyList(interactionMode: PlanningInteractionMode) {
+  const handlers = {
+    onSelect: vi.fn<(waypointId: string) => void>(),
+    onStartMove: vi.fn<(waypointId: string) => void>(),
+    onStartInsertAfter: vi.fn<(waypointId: string) => void>(),
+    onMoveUp: vi.fn<(waypointId: string) => void>(),
+    onMoveDown: vi.fn<(waypointId: string) => void>(),
+    onDelete: vi.fn<(waypointId: string) => void>(),
+  };
+  render(
+    <WaypointList
+      waypoints={MANY_WAYPOINTS}
+      waypointRoles={MANY_WAYPOINT_ROLES}
+      interactionMode={interactionMode}
+      {...handlers}
+    />,
+  );
+  return handlers;
+}
+
 describe("WaypointList", () => {
   it("shows an empty-state message with no waypoints", () => {
     render(
@@ -259,6 +299,56 @@ describe("WaypointList", () => {
       // "1/4" label.
       expect(startButton.querySelector(".waypoint-row-ordinal")).toHaveTextContent("1");
       expect(finishButton.querySelector(".waypoint-row-ordinal")).toHaveTextContent("4");
+    });
+  });
+
+  describe("double-digit waypoint counts (CLAUDE.md item 34)", () => {
+    it("shows correct accessible names and Delete buttons at double-digit ordinals, unselected", () => {
+      renderManyList({ kind: "append" });
+
+      expect(screen.getByRole("button", { name: "Waypoint 10" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Waypoint 12" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Delete Waypoint 10" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Delete Waypoint 12" }),
+      ).toBeInTheDocument();
+    });
+
+    it("disables Move up for the first row and Move down for the last row at a double-digit count", () => {
+      renderManyList({ kind: "append" });
+
+      expect(screen.getByRole("button", { name: "Move Start up" })).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Move Waypoint 12 down" }),
+      ).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Move Start down" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Move Waypoint 12 up" })).toBeEnabled();
+    });
+
+    it("keeps the final double-digit row's accessible name, pressed state and relocate group correct once selected", () => {
+      renderManyList({ kind: "selected", waypointId: "wp-11" });
+
+      const finalRow = screen.getByRole("button", { name: "Waypoint 12" });
+      expect(finalRow).toHaveAttribute("aria-pressed", "true");
+      expect(
+        screen.getByRole("group", { name: "Waypoint 12 actions" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Delete Waypoint 12" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Move Waypoint 12 down" }),
+      ).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Move" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      expect(screen.getByRole("button", { name: "Insert after" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
     });
   });
 });

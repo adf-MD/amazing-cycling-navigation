@@ -1061,6 +1061,143 @@ test.describe("phone viewport", () => {
     expect(consoleErrors).toEqual([]);
   });
 
+  // CLAUDE.md item 34: a real, confirmed field bug on the deployed iPhone
+  // PWA — a selected, double-digit final waypoint row's Delete button
+  // could wrap onto its own second line, while similar unselected rows
+  // stayed on one line. .waypoint-row-main's fix (a CSS grid instead of
+  // flex-wrap, in index.css) cannot be observed in Vitest's css: false
+  // environment, so this is the sole proof that Delete never wraps, at
+  // the ordinals that actually exposed the defect. Places 12 waypoints via
+  // direct map taps — this never contacts OpenRouteService, since
+  // Calculate route is a separate, explicit action — at positions clear of
+  // the top-right Locate-me/north-up control column
+  // (.planning-map-controls, top:8px right:8px, ~48px wide) so every tap
+  // reliably lands on the map itself, not a control.
+  test("phone layout: a double-digit waypoint count keeps Delete on the same row as Select/Move, unselected and selected, with no horizontal overflow", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Plan" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    const readScrollWidths = () =>
+      page.evaluate(() => ({
+        documentWidth: document.documentElement.scrollWidth,
+        bodyWidth: document.body.scrollWidth,
+      }));
+
+    const initialScrollWidths = await readScrollWidths();
+    expect(initialScrollWidths.documentWidth).toBeLessThanOrEqual(390);
+    expect(initialScrollWidths.bodyWidth).toBeLessThanOrEqual(390);
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    await expect(mapContainer.locator("canvas")).toBeVisible();
+
+    const TAP_X_POSITIONS = [40, 110, 180, 250];
+    const TAP_Y_POSITIONS = [60, 110, 160];
+    let waypointCount = 0;
+    for (const y of TAP_Y_POSITIONS) {
+      for (const x of TAP_X_POSITIONS) {
+        await mapContainer.click({ position: { x, y } });
+        waypointCount += 1;
+        const label = waypointCount === 1 ? "Start" : `Waypoint ${String(waypointCount)}`;
+        await expect(
+          page.getByRole("button", { name: label, exact: true }),
+        ).toBeVisible();
+      }
+    }
+    expect(waypointCount).toBe(12);
+
+    function rowMainByLabel(label: string): Locator {
+      return page
+        .locator(".waypoint-row-main")
+        .filter({ has: page.getByRole("button", { name: label, exact: true }) });
+    }
+
+    // A genuine single-row geometry proof, not an inference from
+    // visibility: if Delete had wrapped onto its own line, the wrapper's
+    // own height would be roughly double a single control's height, and
+    // Delete's vertical centre would sit well below Select/Move's.
+    async function assertSingleRowGeometry(label: string): Promise<Box> {
+      const rowMain = rowMainByLabel(label);
+      const selectButton = page.getByRole("button", { name: label, exact: true });
+      const moveUpButton = page.getByRole("button", { name: `Move ${label} up` });
+      const moveDownButton = page.getByRole("button", { name: `Move ${label} down` });
+      const deleteButton = page.getByRole("button", { name: `Delete ${label}` });
+
+      const [rowBox, selectBox, moveUpBox, moveDownBox, deleteBox] = await Promise.all([
+        rowMain.boundingBox(),
+        selectButton.boundingBox(),
+        moveUpButton.boundingBox(),
+        moveDownButton.boundingBox(),
+        deleteButton.boundingBox(),
+      ]);
+      if (!rowBox || !selectBox || !moveUpBox || !moveDownBox || !deleteBox) {
+        throw new Error(
+          `expected every control in the ${label} row to have a bounding box`,
+        );
+      }
+
+      const tallestChild = Math.max(selectBox.height, moveUpBox.height, deleteBox.height);
+      expect(rowBox.height).toBeLessThanOrEqual(tallestChild + 4);
+
+      const selectCentreY = selectBox.y + selectBox.height / 2;
+      const moveUpCentreY = moveUpBox.y + moveUpBox.height / 2;
+      const deleteCentreY = deleteBox.y + deleteBox.height / 2;
+      expect(Math.abs(moveUpCentreY - selectCentreY)).toBeLessThan(6);
+      expect(Math.abs(deleteCentreY - selectCentreY)).toBeLessThan(6);
+
+      // Every control meets the 44x44 CSS-pixel touch-target minimum,
+      // including a disabled Move up/down button.
+      for (const box of [selectBox, moveUpBox, moveDownBox, deleteBox]) {
+        expect(box.width).toBeGreaterThanOrEqual(44);
+        expect(box.height).toBeGreaterThanOrEqual(44);
+      }
+
+      return rowBox;
+    }
+
+    // Unselected double-digit row.
+    await assertSingleRowGeometry("Waypoint 10");
+
+    // The final double-digit row, selected — the exact scenario that
+    // showed the bug on the deployed iPhone PWA (a selected row's bolder,
+    // wider label most easily crossed the old flex-wrap threshold).
+    await page.getByRole("button", { name: "Waypoint 12", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "Waypoint 12", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    const selectedRowBox = await assertSingleRowGeometry("Waypoint 12");
+
+    // The relocate group (Move/Insert after) sits below the main row and
+    // does not change the main row's own geometry.
+    const relocateBox = await page
+      .getByRole("group", { name: "Waypoint 12 actions" })
+      .boundingBox();
+    if (!relocateBox)
+      throw new Error("expected the relocate group to have a bounding box");
+    expect(relocateBox.y).toBeGreaterThanOrEqual(
+      selectedRowBox.y + selectedRowBox.height - 2,
+    );
+
+    const finalScrollWidths = await readScrollWidths();
+    expect(finalScrollWidths.documentWidth).toBeLessThanOrEqual(390);
+    expect(finalScrollWidths.bodyWidth).toBeLessThanOrEqual(390);
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
+
   // Visual slice 5 (corrective) + deterministic-precondition hardening
   // (future-backlog item 21): the same manual-rotation contract as the
   // desktop "pressing Northwards twice" test above, proven again at this
