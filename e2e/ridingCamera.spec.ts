@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 
@@ -44,6 +44,44 @@ function centresClose(a: string | null, b: string | null): boolean {
   return numbersClose(aLon, bLon) && numbersClose(aLat, bLat);
 }
 
+/**
+ * Deterministically establishes a genuine manual rotation and tilt via
+ * MapLibre's own built-in KeyboardHandler rather than a synthetic
+ * right-button pointer drag through DragRotateHandler — mirrors
+ * planning.spec.ts's own establishManualRotationAndPitch helper
+ * (duplicated here rather than imported, matching this project's
+ * established no-shared-e2e-helpers-across-specs convention). See that
+ * helper's own doc comment for the full KeyboardHandler mechanism and why
+ * it cannot reproduce DragRotateHandler's CI-only stuck-gesture failure
+ * mode (CLAUDE.md future-backlog item 21) — the exact failure that broke
+ * this file's own former right-button-drag precondition in GitHub Actions
+ * run 31691965402.
+ *
+ * Reads its own bearing/pitch baseline from the map's currently settled
+ * state rather than assuming "0": the "pressing Northwards twice" test
+ * below begins at bearing/pitch 0 (having just pressed North-up), but the
+ * "re-pressing Follow location" test deliberately begins from its
+ * travel-up followed camera, which is never at bearing 0 and always has a
+ * non-zero pitch (35°, FOLLOW_PITCH_DEGREES).
+ */
+async function establishManualRotationAndPitch(
+  page: Page,
+  mapContainer: Locator,
+): Promise<void> {
+  const canvas = mapContainer.locator("canvas");
+  await canvas.focus();
+  const bearingBefore = await mapContainer.getAttribute("data-camera-bearing");
+  const pitchBefore = await mapContainer.getAttribute("data-camera-pitch");
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-bearing"))
+    .not.toBe(bearingBefore);
+  await page.keyboard.press("Shift+ArrowUp");
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-pitch"))
+    .not.toBe(pitchBefore);
+}
+
 test("Riding: pressing Northwards twice, with a manual rotation in between, rotates back to north both times", async ({
   page,
   context,
@@ -70,28 +108,25 @@ test("Riding: pressing Northwards twice, with a manual rotation in between, rota
 
   await northButton.click();
   await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
+  await expect(mapContainer).toHaveAttribute("data-camera-pitch", "0");
 
-  const mapBox = await mapContainer.boundingBox();
-  if (!mapBox) {
-    throw new Error("expected the map container to lay out");
-  }
-  const centreX = mapBox.x + mapBox.width / 2;
-  const centreY = mapBox.y + mapBox.height / 2;
+  // Deterministically establishes a genuine intervening manual rotation
+  // and tilt via MapLibre's own built-in KeyboardHandler — see
+  // establishManualRotationAndPitch's own doc comment for the full
+  // mechanism and why it cannot reproduce DragRotateHandler's CI-only
+  // stuck-gesture failure mode (CLAUDE.md future-backlog item 21).
+  await establishManualRotationAndPitch(page, mapContainer);
 
-  // MapLibre's default DragRotateHandler binds to a right-button drag —
-  // same gesture planning.spec.ts's own Northwards regression test uses.
-  await page.mouse.move(centreX, centreY);
-  await page.mouse.down({ button: "right" });
-  await page.mouse.move(centreX + 150, centreY - 100, { steps: 10 });
-  await page.mouse.up({ button: "right" });
-
-  // Proves the drag genuinely rotated the map first — otherwise the second
-  // Northwards press below would prove nothing.
-  await expect.poll(() => mapContainer.getAttribute("data-camera-bearing")).not.toBe("0");
+  // Real end-to-end proof of the same contract PlanningScreen.test.tsx
+  // already covers at the mock level ("a manual rotation unpresses the
+  // control") — through the real onCameraSettled production path, not a
+  // mocked map.
+  await expect(northButton).toHaveAttribute("aria-pressed", "false");
 
   await northButton.click();
   await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
   await expect(mapContainer).toHaveAttribute("data-camera-pitch", "0");
+  await expect(northButton).toHaveAttribute("aria-pressed", "true");
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
@@ -134,19 +169,16 @@ test("Riding: re-pressing Follow location with an unchanged GPS fix, after a man
   const followedPitch = await mapContainer.getAttribute("data-camera-pitch");
   const followedZoom = await mapContainer.getAttribute("data-camera-zoom");
 
-  const mapBox = await mapContainer.boundingBox();
-  if (!mapBox) {
-    throw new Error("expected the map container to lay out");
-  }
-  const centreX = mapBox.x + mapBox.width / 2;
-  const centreY = mapBox.y + mapBox.height / 2;
-
-  // A real diagonal right-button drag rotates and pitches simultaneously,
-  // and also pauses follow mode (a genuine MapLibre user gesture).
-  await page.mouse.move(centreX, centreY);
-  await page.mouse.down({ button: "right" });
-  await page.mouse.move(centreX + 120, centreY - 100, { steps: 10 });
-  await page.mouse.up({ button: "right" });
+  // Deterministically establishes a genuine manual rotation and tilt via
+  // MapLibre's own built-in KeyboardHandler, replacing a synthetic
+  // right-button drag — see establishManualRotationAndPitch's own doc
+  // comment. The helper reads its own bearing/pitch baseline from the
+  // map's current state rather than assuming 0: this camera begins at the
+  // followed bearing/pitch (35° pitch), never at north-up/level. A
+  // genuine MapLibre user gesture (real drag or, as here, a real
+  // keyboard-driven ease — both carry a DOM originalEvent, see
+  // mapAdapter.ts's onUserCameraInteraction) also pauses follow mode.
+  await establishManualRotationAndPitch(page, mapContainer);
 
   await expect(followButton).toHaveAttribute("aria-pressed", "false");
   await expect
