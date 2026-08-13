@@ -268,11 +268,13 @@ export interface CameraTarget {
 }
 
 /** An explicit "frame this area" camera command — Planning's fresh-session
- * auto-framing and Locate-me. Distinct from CameraTarget: deduped by
- * `requestId`, not by value (see the effect below), so an identical
- * repeated request (e.g. Locate me tapped twice at an unchanged
- * coordinate) still re-executes — each tap is an explicit user command to
- * re-apply, not a value to reconcile against the last-applied one. */
+ * auto-framing, Locate-me, and the one-time fit applied to a restored or
+ * externally seeded (edit-copy/reverse-copy) waypoint set at draft-
+ * hydration time. Distinct from CameraTarget: deduped by `requestId`, not
+ * by value (see the effect below), so an identical repeated request (e.g.
+ * Locate me tapped twice at an unchanged coordinate) still re-executes —
+ * each tap is an explicit user command to re-apply, not a value to
+ * reconcile against the last-applied one. */
 export interface BoundsCameraTarget {
   bounds: BoundingBox;
   /** Distinct per issuance — generate via src/platform/idGenerator.ts's
@@ -1261,11 +1263,12 @@ export function MapView({
   }, [cameraTarget, styleStructurallyReady]);
 
   // Executes an explicit "frame this area" request (Planning's
-  // fresh-session auto-framing and Locate-me) — deduped by requestId, not
-  // by value, unlike cameraTarget above, so a repeated identical request
-  // still re-executes. Resizes first, matching the route-overview fit
-  // above, since the container's on-screen size can settle late (iOS
-  // Safari/PWA chrome). fitBounds always resets bearing/pitch to 0 (see
+  // fresh-session auto-framing, Locate-me, and its one-time restored/
+  // seeded-waypoint hydration fit) — deduped by requestId, not by value,
+  // unlike cameraTarget above, so a repeated identical request still
+  // re-executes. Resizes first, matching the route-overview fit above,
+  // since the container's on-screen size can settle late (iOS Safari/PWA
+  // chrome). fitBounds always resets bearing/pitch to 0 (see
   // mapAdapter.ts), so this satisfies north-up/top-down for free.
   useEffect(() => {
     if (!styleStructurallyReady || !boundsTarget) return;

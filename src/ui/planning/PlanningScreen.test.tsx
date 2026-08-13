@@ -8,6 +8,7 @@ import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
 import {
   buildPositionFeatureCollection,
+  computeBoundingBox,
   EMPTY_FEATURE_COLLECTION,
 } from "../../map/routeLayer.ts";
 import { cumulativeDistancesMetres } from "../../navigation/distance.ts";
@@ -807,6 +808,90 @@ describe("PlanningScreen", () => {
     expect(requestApproximateLocation).not.toHaveBeenCalled();
   });
 
+  it("fits the camera exactly once to a restored draft's waypoint bounds, issuing no geolocation request", async () => {
+    await saveDraft({
+      waypoints: [
+        { id: "a", coordinate: [0, 51] },
+        { id: "b", coordinate: [0.01, 51] },
+      ],
+      routeName: "Planned route",
+      avoidFerries: true,
+      profile: "cycling-road",
+    });
+    const map = createMockMapFactory();
+    const requestApproximateLocation = vi.fn().mockResolvedValue([-1.5, 53.8]);
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        requestApproximateLocation={requestApproximateLocation}
+      />,
+    );
+    map.triggerLoad();
+
+    await waitFor(() => {
+      expect(map.fitBoundsSpy).toHaveBeenCalledWith(
+        computeBoundingBox([
+          [0, 51],
+          [0.01, 51],
+        ]),
+      );
+    });
+    expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+    expect(requestApproximateLocation).not.toHaveBeenCalled();
+  });
+
+  it("frames a single restored waypoint with the same local-area box a fresh session uses, not a degenerate zero-area fit", async () => {
+    await saveDraft({
+      waypoints: [{ id: "a", coordinate: [0.4, 52.2] }],
+      routeName: "Planned route",
+      avoidFerries: true,
+      profile: "cycling-road",
+    });
+    const map = createMockMapFactory();
+    const requestApproximateLocation = vi.fn().mockResolvedValue([-1.5, 53.8]);
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        requestApproximateLocation={requestApproximateLocation}
+      />,
+    );
+    map.triggerLoad();
+
+    await waitFor(() => {
+      expect(map.fitBoundsSpy).toHaveBeenCalledWith(computeLocalAreaBounds([0.4, 52.2]));
+    });
+    expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+    expect(requestApproximateLocation).not.toHaveBeenCalled();
+  });
+
+  it("never fits the camera when a rider's own manually-placed waypoint(s) win over a slower, discarded restore", async () => {
+    await saveDraft({
+      waypoints: [
+        { id: "a", coordinate: [0, 51] },
+        { id: "b", coordinate: [0.01, 51] },
+      ],
+      routeName: "Should never appear",
+      avoidFerries: true,
+      profile: "cycling-road",
+    });
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+    // Lands synchronously, before the real (fake-indexeddb-backed) getDraft
+    // read has any chance to resolve — the strongest form of "the rider
+    // edits before a slower restore lands".
+    map.triggerMapTap([9, 59]);
+
+    await waitFor(() => {
+      expect(screen.queryByDisplayValue("Should never appear")).not.toBeInTheDocument();
+    });
+    expect(screen.getByDisplayValue("Planned route")).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+  });
+
   describe("Locate me", () => {
     it("renders an accessible, initially enabled control", async () => {
       const map = createMockMapFactory();
@@ -1272,6 +1357,111 @@ describe("PlanningScreen", () => {
         { animate: true },
       ]);
       expect(map.setCameraSpy).not.toHaveBeenCalled();
+    });
+
+    it("once a restored draft's own one-time waypoint fit has happened, a following Locate-me press recentres, not box-fits", async () => {
+      const user = userEvent.setup();
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Planned route",
+        avoidFerries: true,
+        profile: "cycling-road",
+      });
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledWith(
+          computeBoundingBox([
+            [0, 51],
+            [0.01, 51],
+          ]),
+        );
+      });
+      expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+
+      requestApproximateLocation.mockResolvedValueOnce([-1.6, 53.9]);
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+
+      await waitFor(() => {
+        expect(map.centreOnSpy).toHaveBeenCalledWith([-1.6, 53.9], { animate: true });
+      });
+      // The restored-waypoint fit already counts as the session's one-time
+      // initial framing — a following press only recentres.
+      expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("a manual camera gesture landing before a slower restore prevents the restored-waypoint fit entirely", async () => {
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Planned route",
+        avoidFerries: true,
+        profile: "cycling-road",
+      });
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+      // Fires synchronously, before the real (fake-indexeddb-backed)
+      // getDraft read has any chance to resolve.
+      map.triggerUserCameraInteraction();
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+      });
+      expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+    });
+
+    it("pressing Locate me before a slower restore resolves applies Locate me's own bounds, never the restored-waypoint bounds", async () => {
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Planned route",
+        avoidFerries: true,
+        profile: "cycling-road",
+      });
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue([-1.5, 53.8]);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      // fireEvent (synchronous), not user.click, so the press lands before
+      // the real getDraft read has any chance to resolve — the strongest
+      // form of "the rider presses Locate me before a slower restore".
+      fireEvent.click(screen.getByRole("button", { name: "Locate me" }));
+
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledWith(
+          computeLocalAreaBounds([-1.5, 53.8]),
+        );
+      });
+      expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+      // Also proves the restored waypoints themselves were still applied —
+      // this is about which camera command wins, not whether the draft
+      // itself restores.
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+      });
     });
   });
 
@@ -1937,6 +2127,126 @@ describe("PlanningScreen", () => {
 
     // Proves the recalculation genuinely happened, not merely that nothing
     // did — otherwise the fitBounds assertion below would pass vacuously.
+    expect(calculateRouteSpy).toHaveBeenCalled();
+    expect(map.fitBoundsSpy.mock.calls.length).toBe(fitBoundsCallsAfterFirstRoute);
+  });
+
+  it("does not refit the camera for any waypoint edit after a restored draft's own one-time fit", async () => {
+    const user = userEvent.setup();
+    await saveDraft({
+      waypoints: [
+        { id: "a", coordinate: [0, 51] },
+        { id: "b", coordinate: [0.01, 51] },
+      ],
+      routeName: "Planned route",
+      avoidFerries: true,
+      profile: "cycling-road",
+    });
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    await waitFor(() => {
+      expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+    });
+    const fitBoundsCallsAfterRestore = map.fitBoundsSpy.mock.calls.length;
+
+    // Append.
+    await addWaypointViaCrosshair(map, user, [0.02, 51]);
+    expect(screen.getByRole("button", { name: "Waypoint 3" })).toBeInTheDocument();
+
+    // Select, then deselect (a repeat tap on the same waypoint).
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    expect(screen.getByRole("button", { name: "Start" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    expect(screen.getByRole("button", { name: "Start" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+
+    // Undo (removes the appended waypoint), then redo (re-adds it).
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.queryByRole("button", { name: "Waypoint 3" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    expect(screen.getByRole("button", { name: "Waypoint 3" })).toBeInTheDocument();
+
+    // Delete a waypoint.
+    await user.click(screen.getByRole("button", { name: "Delete Waypoint 3" }));
+    expect(screen.queryByRole("button", { name: "Waypoint 3" })).not.toBeInTheDocument();
+
+    expect(map.fitBoundsSpy.mock.calls.length).toBe(fitBoundsCallsAfterRestore);
+  });
+
+  it("fits the camera once to a restored draft's waypoints, then once more to the first calculated route, and never again on recalculation", async () => {
+    const user = userEvent.setup();
+    await saveDraft({
+      waypoints: [
+        { id: "a", coordinate: [0, 51] },
+        { id: "b", coordinate: [0.01, 51] },
+      ],
+      routeName: "Planned route",
+      avoidFerries: true,
+      profile: "cycling-road",
+    });
+    await saveProviderKey("dummy-test-key");
+    const map = createMockMapFactory();
+    // A fixed route unrelated to the requested waypoints (unlike
+    // buildLegAwareResolvedAdapter's own echo-the-waypoints-back
+    // geometry), so the calculated route's own dense points genuinely
+    // differ from the raw two-waypoint envelope.
+    const route = buildRoute();
+    const resolvedAdapter = buildResolvedAdapter(route);
+    const calculateRouteSpy = vi.fn((waypoints: Coordinate[]): Promise<PlannedRoute> =>
+      resolvedAdapter.calculateRoute(waypoints, { profile: "cycling-road" }),
+    );
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={{ calculateRoute: calculateRouteSpy }}
+      />,
+    );
+    map.triggerLoad();
+
+    const waypointBounds = computeBoundingBox([
+      [0, 51],
+      [0.01, 51],
+    ]);
+    await waitFor(() => {
+      expect(map.fitBoundsSpy).toHaveBeenCalledWith(waypointBounds);
+    });
+    expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+
+    const calculateButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /calculate route/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+    await user.click(calculateButton);
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: "Route summary" })).toBeInTheDocument();
+    });
+
+    // The first successful calculation gets its own, separate route-
+    // geometry fit — a second fitBounds call, to different bounds than the
+    // earlier waypoint-only fit (the calculated route's own dense points,
+    // not the raw two-waypoint envelope).
+    expect(map.fitBoundsSpy).toHaveBeenCalledTimes(2);
+    expect(map.fitBoundsSpy.mock.calls[1]?.[0]).not.toEqual(waypointBounds);
+    const fitBoundsCallsAfterFirstRoute = map.fitBoundsSpy.mock.calls.length;
+    calculateRouteSpy.mockClear();
+
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    await user.click(screen.getByRole("button", { name: "Move" }));
+    map.triggerCameraSettled([0.002, 51]);
+    await user.click(screen.getByRole("button", { name: "Move the start here" }));
+
+    // Long enough to clear both the draft-save and recalculation debounces.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+
     expect(calculateRouteSpy).toHaveBeenCalled();
     expect(map.fitBoundsSpy.mock.calls.length).toBe(fitBoundsCallsAfterFirstRoute);
   });
@@ -3393,6 +3703,22 @@ describe("PlanningScreen", () => {
           ),
         ).toBeInTheDocument();
       });
+      // The one-time restored/seeded-waypoint camera fit applies equally
+      // to an edit-copy-seeded draft — it flows through the exact same
+      // hydration restore branch as an ordinary restored draft. A separate
+      // wait since it settles across further render cycles after the
+      // notice text (hydration -> fresh-session effect -> boundsTarget ->
+      // MapView's own effect) that the notice-text wait above doesn't wait
+      // out.
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledWith(
+          computeBoundingBox([
+            [0, 51],
+            [0.01, 51],
+          ]),
+        );
+      });
+      expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
     });
 
     it("shows the derived-provenance notice for a draft restored with derived edit-copy waypoints", async () => {
@@ -3418,6 +3744,15 @@ describe("PlanningScreen", () => {
           ),
         ).toBeInTheDocument();
       });
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledWith(
+          computeBoundingBox([
+            [0, 51],
+            [0.01, 51],
+          ]),
+        );
+      });
+      expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
     });
 
     it("keeps the edit-copy notice, and the underlying draft fields, after an unrelated waypoint edit (autosave regression)", async () => {
@@ -3543,6 +3878,17 @@ describe("PlanningScreen", () => {
           ),
         ).toBeInTheDocument();
       });
+      // The fit mechanism doesn't discriminate on editCopyOperation — a
+      // reversed-copy draft gets the same one-time waypoint fit.
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledWith(
+          computeBoundingBox([
+            [0, 51],
+            [0.01, 51],
+          ]),
+        );
+      });
+      expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
     });
 
     it("shows the reverse+derived notice for a draft restored with editCopyOperation reverse and derived origin", async () => {

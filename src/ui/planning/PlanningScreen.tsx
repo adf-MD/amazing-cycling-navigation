@@ -20,6 +20,7 @@ import {
 import type { MapFactory } from "../../map/mapAdapter.ts";
 import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
 import { deriveWaypointRoles } from "../../map/planningLayer.ts";
+import { computeBoundingBox, type BoundingBox } from "../../map/routeLayer.ts";
 import { shortestAngularDifferenceDegrees } from "../../navigation/bearing.ts";
 import {
   analyzeRouteElevationProfile,
@@ -131,6 +132,24 @@ function buildDefaultAdapter(): RoutingProvider {
  * validity contract. */
 function isValidCoordinate(coordinate: Coordinate): boolean {
   return isValidLongitude(coordinate[0]) && isValidLatitude(coordinate[1]);
+}
+
+/** Bounds for the one-time camera fit applied to a restored or externally
+ * seeded (edit-copy/reverse-copy) waypoint set at hydration time — see the
+ * hydration effect below. A single waypoint reuses the existing "frame
+ * reasonably around one coordinate" abstraction (the same ~50 km box the
+ * fresh-session and Locate-me fits already use) rather than
+ * computeBoundingBox's own degenerate zero-area box for a single
+ * coordinate, which would zoom in to fitBounds's maxZoom with no visible
+ * margin. Two or more waypoints use the plain coordinate envelope. */
+function computeWaypointHydrationBounds(
+  waypoints: readonly Waypoint[],
+): BoundingBox | null {
+  const [onlyWaypoint] = waypoints;
+  if (waypoints.length === 1 && onlyWaypoint) {
+    return computeLocalAreaBounds(onlyWaypoint.coordinate);
+  }
+  return computeBoundingBox(waypoints.map((waypoint) => waypoint.coordinate));
 }
 
 /** Stamps the live Planning waypoints onto a route about to be saved or
@@ -257,6 +276,16 @@ export function PlanningScreen({
   // once the rider has taken direct action, no later-arriving restore
   // (including after a failed hydration's retry) should ever overwrite it.
   const hasUserModifiedDraftFieldsRef = useRef(false);
+  // Set once by the hydration effect's restore branch to the candidate
+  // bounds for a restored/seeded waypoint set's one-time camera fit — a
+  // pure geometry value, never itself a decision to actually apply it.
+  // Consumed exactly once by the fresh-session location effect below,
+  // which is where hasManualCameraActionRef/hasAppliedInitialFramingRef
+  // are actually consulted (see that effect's own doc comment for why).
+  // useState rather than a ref specifically so setting it triggers that
+  // effect to re-run and observe it.
+  const [pendingWaypointHydrationBounds, setPendingWaypointHydrationBounds] =
+    useState<BoundingBox | null>(null);
   const [boundsTarget, setBoundsTarget] = useState<BoundsCameraTarget | null>(null);
   const [centreTarget, setCentreTarget] = useState<CentreCameraTarget | null>(null);
   const [orientNorthTarget, setOrientNorthTarget] =
@@ -592,6 +621,17 @@ export function PlanningScreen({
                 operation: draft.editCopyOperation ?? "forward",
               });
             }
+            // Candidate bounds for the one-time camera fit these restored/
+            // seeded waypoints deserve — a pure geometry computation only,
+            // with no read of hasManualCameraActionRef/
+            // hasAppliedInitialFramingRef here. Whether it's actually
+            // applied (the rider may already own the camera by the time
+            // this resolves) is decided by the fresh-session location
+            // effect below, the one place those two refs are read — see
+            // its own doc comment for why.
+            setPendingWaypointHydrationBounds(
+              computeWaypointHydrationBounds(draft.waypoints),
+            );
           }
           // Reached "ready" either way: if the rider already edited, their
           // own in-memory state (not this draft's) is now authoritative,
@@ -739,12 +779,14 @@ export function PlanningScreen({
 
   // Set true the instant the rider manually pans/pinches/rotates/pitches
   // the map, or explicitly taps Locate me — blocks a still-in-flight
-  // automatic fresh-session framing result from later overriding whatever
-  // the rider has since done themselves. Never reset back to false.
-  // North-up taps deliberately do NOT set this: orientation-only, no
-  // coordinate framing of its own, so it carries no "the rider already
-  // has a view they care about" signal the way a pan or Locate-me tap
-  // does.
+  // automatic fresh-session framing result, or a still-pending restored/
+  // seeded-waypoint hydration fit (see pendingWaypointHydrationBounds and
+  // the fresh-session location effect below, which is where this ref is
+  // actually consulted for that path), from later overriding whatever the
+  // rider has since done themselves. Never reset back to false. North-up
+  // taps deliberately do NOT set this: orientation-only, no coordinate
+  // framing of its own, so it carries no "the rider already has a view
+  // they care about" signal the way a pan or Locate-me tap does.
   const hasManualCameraActionRef = useRef(false);
   // Set true only by a genuine pan/pinch/rotate/pitch gesture — never by a
   // Locate-me tap, successful or not, unlike hasManualCameraActionRef
@@ -760,13 +802,17 @@ export function PlanningScreen({
   // locateStatus === "locating" check in the handler isn't enough on its
   // own, since React state updates aren't synchronous.
   const isLocatingRef = useRef(false);
-  // True once the session's one-time ~50 × 50 km regional box-fit has been
-  // applied — by *either* path: the automatic fresh-session framing effect
-  // below, or an explicit Locate-me press racing ahead of it (e.g. because
-  // the automatic attempt failed or is still pending). Once true, every
-  // subsequent Locate-me press only recentres (see handleLocateMe) —
-  // whichever path resolves the session's first successful geolocation
-  // gets to frame the area; every later one does not repeat it.
+  // True once the session's one-time initial camera framing has been
+  // applied — by *any* of three paths, all decided inside this same
+  // effect below: the automatic fresh-session regional framing itself, an
+  // explicit Locate-me press racing ahead of it (e.g. because the
+  // automatic attempt failed or is still pending), or applying the
+  // hydration effect's own candidate bounds for a restored or externally
+  // seeded (edit-copy/reverse-copy) waypoint set (see
+  // pendingWaypointHydrationBounds's own doc comment above). Once true,
+  // every subsequent Locate-me press only recentres (see handleLocateMe)
+  // — whichever path resolves first gets to frame the area; every later
+  // one does not repeat it.
   const hasAppliedInitialFramingRef = useRef(false);
 
   // Frames a genuinely fresh Planning session (no restored draft, no
@@ -778,11 +824,46 @@ export function PlanningScreen({
   // effect's pre-existing behaviour) — Locate me (see handleLocateMe
   // below) is the always-available, discoverable explicit recovery path,
   // and owns its own separate loading/failure UI.
+  //
+  // Also the sole place that applies pendingWaypointHydrationBounds (the
+  // hydration effect's own candidate fit for a restored/seeded waypoint
+  // set) once it's genuinely safe to: this is deliberate, not incidental
+  // — hasManualCameraActionRef/hasAppliedInitialFramingRef must only ever
+  // be read from one effect (the underlying React-Compiler-backed lint
+  // rule for these two refs — both mutated from plain callbacks
+  // (handleLocateMe, onUserCameraInteraction) — flags a second reader
+  // effect as unsound, since it can no longer verify the two stay
+  // consistent across independently-scheduled effects). Keeping the
+  // restored-waypoint fit's guard checks here, alongside the fresh-
+  // session fit's own identical checks, is what keeps this the only
+  // reader. hasRequestedInitialLocationRef's existing "run my meaningful
+  // body once per mount" guard is reused for both concerns.
   const hasRequestedInitialLocationRef = useRef(false);
   useEffect(() => {
     if (hydrationStatus !== "ready" || hasRequestedInitialLocationRef.current) return;
     hasRequestedInitialLocationRef.current = true;
-    if (waypointsRef.current.length > 0) return;
+    if (waypointsRef.current.length > 0) {
+      // A restored/seeded draft, or a rider's own already-placed
+      // waypoint(s) if hasUserModifiedDraftFieldsRef's own gate meant the
+      // hydration effect skipped restoring — computeWaypointHydrationBounds
+      // is only ever set for the former (inside that gate; see the
+      // hydration effect above), so pendingWaypointHydrationBounds being
+      // null here correctly covers the latter with no fit, exactly as a
+      // fresh session's own manually-placed first waypoint already
+      // retains whatever camera the rider used to place it.
+      if (
+        pendingWaypointHydrationBounds &&
+        !hasManualCameraActionRef.current &&
+        !hasAppliedInitialFramingRef.current
+      ) {
+        hasAppliedInitialFramingRef.current = true;
+        setBoundsTarget({
+          bounds: pendingWaypointHydrationBounds,
+          requestId: generateId(),
+        });
+      }
+      return;
+    }
     requestApproximateLocation()
       .then((coordinate) => {
         if (!coordinate) return;
@@ -798,7 +879,7 @@ export function PlanningScreen({
       .catch((error: unknown) => {
         logError("planning-initial-location", error);
       });
-  }, [hydrationStatus, requestApproximateLocation]);
+  }, [hydrationStatus, requestApproximateLocation, pendingWaypointHydrationBounds]);
 
   const handleLocateMe = useCallback(() => {
     if (isLocatingRef.current) return;

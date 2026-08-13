@@ -11,6 +11,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { PlanningScreen } from "./PlanningScreen.tsx";
 import type { Coordinate } from "../../domain/types.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
+import { computeBoundingBox } from "../../map/routeLayer.ts";
 import { db } from "../../storage/db.ts";
 import type { PlanningDraftContent } from "../../storage/mapping.ts";
 import type { RoutingProvider } from "../../routing/provider.ts";
@@ -54,18 +55,21 @@ interface MockMapHandle {
   factory: MapFactory;
   triggerLoad: () => void;
   triggerMapTap: (coordinate: Coordinate) => void;
+  fitBoundsSpy: ReturnType<typeof vi.fn>;
 }
 
 // A minimal local MapLibreLike stub, trimmed from PlanningScreen.test.tsx's
 // own createMockMapFactory (kept local/duplicated rather than shared, to
-// keep this file's diff strictly additive) — only load and a bare map tap
-// matter for hydration tests, so every hit-testing method is fixed to
-// "always miss" rather than configurable.
+// keep this file's diff strictly additive) — only load, a bare map tap and
+// (for the restored/seeded-waypoint camera fit) fitBounds matter for
+// hydration tests, so every hit-testing method is fixed to "always miss"
+// rather than configurable.
 function createMockMapFactory(): MockMapHandle {
   let loadListener: (() => void) | undefined;
   let styleLoadedListener: (() => void) | undefined;
   let mapTapListener: ((coordinate: Coordinate) => void) | undefined;
   const sources = new Map<string, GeoJSON.FeatureCollection>();
+  const fitBoundsSpy = vi.fn();
 
   const factory: MapFactory = () => {
     const map: MapLibreLike = {
@@ -90,7 +94,7 @@ function createMockMapFactory(): MockMapHandle {
       hasImage: () => false,
       addImage: () => undefined,
       addSymbolLayer: () => undefined,
-      fitBounds: () => undefined,
+      fitBounds: fitBoundsSpy,
       getCenter: () => [0, 51],
       getZoom: () => 14,
       onUserCameraInteraction: () => undefined,
@@ -123,6 +127,7 @@ function createMockMapFactory(): MockMapHandle {
         mapTapListener?.(coordinate);
       });
     },
+    fitBoundsSpy,
   };
 }
 
@@ -238,6 +243,11 @@ describe("PlanningScreen draft hydration lifecycle", () => {
 
     expect(screen.getByText(/Ferries: allowed for this plan/i)).toBeInTheDocument();
     expect(mockedSaveDraft).not.toHaveBeenCalled();
+    // A genuinely fresh, empty draft has nothing to fit — the regional
+    // geolocation fit is a separate, unrelated mechanism (see
+    // PlanningScreen.test.tsx) and this test never mocks geolocation, so
+    // getApproximateLocationOnce resolves null in jsdom regardless.
+    expect(map.fitBoundsSpy).not.toHaveBeenCalled();
 
     map.triggerMapTap([10, 50]);
     await advancePastDebounce();
@@ -249,6 +259,9 @@ describe("PlanningScreen draft hydration lifecycle", () => {
         avoidFerries: false,
       }),
     );
+    // Placing the very first waypoint manually in a fresh session must
+    // never trigger the restored/seeded-waypoint hydration fit either.
+    expect(map.fitBoundsSpy).not.toHaveBeenCalled();
   });
 
   it("survives a delayed hydration read for an editable-copy draft with zero premature writes", async () => {
@@ -324,7 +337,7 @@ describe("PlanningScreen draft hydration lifecycle", () => {
     expect(calculateRouteSpy).not.toHaveBeenCalled();
   });
 
-  it("blocks autosave and shows an accessible failure state when the draft read fails; retry recovers", async () => {
+  it("blocks autosave and shows an accessible failure state when the draft read fails; retry recovers and frames the restored waypoints exactly once", async () => {
     mockedGetDraft.mockRejectedValueOnce(new Error("boom"));
     const map = createMockMapFactory();
     const { provider } = createStubRoutingProvider();
@@ -339,15 +352,25 @@ describe("PlanningScreen draft hydration lifecycle", () => {
     await advancePastDebounce();
     expect(mockedSaveDraft).not.toHaveBeenCalled();
     expect(mockedClearDraft).not.toHaveBeenCalled();
+    // The failed first attempt never reached a restore, so it can never
+    // have framed anything — and, since a rejected promise can never also
+    // later resolve, this failed attempt's own generation is permanently
+    // dead and can contribute no later, stale fit either.
+    expect(map.fitBoundsSpy).not.toHaveBeenCalled();
 
-    mockedGetDraft.mockResolvedValueOnce(
-      buildDraftContent({ routeName: "Recovered route" }),
-    );
+    const recoveredDraft = buildDraftContent({ routeName: "Recovered route" });
+    mockedGetDraft.mockResolvedValueOnce(recoveredDraft);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await flushAsync();
 
     expect(screen.getByDisplayValue("Recovered route")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    // A failed first read followed by one successful retry frames the
+    // restored waypoints exactly once.
+    expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+    expect(map.fitBoundsSpy).toHaveBeenCalledWith(
+      computeBoundingBox(recoveredDraft.waypoints.map((waypoint) => waypoint.coordinate)),
+    );
   });
 
   it("discards a hydration result that resolves after the component has unmounted", async () => {
@@ -371,6 +394,10 @@ describe("PlanningScreen draft hydration lifecycle", () => {
 
     expect(mockedSaveDraft).not.toHaveBeenCalled();
     expect(mockedClearDraft).not.toHaveBeenCalled();
+    // A stale/superseded result — here, one resolving after unmount —
+    // never applies the restored-waypoint camera fit either, via the same
+    // generation guard that already blocks the draft-field restore above.
+    expect(map.fitBoundsSpy).not.toHaveBeenCalled();
   });
 
   it("keeps a rider's own edit rather than losing it to a later-resolving restore", async () => {
@@ -394,6 +421,10 @@ describe("PlanningScreen draft hydration lifecycle", () => {
     expect(screen.queryByDisplayValue("Should never appear")).not.toBeInTheDocument();
     expect(screen.getByDisplayValue("Planned route")).toBeInTheDocument();
     expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    // The rider's own edit wins: the discarded stored waypoints must never
+    // be framed, and the rider's own camera (at whatever position they
+    // used to place their own waypoint) must be left alone.
+    expect(map.fitBoundsSpy).not.toHaveBeenCalled();
 
     await advancePastDebounce();
 
@@ -403,6 +434,7 @@ describe("PlanningScreen draft hydration lifecycle", () => {
         waypoints: [expect.objectContaining({ coordinate: [7, 57] })],
       }),
     );
+    expect(map.fitBoundsSpy).not.toHaveBeenCalled();
   });
 
   it("applies the Settings avoid-ferries default even when a waypoint edit lands before the fresh-session preferences read resolves", async () => {
@@ -428,6 +460,11 @@ describe("PlanningScreen draft hydration lifecycle", () => {
 
     expect(screen.getByText(/Ferries: allowed for this plan/i)).toBeInTheDocument();
     expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    // The waypoint placed before hydration finished must never be framed —
+    // this is a genuinely fresh session (no draft), so no restore ever
+    // happens, and the rider's own manually-placed first waypoint always
+    // retains whatever camera they used to place it.
+    expect(map.fitBoundsSpy).not.toHaveBeenCalled();
   });
 
   it("continues to debounce-save normal edits after hydration completes", async () => {

@@ -464,13 +464,119 @@ test("reloading Planning after placing waypoints and a route name recovers the s
   // request — the mocked count is unchanged from before the reload.
   expect(orsRequestCount).toBe(0);
 
+  // Backlog item 35: the restored draft's two waypoints get a one-time
+  // camera fit — proved two ways, real marker geometry (not merely the
+  // sidebar list) and genuine settled-camera state (not MapLibre's raw,
+  // un-settled default).
+  await expect.poll(() => mapContainer.getAttribute("data-camera-center")).not.toBe("");
+  await expect(mapContainer).toHaveAttribute("data-camera-zoom", /^\d/);
+  const waypointMarkers = page.locator(".planning-waypoint-marker");
+  await expect(waypointMarkers).toHaveCount(2);
+  const mapBox = await mapContainer.boundingBox();
+  if (!mapBox) {
+    throw new Error("expected the map container to lay out");
+  }
+  for (const marker of await waypointMarkers.all()) {
+    const markerBox = await marker.boundingBox();
+    if (!markerBox) {
+      throw new Error("expected a waypoint marker to lay out");
+    }
+    expect(isFullyWithin(markerBox, mapBox)).toBe(true);
+  }
+
+  // A genuine manual pan (mirrors the "Locate me recentres..." test's own
+  // deterministic technique — an unmodified ArrowRight via MapLibre's
+  // KeyboardHandler, not a synthetic drag) must not be undone by a
+  // subsequent, unrelated waypoint edit.
+  await mapContainer.locator("canvas").focus();
+  const centreBeforePan = await mapContainer.getAttribute("data-camera-center");
+  await page.keyboard.press("ArrowRight");
+  const CENTRE_CHANGE_TOLERANCE_DEGREES = 1e-4; // ~11 m, mirrors the Locate-me test's own tolerance
+  await expect
+    .poll(async () => {
+      const centre = await mapContainer.getAttribute("data-camera-center");
+      if (!centre || !centreBeforePan) return false;
+      const [lon, lat] = centre.split(",").map(Number);
+      const [prevLon, prevLat] = centreBeforePan.split(",").map(Number);
+      return (
+        Math.abs(lon - prevLon) > CENTRE_CHANGE_TOLERANCE_DEGREES ||
+        Math.abs(lat - prevLat) > CENTRE_CHANGE_TOLERANCE_DEGREES
+      );
+    })
+    .toBe(true);
+  const centreAfterPan = await mapContainer.getAttribute("data-camera-center");
+  const zoomAfterPan = await mapContainer.getAttribute("data-camera-zoom");
+  const bearingAfterPan = await mapContainer.getAttribute("data-camera-bearing");
+  const pitchAfterPan = await mapContainer.getAttribute("data-camera-pitch");
+
   // The draft remains editable after reload — a third waypoint placed now
   // is accepted normally, proving hydration completed and autosave is
-  // live again, not stuck blocking further edits.
+  // live again, not stuck blocking further edits. This is also the
+  // "non-camera waypoint edit" half of the manual-pan-preservation proof
+  // above: placing it must not move the camera the rider just established.
   await mapContainer.click({ position: { x: 300, y: 200 } });
   await expect(
     page.getByRole("button", { name: "Waypoint 3", exact: true }),
   ).toBeVisible();
+
+  expect(await mapContainer.getAttribute("data-camera-center")).toBe(centreAfterPan);
+  expect(await mapContainer.getAttribute("data-camera-zoom")).toBe(zoomAfterPan);
+  expect(await mapContainer.getAttribute("data-camera-bearing")).toBe(bearingAfterPan);
+  expect(await mapContainer.getAttribute("data-camera-pitch")).toBe(pitchAfterPan);
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("reloading Planning with a single restored waypoint frames it inside the visible map, not a degenerate zero-area fit", async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Plan" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await mapContainer.click({ position: { x: 150, y: 150 } });
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+
+  // Past the draft-autosave debounce, so the single placed waypoint is
+  // genuinely persisted before reloading.
+  await page.waitForTimeout(1_200);
+
+  await page.reload();
+  await page.getByRole("button", { name: "Plan" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+
+  await expect.poll(() => mapContainer.getAttribute("data-camera-center")).not.toBe("");
+  const zoom = await mapContainer.getAttribute("data-camera-zoom");
+  expect(zoom).not.toBe("");
+  expect(zoom).not.toBeNull();
+  // A degenerate zero-area fit (computeBoundingBox on a single coordinate,
+  // rather than the local-area box this single-waypoint case must use
+  // instead) would jump to fitBounds's hardcoded maxZoom of 16 — proving
+  // the zoom stays comfortably below that confirms the ~50 km local-area
+  // box was used, not a tight, marginless zoom-in.
+  expect(Number(zoom)).toBeLessThan(15);
+
+  const marker = page.locator(".planning-waypoint-marker");
+  await expect(marker).toHaveCount(1);
+  const markerBox = await marker.boundingBox();
+  const mapBox = await mapContainer.boundingBox();
+  if (!markerBox || !mapBox) {
+    throw new Error("expected the marker and map container to lay out");
+  }
+  expect(isFullyWithin(markerBox, mapBox)).toBe(true);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);

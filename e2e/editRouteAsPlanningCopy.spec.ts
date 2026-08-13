@@ -14,6 +14,24 @@ import { readPlanningDraftRow } from "./support/rideStateDb.ts";
 
 test.use({ serviceWorkers: "block" });
 
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// Mirrors planning.spec.ts's own identical helper, duplicated locally
+// rather than shared — this project's established e2e-spec precedent.
+function isFullyWithin(inner: Box, outer: Box): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  );
+}
+
 const ORS_URL_GLOB = "https://api.heigit.org/**";
 const DUMMY_KEY = "dummy-e2e-key";
 const SMOKE_ROUTE_GPX_PATH = fileURLToPath(
@@ -259,13 +277,57 @@ test("recovers exact planning waypoints with zero routing requests until Calcula
     page.getByRole("button", { name: "Waypoint 2", exact: true }),
   ).toBeVisible();
 
-  // Edit: append a third waypoint via a direct map tap, then recalculate —
-  // proves per-section requests are issued for the edited copy.
+  // Backlog item 35: the seeded draft's own two waypoints get a one-time
+  // camera fit — real marker geometry (not merely the sidebar list) and
+  // genuine settled-camera state (not MapLibre's raw, un-settled default).
   const mapContainer = page.locator('[data-testid="map-container"]');
+  await expect.poll(() => mapContainer.getAttribute("data-camera-center")).not.toBe("");
+  const waypointMarkers = page.locator(".planning-waypoint-marker");
+  await expect(waypointMarkers).toHaveCount(2);
+  const mapBox = await mapContainer.boundingBox();
+  if (!mapBox) {
+    throw new Error("expected the map container to lay out");
+  }
+  for (const marker of await waypointMarkers.all()) {
+    const markerBox = await marker.boundingBox();
+    if (!markerBox) {
+      throw new Error("expected a waypoint marker to lay out");
+    }
+    expect(isFullyWithin(markerBox, mapBox)).toBe(true);
+  }
+
+  // A genuine manual pan (mirrors planning.spec.ts's own deterministic
+  // technique — an unmodified ArrowRight via MapLibre's KeyboardHandler)
+  // must not be undone by the following, unrelated waypoint edit.
+  await mapContainer.locator("canvas").focus();
+  const centreBeforePan = await mapContainer.getAttribute("data-camera-center");
+  await page.keyboard.press("ArrowRight");
+  const CENTRE_CHANGE_TOLERANCE_DEGREES = 1e-4; // ~11 m, mirrors planning.spec.ts's own tolerance
+  await expect
+    .poll(async () => {
+      const centre = await mapContainer.getAttribute("data-camera-center");
+      if (!centre || !centreBeforePan) return false;
+      const [lon, lat] = centre.split(",").map(Number);
+      const [prevLon, prevLat] = centreBeforePan.split(",").map(Number);
+      return (
+        Math.abs(lon - prevLon) > CENTRE_CHANGE_TOLERANCE_DEGREES ||
+        Math.abs(lat - prevLat) > CENTRE_CHANGE_TOLERANCE_DEGREES
+      );
+    })
+    .toBe(true);
+  const centreAfterPan = await mapContainer.getAttribute("data-camera-center");
+  const zoomAfterPan = await mapContainer.getAttribute("data-camera-zoom");
+
+  // Edit: append a third waypoint via a direct map tap, then recalculate —
+  // proves per-section requests are issued for the edited copy. This is
+  // also the "non-camera edit doesn't move the camera" half of the
+  // manual-pan-preservation proof above.
   await mapContainer.click({ position: { x: 260, y: 190 } });
   await expect(
     page.getByRole("button", { name: "Waypoint 3", exact: true }),
   ).toBeVisible();
+  expect(await mapContainer.getAttribute("data-camera-center")).toBe(centreAfterPan);
+  expect(await mapContainer.getAttribute("data-camera-zoom")).toBe(zoomAfterPan);
 
   const recalculateButton = page.getByRole("button", { name: /calculate route/i });
   await expect(recalculateButton).toBeEnabled();
