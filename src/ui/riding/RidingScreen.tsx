@@ -115,9 +115,9 @@ const EDIT_COPY_CONFIG: CopyOperationConfig = {
   kind: "edit-copy",
   triggerLabel: "Edit copy in Planning",
   pendingLabel: "Creating editable copy…",
-  dialogTitle: "Replace your current plan?",
+  dialogTitle: "Replace your current draft?",
   dialogMessage:
-    "Editing this route will replace your unsaved plan in Planning. This route itself will remain unchanged.",
+    "Editing this route will replace your unsaved draft in Planning. This route itself will remain unchanged.",
   confirmLabel: "Replace and edit",
   genericErrorMessage:
     "The editable copy could not be created on this device. Try again.",
@@ -132,9 +132,9 @@ const REVERSE_ROUTE_CONFIG: CopyOperationConfig = {
   kind: "reverse",
   triggerLabel: "Reverse route",
   pendingLabel: "Reversing route…",
-  dialogTitle: "Replace your current plan to reverse this route?",
+  dialogTitle: "Replace your current draft to reverse this route?",
   dialogMessage:
-    "Reversing this route will replace your unsaved plan in Planning. This route itself will remain unchanged.",
+    "Reversing this route will replace your unsaved draft in Planning. This route itself will remain unchanged.",
   confirmLabel: "Replace and reverse",
   genericErrorMessage:
     "The reversed copy could not be created on this device. Try again.",
@@ -702,7 +702,7 @@ export function RidingScreen({
           logError(config.checkDraftLogTag, error);
           setCopyOperationError({
             kind: config.kind,
-            message: "Your existing plan could not be checked. Try again.",
+            message: "Your existing draft could not be checked. Try again.",
           });
         });
     },

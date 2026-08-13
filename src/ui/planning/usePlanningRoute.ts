@@ -66,6 +66,17 @@ export interface UsePlanningRouteResult {
   /** The explicit first-calculation action; also usable as a manual
    * retry after a failure. */
   calculateNow: () => void;
+  /** Explicitly cancels and forgets any in-flight or scheduled
+   * calculation and clears the current routed result, as if this hook
+   * had just mounted with zero waypoints. Never called automatically by
+   * this hook itself — the caller decides when a larger reset (e.g.
+   * Planning's Clear draft) requires it. Without this, a calculation
+   * already in flight when the caller clears its own waypoints down to
+   * fewer than 2 would still be able to resolve afterward and silently
+   * repopulate `state`/`isCalculating`, since the render-time
+   * insufficient-waypoints branch below only clears `routedResult`, never
+   * aborts the request or bumps requestSeqRef. */
+  reset: () => void;
   /** True whenever `state`'s routed result no longer matches the live
    * waypoints/profile/avoidFerries that would produce it — e.g. right
    * after any of those change, until the matching recalculation lands.
@@ -274,6 +285,20 @@ export function usePlanningRoute({
     runCalculation();
   }, [runCalculation]);
 
+  const reset = useCallback(() => {
+    abortControllerRef.current?.abort();
+    // Supersedes any in-flight .then()/.catch() from runCalculation, even
+    // one whose AbortController.abort() call above doesn't stop a
+    // response that was already in the middle of resolving.
+    requestSeqRef.current += 1;
+    window.clearTimeout(debounceTimeoutRef.current);
+    debounceTimeoutRef.current = undefined;
+    setRoutedResult(null);
+    setIsCalculating(false);
+    setUpdatingLegCount(null);
+    setLastErrorMessage(null);
+  }, []);
+
   // Debounced recalculation after a completed waypoint/profile/ferry
   // edit — but only once a route already exists (checked via a ref, not
   // routedResult directly, so this effect never re-fires merely because
@@ -323,6 +348,7 @@ export function usePlanningRoute({
     isCalculating,
     updatingLegCount,
     calculateNow,
+    reset,
     isStale,
   };
 }

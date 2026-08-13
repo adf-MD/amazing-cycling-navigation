@@ -230,7 +230,7 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
           />
           <span className="setting-row-text">
             <span className="setting-row-title">Avoid ferries by default</span>
-            <span className="field-hint">Used when a new plan is created.</span>
+            <span className="field-hint">Used when a new draft is created.</span>
           </span>
         </label>
         {isSavingPreferences ? (

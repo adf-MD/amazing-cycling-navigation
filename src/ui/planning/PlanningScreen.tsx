@@ -58,6 +58,7 @@ import {
 import { getPlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
 import { saveRoute } from "../../storage/routesRepository.ts";
 import type { EditCopyOperation } from "../../storage/mapping.ts";
+import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
 import { downloadTextFile } from "../shared/downloadTextFile.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { describeProviderKeyStatus } from "../settings/providerKeyStatus.ts";
@@ -279,6 +280,12 @@ export function PlanningScreen({
     useState<PlanningDraftHydrationStatus>("loading");
   const hydrationGenerationRef = useRef(0);
   const [hydrationRetryToken, setHydrationRetryToken] = useState(0);
+  // Bumped only by a successful Clear draft (see handleClearDraftConfirm
+  // below) to re-run the fresh-session location/camera-framing effect's
+  // meaningful body exactly once more, as if this were a brand-new mount —
+  // never touched by ordinary hydration/retry, so it never causes that
+  // effect to fire on its own.
+  const [freshSessionFramingToken, setFreshSessionFramingToken] = useState(0);
   // Which restorable draft fields (waypoints, route name, cycling profile,
   // avoid-ferries) have been directly edited by the rider before hydration
   // applied a result for them. Was a single coarse boolean before backlog
@@ -764,10 +771,25 @@ export function PlanningScreen({
   // guards handleSave's own async continuations against a resolution
   // arriving after unmount, mirroring hydrationGenerationRef's identical
   // idiom above.
+  //
+  // Clear draft (backlog item 37) below reuses saveGenerationRef and
+  // saveTimeoutRef literally, rather than a third, independently-invented
+  // mechanism (CLAUDE.md's own instruction) — cancelling the pending
+  // autosave timer and invalidating stale continuations exactly like
+  // handleSave already does. It gets its own isClearingRef/isClearing pair
+  // because it must work in states handleSave cannot (no calculated route
+  // yet), and the two are made mutually exclusive so a Save and a Clear
+  // can never race each other: handleSave's own guard below also checks
+  // isClearingRef, and handleClearDraftConfirm checks isSavingRef.
   const [isSaving, setIsSaving] = useState(false);
   const isSavingRef = useRef(false);
   const saveGenerationRef = useRef(0);
   const saveTimeoutRef = useRef<number | undefined>(undefined);
+  const isClearingRef = useRef(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [clearDraftError, setClearDraftError] = useState<string | null>(null);
+  const [isClearDraftConfirmOpen, setIsClearDraftConfirmOpen] = useState(false);
+  const clearDraftTriggerRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     return () => {
       saveGenerationRef.current += 1;
@@ -897,6 +919,17 @@ export function PlanningScreen({
   // session fit's own identical checks, is what keeps this the only
   // reader. hasRequestedInitialLocationRef's existing "run my meaningful
   // body once per mount" guard is reused for both concerns.
+  //
+  // A third caller of this same discipline: handleClearDraftConfirm below
+  // resets hasRequestedInitialLocationRef/hasAppliedInitialFramingRef/
+  // hasManualCameraActionRef/hasManualGestureRef to their fresh-mount
+  // values and bumps freshSessionFramingToken (a dependency of this
+  // effect) after a successful Clear draft, so this effect's meaningful
+  // body runs again exactly once — as if Planning had never held a draft
+  // — without becoming a second reader of the two refs the comment above
+  // restricts to this one effect (handleClearDraftConfirm is a plain
+  // callback that only writes them, mirroring handleLocateMe/
+  // onUserCameraInteraction).
   const hasRequestedInitialLocationRef = useRef(false);
   useEffect(() => {
     if (hydrationStatus !== "ready" || hasRequestedInitialLocationRef.current) return;
@@ -938,7 +971,12 @@ export function PlanningScreen({
       .catch((error: unknown) => {
         logError("planning-initial-location", error);
       });
-  }, [hydrationStatus, requestApproximateLocation, pendingWaypointHydrationBounds]);
+  }, [
+    hydrationStatus,
+    requestApproximateLocation,
+    pendingWaypointHydrationBounds,
+    freshSessionFramingToken,
+  ]);
 
   const handleLocateMe = useCallback(() => {
     if (isLocatingRef.current) return;
@@ -1089,7 +1127,8 @@ export function PlanningScreen({
   const canSaveOrExport = canSaveOrExportPlan(routing.state, routing.isStale);
 
   const handleSave = () => {
-    if (routing.state.kind !== "routed" || isSavingRef.current) return;
+    if (routing.state.kind !== "routed" || isSavingRef.current || isClearingRef.current)
+      return;
     isSavingRef.current = true;
 
     // Synchronously cancel any pending autosave timer and invalidate its
@@ -1138,6 +1177,122 @@ export function PlanningScreen({
         // with nothing snapshotted here.
         if (saveGenerationRef.current === attemptGeneration) {
           setIsSaving(false);
+        }
+      });
+  };
+
+  // Restores focus to the Clear-draft trigger once a failed clear has
+  // genuinely re-enabled it — an effect, not an imperative call inside the
+  // .catch() block below, for the exact reason RidingScreen.tsx's own
+  // finalizeError-keyed effect documents: at the moment .catch() runs,
+  // isClearing (driving the trigger's own disabled prop) has not yet
+  // committed to false, and .focus() on a still-disabled element silently
+  // no-ops. Keyed on clearDraftError's own object identity, which is fresh
+  // only for a genuinely new error, so this never re-fires on an unrelated
+  // re-render while the same error is still shown.
+  useEffect(() => {
+    if (!clearDraftError) return;
+    clearDraftTriggerRef.current?.focus();
+  }, [clearDraftError]);
+
+  const handleClearDraftClick = () => {
+    if (isClearDraftConfirmOpen || isClearingRef.current || isSavingRef.current) return;
+    setClearDraftError(null);
+    setIsClearDraftConfirmOpen(true);
+  };
+
+  const handleClearDraftCancel = () => {
+    // Escape can bypass a disabled Cancel button, so guard here too.
+    if (isClearingRef.current) return;
+    setIsClearDraftConfirmOpen(false);
+    clearDraftTriggerRef.current?.focus();
+  };
+
+  // Wipes the entire mutable Planning draft — waypoints, routed/stale
+  // result, name, edit-copy/reversal provenance, selection state — back to
+  // a genuinely fresh session, and clears the persisted draft row. Never
+  // clears in-memory state optimistically: everything below the
+  // Promise.all only runs once the storage write (and, independently, a
+  // fresh read of the current Settings defaults) has actually resolved.
+  // Reuses saveGenerationRef/saveTimeoutRef exactly like handleSave above
+  // — see that ref pair's own doc comment for why this is deliberate reuse,
+  // not a third mechanism.
+  const handleClearDraftConfirm = () => {
+    if (isSavingRef.current || isClearingRef.current) return;
+    isClearingRef.current = true;
+
+    window.clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = undefined;
+    saveGenerationRef.current += 1;
+    const attemptGeneration = saveGenerationRef.current;
+
+    setClearDraftError(null);
+    setIsClearing(true);
+
+    Promise.all([
+      clearDraft(),
+      // A Settings-read failure here must never be reported as "the draft
+      // could not be cleared" — the destructive clear itself can still
+      // succeed — so it swallows its own rejection and falls back to the
+      // same safe defaults getPlanningPreferences() itself resolves to
+      // when no preferences row has ever been saved, mirroring the
+      // existing fresh-session hydration branch's identical precedent
+      // above.
+      getPlanningPreferences().catch((error: unknown) => {
+        logError("planning-clear-draft-load-preferences", error);
+        return {
+          profileByDefault: DEFAULT_ROUTING_PROFILE,
+          avoidFerriesByDefault: true,
+        };
+      }),
+    ])
+      .then(([, preferences]) => {
+        // Superseded only by unmount — isClearingRef already blocks a
+        // second concurrent attempt.
+        if (saveGenerationRef.current !== attemptGeneration) return;
+        dispatchWaypointAction({ type: "reset", waypoints: [] });
+        setRouteName("Planned route");
+        setEditCopyMeta(null);
+        setPendingWaypointAction(null);
+        setSaveError(null);
+        setExportError(null);
+        // Unconditional, unlike the hydration effect's own fresh-session
+        // branch above: hasUserModifiedDraftFieldsRef.current.profile/
+        // avoidFerries mean "modified since this component mounted" and
+        // are never reset by an ordinary edit, so a rider who customised
+        // routing before pressing Clear draft (an entirely normal flow —
+        // e.g. after arriving via "Edit copy in Planning") would already
+        // have one or both flags permanently true; gating this reseed on
+        // them the same way would silently skip it precisely when it
+        // matters most. Clear draft is itself the explicit "start over"
+        // request, so it always wins over whatever was set before it.
+        setProfile(preferences.profileByDefault);
+        setAvoidFerries(preferences.avoidFerriesByDefault);
+        routing.reset();
+        // Re-arms the fresh-session camera/geolocation framing effect's
+        // "run once" guard exactly as if this were a brand-new mount — see
+        // that effect's own doc comment above for the full ordering and
+        // lint-safety reasoning.
+        hasRequestedInitialLocationRef.current = false;
+        hasAppliedInitialFramingRef.current = false;
+        hasManualCameraActionRef.current = false;
+        hasManualGestureRef.current = false;
+        setPendingWaypointHydrationBounds(null);
+        setFreshSessionFramingToken((token) => token + 1);
+        setIsClearDraftConfirmOpen(false);
+      })
+      .catch((error: unknown) => {
+        // Only reachable for a genuine clearDraft() rejection — the
+        // preferences read above already swallows its own failure.
+        if (saveGenerationRef.current !== attemptGeneration) return;
+        logError("planning-clear-draft", error);
+        setClearDraftError("The draft could not be cleared on this device. Try again.");
+        setIsClearDraftConfirmOpen(false);
+      })
+      .finally(() => {
+        isClearingRef.current = false;
+        if (saveGenerationRef.current === attemptGeneration) {
+          setIsClearing(false);
         }
       });
   };
@@ -1257,14 +1412,14 @@ export function PlanningScreen({
 
       {hydrationStatus === "loading" ? (
         <p className="status-row" role="status">
-          Loading your plan…
+          Loading your draft…
         </p>
       ) : null}
 
       {hydrationStatus === "failed" ? (
         <div className="row">
           <p className="field-error" role="alert">
-            Your saved plan could not be loaded. Nothing in storage has been changed.
+            Your saved draft could not be loaded. Nothing in storage has been changed.
           </p>
           <button
             type="button"
@@ -1511,7 +1666,36 @@ export function PlanningScreen({
             </div>
           </details>
         </div>
+
+        <div className="row">
+          <button
+            type="button"
+            className="btn-danger"
+            ref={clearDraftTriggerRef}
+            onClick={handleClearDraftClick}
+            disabled={isSaving || isClearing}
+          >
+            Clear draft
+          </button>
+          {clearDraftError ? (
+            <p className="field-error" role="alert">
+              {clearDraftError}
+            </p>
+          ) : null}
+        </div>
       </div>
+
+      <ConfirmDialog
+        open={isClearDraftConfirmOpen}
+        title="Clear this draft?"
+        message="This removes all waypoints, the calculated route and other unsaved draft details. Saved routes are not affected."
+        confirmLabel={isClearing ? "Clearing…" : "Clear draft"}
+        cancelLabel="Cancel"
+        confirmDisabled={isClearing}
+        cancelDisabled={isClearing}
+        onConfirm={handleClearDraftConfirm}
+        onCancel={handleClearDraftCancel}
+      />
 
       <div className="stack planning-section">
         <h2>Waypoints</h2>
@@ -1609,7 +1793,7 @@ export function PlanningScreen({
             type="button"
             className="btn-primary"
             onClick={handleSave}
-            disabled={!canSaveOrExport || isSaving}
+            disabled={!canSaveOrExport || isSaving || isClearing}
           >
             {isSaving ? "Saving…" : "Save route"}
           </button>

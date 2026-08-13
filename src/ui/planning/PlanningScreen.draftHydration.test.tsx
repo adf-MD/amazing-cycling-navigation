@@ -356,7 +356,9 @@ describe("PlanningScreen draft hydration lifecycle", () => {
     await flushAsync();
 
     const alert = screen.getByRole("alert");
-    expect(alert).toHaveTextContent(/could not be loaded/i);
+    expect(alert).toHaveTextContent(
+      "Your saved draft could not be loaded. Nothing in storage has been changed.",
+    );
 
     await advancePastDebounce();
     expect(mockedSaveDraft).not.toHaveBeenCalled();

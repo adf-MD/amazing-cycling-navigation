@@ -427,7 +427,7 @@ test("shows a confirmation before replacing a meaningful existing Planning draft
   const routeName = "Confirm Test Route";
   await planAndSaveTwoWaypointRoute(page, routeName);
 
-  // Start an unrelated, unsaved plan — a single waypoint is enough to
+  // Start an unrelated, unsaved draft — a single waypoint is enough to
   // count as "meaningful" (non-empty). Wait past the 900ms draft-autosave
   // debounce before navigating away, so it genuinely persists.
   await openPlanningAndAwaitFraming(page);

@@ -567,7 +567,7 @@ test("shows a reverse-specific confirmation before replacing a meaningful existi
   const routeName = "Confirm Reverse Test Route";
   await planAndSaveTwoWaypointRoute(page, routeName);
 
-  // Start an unrelated, unsaved plan — a single waypoint is enough to
+  // Start an unrelated, unsaved draft — a single waypoint is enough to
   // count as "meaningful" (non-empty).
   await openPlanningAndAwaitFraming(page);
   const freshMapContainer = page.locator('[data-testid="map-container"]');
@@ -584,7 +584,7 @@ test("shows a reverse-specific confirmation before replacing a meaningful existi
   const dialog = page.getByRole("alertdialog");
   await expect(dialog).toBeVisible();
   await expect(
-    dialog.getByText(/reversing this route will replace your unsaved plan/i),
+    dialog.getByText(/reversing this route will replace your unsaved draft/i),
   ).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
 

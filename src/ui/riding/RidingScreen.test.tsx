@@ -4312,6 +4312,10 @@ describe("RidingScreen", () => {
       await user.click(editCopyButton);
 
       const dialog = await screen.findByRole("alertdialog");
+      expect(dialog).toHaveTextContent("Replace your current draft?");
+      expect(
+        within(dialog).getByText(/replace your unsaved draft in planning/i),
+      ).toBeInTheDocument();
       expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
 
       await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
@@ -4323,6 +4327,33 @@ describe("RidingScreen", () => {
       const draft = await getDraft();
       expect(draft?.routeName).toBe("Unsaved plan");
       expect(draft?.editCopySourceRouteId).toBeUndefined();
+    });
+
+    it("shows the renamed draft-terminology error when checking for an existing draft fails", async () => {
+      const user = userEvent.setup();
+      const getDraftSpy = vi
+        .spyOn(planningDraftRepository, "getDraft")
+        .mockRejectedValueOnce(new Error("boom"));
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(
+        await screen.findByRole("button", { name: "Edit copy in Planning" }),
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "Your existing draft could not be checked. Try again.",
+        );
+      });
+
+      getDraftSpy.mockRestore();
     });
 
     it("Confirm replaces the existing draft and navigates", async () => {
@@ -4509,8 +4540,11 @@ describe("RidingScreen", () => {
       await user.click(reverseButton);
 
       const dialog = await screen.findByRole("alertdialog");
+      expect(dialog).toHaveTextContent(
+        "Replace your current draft to reverse this route?",
+      );
       expect(
-        within(dialog).getByText(/replace your unsaved plan in planning/i),
+        within(dialog).getByText(/replace your unsaved draft in planning/i),
       ).toBeInTheDocument();
       expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
 

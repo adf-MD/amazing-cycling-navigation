@@ -974,4 +974,133 @@ describe("usePlanningRoute", () => {
       expect(calls).toHaveLength(2);
     });
   });
+
+  describe("reset", () => {
+    it("is a no-op while idle", () => {
+      const { adapter, calls } = buildQueuedAdapter();
+      const { result } = renderHook(() =>
+        usePlanningRoute({
+          waypoints: WAYPOINTS,
+          profile: "cycling-road",
+          avoidFerries: false,
+          adapter,
+        }),
+      );
+
+      act(() => {
+        result.current.reset();
+      });
+
+      expect(calls).toHaveLength(0);
+      expect(result.current.state.kind).toBe("unrouted-preview");
+      expect(result.current.isCalculating).toBe(false);
+    });
+
+    it("aborts an in-flight request and prevents its late resolution from reviving state", async () => {
+      const { adapter, calls } = buildQueuedAdapter();
+      const { result } = renderHook(() =>
+        usePlanningRoute({
+          waypoints: WAYPOINTS,
+          profile: "cycling-road",
+          avoidFerries: false,
+          adapter,
+        }),
+      );
+
+      act(() => {
+        result.current.calculateNow();
+      });
+      expect(calls).toHaveLength(1);
+      expect(result.current.isCalculating).toBe(true);
+
+      act(() => {
+        result.current.reset();
+      });
+
+      expect(calls[0]?.signal?.aborted).toBe(true);
+      expect(result.current.state.kind).not.toBe("routed");
+      expect(result.current.isCalculating).toBe(false);
+
+      const route = buildRoute("late");
+      await act(async () => {
+        calls[0]?.resolve(route); // resolves AFTER reset()
+        await flushMicrotasks();
+      });
+
+      // Must not be revived by the late resolution.
+      expect(result.current.state.kind).not.toBe("routed");
+      // An abort must never surface as a user-facing error.
+      expect(result.current.lastErrorMessage).toBeNull();
+      expect(result.current.isCalculating).toBe(false);
+    });
+
+    it("clears a previous error and multi-leg progress state", async () => {
+      const { adapter, calls } = buildQueuedAdapter();
+      const { result } = renderHook(() =>
+        usePlanningRoute({
+          waypoints: WAYPOINTS,
+          profile: "cycling-road",
+          avoidFerries: false,
+          adapter,
+        }),
+      );
+
+      act(() => {
+        result.current.calculateNow();
+      });
+      await act(async () => {
+        calls[0]?.reject(new Error("boom"));
+        await flushMicrotasks();
+      });
+      await waitFor(() => {
+        expect(result.current.lastErrorMessage).not.toBeNull();
+      });
+
+      act(() => {
+        result.current.reset();
+      });
+
+      expect(result.current.lastErrorMessage).toBeNull();
+      expect(result.current.updatingLegCount).toBeNull();
+    });
+
+    it("prevents a scheduled recalculation debounce from firing after reset", async () => {
+      const { adapter, calls } = buildQueuedAdapter();
+      const { result, rerender } = renderHook(
+        (props: { waypoints: Waypoint[] }) =>
+          usePlanningRoute({
+            waypoints: props.waypoints,
+            profile: "cycling-road",
+            avoidFerries: false,
+            adapter,
+          }),
+        { initialProps: { waypoints: WAYPOINTS } },
+      );
+
+      act(() => {
+        result.current.calculateNow();
+      });
+      const route = buildRoute();
+      await act(async () => {
+        calls[0]?.resolve(route);
+        await flushMicrotasks();
+      });
+      await waitFor(() => {
+        expect(result.current.state.kind).toBe("routed");
+      });
+
+      // An edit after a route exists schedules a debounced recalculation.
+      const thirdWaypoint: Waypoint = { id: "c", coordinate: [0.02, 51] };
+      rerender({ waypoints: [...WAYPOINTS, thirdWaypoint] });
+
+      act(() => {
+        result.current.reset();
+      });
+
+      // Give the (cleared) debounce timer's original delay a chance to
+      // have fired, had reset() not cancelled it.
+      await new Promise((resolve) => setTimeout(resolve, 950));
+      expect(calls).toHaveLength(1);
+    });
+  });
 });

@@ -258,6 +258,14 @@ describe("SettingsScreen", () => {
       });
     });
 
+    it("uses draft terminology, not plan, for the hint text", async () => {
+      render(<SettingsScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Used when a new draft is created.")).toBeInTheDocument();
+      });
+    });
+
     it("unchecking then rechecking persists each value", async () => {
       const user = userEvent.setup();
       render(<SettingsScreen />);
