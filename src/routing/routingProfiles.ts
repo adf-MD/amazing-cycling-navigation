@@ -23,8 +23,7 @@ const METADATA_BY_VALUE: Record<
 > = {
   "cycling-road": {
     label: "Road bike",
-    description:
-      "Prefers roads suitable for a road bike. The default profile for every new plan.",
+    description: "Prefers roads suitable for a road bike.",
   },
   "cycling-regular": {
     label: "General cycling",

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsScreen } from "./SettingsScreen.tsx";
 import { db } from "../../storage/db.ts";
@@ -271,6 +271,7 @@ describe("SettingsScreen", () => {
       await waitFor(async () => {
         await expect(getPlanningPreferences()).resolves.toEqual({
           avoidFerriesByDefault: false,
+          profileByDefault: "cycling-road",
         });
       });
 
@@ -279,6 +280,7 @@ describe("SettingsScreen", () => {
       await waitFor(async () => {
         await expect(getPlanningPreferences()).resolves.toEqual({
           avoidFerriesByDefault: true,
+          profileByDefault: "cycling-road",
         });
       });
     });
@@ -302,6 +304,147 @@ describe("SettingsScreen", () => {
       expect(checkbox).toBeChecked();
       expect(screen.getByRole("alert")).not.toHaveTextContent("simulated failure");
 
+      putSpy.mockRestore();
+    });
+  });
+
+  describe("Default cycling profile", () => {
+    it("has Road bike pressed by default when no preferences row has been saved", async () => {
+      render(<SettingsScreen />);
+
+      const group = await screen.findByRole("group", { name: "Default cycling profile" });
+      const roadBike = within(group).getByRole("button", { name: "Road bike" });
+      const generalCycling = within(group).getByRole("button", {
+        name: "General cycling",
+      });
+
+      await waitFor(() => {
+        expect(roadBike).toHaveAttribute("aria-pressed", "true");
+      });
+      expect(generalCycling).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("clicking General cycling persists it and flips the pressed state on both buttons", async () => {
+      const user = userEvent.setup();
+      render(<SettingsScreen />);
+
+      const group = await screen.findByRole("group", { name: "Default cycling profile" });
+      const roadBike = within(group).getByRole("button", { name: "Road bike" });
+      const generalCycling = within(group).getByRole("button", {
+        name: "General cycling",
+      });
+      await waitFor(() => expect(roadBike).toHaveAttribute("aria-pressed", "true"));
+
+      await user.click(generalCycling);
+
+      await waitFor(() => {
+        expect(generalCycling).toHaveAttribute("aria-pressed", "true");
+      });
+      expect(roadBike).toHaveAttribute("aria-pressed", "false");
+      await waitFor(async () => {
+        await expect(getPlanningPreferences()).resolves.toEqual({
+          avoidFerriesByDefault: true,
+          profileByDefault: "cycling-regular",
+        });
+      });
+    });
+
+    it("changing the profile preserves the ferries default, and changing ferries preserves the profile default", async () => {
+      const user = userEvent.setup();
+      render(<SettingsScreen />);
+
+      const checkbox = await screen.findByRole("checkbox", {
+        name: "Avoid ferries by default",
+      });
+      await waitFor(() => expect(checkbox).toBeChecked());
+      await user.click(checkbox);
+      await waitFor(() => expect(checkbox).not.toBeChecked());
+      await waitFor(async () => {
+        await expect(getPlanningPreferences()).resolves.toEqual({
+          avoidFerriesByDefault: false,
+          profileByDefault: "cycling-road",
+        });
+      });
+
+      const group = screen.getByRole("group", { name: "Default cycling profile" });
+      const generalCycling = within(group).getByRole("button", {
+        name: "General cycling",
+      });
+      await user.click(generalCycling);
+
+      await waitFor(() => {
+        expect(generalCycling).toHaveAttribute("aria-pressed", "true");
+      });
+      // The ferries value from the earlier write must still be the one
+      // persisted — not reverted back to the default true, which would
+      // happen if this write captured a stale pre-toggle value.
+      await waitFor(async () => {
+        await expect(getPlanningPreferences()).resolves.toEqual({
+          avoidFerriesByDefault: false,
+          profileByDefault: "cycling-regular",
+        });
+      });
+      // And the reverse: the checkbox must still reflect the earlier write.
+      expect(checkbox).not.toBeChecked();
+    });
+
+    it("shows an inline error and leaves both controls at their last persisted values when saving fails", async () => {
+      const putSpy = vi
+        .spyOn(db.planningPreferences, "put")
+        .mockRejectedValueOnce(new Error("simulated failure"));
+      const user = userEvent.setup();
+      render(<SettingsScreen />);
+
+      const group = await screen.findByRole("group", { name: "Default cycling profile" });
+      const roadBike = within(group).getByRole("button", { name: "Road bike" });
+      const generalCycling = within(group).getByRole("button", {
+        name: "General cycling",
+      });
+      await waitFor(() => expect(roadBike).toHaveAttribute("aria-pressed", "true"));
+
+      await user.click(generalCycling);
+
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toHaveTextContent(/could not be saved/i);
+      });
+      expect(roadBike).toHaveAttribute("aria-pressed", "true");
+      expect(generalCycling).toHaveAttribute("aria-pressed", "false");
+      expect(screen.getByRole("alert")).not.toHaveTextContent("simulated failure");
+
+      putSpy.mockRestore();
+    });
+
+    it("disables both the profile buttons and the ferries checkbox while a write is in flight", async () => {
+      let resolve!: () => void;
+      const promise = new Promise<void>((res) => {
+        resolve = res;
+      });
+      const putSpy = vi
+        .spyOn(db.planningPreferences, "put")
+        .mockImplementationOnce(
+          () => promise as unknown as ReturnType<typeof db.planningPreferences.put>,
+        );
+      const user = userEvent.setup();
+      render(<SettingsScreen />);
+
+      const group = await screen.findByRole("group", { name: "Default cycling profile" });
+      const roadBike = within(group).getByRole("button", { name: "Road bike" });
+      const generalCycling = within(group).getByRole("button", {
+        name: "General cycling",
+      });
+      const checkbox = screen.getByRole("checkbox", { name: "Avoid ferries by default" });
+      await waitFor(() => expect(roadBike).toHaveAttribute("aria-pressed", "true"));
+
+      await user.click(generalCycling);
+
+      await waitFor(() => {
+        expect(screen.getByText("Saving…")).toBeInTheDocument();
+      });
+      expect(roadBike).toBeDisabled();
+      expect(generalCycling).toBeDisabled();
+      expect(checkbox).toBeDisabled();
+
+      resolve();
       putSpy.mockRestore();
     });
   });

@@ -35,6 +35,13 @@ describe("ROUTING_PROFILES", () => {
     expect(generalCycling?.description.toLowerCase()).not.toContain("guarantee");
     expect(generalCycling?.description.toLowerCase()).not.toContain("safer");
   });
+
+  it("never claims Road bike is the default, since Settings can now configure a different default", () => {
+    const roadBike = ROUTING_PROFILES.find(
+      (metadata) => metadata.value === "cycling-road",
+    );
+    expect(roadBike?.description.toLowerCase()).not.toContain("default");
+  });
 });
 
 describe("formatRoutingProfileLabel", () => {

@@ -9,6 +9,10 @@ test.use({ serviceWorkers: "block" });
 const ORS_URL_GLOB = "https://api.heigit.org/**";
 const DUMMY_KEY = "dummy-e2e-key";
 
+interface CapturedOrsRequestBody {
+  options?: { avoid_features?: string[] };
+}
+
 interface Box {
   x: number;
   y: number;
@@ -582,7 +586,7 @@ test("reloading Planning with a single restored waypoint frames it inside the vi
   expect(consoleErrors).toEqual([]);
 });
 
-test("selecting General cycling routes via the cycling-regular endpoint, not the default cycling-road one", async ({
+test("selecting General cycling and disabling avoid-ferries in the current-draft Change disclosure routes via the cycling-regular endpoint with no ferry avoidance", async ({
   page,
 }) => {
   const consoleErrors: string[] = [];
@@ -608,11 +612,20 @@ test("selecting General cycling routes via the cycling-regular endpoint, not the
     page.getByText(/key saved on this device, not yet verified/i),
   ).toBeVisible();
 
-  let capturedUrl: string | null = null;
+  // A plain object, not two separate `let` bindings — TypeScript 6's
+  // closure narrowing otherwise narrows a bare `let` reassigned only
+  // inside this async route callback to `never` at every later read,
+  // even behind optional chaining (confirmed in isolation; see the
+  // captured object property pattern used here instead).
+  const captured: { url: string | null; body: CapturedOrsRequestBody | null } = {
+    url: null,
+    body: null,
+  };
   await page.route(ORS_URL_GLOB, async (route) => {
     const request = route.request();
     if (request.method() === "POST") {
-      capturedUrl = request.url();
+      captured.url = request.url();
+      captured.body = request.postDataJSON() as CapturedOrsRequestBody;
     }
     await route.fulfill({
       status: 200,
@@ -625,14 +638,26 @@ test("selecting General cycling routes via the cycling-regular endpoint, not the
   await page.getByRole("button", { name: "Plan" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-  // Road bike is selected by default, before any waypoint is placed.
+  // Zero ORS requests before Calculate, and the compact summary reflects
+  // the default (Road bike, ferries avoided) before any change.
+  await expect(
+    page.getByText("Routing: Road bike · Ferries avoided", { exact: true }),
+  ).toBeVisible();
+
+  // Opening/editing the current-draft Change disclosure controls this
+  // draft, not the Settings default.
+  await page.getByText("Change", { exact: true }).click();
   const roadBikeButton = page.getByRole("button", { name: "Road bike", exact: true });
   const generalCyclingButton = page.getByRole("button", {
     name: "General cycling",
     exact: true,
   });
+  const ferriesCheckbox = page.getByRole("checkbox", {
+    name: "Avoid ferries for this draft",
+  });
   await expect(roadBikeButton).toHaveAttribute("aria-pressed", "true");
   await expect(generalCyclingButton).toHaveAttribute("aria-pressed", "false");
+  await expect(ferriesCheckbox).toBeChecked();
 
   const mapContainer = page.locator('[data-testid="map-container"]');
   await mapContainer.click({ position: { x: 100, y: 100 } });
@@ -645,6 +670,14 @@ test("selecting General cycling routes via the cycling-regular endpoint, not the
   await generalCyclingButton.click();
   await expect(generalCyclingButton).toHaveAttribute("aria-pressed", "true");
   await expect(roadBikeButton).toHaveAttribute("aria-pressed", "false");
+  await ferriesCheckbox.uncheck();
+  await expect(ferriesCheckbox).not.toBeChecked();
+  await expect(
+    page.getByText("Routing: General cycling · Ferries allowed", { exact: true }),
+  ).toBeVisible();
+
+  // No routing request until Calculate is pressed explicitly.
+  expect(captured.url).toBeNull();
 
   const calculateButton = page.getByRole("button", { name: /calculate route/i });
   await expect(calculateButton).toBeEnabled();
@@ -653,14 +686,88 @@ test("selecting General cycling routes via the cycling-regular endpoint, not the
   const summaryRegion = page.getByRole("region", { name: "Route summary" });
   await expect(summaryRegion).toBeVisible({ timeout: 15_000 });
 
-  expect(capturedUrl).toContain("/directions/cycling-regular/geojson");
-  expect(capturedUrl).not.toContain("/directions/cycling-road/geojson");
+  expect(captured.url).toContain("/directions/cycling-regular/geojson");
+  expect(captured.url).not.toContain("/directions/cycling-road/geojson");
+  expect(captured.body?.options?.avoid_features ?? []).not.toContain("ferries");
   await expect(
     summaryRegion.getByText(/General cycling \(cycling-regular\)/),
   ).toBeVisible();
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
+});
+
+test("a genuinely fresh draft picks up the Settings default cycling profile, with no routing request until Calculate", async ({
+  page,
+}) => {
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  let unexpectedOrsRequest = false;
+  await page.route(ORS_URL_GLOB, async (route) => {
+    unexpectedOrsRequest = true;
+    await route.abort("failed");
+  });
+
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  const profileGroup = page.getByRole("group", { name: "Default cycling profile" });
+  await profileGroup
+    .getByRole("button", { name: "General cycling", exact: true })
+    .click();
+  await expect(
+    profileGroup.getByRole("button", { name: "General cycling", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "Plan" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  await expect(
+    page.getByText("Routing: General cycling · Ferries avoided", { exact: true }),
+  ).toBeVisible();
+
+  expect(unexpectedOrsRequest).toBe(false);
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+});
+
+test("the action card's Calculate button sits above the Waypoints heading in actual visual/DOM order", async ({
+  page,
+}) => {
+  await installLocalMapStyle(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Plan" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  const calculateButton = page.getByRole("button", { name: /calculate route/i });
+  const waypointsHeading = page.getByRole("heading", { level: 2, name: "Waypoints" });
+  await expect(calculateButton).toBeVisible();
+  await expect(waypointsHeading).toBeVisible();
+
+  const [calculateBox, waypointsBox] = await Promise.all([
+    calculateButton.boundingBox(),
+    waypointsHeading.boundingBox(),
+  ]);
+  if (!calculateBox || !waypointsBox) {
+    throw new Error(
+      "expected both the Calculate button and Waypoints heading to have a box",
+    );
+  }
+  expect(calculateBox.y).toBeLessThan(waypointsBox.y);
+
+  const documentOrder = await page.evaluate(() => {
+    const calculate = Array.from(document.querySelectorAll("button")).find((button) =>
+      /calculate route/i.test(button.textContent),
+    );
+    const waypointsHeadingEl = Array.from(document.querySelectorAll("h2")).find(
+      (heading) => heading.textContent === "Waypoints",
+    );
+    if (!calculate || !waypointsHeadingEl) return null;
+    return Boolean(
+      calculate.compareDocumentPosition(waypointsHeadingEl) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+  expect(documentOrder).toBe(true);
 });
 
 test("plans a route across three waypoints using exactly one routing request per section", async ({
@@ -1158,6 +1265,36 @@ test.describe("phone viewport", () => {
     await expect(saveButton).toBeEnabled();
     await exportButton.scrollIntoViewIfNeeded();
     await expect(exportButton).toBeEnabled();
+
+    // The compact routing summary and its "Change" disclosure (backlog
+    // item 36) must introduce no horizontal overflow either closed or
+    // open, and every control it reveals must keep a real ≥44x44px touch
+    // target — Vitest's css:false environment cannot verify this.
+    const changeSummary = page.getByText("Change", { exact: true });
+    await changeSummary.scrollIntoViewIfNeeded();
+    const changeSummaryBox = await changeSummary.boundingBox();
+    if (!changeSummaryBox) throw new Error("expected the Change summary to have a box");
+    expect(changeSummaryBox.height).toBeGreaterThanOrEqual(44);
+
+    await changeSummary.click();
+    const draftRoadBike = page.getByRole("button", { name: "Road bike", exact: true });
+    const draftGeneralCycling = page.getByRole("button", {
+      name: "General cycling",
+      exact: true,
+    });
+    const draftFerriesCheckbox = page.getByRole("checkbox", {
+      name: "Avoid ferries for this draft",
+    });
+    for (const control of [draftRoadBike, draftGeneralCycling, draftFerriesCheckbox]) {
+      const box = await control.boundingBox();
+      if (!box) throw new Error("expected the current-draft control to have a box");
+      expect(box.width).toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+
+    const openScrollWidths = await readScrollWidths();
+    expect(openScrollWidths.documentWidth).toBeLessThanOrEqual(390);
+    expect(openScrollWidths.bodyWidth).toBeLessThanOrEqual(390);
 
     const finalScrollWidths = await readScrollWidths();
     expect(finalScrollWidths.documentWidth).toBeLessThanOrEqual(390);

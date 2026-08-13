@@ -223,17 +223,23 @@ describe("PlanningScreen draft hydration lifecycle", () => {
     });
 
     expect(screen.getByDisplayValue("Distinctive stored route")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Routing: General cycling · Ferries allowed/),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Change"));
     expect(screen.getByRole("button", { name: "General cycling" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
-    expect(screen.getByText(/Ferries: allowed for this plan/i)).toBeInTheDocument();
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
   });
 
   it("applies genuinely-fresh defaults exactly once, then autosaves a subsequent edit normally", async () => {
     mockedGetDraft.mockResolvedValueOnce(undefined);
-    mockedGetPlanningPreferences.mockResolvedValueOnce({ avoidFerriesByDefault: false });
+    mockedGetPlanningPreferences.mockResolvedValueOnce({
+      avoidFerriesByDefault: false,
+      profileByDefault: "cycling-regular",
+    });
     const map = createMockMapFactory();
     const { provider } = createStubRoutingProvider();
 
@@ -241,7 +247,9 @@ describe("PlanningScreen draft hydration lifecycle", () => {
     map.triggerLoad();
     await flushAsync();
 
-    expect(screen.getByText(/Ferries: allowed for this plan/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Routing: General cycling · Ferries allowed/),
+    ).toBeInTheDocument();
     expect(mockedSaveDraft).not.toHaveBeenCalled();
     // A genuinely fresh, empty draft has nothing to fit — the regional
     // geolocation fit is a separate, unrelated mechanism (see
@@ -257,6 +265,7 @@ describe("PlanningScreen draft hydration lifecycle", () => {
       expect.objectContaining({
         waypoints: [expect.objectContaining({ coordinate: [10, 50] })],
         avoidFerries: false,
+        profile: "cycling-regular",
       }),
     );
     // Placing the very first waypoint manually in a fresh session must
@@ -437,10 +446,43 @@ describe("PlanningScreen draft hydration lifecycle", () => {
     expect(map.fitBoundsSpy).not.toHaveBeenCalled();
   });
 
+  it("blocks the entire restore, not just avoidFerries, when only the ferries checkbox is edited before a slow restore resolves", async () => {
+    const { promise, resolve } = createControlledPromise<
+      PlanningDraftContent | undefined
+    >();
+    mockedGetDraft.mockReturnValue(promise);
+    const map = createMockMapFactory();
+    const { provider } = createStubRoutingProvider();
+
+    renderPlanningScreen(map, provider);
+    map.triggerLoad();
+    fireEvent.click(screen.getByText("Change"));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Avoid ferries for this draft" }),
+    );
+
+    await act(async () => {
+      resolve(buildDraftContent({ routeName: "Should never appear" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The atomic restore guard covers all four fields — touching only
+    // avoidFerries must still block the whole restore, not merely skip
+    // re-applying avoidFerries while still restoring waypoints/routeName.
+    expect(screen.queryByDisplayValue("Should never appear")).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue("Planned route")).toBeInTheDocument();
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+    expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+  });
+
   it("applies the Settings avoid-ferries default even when a waypoint edit lands before the fresh-session preferences read resolves", async () => {
     mockedGetDraft.mockResolvedValueOnce(undefined);
     const { promise: preferencesPromise, resolve: resolvePreferences } =
-      createControlledPromise<{ avoidFerriesByDefault: boolean }>();
+      createControlledPromise<{
+        avoidFerriesByDefault: boolean;
+        profileByDefault: "cycling-road" | "cycling-regular";
+      }>();
     mockedGetPlanningPreferences.mockReturnValue(preferencesPromise);
     const map = createMockMapFactory();
     const { provider } = createStubRoutingProvider();
@@ -452,13 +494,20 @@ describe("PlanningScreen draft hydration lifecycle", () => {
     map.triggerMapTap([3, 53]);
 
     await act(async () => {
-      resolvePreferences({ avoidFerriesByDefault: false });
+      resolvePreferences({
+        avoidFerriesByDefault: false,
+        profileByDefault: "cycling-regular",
+      });
       await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(screen.getByText(/Ferries: allowed for this plan/i)).toBeInTheDocument();
+    // Both untouched Settings defaults still seed, since a waypoint edit
+    // never gates the fresh-session branch's profile/avoidFerries checks.
+    expect(
+      screen.getByText(/Routing: General cycling · Ferries allowed/),
+    ).toBeInTheDocument();
     expect(screen.getAllByRole("listitem")).toHaveLength(1);
     // The waypoint placed before hydration finished must never be framed —
     // this is a genuinely fresh session (no draft), so no restore ever
@@ -467,9 +516,110 @@ describe("PlanningScreen draft hydration lifecycle", () => {
     expect(map.fitBoundsSpy).not.toHaveBeenCalled();
   });
 
+  it("editing only the current-draft profile before the fresh-session preferences read resolves still lets the untouched ferry default seed", async () => {
+    mockedGetDraft.mockResolvedValueOnce(undefined);
+    const { promise: preferencesPromise, resolve: resolvePreferences } =
+      createControlledPromise<{
+        avoidFerriesByDefault: boolean;
+        profileByDefault: "cycling-road" | "cycling-regular";
+      }>();
+    mockedGetPlanningPreferences.mockReturnValue(preferencesPromise);
+    const map = createMockMapFactory();
+    const { provider } = createStubRoutingProvider();
+
+    renderPlanningScreen(map, provider);
+    map.triggerLoad();
+    fireEvent.click(screen.getByText("Change"));
+    fireEvent.click(screen.getByRole("button", { name: "General cycling" }));
+
+    await act(async () => {
+      resolvePreferences({
+        avoidFerriesByDefault: false,
+        profileByDefault: "cycling-road",
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The rider's own profile choice (General cycling) survives, but the
+    // untouched ferry default (allowed) still seeds from the resolved
+    // preferences.
+    expect(
+      screen.getByText(/Routing: General cycling · Ferries allowed/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "General cycling" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("editing only the current-draft ferries checkbox before the fresh-session preferences read resolves still lets the untouched profile default seed", async () => {
+    mockedGetDraft.mockResolvedValueOnce(undefined);
+    const { promise: preferencesPromise, resolve: resolvePreferences } =
+      createControlledPromise<{
+        avoidFerriesByDefault: boolean;
+        profileByDefault: "cycling-road" | "cycling-regular";
+      }>();
+    mockedGetPlanningPreferences.mockReturnValue(preferencesPromise);
+    const map = createMockMapFactory();
+    const { provider } = createStubRoutingProvider();
+
+    renderPlanningScreen(map, provider);
+    map.triggerLoad();
+    fireEvent.click(screen.getByText("Change"));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Avoid ferries for this draft" }),
+    );
+
+    await act(async () => {
+      resolvePreferences({
+        avoidFerriesByDefault: true,
+        profileByDefault: "cycling-regular",
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The rider's own ferries choice (unchecked -> allowed) survives, but
+    // the untouched profile default (General cycling) still seeds from the
+    // resolved preferences.
+    expect(
+      screen.getByText(/Routing: General cycling · Ferries allowed/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Avoid ferries for this draft" }),
+    ).not.toBeChecked();
+  });
+
+  it("a getPlanningPreferences rejection on a fresh session leaves profile/avoidFerries at their safe fallback values and still reaches ready", async () => {
+    mockedGetDraft.mockResolvedValueOnce(undefined);
+    mockedGetPlanningPreferences.mockRejectedValueOnce(new Error("boom"));
+    const map = createMockMapFactory();
+    const { provider } = createStubRoutingProvider();
+
+    renderPlanningScreen(map, provider);
+    map.triggerLoad();
+    await flushAsync();
+
+    // Safe fallbacks: Road bike, ferries avoided — the same values the
+    // useState initial defaults, and the Settings default itself, already
+    // resolve to when nothing has been saved.
+    expect(screen.getByText(/Routing: Road bike · Ferries avoided/)).toBeInTheDocument();
+
+    // hydrationStatus still reaches "ready" — autosave is unblocked.
+    map.triggerMapTap([15, 55]);
+    await advancePastDebounce();
+    expect(mockedSaveDraft).toHaveBeenCalledTimes(1);
+  });
+
   it("continues to debounce-save normal edits after hydration completes", async () => {
     mockedGetDraft.mockResolvedValueOnce(undefined);
-    mockedGetPlanningPreferences.mockResolvedValueOnce({ avoidFerriesByDefault: true });
+    mockedGetPlanningPreferences.mockResolvedValueOnce({
+      avoidFerriesByDefault: true,
+      profileByDefault: "cycling-road",
+    });
     const map = createMockMapFactory();
     const { provider } = createStubRoutingProvider();
 

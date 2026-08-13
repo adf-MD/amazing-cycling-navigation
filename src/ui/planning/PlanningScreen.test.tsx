@@ -496,14 +496,22 @@ describe("PlanningScreen", () => {
       screen.getByRole("heading", { level: 2, name: "Waypoints" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 2, name: "Route options" }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByRole("heading", { level: 2, name: "Save or export" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { level: 2, name: "Route overview" }),
     ).toBeNull();
+    // The large "Route options" panel/heading is superseded by the compact
+    // action card (backlog item 36) — it must never reappear.
+    expect(screen.queryByRole("heading", { level: 2, name: "Route options" })).toBeNull();
+    // The action card's Calculate button precedes the Waypoints heading in
+    // actual DOM order.
+    const calculateButton = screen.getByRole("button", { name: /calculate route/i });
+    const waypointsHeading = screen.getByRole("heading", { level: 2, name: "Waypoints" });
+    expect(
+      calculateButton.compareDocumentPosition(waypointsHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("keeps waypoint editing usable without a key, and shows the required notice", async () => {
@@ -2831,9 +2839,10 @@ describe("PlanningScreen", () => {
     });
     expect(screen.getByRole("button", { name: "Waypoint 2" })).toBeInTheDocument();
     expect(screen.getByLabelText("Route name")).toHaveValue("Planned route");
-    // Restored draft: avoidFerries comes from mapping.ts's pre-existing
-    // `?? true` legacy default, never from the Settings default.
-    expect(screen.getByText(/Ferries: avoided for this plan/i)).toBeInTheDocument();
+    // Restored draft: avoidFerries/profile come from mapping.ts's
+    // pre-existing legacy defaults (true/cycling-road), never from the
+    // Settings default.
+    expect(screen.getByText(/Routing: Road bike · Ferries avoided/)).toBeInTheDocument();
   });
 
   it("route name persists into the draft and survives a reload", async () => {
@@ -2872,7 +2881,10 @@ describe("PlanningScreen", () => {
   });
 
   it("a genuinely fresh draft (no prior draft row) seeds avoidFerries from the current Settings default", async () => {
-    await savePlanningPreferences({ avoidFerriesByDefault: false });
+    await savePlanningPreferences({
+      avoidFerriesByDefault: false,
+      profileByDefault: "cycling-road",
+    });
     const map = createMockMapFactory();
     render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
     map.triggerLoad();
@@ -2881,12 +2893,17 @@ describe("PlanningScreen", () => {
     map.triggerMapTap([0.01, 51]);
 
     await waitFor(() => {
-      expect(screen.getByText(/Ferries: allowed for this plan/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Routing: Road bike · Ferries allowed/),
+      ).toBeInTheDocument();
     });
   });
 
   it("treats an existing empty-waypoints draft row as genuinely fresh for ferry-default seeding", async () => {
-    await savePlanningPreferences({ avoidFerriesByDefault: false });
+    await savePlanningPreferences({
+      avoidFerriesByDefault: false,
+      profileByDefault: "cycling-road",
+    });
     await db.planningDrafts.put({
       id: "draft",
       waypoints: [],
@@ -2900,12 +2917,17 @@ describe("PlanningScreen", () => {
     map.triggerMapTap([0.01, 51]);
 
     await waitFor(() => {
-      expect(screen.getByText(/Ferries: allowed for this plan/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Routing: Road bike · Ferries allowed/),
+      ).toBeInTheDocument();
     });
   });
 
   it("a fresh draft keeps its seeded value even after the Settings default later changes and the app reloads", async () => {
-    await savePlanningPreferences({ avoidFerriesByDefault: false });
+    await savePlanningPreferences({
+      avoidFerriesByDefault: false,
+      profileByDefault: "cycling-road",
+    });
     const map = createMockMapFactory();
     const { unmount } = render(
       <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
@@ -2916,7 +2938,9 @@ describe("PlanningScreen", () => {
     map.triggerMapTap([0.01, 51]);
 
     await waitFor(() => {
-      expect(screen.getByText(/Ferries: allowed for this plan/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Routing: Road bike · Ferries allowed/),
+      ).toBeInTheDocument();
     });
     await waitFor(
       async () => {
@@ -2927,19 +2951,27 @@ describe("PlanningScreen", () => {
     );
     unmount();
 
-    await savePlanningPreferences({ avoidFerriesByDefault: true });
+    await savePlanningPreferences({
+      avoidFerriesByDefault: true,
+      profileByDefault: "cycling-road",
+    });
 
     const map2 = createMockMapFactory();
     render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map2.factory} />);
     map2.triggerLoad();
 
     await waitFor(() => {
-      expect(screen.getByText(/Ferries: allowed for this plan/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Routing: Road bike · Ferries allowed/),
+      ).toBeInTheDocument();
     });
   });
 
   it("changing the Settings ferry default afterwards leaves an already-restored draft, its policy, and routing untouched", async () => {
-    await savePlanningPreferences({ avoidFerriesByDefault: true });
+    await savePlanningPreferences({
+      avoidFerriesByDefault: true,
+      profileByDefault: "cycling-road",
+    });
     await saveDraft({
       waypoints: [
         { id: "a", coordinate: [0, 51] },
@@ -2961,47 +2993,39 @@ describe("PlanningScreen", () => {
     map.triggerLoad();
 
     await waitFor(() => {
-      expect(screen.getByText(/Ferries: avoided for this plan/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Routing: Road bike · Ferries avoided/),
+      ).toBeInTheDocument();
     });
     const callCountBefore = calculateRouteSpy.mock.calls.length;
 
-    await savePlanningPreferences({ avoidFerriesByDefault: false });
+    await savePlanningPreferences({
+      avoidFerriesByDefault: false,
+      profileByDefault: "cycling-regular",
+    });
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    expect(screen.getByText(/Ferries: avoided for this plan/i)).toBeInTheDocument();
+    expect(screen.getByText(/Routing: Road bike · Ferries avoided/)).toBeInTheDocument();
     const draft = await getDraft();
     expect(draft?.avoidFerries).toBe(true);
+    expect(draft?.profile).toBe("cycling-road");
     expect(calculateRouteSpy.mock.calls.length).toBe(callCountBefore);
   });
 
-  it("no longer exposes an editable Avoid ferries checkbox, and reports the draft's ferry policy as read-only text", async () => {
+  it("exposes an editable Avoid ferries checkbox for the current draft, inside the Change disclosure", async () => {
     const map = createMockMapFactory();
     render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
     map.triggerLoad();
 
     await waitFor(() => {
       expect(
-        screen.getByText(/Ferries: (avoided|allowed) for this plan/i),
+        screen.getByText(/Routing: Road bike · Ferries (avoided|allowed)/),
       ).toBeInTheDocument();
     });
-    expect(screen.queryByLabelText("Avoid ferries")).toBeNull();
-    expect(screen.queryByRole("checkbox", { name: /avoid ferries/i })).toBeNull();
-  });
-
-  it("the ferry-policy readout's Change default in Settings action calls onNavigateToSettings", async () => {
-    const handleNavigate = vi.fn();
-    const user = userEvent.setup();
-    const map = createMockMapFactory();
-    render(
-      <PlanningScreen onNavigateToSettings={handleNavigate} mapFactory={map.factory} />,
-    );
-    map.triggerLoad();
-
-    await user.click(
-      await screen.findByRole("button", { name: "Change default in Settings" }),
-    );
-
-    expect(handleNavigate).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByText("Change"));
+    expect(
+      screen.getByRole("checkbox", { name: "Avoid ferries for this draft" }),
+    ).toBeInTheDocument();
   });
 
   describe("cycling profile selector", () => {
@@ -3025,8 +3049,9 @@ describe("PlanningScreen", () => {
       const map = createMockMapFactory();
       render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
       map.triggerLoad();
+      fireEvent.click(screen.getByText("Change"));
 
-      const group = screen.getByRole("group", { name: "Cycling profile" });
+      const group = screen.getByRole("group", { name: "Cycling profile for this draft" });
       const roadBikeButton = within(group).getByRole("button", { name: "Road bike" });
       const generalCyclingButton = within(group).getByRole("button", {
         name: "General cycling",
@@ -3047,6 +3072,7 @@ describe("PlanningScreen", () => {
       const map = createMockMapFactory();
       render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
       map.triggerLoad();
+      await user.click(screen.getByText("Change"));
 
       await user.click(screen.getByRole("button", { name: "General cycling" }));
 
@@ -3091,6 +3117,7 @@ describe("PlanningScreen", () => {
           />,
         );
         map.triggerLoad();
+        await user.click(screen.getByText("Change"));
 
         await addWaypointViaCrosshair(map, user, [0, 51]);
         await addWaypointViaCrosshair(map, user, [0.01, 51]);
@@ -3171,6 +3198,7 @@ describe("PlanningScreen", () => {
           />,
         );
         map.triggerLoad();
+        await user.click(screen.getByText("Change"));
 
         await addWaypointViaCrosshair(map, user, [0, 51]);
         await addWaypointViaCrosshair(map, user, [0.01, 51]);
@@ -3234,6 +3262,7 @@ describe("PlanningScreen", () => {
       const map = createMockMapFactory();
       render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
       map.triggerLoad();
+      fireEvent.click(screen.getByText("Change"));
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "General cycling" })).toHaveAttribute(
@@ -3259,6 +3288,7 @@ describe("PlanningScreen", () => {
       const map = createMockMapFactory();
       render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
       map.triggerLoad();
+      fireEvent.click(screen.getByText("Change"));
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Road bike" })).toHaveAttribute(
@@ -3274,6 +3304,7 @@ describe("PlanningScreen", () => {
         <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
       );
       map.triggerLoad();
+      fireEvent.click(screen.getByText("Change"));
 
       map.triggerMapTap([0, 51]);
       await waitFor(() => {
@@ -3297,6 +3328,7 @@ describe("PlanningScreen", () => {
       const map2 = createMockMapFactory();
       render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map2.factory} />);
       map2.triggerLoad();
+      fireEvent.click(screen.getByText("Change"));
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "General cycling" })).toHaveAttribute(
@@ -3397,7 +3429,9 @@ describe("PlanningScreen", () => {
         expect(screen.getByRole("button", { name: "Waypoint 4" })).toBeInTheDocument();
       });
       expect(screen.getByLabelText("Route name")).toHaveValue("Weekend loop");
-      expect(screen.getByText(/Ferries: allowed for this plan/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Routing: Road bike · Ferries allowed/),
+      ).toBeInTheDocument();
 
       // 8. No live network request was ever required.
       expect(fetchSpy).not.toHaveBeenCalled();

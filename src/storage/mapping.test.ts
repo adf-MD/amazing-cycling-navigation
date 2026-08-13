@@ -725,28 +725,80 @@ describe("toStoredPlanningDraft / fromStoredPlanningDraft", () => {
 });
 
 describe("toStoredPlanningPreferences / fromStoredPlanningPreferences", () => {
-  it("defaults avoidFerriesByDefault to true when no row has ever been saved", () => {
+  it("defaults avoidFerriesByDefault to true and profileByDefault to cycling-road when no row has ever been saved", () => {
     expect(fromStoredPlanningPreferences(undefined)).toEqual({
       avoidFerriesByDefault: true,
+      profileByDefault: "cycling-road",
     });
   });
 
-  it("round-trips an explicitly saved false value", () => {
-    const stored = toStoredPlanningPreferences({ avoidFerriesByDefault: false });
+  it("round-trips an explicitly saved false ferries value alongside cycling-regular", () => {
+    const stored = toStoredPlanningPreferences({
+      avoidFerriesByDefault: false,
+      profileByDefault: "cycling-regular",
+    });
     const restored = fromStoredPlanningPreferences({ id: "planning", ...stored });
 
-    expect(restored).toEqual({ avoidFerriesByDefault: false });
+    expect(restored).toEqual({
+      avoidFerriesByDefault: false,
+      profileByDefault: "cycling-regular",
+    });
   });
 
-  it("round-trips an explicitly saved true value, distinct from the no-row default", () => {
-    const stored = toStoredPlanningPreferences({ avoidFerriesByDefault: true });
+  it("round-trips an explicitly saved true ferries value alongside cycling-road, distinct from the no-row default", () => {
+    const stored = toStoredPlanningPreferences({
+      avoidFerriesByDefault: true,
+      profileByDefault: "cycling-road",
+    });
     const restored = fromStoredPlanningPreferences({ id: "planning", ...stored });
 
-    expect(restored).toEqual({ avoidFerriesByDefault: true });
+    expect(restored).toEqual({
+      avoidFerriesByDefault: true,
+      profileByDefault: "cycling-road",
+    });
+  });
+
+  it("round-trips every combination of profile and ferry value", () => {
+    for (const profileByDefault of ["cycling-road", "cycling-regular"] as const) {
+      for (const avoidFerriesByDefault of [true, false]) {
+        const stored = toStoredPlanningPreferences({
+          avoidFerriesByDefault,
+          profileByDefault,
+        });
+        const restored = fromStoredPlanningPreferences({ id: "planning", ...stored });
+
+        expect(restored).toEqual({ avoidFerriesByDefault, profileByDefault });
+      }
+    }
+  });
+
+  it("defaults profileByDefault to cycling-road for a legacy row written before that field existed", () => {
+    const legacyRow = { id: "planning" as const, avoidFerriesByDefault: false };
+
+    expect(fromStoredPlanningPreferences(legacyRow)).toEqual({
+      avoidFerriesByDefault: false,
+      profileByDefault: "cycling-road",
+    });
+  });
+
+  it("recovers safely to cycling-road for a corrupt or unrecognised stored profileByDefault value", () => {
+    const corruptRow = {
+      id: "planning" as const,
+      avoidFerriesByDefault: true,
+      profileByDefault: "cycling-mountain",
+    };
+
+    expect(fromStoredPlanningPreferences(corruptRow)).toEqual({
+      avoidFerriesByDefault: true,
+      profileByDefault: "cycling-road",
+    });
   });
 
   it("never includes the row id in the stored shape", () => {
-    const stored = toStoredPlanningPreferences({ avoidFerriesByDefault: false });
+    const stored = toStoredPlanningPreferences({
+      avoidFerriesByDefault: false,
+      profileByDefault: "cycling-road",
+    });
 
     expect(stored).not.toHaveProperty("id");
   });

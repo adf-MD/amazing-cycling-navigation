@@ -196,7 +196,10 @@ async function establishRoutedPlan(
   onRouteSaved?: (route: PlannedRoute) => void,
 ): Promise<{ map: MockMapHandle; route: PlannedRoute; unmount: () => void }> {
   mockedGetDraft.mockResolvedValueOnce(undefined);
-  mockedGetPlanningPreferences.mockResolvedValueOnce({ avoidFerriesByDefault: true });
+  mockedGetPlanningPreferences.mockResolvedValueOnce({
+    avoidFerriesByDefault: true,
+    profileByDefault: "cycling-road",
+  });
   await saveProviderKey("dummy-test-key");
   const map = createMockMapFactory();
   const route = buildRoute();

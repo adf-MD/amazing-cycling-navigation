@@ -44,6 +44,7 @@ import {
   DEFAULT_ROUTING_PROFILE,
   ROUTING_PROFILES,
   describeRoutingProfile,
+  formatRoutingProfileLabel,
 } from "../../routing/routingProfiles.ts";
 import {
   getProviderKey,
@@ -103,6 +104,10 @@ const DRAFT_DEBOUNCE_MS = 900;
  * meaning nothing was read or applied at all. A rider action taken before
  * "ready" jumps straight to it — see noteHydrationOverriddenByUserEdit. */
 type PlanningDraftHydrationStatus = "loading" | "ready" | "failed";
+
+/** The restorable draft fields hydration coordinates rider edits against —
+ * see hasUserModifiedDraftFieldsRef's own doc comment below. */
+type DraftEditableField = "waypoints" | "routeName" | "profile" | "avoidFerries";
 
 /** How close a settled bearing must be to 0° (via
  * shortestAngularDifferenceDegrees, so the 0°/360° wrap is handled
@@ -190,6 +195,20 @@ function describeEditCopyNotice(meta: {
     : "Editable waypoints were estimated from this route. Recalculation may follow different roads. The saved route will remain unchanged.";
 }
 
+/** The always-visible compact routing-preference summary shown beside
+ * Calculate, e.g. "Routing: Road bike · Ferries avoided" — always the
+ * current draft's own live profile/avoidFerries state (editable via the
+ * adjacent Change disclosure), never the Settings default, which only
+ * ever seeds a genuinely fresh draft (see the hydration effect below). */
+function describeCurrentDraftRoutingSummary(
+  profile: RoutingProfile,
+  avoidFerries: boolean,
+): string {
+  return `Routing: ${formatRoutingProfileLabel(profile)} · Ferries ${
+    avoidFerries ? "avoided" : "allowed"
+  }`;
+}
+
 /**
  * Orchestrates waypoint editing, debounced route calculation, draft
  * persistence and save/export — the map's own lifecycle, sources and
@@ -260,22 +279,37 @@ export function PlanningScreen({
     useState<PlanningDraftHydrationStatus>("loading");
   const hydrationGenerationRef = useRef(0);
   const [hydrationRetryToken, setHydrationRetryToken] = useState(0);
-  // Set true by a genuine rider edit to a restorable field (waypoints,
-  // route name or cycling profile) made before hydration has applied a
-  // restored draft — tells the eventual restore (if a real draft exists)
-  // to skip re-applying its fields over what the rider has already
-  // changed, rather than silently overwriting them. Deliberately does NOT
-  // affect the separate genuinely-fresh branch's own avoid-ferries
-  // seeding (see the hydration effect below): that path touches none of
-  // these three fields, so it can never conflict with them, and skipping
-  // it merely because the rider tapped the map first would deny a fast
-  // session its correct Settings default for no data-integrity benefit —
-  // confirmed necessary by real, pre-existing tests that place waypoints
-  // immediately after mount, before any read has had a chance to resolve.
-  // Monotonic: once true, stays true for the rest of this mount's life —
-  // once the rider has taken direct action, no later-arriving restore
-  // (including after a failed hydration's retry) should ever overwrite it.
-  const hasUserModifiedDraftFieldsRef = useRef(false);
+  // Which restorable draft fields (waypoints, route name, cycling profile,
+  // avoid-ferries) have been directly edited by the rider before hydration
+  // applied a result for them. Was a single coarse boolean before backlog
+  // item 36 made avoidFerries directly editable in Planning (alongside the
+  // already-editable profile) — a single flag could no longer serve both
+  // consumers below without either overwriting a rider's choice or
+  // suppressing an unrelated Settings default, so this is now tracked
+  // per-field:
+  //  - The restore branch (below) still gates atomically: ANY field
+  //    touched (waypoints, routeName, profile OR avoidFerries) skips the
+  //    *entire* restore, never applying some stored fields while skipping
+  //    others — "never partially apply stale stored fields" (see that
+  //    branch's own comment).
+  //  - The genuinely-fresh branch (below) gates profile and avoidFerries
+  //    *independently* against the Settings defaults it seeds — editing
+  //    only one must never suppress the untouched other's default. It
+  //    never reads waypoints/routeName at all, so an early waypoint or
+  //    route-name edit can never suppress either Settings default either
+  //    — confirmed necessary by real, pre-existing tests that place
+  //    waypoints immediately after mount, before any read has had a
+  //    chance to resolve.
+  // Each field is monotonic: once true, stays true for the rest of this
+  // mount's life — once the rider has taken direct action on a field, no
+  // later-arriving restore or Settings-default read (including after a
+  // failed hydration's retry) should ever overwrite it.
+  const hasUserModifiedDraftFieldsRef = useRef<Record<DraftEditableField, boolean>>({
+    waypoints: false,
+    routeName: false,
+    profile: false,
+    avoidFerries: false,
+  });
   // Set once by the hydration effect's restore branch to the candidate
   // bounds for a restored/seeded waypoint set's one-time camera fit — a
   // pure geometry value, never itself a decision to actually apply it.
@@ -431,18 +465,23 @@ export function PlanningScreen({
     effectivePendingAction,
   );
 
-  // Records that the rider has taken direct action on a restorable field
+  // Records that the rider has taken direct action on one restorable field
   // (see hasUserModifiedDraftFieldsRef's own doc comment above) — consulted
-  // by the hydration effect's restore branch, never by its fresh-session
-  // branch. Also unblocks autosave immediately if hydration had already
-  // reached a permanent dead end ("failed"): the read already rejected, so
-  // there is no pending promise left to ever move it to "ready" on its
-  // own, and the rider has now started fresh work that deserves saving.
-  // While still "loading", this deliberately leaves hydrationStatus alone
-  // — the in-flight read's own resolution (which consults the ref above)
-  // is what decides the transition to "ready", not this call site.
-  const noteHydrationOverriddenByUserEdit = useCallback(() => {
-    hasUserModifiedDraftFieldsRef.current = true;
+  // by the hydration effect's restore branch (atomically, across all four
+  // fields) and its fresh-session branch (per-field, for profile/
+  // avoidFerries only). Also unblocks autosave immediately if hydration had
+  // already reached a permanent dead end ("failed"): the read already
+  // rejected, so there is no pending promise left to ever move it to
+  // "ready" on its own, and the rider has now started fresh work that
+  // deserves saving. While still "loading", this deliberately leaves
+  // hydrationStatus alone — the in-flight read's own resolution (which
+  // consults the ref above) is what decides the transition to "ready", not
+  // this call site.
+  const noteHydrationOverriddenByUserEdit = useCallback((field: DraftEditableField) => {
+    hasUserModifiedDraftFieldsRef.current = {
+      ...hasUserModifiedDraftFieldsRef.current,
+      [field]: true,
+    };
     setHydrationStatus((current) => (current === "failed" ? "ready" : current));
   }, []);
 
@@ -459,7 +498,7 @@ export function PlanningScreen({
   // requires hydrationStatus to already be "ready".
   const dispatchWaypointAction = useCallback(
     (action: WaypointAction) => {
-      noteHydrationOverriddenByUserEdit();
+      noteHydrationOverriddenByUserEdit("waypoints");
       if (selectedWarningIndex !== null) setSelectedWarningIndex(null);
       if (selectedRouteFeatureId !== null) setSelectedRouteFeatureId(null);
       if (selectedGradientSegment !== null) setSelectedGradientSegment(null);
@@ -598,7 +637,16 @@ export function PlanningScreen({
       .then((draft) => {
         if (hydrationGenerationRef.current !== generation) return;
         if (draft && draft.waypoints.length > 0) {
-          if (!hasUserModifiedDraftFieldsRef.current) {
+          // Atomic across all four restorable fields — see
+          // hasUserModifiedDraftFieldsRef's own doc comment above: any
+          // single field the rider has already touched (waypoints,
+          // routeName, profile OR avoidFerries) skips the *entire*
+          // restore, never applying some stored fields while skipping
+          // others.
+          const hasAnyUserEdit = Object.values(
+            hasUserModifiedDraftFieldsRef.current,
+          ).some(Boolean);
+          if (!hasAnyUserEdit) {
             dispatch({ type: "reset", waypoints: draft.waypoints });
             setRouteName(draft.routeName);
             setAvoidFerries(draft.avoidFerries);
@@ -641,29 +689,40 @@ export function PlanningScreen({
         }
         // Genuinely fresh: no draft row at all, or a draft row with zero
         // waypoints — the exact boundary this effect already used before
-        // the Settings-level ferry default existed, and the same boundary
-        // the debounced autosave effect below relies on (it only ever
-        // writes once state.present is non-empty). Seed this session's
-        // ferries value once from the Settings default; from the draft's
-        // first autosave onward it is fully self-contained, and a later
-        // change to the Settings default never touches it again.
-        // Deliberately unconditional on hasUserModifiedDraftFieldsRef: this
-        // branch never restores waypoints/routeName/profile, so a rider
-        // who has already tapped the map to place a waypoint has nothing
-        // here for that edit to conflict with — confirmed necessary by
-        // pre-existing tests that place waypoints immediately on mount and
-        // still expect the Settings default to apply.
+        // the Settings-level defaults existed, and the same boundary the
+        // debounced autosave effect below relies on (it only ever writes
+        // once state.present is non-empty). Seed this session's profile
+        // and avoidFerries once each from the Settings defaults; from the
+        // draft's first autosave onward it is fully self-contained, and a
+        // later change to either Settings default never touches it again.
+        // Each field is gated independently against
+        // hasUserModifiedDraftFieldsRef, not the object as a whole: the
+        // rider may have already opened the current-draft "Change"
+        // disclosure and touched just one of profile/avoidFerries before
+        // this read resolves, and that must never suppress the untouched
+        // other field's own Settings default. This branch never reads or
+        // restores waypoints/routeName, so an early waypoint or
+        // route-name edit can never suppress either default either —
+        // confirmed necessary by pre-existing tests that place waypoints
+        // immediately on mount and still expect the Settings defaults to
+        // apply.
         getPlanningPreferences()
           .then((preferences) => {
             if (hydrationGenerationRef.current !== generation) return;
-            setAvoidFerries(preferences.avoidFerriesByDefault);
+            if (!hasUserModifiedDraftFieldsRef.current.profile) {
+              setProfile(preferences.profileByDefault);
+            }
+            if (!hasUserModifiedDraftFieldsRef.current.avoidFerries) {
+              setAvoidFerries(preferences.avoidFerriesByDefault);
+            }
           })
           .catch((error: unknown) => {
             logError("planning-load-preferences", error);
-            // Leaves avoidFerries at its useState(true) initial value —
-            // the same value the Settings default itself resolves to
-            // when nothing has been saved, so a failed read here is
-            // never observably different from the ordinary case.
+            // Leaves profile/avoidFerries at their useState initial values
+            // (DEFAULT_ROUTING_PROFILE, true) — the same values the
+            // Settings defaults themselves resolve to when nothing has
+            // been saved, so a failed read here is never observably
+            // different from the ordinary case.
           })
           .finally(() => {
             if (hydrationGenerationRef.current === generation) {
@@ -1311,127 +1370,46 @@ export function PlanningScreen({
         </div>
       </div>
 
-      <div role="group" aria-label="Waypoint actions" className="row planning-section">
-        <button
-          type="button"
-          onClick={() => {
-            dispatchWaypointAction({ type: "undo" });
-          }}
-          disabled={state.past.length === 0}
-        >
-          Undo
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            dispatchWaypointAction({ type: "redo" });
-          }}
-          disabled={state.future.length === 0}
-        >
-          Redo
-        </button>
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => {
-            dispatchWaypointAction({ type: "returnToStart" });
-          }}
-          disabled={!canReturnToStart}
-        >
-          Return to start
-        </button>
-        {state.selectedWaypointId ? (
+      <div className="panel stack planning-section">
+        <div role="group" aria-label="Waypoint actions" className="row">
           <button
             type="button"
             onClick={() => {
-              dispatchWaypointAction({ type: "select", waypointId: null });
+              dispatchWaypointAction({ type: "undo" });
             }}
+            disabled={state.past.length === 0}
           >
-            Add to end
+            Undo
           </button>
-        ) : null}
-      </div>
-
-      <div className="stack planning-section">
-        <h2>Waypoints</h2>
-        <WaypointList
-          waypoints={state.present}
-          waypointRoles={waypointRoles}
-          interactionMode={interactionMode}
-          onSelect={(waypointId) => {
-            // Tapping the already-selected waypoint again deselects it —
-            // but only when no relocation is active for it, mirroring
-            // Move/Insert-after's own toggle idiom above. Suspending on
-            // effectivePendingAction (rather than pendingWaypointAction
-            // directly) keeps this consistent with interactionMode's own
-            // derivation: a stale pending action for a waypoint that is no
-            // longer selected already reads as "no relocation active"
-            // everywhere else in this file.
-            const shouldDeselect =
-              effectivePendingAction === null && waypointId === state.selectedWaypointId;
-            dispatchWaypointAction({
-              type: "select",
-              waypointId: shouldDeselect ? null : waypointId,
-            });
-          }}
-          onStartMove={handleStartMove}
-          onStartInsertAfter={handleStartInsertAfter}
-          onMoveUp={(waypointId) => {
-            const index = state.present.findIndex((w) => w.id === waypointId);
-            dispatchWaypointAction({ type: "reorder", waypointId, toIndex: index - 1 });
-          }}
-          onMoveDown={(waypointId) => {
-            const index = state.present.findIndex((w) => w.id === waypointId);
-            dispatchWaypointAction({ type: "reorder", waypointId, toIndex: index + 1 });
-          }}
-          onDelete={(waypointId) => {
-            dispatchWaypointAction({ type: "delete", waypointId });
-          }}
-        />
-      </div>
-
-      <div className="panel stack planning-section">
-        <h2>Route options</h2>
-
-        <div>
-          <div
-            role="group"
-            aria-label="Cycling profile"
-            className="cycling-profile-group"
+          <button
+            type="button"
+            onClick={() => {
+              dispatchWaypointAction({ type: "redo" });
+            }}
+            disabled={state.future.length === 0}
           >
-            {ROUTING_PROFILES.map((metadata) => {
-              const isSelected = profile === metadata.value;
-              return (
-                <button
-                  key={metadata.value}
-                  type="button"
-                  className={
-                    isSelected
-                      ? "cycling-profile-button is-selected"
-                      : "cycling-profile-button"
-                  }
-                  aria-pressed={isSelected}
-                  onClick={() => {
-                    noteHydrationOverriddenByUserEdit();
-                    setProfile(metadata.value);
-                  }}
-                >
-                  {metadata.label}
-                </button>
-              );
-            })}
-          </div>
-          <p className="field-hint">{describeRoutingProfile(profile)}</p>
-        </div>
-
-        <div className="row">
-          <p className="field-hint">
-            Ferries: {avoidFerries ? "avoided for this plan" : "allowed for this plan"}.
-            Set when this plan was created.
-          </p>
-          <button type="button" className="btn-secondary" onClick={onNavigateToSettings}>
-            Change default in Settings
+            Redo
           </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              dispatchWaypointAction({ type: "returnToStart" });
+            }}
+            disabled={!canReturnToStart}
+          >
+            Return to start
+          </button>
+          {state.selectedWaypointId ? (
+            <button
+              type="button"
+              onClick={() => {
+                dispatchWaypointAction({ type: "select", waypointId: null });
+              }}
+            >
+              Add to end
+            </button>
+          ) : null}
         </div>
 
         <div className="planning-calculate-actions">
@@ -1477,6 +1455,100 @@ export function PlanningScreen({
             </p>
           </details>
         </div>
+
+        <div className="row">
+          <p className="field-hint">
+            {describeCurrentDraftRoutingSummary(profile, avoidFerries)}
+          </p>
+          <details className="settings-disclosure">
+            <summary>Change</summary>
+            <div className="stack">
+              <div>
+                <div
+                  role="group"
+                  aria-label="Cycling profile for this draft"
+                  className="cycling-profile-group"
+                >
+                  {ROUTING_PROFILES.map((metadata) => {
+                    const isSelected = profile === metadata.value;
+                    return (
+                      <button
+                        key={metadata.value}
+                        type="button"
+                        className={
+                          isSelected
+                            ? "cycling-profile-button is-selected"
+                            : "cycling-profile-button"
+                        }
+                        aria-pressed={isSelected}
+                        onClick={() => {
+                          noteHydrationOverriddenByUserEdit("profile");
+                          setProfile(metadata.value);
+                        }}
+                      >
+                        {metadata.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="field-hint">{describeRoutingProfile(profile)}</p>
+              </div>
+              <label className="setting-row" htmlFor="planning-avoid-ferries-checkbox">
+                <input
+                  id="planning-avoid-ferries-checkbox"
+                  type="checkbox"
+                  className="setting-row-checkbox"
+                  checked={avoidFerries}
+                  onChange={(event) => {
+                    noteHydrationOverriddenByUserEdit("avoidFerries");
+                    setAvoidFerries(event.target.checked);
+                  }}
+                />
+                <span className="setting-row-text">
+                  <span className="setting-row-title">Avoid ferries for this draft</span>
+                </span>
+              </label>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <div className="stack planning-section">
+        <h2>Waypoints</h2>
+        <WaypointList
+          waypoints={state.present}
+          waypointRoles={waypointRoles}
+          interactionMode={interactionMode}
+          onSelect={(waypointId) => {
+            // Tapping the already-selected waypoint again deselects it —
+            // but only when no relocation is active for it, mirroring
+            // Move/Insert-after's own toggle idiom above. Suspending on
+            // effectivePendingAction (rather than pendingWaypointAction
+            // directly) keeps this consistent with interactionMode's own
+            // derivation: a stale pending action for a waypoint that is no
+            // longer selected already reads as "no relocation active"
+            // everywhere else in this file.
+            const shouldDeselect =
+              effectivePendingAction === null && waypointId === state.selectedWaypointId;
+            dispatchWaypointAction({
+              type: "select",
+              waypointId: shouldDeselect ? null : waypointId,
+            });
+          }}
+          onStartMove={handleStartMove}
+          onStartInsertAfter={handleStartInsertAfter}
+          onMoveUp={(waypointId) => {
+            const index = state.present.findIndex((w) => w.id === waypointId);
+            dispatchWaypointAction({ type: "reorder", waypointId, toIndex: index - 1 });
+          }}
+          onMoveDown={(waypointId) => {
+            const index = state.present.findIndex((w) => w.id === waypointId);
+            dispatchWaypointAction({ type: "reorder", waypointId, toIndex: index + 1 });
+          }}
+          onDelete={(waypointId) => {
+            dispatchWaypointAction({ type: "delete", waypointId });
+          }}
+        />
       </div>
 
       {routing.state.kind === "routed" ? (
@@ -1512,7 +1584,7 @@ export function PlanningScreen({
             className="field-input"
             value={routeName}
             onChange={(event) => {
-              noteHydrationOverriddenByUserEdit();
+              noteHydrationOverriddenByUserEdit("routeName");
               setRouteName(event.target.value);
             }}
           />

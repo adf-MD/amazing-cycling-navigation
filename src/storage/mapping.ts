@@ -261,17 +261,21 @@ export function fromStoredPlanningDraft(
   };
 }
 
-/** Settings' persisted Route-planning defaults, resolved for use — unlike
- * PlanningDraftContent's asymmetric fields, this has exactly one field
- * today, so one shared shape is enough for both directions. */
+/** Settings' persisted Route-planning defaults, resolved for use — both
+ * fields resolve to a concrete value regardless of whether a row exists or
+ * which fields it happens to carry (see fromStoredPlanningPreferences). */
 export interface PlanningPreferences {
   avoidFerriesByDefault: boolean;
+  profileByDefault: RoutingProfile;
 }
 
 export function toStoredPlanningPreferences(
   preferences: PlanningPreferences,
 ): Omit<StoredPlanningPreferences, "id"> {
-  return { avoidFerriesByDefault: preferences.avoidFerriesByDefault };
+  return {
+    avoidFerriesByDefault: preferences.avoidFerriesByDefault,
+    profileByDefault: preferences.profileByDefault,
+  };
 }
 
 /**
@@ -280,12 +284,22 @@ export function toStoredPlanningPreferences(
  * itself the settled, meaningful default state for this preference (a new
  * installation, or an installation upgrading from a schema version before
  * this table existed) — so this accepts the possibly-absent row directly
- * and always resolves it to a concrete value.
+ * and always resolves it to a concrete value. profileByDefault uses a real
+ * validity check (isRoutingProfile), not a bare `??`, mirroring
+ * fromStoredPlanningDraft's own profile handling — a corrupt or
+ * future-unknown stored string, or a row written before this field
+ * existed, must never flow through to the routing adapter.
  */
 export function fromStoredPlanningPreferences(
   stored: StoredPlanningPreferences | undefined,
 ): PlanningPreferences {
-  return { avoidFerriesByDefault: stored?.avoidFerriesByDefault ?? true };
+  const profileByDefault = stored?.profileByDefault;
+  return {
+    avoidFerriesByDefault: stored?.avoidFerriesByDefault ?? true,
+    profileByDefault: isRoutingProfile(profileByDefault)
+      ? profileByDefault
+      : DEFAULT_ROUTING_PROFILE,
+  };
 }
 
 /** The Route Library screen's persisted sort choice. "Most recent" keeps

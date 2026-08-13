@@ -121,11 +121,22 @@ export interface StoredPlanningDraft {
  * never a live, retroactively-applied switch (see
  * planningPreferencesRepository.ts and PlanningScreen.tsx's draft-
  * hydration effect). A new table, not a plain field on an existing row,
- * so it needs the version(3) bump below.
+ * so it needs the version(3) bump below. profileByDefault was added later
+ * (backlog item 36) as a plain, non-indexed field — the same additive,
+ * no-version-bump convention as planningDrafts' own routeName/avoidFerries/
+ * profile fields.
  */
 export interface StoredPlanningPreferences {
   id: "planning";
   avoidFerriesByDefault: boolean;
+  /** The rider's default cycling profile for a genuinely fresh Planning
+   * draft. Optional/non-indexed for the same reason as avoidFerriesByDefault
+   * — a plain string, not RoutingProfile, at this storage boundary (Dexie
+   * never validates stored data); mapping.ts's fromStoredPlanningPreferences
+   * is where a corrupt/unrecognised value is rejected and defaulted to
+   * DEFAULT_ROUTING_PROFILE. Absent on every row written before this field
+   * existed. */
+  profileByDefault?: string;
 }
 
 /**

@@ -1,4 +1,5 @@
-import { useCallback, useState, type SubmitEvent } from "react";
+import { useCallback, useRef, useState, type SubmitEvent } from "react";
+import type { RoutingProfile } from "../../domain/types.ts";
 import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
 import { useOnlineStatus } from "../../platform/onlineStatus.ts";
 import { logError } from "../../platform/errorLog.ts";
@@ -13,6 +14,11 @@ import {
   getPlanningPreferences,
   savePlanningPreferences,
 } from "../../storage/planningPreferencesRepository.ts";
+import {
+  DEFAULT_ROUTING_PROFILE,
+  ROUTING_PROFILES,
+  describeRoutingProfile,
+} from "../../routing/routingProfiles.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
 import { describeProviderKeyStatus } from "./providerKeyStatus.ts";
@@ -38,12 +44,19 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
   const [pendingDelete, setPendingDelete] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // avoidFerriesByDefault is undefined both while the live query is still
-  // loading and when no preferences row has ever been saved — resolved to
-  // the app's own documented default (true) either way, matching
-  // fromStoredPlanningPreferences's own no-row default.
+  // avoidFerriesByDefault/profileByDefault are undefined both while the
+  // live query is still loading and when no preferences row has ever been
+  // saved — resolved to the app's own documented defaults (true,
+  // DEFAULT_ROUTING_PROFILE) either way, matching
+  // fromStoredPlanningPreferences's own no-row/legacy-row defaults.
   const avoidFerriesByDefault = preferences?.avoidFerriesByDefault ?? true;
+  const profileByDefault = preferences?.profileByDefault ?? DEFAULT_ROUTING_PROFILE;
   const [isSavingPreferences, setIsSavingPreferences] = useState(false);
+  // Synchronous duplicate-submission guard, mirroring isSavingRef/
+  // isLocatingRef elsewhere in this codebase — a React state check alone
+  // isn't synchronous enough to block a rapid second click/tap before the
+  // disabled attribute has actually committed to the DOM.
+  const isSavingPreferencesRef = useRef(false);
   const [preferencesError, setPreferencesError] = useState<string | null>(null);
 
   const handleSave = (event: SubmitEvent) => {
@@ -88,29 +101,57 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
   };
 
   /**
-   * The checkbox's checked state is always bound directly to
-   * avoidFerriesByDefault, itself derived from the live-query-resolved
-   * persisted value — never a separate optimistic local flag. A save in
-   * flight, or one that fails, can therefore never make the control
-   * appear to have already succeeded: the DOM only changes once the write
-   * has actually committed and the liveQuery subscription re-emits. No
-   * revert-on-failure logic is needed, since nothing is ever mutated
-   * locally ahead of the write landing.
+   * Both controls' state is always bound directly to
+   * avoidFerriesByDefault/profileByDefault, themselves derived from the
+   * live-query-resolved persisted value — never a separate optimistic
+   * local flag. A save in flight, or one that fails, can therefore never
+   * make either control appear to have already succeeded: the DOM only
+   * changes once the write has actually committed and the liveQuery
+   * subscription re-emits. No revert-on-failure logic is needed, since
+   * nothing is ever mutated locally ahead of the write landing.
+   *
+   * Shared by both controls (rather than one handler per field) so a
+   * write always carries the *complete* resolved preferences object —
+   * savePlanningPreferences does a full put, not a merge, so writing only
+   * the field that changed would silently reset the other one back to
+   * whatever it happened to default to. isSavingPreferencesRef also
+   * serialises the two controls against each other: a click on either one
+   * while the other's write is still in flight is a no-op, which is what
+   * actually prevents two overlapping writes from clobbering one another
+   * (each capturing the *other* field's pre-write value in its own
+   * closure). Both controls are additionally disabled via isSavingPreferences
+   * while a write is in flight, so this is belt-and-braces once React has
+   * had a chance to re-render.
    */
-  const handleToggleAvoidFerriesByDefault = (checked: boolean) => {
+  const savePreferences = (next: {
+    avoidFerriesByDefault: boolean;
+    profileByDefault: RoutingProfile;
+  }) => {
+    if (isSavingPreferencesRef.current) return;
+    isSavingPreferencesRef.current = true;
     setPreferencesError(null);
     setIsSavingPreferences(true);
-    savePlanningPreferences({ avoidFerriesByDefault: checked })
+    savePlanningPreferences(next)
       .then(() => {
+        isSavingPreferencesRef.current = false;
         setIsSavingPreferences(false);
       })
       .catch((error: unknown) => {
         logError("settings-save-planning-preferences", error);
+        isSavingPreferencesRef.current = false;
         setIsSavingPreferences(false);
         setPreferencesError(
           "This preference could not be saved on this device. Try again.",
         );
       });
+  };
+
+  const handleToggleAvoidFerriesByDefault = (checked: boolean) => {
+    savePreferences({ avoidFerriesByDefault: checked, profileByDefault });
+  };
+
+  const handleChangeDefaultProfile = (nextProfile: RoutingProfile) => {
+    savePreferences({ avoidFerriesByDefault, profileByDefault: nextProfile });
   };
 
   // key is undefined both while the live query is still loading and when
@@ -133,6 +174,41 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
 
       <section className="panel stack" aria-labelledby="route-planning-heading">
         <h2 id="route-planning-heading">Route planning</h2>
+
+        <div className="stack">
+          <p className="setting-row-title" id="default-cycling-profile-heading">
+            Default cycling profile
+          </p>
+          <div
+            role="group"
+            aria-labelledby="default-cycling-profile-heading"
+            className="cycling-profile-group"
+          >
+            {ROUTING_PROFILES.map((metadata) => {
+              const isSelected = profileByDefault === metadata.value;
+              return (
+                <button
+                  key={metadata.value}
+                  type="button"
+                  className={
+                    isSelected
+                      ? "cycling-profile-button is-selected"
+                      : "cycling-profile-button"
+                  }
+                  aria-pressed={isSelected}
+                  disabled={isSavingPreferences}
+                  onClick={() => {
+                    handleChangeDefaultProfile(metadata.value);
+                  }}
+                >
+                  {metadata.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="field-hint">{describeRoutingProfile(profileByDefault)}</p>
+        </div>
+
         <label className="setting-row" htmlFor="avoid-ferries-default-checkbox">
           <input
             id="avoid-ferries-default-checkbox"
@@ -147,6 +223,7 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
             // technology announces the control's name.
             aria-label="Avoid ferries by default"
             checked={avoidFerriesByDefault}
+            disabled={isSavingPreferences}
             onChange={(event) => {
               handleToggleAvoidFerriesByDefault(event.target.checked);
             }}

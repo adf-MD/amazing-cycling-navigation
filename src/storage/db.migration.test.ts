@@ -280,3 +280,36 @@ describe("planningDrafts editCopySourceRouteId/editCopyWaypointsOrigin (no schem
     db.close();
   });
 });
+
+describe("planningPreferences profileByDefault (no schema version bump)", () => {
+  it("a legacy planningPreferences row written before profileByDefault existed loads cleanly", async () => {
+    // Simulates a real installation whose planningPreferences row predates
+    // backlog item 36 — the schema itself (planningPreferences: "id") is
+    // unchanged, so this is a plain field addition, not a new Dexie
+    // version; no upgrade path is exercised here at all.
+    const db = new AcnDatabase(TEST_DB_NAME);
+    await db.open();
+    await db.planningPreferences.put({ id: "planning", avoidFerriesByDefault: false });
+
+    const stored = await db.planningPreferences.get("planning");
+    expect(stored).not.toHaveProperty("profileByDefault");
+
+    db.close();
+  });
+
+  it("round-trips a planningPreferences row with profileByDefault set", async () => {
+    const db = new AcnDatabase(TEST_DB_NAME);
+    await db.open();
+    await db.planningPreferences.put({
+      id: "planning",
+      avoidFerriesByDefault: false,
+      profileByDefault: "cycling-regular",
+    });
+
+    await expect(db.planningPreferences.get("planning")).resolves.toMatchObject({
+      profileByDefault: "cycling-regular",
+    });
+
+    db.close();
+  });
+});
