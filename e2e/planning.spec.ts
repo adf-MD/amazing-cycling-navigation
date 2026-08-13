@@ -1198,6 +1198,210 @@ test.describe("phone viewport", () => {
     expect(consoleErrors).toEqual([]);
   });
 
+  // Corrective follow-up to item 34: the 3-column .waypoint-row-main grid
+  // (above) proved Delete never wraps, but real iPhone testing after that
+  // fix found a second, narrower defect the 12-waypoint fixture above
+  // never exercised — inside column 1 (.waypoint-row-select), "Waypoint
+  // 10"'s own label wrapped onto two lines specifically when ordinal 10
+  // was an endpoint badge (white .waypoint-row-ordinal--finish or green
+  // --start-finish, border: 3px solid) but not as an ordinary intermediate
+  // waypoint (border: 2px solid). This test proves all three roles ordinal
+  // 10 can hold stay single-line: closed-loop start-finish (via Return to
+  // start), open-route finish (a genuinely new 10th waypoint after Undo),
+  // and ordinary (once an 11th waypoint bumps it inward) — plus that the
+  // label's own left edge lands at the same x position regardless of role,
+  // proving the fixed badge slot. Never contacts OpenRouteService: map
+  // taps, Return to start and Undo are all local waypointHistoryReducer
+  // operations, and Calculate route is never clicked.
+  test("phone layout: ordinal 10's label stays single-line as start-finish, finish and ordinary badge roles", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Plan" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    await expect(mapContainer.locator("canvas")).toBeVisible();
+
+    // 9 distinct waypoints via direct map taps — a subset of the item-34
+    // test's own proven-safe tap grid, clear of .planning-map-controls
+    // (top:8px right:8px, ~48px wide).
+    const TAP_X_POSITIONS = [40, 110, 180];
+    const TAP_Y_POSITIONS = [60, 110, 160];
+    let waypointCount = 0;
+    for (const y of TAP_Y_POSITIONS) {
+      for (const x of TAP_X_POSITIONS) {
+        await mapContainer.click({ position: { x, y } });
+        waypointCount += 1;
+        const label = waypointCount === 1 ? "Start" : `Waypoint ${String(waypointCount)}`;
+        await expect(
+          page.getByRole("button", { name: label, exact: true }),
+        ).toBeVisible();
+      }
+    }
+    expect(waypointCount).toBe(9);
+
+    async function assertOrdinalTenRoleClass(
+      role: "start-finish" | "finish" | "ordinary",
+    ): Promise<void> {
+      const badge = page
+        .getByRole("button", { name: "Waypoint 10", exact: true })
+        .locator(".waypoint-row-ordinal");
+      if (role === "ordinary") {
+        await expect(badge).toHaveClass("waypoint-row-ordinal");
+      } else {
+        await expect(badge).toHaveClass(new RegExp(`waypoint-row-ordinal--${role}`));
+      }
+    }
+
+    // Single-line + containment + same-vertical-band + touch-target proof
+    // for "Waypoint 10", mirroring the item-34 test's own
+    // assertSingleRowGeometry above — duplicated locally rather than
+    // shared, per this file's established precedent (see isFullyWithin's
+    // own comment). Returns .waypoint-row-label's own left edge (x),
+    // collected by the caller to prove the badge-slot-centred requirement
+    // across all three role states.
+    async function assertOrdinalTenSingleLine(): Promise<number> {
+      const rowName = "Waypoint 10";
+      const rowMain = page
+        .locator(".waypoint-row-main")
+        .filter({ has: page.getByRole("button", { name: rowName, exact: true }) });
+      const selectButton = page.getByRole("button", { name: rowName, exact: true });
+      const label = selectButton.locator(".waypoint-row-label");
+      const startLabel = page
+        .getByRole("button", { name: "Start", exact: true })
+        .locator(".waypoint-row-label");
+      const moveUpButton = page.getByRole("button", { name: `Move ${rowName} up` });
+      const moveDownButton = page.getByRole("button", { name: `Move ${rowName} down` });
+      const deleteButton = page.getByRole("button", { name: `Delete ${rowName}` });
+
+      const [
+        rowBox,
+        selectBox,
+        labelBox,
+        startLabelBox,
+        moveUpBox,
+        moveDownBox,
+        deleteBox,
+      ] = await Promise.all([
+        rowMain.boundingBox(),
+        selectButton.boundingBox(),
+        label.boundingBox(),
+        startLabel.boundingBox(),
+        moveUpButton.boundingBox(),
+        moveDownButton.boundingBox(),
+        deleteButton.boundingBox(),
+      ]);
+      if (
+        !rowBox ||
+        !selectBox ||
+        !labelBox ||
+        !startLabelBox ||
+        !moveUpBox ||
+        !moveDownBox ||
+        !deleteBox
+      ) {
+        throw new Error(
+          `expected every control in the ${rowName} row (and Start's own label) to have a bounding box`,
+        );
+      }
+
+      // Single-line proof without a hardcoded pixel constant: a genuine
+      // 2-line wrap would be roughly double a known-single-line label's
+      // own height ("Start", guaranteed short).
+      expect(Math.abs(labelBox.height - startLabelBox.height)).toBeLessThan(4);
+
+      // The label never extends outside its own button.
+      expect(isFullyWithin(labelBox, selectBox)).toBe(true);
+
+      // Select/Move/Delete stay in the same vertical band, mirroring the
+      // item-34 test's own assertSingleRowGeometry tolerances exactly.
+      const tallestChild = Math.max(selectBox.height, moveUpBox.height, deleteBox.height);
+      expect(rowBox.height).toBeLessThanOrEqual(tallestChild + 4);
+      const selectCentreY = selectBox.y + selectBox.height / 2;
+      const moveUpCentreY = moveUpBox.y + moveUpBox.height / 2;
+      const deleteCentreY = deleteBox.y + deleteBox.height / 2;
+      expect(Math.abs(moveUpCentreY - selectCentreY)).toBeLessThan(6);
+      expect(Math.abs(deleteCentreY - selectCentreY)).toBeLessThan(6);
+
+      // Every control meets the 44x44 CSS-pixel touch-target minimum.
+      for (const box of [selectBox, moveUpBox, moveDownBox, deleteBox]) {
+        expect(box.width).toBeGreaterThanOrEqual(44);
+        expect(box.height).toBeGreaterThanOrEqual(44);
+      }
+
+      return labelBox.x;
+    }
+
+    const labelLeftXByRole: number[] = [];
+
+    // State A: closed loop — appends waypoint 10 as a coordinate duplicate
+    // of waypoint 1 (waypointHistory.ts's returnToStart), making both ends
+    // "start-finish" (green, border: 3px solid, 40% radius).
+    const returnToStartButton = page.getByRole("button", { name: "Return to start" });
+    await expect(returnToStartButton).toBeEnabled();
+    await returnToStartButton.click();
+    await expect(
+      page.getByRole("button", { name: "Waypoint 10", exact: true }),
+    ).toBeVisible();
+    await assertOrdinalTenRoleClass("start-finish");
+    labelLeftXByRole.push(await assertOrdinalTenSingleLine());
+
+    // Undo removes the return-to-start waypoint, restoring exactly the
+    // prior 9-waypoint present array (waypointHistoryReducer's own "undo"
+    // case).
+    const undoButton = page.getByRole("button", { name: "Undo" });
+    await expect(undoButton).toBeEnabled();
+    await undoButton.click();
+    await expect(
+      page.getByRole("button", { name: "Waypoint 10", exact: true }),
+    ).toHaveCount(0);
+
+    // State B: a genuinely new 10th waypoint, at a map position distinct
+    // from waypoint 1's own coordinate — open route, so ordinal 10 becomes
+    // the white "finish" role.
+    await mapContainer.click({ position: { x: 250, y: 60 } });
+    await expect(
+      page.getByRole("button", { name: "Waypoint 10", exact: true }),
+    ).toBeVisible();
+    await assertOrdinalTenRoleClass("finish");
+    labelLeftXByRole.push(await assertOrdinalTenSingleLine());
+
+    // State C: an 11th waypoint bumps ordinal 10 back to an ordinary,
+    // intermediate orange badge (ordinal 11 becomes the new finish).
+    await mapContainer.click({ position: { x: 250, y: 110 } });
+    await expect(
+      page.getByRole("button", { name: "Waypoint 11", exact: true }),
+    ).toBeVisible();
+    await assertOrdinalTenRoleClass("ordinary");
+    labelLeftXByRole.push(await assertOrdinalTenSingleLine());
+
+    // Badge-slot-centred proof: the label begins at the same x position
+    // across all three badge roles, regardless of border-width (2px vs
+    // 3px) or badge shape/colour.
+    expect(Math.max(...labelLeftXByRole) - Math.min(...labelLeftXByRole)).toBeLessThan(2);
+
+    const scrollWidths = await page.evaluate(() => ({
+      documentWidth: document.documentElement.scrollWidth,
+      bodyWidth: document.body.scrollWidth,
+    }));
+    expect(scrollWidths.documentWidth).toBeLessThanOrEqual(390);
+    expect(scrollWidths.bodyWidth).toBeLessThanOrEqual(390);
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
+
   // Visual slice 5 (corrective) + deterministic-precondition hardening
   // (future-backlog item 21): the same manual-rotation contract as the
   // desktop "pressing Northwards twice" test above, proven again at this

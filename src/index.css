@@ -1317,11 +1317,63 @@ button:focus-visible {
   gap: var(--space-8);
 }
 
+/* Corrective follow-up to item 34 (CLAUDE.md): the fix above made the
+ * *row* deterministic, but left this button's own internal badge+label
+ * layout as plain flex with no column boundary of its own. Real iPhone
+ * testing after that fix found "Waypoint 10"'s own label wrapping onto a
+ * second line specifically when its ordinal badge was an endpoint
+ * (.waypoint-row-ordinal--finish/--start-finish, border: 3px solid) but
+ * never when it was an ordinary intermediate waypoint (border: 2px
+ * solid) — the endpoint badge's extra 1px of border per side (+2px total
+ * width at a two-digit ordinal) was just enough to push the label past
+ * its available shrink space on real-device font rendering, given this
+ * button's inherited global `button` padding (var(--space-8)
+ * var(--space-16), 16px per side horizontally) and its lack of any
+ * internal column of its own. A fixed-width badge slot removes badge
+ * width variance as a factor entirely: column 1 never changes width with
+ * badge role or a 1- vs 2-digit ordinal, so column 2 (the label) always
+ * starts at the same x position and always gets the same available
+ * shrink width, regardless of which badge role renders for that row. The
+ * slot width was measured directly against the widest real badge
+ * (.waypoint-row-ordinal--finish/--start-finish at a two-digit ordinal,
+ * ~27-31px across the font stacks measured) with a small safety margin,
+ * not assumed.
+ *
+ * This button's own border-box width is not free to grow: it is the
+ * `minmax(0, 1fr)` track of .waypoint-row-main's outer 3-column grid
+ * (above), so it is exactly whatever remains after the reorder group and
+ * Delete (both untouched by this fix) claim their own natural width —
+ * measured at 153px on this project's real double-digit fixture, of
+ * which only ~135px is left once the inherited global 16px-per-side
+ * padding is subtracted. A real-browser measurement of "Waypoint 10" at
+ * this button's own font-size (16px, regular weight) needs ~100px on one
+ * line — more than the ~95px an 8px-per-side padding plus an 8px
+ * badge-label gap would leave, even with the badge slot minimised: no
+ * combination of gap and badge-slot width closes that gap while padding
+ * stays at 8px per side, so padding and the internal badge-label gap are
+ * both reduced to var(--space-4) (4px) instead of var(--space-8) — a
+ * deliberate, measured deviation from the original 8px-padding/8px-gap
+ * estimate, not the literal values initially proposed for this fix,
+ * chosen because the single-line requirement is the actual outcome that
+ * matters and 4px still leaves a genuine (~7px) margin over the measured
+ * minimum. 4px already has a direct precedent in this same file
+ * (.waypoint-row-reorder's own inter-button gap, below). Vertical padding
+ * stays entirely unstated (not the padding shorthand, and not the
+ * `.waypoint-row-icon-button` zero-vertical-padding pattern below, since
+ * this button's taller badge content (24-32px) genuinely interacts with
+ * `min-height: 44px` in a way a plain icon button's short text never
+ * does), so vertical padding stays genuinely inherited (already the
+ * correct var(--space-8)) rather than being restated or changed, leaving
+ * the existing row/touch-target vertical geometry provably untouched.
+ * The previous `flex: 1 1 auto` is removed: it was already fully dead
+ * once the parent (.waypoint-row-main, above) became display: grid. */
 .waypoint-row-select {
-  flex: 1 1 auto;
-  display: flex;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-8);
+  gap: var(--space-4);
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
   min-width: 0;
   text-align: left;
 }
@@ -1352,6 +1404,13 @@ button:focus-visible {
   font-weight: 700;
   flex-shrink: 0;
   box-shadow: 0 1px 3px rgb(0 0 0 / 45%);
+  /* Load-bearing, not decorative: Grid's default justify-items/
+   * justify-self is stretch, so once .waypoint-row-select's badge
+   * column has a fixed width wider than the badge's own natural size,
+   * an un-centred badge would stretch to fill it, distorting its
+   * circular/40%-radius shape. This keeps the badge at its natural
+   * size, centred in the slot. */
+  justify-self: center;
 }
 
 .waypoint-row-ordinal--start {
