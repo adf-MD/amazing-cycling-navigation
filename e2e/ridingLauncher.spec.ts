@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { BrowserContext, Page } from "@playwright/test";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
-import { readActiveRideStateRow } from "./support/rideStateDb.ts";
+import { readActiveRideStateRow, readSavedRouteId } from "./support/rideStateDb.ts";
 
 // Proves backlog item 41 (Ride launcher, explicit session recovery and
 // post-finalisation route clearing): the launcher discovers a persisted
@@ -55,7 +55,19 @@ ${points}
 /** Imports the fixture route, opens it, starts riding and advances the fix
  * partway along the route so a real, persisted rideState row exists —
  * shared setup for all three tests below. Leaves the rider on the active
- * Riding screen; callers reload from there. */
+ * Riding screen; callers reload from there.
+ *
+ * "On route" becoming visible only proves a fix was accepted and
+ * off-route-classified in React state (useRideNavigation.ts's handleFix,
+ * synchronous) — it is not proof the corresponding rideState row has
+ * actually committed to IndexedDB, which happens in a separate effect via
+ * the async, un-throttled setActiveRideState(...) write. A reload
+ * immediately after only the UI assertion can race that write under CI
+ * load, leaving the Ride launcher with no persisted session to recover and
+ * so no Resume route/End ride/Discard button — exactly the failure mode
+ * that motivated the identical readSavedRouteId/readActiveRideStateRow
+ * polling idiom already established in androidPersistenceAndOffline.spec.ts.
+ * Reused here, not reinvented. */
 async function establishUnfinishedRide(
   page: Page,
   context: BrowserContext,
@@ -81,6 +93,19 @@ async function establishUnfinishedRide(
 
   await context.setGeolocation({ latitude: ROUTE_LAT, longitude: lonAtMetres(400) });
   await expect(page.getByText("On route")).toBeVisible();
+
+  const routeId = await readSavedRouteId(page, routeName);
+  expect(routeId).not.toBeNull();
+
+  await expect
+    .poll(() => readActiveRideStateRow(page), { timeout: 10_000 })
+    .toMatchObject({
+      kind: "route",
+      routeId,
+      lastFix: expect.anything(),
+      lastMatchedPointIndex: expect.any(Number),
+      matchedDistanceFromStartMetres: expect.any(Number),
+    });
 }
 
 test("the launcher resumes a route session after a real reload, with zero OpenRouteService requests", async ({
