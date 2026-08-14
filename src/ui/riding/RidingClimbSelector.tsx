@@ -23,6 +23,13 @@ const ALL_ROUTE_VALUE = "all";
  * selection state, shared with map/chart-tap selection) is reused for
  * that, so there is only ever one climb-information card on screen by
  * construction, never two competing panels to keep in sync.
+ *
+ * Rendered by RidingScreen.tsx as an embedded subsection directly inside
+ * the Route profile card's elevation section — immediately after the main
+ * elevation chart and its gradient-colours disclosure, immediately before
+ * RouteFeatureDetailsPanel — so it deliberately carries no `.panel` box of
+ * its own (plain `.stack` spacing only), matching that section's other,
+ * already-unboxed subsections.
  */
 export function RidingClimbSelector({
   climbs,
@@ -31,7 +38,7 @@ export function RidingClimbSelector({
 }: RidingClimbSelectorProps) {
   if (climbs.length === 0) {
     return (
-      <section aria-label="Recognised climbs" className="panel stack">
+      <section aria-label="Recognised climbs" className="stack">
         <h2>Recognised climbs</h2>
         <p>
           No recognised climbs. A recognised climb must be at least 500 m long and average
@@ -42,7 +49,7 @@ export function RidingClimbSelector({
   }
 
   return (
-    <section aria-label="Recognised climbs" className="panel stack">
+    <section aria-label="Recognised climbs" className="stack">
       <h2 id="recognised-climbs-heading">Recognised climbs</h2>
       <select
         className="recognised-climb-select"

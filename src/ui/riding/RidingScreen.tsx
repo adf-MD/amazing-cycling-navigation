@@ -456,7 +456,8 @@ export function RidingScreen({
   // accessible error message, focus restored to whichever button triggered
   // the action). endRideTriggerRef is shared across the two mutually
   // exclusive render sites the End-ride button can appear at (the
-  // Resume-riding idle panel, and the active-tracking slot below the map) —
+  // Resume-riding idle panel, and the active-tracking slot near the top of
+  // the screen, directly after the offline notice and before the map) —
   // exactly one is ever mounted at a time.
   const endRideTriggerRef = useRef<HTMLButtonElement>(null);
   const finishRideButtonRef = useRef<HTMLButtonElement>(null);
@@ -744,7 +745,24 @@ export function RidingScreen({
             </>
           ) : null}
         </div>
-      ) : null}
+      ) : (
+        <div className="ride-end-ride-row">
+          <button
+            type="button"
+            className="btn-danger"
+            ref={endRideTriggerRef}
+            onClick={handleEndRideClick}
+            disabled={activeFinalizeSource !== null}
+          >
+            End ride
+          </button>
+          {finalizeError?.source === "end" ? (
+            <p className="field-error" role="alert">
+              {finalizeError.message}
+            </p>
+          ) : null}
+        </div>
+      )}
 
       <ConfirmDialog
         open={isEndRideConfirmOpen}
@@ -866,37 +884,6 @@ export function RidingScreen({
           </button>
         ) : null}
       </div>
-
-      {nav.geolocationStatus === "idle" ? (
-        <RidingClimbSelector
-          climbs={climbs}
-          selectedClimbId={selectedFeature?.kind === "climb" ? selectedFeature.id : null}
-          onSelectClimb={(id) => {
-            if (id) {
-              selectRouteFeature(id);
-            } else {
-              handleClearRouteFeatureSelection();
-            }
-          }}
-        />
-      ) : (
-        <div className="ride-end-ride-row">
-          <button
-            type="button"
-            className="btn-danger"
-            ref={endRideTriggerRef}
-            onClick={handleEndRideClick}
-            disabled={activeFinalizeSource !== null}
-          >
-            End ride
-          </button>
-          {finalizeError?.source === "end" ? (
-            <p className="field-error" role="alert">
-              {finalizeError.message}
-            </p>
-          ) : null}
-        </div>
-      )}
 
       <div
         className={
@@ -1093,6 +1080,21 @@ export function RidingScreen({
                     )
                   }
                 />
+                {nav.geolocationStatus === "idle" ? (
+                  <RidingClimbSelector
+                    climbs={climbs}
+                    selectedClimbId={
+                      selectedFeature?.kind === "climb" ? selectedFeature.id : null
+                    }
+                    onSelectClimb={(id) => {
+                      if (id) {
+                        selectRouteFeature(id);
+                      } else {
+                        handleClearRouteFeatureSelection();
+                      }
+                    }}
+                  />
+                ) : null}
                 <RouteFeatureDetailsPanel
                   feature={microDetailFeature}
                   climbNumber={preRideClimbNumber}

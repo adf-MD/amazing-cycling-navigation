@@ -1259,6 +1259,150 @@ describe("RidingScreen", () => {
     });
   });
 
+  describe("Riding information and action proximity (item 40)", () => {
+    it("embeds Recognised climbs inside the Route profile panel, after the Route profile heading", () => {
+      const { container } = render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      const profilePanel = container.querySelector(".ride-profile-panel");
+      const climbSelectorSection = screen.getByRole("region", {
+        name: "Recognised climbs",
+      });
+      expect(profilePanel).not.toBeNull();
+      expect(profilePanel?.contains(climbSelectorSection)).toBe(true);
+
+      const routeProfileHeading = screen.getByRole("heading", {
+        level: 2,
+        name: "Route profile",
+      });
+      const recognisedClimbsHeading = screen.getByRole("heading", {
+        level: 2,
+        name: "Recognised climbs",
+      });
+      // DOCUMENT_POSITION_FOLLOWING (4).
+      expect(
+        routeProfileHeading.compareDocumentPosition(recognisedClimbsHeading) & 4,
+      ).toBe(4);
+    });
+
+    it("renders the selected climb's details immediately after the Recognised climbs selector, with no unrelated element between them", async () => {
+      const user = userEvent.setup();
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+        "climb-0",
+      );
+
+      const climbSelectorSection = screen.getByRole("region", {
+        name: "Recognised climbs",
+      });
+      const detailsSection = screen.getByRole("region", {
+        name: "Route feature details",
+      });
+      expect(climbSelectorSection.nextElementSibling).toBe(detailsSection);
+    });
+
+    it("keeps the sole active End-ride trigger ahead of status/manoeuvre/map content in DOM order", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const { container } = render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+
+      const endRideButton = await screen.findByRole("button", { name: "End ride" });
+      const endRideRow = container.querySelector(".ride-end-ride-row");
+      expect(endRideRow).not.toBeNull();
+      expect(endRideRow?.contains(endRideButton)).toBe(true);
+      const nextManoeuvrePanel = await screen.findByText(
+        "No trusted turn information is available for this imported GPX. Follow the route line on the map.",
+      );
+      const mapContainer = screen.getByTestId("map-container");
+
+      // DOCUMENT_POSITION_FOLLOWING (4).
+      expect((endRideRow?.compareDocumentPosition(nextManoeuvrePanel) ?? 0) & 4).toBe(4);
+      expect((endRideRow?.compareDocumentPosition(mapContainer) ?? 0) & 4).toBe(4);
+    });
+
+    it("renders the opened End-ride confirmation immediately after the top action row", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const { container } = render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      await user.click(await screen.findByRole("button", { name: "End ride" }));
+
+      const endRideRow = container.querySelector(".ride-end-ride-row");
+      const dialog = await screen.findByRole("alertdialog");
+      expect(endRideRow?.nextElementSibling).toBe(dialog);
+    });
+
+    it("shows no End-ride action in a clean pre-ride state", () => {
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "End ride" })).toBeNull();
+    });
+
+    it("still exposes Resume riding and End ride, inside the pre-ride panel, in a resumable pre-ride state", async () => {
+      await setActiveRideState({
+        id: "active",
+        routeId: route.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: pointAt(0), accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 0,
+        matchedDistanceFromStartMetres: 0,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+      });
+
+      const { container } = render(
+        <RidingScreen
+          route={route}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      expect(
+        await screen.findByRole("button", { name: "Resume riding" }),
+      ).toBeInTheDocument();
+      const endRideButton = screen.getByRole("button", { name: "End ride" });
+      expect(container.querySelector(".ride-start-panel")?.contains(endRideButton)).toBe(
+        true,
+      );
+      // A resumable-but-still-idle state must not also render the separate
+      // active-tracking End-ride row this slice introduced.
+      expect(container.querySelector(".ride-end-ride-row")).toBeNull();
+    });
+  });
+
   describe("pre-ride selected-climb chart", () => {
     // Two distinct recognised climbs (verified against the real
     // detectRouteFeatures output before writing these assertions, since

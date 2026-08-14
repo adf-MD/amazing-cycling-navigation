@@ -759,13 +759,27 @@ test.describe("Riding: pre-ride climb chart layout", () => {
     await expect(page.locator(".ride-profile-panel")).toBeVisible();
 
     // Reading/keyboard order: the route's own h1, then the two top-level
-    // pre-ride h2 sections, in DOM order.
+    // pre-ride h2 sections, in DOM order — Route profile (the card the
+    // climb selector is now embedded within) before Recognised climbs.
     const headingTexts = await page.locator("h1, h2").allTextContents();
     expect(headingTexts).toEqual([
       "gradient-route",
-      "Recognised climbs",
       "Route profile",
+      "Recognised climbs",
     ]);
+
+    // Recognised climbs is now embedded inside the Route profile card, not
+    // a separate top-level block.
+    const climbSelectorInsideProfilePanel = await page.evaluate(() => {
+      const panel = document.querySelector(".ride-profile-panel");
+      const selectorSection = document.querySelector(
+        'section[aria-label="Recognised climbs"]',
+      );
+      return (
+        panel !== null && selectorSection !== null && panel.contains(selectorSection)
+      );
+    });
+    expect(climbSelectorInsideProfilePanel).toBe(true);
 
     await page
       .getByRole("combobox", { name: "Recognised climbs" })
@@ -777,6 +791,19 @@ test.describe("Riding: pre-ride climb chart layout", () => {
       page.getByRole("img", { name: "Elevation profile for Climb 1" }),
     ).toBeVisible();
 
+    // The selected climb's details/detail-chart sit immediately after the
+    // Recognised climbs selector, with nothing in between.
+    const climbSelectorFollowedByDetails = await page.evaluate(() => {
+      const selectorSection = document.querySelector(
+        'section[aria-label="Recognised climbs"]',
+      );
+      const detailsSection = document.querySelector(
+        'section[aria-label="Route feature details"]',
+      );
+      return selectorSection?.nextElementSibling === detailsSection;
+    });
+    expect(climbSelectorFollowedByDetails).toBe(true);
+
     const scrollWidthWithClimbSelected = await page.evaluate(
       () => document.documentElement.scrollWidth,
     );
@@ -787,6 +814,38 @@ test.describe("Riding: pre-ride climb chart layout", () => {
     await expect(page.getByRole("combobox", { name: "Recognised climbs" })).toBeHidden();
     await expect(page.locator(".ride-profile-panel")).toBeHidden();
     await expect(page.locator(".ride-elevation-section")).toBeVisible();
+
+    // The now-active End-ride trigger sits at the top of the screen,
+    // ahead of the map, and its confirmation opens immediately after it.
+    const endRideRow = page.locator(".ride-end-ride-row");
+    await expect(endRideRow).toBeVisible();
+    const endRideRowPrecedesMap = await page.evaluate(() => {
+      const row = document.querySelector(".ride-end-ride-row");
+      const mapContainer = document.querySelector('[data-testid="map-container"]');
+      if (!row || !mapContainer) return false;
+      return Boolean(
+        row.compareDocumentPosition(mapContainer) & Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    });
+    expect(endRideRowPrecedesMap).toBe(true);
+
+    await endRideRow.getByRole("button", { name: "End ride" }).click();
+    const endRideDialog = page.getByRole("alertdialog");
+    await expect(endRideDialog).toBeVisible();
+    const dialogFollowsEndRideRow = await page.evaluate(() => {
+      const row = document.querySelector(".ride-end-ride-row");
+      const alertDialog = document.querySelector('[role="alertdialog"]');
+      return row?.nextElementSibling === alertDialog;
+    });
+    expect(dialogFollowsEndRideRow).toBe(true);
+
+    const scrollWidthWithDialogOpen = await page.evaluate(
+      () => document.documentElement.scrollWidth,
+    );
+    expect(scrollWidthWithDialogOpen).toBeLessThanOrEqual(390);
+
+    await endRideDialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(endRideDialog).toBeHidden();
 
     const scrollWidthActive = await page.evaluate(
       () => document.documentElement.scrollWidth,
