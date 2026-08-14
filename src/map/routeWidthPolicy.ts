@@ -21,28 +21,40 @@ export const ROUTE_WIDTH_OVERVIEW_ZOOM = 6;
 export const ROUTE_WIDTH_REGIONAL_ZOOM = 11;
 export const ROUTE_WIDTH_CLOSE_ZOOM = 15;
 
-// Two independently-tuned recession curves, each expressed as a fraction
+// Three independently-tuned recession curves, each expressed as a fraction
 // of a layer's own close-zoom (unchanged, existing) width:
 //  - RECEDING: the always-on coloured overlays (macro climb/descent,
-//    micro gradient) — recede faster, so at low zoom they read as a
+//    micro gradient) — recede fastest, so at low zoom they read as a
 //    narrower stripe over the neutral casing beneath them, rather than
 //    fully covering it the way they do today at every zoom (today both
 //    are the same fixed width, so the coloured overlay always completely
 //    hides the casing — this is the confirmed root cause of a
 //    long-descent route reading as solid blue).
-//  - LEGIBLE: the neutral base/casing, selection halos and warning
-//    casings — recede more gently, so the underlying route shape stays
-//    traceable, and a warning still visually outranks whatever climb/
-//    descent overlay it overlaps, at every zoom.
+//  - LEGIBLE: the neutral base/casing and selection halos (the selected
+//    route-feature halo) — recede more gently, so the underlying route
+//    shape stays traceable at every zoom.
+//  - WARNING (backlog item 39): surface/access/ferry warning casings and
+//    the selected-warning halo. Warnings originally shared LEGIBLE with
+//    the neutral base/selection halos, which meant an ordinary warning
+//    barely receded at low zoom and visually dominated a full-route
+//    overview — exactly the problem RECEDING already solved for
+//    climb/descent colouring. WARNING recedes faster than LEGIBLE (fixing
+//    that), while staying wider than RECEDING's own climb/descent overlay
+//    centre and LEGIBLE's own neutral route base at every zoom, and wider
+//    than the selected route-feature halo (legibleWidthStops(9)) so a
+//    selected warning still visually outranks a selected climb/descent
+//    wherever they overlap. See warningWidthStops's own doc comment and
+//    routeWidthPolicy.test.ts for the exact preserved inequalities.
 // Applying one shared multiplier per family (rather than a bespoke curve
 // per layer) means every within-family width relationship established at
 // close zoom — e.g. a selection halo wider than what it rings — is
 // preserved proportionally at every zoom, with no extra bookkeeping.
-// At ROUTE_WIDTH_CLOSE_ZOOM both curves resolve to exactly 1 (today's
+// At ROUTE_WIDTH_CLOSE_ZOOM every curve resolves to exactly 1 (today's
 // unchanged width) by construction, matching the settled contract's
 // requirement to preserve the current close-zoom relationship exactly.
 const RECEDING_MULTIPLIERS = { overview: 0.4, regional: 0.65 } as const;
 const LEGIBLE_MULTIPLIERS = { overview: 0.6, regional: 0.8 } as const;
+const WARNING_MULTIPLIERS = { overview: 0.45, regional: 0.6 } as const;
 
 function buildStops(
   closeWidthPx: number,
@@ -66,10 +78,26 @@ export function recedingWidthStops(closeWidthPx: number): ZoomInterpolatedLineWi
   return buildStops(closeWidthPx, RECEDING_MULTIPLIERS);
 }
 
-/** Width policy for the neutral route casing (remaining/completed line),
- * selection halos and warning casings — recedes more gently than
- * recedingWidthStops, so the route stays traceable and a warning still
- * visually outranks whatever it overlaps, at every zoom. */
+/** Width policy for the neutral route casing (remaining/completed line)
+ * and selection halos (the selected route-feature halo) — recedes more
+ * gently than recedingWidthStops, so the route stays traceable at every
+ * zoom. */
 export function legibleWidthStops(closeWidthPx: number): ZoomInterpolatedLineWidth {
   return buildStops(closeWidthPx, LEGIBLE_MULTIPLIERS);
+}
+
+/** Width policy for surface/access/ferry warning casings
+ * (WARNING_CATEGORY_PAINT) and the selected-warning halo
+ * (WARNING_SELECTED_PAINT) in MapView.tsx — backlog item 39. Recedes
+ * faster than legibleWidthStops, so an ordinary warning no longer
+ * visually dominates a full-route overview merely by sharing the neutral
+ * casing's gentle curve, while staying strictly wider than
+ * recedingWidthStops(5) (the climb/descent macro/micro overlay centre)
+ * and legibleWidthStops(5) (the neutral route base) at every zoom, and
+ * wider than legibleWidthStops(9) (the selected route-feature halo) so a
+ * selected warning still visually outranks a selected climb/descent
+ * wherever they overlap. See routeWidthPolicy.test.ts for the exact
+ * preserved inequalities. */
+export function warningWidthStops(closeWidthPx: number): ZoomInterpolatedLineWidth {
+  return buildStops(closeWidthPx, WARNING_MULTIPLIERS);
 }

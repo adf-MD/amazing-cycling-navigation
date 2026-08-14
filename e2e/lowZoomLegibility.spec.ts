@@ -46,6 +46,51 @@ const MOCK_ORS_RESPONSE = {
 };
 
 /**
+ * Same coordinate geometry as MOCK_ORS_RESPONSE, but with
+ * extras.surface.values (verified against src/routing/surfaceCodes.ts's
+ * real code table) splitting the route into paved / compacted-gravel
+ * (code 8, "questionable-surface", label "Compacted gravel") / ground-or-
+ * mud (code 12, "unsuitable-surface", label "Ground or mud") thirds — two
+ * independently-selectable warnings in two different WarningCategory
+ * buckets, for backlog item 39's low-zoom warning-width e2e coverage.
+ */
+const MOCK_WARNING_ORS_RESPONSE = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      properties: {
+        summary: { distance: 950, duration: 200 },
+        extras: {
+          surface: {
+            values: [
+              [0, 3, 1],
+              [3, 6, 8],
+              [6, 9, 12],
+            ],
+          },
+        },
+      },
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [-0.1, 51.5, 10],
+          [-0.099, 51.5005, 12],
+          [-0.098, 51.501, 15],
+          [-0.097, 51.5015, 20],
+          [-0.096, 51.502, 25],
+          [-0.095, 51.5025, 22],
+          [-0.094, 51.503, 18],
+          [-0.093, 51.5035, 14],
+          [-0.092, 51.504, 11],
+          [-0.091, 51.5045, 9],
+        ],
+      },
+    },
+  ],
+};
+
+/**
  * Presses a MapLibre KeyboardHandler zoom key repeatedly until the map
  * container's own data-marker-zoom-band settles at the expected band —
  * mirrors planning.spec.ts's "pressing Northwards twice" test's own
@@ -318,6 +363,264 @@ test.describe("Planning and Riding: route rendering across zoom", () => {
     await expect(ridingMapContainer).toHaveAttribute("data-route-loaded", "true");
 
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
+});
+
+/**
+ * Backlog item 39 ("Low-zoom surface-warning width correction"):
+ * warningWidthStops (routeWidthPolicy.ts) now recedes faster than
+ * legibleWidthStops for warning casings and the selected-warning halo, so
+ * an ordinary warning no longer visually dominates a full-route overview.
+ * Precise width values are unit-tested directly (routeWidthPolicy.test.ts,
+ * MapView.test.tsx) — this file proves the real, rendered outcome: warning
+ * count/category/selection/details survive a zoom round trip, and the
+ * shared warning-layer paint path renders without error in Planning, the
+ * pre-ride overview, active Riding, and under the local fallback style.
+ */
+test.describe("Planning and Riding: surface-warning legibility across zoom (backlog item 39)", () => {
+  test("shows warning count, category and details before zooming, and both stay selectable and rendered after zooming out to overview and back to close", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+    await page.addInitScript(() => {
+      const originalFetch = fetch;
+      globalThis.fetch = (...args: Parameters<typeof fetch>) => originalFetch(...args);
+    });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByLabel("OpenRouteService API key").fill(DUMMY_KEY);
+    await page.getByRole("button", { name: "Save on this device" }).click();
+    await expect(
+      page.getByText(/key saved on this device, not yet verified/i),
+    ).toBeVisible();
+
+    await page.route(ORS_URL_GLOB, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify(MOCK_WARNING_ORS_RESPONSE),
+      });
+    });
+
+    await page.getByRole("button", { name: "Plan" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    await mapContainer.click({ position: { x: 100, y: 100 } });
+    await mapContainer.click({ position: { x: 200, y: 150 } });
+
+    const calculateButton = page.getByRole("button", { name: /calculate route/i });
+    await expect(calculateButton).toBeEnabled();
+    await calculateButton.click();
+    await expect(page.getByRole("region", { name: "Route summary" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const questionableButton = page.getByRole("button", {
+      name: /^Questionable surface/,
+    });
+    const unsuitableButton = page.getByRole("button", { name: /^Unsuitable surface/ });
+    await expect(questionableButton).toHaveCount(1);
+    await expect(unsuitableButton).toHaveCount(1);
+
+    await questionableButton.click();
+    await expect(questionableButton).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("Surface: Compacted gravel")).toBeVisible();
+    await expect(mapContainer).toHaveAttribute("data-route-loaded", "true");
+
+    await zoomToBand(page, mapContainer, "out", "overview");
+    await expect(questionableButton).toHaveCount(1);
+    await expect(unsuitableButton).toHaveCount(1);
+    await expect(questionableButton).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("Surface: Compacted gravel")).toBeVisible();
+    await expect(mapContainer).toHaveAttribute("data-route-loaded", "true");
+    await expect(mapContainer.locator("canvas")).toBeVisible();
+
+    await zoomToBand(page, mapContainer, "in", "close");
+    await expect(questionableButton).toHaveCount(1);
+    await expect(unsuitableButton).toHaveCount(1);
+    await expect(questionableButton).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("Surface: Compacted gravel")).toBeVisible();
+    await expect(mapContainer).toHaveAttribute("data-route-loaded", "true");
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test("saving the warning-rich route, opening it in the pre-ride overview and starting to ride keeps the route rendering correctly across zoom round trips", async ({
+    page,
+    context,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+    await page.addInitScript(() => {
+      const originalFetch = fetch;
+      globalThis.fetch = (...args: Parameters<typeof fetch>) => originalFetch(...args);
+    });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByLabel("OpenRouteService API key").fill(DUMMY_KEY);
+    await page.getByRole("button", { name: "Save on this device" }).click();
+    await expect(
+      page.getByText(/key saved on this device, not yet verified/i),
+    ).toBeVisible();
+
+    await page.route(ORS_URL_GLOB, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify(MOCK_WARNING_ORS_RESPONSE),
+      });
+    });
+
+    await page.getByRole("button", { name: "Plan" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    const planningMapContainer = page.locator('[data-testid="map-container"]');
+    await planningMapContainer.click({ position: { x: 100, y: 100 } });
+    await planningMapContainer.click({ position: { x: 200, y: 150 } });
+
+    const calculateButton = page.getByRole("button", { name: /calculate route/i });
+    await expect(calculateButton).toBeEnabled();
+    await calculateButton.click();
+    await expect(page.getByRole("region", { name: "Route summary" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const routeName = "E2E Warning Route";
+    await page.getByLabel("Route name").fill(routeName);
+    const saveButton = page.getByRole("button", { name: /save route/i });
+    await expect(saveButton).toBeEnabled();
+    await saveButton.click();
+
+    // Saving switches to the pre-ride overview for the new route.
+    await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+    const ridingMapContainer = page.locator('[data-testid="map-container"]');
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    await expect(ridingMapContainer).toHaveAttribute("data-route-loaded", "true");
+
+    // RidingScreen never passes a warningOverlay prop to MapView — warnings
+    // are a Planning-only UI/data feature (see CLAUDE.md's own "Planning
+    // behaviour" section), so there is no warning-list UI to assert on
+    // here. What this proves instead is that the shared MapView
+    // warning-layer paint setup (installed unconditionally, regardless of
+    // whether warningOverlay is supplied) renders without error and the
+    // route keeps loading across a zoom round trip in the pre-ride
+    // overview and active Riding too.
+    await zoomToBand(page, ridingMapContainer, "out", "overview");
+    await expect(ridingMapContainer).toHaveAttribute("data-route-loaded", "true");
+    await expect(ridingMapContainer.locator("canvas")).toBeVisible();
+
+    await zoomToBand(page, ridingMapContainer, "in", "close");
+    await expect(ridingMapContainer).toHaveAttribute("data-route-loaded", "true");
+
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
+    await page.getByRole("button", { name: "Start riding" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    await expect(ridingMapContainer).toHaveAttribute("data-route-loaded", "true");
+
+    await zoomToBand(page, ridingMapContainer, "out", "overview");
+    await expect(ridingMapContainer).toHaveAttribute("data-route-loaded", "true");
+    await expect(ridingMapContainer.locator("canvas")).toBeVisible();
+
+    await zoomToBand(page, ridingMapContainer, "in", "close");
+    await expect(ridingMapContainer).toHaveAttribute("data-route-loaded", "true");
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test("the warning-rich route still renders, with a warning still selectable, on the local fallback style", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      // The browser itself logs this for the tile-style request this test
+      // deliberately aborts below, to force the local fallback style — an
+      // expected artefact of that intentional abort, not an app error
+      // (mirrors this file's own "still shrinks markers..." test and
+      // directionArrows.spec.ts's identical justification).
+      if (message.type() === "error" && !message.text().includes("net::ERR_FAILED")) {
+        consoleErrors.push(message.text());
+      }
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+    await page.addInitScript(() => {
+      const originalFetch = fetch;
+      globalThis.fetch = (...args: Parameters<typeof fetch>) => originalFetch(...args);
+    });
+
+    await forceMapStyleFailure(page);
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByLabel("OpenRouteService API key").fill(DUMMY_KEY);
+    await page.getByRole("button", { name: "Save on this device" }).click();
+    await expect(
+      page.getByText(/key saved on this device, not yet verified/i),
+    ).toBeVisible();
+
+    await page.route(ORS_URL_GLOB, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify(MOCK_WARNING_ORS_RESPONSE),
+      });
+    });
+
+    await page.getByRole("button", { name: "Plan" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    await expect(page.getByTestId("map-fallback-banner")).toBeVisible();
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    await mapContainer.click({ position: { x: 100, y: 100 } });
+    await mapContainer.click({ position: { x: 200, y: 150 } });
+
+    const calculateButton = page.getByRole("button", { name: /calculate route/i });
+    await expect(calculateButton).toBeEnabled();
+    await calculateButton.click();
+    await expect(page.getByRole("region", { name: "Route summary" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const questionableButton = page.getByRole("button", {
+      name: /^Questionable surface/,
+    });
+    await questionableButton.click();
+    await expect(questionableButton).toHaveAttribute("aria-pressed", "true");
+
+    await zoomToBand(page, mapContainer, "out", "overview");
+    await expect(questionableButton).toHaveAttribute("aria-pressed", "true");
+    await expect(mapContainer.locator("canvas")).toBeVisible();
+
+    await zoomToBand(page, mapContainer, "in", "close");
+    await expect(mapContainer).toHaveAttribute("data-route-loaded", "true");
+    await expect(questionableButton).toHaveAttribute("aria-pressed", "true");
+
     expect(consoleErrors).toEqual([]);
   });
 });

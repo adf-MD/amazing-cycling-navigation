@@ -35,6 +35,7 @@ import {
   ROUTE_WIDTH_CLOSE_ZOOM,
   ROUTE_WIDTH_OVERVIEW_ZOOM,
   ROUTE_WIDTH_REGIONAL_ZOOM,
+  warningWidthStops,
 } from "./routeWidthPolicy.ts";
 
 const points: RoutePoint[] = [
@@ -2953,19 +2954,19 @@ describe("MapView", () => {
       );
       expect(paintFor(mock, "acn-route-feature-line")).toEqual(recedingWidthStops(5));
       expect(paintFor(mock, "acn-route-gradient-line")).toEqual(recedingWidthStops(5));
-      expect(paintFor(mock, "acn-warning-selected-line")).toEqual(legibleWidthStops(13));
+      expect(paintFor(mock, "acn-warning-selected-line")).toEqual(warningWidthStops(13));
       expect(paintFor(mock, "acn-warning-unknown-surface-line")).toEqual(
-        legibleWidthStops(8),
+        warningWidthStops(8),
       );
-      expect(paintFor(mock, "acn-warning-other-line")).toEqual(legibleWidthStops(9));
-      expect(paintFor(mock, "acn-warning-ferry-line")).toEqual(legibleWidthStops(9));
+      expect(paintFor(mock, "acn-warning-other-line")).toEqual(warningWidthStops(9));
+      expect(paintFor(mock, "acn-warning-ferry-line")).toEqual(warningWidthStops(9));
       expect(paintFor(mock, "acn-warning-questionable-surface-line")).toEqual(
-        legibleWidthStops(9),
+        warningWidthStops(9),
       );
       expect(paintFor(mock, "acn-warning-unsuitable-surface-line")).toEqual(
-        legibleWidthStops(10),
+        warningWidthStops(10),
       );
-      expect(paintFor(mock, "acn-warning-obstacle-line")).toEqual(legibleWidthStops(10));
+      expect(paintFor(mock, "acn-warning-obstacle-line")).toEqual(warningWidthStops(10));
       expect(paintFor(mock, "acn-planning-preview-line")).toEqual(legibleWidthStops(4));
     });
 
@@ -2998,6 +2999,63 @@ describe("MapView", () => {
       );
     });
 
+    it("backlog item 39: warning casings stay wider than the neutral base and the macro overlay at overview/regional, and the selected-warning halo stays wider than the selected route-feature halo at every stop", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      const neutralBase = paintFor(mock, "acn-route-remaining-line");
+      const macroOverlay = paintFor(mock, "acn-route-feature-line");
+      const warningCategory = paintFor(mock, "acn-warning-unsuitable-surface-line");
+      for (const zoom of [ROUTE_WIDTH_OVERVIEW_ZOOM, ROUTE_WIDTH_REGIONAL_ZOOM]) {
+        expect(widthAt(warningCategory, zoom)).toBeGreaterThan(
+          widthAt(neutralBase, zoom),
+        );
+        expect(widthAt(warningCategory, zoom)).toBeGreaterThan(
+          widthAt(macroOverlay, zoom),
+        );
+      }
+
+      const selectedWarning = paintFor(mock, "acn-warning-selected-line");
+      const selectedFeature = paintFor(mock, "acn-route-feature-selected-line");
+      for (const zoom of [
+        ROUTE_WIDTH_OVERVIEW_ZOOM,
+        ROUTE_WIDTH_REGIONAL_ZOOM,
+        ROUTE_WIDTH_CLOSE_ZOOM,
+      ]) {
+        expect(widthAt(selectedWarning, zoom)).toBeGreaterThan(
+          widthAt(selectedFeature, zoom),
+        );
+      }
+    });
+
+    it("backlog item 39: adds each warning category layer in WARNING_CATEGORIES_IN_PAINT_ORDER sequence, with the selected-warning halo added before all of them", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      const order = mock.addLineLayerSpy.mock.calls.map(([id]) => id as string);
+      const categoryLayerIds = [
+        "acn-warning-unknown-surface-line",
+        "acn-warning-other-line",
+        "acn-warning-ferry-line",
+        "acn-warning-questionable-surface-line",
+        "acn-warning-unsuitable-surface-line",
+        "acn-warning-obstacle-line",
+      ];
+      const selectedIndex = order.indexOf("acn-warning-selected-line");
+      const categoryIndices = categoryLayerIds.map((id) => order.indexOf(id));
+      for (const categoryIndex of categoryIndices) {
+        expect(categoryIndex).toBeGreaterThan(-1);
+        expect(selectedIndex).toBeLessThan(categoryIndex);
+      }
+      for (let index = 1; index < categoryIndices.length; index += 1) {
+        expect(categoryIndices[index - 1]).toBeLessThan(
+          categoryIndices[index] ?? Number.POSITIVE_INFINITY,
+        );
+      }
+    });
+
     it("resolves identical route/warning/preview widths for Planning and Riding at the same zoom, by construction", () => {
       const planningMock = createMockMapFactory();
       render(
@@ -3027,6 +3085,12 @@ describe("MapView", () => {
         "acn-route-feature-line",
         "acn-route-gradient-line",
         "acn-warning-selected-line",
+        "acn-warning-unknown-surface-line",
+        "acn-warning-other-line",
+        "acn-warning-ferry-line",
+        "acn-warning-questionable-surface-line",
+        "acn-warning-unsuitable-surface-line",
+        "acn-warning-obstacle-line",
         "acn-planning-preview-line",
       ]) {
         expect(paintFor(planningMock, layerId)).toEqual(paintFor(ridingMock, layerId));
@@ -3069,6 +3133,65 @@ describe("MapView", () => {
 
       expect(JSON.stringify(mock.sources.get("acn-route-feature"))).toBe(atClose);
       expect(JSON.stringify(mock.sources.get("acn-route-feature-selected"))).toBe(
+        selectedAtClose,
+      );
+    });
+
+    it("backlog item 39: never alters classified warning source data across a zoom change", () => {
+      const mock = createMockMapFactory();
+      const zoomWarnings: RouteWarning[] = [
+        {
+          kind: "questionable-surface",
+          startDistanceMetres: 50,
+          endDistanceMetres: 150,
+          message: "Questionable surface for a road bike.",
+        },
+        {
+          kind: "ford",
+          startDistanceMetres: 300,
+          endDistanceMetres: 350,
+          message: "Ford crossing.",
+        },
+      ];
+      render(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          warningOverlay={{
+            warnings: zoomWarnings,
+            selectedWarningIndex: 0,
+            onSelectWarning: vi.fn(),
+          }}
+        />,
+      );
+      mock.triggerLoad();
+
+      const questionableAtClose = JSON.stringify(
+        mock.sources.get("acn-warning-questionable-surface"),
+      );
+      const obstacleAtClose = JSON.stringify(mock.sources.get("acn-warning-obstacle"));
+      const selectedAtClose = JSON.stringify(mock.sources.get("acn-warning-selected"));
+
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: ROUTE_WIDTH_REGIONAL_ZOOM,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: ROUTE_WIDTH_OVERVIEW_ZOOM,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      expect(JSON.stringify(mock.sources.get("acn-warning-questionable-surface"))).toBe(
+        questionableAtClose,
+      );
+      expect(JSON.stringify(mock.sources.get("acn-warning-obstacle"))).toBe(
+        obstacleAtClose,
+      );
+      expect(JSON.stringify(mock.sources.get("acn-warning-selected"))).toBe(
         selectedAtClose,
       );
     });
@@ -3117,6 +3240,12 @@ describe("MapView", () => {
       expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
       expect(paintFor(mock, "acn-route-remaining-line")).toEqual(legibleWidthStops(5));
       expect(paintFor(mock, "acn-route-feature-line")).toEqual(recedingWidthStops(5));
+      // Backlog item 39: the fallback style installs the same
+      // warningWidthStops-based paints as the primary style.
+      expect(paintFor(mock, "acn-warning-selected-line")).toEqual(warningWidthStops(13));
+      expect(paintFor(mock, "acn-warning-unsuitable-surface-line")).toEqual(
+        warningWidthStops(10),
+      );
     });
 
     it("scales the map container's own data-marker-zoom-band attribute across close, regional and overview zoom, and back", () => {

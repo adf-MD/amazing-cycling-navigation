@@ -48,7 +48,11 @@ import {
   buildDistanceBadgeMarkerSpecs,
   selectDistanceBadgeIntervalMetres,
 } from "./distanceBadgeLayer.ts";
-import { legibleWidthStops, recedingWidthStops } from "./routeWidthPolicy.ts";
+import {
+  legibleWidthStops,
+  recedingWidthStops,
+  warningWidthStops,
+} from "./routeWidthPolicy.ts";
 import {
   buildSelectedWarningFeatureCollection,
   buildWarningFeatureCollectionsByCategory,
@@ -145,41 +149,50 @@ const WARNING_CATEGORY_LAYER_IDS: readonly string[] =
  * not the app's own light/dark-scheme background. Widths act as a
  * "casing" wider than the gradient-coloured route centre painted on top
  * of them (see addRouteAndPositionLayers), so a warned section's dashed
- * edges stay visible on both sides of the centre. */
+ * edges stay visible on both sides of the centre. Widths use
+ * warningWidthStops (backlog item 39), not legibleWidthStops — a warning
+ * previously receded no faster than the neutral base/selection halos it
+ * shared that family with, so it visually dominated a full-route
+ * overview; warningWidthStops recedes faster while staying wider than
+ * the climb/descent overlay and neutral base at every zoom (see
+ * routeWidthPolicy.ts). */
 const WARNING_CATEGORY_PAINT: Readonly<Record<WarningCategory, LineLayerPaint>> = {
   "unknown-surface": {
     lineColor: "#5f6368",
-    lineWidth: legibleWidthStops(8),
+    lineWidth: warningWidthStops(8),
     lineDasharray: [1, 3],
   },
   other: {
     lineColor: "#455a64",
-    lineWidth: legibleWidthStops(9),
+    lineWidth: warningWidthStops(9),
     lineDasharray: [2, 2, 6, 2],
   },
-  ferry: { lineColor: "#0d47a1", lineWidth: legibleWidthStops(9), lineDasharray: [8, 4] },
+  ferry: { lineColor: "#0d47a1", lineWidth: warningWidthStops(9), lineDasharray: [8, 4] },
   "questionable-surface": {
     lineColor: "#f2a900",
-    lineWidth: legibleWidthStops(9),
+    lineWidth: warningWidthStops(9),
     lineDasharray: [4, 2],
   },
   "unsuitable-surface": {
     lineColor: "#d32f2f",
-    lineWidth: legibleWidthStops(10),
+    lineWidth: warningWidthStops(10),
     lineDasharray: [6, 2],
   },
   obstacle: {
     lineColor: "#7b1fa2",
-    lineWidth: legibleWidthStops(10),
+    lineWidth: warningWidthStops(10),
     lineDasharray: [1, 1, 5, 1],
   },
 };
 /** Solid (no dash) and wider than any category above — an outer focus
  * halo around the casing, contrasting with every dashed category rather
- * than just repeating one of their colours. */
+ * than just repeating one of their colours. Uses warningWidthStops, same
+ * rationale as WARNING_CATEGORY_PAINT above — stays wider than the
+ * selected route-feature halo (legibleWidthStops(9)) at every zoom, so a
+ * selected warning still visually outranks a selected climb/descent. */
 const WARNING_SELECTED_PAINT: LineLayerPaint = {
   lineColor: "#000000",
-  lineWidth: legibleWidthStops(13),
+  lineWidth: warningWidthStops(13),
 };
 /** Matches the existing route-line width — the gradient layer recolours
  * the same visual footprint the route already had, rather than adding a
@@ -688,15 +701,25 @@ export function MapView({
       // always-on macro overlay share the same width there, matching
       // today's appearance exactly. Below that, the macro/micro colour
       // overlays (recedingWidthStops) recede faster than the neutral
-      // casing and warning casings (legibleWidthStops), so at regional and
+      // casing and selection halos (legibleWidthStops), so at regional and
       // overview zoom the wider neutral casing begins to peek out as a
       // visible ring around the narrower coloured overlay — this is what
       // stops a route with a long recognised descent from reading as a
-      // solid, geometry-obscuring block of colour once zoomed out. Both
-      // families resolve identically for Planning and Riding, since this
-      // function has no mode branch and none was added — MapLibre itself
-      // evaluates the `interpolate` expression per render frame, so none
-      // of this triggers a React state update or effect on zoom.
+      // solid, geometry-obscuring block of colour once zoomed out. Warning
+      // casings and the selected-warning halo (backlog item 39) use a
+      // third, warningWidthStops family: it also recedes faster than
+      // legibleWidthStops — an ordinary warning previously shared the
+      // neutral casing's gentle curve and so visually dominated a
+      // full-route overview — while staying strictly wider than
+      // recedingWidthStops's own climb/descent overlay centre and
+      // legibleWidthStops's own neutral route base at every zoom, and
+      // wider than the selected route-feature halo (legibleWidthStops(9))
+      // so a selected warning still visually outranks a selected
+      // climb/descent wherever they overlap. All three families resolve
+      // identically for Planning and Riding, since this function has no
+      // mode branch and none was added — MapLibre itself evaluates the
+      // `interpolate` expression per render frame, so none of this
+      // triggers a React state update or effect on zoom.
       try {
         map.addGeoJsonSource(ROUTE_FEATURE_SELECTED_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
         map.addLineLayer(
