@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App.tsx";
 import type { MapFactory, MapLibreLike } from "./map/mapAdapter.ts";
 import { db } from "./storage/db.ts";
+import { getActiveRideState, setActiveRideState } from "./storage/rideStateRepository.ts";
+import * as rideStateRepository from "./storage/rideStateRepository.ts";
 import { trackWithElevationGpx } from "./test/fixtures/gpx.ts";
 
 describe("App", () => {
@@ -32,7 +34,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Ride" }));
     expect(screen.getByRole("heading", { name: "Ride" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Choose a route" }));
+    await user.click(await screen.findByRole("button", { name: "Choose a route" }));
     expect(screen.getByRole("heading", { name: "Routes" })).toBeInTheDocument();
   });
 
@@ -343,5 +345,141 @@ describe("App — Route Library search restoration across navigation", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Sort by")).toHaveValue("name-asc");
     });
+  });
+});
+
+describe("App — Ride launcher session recovery", () => {
+  beforeEach(async () => {
+    await db.routes.clear();
+    await db.rideState.clear();
+    await db.routeLibraryPreferences.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function stickyHeader(): Element {
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    const header = nav.closest("header");
+    if (!header) throw new Error("expected the nav to be wrapped in a header");
+    return header;
+  }
+
+  it("a resumable session (never selectedRoute) drives the launcher, and Resume route opens the existing recovery state", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    const [importedRoute] = await db.routes.toArray();
+    if (!importedRoute) throw new Error("expected an imported route");
+
+    await setActiveRideState({
+      id: "active",
+      routeId: importedRoute.id,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: { coordinate: [0, 51], accuracyMetres: 6, timestampMs: 1000 },
+      lastMatchedPointIndex: 0,
+      matchedDistanceFromStartMetres: 0,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+    });
+
+    // Navigate to "Ride" directly — never through Routes/selectedRoute —
+    // proving the launcher discovers the session from persisted storage
+    // itself, not from any in-memory App state.
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+
+    expect(await screen.findByRole("heading", { name: "Route A" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resume route" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "End ride" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start riding" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Resume route" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Resume riding" }),
+    ).toBeInTheDocument();
+  });
+
+  it("a successful End ride from the resumed state clears selectedRoute, resets scroll, and returns to the empty launcher", async () => {
+    const user = userEvent.setup();
+    const scrollToSpy = installScrollToSpy();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    const [importedRoute] = await db.routes.toArray();
+    if (!importedRoute) throw new Error("expected an imported route");
+
+    await setActiveRideState({
+      id: "active",
+      routeId: importedRoute.id,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: { coordinate: [0, 51], accuracyMetres: 6, timestampMs: 1000 },
+      lastMatchedPointIndex: 0,
+      matchedDistanceFromStartMetres: 0,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+    await user.click(await screen.findByRole("button", { name: "Resume route" }));
+    await screen.findByRole("button", { name: "Resume riding" });
+    const scrollCallsBeforeEndRide = scrollToSpy.mock.calls.length;
+
+    expect(stickyHeader()).toHaveClass("app-header--sticky");
+
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+
+    await waitFor(async () => {
+      expect(await getActiveRideState()).toBeUndefined();
+    });
+    expect(
+      await screen.findByRole("button", { name: "Choose a route" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Route A" })).toBeNull();
+    expect(scrollToSpy.mock.calls.length).toBeGreaterThan(scrollCallsBeforeEndRide);
+    // isRidingActive genuinely flips back to false via RidingScreen's own
+    // unmount-driven onRidingActiveChange cleanup, not merely because the
+    // route is gone — proven by the header returning to sticky (it's
+    // static only while screen === "riding" && isRidingActive).
+    expect(stickyHeader()).toHaveClass("app-header--sticky");
+  });
+
+  it("a storage-clear failure during End ride leaves the same route selected and RidingScreen still shown", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    const [importedRoute] = await db.routes.toArray();
+    if (!importedRoute) throw new Error("expected an imported route");
+
+    await setActiveRideState({
+      id: "active",
+      routeId: importedRoute.id,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: { coordinate: [0, 51], accuracyMetres: 6, timestampMs: 1000 },
+      lastMatchedPointIndex: 0,
+      matchedDistanceFromStartMetres: 0,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+    await user.click(await screen.findByRole("button", { name: "Resume route" }));
+    await screen.findByRole("button", { name: "Resume riding" });
+
+    const clearSpy = vi
+      .spyOn(rideStateRepository, "clearActiveRideState")
+      .mockRejectedValueOnce(new Error("boom"));
+
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Route A" })).toBeInTheDocument();
+    expect(await getActiveRideState()).toBeDefined();
+
+    clearSpy.mockRestore();
   });
 });

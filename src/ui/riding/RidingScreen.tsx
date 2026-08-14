@@ -78,6 +78,20 @@ export interface RidingScreenProps {
    * waypointHistoryReducer's "reverse" case) — this callback only ever
    * fires for a plain, unreversed copy now. */
   onNavigateToPlanning?: () => void;
+  /** Called once a successful End ride or Finish ride has fully completed —
+   * after nav.finish()'s own storage-clear-then-reset lifecycle has already
+   * resolved AND this screen's own runtime cleanup (camera.resetCamera(),
+   * completion.reset(), reachedManoeuvreIndex reset, closing the
+   * confirmation dialog) has already applied. App.tsx is the only current
+   * caller; it clears its own selectedRoute in response, which is what
+   * actually unmounts this screen and shows the empty Ride launcher in its
+   * place — this component has no notion of what the caller does with the
+   * notification. Never called on cancellation, Escape, a genuine storage
+   * failure, or a duplicate/re-entrant submission. If the callback itself
+   * throws, that's logged only (see performFinalizeRide) — finalisation has
+   * already fully succeeded by this point, so a bug in the caller's own
+   * handler must never be reported as a finalisation failure. */
+  onRideFinalized?: () => void;
 }
 
 const DEFAULT_CAMERA_STATE: StoredCameraState = {
@@ -132,6 +146,7 @@ export function RidingScreen({
   wakeLockSource,
   onRidingActiveChange,
   onNavigateToPlanning,
+  onRideFinalized,
 }: RidingScreenProps) {
   // Bridges useRideCamera's current camera state into useRideNavigation's
   // persistence. Both hooks are called in this same render, and
@@ -515,6 +530,18 @@ export function RidingScreen({
       // fresh ride following a finalisation must not inherit it.
       setReachedManoeuvreIndex(0);
       setIsEndRideConfirmOpen(false);
+      // Finalisation has now fully succeeded — storage cleared and this
+      // screen's own runtime cleanup already applied above. Notify the
+      // caller. Its own nested try/catch, deliberately separate from the
+      // outer one: a throw here would only ever indicate a bug in the
+      // caller's own handler, never a genuine finalisation failure, so it
+      // must never be surfaced as one (which would misleadingly invite a
+      // pointless retry after the ride has already ended).
+      try {
+        onRideFinalized?.();
+      } catch (callbackError) {
+        logError("riding-ride-finalized-callback", callbackError);
+      }
     } catch (error) {
       logError(source === "end" ? "riding-end-ride" : "riding-finish-ride", error);
       setFinalizeError({

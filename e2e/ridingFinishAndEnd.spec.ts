@@ -46,7 +46,7 @@ ${points}
 </gpx>`;
 }
 
-test("ends a ride, returns to a clean pre-ride overview, and survives a reload with no restored progress", async ({
+test("ends a ride, returns to the empty Ride launcher, and survives a reload with no restored progress", async ({
   page,
   context,
 }) => {
@@ -96,11 +96,12 @@ test("ends a ride, returns to a clean pre-ride overview, and survives a reload w
   ).toBeVisible();
   await dialog.getByRole("button", { name: "End ride" }).click();
 
-  // Same route, clean pre-ride overview.
-  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Start riding" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Resume riding" })).toBeHidden();
-  await expect(page.getByRole("button", { name: "End ride" })).toBeHidden();
+  // Empty Ride launcher — the route is no longer open, but remains saved
+  // (the reload + reopen below proves this directly).
+  await expect(page.getByRole("heading", { name: "Ride" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resume route" })).toBeHidden();
+  await expect(page.getByRole("heading", { name: routeName })).toBeHidden();
 
   // Deterministic replacement for a fixed sleep before reload — see
   // waitForClearedRideState's own doc comment for why polling for the
@@ -189,8 +190,12 @@ test("conservatively confirms route completion only after consecutive fixes, and
 
   await finishButton.click();
 
-  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Start riding" })).toBeVisible();
+  // Empty Ride launcher — the route is no longer open, but remains saved
+  // (the reload + reopen below proves this directly).
+  await expect(page.getByRole("heading", { name: "Ride" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resume route" })).toBeHidden();
+  await expect(page.getByRole("heading", { name: routeName })).toBeHidden();
   await expect(page.getByText("Route complete")).toBeHidden();
   await expect(page.getByRole("button", { name: "End ride" })).toBeHidden();
 

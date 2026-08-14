@@ -12,6 +12,7 @@ import {
   ELEVATION_WINDOW_OPTIONS_METRES,
 } from "../navigation/upcomingElevation.ts";
 import {
+  type RideSessionKind,
   type StoredPlanningDraft,
   type StoredPlanningPreferences,
   type StoredRideState,
@@ -46,6 +47,51 @@ function resolveElevationViewMode(stored: StoredRideState): ElevationViewMode {
   return DEFAULT_ELEVATION_VIEW_MODE;
 }
 
+function isRideSessionKind(value: unknown): value is RideSessionKind {
+  return value === "route";
+}
+
+/** What `resolveStoredRideSessionKind` can determine about a stored row's
+ * session kind: either a real, recognised `RideSessionKind`, or
+ * `"unsupported"` — a present value this version of the app doesn't
+ * recognise (a future kind, or a corrupted row). Callers (the Ride
+ * launcher) must treat `"unsupported"` as non-resumable, offering only an
+ * explicit discard, never a Resume action. */
+export type ResolvedRideSessionKind = RideSessionKind | "unsupported";
+
+/**
+ * Resolves a stored row's session kind, defensively — Dexie never validates
+ * stored data, so a `kind` string from an older or newer app version, or a
+ * corrupted row, must never be trusted at face value.
+ *
+ * Absent (`undefined`) is the ordinary legacy case: every row this table
+ * has ever held before this field existed was implicitly a route session,
+ * so it resolves to `"route"` — the same legacy-absence handling this
+ * table already uses for wakeLockDesired/dismissedClimbFeatureId/
+ * completionArmed.
+ *
+ * A *present but unrecognised* value is deliberately NOT defaulted to
+ * `"route"` the way `editCopyOperation`'s own `?? "forward"` cosmetic
+ * fallback works elsewhere in this file. `editCopyOperation` is a closed,
+ * two-value historical field whose absence has exactly one proven past
+ * meaning and never gates a differently-shaped read. `kind` is different by
+ * design: a discriminant this project already knows it will widen (backlog
+ * item 42, free roam) to a variant carrying different, route-incompatible
+ * fields (no meaningful `routeId`). Silently defaulting an unrecognised
+ * future value to `"route"` here could make the Ride launcher confidently
+ * resolve `routeId` on a row whose actual shape it cannot correctly
+ * interpret — wrong in a way that actively misleads the rider, not merely
+ * cosmetically wrong. `"unsupported"` is the conservative, correct
+ * resolution: the launcher can still offer a safe, no-interpretation-
+ * required discard action for it, never a Resume one.
+ */
+export function resolveStoredRideSessionKind(
+  stored: StoredRideState,
+): ResolvedRideSessionKind {
+  if (stored.kind === undefined) return "route";
+  return isRideSessionKind(stored.kind) ? stored.kind : "unsupported";
+}
+
 export interface StoredCameraState {
   mode: RideCameraMode;
   /** Only meaningful when mode is "free"; null otherwise. */
@@ -73,6 +119,7 @@ export function toStoredRideState(
     id: "active",
     routeId,
     startedAt,
+    kind: "route",
     lastFix: lastFix
       ? {
           coordinate: lastFix.coordinate,

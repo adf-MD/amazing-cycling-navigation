@@ -17,7 +17,12 @@ import { readActiveRideStateRow, readSavedRouteId } from "./support/rideStateDb.
 // panel offers "Resume riding" instead of "Start riding". The first test
 // below asserts this real contract precisely, through an actual
 // page.reload() — no test at any level (hook, component or e2e)
-// previously did this.
+// previously did this. Backlog item 41 (the Ride launcher) later added a
+// second, more direct recovery path — visiting "Ride" itself now
+// discovers and offers to resume the same persisted session without
+// reopening the route from Routes first (see e2e/ridingLauncher.spec.ts)
+// — but the manual-reopen path this file exercises remains fully valid
+// and is unchanged by that addition.
 
 test.use({ serviceWorkers: "block" });
 

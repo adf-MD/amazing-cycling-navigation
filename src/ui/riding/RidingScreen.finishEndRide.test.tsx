@@ -21,6 +21,7 @@ import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry
 import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
 import { buildFakeWakeLockSource } from "../../test/fixtures/wakeLockSource.ts";
 import type { GeolocationFix } from "../../platform/geolocation.ts";
+import { clearErrorLog, getRecentErrors } from "../../platform/errorLog.ts";
 
 const routePoints = buildRoutePointsFromWaypoints(
   [
@@ -509,4 +510,222 @@ describe("RidingScreen Finish/End ride", () => {
   // own unit tests) exists purely as defence-in-depth for that
   // unreachable-in-practice case, mirroring explicitFeatureSelection's
   // identical precedent.
+});
+
+describe("RidingScreen onRideFinalized", () => {
+  it("onRideFinalized is not called until the persisted clear has actually resolved", async () => {
+    const user = userEvent.setup();
+    const fake = buildFakeGeolocationSource();
+    let resolveClear: (() => void) | undefined;
+    const clearSpy = vi
+      .spyOn(rideStateRepository, "clearActiveRideState")
+      .mockReturnValue(
+        new Promise((resolve) => {
+          resolveClear = () => {
+            resolve(undefined);
+          };
+        }),
+      );
+    const onRideFinalized = vi.fn();
+    render(
+      <RidingScreen
+        route={route}
+        geolocationSource={fake.source}
+        mapFactory={createMockMapFactory().factory}
+        onRideFinalized={onRideFinalized}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+    act(() => {
+      fake.watches[0]?.emitFix(midpointFix(1000));
+    });
+    await user.click(await screen.findByRole("button", { name: "End ride" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+
+    // The clear is still pending — onRideFinalized must not have fired yet.
+    expect(onRideFinalized).not.toHaveBeenCalled();
+
+    resolveClear?.();
+    await waitFor(() => {
+      expect(onRideFinalized).toHaveBeenCalledTimes(1);
+    });
+    clearSpy.mockRestore();
+  });
+
+  it("a successful Finish ride calls onRideFinalized exactly once", async () => {
+    const user = userEvent.setup();
+    const fake = buildFakeGeolocationSource();
+    const onRideFinalized = vi.fn();
+    render(
+      <RidingScreen
+        route={route}
+        geolocationSource={fake.source}
+        mapFactory={createMockMapFactory().factory}
+        onRideFinalized={onRideFinalized}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+    act(() => {
+      fake.watches[0]?.emitFix(midpointFix(1000));
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(midpointFix(1500));
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(nearEndFix(2000));
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(nearEndFix(3000));
+    });
+    await user.click(await screen.findByRole("button", { name: "Finish ride" }));
+
+    await waitFor(() => {
+      expect(onRideFinalized).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("cancelling or pressing Escape on the End-ride dialog never calls onRideFinalized", async () => {
+    const user = userEvent.setup();
+    const fake = buildFakeGeolocationSource();
+    const onRideFinalized = vi.fn();
+    render(
+      <RidingScreen
+        route={route}
+        geolocationSource={fake.source}
+        mapFactory={createMockMapFactory().factory}
+        onRideFinalized={onRideFinalized}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+    act(() => {
+      fake.watches[0]?.emitFix(midpointFix(1000));
+    });
+    const endRideButton = await screen.findByRole("button", { name: "End ride" });
+
+    await user.click(endRideButton);
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Cancel",
+      }),
+    );
+
+    await user.click(endRideButton);
+    await user.keyboard("{Escape}");
+
+    expect(onRideFinalized).not.toHaveBeenCalled();
+  });
+
+  it("a storage-clear failure never calls onRideFinalized; a subsequent successful retry calls it exactly once", async () => {
+    const user = userEvent.setup();
+    const fake = buildFakeGeolocationSource();
+    const onRideFinalized = vi.fn();
+    render(
+      <RidingScreen
+        route={route}
+        geolocationSource={fake.source}
+        mapFactory={createMockMapFactory().factory}
+        onRideFinalized={onRideFinalized}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+    act(() => {
+      fake.watches[0]?.emitFix(midpointFix(1000));
+    });
+
+    const clearSpy = vi
+      .spyOn(rideStateRepository, "clearActiveRideState")
+      .mockRejectedValueOnce(new Error("boom"));
+
+    const endRideButton = await screen.findByRole("button", { name: "End ride" });
+    await user.click(endRideButton);
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+
+    await screen.findByRole("alert");
+    expect(onRideFinalized).not.toHaveBeenCalled();
+
+    clearSpy.mockRestore();
+
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    const retryDialog = await screen.findByRole("alertdialog");
+    await user.click(within(retryDialog).getByRole("button", { name: "End ride" }));
+
+    await waitFor(() => {
+      expect(onRideFinalized).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("a rapid double confirm click calls onRideFinalized at most once", async () => {
+    const user = userEvent.setup();
+    const fake = buildFakeGeolocationSource();
+    const onRideFinalized = vi.fn();
+    render(
+      <RidingScreen
+        route={route}
+        geolocationSource={fake.source}
+        mapFactory={createMockMapFactory().factory}
+        onRideFinalized={onRideFinalized}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+    act(() => {
+      fake.watches[0]?.emitFix(midpointFix(1000));
+    });
+    await user.click(await screen.findByRole("button", { name: "End ride" }));
+    const dialog = await screen.findByRole("alertdialog");
+    const confirmButton = within(dialog).getByRole("button", { name: "End ride" });
+
+    await user.click(confirmButton);
+    // The button disables itself once the click is handled — a second
+    // click attempt on the same (by-then-unmounted or disabled) element is
+    // a no-op through user-event, exercising the same re-entrancy guard
+    // performFinalizeRide's own isFinalizeActionPendingRef provides.
+    await user.click(confirmButton).catch(() => undefined);
+
+    await waitFor(() => {
+      expect(onRideFinalized).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("a throwing onRideFinalized still reaches the clean Start-riding state with no finalizeError shown, and is logged", async () => {
+    const user = userEvent.setup();
+    const fake = buildFakeGeolocationSource();
+    const onRideFinalized = vi.fn(() => {
+      throw new Error("boom");
+    });
+    clearErrorLog();
+    render(
+      <RidingScreen
+        route={route}
+        geolocationSource={fake.source}
+        mapFactory={createMockMapFactory().factory}
+        onRideFinalized={onRideFinalized}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+    act(() => {
+      fake.watches[0]?.emitFix(midpointFix(1000));
+    });
+    await user.click(await screen.findByRole("button", { name: "End ride" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Start riding" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(await getActiveRideState()).toBeUndefined();
+    expect(
+      getRecentErrors().some(
+        (entry) => entry.context === "riding-ride-finalized-callback",
+      ),
+    ).toBe(true);
+  });
 });

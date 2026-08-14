@@ -5,6 +5,7 @@ import { usePwaUpdate } from "./pwa/registerSW.ts";
 import { DiagnosticsScreen } from "./ui/diagnostics/DiagnosticsScreen.tsx";
 import { RouteLibrary } from "./ui/library/RouteLibrary.tsx";
 import { PlanningScreen } from "./ui/planning/PlanningScreen.tsx";
+import { RidingLauncher } from "./ui/riding/RidingLauncher.tsx";
 import { RidingScreen } from "./ui/riding/RidingScreen.tsx";
 import { SettingsScreen } from "./ui/settings/SettingsScreen.tsx";
 import { MainNavigation, type Screen } from "./ui/shared/MainNavigation.tsx";
@@ -38,6 +39,31 @@ function App({ mapFactory }: AppProps) {
   const handleRouteSaved = (route: PlannedRoute) => {
     setSelectedRoute(route);
     setScreen("riding");
+    notifyNewRideContent();
+  };
+
+  // Opens a resumable route session discovered by the Ride launcher itself
+  // (getActiveRideState()/getRoute()) — App.tsx never inspects persisted
+  // ride state directly. Deliberately does not capture window.scrollY into
+  // routesScrollYRef the way handleOpenRoute does: the rider is already on
+  // the Ride screen (the launcher), not Routes, so capturing the launcher's
+  // own scroll offset here would wrongly overwrite the Routes-restore ref.
+  // Never starts geolocation itself.
+  const handleResumeRoute = (route: PlannedRoute) => {
+    setSelectedRoute(route);
+    setScreen("riding");
+    notifyNewRideContent();
+  };
+
+  // The sole success-path integration point from RidingScreen's shared End
+  // ride/Finish ride finalisation lifecycle. Called only once nav.finish()
+  // has already cleared the persisted active-ride row and RidingScreen's
+  // own runtime cleanup has already applied. Clearing selectedRoute here
+  // (never elsewhere) is what actually unmounts RidingScreen and mounts the
+  // empty Ride launcher in its place; screen deliberately stays "riding"
+  // throughout.
+  const handleRideFinalized = () => {
+    setSelectedRoute(null);
     notifyNewRideContent();
   };
 
@@ -90,21 +116,15 @@ function App({ mapFactory }: AppProps) {
               mapFactory={mapFactory}
               onRidingActiveChange={setIsRidingActive}
               onNavigateToPlanning={handleNavigateToPlanning}
+              onRideFinalized={handleRideFinalized}
             />
           ) : (
-            <section className="screen" aria-label="Ride">
-              <h1 className="screen-title">Ride</h1>
-              <p>No route selected yet. Choose a route from Routes to start riding.</p>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => {
-                  setScreen("library");
-                }}
-              >
-                Choose a route
-              </button>
-            </section>
+            <RidingLauncher
+              onResumeRoute={handleResumeRoute}
+              onChooseRoute={() => {
+                setScreen("library");
+              }}
+            />
           ))}
         {screen === "planning" && (
           <PlanningScreen

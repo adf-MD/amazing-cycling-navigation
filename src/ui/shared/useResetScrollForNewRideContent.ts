@@ -3,8 +3,10 @@ import type { Screen } from "./MainNavigation.tsx";
 
 /**
  * Scrolls the document to the top exactly once per genuinely new Ride
- * content event (a route opened from Routes, or newly saved from
- * Planning), never on a plain nav-tab return to an already-open ride.
+ * content event (a route opened from Routes, newly saved from Planning,
+ * resumed from the Ride launcher, or the empty launcher shown after a
+ * successful End/Finish ride), never on a plain nav-tab return to an
+ * already-open ride.
  * RidingScreen always fully unmounts and remounts on every screen switch
  * (App.tsx's conditional screen rendering has no `key`), so it can never
  * itself tell "genuinely new" apart from "already open" — only this hook,

@@ -13,6 +13,18 @@ import type {
 export type StoredElevationViewMode =
   { kind: "full" } | { kind: "upcoming"; windowMetres: ElevationWindowMetres };
 
+/** Discriminates what kind of active ride session a `StoredRideState` row
+ * represents — see `StoredRideState.kind`'s own doc comment for the full
+ * legacy-defaulting/forward-compatibility rationale, and
+ * `src/storage/mapping.ts`'s `resolveStoredRideSessionKind` for how a
+ * stored value is resolved defensively. Single-valued today ("route" is the
+ * only kind this table has ever held); backlog item 42 (route-less free
+ * roam) is expected to widen this union with a second variant carrying
+ * different, route-incompatible fields (no meaningful `routeId`). A
+ * storage-only discriminant (like `StoredElevationViewMode` above), not a
+ * domain-level type — it has no meaning outside a stored row. */
+export type RideSessionKind = "route";
+
 /** Coarse, provider-independent outcome of the most recent attempt to use
  * the stored OpenRouteService key — never the raw HTTP status or provider
  * response, which could carry request/response detail we don't want to
@@ -249,6 +261,24 @@ export interface StoredRideState {
    * is never inferred as armed merely because it happens to store
    * near-total progress. No Dexie version() bump required. */
   completionArmed?: boolean;
+  /** Discriminates what kind of active ride session this row represents.
+   * Single-valued today ("route" only) — this table has held only route
+   * sessions since it was introduced; backlog item 42 (route-less free
+   * roam) is expected to widen `RideSessionKind` with a second variant. A
+   * plain string, not the narrower `RideSessionKind` union, at this
+   * storage boundary — Dexie never validates stored data, so
+   * src/storage/mapping.ts's `resolveStoredRideSessionKind` is where an
+   * unrecognised/corrupt value is actually resolved, never passed through
+   * as though it were trusted. Optional/non-indexed for the same reason as
+   * every field added since v1: a row written before this field existed
+   * simply lacks it, and `resolveStoredRideSessionKind` treats that
+   * absence as `"route"` — the only kind that has ever existed, so this is
+   * the correct legacy default. A *present but unrecognised* value
+   * deliberately resolves to a distinct `"unsupported"` outcome instead of
+   * also defaulting to `"route"` — see `resolveStoredRideSessionKind`'s own
+   * doc comment for why this table's usual `?? default` convention doesn't
+   * apply to this one field. No Dexie `version()` bump required. */
+  kind?: string;
 }
 
 export class AcnDatabase extends Dexie {
@@ -330,10 +360,11 @@ export class AcnDatabase extends Dexie {
     });
     // planningDrafts' later editCopySourceRouteId/editCopyWaypointsOrigin
     // fields (the "Edit copy in Planning" slice), planningDrafts' later
-    // editCopyOperation field (the "Reverse route" slice), and routes'
-    // later planningProvenance field, are plain, non-indexed data fields
-    // added the same way as everything else documented above — no
-    // version(5) needed for them.
+    // editCopyOperation field (the "Reverse route" slice), routes' later
+    // planningProvenance field, and rideState's later `kind` field (the
+    // Ride-launcher/explicit-session-recovery slice, item 41) are all
+    // plain, non-indexed data fields added the same way as everything else
+    // documented above — no version(5) needed for any of them.
   }
 }
 

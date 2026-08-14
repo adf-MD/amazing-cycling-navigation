@@ -313,3 +313,33 @@ describe("planningPreferences profileByDefault (no schema version bump)", () => 
     db.close();
   });
 });
+
+describe("rideState kind (no schema version bump)", () => {
+  it("a legacy rideState row written before kind existed loads cleanly", async () => {
+    // Simulates a real installation whose active-ride row predates backlog
+    // item 41 (the Ride launcher/explicit-session-recovery slice) — the
+    // schema itself (rideState: "id") is unchanged, so this is a plain
+    // field addition, not a new Dexie version; no upgrade path is
+    // exercised here at all.
+    const db = new AcnDatabase(TEST_DB_NAME);
+    await db.open();
+    await db.rideState.put(rideState);
+
+    const stored = await db.rideState.get("active");
+    expect(stored).not.toHaveProperty("kind");
+
+    db.close();
+  });
+
+  it("round-trips a rideState row with kind set", async () => {
+    const db = new AcnDatabase(TEST_DB_NAME);
+    await db.open();
+    await db.rideState.put({ ...rideState, kind: "route" });
+
+    await expect(db.rideState.get("active")).resolves.toMatchObject({
+      kind: "route",
+    });
+
+    db.close();
+  });
+});

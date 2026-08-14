@@ -4,6 +4,7 @@ import {
   fromStoredPlanningPreferences,
   fromStoredRideState,
   fromStoredRouteLibraryPreferences,
+  resolveStoredRideSessionKind,
   toStoredPlanningDraft,
   toStoredPlanningPreferences,
   toStoredRideState,
@@ -532,6 +533,50 @@ describe("toStoredRideState / fromStoredRideState", () => {
         false,
       );
     });
+  });
+
+  describe("session kind (kind)", () => {
+    it("toStoredRideState always writes the route session kind", () => {
+      const stored = toStoredRideState(
+        "route-1",
+        "2026-01-01T00:00:00.000Z",
+        fix,
+        coreState,
+        upcoming5km,
+        overviewCamera,
+        false,
+        null,
+        false,
+      );
+
+      expect(stored.kind).toBe("route");
+    });
+  });
+});
+
+describe("resolveStoredRideSessionKind", () => {
+  const baseRow: StoredRideState = {
+    id: "active",
+    routeId: "route-1",
+    startedAt: "2026-01-01T00:00:00.000Z",
+    lastFix: null,
+    lastMatchedPointIndex: 0,
+    matchedDistanceFromStartMetres: 0,
+    offRouteMachineState: coreState.offRouteMachineState,
+  };
+
+  it('resolves an absent kind (a legacy row written before this field existed) to "route"', () => {
+    expect(resolveStoredRideSessionKind(baseRow)).toBe("route");
+  });
+
+  it('resolves an explicit "route" kind to itself', () => {
+    expect(resolveStoredRideSessionKind({ ...baseRow, kind: "route" })).toBe("route");
+  });
+
+  it('resolves an unrecognised, present kind value to "unsupported" — never silently to "route"', () => {
+    expect(resolveStoredRideSessionKind({ ...baseRow, kind: "free-roam" })).toBe(
+      "unsupported",
+    );
   });
 });
 
