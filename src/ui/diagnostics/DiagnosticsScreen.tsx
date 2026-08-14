@@ -22,9 +22,22 @@ import {
 } from "../../routing/routingConnectionTest.ts";
 import { describeMapAttempt, useRecentMapAttempts } from "../../map/mapDiagnostics.ts";
 import { useStorageHealth } from "../../storage/storageHealth.ts";
+import { isStoredRouteRideState } from "../../storage/mapping.ts";
 import { getActiveRideState } from "../../storage/rideStateRepository.ts";
 import { getProviderKey } from "../../storage/providerKeyRepository.ts";
+import type { StoredRideState } from "../../storage/db.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
+
+/** "Active route" is a slight misnomer once a free-roam session (backlog
+ * item 42, which has no route id at all) can also be the stored active
+ * session — kept as the field label since it's still the common case, but
+ * this resolves a genuinely useful value for either kind rather than
+ * failing to compile against the union or silently showing "None" for an
+ * active free-roam session. */
+function describeActiveRideStateSummary(rideState: StoredRideState | undefined): string {
+  if (!rideState) return "None";
+  return isStoredRouteRideState(rideState) ? rideState.routeId : "Free roam";
+}
 
 const SERVICE_WORKER_LABEL: Record<ServiceWorkerStatus, string> = {
   unsupported: "Not supported by this browser",
@@ -200,7 +213,7 @@ export function DiagnosticsScreen({
           <div className="diagnostics-definition-item">
             <dt className="diagnostics-label">Active route</dt>
             <dd className="diagnostics-value diagnostics-value--mono">
-              {rideState?.routeId ?? "None"}
+              {describeActiveRideStateSummary(rideState)}
             </dd>
           </div>
         </dl>

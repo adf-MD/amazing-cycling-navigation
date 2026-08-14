@@ -1,6 +1,6 @@
 import Dexie from "dexie";
 import { afterEach, describe, expect, it } from "vitest";
-import { AcnDatabase } from "./db.ts";
+import { AcnDatabase, type StoredFreeRoamRideState } from "./db.ts";
 import type { PlannedRoute } from "../domain/types.ts";
 
 const TEST_DB_NAME = "acn-migration-test";
@@ -339,6 +339,41 @@ describe("rideState kind (no schema version bump)", () => {
     await expect(db.rideState.get("active")).resolves.toMatchObject({
       kind: "route",
     });
+
+    db.close();
+  });
+
+  it("round-trips a free-roam rideState row (backlog item 42) through the same v1 store, with no schema bump", async () => {
+    // Confirms StoredRideState becoming a discriminated union
+    // (StoredRouteRideState | StoredFreeRoamRideState) is a TypeScript-only
+    // change — the rideState object store itself is untouched (still "id"
+    // only, still version(1)'s own declaration), and a free-roam row lives
+    // in the exact same singleton slot a route row would.
+    const db = new AcnDatabase(TEST_DB_NAME);
+    await db.open();
+    // A typed variable, not a fresh object literal, is passed to put()
+    // deliberately: TypeScript's excess-property check only applies to
+    // fresh literals, and Dexie's own InsertType<StoredRideState, "id">
+    // utility (built from a plain Omit, which doesn't distribute keyof
+    // over a union type parameter) would otherwise reject
+    // lastReliableBearingDegrees as unknown — a library-typing quirk, not
+    // a real problem with this row's shape, confirmed by the fact that
+    // rideStateRepository.ts's own setActiveRideState(state: StoredRideState)
+    // passes an already-typed variable through .put() with no such issue.
+    const freeRoamRow: StoredFreeRoamRideState = {
+      id: "active",
+      kind: "free-roam",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      lastFix: { coordinate: [-1.5, 53.8], accuracyMetres: 8, timestampMs: 0 },
+      lastReliableBearingDegrees: 42,
+    };
+    await db.rideState.put(freeRoamRow);
+
+    await expect(db.rideState.get("active")).resolves.toMatchObject({
+      kind: "free-roam",
+      lastReliableBearingDegrees: 42,
+    });
+    expect(await db.rideState.get("active")).not.toHaveProperty("routeId");
 
     db.close();
   });

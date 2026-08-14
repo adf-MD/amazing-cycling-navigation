@@ -56,6 +56,9 @@ ACN has two modes — Planning and Riding — sharing one local route library.
   action; both clear only navigation progress, never the saved route itself.
 - A neutral fallback background keeps the route, position and elevation usable if map tiles are
   unavailable.
+- A route-less **Free roam** mode from the idle Ride launcher: live position and camera follow with
+  no selected route, no route line, and no OpenRouteService dependency. An unfinished route session
+  and an unfinished free-roam session can't silently replace one another.
 
 Automatic rerouting, spoken directions, background location tracking, ride recording/history,
 Bluetooth sensors, accounts, cloud sync, full offline map downloads, and weather are deliberately
@@ -164,8 +167,8 @@ projects — desktop Chromium, and Chromium's Pixel 7 emulation for Android (see
 [Platform, privacy and limitations](#platform-privacy-and-limitations) above for what that does
 and doesn't prove). Together they cover GPX import/export, Planning under both cycling profiles
 plus the edit-copy/reverse-route flows, the route library (search/sort/pin), active Riding (camera
-controls, next-manoeuvre, climb view, wake lock, finish/end ride), sticky navigation, the PWA
-manifest and service-worker scope, and Android-emulated layout/persistence/offline behaviour. See
+controls, next-manoeuvre, climb view, wake lock, finish/end ride), free roam, sticky navigation, the
+PWA manifest and service-worker scope, and Android-emulated layout/persistence/offline behaviour. See
 [`docs/android-chrome-acceptance.md`](./docs/android-chrome-acceptance.md) for the Android-specific
 acceptance checklist.
 

@@ -483,3 +483,191 @@ describe("App — Ride launcher session recovery", () => {
     clearSpy.mockRestore();
   });
 });
+
+describe("App — Free roam", () => {
+  beforeEach(async () => {
+    await db.routes.clear();
+    await db.rideState.clear();
+    await db.routeLibraryPreferences.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function stickyHeader(): Element {
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    const header = nav.closest("header");
+    if (!header) throw new Error("expected the nav to be wrapped in a header");
+    return header;
+  }
+
+  it("Start free roam opens FreeRoamScreen, with no route selected", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+    await user.click(await screen.findByRole("button", { name: "Start free roam" }));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Free roam" }),
+    ).toBeInTheDocument();
+  });
+
+  it("onRideFinalized from FreeRoamScreen clears the ride content, resets scroll, and restores the sticky header", async () => {
+    const user = userEvent.setup();
+    const scrollToSpy = installScrollToSpy();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+    await user.click(await screen.findByRole("button", { name: "Start free roam" }));
+    await screen.findByRole("heading", { level: 1, name: "Free roam" });
+    // Becomes non-sticky only once the mount effect's nav.start() call has
+    // actually flipped geolocationStatus away from "idle" and propagated
+    // through onRidingActiveChange — not necessarily settled at the exact
+    // microtask the heading itself first appears at.
+    await waitFor(() => {
+      expect(stickyHeader()).not.toHaveClass("app-header--sticky");
+    });
+    const scrollCallsBeforeEndRide = scrollToSpy.mock.calls.length;
+
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+
+    await waitFor(async () => {
+      expect(await getActiveRideState()).toBeUndefined();
+    });
+    expect(
+      await screen.findByRole("button", { name: "Choose a route" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1, name: "Free roam" })).toBeNull();
+    expect(scrollToSpy.mock.calls.length).toBeGreaterThan(scrollCallsBeforeEndRide);
+    expect(stickyHeader()).toHaveClass("app-header--sticky");
+  });
+
+  it("navigating away from an active free-roam session and back to Ride shows the launcher (Resume free roam), never a silently-still-active FreeRoamScreen", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+    await user.click(await screen.findByRole("button", { name: "Start free roam" }));
+    await screen.findByRole("heading", { level: 1, name: "Free roam" });
+
+    await user.click(screen.getByRole("button", { name: "Routes" }));
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+
+    // Never the still-selected FreeRoamScreen — the launcher, re-hydrated
+    // from the still-persisted row, requiring a fresh explicit tap before
+    // GPS can restart.
+    expect(screen.queryByRole("heading", { level: 1, name: "Free roam" })).toBeNull();
+    expect(
+      await screen.findByRole("button", { name: "Resume free roam" }),
+    ).toBeInTheDocument();
+  });
+
+  it("the identical navigate-away-and-back sequence leaves an open ROUTE session untouched (RidingScreen stays shown directly)", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    await user.click(screen.getByRole("button", { name: "Route A" }));
+    expect(screen.getByRole("heading", { name: "Route A" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Routes" }));
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+
+    // Unlike free roam, a route session's own idle panel (not the
+    // launcher) is what's shown — this behaviour must be completely
+    // unaffected by the free-roam-specific reset in App.tsx's
+    // handleNavigate.
+    expect(screen.getByRole("heading", { name: "Route A" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Choose a route" })).toBeNull();
+  });
+
+  it("a saved route cannot silently replace an unfinished free-roam session — Routes is blocked with an explanation, and can open normally once free roam is ended", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    await setActiveRideState({
+      id: "active",
+      kind: "free-roam",
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: null,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Route A" }));
+
+    // Blocked: redirected to Ride, never opened into RidingScreen.
+    expect(screen.queryByRole("heading", { name: "Route A" })).toBeNull();
+    expect(
+      await screen.findByText(
+        "You have an unfinished free roam session. End it before opening a saved route.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Resume free roam" }),
+    ).toBeInTheDocument();
+    // The row must genuinely still be there — nothing was cleared.
+    expect(await getActiveRideState()).toBeDefined();
+
+    // End the conflicting session, then the same route opens normally.
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+    await waitFor(async () => {
+      expect(await getActiveRideState()).toBeUndefined();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Routes" }));
+    await user.click(await screen.findByRole("button", { name: "Route A" }));
+    expect(await screen.findByRole("heading", { name: "Route A" })).toBeInTheDocument();
+  });
+
+  it("a failed conflict check also blocks opening a route (fails closed), never silently proceeding", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    const readSpy = vi
+      .spyOn(rideStateRepository, "getActiveRideState")
+      .mockRejectedValueOnce(new Error("boom"));
+
+    await user.click(screen.getByRole("button", { name: "Route A" }));
+
+    expect(screen.queryByRole("heading", { name: "Route A" })).toBeNull();
+    expect(
+      await screen.findByText(
+        "Whether a free roam session is still active could not be checked, so the route was not opened. Try again.",
+      ),
+    ).toBeInTheDocument();
+
+    readSpy.mockRestore();
+  });
+
+  it("Start free roam is unavailable while a route session is unfinished — the launcher shows only Resume route/End ride", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    const [importedRoute] = await db.routes.toArray();
+    if (!importedRoute) throw new Error("expected an imported route");
+    await setActiveRideState({
+      id: "active",
+      routeId: importedRoute.id,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: { coordinate: [0, 51], accuracyMetres: 6, timestampMs: 1000 },
+      lastMatchedPointIndex: 0,
+      matchedDistanceFromStartMetres: 0,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Resume route" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start free roam" })).toBeNull();
+  });
+});

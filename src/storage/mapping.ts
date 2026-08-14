@@ -13,10 +13,12 @@ import {
 } from "../navigation/upcomingElevation.ts";
 import {
   type RideSessionKind,
+  type StoredFreeRoamRideState,
   type StoredPlanningDraft,
   type StoredPlanningPreferences,
   type StoredRideState,
   type StoredRouteLibraryPreferences,
+  type StoredRouteRideState,
 } from "./db.ts";
 
 function isElevationWindowMetres(value: number): value is ElevationWindowMetres {
@@ -30,7 +32,7 @@ function isElevationWindowMetres(value: number): value is ElevationWindowMetres 
  * existed, and to the 5 km default for anything malformed or absent —
  * never rejects a row outright.
  */
-function resolveElevationViewMode(stored: StoredRideState): ElevationViewMode {
+function resolveElevationViewMode(stored: StoredRouteRideState): ElevationViewMode {
   const mode = stored.elevationViewMode;
   if (mode?.kind === "full") {
     return mode;
@@ -48,7 +50,7 @@ function resolveElevationViewMode(stored: StoredRideState): ElevationViewMode {
 }
 
 function isRideSessionKind(value: unknown): value is RideSessionKind {
-  return value === "route";
+  return value === "route" || value === "free-roam";
 }
 
 /** What `resolveStoredRideSessionKind` can determine about a stored row's
@@ -75,21 +77,47 @@ export type ResolvedRideSessionKind = RideSessionKind | "unsupported";
  * fallback works elsewhere in this file. `editCopyOperation` is a closed,
  * two-value historical field whose absence has exactly one proven past
  * meaning and never gates a differently-shaped read. `kind` is different by
- * design: a discriminant this project already knows it will widen (backlog
- * item 42, free roam) to a variant carrying different, route-incompatible
- * fields (no meaningful `routeId`). Silently defaulting an unrecognised
- * future value to `"route"` here could make the Ride launcher confidently
- * resolve `routeId` on a row whose actual shape it cannot correctly
- * interpret — wrong in a way that actively misleads the rider, not merely
- * cosmetically wrong. `"unsupported"` is the conservative, correct
- * resolution: the launcher can still offer a safe, no-interpretation-
- * required discard action for it, never a Resume one.
+ * design: a discriminant that now genuinely has two route-incompatible
+ * shapes (backlog item 42, free roam — see `StoredFreeRoamRideState`, which
+ * has no meaningful `routeId`). Silently defaulting an unrecognised value
+ * to `"route"` here could make the Ride launcher confidently resolve
+ * `routeId` on a row whose actual shape it cannot correctly interpret —
+ * wrong in a way that actively misleads the rider, not merely cosmetically
+ * wrong. `"unsupported"` is the conservative, correct resolution: the
+ * launcher can still offer a safe, no-interpretation-required discard
+ * action for it, never a Resume one.
+ *
+ * Takes the raw `StoredRideState` union (rather than requiring the caller
+ * to narrow first) since `kind` is readable on either member.
  */
 export function resolveStoredRideSessionKind(
   stored: StoredRideState,
 ): ResolvedRideSessionKind {
   if (stored.kind === undefined) return "route";
   return isRideSessionKind(stored.kind) ? stored.kind : "unsupported";
+}
+
+/**
+ * Narrows a `StoredRideState` to its route-session member. Every read of a
+ * route-only field (`routeId`, match/off-route/elevation/climb/completion
+ * state) must go through this first — the compiler, not just a runtime
+ * convention, is what then stops a free-roam row from ever reaching
+ * route-progress restoration.
+ */
+export function isStoredRouteRideState(
+  stored: StoredRideState,
+): stored is StoredRouteRideState {
+  return resolveStoredRideSessionKind(stored) === "route";
+}
+
+/**
+ * Narrows a `StoredRideState` to its free-roam-session member — see
+ * `isStoredRouteRideState`'s own doc comment for the reciprocal rationale.
+ */
+export function isStoredFreeRoamRideState(
+  stored: StoredRideState,
+): stored is StoredFreeRoamRideState {
+  return resolveStoredRideSessionKind(stored) === "free-roam";
 }
 
 export interface StoredCameraState {
@@ -114,7 +142,7 @@ export function toStoredRideState(
   wakeLockDesired: boolean,
   dismissedClimbFeatureId: string | null,
   completionArmed: boolean,
-): StoredRideState {
+): StoredRouteRideState {
   return {
     id: "active",
     routeId,
@@ -155,7 +183,7 @@ export interface RestoredRideState {
   completionArmed: boolean;
 }
 
-export function fromStoredRideState(stored: StoredRideState): RestoredRideState {
+export function fromStoredRideState(stored: StoredRouteRideState): RestoredRideState {
   const lastMatch = stored.lastFix
     ? {
         pointIndex: stored.lastMatchedPointIndex,
@@ -210,6 +238,76 @@ export function fromStoredRideState(stored: StoredRideState): RestoredRideState 
     // the only safe default; never inferred true merely from a stored
     // near-total progress value.
     completionArmed: stored.completionArmed ?? false,
+  };
+}
+
+export function toStoredFreeRoamState(
+  startedAt: string,
+  lastFix: GeolocationFix | null,
+  cameraState: StoredCameraState,
+  lastReliableBearingDegrees: number | null,
+  wakeLockDesired: boolean,
+): StoredFreeRoamRideState {
+  return {
+    id: "active",
+    kind: "free-roam",
+    startedAt,
+    lastFix: lastFix
+      ? {
+          coordinate: lastFix.coordinate,
+          accuracyMetres: lastFix.accuracyMetres,
+          timestampMs: lastFix.timestampMs,
+        }
+      : null,
+    cameraMode: cameraState.mode,
+    cameraCoordinate: cameraState.coordinate,
+    cameraZoom: cameraState.zoom,
+    cameraBearingDegrees: cameraState.bearingDegrees,
+    cameraPitchDegrees: cameraState.pitchDegrees,
+    lastReliableBearingDegrees: lastReliableBearingDegrees ?? undefined,
+    wakeLockDesired,
+  };
+}
+
+export interface RestoredFreeRoamState {
+  lastFix: GeolocationFix | null;
+  cameraState: StoredCameraState;
+  lastReliableBearingDegrees: number | null;
+  wakeLockDesired: boolean;
+}
+
+export function fromStoredFreeRoamState(
+  stored: StoredFreeRoamRideState,
+): RestoredFreeRoamState {
+  return {
+    lastFix: stored.lastFix
+      ? {
+          coordinate: stored.lastFix.coordinate,
+          accuracyMetres: stored.lastFix.accuracyMetres,
+          timestampMs: stored.lastFix.timestampMs,
+          speedMetresPerSecond: null,
+          headingDegrees: null,
+        }
+      : null,
+    // Rows written before these fields existed won't have them — default
+    // to "overview"/north-up/top-down, mirroring fromStoredRideState's
+    // identical rationale for a route session.
+    cameraState: {
+      mode: stored.cameraMode ?? "overview",
+      coordinate: stored.cameraCoordinate ?? null,
+      zoom: stored.cameraZoom ?? null,
+      bearingDegrees: stored.cameraBearingDegrees ?? 0,
+      pitchDegrees: stored.cameraPitchDegrees ?? 0,
+    },
+    // Absent whenever a reliable bearing was never established (e.g. the
+    // rider stayed stationary) — null (never a fabricated 0/north-up value
+    // here; the camera hook itself decides the north-up fallback) is the
+    // only honest default.
+    lastReliableBearingDegrees: stored.lastReliableBearingDegrees ?? null,
+    // Rows written before this field existed won't have it — off is the
+    // only safe default, mirroring fromStoredRideState's identical
+    // rationale.
+    wakeLockDesired: stored.wakeLockDesired ?? false,
   };
 }
 

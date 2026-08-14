@@ -14,16 +14,15 @@ export type StoredElevationViewMode =
   { kind: "full" } | { kind: "upcoming"; windowMetres: ElevationWindowMetres };
 
 /** Discriminates what kind of active ride session a `StoredRideState` row
- * represents — see `StoredRideState.kind`'s own doc comment for the full
- * legacy-defaulting/forward-compatibility rationale, and
+ * represents — see `StoredRouteRideState.kind`'s own doc comment for the
+ * full legacy-defaulting/forward-compatibility rationale, and
  * `src/storage/mapping.ts`'s `resolveStoredRideSessionKind` for how a
- * stored value is resolved defensively. Single-valued today ("route" is the
- * only kind this table has ever held); backlog item 42 (route-less free
- * roam) is expected to widen this union with a second variant carrying
- * different, route-incompatible fields (no meaningful `routeId`). A
- * storage-only discriminant (like `StoredElevationViewMode` above), not a
- * domain-level type — it has no meaning outside a stored row. */
-export type RideSessionKind = "route";
+ * stored value is resolved defensively. A storage-only discriminant (like
+ * `StoredElevationViewMode` above), not a domain-level type — it has no
+ * meaning outside a stored row. Widened to `"free-roam"` (backlog item 42,
+ * route-less free roam) alongside `StoredRideState` itself becoming a
+ * union — see `StoredFreeRoamRideState` below. */
+export type RideSessionKind = "route" | "free-roam";
 
 /** Coarse, provider-independent outcome of the most recent attempt to use
  * the stored OpenRouteService key — never the raw HTTP status or provider
@@ -180,11 +179,13 @@ export interface StoredOffRouteMachineState {
 }
 
 /**
- * Singleton row (id is always "active"): the one currently-active ride, if
- * any. Enough to resume a ride immediately after reload/pageshow/hidden
- * without re-deriving progress from scratch.
+ * Singleton row (id is always "active") for a route-based ride session —
+ * one of the two members of the `StoredRideState` union below (the other,
+ * `StoredFreeRoamRideState`, has no route to speak of). Enough to resume a
+ * ride immediately after reload/pageshow/hidden without re-deriving
+ * progress from scratch.
  */
-export interface StoredRideState {
+export interface StoredRouteRideState {
   id: "active";
   routeId: string;
   startedAt: string;
@@ -262,24 +263,77 @@ export interface StoredRideState {
    * near-total progress. No Dexie version() bump required. */
   completionArmed?: boolean;
   /** Discriminates what kind of active ride session this row represents.
-   * Single-valued today ("route" only) — this table has held only route
-   * sessions since it was introduced; backlog item 42 (route-less free
-   * roam) is expected to widen `RideSessionKind` with a second variant. A
-   * plain string, not the narrower `RideSessionKind` union, at this
+   * A plain string, not the narrower `RideSessionKind` union, at this
    * storage boundary — Dexie never validates stored data, so
    * src/storage/mapping.ts's `resolveStoredRideSessionKind` is where an
    * unrecognised/corrupt value is actually resolved, never passed through
-   * as though it were trusted. Optional/non-indexed for the same reason as
-   * every field added since v1: a row written before this field existed
-   * simply lacks it, and `resolveStoredRideSessionKind` treats that
-   * absence as `"route"` — the only kind that has ever existed, so this is
-   * the correct legacy default. A *present but unrecognised* value
-   * deliberately resolves to a distinct `"unsupported"` outcome instead of
-   * also defaulting to `"route"` — see `resolveStoredRideSessionKind`'s own
-   * doc comment for why this table's usual `?? default` convention doesn't
+   * as though it were trusted. Deliberately left as a plain string here
+   * (not narrowed to the literal `"route"`) even now that `StoredRideState`
+   * is a union: `resolveStoredRideSessionKind` must still be able to
+   * resolve a corrupted or future-unknown value from a route-shaped row to
+   * `"unsupported"`, which would be impossible to construct without an
+   * unsafe cast if this were narrowed to `"route"` only. Optional/
+   * non-indexed for the same reason as every field added since v1: a row
+   * written before this field existed simply lacks it, and
+   * `resolveStoredRideSessionKind` treats that absence as `"route"` — the
+   * only kind this table held before backlog item 42 (route-less free
+   * roam) added `StoredFreeRoamRideState` below, so this is the correct
+   * legacy default. A *present but unrecognised* value deliberately
+   * resolves to a distinct `"unsupported"` outcome instead of also
+   * defaulting to `"route"` — see `resolveStoredRideSessionKind`'s own doc
+   * comment for why this table's usual `?? default` convention doesn't
    * apply to this one field. No Dexie `version()` bump required. */
   kind?: string;
 }
+
+/**
+ * Singleton row (id is always "active") for a route-less "free roam" ride
+ * session (backlog item 42) — the other member of the `StoredRideState`
+ * union, alongside `StoredRouteRideState` above. Deliberately has no
+ * `routeId`/`lastMatchedPointIndex`/`matchedDistanceFromStartMetres`/
+ * `offRouteMachineState`/elevation/climb/completion fields at all: none of
+ * those concepts exist without a route, and the type system (not just a
+ * runtime convention) is what stops free-roam code from ever touching them.
+ * `kind` is a required literal here, unlike `StoredRouteRideState.kind`'s
+ * plain-string-and-optional shape — there is no legacy free-roam row from
+ * before this field existed (free roam didn't exist before this slice), so
+ * every free-roam row that will ever exist is written by code that already
+ * knows to set it explicitly.
+ */
+export interface StoredFreeRoamRideState {
+  id: "active";
+  kind: "free-roam";
+  startedAt: string;
+  lastFix: StoredGpsFix | null;
+  cameraMode?: RideCameraMode;
+  cameraCoordinate?: Coordinate | null;
+  cameraZoom?: number | null;
+  cameraBearingDegrees?: number;
+  cameraPitchDegrees?: number;
+  /** The last reliable direction-of-travel bearing (mirrors
+   * src/ui/riding/rideCamera.ts's internal lastCommandedBearingDegrees) —
+   * persisted separately from raw GPS heading/speed, which stay transient
+   * and are never persisted, so a resumed session can be framed sensibly
+   * (using this bearing, or north-up when absent) while awaiting the first
+   * fresh fix, rather than flashing MapLibre's raw default view. */
+  lastReliableBearingDegrees?: number;
+  /** Same meaning and defaulting convention as
+   * StoredRouteRideState.wakeLockDesired above. */
+  wakeLockDesired?: boolean;
+}
+
+/**
+ * The stored shape of the one currently-active ride session, if any —
+ * either a route session or a route-less free-roam session (backlog item
+ * 42). Every route-only field access on a value typed as this union
+ * requires narrowing first (via src/storage/mapping.ts's
+ * `isStoredRouteRideState`/`isStoredFreeRoamRideState`), which is what
+ * makes "a free-roam row must never be passed through route-progress
+ * restoration or sent to getRoute" a compile-time guarantee, not just a
+ * convention. Dexie itself never validates stored data either way — the
+ * union only helps once a row has been read back into application code.
+ */
+export type StoredRideState = StoredRouteRideState | StoredFreeRoamRideState;
 
 export class AcnDatabase extends Dexie {
   routes!: EntityTable<PlannedRoute, "id">;
@@ -361,10 +415,15 @@ export class AcnDatabase extends Dexie {
     // planningDrafts' later editCopySourceRouteId/editCopyWaypointsOrigin
     // fields (the "Edit copy in Planning" slice), planningDrafts' later
     // editCopyOperation field (the "Reverse route" slice), routes' later
-    // planningProvenance field, and rideState's later `kind` field (the
-    // Ride-launcher/explicit-session-recovery slice, item 41) are all
-    // plain, non-indexed data fields added the same way as everything else
-    // documented above — no version(5) needed for any of them.
+    // planningProvenance field, rideState's later `kind` field (the
+    // Ride-launcher/explicit-session-recovery slice, item 41), and
+    // StoredFreeRoamRideState's own fields (lastReliableBearingDegrees etc,
+    // item 42, route-less free roam) are all plain, non-indexed data fields
+    // stored in the same `rideState` object store as every route session —
+    // added the same way as everything else documented above — no
+    // version(5) needed for any of them. StoredRideState becoming a union
+    // of StoredRouteRideState | StoredFreeRoamRideState (item 42) is a
+    // TypeScript-only change; it doesn't affect what's actually indexed.
   }
 }
 

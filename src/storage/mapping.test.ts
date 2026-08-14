@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  fromStoredFreeRoamState,
   fromStoredPlanningDraft,
   fromStoredPlanningPreferences,
   fromStoredRideState,
   fromStoredRouteLibraryPreferences,
+  isStoredFreeRoamRideState,
+  isStoredRouteRideState,
   resolveStoredRideSessionKind,
+  toStoredFreeRoamState,
   toStoredPlanningDraft,
   toStoredPlanningPreferences,
   toStoredRideState,
@@ -16,9 +20,11 @@ import type { GeolocationFix } from "../platform/geolocation.ts";
 import type { ElevationViewMode } from "../navigation/types.ts";
 import type { Waypoint } from "../domain/types.ts";
 import type {
+  StoredFreeRoamRideState,
   StoredPlanningDraft,
   StoredRideState,
   StoredRouteLibraryPreferences,
+  StoredRouteRideState,
 } from "./db.ts";
 
 const coreState: RideNavigationCoreState = {
@@ -187,7 +193,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     // Simulates a real pre-existing row from before this feature shipped —
     // built by hand, not via toStoredRideState, so it genuinely lacks the
     // camera fields (rather than having them set to undefined explicitly).
-    const legacyRow: StoredRideState = {
+    const legacyRow: StoredRouteRideState = {
       id: "active",
       routeId: "route-1",
       startedAt: "2026-01-01T00:00:00.000Z",
@@ -207,7 +213,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     // A row from between the free-camera-position feature and the
     // bearing/pitch feature: has a saved position but genuinely lacks
     // cameraBearingDegrees/cameraPitchDegrees.
-    const legacyFreeRow: StoredRideState = {
+    const legacyFreeRow: StoredRouteRideState = {
       id: "active",
       routeId: "route-1",
       startedAt: "2026-01-01T00:00:00.000Z",
@@ -270,7 +276,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     );
 
     it("restores a legacy row with only the old numeric elevationWindowMetres field to the matching upcoming mode", () => {
-      const legacyRow: StoredRideState = {
+      const legacyRow: StoredRouteRideState = {
         id: "active",
         routeId: "route-1",
         startedAt: "2026-01-01T00:00:00.000Z",
@@ -288,7 +294,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     });
 
     it("defaults to the 5 km upcoming view when neither elevation field is present", () => {
-      const rowWithNeitherField: StoredRideState = {
+      const rowWithNeitherField: StoredRouteRideState = {
         id: "active",
         routeId: "route-1",
         startedAt: "2026-01-01T00:00:00.000Z",
@@ -305,7 +311,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     });
 
     it("falls back to the 5 km upcoming view for a malformed windowMetres value", () => {
-      const malformedRow: StoredRideState = {
+      const malformedRow: StoredRouteRideState = {
         id: "active",
         routeId: "route-1",
         startedAt: "2026-01-01T00:00:00.000Z",
@@ -357,7 +363,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     });
 
     it("defaults lastReliableMatch to lastMatch for a legacy row with no freeze history", () => {
-      const legacyRow: StoredRideState = {
+      const legacyRow: StoredRouteRideState = {
         id: "active",
         routeId: "route-1",
         startedAt: "2026-01-01T00:00:00.000Z",
@@ -405,7 +411,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       // shipped — built by hand, not via toStoredRideState, so it
       // genuinely lacks wakeLockDesired (rather than having it set to
       // undefined explicitly).
-      const legacyRow: StoredRideState = {
+      const legacyRow: StoredRouteRideState = {
         id: "active",
         routeId: "route-1",
         startedAt: "2026-01-01T00:00:00.000Z",
@@ -460,7 +466,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       // shipped — built by hand, not via toStoredRideState, so it
       // genuinely lacks dismissedClimbFeatureId (rather than having it
       // set to undefined explicitly).
-      const legacyRow: StoredRideState = {
+      const legacyRow: StoredRouteRideState = {
         id: "active",
         routeId: "route-1",
         startedAt: "2026-01-01T00:00:00.000Z",
@@ -498,7 +504,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       // shipped — built by hand, not via toStoredRideState, so it
       // genuinely lacks completionArmed (rather than having it set to
       // undefined explicitly).
-      const legacyRow: StoredRideState = {
+      const legacyRow: StoredRouteRideState = {
         id: "active",
         routeId: "route-1",
         startedAt: "2026-01-01T00:00:00.000Z",
@@ -517,7 +523,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       // happens to store near-total progress — completionArmed is only
       // ever set true by explicit evidence, never derived from other
       // fields on read.
-      const legacyRowWithNearTotalProgress: StoredRideState = {
+      const legacyRowWithNearTotalProgress: StoredRouteRideState = {
         id: "active",
         routeId: "route-1",
         startedAt: "2026-01-01T00:00:00.000Z",
@@ -555,7 +561,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
 });
 
 describe("resolveStoredRideSessionKind", () => {
-  const baseRow: StoredRideState = {
+  const baseRow: StoredRouteRideState = {
     id: "active",
     routeId: "route-1",
     startedAt: "2026-01-01T00:00:00.000Z",
@@ -573,10 +579,176 @@ describe("resolveStoredRideSessionKind", () => {
     expect(resolveStoredRideSessionKind({ ...baseRow, kind: "route" })).toBe("route");
   });
 
-  it('resolves an unrecognised, present kind value to "unsupported" — never silently to "route"', () => {
+  it('resolves an explicit "free-roam" kind to itself, regardless of the rest of the row\'s shape', () => {
     expect(resolveStoredRideSessionKind({ ...baseRow, kind: "free-roam" })).toBe(
+      "free-roam",
+    );
+  });
+
+  it('resolves an unrecognised, present kind value to "unsupported" — never silently to "route" or "free-roam"', () => {
+    expect(resolveStoredRideSessionKind({ ...baseRow, kind: "training-session" })).toBe(
       "unsupported",
     );
+  });
+});
+
+describe("isStoredRouteRideState / isStoredFreeRoamRideState", () => {
+  const routeRow: StoredRideState = {
+    id: "active",
+    routeId: "route-1",
+    startedAt: "2026-01-01T00:00:00.000Z",
+    lastFix: null,
+    lastMatchedPointIndex: 0,
+    matchedDistanceFromStartMetres: 0,
+    offRouteMachineState: coreState.offRouteMachineState,
+  };
+  const freeRoamRow: StoredRideState = {
+    id: "active",
+    kind: "free-roam",
+    startedAt: "2026-01-01T00:00:00.000Z",
+    lastFix: null,
+  };
+
+  it("narrows a legacy (kind-absent) row to route", () => {
+    expect(isStoredRouteRideState(routeRow)).toBe(true);
+    expect(isStoredFreeRoamRideState(routeRow)).toBe(false);
+  });
+
+  it('narrows an explicit kind: "route" row to route', () => {
+    expect(isStoredRouteRideState({ ...routeRow, kind: "route" })).toBe(true);
+    expect(isStoredFreeRoamRideState({ ...routeRow, kind: "route" })).toBe(false);
+  });
+
+  it("narrows a free-roam row to free-roam, never to route", () => {
+    expect(isStoredFreeRoamRideState(freeRoamRow)).toBe(true);
+    expect(isStoredRouteRideState(freeRoamRow)).toBe(false);
+  });
+
+  it("narrows an unsupported-kind row to neither", () => {
+    const unsupportedRow = { ...routeRow, kind: "training-session" };
+    expect(isStoredRouteRideState(unsupportedRow)).toBe(false);
+    expect(isStoredFreeRoamRideState(unsupportedRow)).toBe(false);
+  });
+});
+
+describe("toStoredFreeRoamState / fromStoredFreeRoamState", () => {
+  const freeRoamCamera: StoredCameraState = {
+    mode: "following",
+    coordinate: null,
+    zoom: null,
+    bearingDegrees: 0,
+    pitchDegrees: 0,
+  };
+
+  it("always writes the free-roam session kind and no route-only fields", () => {
+    const stored = toStoredFreeRoamState(
+      "2026-01-01T00:00:00.000Z",
+      fix,
+      freeRoamCamera,
+      95,
+      false,
+    );
+
+    expect(stored.kind).toBe("free-roam");
+    expect(stored).not.toHaveProperty("routeId");
+    expect(stored).not.toHaveProperty("matchedDistanceFromStartMetres");
+    expect(stored).not.toHaveProperty("offRouteMachineState");
+  });
+
+  it("round-trips a fix, camera state, last-reliable bearing and wake-lock preference", () => {
+    const stored = toStoredFreeRoamState(
+      "2026-01-01T00:00:00.000Z",
+      fix,
+      freeRoamCamera,
+      95,
+      true,
+    );
+    const restored = fromStoredFreeRoamState(stored);
+
+    expect(restored.lastFix?.coordinate).toEqual(fix.coordinate);
+    expect(restored.lastFix?.accuracyMetres).toBe(fix.accuracyMetres);
+    expect(restored.cameraState).toEqual(freeRoamCamera);
+    expect(restored.lastReliableBearingDegrees).toBe(95);
+    expect(restored.wakeLockDesired).toBe(true);
+  });
+
+  it("never persists speed or heading, and restores null for both", () => {
+    const stored = toStoredFreeRoamState(
+      "2026-01-01T00:00:00.000Z",
+      fix,
+      freeRoamCamera,
+      95,
+      false,
+    );
+    expect(stored.lastFix).not.toHaveProperty("speedMetresPerSecond");
+    expect(stored.lastFix).not.toHaveProperty("headingDegrees");
+
+    const restored = fromStoredFreeRoamState(stored);
+    expect(restored.lastFix?.speedMetresPerSecond).toBeNull();
+    expect(restored.lastFix?.headingDegrees).toBeNull();
+  });
+
+  it("stores and restores a null lastFix and null lastReliableBearingDegrees for a brand-new session", () => {
+    const stored = toStoredFreeRoamState(
+      "2026-01-01T00:00:00.000Z",
+      null,
+      {
+        mode: "overview",
+        coordinate: null,
+        zoom: null,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      },
+      null,
+      false,
+    );
+
+    expect(stored.lastFix).toBeNull();
+    expect(stored.lastReliableBearingDegrees).toBeUndefined();
+
+    const restored = fromStoredFreeRoamState(stored);
+    expect(restored.lastFix).toBeNull();
+    expect(restored.lastReliableBearingDegrees).toBeNull();
+  });
+
+  it("round-trips a free camera state's saved position, zoom, bearing and pitch", () => {
+    const freeCamera: StoredCameraState = {
+      mode: "free",
+      coordinate: [-1.2, 53.4],
+      zoom: 13.5,
+      bearingDegrees: 128,
+      pitchDegrees: 22,
+    };
+    const stored = toStoredFreeRoamState(
+      "2026-01-01T00:00:00.000Z",
+      fix,
+      freeCamera,
+      null,
+      false,
+    );
+    expect(fromStoredFreeRoamState(stored).cameraState).toEqual(freeCamera);
+  });
+
+  it("defaults camera/bearing/wake-lock conservatively for a malformed or legacy-shaped row", () => {
+    // Built by hand — a minimal, genuinely legacy-shaped row missing every
+    // optional field.
+    const minimalRow: StoredFreeRoamRideState = {
+      id: "active",
+      kind: "free-roam",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      lastFix: null,
+    };
+
+    const restored = fromStoredFreeRoamState(minimalRow);
+    expect(restored.cameraState).toEqual({
+      mode: "overview",
+      coordinate: null,
+      zoom: null,
+      bearingDegrees: 0,
+      pitchDegrees: 0,
+    });
+    expect(restored.lastReliableBearingDegrees).toBeNull();
+    expect(restored.wakeLockDesired).toBe(false);
   });
 });
 

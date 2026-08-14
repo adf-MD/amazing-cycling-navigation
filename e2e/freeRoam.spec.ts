@@ -1,0 +1,358 @@
+import { expect, test } from "@playwright/test";
+import type { BrowserContext, Locator, Page } from "@playwright/test";
+import { forceMapStyleFailure, installLocalMapStyle } from "./support/localMapStyle.ts";
+import { readActiveRideStateRow } from "./support/rideStateDb.ts";
+
+// Proves backlog item 42 (route-less free roam): a live GPS position on the
+// ordinary map with camera follow, reachable and recoverable entirely
+// through the Ride launcher, with no OpenRouteService dependency at any
+// point and no silent conflict with a saved route.
+
+const ORS_URL_GLOB = "https://api.heigit.org/**";
+const START = { latitude: 51.5, longitude: -0.1 };
+const MOVED = { latitude: 51.5006, longitude: -0.1 }; // ~67 m north
+
+/** Deterministic replacement for a fixed sleep, mirroring
+ * ridingLauncher.spec.ts's own identical helper — duplicated locally per
+ * this repo's established no-shared-e2e-helpers-across-specs convention. */
+async function waitForClearedRideState(page: Page): Promise<void> {
+  await expect.poll(() => readActiveRideStateRow(page), { timeout: 10_000 }).toBeNull();
+}
+
+/** Mirrors ridingCamera.spec.ts's own establishManualRotationAndPitch —
+ * duplicated locally per this repo's established no-shared-e2e-helpers
+ * convention. Uses MapLibre's own built-in KeyboardHandler (a genuine,
+ * trusted user gesture carrying a DOM originalEvent — see
+ * mapAdapter.ts's onUserCameraInteraction) rather than a synthetic pointer
+ * drag, avoiding CI's documented DragRotateHandler stuck-gesture failure
+ * mode entirely (CLAUDE.md future-backlog item 21). */
+async function establishManualRotation(page: Page, mapContainer: Locator): Promise<void> {
+  const canvas = mapContainer.locator("canvas");
+  await canvas.focus();
+  const bearingBefore = await mapContainer.getAttribute("data-camera-bearing");
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-bearing"))
+    .not.toBe(bearingBefore);
+}
+
+async function startFreeRoam(page: Page, context: BrowserContext) {
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation(START);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Ride", exact: true }).click();
+  await page.getByRole("button", { name: "Start free roam" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Free roam" })).toBeVisible();
+}
+
+test("Start free roam shows a live position on the map, with zero OpenRouteService requests", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  let orsRequested = false;
+  await page.route(ORS_URL_GLOB, async (route) => {
+    orsRequested = true;
+    await route.abort("failed");
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Ride", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start free roam" })).toBeVisible();
+
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation(START);
+  await page.getByRole("button", { name: "Start free roam" }).click();
+
+  await expect(page.getByRole("heading", { level: 1, name: "Free roam" })).toBeVisible();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "End ride" })).toBeVisible();
+  await expect(page.getByText(/GPS accuracy:/)).toBeVisible();
+
+  expect(orsRequested).toBe(false);
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("a position change moves the followed camera; a manual interaction pauses it, and Follow restores it", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await startFreeRoam(page, context);
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  // Waits for the real followed camera to genuinely land (mirrors
+  // ridingCamera.spec.ts's own established pattern): MapLibre fires an
+  // initial "settled" callback at style load with its own default centre
+  // (0,0) before the follow command ever applies, so polling on centre
+  // alone would be satisfied early by that unrelated transition. Pitch
+  // "35" (FOLLOW_PITCH_DEGREES) only appears once a real GPS-driven follow
+  // command has actually landed.
+  await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).toBe("35");
+  const initialCentre = await mapContainer.getAttribute("data-camera-center");
+
+  await context.setGeolocation(MOVED);
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-center"))
+    .not.toBe(initialCentre);
+
+  const followButton = page.getByRole("button", { name: "Follow my location" });
+  await expect(followButton).toHaveAttribute("aria-pressed", "true");
+
+  await establishManualRotation(page, mapContainer);
+  await expect(followButton).toHaveAttribute("aria-pressed", "false");
+
+  await followButton.click();
+  await expect(followButton).toHaveAttribute("aria-pressed", "true");
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("a committed free-roam row survives a real reload; the launcher offers Resume free roam, restoring stale-then-fresh state", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await startFreeRoam(page, context);
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+  // A fix must actually have been accepted and persisted before reloading —
+  // mirrors ridingLauncher.spec.ts's own established rationale (UI state
+  // going green is not proof the async IndexedDB write has landed).
+  await expect.poll(() => page.getByText(/GPS accuracy:/).isVisible()).toBe(true);
+  await expect
+    .poll(() => readActiveRideStateRow(page), { timeout: 10_000 })
+    .toMatchObject({ kind: "free-roam", lastFix: expect.anything() });
+
+  let orsRequested = false;
+  await page.route(ORS_URL_GLOB, async (route) => {
+    orsRequested = true;
+    await route.abort("failed");
+  });
+
+  await page.reload();
+  // The same established contract as route sessions: a reload alone never
+  // restores in-memory ride content — navigating to "Ride" directly is
+  // what proves the launcher discovers the session from persisted storage.
+  await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+  await page.getByRole("button", { name: "Ride", exact: true }).click();
+
+  const resumeButton = page.getByRole("button", { name: "Resume free roam" });
+  await expect(resumeButton).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start free roam" })).toBeHidden();
+
+  await resumeButton.click();
+  await expect(page.getByRole("heading", { level: 1, name: "Free roam" })).toBeVisible();
+  // The restored fix renders immediately (never a blank/waiting state) —
+  // the exact "Stale" vs "Live" transition is not asserted here, since a
+  // real device with geolocation already granted can deliver a fresh fix
+  // fast enough that the transient stale window isn't reliably observable
+  // under Playwright's polling; the component-level restore proof already
+  // covers this precisely (useFreeRoamNavigation.test.ts's "restore"
+  // suite). What matters end-to-end is that restoration definitely
+  // happened and a subsequent position update definitely reaches "Live".
+  await expect(page.getByText(/GPS accuracy:/)).toBeVisible();
+
+  await context.setGeolocation(MOVED);
+  await expect(page.getByText(/Live/)).toBeVisible();
+
+  expect(orsRequested).toBe(false);
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("End ride from the active screen clears the row and returns to the empty launcher", async ({
+  page,
+  context,
+}) => {
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  await startFreeRoam(page, context);
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  await page.getByRole("button", { name: "End ride" }).click();
+  const dialog = page.getByRole("alertdialog");
+  await expect(
+    dialog.getByText("Your free roam position and camera state will be cleared."),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "End ride" }).click();
+
+  await waitForClearedRideState(page);
+  await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start free roam" })).toBeVisible();
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+});
+
+test("End ride from the unresumed launcher works directly, without ever resuming GPS", async ({
+  page,
+  context,
+}) => {
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  await startFreeRoam(page, context);
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+  await expect
+    .poll(() => readActiveRideStateRow(page), { timeout: 10_000 })
+    .toMatchObject({ kind: "free-roam" });
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+  await page.getByRole("button", { name: "Ride", exact: true }).click();
+
+  await expect(page.getByRole("button", { name: "Resume free roam" })).toBeVisible();
+  const endRideButton = page.getByRole("button", { name: "End ride" });
+  await endRideButton.click();
+  const dialog = page.getByRole("alertdialog");
+  await dialog.getByRole("button", { name: "End ride" }).click();
+
+  await waitForClearedRideState(page);
+  await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+});
+
+test("a saved route cannot silently replace an unfinished free-roam session, and opens normally once free roam is ended", async ({
+  page,
+  context,
+}) => {
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  await startFreeRoam(page, context);
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+  await expect
+    .poll(() => readActiveRideStateRow(page), { timeout: 10_000 })
+    .toMatchObject({ kind: "free-roam" });
+
+  await page.getByRole("button", { name: "Routes" }).click();
+  await page.getByLabel("Import GPX file").setInputFiles({
+    name: "free-roam-conflict-route.gpx",
+    mimeType: "application/gpx+xml",
+    buffer: Buffer.from(
+      `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="acn-e2e-fixtures" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>free-roam-conflict-route</name>
+    <trkseg>
+      <trkpt lat="51.5" lon="-0.1"><ele>10</ele></trkpt>
+      <trkpt lat="51.501" lon="-0.1"><ele>12</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>`,
+    ),
+  });
+  const routeButton = page.getByRole("button", {
+    name: "free-roam-conflict-route",
+    exact: true,
+  });
+  await expect(routeButton).toBeVisible();
+  await routeButton.click();
+
+  await expect(
+    page.getByText(
+      "You have an unfinished free roam session. End it before opening a saved route.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resume free roam" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "free-roam-conflict-route" }),
+  ).toBeHidden();
+
+  await page.getByRole("button", { name: "End ride" }).click();
+  const dialog = page.getByRole("alertdialog");
+  await dialog.getByRole("button", { name: "End ride" }).click();
+  await waitForClearedRideState(page);
+
+  await page.getByRole("button", { name: "Routes" }).click();
+  await routeButton.click();
+  await expect(
+    page.getByRole("heading", { name: "free-roam-conflict-route" }),
+  ).toBeVisible();
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+});
+
+test("the local fallback map style still shows the position marker and camera controls", async ({
+  page,
+  context,
+}) => {
+  await forceMapStyleFailure(page);
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation(START);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Ride", exact: true }).click();
+  await page.getByRole("button", { name: "Start free roam" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Free roam" })).toBeVisible();
+
+  await expect(page.getByText("Retry map imagery")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('[data-testid="map-container"] canvas')).toBeVisible();
+  await expect(page.getByRole("button", { name: "Follow my location" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "North-up, top-down view" }),
+  ).toBeVisible();
+  await expect(page.getByText(/GPS accuracy:/)).toBeVisible();
+});
+
+test.describe("390px phone viewport", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("no horizontal overflow, and End-ride/map controls stay usable", async ({
+    page,
+    context,
+  }) => {
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+    await startFreeRoam(page, context);
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(390);
+
+    const endRideButton = page.getByRole("button", { name: "End ride" });
+    await expect(endRideButton).toBeVisible();
+    const endRideBox = await endRideButton.boundingBox();
+    expect(endRideBox?.width ?? 0).toBeGreaterThanOrEqual(44);
+    expect(endRideBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+    const followButton = page.getByRole("button", { name: "Follow my location" });
+    const followBox = await followButton.boundingBox();
+    expect(followBox?.width ?? 0).toBeGreaterThanOrEqual(44);
+    expect(followBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+    await endRideButton.click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toBeVisible();
+    const scrollWidthWithDialog = await page.evaluate(
+      () => document.documentElement.scrollWidth,
+    );
+    expect(scrollWidthWithDialog).toBeLessThanOrEqual(390);
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  });
+});

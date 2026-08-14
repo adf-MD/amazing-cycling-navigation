@@ -1,12 +1,20 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { db, type StoredRideState } from "./db.ts";
+import { db, type StoredRouteRideState } from "./db.ts";
+import { isStoredRouteRideState } from "./mapping.ts";
 import {
   clearActiveRideState,
   getActiveRideState,
   setActiveRideState,
 } from "./rideStateRepository.ts";
 
-function buildRideState(overrides: Partial<StoredRideState> = {}): StoredRideState {
+// Typed as Partial<StoredRouteRideState>, not Partial<StoredRideState> —
+// TypeScript's Partial<> doesn't distribute over a union, so it would only
+// allow overriding fields common to both StoredRouteRideState and
+// StoredFreeRoamRideState (see src/storage/db.ts), silently rejecting e.g.
+// matchedDistanceFromStartMetres below.
+function buildRideState(
+  overrides: Partial<StoredRouteRideState> = {},
+): StoredRouteRideState {
   return {
     id: "active",
     routeId: "route-1",
@@ -46,7 +54,11 @@ describe("rideStateRepository", () => {
     await setActiveRideState(buildRideState({ matchedDistanceFromStartMetres: 250 }));
 
     const state = await getActiveRideState();
-    expect(state?.matchedDistanceFromStartMetres).toBe(250);
+    expect(
+      state && isStoredRouteRideState(state)
+        ? state.matchedDistanceFromStartMetres
+        : null,
+    ).toBe(250);
   });
 
   it("clears the active ride state", async () => {

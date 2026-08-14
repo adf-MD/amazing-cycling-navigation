@@ -123,10 +123,41 @@ Web Activity, or Play Store listing.
 - General PWA suspend/resume recovery (backgrounding, screen lock,
   reopening the app) — **(Device)**, **(Recheck vs iPhone)**.
 
+## 8. Free roam (route-less Riding, CLAUDE.md backlog item 42)
+
+- Starting free roam from the idle Ride launcher shows a live GPS position
+  on the map with camera follow, and makes no OpenRouteService request at
+  any point — **(Auto)**, `e2e/androidFreeRoam.spec.ts`. The header leaves
+  sticky flow the instant free roam is genuinely watching, mirroring
+  section 5's identical Riding contract, proven again here under the same
+  device emulation.
+- A committed free-roam session survives a real `page.reload()` and is
+  discoverable by navigating directly to the "Ride" tab, offering `Resume
+free roam` — **(Auto)**, same file.
+- Ending an active free-roam session clears the persisted row and returns
+  to the empty launcher — **(Auto)**, same file.
+- The fuller state machine — a manual camera gesture pausing follow and
+  Follow restoring it, reload recovery restoring a genuinely usable state,
+  the conflict guard blocking a saved route while free roam is unfinished
+  (and recovering once it's ended), and the local fallback map style — is
+  already proven at a desktop viewport in `e2e/freeRoam.spec.ts` and is
+  deliberately not duplicated here, matching this document's own
+  established "lighter-touch Android pass" convention (see section 5's own
+  Wake Lock note for the identical rationale).
+- Real GPS-driven direction-of-travel following (course-based bearing
+  while moving, retained bearing while stationary, no oscillation), Screen
+  Wake Lock hardware/OS behaviour during free roam, and any genuine
+  bicycle field test are all **(Device)** — none of this has been checked
+  on a real Android phone. Free roam is a wholly new capability with no
+  prior iPhone verification either, so there is no **(Recheck vs iPhone)**
+  row for it yet — see CLAUDE.md item 43's own ledger, which lists free
+  roam's full real-device checklist (including its own dedicated bicycle
+  field test, distinct from route Riding's).
+
 ## What automation cannot prove
 
 Consolidated from every "(Device)" row above, so nobody has to re-derive
-it by scanning all seven sections:
+it by scanning all eight sections:
 
 - The real native "Add to Home Screen"/install prompt, and standalone
   display chrome after installing.
@@ -143,6 +174,12 @@ it by scanning all seven sections:
   Chromium-emulated context can approximate.
 - Anything about real-world daylight/glove/vibration readability while
   actually cycling.
+- Free roam's real GPS-driven direction-of-travel camera following
+  (course-based bearing while genuinely moving, stationary-bearing
+  stability, no oscillation) — Playwright's geolocation emulation can set
+  a fix's coordinates but cannot reliably drive trustworthy heading/speed
+  values, so this is unverifiable by any automated means, not just Android
+  emulation.
 
 ## How to run the Android-emulated suite
 
@@ -177,6 +214,14 @@ npx playwright test --project=android-chrome
 9. Offline: with the ride's route already saved, turn on aeroplane mode,
    reopen the app and the route, and confirm the route/position/progress
    remain usable even though map imagery may not load.
-10. If anything fails, open Diagnostics, note the app version/build and
+10. Free roam: from an idle Ride tab, tap "Start free roam" and confirm
+    the live position dot, camera follow, and North-up/Follow controls
+    all work while genuinely moving or simulating movement; confirm the
+    camera points in the actual direction of travel while moving and
+    holds a stable bearing while stationary; back out to another tab and
+    return, confirming the launcher requires an explicit "Resume free
+    roam" tap rather than silently resuming; end the session and confirm
+    it returns to the empty launcher.
+11. If anything fails, open Diagnostics, note the app version/build and
     any recent redacted errors shown there, and record the exact device
     model and Chrome version alongside the failure.

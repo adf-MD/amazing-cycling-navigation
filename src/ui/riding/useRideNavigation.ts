@@ -18,6 +18,7 @@ import {
 } from "../../navigation/upcomingElevation.ts";
 import {
   fromStoredRideState,
+  isStoredRouteRideState,
   toStoredRideState,
   type StoredCameraState,
 } from "../../storage/mapping.ts";
@@ -324,7 +325,14 @@ export function useRideNavigation(
     let cancelled = false;
     getActiveRideState()
       .then((stored) => {
-        if (cancelled || stored?.routeId !== route.id) return;
+        if (
+          cancelled ||
+          !stored ||
+          !isStoredRouteRideState(stored) ||
+          stored.routeId !== route.id
+        ) {
+          return;
+        }
         const restored = fromStoredRideState(stored);
         startedAtRef.current = stored.startedAt;
         setCoreState(restored.core);
