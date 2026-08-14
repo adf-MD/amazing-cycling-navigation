@@ -4,13 +4,15 @@ import { fileURLToPath } from "node:url";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 import { readPlanningDraftRow } from "./support/rideStateDb.ts";
 
-// Proves "Edit copy in Planning" (CLAUDE.md future-backlog item 26): a
-// saved or imported route can be reopened as an editable Planning copy,
-// sourced from exact recovered provenance when available or a capped
-// deterministic derivation otherwise, with the source route always left
-// untouched and no routing request issued until Calculate is pressed
-// explicitly. No test in this file contacts a live map or routing
-// provider.
+// Proves "Edit copy" (CLAUDE.md backlog item 26; the button itself was
+// renamed from "Edit copy in Planning" to "Edit copy" by item 38, which
+// also moved route reversal into Planning itself — see
+// reverseRoute.spec.ts): a saved or imported route can be reopened as an
+// editable Planning copy, sourced from exact recovered provenance when
+// available or a capped deterministic derivation otherwise, with the
+// source route always left untouched and no routing request issued until
+// Calculate is pressed explicitly. No test in this file contacts a live
+// map or routing provider.
 
 test.use({ serviceWorkers: "block" });
 
@@ -165,9 +167,10 @@ async function mockOrsRequests(
  * subsequent map click lands at a real, in-range coordinate rather than
  * whatever indeterminate default camera preceded it. */
 async function openPlanningAndAwaitFraming(page: Page): Promise<void> {
-  // Non-exact: "Edit copy in Planning" (Riding's pre-ride overview) also
-  // contains "Plan" as a substring, so an exact match is required whenever
-  // that button might also be on screen.
+  // Exact match kept defensively even though the substring collision this
+  // once guarded against ("Edit copy in Planning" containing "Plan") no
+  // longer exists — backlog item 38 shortened that button's label to
+  // "Edit copy".
   await page.getByRole("button", { name: "Plan", exact: true }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
   await page.waitForTimeout(500);
@@ -266,7 +269,7 @@ test("recovers exact planning waypoints with zero routing requests until Calcula
 
   // Opening the copy (no pre-existing draft) must navigate directly, with
   // no confirmation, and issue zero routing requests.
-  await page.getByRole("button", { name: "Edit copy in Planning" }).click();
+  await page.getByRole("button", { name: "Edit copy" }).click();
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
   expect(requestedCoordinatePairs).toHaveLength(1);
 
@@ -381,7 +384,7 @@ test("derives at most 20 waypoints from an arbitrary GPX with no ACN extension, 
   await importedButton.click();
   await expect(page.getByRole("heading", { name: "smoke-route" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Edit copy in Planning" }).click();
+  await page.getByRole("button", { name: "Edit copy" }).click();
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
   await expect(page.getByText(DERIVED_NOTICE)).toBeVisible();
 
@@ -440,7 +443,7 @@ test("shows a confirmation before replacing a meaningful existing Planning draft
   await page.getByRole("button", { name: routeName, exact: true }).click();
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
 
-  await page.getByRole("button", { name: "Edit copy in Planning" }).click();
+  await page.getByRole("button", { name: "Edit copy" }).click();
   const dialog = page.getByRole("alertdialog");
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
@@ -452,9 +455,10 @@ test("shows a confirmation before replacing a meaningful existing Planning draft
 
   // The original unrelated draft (one waypoint, no second waypoint) must
   // be exactly as the rider left it.
-  // Non-exact: "Edit copy in Planning" (Riding's pre-ride overview) also
-  // contains "Plan" as a substring, so an exact match is required whenever
-  // that button might also be on screen.
+  // Exact match kept defensively even though the substring collision this
+  // once guarded against ("Edit copy in Planning" containing "Plan") no
+  // longer exists — backlog item 38 shortened that button's label to
+  // "Edit copy".
   await page.getByRole("button", { name: "Plan", exact: true }).click();
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
   await expect(
@@ -463,7 +467,7 @@ test("shows a confirmation before replacing a meaningful existing Planning draft
 
   await page.getByRole("button", { name: "Routes" }).click();
   await page.getByRole("button", { name: routeName, exact: true }).click();
-  await page.getByRole("button", { name: "Edit copy in Planning" }).click();
+  await page.getByRole("button", { name: "Edit copy" }).click();
   await expect(page.getByRole("alertdialog")).toBeVisible();
   await page
     .getByRole("alertdialog")
@@ -528,7 +532,7 @@ test("exporting and offline re-importing the edited route preserves its new plan
   await reimportedButton.click();
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
 
-  await page.getByRole("button", { name: "Edit copy in Planning" }).click();
+  await page.getByRole("button", { name: "Edit copy" }).click();
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
   // "exact", not "derived" — the reimported file's own <acn:planning>
   // extension round-tripped the authored waypoints, not the geometry.
@@ -586,7 +590,7 @@ test("a tampered acn:planning geometry digest falls back to derivation without f
   await importedButton.click();
   await expect(page.getByRole("heading", { name: importedName })).toBeVisible();
 
-  await page.getByRole("button", { name: "Edit copy in Planning" }).click();
+  await page.getByRole("button", { name: "Edit copy" }).click();
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
   await expect(page.getByText(DERIVED_NOTICE)).toBeVisible();
 

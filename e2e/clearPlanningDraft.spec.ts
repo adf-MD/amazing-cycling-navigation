@@ -140,8 +140,10 @@ async function mockOrsRequests(
  * automatic regional framing to settle — mirrors editRouteAsPlanningCopy.spec.ts's
  * and reverseRoute.spec.ts's identical helper. */
 async function openPlanningAndAwaitFraming(page: Page): Promise<void> {
-  // Non-exact match is unsafe here: "Edit copy in Planning" also contains
-  // "Plan" as a substring whenever Riding's pre-ride panel is on screen.
+  // Exact match kept defensively even though the substring collision this
+  // once guarded against ("Edit copy in Planning" containing "Plan") no
+  // longer exists — backlog item 38 shortened that button's label to
+  // "Edit copy".
   await page.getByRole("button", { name: "Plan", exact: true }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
   await page.waitForTimeout(500);
@@ -212,11 +214,11 @@ test("Clear draft wipes a populated, calculated, custom-routed, edit-copy-proven
   await planAndSaveTwoWaypointRoute(page, sourceName);
 
   // planAndSaveTwoWaypointRoute's own Save already lands on this route's
-  // Riding pre-ride panel — arrive at a meaningful draft via "Edit copy in
-  // Planning" from here, populating editCopySourceRouteId/
-  // editCopyWaypointsOrigin/editCopyOperation.
+  // Riding pre-ride panel — arrive at a meaningful draft via "Edit copy"
+  // from here, populating editCopySourceRouteId/editCopyWaypointsOrigin/
+  // editCopyOperation.
   await expect(page.getByRole("heading", { name: sourceName })).toBeVisible();
-  await page.getByRole("button", { name: "Edit copy in Planning" }).click();
+  await page.getByRole("button", { name: "Edit copy" }).click();
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
   await expect(page.getByText(EXACT_EDIT_COPY_NOTICE)).toBeVisible();
 

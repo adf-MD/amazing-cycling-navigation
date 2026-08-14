@@ -10,11 +10,19 @@ const A: Coordinate = [0, 51];
 const B: Coordinate = [0.001, 51];
 const C: Coordinate = [0.002, 51];
 
+const DEFAULT_NAME = "Planned route";
+
 function stateWith(
   waypoints: Waypoint[],
   selectedWaypointId: string | null = null,
+  routeName: string = DEFAULT_NAME,
 ): WaypointHistoryState {
-  return { past: [], present: waypoints, future: [], selectedWaypointId };
+  return {
+    past: [],
+    present: { waypoints, routeName },
+    future: [],
+    selectedWaypointId,
+  };
 }
 
 describe("waypointHistoryReducer", () => {
@@ -23,7 +31,7 @@ describe("waypointHistoryReducer", () => {
       const state = stateWith([{ id: "a", coordinate: A }]);
       const result = waypointHistoryReducer(state, { type: "append", coordinate: B });
 
-      expect(result.present.map((w) => w.coordinate)).toEqual([A, B]);
+      expect(result.present.waypoints.map((w) => w.coordinate)).toEqual([A, B]);
       expect(result.selectedWaypointId).toBeNull();
     });
 
@@ -39,21 +47,28 @@ describe("waypointHistoryReducer", () => {
       );
       const result = waypointHistoryReducer(state, { type: "append", coordinate: B });
 
-      expect(result.present.map((w) => w.coordinate)).toEqual([A, C, B]);
+      expect(result.present.waypoints.map((w) => w.coordinate)).toEqual([A, C, B]);
       expect(result.selectedWaypointId).toBeNull();
     });
 
     it("pushes the previous state onto history and clears future", () => {
       const state: WaypointHistoryState = {
         past: [],
-        present: [{ id: "a", coordinate: A }],
-        future: [[{ id: "stale", coordinate: C }]],
+        present: { waypoints: [{ id: "a", coordinate: A }], routeName: DEFAULT_NAME },
+        future: [{ waypoints: [{ id: "stale", coordinate: C }], routeName: "Stale" }],
         selectedWaypointId: null,
       };
       const result = waypointHistoryReducer(state, { type: "append", coordinate: B });
 
       expect(result.past).toHaveLength(1);
       expect(result.future).toEqual([]);
+    });
+
+    it("carries the route name forward unchanged", () => {
+      const state = stateWith([{ id: "a", coordinate: A }], null, "Evening loop");
+      const result = waypointHistoryReducer(state, { type: "append", coordinate: B });
+
+      expect(result.present.routeName).toBe("Evening loop");
     });
   });
 
@@ -69,7 +84,7 @@ describe("waypointHistoryReducer", () => {
         coordinate: B,
       });
 
-      expect(result.present.map((w) => w.coordinate)).toEqual([A, B, C]);
+      expect(result.present.waypoints.map((w) => w.coordinate)).toEqual([A, B, C]);
     });
 
     it("creates a new waypoint ID, distinct from the anchor's", () => {
@@ -80,7 +95,7 @@ describe("waypointHistoryReducer", () => {
         coordinate: B,
       });
 
-      const insertedId = result.present[1]?.id;
+      const insertedId = result.present.waypoints[1]?.id;
       expect(insertedId).toBeDefined();
       expect(insertedId).not.toBe("a");
     });
@@ -93,7 +108,7 @@ describe("waypointHistoryReducer", () => {
         coordinate: B,
       });
 
-      expect(result.selectedWaypointId).toBe(result.present[1]?.id);
+      expect(result.selectedWaypointId).toBe(result.present.waypoints[1]?.id);
       expect(result.selectedWaypointId).not.toBe("a");
     });
 
@@ -111,8 +126,8 @@ describe("waypointHistoryReducer", () => {
     it("pushes the previous state onto history and clears future", () => {
       const state: WaypointHistoryState = {
         past: [],
-        present: [{ id: "a", coordinate: A }],
-        future: [[{ id: "stale", coordinate: C }]],
+        present: { waypoints: [{ id: "a", coordinate: A }], routeName: DEFAULT_NAME },
+        future: [{ waypoints: [{ id: "stale", coordinate: C }], routeName: "Stale" }],
         selectedWaypointId: null,
       };
       const result = waypointHistoryReducer(state, {
@@ -135,7 +150,7 @@ describe("waypointHistoryReducer", () => {
         coordinate: C,
       });
 
-      expect(result.present[0]?.coordinate).toEqual(C);
+      expect(result.present.waypoints[0]?.coordinate).toEqual(C);
       expect(result.selectedWaypointId).toBe("a");
     });
 
@@ -147,7 +162,7 @@ describe("waypointHistoryReducer", () => {
         coordinate: C,
       });
 
-      expect(result.present[0]?.id).toBe("a");
+      expect(result.present.waypoints[0]?.id).toBe("a");
     });
 
     it("is a no-op for an unknown waypoint id", () => {
@@ -175,7 +190,7 @@ describe("waypointHistoryReducer", () => {
         toIndex: 2,
       });
 
-      expect(result.present.map((w) => w.id)).toEqual(["b", "c", "a"]);
+      expect(result.present.waypoints.map((w) => w.id)).toEqual(["b", "c", "a"]);
     });
 
     it("clamps an out-of-range target index", () => {
@@ -189,7 +204,7 @@ describe("waypointHistoryReducer", () => {
         toIndex: 99,
       });
 
-      expect(result.present.map((w) => w.id)).toEqual(["b", "a"]);
+      expect(result.present.waypoints.map((w) => w.id)).toEqual(["b", "a"]);
     });
 
     it("is a no-op when the target index equals the current one", () => {
@@ -215,7 +230,7 @@ describe("waypointHistoryReducer", () => {
       ]);
       const result = waypointHistoryReducer(state, { type: "delete", waypointId: "a" });
 
-      expect(result.present.map((w) => w.id)).toEqual(["b"]);
+      expect(result.present.waypoints.map((w) => w.id)).toEqual(["b"]);
     });
 
     it("clears selection when the deleted waypoint was selected", () => {
@@ -247,9 +262,9 @@ describe("waypointHistoryReducer", () => {
       ]);
       const result = waypointHistoryReducer(state, { type: "returnToStart" });
 
-      expect(result.present).toHaveLength(3);
-      expect(result.present.at(-1)?.coordinate).toEqual(A);
-      expect(result.present.at(-1)?.id).not.toBe("a"); // a genuinely new, distinct, deletable waypoint
+      expect(result.present.waypoints).toHaveLength(3);
+      expect(result.present.waypoints.at(-1)?.coordinate).toEqual(A);
+      expect(result.present.waypoints.at(-1)?.id).not.toBe("a"); // a genuinely new, distinct, deletable waypoint
     });
 
     it("is a no-op with fewer than two waypoints", () => {
@@ -298,6 +313,281 @@ describe("waypointHistoryReducer", () => {
     });
   });
 
+  describe("rename", () => {
+    it("sets the route name only, with no history entry", () => {
+      const state = stateWith([{ id: "a", coordinate: A }], null, "Old name");
+      const result = waypointHistoryReducer(state, {
+        type: "rename",
+        routeName: "New name",
+      });
+
+      expect(result.present.routeName).toBe("New name");
+      expect(result.past).toEqual(state.past);
+      expect(result.future).toEqual(state.future);
+      expect(result.selectedWaypointId).toBe(state.selectedWaypointId);
+    });
+
+    it("keeps the same waypoints array reference, so a rename never looks like a waypoint change", () => {
+      const state = stateWith([{ id: "a", coordinate: A }], null, "Old name");
+      const result = waypointHistoryReducer(state, {
+        type: "rename",
+        routeName: "New name",
+      });
+
+      expect(result.present.waypoints).toBe(state.present.waypoints);
+    });
+
+    it("does not disturb an existing selection", () => {
+      const state = stateWith([{ id: "a", coordinate: A }], "a", "Old name");
+      const result = waypointHistoryReducer(state, {
+        type: "rename",
+        routeName: "New name",
+      });
+
+      expect(result.selectedWaypointId).toBe("a");
+    });
+  });
+
+  describe("reverse", () => {
+    function closedLoopState(routeName = DEFAULT_NAME) {
+      return stateWith(
+        [
+          { id: "w1", coordinate: A },
+          { id: "w2", coordinate: B },
+          { id: "w3", coordinate: C },
+          { id: "w4", coordinate: A },
+        ],
+        null,
+        routeName,
+      );
+    }
+
+    it("reverses the order of two waypoints", () => {
+      const state = stateWith([
+        { id: "a", coordinate: A },
+        { id: "b", coordinate: B },
+      ]);
+      const result = waypointHistoryReducer(state, { type: "reverse" });
+
+      expect(result.present.waypoints.map((w) => w.coordinate)).toEqual([B, A]);
+    });
+
+    it("reverses the order of three or more waypoints", () => {
+      const state = stateWith([
+        { id: "a", coordinate: A },
+        { id: "b", coordinate: B },
+        { id: "c", coordinate: C },
+      ]);
+      const result = waypointHistoryReducer(state, { type: "reverse" });
+
+      expect(result.present.waypoints.map((w) => w.coordinate)).toEqual([C, B, A]);
+    });
+
+    it("reverses ids in lockstep with coordinates, rather than minting fresh ones", () => {
+      const state = stateWith([
+        { id: "a", coordinate: A },
+        { id: "b", coordinate: B },
+        { id: "c", coordinate: C },
+      ]);
+      const result = waypointHistoryReducer(state, { type: "reverse" });
+
+      expect(result.present.waypoints.map((w) => w.id)).toEqual(["c", "b", "a"]);
+    });
+
+    it("reverses a closed loop, keeping the same value-equal start/finish coordinate", () => {
+      const state = closedLoopState();
+      const result = waypointHistoryReducer(state, { type: "reverse" });
+
+      expect(result.present.waypoints.map((w) => w.coordinate)).toEqual([A, C, B, A]);
+      // Value-equal, not id-equal: the reversed final waypoint is "w1" by
+      // id (positionally reversed), even though its coordinate matches
+      // the reversed first waypoint "w4" — exactly mirroring
+      // reverseEditableWaypoints's own documented closed-loop contract.
+      expect(result.present.waypoints[0]?.coordinate).toEqual(
+        result.present.waypoints.at(-1)?.coordinate,
+      );
+      expect(result.present.waypoints.map((w) => w.id)).toEqual(["w4", "w3", "w2", "w1"]);
+    });
+
+    it("does not mutate the input waypoints array or its elements", () => {
+      const original: Waypoint[] = [
+        { id: "a", coordinate: A },
+        { id: "b", coordinate: B },
+      ];
+      const state = stateWith(original);
+      waypointHistoryReducer(state, { type: "reverse" });
+
+      expect(original.map((w) => w.coordinate)).toEqual([A, B]);
+      expect(original.map((w) => w.id)).toEqual(["a", "b"]);
+    });
+
+    it("appends the reversed suffix to a named draft", () => {
+      const state = stateWith(
+        [
+          { id: "a", coordinate: A },
+          { id: "b", coordinate: B },
+        ],
+        null,
+        "Evening loop",
+      );
+      const result = waypointHistoryReducer(state, { type: "reverse" });
+
+      expect(result.present.routeName).toBe("Evening loop (reversed)");
+    });
+
+    it("leaves a blank route name blank", () => {
+      const state = stateWith(
+        [
+          { id: "a", coordinate: A },
+          { id: "b", coordinate: B },
+        ],
+        null,
+        "",
+      );
+      const result = waypointHistoryReducer(state, { type: "reverse" });
+
+      expect(result.present.routeName).toBe("");
+    });
+
+    it("leaves a whitespace-only route name unchanged", () => {
+      const state = stateWith(
+        [
+          { id: "a", coordinate: A },
+          { id: "b", coordinate: B },
+        ],
+        null,
+        "   ",
+      );
+      const result = waypointHistoryReducer(state, { type: "reverse" });
+
+      expect(result.present.routeName).toBe("   ");
+    });
+
+    it("appends a second suffix to an already-suffixed name", () => {
+      const state = stateWith(
+        [
+          { id: "a", coordinate: A },
+          { id: "b", coordinate: B },
+        ],
+        null,
+        "Loop (reversed)",
+      );
+      const result = waypointHistoryReducer(state, { type: "reverse" });
+
+      expect(result.present.routeName).toBe("Loop (reversed) (reversed)");
+    });
+
+    it("pushes exactly one history entry and clears future", () => {
+      const state: WaypointHistoryState = {
+        ...stateWith([
+          { id: "a", coordinate: A },
+          { id: "b", coordinate: B },
+        ]),
+        future: [{ waypoints: [{ id: "stale", coordinate: C }], routeName: "Stale" }],
+      };
+      const result = waypointHistoryReducer(state, { type: "reverse" });
+
+      expect(result.past).toHaveLength(1);
+      expect(result.past[0]).toEqual(state.present);
+      expect(result.future).toEqual([]);
+    });
+
+    it("clears the current selection", () => {
+      const state = stateWith(
+        [
+          { id: "a", coordinate: A },
+          { id: "b", coordinate: B },
+        ],
+        "a",
+      );
+      const result = waypointHistoryReducer(state, { type: "reverse" });
+
+      expect(result.selectedWaypointId).toBeNull();
+    });
+
+    it("is a no-op below two waypoints", () => {
+      const state = stateWith([{ id: "a", coordinate: A }]);
+      const result = waypointHistoryReducer(state, { type: "reverse" });
+
+      expect(result).toBe(state);
+    });
+
+    it("is a no-op with zero waypoints", () => {
+      const state = stateWith([]);
+      const result = waypointHistoryReducer(state, { type: "reverse" });
+
+      expect(result).toBe(state);
+    });
+
+    it("reverse then undo then redo restores both waypoint order and name together, atomically", () => {
+      const original = stateWith(
+        [
+          { id: "a", coordinate: A },
+          { id: "b", coordinate: B },
+        ],
+        null,
+        "Evening loop",
+      );
+      const reversed = waypointHistoryReducer(original, { type: "reverse" });
+      expect(reversed.present.waypoints.map((w) => w.coordinate)).toEqual([B, A]);
+      expect(reversed.present.routeName).toBe("Evening loop (reversed)");
+
+      const undone = waypointHistoryReducer(reversed, { type: "undo" });
+      expect(undone.present.waypoints.map((w) => w.coordinate)).toEqual([A, B]);
+      expect(undone.present.routeName).toBe("Evening loop");
+
+      const redone = waypointHistoryReducer(undone, { type: "redo" });
+      expect(redone.present.waypoints.map((w) => w.coordinate)).toEqual([B, A]);
+      expect(redone.present.routeName).toBe("Evening loop (reversed)");
+    });
+
+    it("an ordinary edit after reversal, followed by two undos, crosses the reversal boundary correctly", () => {
+      const original = stateWith(
+        [
+          { id: "a", coordinate: A },
+          { id: "b", coordinate: B },
+        ],
+        null,
+        "Evening loop",
+      );
+      const reversed = waypointHistoryReducer(original, { type: "reverse" });
+      const edited = waypointHistoryReducer(reversed, { type: "append", coordinate: C });
+      expect(edited.present.waypoints.map((w) => w.coordinate)).toEqual([B, A, C]);
+      expect(edited.present.routeName).toBe("Evening loop (reversed)");
+
+      const firstUndo = waypointHistoryReducer(edited, { type: "undo" });
+      // First undo reverts only the append, keeping the reversed order and name.
+      expect(firstUndo.present.waypoints.map((w) => w.coordinate)).toEqual([B, A]);
+      expect(firstUndo.present.routeName).toBe("Evening loop (reversed)");
+
+      const secondUndo = waypointHistoryReducer(firstUndo, { type: "undo" });
+      // Second undo crosses the reversal boundary, restoring the original order and name.
+      expect(secondUndo.present.waypoints.map((w) => w.coordinate)).toEqual([A, B]);
+      expect(secondUndo.present.routeName).toBe("Evening loop");
+    });
+
+    it("a new action after undoing a reversal clears the redo stack coherently", () => {
+      const original = stateWith(
+        [
+          { id: "a", coordinate: A },
+          { id: "b", coordinate: B },
+        ],
+        null,
+        "Evening loop",
+      );
+      const reversed = waypointHistoryReducer(original, { type: "reverse" });
+      const undone = waypointHistoryReducer(reversed, { type: "undo" });
+      expect(undone.future).toHaveLength(1);
+
+      const afterNewAction = waypointHistoryReducer(undone, {
+        type: "append",
+        coordinate: C,
+      });
+
+      expect(afterNewAction.future).toEqual([]);
+    });
+  });
+
   describe("undo / redo", () => {
     it("undo restores the previous present and pushes the current one onto future", () => {
       const afterAdd = waypointHistoryReducer(INITIAL_WAYPOINT_HISTORY_STATE, {
@@ -306,7 +596,7 @@ describe("waypointHistoryReducer", () => {
       });
       const undone = waypointHistoryReducer(afterAdd, { type: "undo" });
 
-      expect(undone.present).toEqual([]);
+      expect(undone.present.waypoints).toEqual([]);
       expect(undone.future).toHaveLength(1);
     });
 
@@ -355,7 +645,7 @@ describe("waypointHistoryReducer", () => {
         type: "append",
         coordinate: A,
       });
-      const addedId = afterAdd.present[0]?.id ?? "";
+      const addedId = afterAdd.present.waypoints[0]?.id ?? "";
       const selected = waypointHistoryReducer(afterAdd, {
         type: "select",
         waypointId: addedId,
@@ -375,14 +665,14 @@ describe("waypointHistoryReducer", () => {
         type: "append",
         coordinate: C,
       });
-      const aId = afterAppendC.present[0]?.id ?? "";
-      const cId = afterAppendC.present[1]?.id ?? "";
+      const aId = afterAppendC.present.waypoints[0]?.id ?? "";
+      const cId = afterAppendC.present.waypoints[1]?.id ?? "";
       const afterInsert = waypointHistoryReducer(afterAppendC, {
         type: "insertAfter",
         afterWaypointId: aId,
         coordinate: B,
       });
-      const bId = afterInsert.present[1]?.id ?? "";
+      const bId = afterInsert.present.waypoints[1]?.id ?? "";
       const afterMove = waypointHistoryReducer(afterInsert, {
         type: "move",
         waypointId: bId,
@@ -397,7 +687,7 @@ describe("waypointHistoryReducer", () => {
         type: "delete",
         waypointId: aId,
       });
-      expect(afterDelete.present.map((w) => w.id)).toEqual([bId, cId]);
+      expect(afterDelete.present.waypoints.map((w) => w.id)).toEqual([bId, cId]);
 
       // Six state-changing actions were dispatched above (append x2,
       // insertAfter, move, reorder, delete) — six undos should walk all
@@ -406,7 +696,7 @@ describe("waypointHistoryReducer", () => {
       for (let i = 0; i < 6; i += 1) {
         undone = waypointHistoryReducer(undone, { type: "undo" });
       }
-      expect(undone.present).toEqual([]);
+      expect(undone.present.waypoints).toEqual([]);
       expect(undone.past).toEqual([]);
 
       // Six redos should walk all the way back to the final state.
@@ -420,20 +710,24 @@ describe("waypointHistoryReducer", () => {
   });
 
   describe("reset", () => {
-    it("replaces present and clears history and selection", () => {
+    it("replaces present (waypoints and route name) and clears history and selection", () => {
       const waypoints: Waypoint[] = [{ id: "a", coordinate: A }];
       const state: WaypointHistoryState = {
-        past: [[{ id: "x", coordinate: B }]],
-        present: [],
-        future: [[{ id: "y", coordinate: C }]],
+        past: [{ waypoints: [{ id: "x", coordinate: B }], routeName: "Old" }],
+        present: { waypoints: [], routeName: "Old" },
+        future: [{ waypoints: [{ id: "y", coordinate: C }], routeName: "Stale" }],
         selectedWaypointId: "x",
       };
 
-      const result = waypointHistoryReducer(state, { type: "reset", waypoints });
+      const result = waypointHistoryReducer(state, {
+        type: "reset",
+        waypoints,
+        routeName: "Planned route",
+      });
 
       expect(result).toEqual({
         past: [],
-        present: waypoints,
+        present: { waypoints, routeName: "Planned route" },
         future: [],
         selectedWaypointId: null,
       });

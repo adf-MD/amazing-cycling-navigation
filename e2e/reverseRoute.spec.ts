@@ -4,33 +4,16 @@ import { fileURLToPath } from "node:url";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 import { readPlanningDraftRow } from "./support/rideStateDb.ts";
 
-// Proves "Reverse route" (CLAUDE.md future-backlog item 27): a saved or
-// imported route can be reversed into a new editable Planning draft,
-// sourced from exact recovered provenance when available or a capped
-// deterministic derivation otherwise, with the source route always left
-// untouched and no routing request issued until Calculate is pressed
-// explicitly. No test in this file contacts a live map or routing
-// provider.
+// Proves "Reverse route" (CLAUDE.md backlog item 38, superseding item 27's
+// original pre-ride implementation): a saved or imported route, opened via
+// the sole remaining "Edit copy" pre-ride action, can be reversed as an
+// ordinary, local, undoable Planning edit — waypoint order and the route
+// name reversed together as one atomic history entry, no routing-provider
+// request issued until Calculate is pressed explicitly, and the source
+// route always left untouched. No test in this file contacts a live map or
+// routing provider.
 
 test.use({ serviceWorkers: "block" });
-
-interface Box {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-// Mirrors planning.spec.ts's own identical helper, duplicated locally
-// rather than shared — this project's established e2e-spec precedent.
-function isFullyWithin(inner: Box, outer: Box): boolean {
-  return (
-    inner.x >= outer.x &&
-    inner.y >= outer.y &&
-    inner.x + inner.width <= outer.x + outer.width &&
-    inner.y + inner.height <= outer.y + outer.height
-  );
-}
 
 const ORS_URL_GLOB = "https://api.heigit.org/**";
 const DUMMY_KEY = "dummy-e2e-key";
@@ -143,13 +126,13 @@ async function mockOrsRequests(
   return { requestedCoordinatePairs };
 }
 
-/** Opens Planning and waits for the map and the genuinely-fresh-session
- * automatic regional framing to settle — see editRouteAsPlanningCopy.spec.ts's
- * identical helper for the full rationale. */
+/** Opens Planning (via the nav "Plan" destination) and waits for the map
+ * and the genuinely-fresh-session automatic regional framing to settle —
+ * see editRouteAsPlanningCopy.spec.ts's identical helper. Exact match is
+ * kept defensively even though the substring collision this once guarded
+ * against ("Edit copy in Planning" containing "Plan") no longer exists —
+ * backlog item 38 shortened that button's label to "Edit copy". */
 async function openPlanningAndAwaitFraming(page: Page): Promise<void> {
-  // Non-exact: "Edit copy in Planning"/"Reverse route" (Riding's pre-ride
-  // overview) also contain "Plan" as a substring, so an exact match is
-  // required whenever those buttons might also be on screen.
   await page.getByRole("button", { name: "Plan", exact: true }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
   await page.waitForTimeout(500);
@@ -211,6 +194,25 @@ async function planAndSaveClosedLoopRoute(page: Page, routeName: string): Promis
   await assertPlanningDraftStaysCleared(page);
 }
 
+/** Opens the just-saved route's Planning draft via the sole remaining
+ * "Edit copy" action (item 38 removed the pre-ride "Reverse route" entry
+ * point entirely), awaits the same one-time camera framing
+ * openPlanningAndAwaitFraming proves elsewhere, then presses Planning's own
+ * new in-Planning "Reverse route" button. The Edit-copy step's own camera
+ * fit/marker-containment/manual-pan-survival contract is already proven by
+ * editRouteAsPlanningCopy.spec.ts and is deliberately not re-proven here —
+ * this file focuses on what backlog item 38 actually adds: the in-Planning
+ * reversal itself. */
+async function editCopyThenReverseInPlanning(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Edit copy" }).click();
+  await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+  await page.waitForTimeout(500);
+  const reverseButton = page.getByRole("button", { name: "Reverse route" });
+  await expect(reverseButton).toBeEnabled();
+  await reverseButton.click();
+}
+
 /** Exports a route directly from its own Route Library card — see
  * editRouteAsPlanningCopy.spec.ts's identical helper. */
 async function exportRouteFromLibrary(page: Page, routeName: string) {
@@ -256,12 +258,18 @@ async function assertPlanningDraftStaysCleared(page: Page): Promise<void> {
   }
 }
 
-const EXACT_REVERSE_NOTICE =
-  "Reversed editable copy created. Recalculate before saving; one-way restrictions may make the new route differ from the original. The saved route remains unchanged.";
-const DERIVED_REVERSE_NOTICE =
-  "Reversed waypoints were estimated from this route. Recalculation may follow different roads, especially around one-way restrictions. The saved route remains unchanged.";
+// The "forward" Edit-copy notice text — reversing an already-open draft
+// inside Planning never touches editCopyMeta (it describes seed
+// provenance, not live edit history — see PlanningScreen.tsx's
+// describeEditCopyNotice doc comment), so this exact text stays visible,
+// unchanged, across a reversal. There is deliberately no reverse-specific
+// notice any more.
+const EXACT_EDIT_COPY_NOTICE =
+  "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.";
+const DERIVED_EDIT_COPY_NOTICE =
+  "Editable waypoints were estimated from this route. Recalculation may follow different roads. The saved route will remain unchanged.";
 
-test("Reverse route issues zero requests until Calculate, seeds exact reversed waypoints with a suggested name and notice, sends reversed leg coordinates, and Save leaves the original route unchanged and reopenable", async ({
+test("Reverse route inside Planning issues zero requests until Calculate — even past the recalculation debounce and across Undo/Redo — and restores order and name atomically", async ({
   page,
   context,
 }) => {
@@ -276,82 +284,67 @@ test("Reverse route issues zero requests until Calculate, seeds exact reversed w
   await planAndSaveTwoWaypointRoute(page, originalName);
   expect(requestedCoordinatePairs).toHaveLength(1); // the original save's own single leg
 
-  // Both actions are visible together, pre-ride, next to Start riding.
-  await expect(page.getByRole("button", { name: "Start riding" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Edit copy in Planning" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Reverse route" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Edit copy" })).toBeEnabled();
+  await editCopyThenReverseInPlanning(page);
 
-  // Opening the reverse copy (no pre-existing draft) must navigate
-  // directly, with no confirmation, and issue zero routing requests.
-  await page.getByRole("button", { name: "Reverse route" }).click();
-  await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
+  // Zero new requests from Edit copy + Reverse together; the unchanged
+  // forward notice (not a reverse-specific one); name and order both
+  // reversed.
   expect(requestedCoordinatePairs).toHaveLength(1);
-
-  await expect(page.getByText(EXACT_REVERSE_NOTICE)).toBeVisible();
+  await expect(page.getByText(EXACT_EDIT_COPY_NOTICE)).toBeVisible();
   await expect(page.getByLabel("Route name")).toHaveValue(`${originalName} (reversed)`);
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Waypoint 2", exact: true }),
   ).toBeVisible();
 
-  // Backlog item 35: the reversed draft's own two waypoints get a one-time
-  // camera fit — real marker geometry (not merely the sidebar list) and
-  // genuine settled-camera state (not MapLibre's raw, un-settled default).
-  const mapContainer = page.locator('[data-testid="map-container"]');
-  await expect.poll(() => mapContainer.getAttribute("data-camera-center")).not.toBe("");
-  const waypointMarkers = page.locator(".planning-waypoint-marker");
-  await expect(waypointMarkers).toHaveCount(2);
-  const mapBox = await mapContainer.boundingBox();
-  if (!mapBox) {
-    throw new Error("expected the map container to lay out");
-  }
-  for (const marker of await waypointMarkers.all()) {
-    const markerBox = await marker.boundingBox();
-    if (!markerBox) {
-      throw new Error("expected a waypoint marker to lay out");
-    }
-    expect(isFullyWithin(markerBox, mapBox)).toBe(true);
-  }
-
-  // A genuine manual pan (mirrors planning.spec.ts's own deterministic
-  // technique — an unmodified ArrowRight via MapLibre's KeyboardHandler)
-  // must not be undone by a following, non-camera waypoint edit (a
-  // select/deselect, not Calculate below, which legitimately fits the
-  // camera again once to the newly calculated route's own geometry).
-  await mapContainer.locator("canvas").focus();
-  const centreBeforePan = await mapContainer.getAttribute("data-camera-center");
-  await page.keyboard.press("ArrowRight");
-  const CENTRE_CHANGE_TOLERANCE_DEGREES = 1e-4; // ~11 m, mirrors planning.spec.ts's own tolerance
-  await expect
-    .poll(async () => {
-      const centre = await mapContainer.getAttribute("data-camera-center");
-      if (!centre || !centreBeforePan) return false;
-      const [lon, lat] = centre.split(",").map(Number);
-      const [prevLon, prevLat] = centreBeforePan.split(",").map(Number);
-      return (
-        Math.abs(lon - prevLon) > CENTRE_CHANGE_TOLERANCE_DEGREES ||
-        Math.abs(lat - prevLat) > CENTRE_CHANGE_TOLERANCE_DEGREES
-      );
-    })
-    .toBe(true);
-  const centreAfterPan = await mapContainer.getAttribute("data-camera-center");
-  const zoomAfterPan = await mapContainer.getAttribute("data-camera-zoom");
-
-  await page.getByRole("button", { name: "Start", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Start", exact: true })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await page.getByRole("button", { name: "Start", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Start", exact: true })).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
-  expect(await mapContainer.getAttribute("data-camera-center")).toBe(centreAfterPan);
-  expect(await mapContainer.getAttribute("data-camera-zoom")).toBe(zoomAfterPan);
-
-  // Save/Export are unavailable before a fresh calculation.
+  // Save/Export are unavailable before an explicit Calculate.
   await expect(page.getByRole("button", { name: /save route/i })).toBeDisabled();
+
+  // Still zero requests well past the normal ~900ms recalculation
+  // debounce — reversal must invalidate the (already-absent, in this
+  // freshly-seeded-draft case) prior result and suppress the debounce
+  // that would otherwise auto-recalculate.
+  await page.waitForTimeout(1_200);
+  expect(requestedCoordinatePairs).toHaveLength(1);
+
+  // Undo restores both waypoint order and route name together, atomically.
+  const undoButton = page.getByRole("button", { name: "Undo" });
+  await expect(undoButton).toBeEnabled();
+  await undoButton.click();
+  await expect(page.getByLabel("Route name")).toHaveValue(originalName);
+  await page.waitForTimeout(1_200);
+  expect(requestedCoordinatePairs).toHaveLength(1);
+
+  // Redo reapplies both together, also with no provider contact.
+  const redoButton = page.getByRole("button", { name: "Redo" });
+  await expect(redoButton).toBeEnabled();
+  await redoButton.click();
+  await expect(page.getByLabel("Route name")).toHaveValue(`${originalName} (reversed)`);
+  await page.waitForTimeout(1_200);
+  expect(requestedCoordinatePairs).toHaveLength(1);
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("Calculate after Reverse route sends the reversed leg coordinates, and Save creates an independent reversed route leaving the original unchanged and reopenable", async ({
+  page,
+  context,
+}) => {
+  const { unexpectedOpenFreeMapRequests, consoleErrors } = await preparePage(
+    page,
+    context,
+  );
+  await configureProviderKey(page);
+  const { requestedCoordinatePairs } = await mockOrsRequests(page);
+
+  const originalName = "ACN Original Route For Calculate";
+  await planAndSaveTwoWaypointRoute(page, originalName);
+  expect(requestedCoordinatePairs).toHaveLength(1);
+
+  await editCopyThenReverseInPlanning(page);
+  expect(requestedCoordinatePairs).toHaveLength(1);
 
   const calculateButton = page.getByRole("button", { name: /calculate route/i });
   await expect(calculateButton).toBeEnabled();
@@ -372,7 +365,7 @@ test("Reverse route issues zero requests until Calculate, seeds exact reversed w
   await assertPlanningDraftStaysCleared(page);
 
   // The original route remains unchanged and independently reopenable —
-  // two distinct routes now exist in the library, with different ids.
+  // two distinct routes now exist in the library.
   await page.getByRole("button", { name: "Routes" }).click();
   await expect(
     page.getByRole("button", { name: originalName, exact: true }),
@@ -388,7 +381,7 @@ test("Reverse route issues zero requests until Calculate, seeds exact reversed w
   expect(consoleErrors).toEqual([]);
 });
 
-test("exporting and offline re-importing the reversed route, then Edit copy in Planning, recovers the exact reversed waypoints", async ({
+test("exporting and offline re-importing a reversed route, then Edit copy, recovers the exact reversed waypoints", async ({
   page,
   context,
 }) => {
@@ -402,9 +395,8 @@ test("exporting and offline re-importing the reversed route, then Edit copy in P
   const originalName = "Round Trip Reversal Route";
   await planAndSaveTwoWaypointRoute(page, originalName);
 
-  await page.getByRole("button", { name: "Reverse route" }).click();
-  await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
-  await expect(page.getByText(EXACT_REVERSE_NOTICE)).toBeVisible();
+  await editCopyThenReverseInPlanning(page);
+  await expect(page.getByText(EXACT_EDIT_COPY_NOTICE)).toBeVisible();
 
   const calculateButton = page.getByRole("button", { name: /calculate route/i });
   await expect(calculateButton).toBeEnabled();
@@ -447,16 +439,12 @@ test("exporting and offline re-importing the reversed route, then Edit copy in P
   await reimportedButton.click();
   await expect(page.getByRole("heading", { name: reversedName })).toBeVisible();
 
-  // Edit copy in Planning (not Reverse route again) recovers the reversed
-  // route's own waypoints exactly, forward, via its round-tripped
-  // <acn:planning> provenance.
-  await page.getByRole("button", { name: "Edit copy in Planning" }).click();
+  // Edit copy (the reimported route is already reversed, so no second
+  // Reverse press is needed) recovers its own waypoints exactly, via its
+  // round-tripped <acn:planning> provenance.
+  await page.getByRole("button", { name: "Edit copy" }).click();
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
-  await expect(
-    page.getByText(
-      "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.",
-    ),
-  ).toBeVisible();
+  await expect(page.getByText(EXACT_EDIT_COPY_NOTICE)).toBeVisible();
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Waypoint 2", exact: true }),
@@ -467,7 +455,7 @@ test("exporting and offline re-importing the reversed route, then Edit copy in P
   expect(consoleErrors).toEqual([]);
 });
 
-test("reversing a dense arbitrary GPX with no ACN extension stays within the 20-waypoint cap, derived, reversed", async ({
+test("reversing a dense arbitrary GPX with no ACN extension stays within the 20-waypoint cap, derived", async ({
   page,
   context,
 }) => {
@@ -485,14 +473,16 @@ test("reversing a dense arbitrary GPX with no ACN extension stays within the 20-
   await importedButton.click();
   await expect(page.getByRole("heading", { name: "smoke-route" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Reverse route" }).click();
-  await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
-  await expect(page.getByText(DERIVED_REVERSE_NOTICE)).toBeVisible();
+  await editCopyThenReverseInPlanning(page);
+  await expect(page.getByText(DERIVED_EDIT_COPY_NOTICE)).toBeVisible();
   await expect(page.getByLabel("Route name")).toHaveValue("smoke-route (reversed)");
 
   const waypointButtons = page.getByRole("button", { name: /^Waypoint \d+$/ });
   const derivedIntermediateCount = await waypointButtons.count();
-  // +1 for the "Start" waypoint, which is labelled differently.
+  // +1 for the "Start" waypoint, which is labelled differently. The
+  // derivation happened once, at Edit-copy seed time; Reverse only
+  // reorders whatever was already derived — it must never re-derive or
+  // increase the count.
   expect(derivedIntermediateCount + 1).toBeLessThanOrEqual(20);
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
 
@@ -500,7 +490,7 @@ test("reversing a dense arbitrary GPX with no ACN extension stays within the 20-
   expect(consoleErrors).toEqual([]);
 });
 
-test("reversing a closed loop retains the same start/finish coordinate with the interior traversal reversed", async ({
+test("reversing a closed-loop draft inside Planning retains the same start/finish coordinate with the interior traversal reversed", async ({
   page,
   context,
 }) => {
@@ -516,9 +506,7 @@ test("reversing a closed loop retains the same start/finish coordinate with the 
   // Three legs for the original 4-waypoint closed loop (A-B, B-C, C-A).
   expect(requestedCoordinatePairs).toHaveLength(3);
 
-  await page.getByRole("button", { name: "Reverse route" }).click();
-  await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
-  await expect(page.getByText(EXACT_REVERSE_NOTICE)).toBeVisible();
+  await editCopyThenReverseInPlanning(page);
   expect(requestedCoordinatePairs).toHaveLength(3);
 
   // Still 4 waypoints, first and last still coincide — reversing
@@ -553,77 +541,7 @@ test("reversing a closed loop retains the same start/finish coordinate with the 
   expect(consoleErrors).toEqual([]);
 });
 
-test("shows a reverse-specific confirmation before replacing a meaningful existing Planning draft; Cancel preserves it and restores focus to Reverse route, Confirm replaces it", async ({
-  page,
-  context,
-}) => {
-  const { unexpectedOpenFreeMapRequests, consoleErrors } = await preparePage(
-    page,
-    context,
-  );
-  await configureProviderKey(page);
-  await mockOrsRequests(page);
-
-  const routeName = "Confirm Reverse Test Route";
-  await planAndSaveTwoWaypointRoute(page, routeName);
-
-  // Start an unrelated, unsaved draft — a single waypoint is enough to
-  // count as "meaningful" (non-empty).
-  await openPlanningAndAwaitFraming(page);
-  const freshMapContainer = page.locator('[data-testid="map-container"]');
-  await freshMapContainer.click({ position: { x: 120, y: 130 } });
-  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
-  await page.waitForTimeout(1_200);
-
-  await page.getByRole("button", { name: "Routes" }).click();
-  await page.getByRole("button", { name: routeName, exact: true }).click();
-  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
-
-  const reverseButton = page.getByRole("button", { name: "Reverse route" });
-  await reverseButton.click();
-  const dialog = page.getByRole("alertdialog");
-  await expect(dialog).toBeVisible();
-  await expect(
-    dialog.getByText(/reversing this route will replace your unsaved draft/i),
-  ).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
-
-  await dialog.getByRole("button", { name: "Cancel" }).click();
-  await expect(dialog).toBeHidden();
-  // Cancel must not navigate — still on the pre-ride overview, focus
-  // restored to Reverse route specifically.
-  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
-  await expect(reverseButton).toBeFocused();
-
-  // The original unrelated draft (one waypoint, no second waypoint) must
-  // be exactly as the rider left it.
-  await page.getByRole("button", { name: "Plan", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Waypoint 2", exact: true }),
-  ).toBeHidden();
-
-  await page.getByRole("button", { name: "Routes" }).click();
-  await page.getByRole("button", { name: routeName, exact: true }).click();
-  await page.getByRole("button", { name: "Reverse route" }).click();
-  await expect(page.getByRole("alertdialog")).toBeVisible();
-  await page
-    .getByRole("alertdialog")
-    .getByRole("button", { name: "Replace and reverse" })
-    .click();
-
-  await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
-  await expect(page.getByText(EXACT_REVERSE_NOTICE)).toBeVisible();
-  await expect(page.getByLabel("Route name")).toHaveValue(`${routeName} (reversed)`);
-  await expect(
-    page.getByRole("button", { name: "Waypoint 2", exact: true }),
-  ).toBeVisible();
-
-  expect(unexpectedOpenFreeMapRequests).toEqual([]);
-  expect(consoleErrors).toEqual([]);
-});
-
-test("reloading after creating the reverse draft recovers the draft and notice with no automatic routing request", async ({
+test("reloading after reversing a draft inside Planning restores it without an automatic routing request", async ({
   page,
   context,
 }) => {
@@ -638,18 +556,13 @@ test("reloading after creating the reverse draft recovers the draft and notice w
   await planAndSaveTwoWaypointRoute(page, originalName);
   expect(requestedCoordinatePairs).toHaveLength(1);
 
-  await page.getByRole("button", { name: "Reverse route" }).click();
-  await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
-  await expect(page.getByText(EXACT_REVERSE_NOTICE)).toBeVisible();
+  await editCopyThenReverseInPlanning(page);
   await expect(page.getByLabel("Route name")).toHaveValue(`${originalName} (reversed)`);
-  // Confirms the seeded draft's own fields are genuinely persisted before
-  // reloading, via a deterministic IndexedDB postcondition rather than a
-  // fixed wait. The seeding write itself already happened synchronously in
-  // RidingScreen (performCopyOperation) before navigation; this proves the
-  // same row PlanningScreen is about to re-read after reload already
-  // carries the reversed name. Distinct from the Save-versus-autosave race
-  // (CLAUDE.md backlog item 30) this file's other waits used to guard
-  // against — no Save button is pressed anywhere near this point.
+  // Confirms the reversed draft's own fields are genuinely persisted
+  // before reloading, via a deterministic IndexedDB postcondition rather
+  // than a fixed wait — distinct from the Save-versus-autosave race
+  // (CLAUDE.md backlog item 30); no Save button is pressed anywhere near
+  // this point.
   await expect
     .poll(() => readPlanningDraftRow(page), { timeout: 5_000 })
     .toMatchObject({ routeName: `${originalName} (reversed)` });
@@ -658,7 +571,7 @@ test("reloading after creating the reverse draft recovers the draft and notice w
   await page.reload();
   await openPlanningAndAwaitFraming(page);
 
-  await expect(page.getByText(EXACT_REVERSE_NOTICE)).toBeVisible();
+  await expect(page.getByText(EXACT_EDIT_COPY_NOTICE)).toBeVisible();
   await expect(page.getByLabel("Route name")).toHaveValue(`${originalName} (reversed)`);
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
   await expect(
@@ -670,4 +583,49 @@ test("reloading after creating the reverse draft recovers the draft and notice w
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
+});
+
+test.describe("phone viewport", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("Reverse route is a usable touch target and causes no horizontal overflow", async ({
+    page,
+    context,
+  }) => {
+    const { unexpectedOpenFreeMapRequests, consoleErrors } = await preparePage(
+      page,
+      context,
+    );
+    await configureProviderKey(page);
+    await mockOrsRequests(page);
+
+    const originalName = "Phone Viewport Reverse Route";
+    await planAndSaveTwoWaypointRoute(page, originalName);
+
+    await page.getByRole("button", { name: "Edit copy" }).click();
+    await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    await page.waitForTimeout(500);
+
+    const reverseButton = page.getByRole("button", { name: "Reverse route" });
+    await reverseButton.scrollIntoViewIfNeeded();
+    const box = await reverseButton.boundingBox();
+    if (!box) throw new Error("expected the Reverse route button to lay out");
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+
+    let scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    let clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+
+    await reverseButton.click();
+    await expect(page.getByLabel("Route name")).toHaveValue(`${originalName} (reversed)`);
+
+    scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
 });

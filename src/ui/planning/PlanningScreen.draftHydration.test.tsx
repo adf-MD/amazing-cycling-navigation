@@ -325,6 +325,11 @@ describe("PlanningScreen draft hydration lifecycle", () => {
     expect(mockedClearDraft).not.toHaveBeenCalled();
 
     await act(async () => {
+      // editCopyOperation: "reverse" is a legacy value only (backlog item
+      // 38 removed its one writer, the pre-ride Reverse route action) —
+      // exercised here purely as realistic legacy draft-row content for
+      // this hydration-race test, not as a reachable current UI path; see
+      // fromStoredPlanningDraft's own `?? "forward"` default.
       resolve(
         buildDraftContent({
           routeName: "Evening loop (reversed)",

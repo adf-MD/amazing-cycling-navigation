@@ -30,4 +30,8 @@ describe("suggestReversedRouteName", () => {
       "Evening loop (reversed) (reversed)",
     );
   });
+
+  it('appends " (reversed)" unconditionally, even to a blank name — the pure contract is unchanged; the "blank draft stays blank" rule lives in waypointHistoryReducer\'s "reverse" case, not here', () => {
+    expect(suggestReversedRouteName("")).toBe(" (reversed)");
+  });
 });

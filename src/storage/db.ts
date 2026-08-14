@@ -83,7 +83,7 @@ export interface StoredPlanningDraft {
    * missing value to DEFAULT_ROUTING_PROFILE ("cycling-road"), the app's
    * only profile before this field existed. */
   profile?: string;
-  /** Marks this draft as an "Edit copy in Planning" seeded from an
+  /** Marks this draft as an "Edit copy" seeded from an
    * existing saved route — that route's id, purely informational (drives
    * PlanningScreen's read-only "editable copy" notice; never gates Save/
    * Export, never implies updating that route in place). Optional/non-

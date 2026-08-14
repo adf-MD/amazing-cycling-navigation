@@ -159,10 +159,13 @@ function computeWaypointHydrationBounds(
 }
 
 /** Stamps the live Planning waypoints onto a route about to be saved or
- * exported, so a future "Edit copy in Planning" (or GPX round-trip) can
- * recover them exactly — see domain/editableWaypoints.ts and
- * PlanningProvenance's own doc comment. Used by both handleSave and
- * handleExport so the two never disagree about what was actually planned. */
+ * exported, so a future "Edit copy" (or GPX round-trip) can recover them
+ * exactly — see domain/editableWaypoints.ts and PlanningProvenance's own
+ * doc comment. Used by both handleSave and handleExport so the two never
+ * disagree about what was actually planned. Naturally captures a reversed
+ * waypoint order too, once the rider has explicitly recalculated after
+ * pressing Reverse route (see handleReverseRoute above) — no separate
+ * "reversed" provenance field exists or is needed. */
 function buildPlanningProvenance(
   waypoints: readonly Waypoint[],
   profile: RoutingProfile,
@@ -178,10 +181,28 @@ function buildPlanningProvenance(
 
 /** The read-only Planning notice text for a hydrated/autosaved edit-copy
  * draft — one of exactly four combinations of operation ("forward" from
- * Edit copy in Planning, "reverse" from Reverse route) and origin ("exact"
+ * Edit copy, "reverse" — legacy only, see below) and origin ("exact"
  * recovered planning waypoints, or "derived" from route geometry). Never
  * shows more than one notice: this function always returns exactly one
- * string. */
+ * string.
+ *
+ * Since backlog item 38 moved "Reverse route" from a pre-ride, seed-time-
+ * only action (RidingScreen.tsx) into an ordinary, repeatable Planning
+ * edit (see waypointHistoryReducer's "reverse" case and handleReverseRoute
+ * above), reversing an open draft never touches editCopyMeta at all —
+ * editCopyMeta/operation describes seed provenance ("how this draft was
+ * first created"), not live edit history, and stays exactly as it was
+ * when the draft was seeded, however many times it's since been reversed.
+ * No code path writes operation: "reverse" any more (its one writer,
+ * RidingScreen.tsx's old REVERSE_ROUTE_CONFIG, was deleted); the
+ * "reverse" branch below survives purely to correctly display a legacy
+ * draft row written by v0.3.17–v0.3.28, before this change. A freshly
+ * Edit-copied-then-reversed-in-Planning draft therefore shows the
+ * unchanged "forward" notice below, describing how the draft was seeded,
+ * not that it has since been reversed — this is deliberate, not a
+ * contradiction: the notice narrates the draft's origin, a historical
+ * fact unaffected by later edits, exactly like it already tolerates an
+ * ordinary append/delete edit without updating. */
 function describeEditCopyNotice(meta: {
   origin: "exact" | "derived";
   operation: EditCopyOperation;
@@ -242,9 +263,14 @@ export function PlanningScreen({
   // `true` when nothing has been saved in Settings.
   const [avoidFerries, setAvoidFerries] = useState(true);
   const [profile, setProfile] = useState<RoutingProfile>(DEFAULT_ROUTING_PROFILE);
-  const [routeName, setRouteName] = useState("Planned route");
+  // Route name lives inside the waypoint-history reducer's own present
+  // snapshot (state.present.routeName), not a separate useState — see
+  // waypointHistory.ts's WaypointDraftSnapshot doc comment (backlog item
+  // 38) for why: a "reverse" action must change waypoint order and the
+  // route name together as one atomic, undoable history entry, which a
+  // separate useState could never guarantee stays in sync with undo/redo.
   // Set together, or neither — present only when this draft was created via
-  // "Edit copy in Planning" (see RidingScreen.tsx), restored from the
+  // "Edit copy" (see RidingScreen.tsx), restored from the
   // hydrated draft below or set fresh by the debounced autosave effect.
   // Held as one nullable object, not two separate booleans/strings, so the
   // two fields can never drift out of sync. Drives only the read-only
@@ -395,7 +421,7 @@ export function PlanningScreen({
   const now = useNow(clock);
 
   const routing = usePlanningRoute({
-    waypoints: state.present,
+    waypoints: state.present.waypoints,
     profile,
     avoidFerries,
     adapter,
@@ -654,8 +680,11 @@ export function PlanningScreen({
             hasUserModifiedDraftFieldsRef.current,
           ).some(Boolean);
           if (!hasAnyUserEdit) {
-            dispatch({ type: "reset", waypoints: draft.waypoints });
-            setRouteName(draft.routeName);
+            dispatch({
+              type: "reset",
+              waypoints: draft.waypoints,
+              routeName: draft.routeName,
+            });
             setAvoidFerries(draft.avoidFerries);
             setProfile(draft.profile);
             // Both fields, or neither — see editCopyMeta's own doc comment.
@@ -799,10 +828,18 @@ export function PlanningScreen({
   // A separate 900ms debounce from usePlanningRoute's own recalculation
   // debounce below — this one persists the draft (waypoints, route name,
   // avoid-ferries, cycling profile), so it deliberately DOES depend on
-  // routeName/avoidFerries/profile, unlike the routing debounce, which
-  // never receives routeName. Also gated on isSaving, and included in the
-  // dependency array, so no new timer is ever scheduled while an explicit
-  // Save attempt is in flight (see handleSave below).
+  // avoidFerries/profile, unlike the routing debounce, which never receives
+  // routeName. Depends on state.present (not a standalone routeName dep):
+  // every reducer case that changes routeName (rename, reverse, reset)
+  // already produces a new state.present object reference — see
+  // waypointHistory.ts — so state.present's own identity already covers
+  // name changes, and a rename's own deliberate reuse of the same
+  // waypoints array reference (see waypointHistoryReducer's "rename" case)
+  // is what stops a rename from ever looking like a waypoint change to
+  // usePlanningRoute's separate recalculation-debounce effect. Also gated
+  // on isSaving, and included in the dependency array, so no new timer is
+  // ever scheduled while an explicit Save attempt is in flight (see
+  // handleSave below).
   useEffect(() => {
     if (hydrationStatus !== "ready" || isSaving) return;
     const generation = saveGenerationRef.current;
@@ -814,17 +851,17 @@ export function PlanningScreen({
       // guards against a future refactor weakening that primary guard.
       if (saveGenerationRef.current !== generation) return;
       const persist =
-        state.present.length === 0
+        state.present.waypoints.length === 0
           ? clearDraft()
           : saveDraft({
-              waypoints: state.present,
-              routeName,
+              waypoints: state.present.waypoints,
+              routeName: state.present.routeName,
               avoidFerries,
               profile,
               // Carried through on every autosave, not just the initial
               // hydration — saveDraft fully replaces the stored row, so
               // omitting this here would silently drop it on the very
-              // first autosave after a fresh "Edit copy in Planning" open.
+              // first autosave after a fresh "Edit copy" open.
               ...(editCopyMeta
                 ? {
                     editCopySourceRouteId: editCopyMeta.sourceRouteId,
@@ -840,23 +877,15 @@ export function PlanningScreen({
     return () => {
       window.clearTimeout(saveTimeoutRef.current);
     };
-  }, [
-    state.present,
-    routeName,
-    avoidFerries,
-    profile,
-    editCopyMeta,
-    hydrationStatus,
-    isSaving,
-  ]);
+  }, [state.present, avoidFerries, profile, editCopyMeta, hydrationStatus, isSaving]);
 
   // Read fresh inside the location effect below rather than depending on
   // state.present directly, so a waypoint added while the location request
   // is still pending is seen without re-triggering the request itself.
-  const waypointsRef = useRef(state.present);
+  const waypointsRef = useRef(state.present.waypoints);
   useEffect(() => {
-    waypointsRef.current = state.present;
-  }, [state.present]);
+    waypointsRef.current = state.present.waypoints;
+  }, [state.present.waypoints]);
 
   // Set true the instant the rider manually pans/pinches/rotates/pitches
   // the map, or explicitly taps Locate me — blocks a still-in-flight
@@ -1106,25 +1135,50 @@ export function PlanningScreen({
   };
 
   const selectedIndex = state.selectedWaypointId
-    ? state.present.findIndex((waypoint) => waypoint.id === state.selectedWaypointId)
+    ? state.present.waypoints.findIndex(
+        (waypoint) => waypoint.id === state.selectedWaypointId,
+      )
     : -1;
   const selectedWaypointIndex = selectedIndex === -1 ? null : selectedIndex;
 
   // Shared with the map's own waypoint markers — see
   // planningLayer.ts's deriveWaypointRoles doc comment.
   const waypointRoles = deriveWaypointRoles(
-    state.present.map((waypoint) => waypoint.coordinate),
+    state.present.waypoints.map((waypoint) => waypoint.coordinate),
   );
 
-  const first = state.present[0];
-  const last = state.present.at(-1);
+  const first = state.present.waypoints[0];
+  const last = state.present.waypoints.at(-1);
   const canReturnToStart =
-    state.present.length >= 2 &&
+    state.present.waypoints.length >= 2 &&
     !!first &&
     !!last &&
     !sameCoordinate(first.coordinate, last.coordinate);
 
   const canSaveOrExport = canSaveOrExportPlan(routing.state, routing.isStale);
+
+  // Reverses waypoint order and the route name together as one atomic,
+  // undoable history entry (waypointHistoryReducer's "reverse" case, see
+  // its own doc comment) — local only, no routing-provider request. Calling
+  // routing.reset() strictly after the dispatch (mirroring
+  // handleClearDraftConfirm's own ordering below) discards any in-flight
+  // or previously calculated result and, critically, sets hasRoutedResultRef
+  // to false before usePlanningRoute's debounced recalculation-scheduling
+  // effect next runs — which is what stops that effect from silently
+  // scheduling a provider request ~900ms after a reversal, something
+  // isStale's own order-sensitive fingerprint check alone would not have
+  // prevented (it only gates Save/Export, not the debounce). Deliberately
+  // no confirmation dialog (local + fully undoable) and no re-entrancy
+  // guard beyond the disabled prop below — matching Undo/Redo/Return to
+  // start, none of which have one either; a rapid double-click simply
+  // double-reverses, which is harmless and fully undoable.
+  const handleReverseRoute = () => {
+    if (state.present.waypoints.length < 2) return; // defensive; button disabled below this anyway
+    setPendingWaypointAction(null);
+    noteHydrationOverriddenByUserEdit("routeName");
+    dispatchWaypointAction({ type: "reverse" });
+    routing.reset();
+  };
 
   const handleSave = () => {
     if (routing.state.kind !== "routed" || isSavingRef.current || isClearingRef.current)
@@ -1148,8 +1202,12 @@ export function PlanningScreen({
 
     const routeToSave: PlannedRoute = {
       ...routing.state.route,
-      name: routeName.trim() || "Planned route",
-      planningProvenance: buildPlanningProvenance(state.present, profile, avoidFerries),
+      name: state.present.routeName.trim() || "Planned route",
+      planningProvenance: buildPlanningProvenance(
+        state.present.waypoints,
+        profile,
+        avoidFerries,
+      ),
     };
     setSaveError(null);
     setIsSaving(true);
@@ -1159,8 +1217,11 @@ export function PlanningScreen({
         // Superseded only by unmount (isSavingRef already blocks a second
         // concurrent attempt) — skip applying state after that.
         if (saveGenerationRef.current !== attemptGeneration) return;
-        dispatchWaypointAction({ type: "reset", waypoints: [] });
-        setRouteName("Planned route");
+        dispatchWaypointAction({
+          type: "reset",
+          waypoints: [],
+          routeName: "Planned route",
+        });
         setEditCopyMeta(null);
         onRouteSaved?.(routeToSave);
       })
@@ -1250,8 +1311,11 @@ export function PlanningScreen({
         // Superseded only by unmount — isClearingRef already blocks a
         // second concurrent attempt.
         if (saveGenerationRef.current !== attemptGeneration) return;
-        dispatchWaypointAction({ type: "reset", waypoints: [] });
-        setRouteName("Planned route");
+        dispatchWaypointAction({
+          type: "reset",
+          waypoints: [],
+          routeName: "Planned route",
+        });
         setEditCopyMeta(null);
         setPendingWaypointAction(null);
         setSaveError(null);
@@ -1261,7 +1325,7 @@ export function PlanningScreen({
         // avoidFerries mean "modified since this component mounted" and
         // are never reset by an ordinary edit, so a rider who customised
         // routing before pressing Clear draft (an entirely normal flow —
-        // e.g. after arriving via "Edit copy in Planning") would already
+        // e.g. after arriving via "Edit copy") would already
         // have one or both flags permanently true; gating this reseed on
         // them the same way would silently skip it precisely when it
         // matters most. Clear draft is itself the explicit "start over"
@@ -1300,11 +1364,15 @@ export function PlanningScreen({
   const handleExport = () => {
     if (routing.state.kind !== "routed") return;
     setExportError(null);
-    const trimmedName = routeName.trim() || "Planned route";
+    const trimmedName = state.present.routeName.trim() || "Planned route";
     const routeToExport: PlannedRoute = {
       ...routing.state.route,
       name: trimmedName,
-      planningProvenance: buildPlanningProvenance(state.present, profile, avoidFerries),
+      planningProvenance: buildPlanningProvenance(
+        state.present.waypoints,
+        profile,
+        avoidFerries,
+      ),
     };
     exportRouteToGpx(routeToExport)
       .then((xml) => {
@@ -1319,12 +1387,14 @@ export function PlanningScreen({
   };
 
   const planningOverlay: PlanningOverlay = {
-    waypoints: state.present,
+    waypoints: state.present.waypoints,
     // Only shown before/between calculations — once routed, the real
     // geometry is already visible via `points` below, and this preview
     // must never be mixed with it (see planningLayer.ts).
     previewCoordinates:
-      routing.state.kind === "routed" ? [] : state.present.map((w) => w.coordinate),
+      routing.state.kind === "routed"
+        ? []
+        : state.present.waypoints.map((w) => w.coordinate),
     selectedWaypointIndex,
     onMapTap: handlePlacementAt,
   };
@@ -1484,7 +1554,7 @@ export function PlanningScreen({
             selectedRouteFeatureId !== null
           }
         >
-          {describeCrosshairAction(interactionMode, state.present)}
+          {describeCrosshairAction(interactionMode, state.present.waypoints)}
         </button>
         <div className="planning-map-controls">
           <button
@@ -1555,6 +1625,14 @@ export function PlanningScreen({
           >
             Return to start
           </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleReverseRoute}
+            disabled={state.present.waypoints.length < 2}
+          >
+            Reverse route
+          </button>
           {state.selectedWaypointId ? (
             <button
               type="button"
@@ -1572,7 +1650,9 @@ export function PlanningScreen({
             type="button"
             className="btn-primary"
             onClick={routing.calculateNow}
-            disabled={state.present.length < 2 || !hasKey || routing.isCalculating}
+            disabled={
+              state.present.waypoints.length < 2 || !hasKey || routing.isCalculating
+            }
           >
             {routing.isCalculating
               ? routing.updatingLegCount !== null
@@ -1700,7 +1780,7 @@ export function PlanningScreen({
       <div className="stack planning-section">
         <h2>Waypoints</h2>
         <WaypointList
-          waypoints={state.present}
+          waypoints={state.present.waypoints}
           waypointRoles={waypointRoles}
           interactionMode={interactionMode}
           onSelect={(waypointId) => {
@@ -1722,11 +1802,11 @@ export function PlanningScreen({
           onStartMove={handleStartMove}
           onStartInsertAfter={handleStartInsertAfter}
           onMoveUp={(waypointId) => {
-            const index = state.present.findIndex((w) => w.id === waypointId);
+            const index = state.present.waypoints.findIndex((w) => w.id === waypointId);
             dispatchWaypointAction({ type: "reorder", waypointId, toIndex: index - 1 });
           }}
           onMoveDown={(waypointId) => {
-            const index = state.present.findIndex((w) => w.id === waypointId);
+            const index = state.present.waypoints.findIndex((w) => w.id === waypointId);
             dispatchWaypointAction({ type: "reorder", waypointId, toIndex: index + 1 });
           }}
           onDelete={(waypointId) => {
@@ -1766,10 +1846,16 @@ export function PlanningScreen({
             id="planning-route-name"
             type="text"
             className="field-input"
-            value={routeName}
+            value={state.present.routeName}
             onChange={(event) => {
               noteHydrationOverriddenByUserEdit("routeName");
-              setRouteName(event.target.value);
+              // Plain dispatch, not dispatchWaypointAction: typing a name
+              // must not clear an active warning/route-feature selection
+              // (unlike an actual waypoint edit), and the reducer's
+              // "rename" case itself never creates a history entry — see
+              // waypointHistory.ts's own doc comment on why route-name
+              // typing must stay outside undo/redo.
+              dispatch({ type: "rename", routeName: event.target.value });
             }}
           />
         </div>

@@ -659,6 +659,10 @@ describe("toStoredPlanningDraft / fromStoredPlanningDraft", () => {
     expect(restored.editCopyWaypointsOrigin).toBeUndefined();
   });
 
+  // "reverse" is now a legacy-only value (backlog item 38 removed its one
+  // writer, RidingScreen.tsx's former pre-ride Reverse route action) — the
+  // storage layer must still round-trip it correctly for a pre-existing
+  // v0.3.17-v0.3.28 draft row, even though no current UI path writes it.
   it('round-trips editCopyOperation "reverse"', () => {
     const stored = toStoredPlanningDraft({
       waypoints,

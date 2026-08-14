@@ -3888,6 +3888,19 @@ describe("PlanningScreen", () => {
       expect(draftAfterDebounce).toBeUndefined();
     });
 
+    // The four tests below (through "keeps the reverse notice...") seed
+    // editCopyOperation: "reverse" directly via a mocked/raw stored draft
+    // row, never through a live UI action — backlog item 38 moved
+    // "Reverse route" from a pre-ride, seed-time-only action into an
+    // ordinary, repeatable, undoable Planning edit that never touches
+    // editCopyOperation at all (see waypointHistoryReducer's "reverse"
+    // case and PlanningScreen.tsx's handleReverseRoute), so no current UI
+    // path writes this value any more. These tests now prove read-only
+    // backward compatibility for a draft row persisted by a pre-item-38
+    // build (v0.3.17–v0.3.28) — fromStoredPlanningDraft's own `?? "forward"`
+    // default and describeEditCopyNotice's "reverse" branch must keep
+    // correctly displaying such a legacy row, even though nothing can
+    // create a fresh one any more.
     it("shows the reverse+exact notice for a draft restored with editCopyOperation reverse and exact origin", async () => {
       await saveDraft({
         waypoints: [

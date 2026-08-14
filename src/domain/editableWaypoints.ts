@@ -3,8 +3,8 @@ import { DEFAULT_ROUTING_PROFILE } from "./routingProfile.ts";
 import type { Coordinate, PlannedRoute, RoutingProfile } from "./types.ts";
 
 /**
- * Cheap, render-safe check for whether "Edit copy in Planning" should be
- * offered for a route at all. Deliberately does not run derivation:
+ * Cheap, render-safe check for whether "Edit copy" should be offered for a
+ * route at all. Deliberately does not run derivation:
  * deriveWaypointsFromRoute can always succeed for two or more points (worst
  * case it converges to the route's own first and last coordinate), so the
  * only real failure mode is too little geometry to begin with. The actual,
@@ -28,8 +28,8 @@ export interface EditableWaypointsResult {
 }
 
 /**
- * Resolves the waypoints an "Edit copy in Planning" draft should be seeded
- * with, following the app's documented priority: exact recovered
+ * Resolves the waypoints an "Edit copy" draft should be seeded with,
+ * following the app's documented priority: exact recovered
  * PlanningProvenance first (whichever of its two kinds — see
  * domain/types.ts), otherwise a deterministic, capped derivation from the
  * route's calculated geometry. Returns null only when the route has too

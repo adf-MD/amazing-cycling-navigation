@@ -4166,7 +4166,7 @@ describe("RidingScreen", () => {
     });
   });
 
-  describe("Edit copy in Planning", () => {
+  describe("Edit copy", () => {
     it("renders enabled, pre-ride only, for a route with usable geometry", async () => {
       const stub = buildStubGeolocationSource();
       render(
@@ -4177,11 +4177,27 @@ describe("RidingScreen", () => {
         />,
       );
 
-      const button = await screen.findByRole("button", { name: "Edit copy in Planning" });
+      const button = await screen.findByRole("button", { name: "Edit copy" });
       expect(button).toBeEnabled();
     });
 
-    it("disables the action and shows the shared inline reason for a route with insufficient geometry", async () => {
+    it("no longer offers a pre-ride Reverse route action — reversal moved into Planning itself (backlog item 38)", async () => {
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await screen.findByRole("button", { name: "Edit copy" });
+      expect(
+        screen.queryByRole("button", { name: "Reverse route" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("disables the action and shows the inline reason for a route with insufficient geometry", async () => {
       const shortRoute: PlannedRoute = {
         ...route,
         points: [
@@ -4197,19 +4213,13 @@ describe("RidingScreen", () => {
         />,
       );
 
-      const editCopyButton = await screen.findByRole("button", {
-        name: "Edit copy in Planning",
-      });
-      const reverseButton = await screen.findByRole("button", { name: "Reverse route" });
+      const editCopyButton = await screen.findByRole("button", { name: "Edit copy" });
       expect(editCopyButton).toBeDisabled();
-      expect(reverseButton).toBeDisabled();
-      // Both buttons share the exact same eligibility rule, so exactly one
-      // hint paragraph is rendered, not one per button.
       expect(
-        screen.getAllByText(
+        screen.getByText(
           "This route doesn't have enough distinct geometry to create an editable copy.",
         ),
-      ).toHaveLength(1);
+      ).toBeInTheDocument();
     });
 
     it("seeds a Planning draft with derived waypoints and navigates when there is no existing meaningful draft", async () => {
@@ -4225,9 +4235,7 @@ describe("RidingScreen", () => {
         />,
       );
 
-      await user.click(
-        await screen.findByRole("button", { name: "Edit copy in Planning" }),
-      );
+      await user.click(await screen.findByRole("button", { name: "Edit copy" }));
 
       await waitFor(() => {
         expect(onNavigateToPlanning).toHaveBeenCalledTimes(1);
@@ -4269,9 +4277,7 @@ describe("RidingScreen", () => {
         />,
       );
 
-      await user.click(
-        await screen.findByRole("button", { name: "Edit copy in Planning" }),
-      );
+      await user.click(await screen.findByRole("button", { name: "Edit copy" }));
 
       await waitFor(() => {
         expect(onNavigateToPlanning).toHaveBeenCalledTimes(1);
@@ -4306,9 +4312,7 @@ describe("RidingScreen", () => {
         />,
       );
 
-      const editCopyButton = await screen.findByRole("button", {
-        name: "Edit copy in Planning",
-      });
+      const editCopyButton = await screen.findByRole("button", { name: "Edit copy" });
       await user.click(editCopyButton);
 
       const dialog = await screen.findByRole("alertdialog");
@@ -4343,9 +4347,7 @@ describe("RidingScreen", () => {
         />,
       );
 
-      await user.click(
-        await screen.findByRole("button", { name: "Edit copy in Planning" }),
-      );
+      await user.click(await screen.findByRole("button", { name: "Edit copy" }));
 
       await waitFor(() => {
         expect(screen.getByRole("alert")).toHaveTextContent(
@@ -4378,9 +4380,7 @@ describe("RidingScreen", () => {
         />,
       );
 
-      await user.click(
-        await screen.findByRole("button", { name: "Edit copy in Planning" }),
-      );
+      await user.click(await screen.findByRole("button", { name: "Edit copy" }));
       const dialog = await screen.findByRole("alertdialog");
       await user.click(within(dialog).getByRole("button", { name: "Replace and edit" }));
 
@@ -4410,9 +4410,7 @@ describe("RidingScreen", () => {
         />,
       );
 
-      await user.click(
-        await screen.findByRole("button", { name: "Edit copy in Planning" }),
-      );
+      await user.click(await screen.findByRole("button", { name: "Edit copy" }));
 
       await waitFor(() => {
         expect(screen.getByRole("alert")).toBeInTheDocument();
@@ -4421,303 +4419,8 @@ describe("RidingScreen", () => {
 
       saveDraftSpy.mockRestore();
     });
-  });
 
-  describe("Reverse route", () => {
-    it("renders enabled, pre-ride only, for a route with usable geometry", async () => {
-      const stub = buildStubGeolocationSource();
-      render(
-        <RidingScreen
-          route={route}
-          geolocationSource={stub.source}
-          mapFactory={buildStubMapFactory().factory}
-        />,
-      );
-
-      const button = await screen.findByRole("button", { name: "Reverse route" });
-      expect(button).toBeEnabled();
-    });
-
-    it("seeds a reversed Planning draft with a suggested name and navigates when there is no existing meaningful draft", async () => {
-      const user = userEvent.setup();
-      const onNavigateToPlanning = vi.fn();
-      const stub = buildStubGeolocationSource();
-      render(
-        <RidingScreen
-          route={route}
-          geolocationSource={stub.source}
-          mapFactory={buildStubMapFactory().factory}
-          onNavigateToPlanning={onNavigateToPlanning}
-        />,
-      );
-
-      await user.click(await screen.findByRole("button", { name: "Reverse route" }));
-
-      await waitFor(() => {
-        expect(onNavigateToPlanning).toHaveBeenCalledTimes(1);
-      });
-
-      const draft = await getDraft();
-      expect(draft?.routeName).toBe("Evening loop (reversed)");
-      expect(draft?.editCopySourceRouteId).toBe("route-1");
-      expect(draft?.editCopyWaypointsOrigin).toBe("derived");
-      expect(draft?.editCopyOperation).toBe("reverse");
-      expect(draft?.waypoints.length).toBeGreaterThanOrEqual(2);
-      expect(draft?.waypoints.length).toBeLessThanOrEqual(20);
-      // The reversed draft's first waypoint corresponds to the source
-      // route's own last point, not its first.
-      expect(draft?.waypoints[0]?.coordinate).toEqual(
-        route.points[route.points.length - 1]?.coordinate,
-      );
-    });
-
-    it("recovers exact waypoints in reverse order when the route has planningProvenance", async () => {
-      const user = userEvent.setup();
-      const onNavigateToPlanning = vi.fn();
-      const exactWaypoints: Coordinate[] = [
-        [0, 51],
-        [0.005, 51.002],
-        [0.01, 51],
-      ];
-      const routeWithProvenance: PlannedRoute = {
-        ...route,
-        planningProvenance: {
-          kind: "planning-session",
-          waypoints: exactWaypoints,
-          profile: "cycling-regular",
-          avoidFerries: false,
-        },
-      };
-      const stub = buildStubGeolocationSource();
-      render(
-        <RidingScreen
-          route={routeWithProvenance}
-          geolocationSource={stub.source}
-          mapFactory={buildStubMapFactory().factory}
-          onNavigateToPlanning={onNavigateToPlanning}
-        />,
-      );
-
-      await user.click(await screen.findByRole("button", { name: "Reverse route" }));
-
-      await waitFor(() => {
-        expect(onNavigateToPlanning).toHaveBeenCalledTimes(1);
-      });
-
-      const draft = await getDraft();
-      expect(draft?.editCopyWaypointsOrigin).toBe("exact");
-      expect(draft?.editCopyOperation).toBe("reverse");
-      expect(draft?.waypoints.map((w) => w.coordinate)).toEqual(
-        [...exactWaypoints].reverse(),
-      );
-      expect(draft?.profile).toBe("cycling-regular");
-      expect(draft?.avoidFerries).toBe(false);
-    });
-
-    it("shows a reverse-specific confirmation before replacing a meaningful existing draft; Cancel preserves it and restores focus to Reverse route", async () => {
-      const user = userEvent.setup();
-      const onNavigateToPlanning = vi.fn();
-      await saveDraft({
-        waypoints: [
-          { id: "existing-a", coordinate: [1, 52] },
-          { id: "existing-b", coordinate: [1.01, 52] },
-        ],
-        routeName: "Unsaved plan",
-        avoidFerries: true,
-        profile: "cycling-road",
-      });
-      const stub = buildStubGeolocationSource();
-      render(
-        <RidingScreen
-          route={route}
-          geolocationSource={stub.source}
-          mapFactory={buildStubMapFactory().factory}
-          onNavigateToPlanning={onNavigateToPlanning}
-        />,
-      );
-
-      const reverseButton = await screen.findByRole("button", { name: "Reverse route" });
-      await user.click(reverseButton);
-
-      const dialog = await screen.findByRole("alertdialog");
-      expect(dialog).toHaveTextContent(
-        "Replace your current draft to reverse this route?",
-      );
-      expect(
-        within(dialog).getByText(/replace your unsaved draft in planning/i),
-      ).toBeInTheDocument();
-      expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
-
-      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-
-      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-      expect(onNavigateToPlanning).not.toHaveBeenCalled();
-      expect(reverseButton).toHaveFocus();
-
-      const draft = await getDraft();
-      expect(draft?.routeName).toBe("Unsaved plan");
-      expect(draft?.editCopySourceRouteId).toBeUndefined();
-    });
-
-    it("Confirm replaces the existing draft and navigates, with editCopyOperation reverse", async () => {
-      const user = userEvent.setup();
-      const onNavigateToPlanning = vi.fn();
-      await saveDraft({
-        waypoints: [
-          { id: "existing-a", coordinate: [1, 52] },
-          { id: "existing-b", coordinate: [1.01, 52] },
-        ],
-        routeName: "Unsaved plan",
-        avoidFerries: true,
-        profile: "cycling-road",
-      });
-      const stub = buildStubGeolocationSource();
-      render(
-        <RidingScreen
-          route={route}
-          geolocationSource={stub.source}
-          mapFactory={buildStubMapFactory().factory}
-          onNavigateToPlanning={onNavigateToPlanning}
-        />,
-      );
-
-      await user.click(await screen.findByRole("button", { name: "Reverse route" }));
-      const dialog = await screen.findByRole("alertdialog");
-      await user.click(
-        within(dialog).getByRole("button", { name: "Replace and reverse" }),
-      );
-
-      await waitFor(() => {
-        expect(onNavigateToPlanning).toHaveBeenCalledTimes(1);
-      });
-      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-
-      const draft = await getDraft();
-      expect(draft?.routeName).toBe("Evening loop (reversed)");
-      expect(draft?.editCopySourceRouteId).toBe("route-1");
-      expect(draft?.editCopyOperation).toBe("reverse");
-    });
-
-    it("shows the reverse-specific inline error and does not navigate when saving the draft fails; focus returns to Reverse route", async () => {
-      const user = userEvent.setup();
-      const onNavigateToPlanning = vi.fn();
-      const saveDraftSpy = vi
-        .spyOn(planningDraftRepository, "saveDraft")
-        .mockRejectedValueOnce(new Error("boom"));
-      const stub = buildStubGeolocationSource();
-      render(
-        <RidingScreen
-          route={route}
-          geolocationSource={stub.source}
-          mapFactory={buildStubMapFactory().factory}
-          onNavigateToPlanning={onNavigateToPlanning}
-        />,
-      );
-
-      const reverseButton = await screen.findByRole("button", { name: "Reverse route" });
-      await user.click(reverseButton);
-
-      await waitFor(() => {
-        expect(
-          screen.getByText(
-            "The reversed copy could not be created on this device. Try again.",
-          ),
-        ).toBeInTheDocument();
-      });
-      expect(onNavigateToPlanning).not.toHaveBeenCalled();
-      expect(reverseButton).toHaveFocus();
-
-      saveDraftSpy.mockRestore();
-    });
-  });
-
-  describe("Edit copy in Planning and Reverse route share a single in-flight guard", () => {
-    it("clicking Reverse route while Edit copy's confirmation dialog is open is a no-op", async () => {
-      const user = userEvent.setup();
-      const onNavigateToPlanning = vi.fn();
-      await saveDraft({
-        waypoints: [
-          { id: "existing-a", coordinate: [1, 52] },
-          { id: "existing-b", coordinate: [1.01, 52] },
-        ],
-        routeName: "Unsaved plan",
-        avoidFerries: true,
-        profile: "cycling-road",
-      });
-      const stub = buildStubGeolocationSource();
-      render(
-        <RidingScreen
-          route={route}
-          geolocationSource={stub.source}
-          mapFactory={buildStubMapFactory().factory}
-          onNavigateToPlanning={onNavigateToPlanning}
-        />,
-      );
-
-      await user.click(
-        await screen.findByRole("button", { name: "Edit copy in Planning" }),
-      );
-      await screen.findByRole("alertdialog");
-
-      // Clicking Reverse route while Edit copy's own dialog is open must
-      // not open a second dialog or otherwise disturb the pending one.
-      await user.click(screen.getByRole("button", { name: "Reverse route" }));
-
-      expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
-      expect(
-        within(screen.getByRole("alertdialog")).getByText(
-          /editing this route will replace/i,
-        ),
-      ).toBeInTheDocument();
-      expect(onNavigateToPlanning).not.toHaveBeenCalled();
-    });
-
-    it("clicking Edit copy in Planning while a reverse operation is mid-flight is a no-op", async () => {
-      const user = userEvent.setup();
-      const onNavigateToPlanning = vi.fn();
-      let resolveSave: (() => void) | undefined;
-      const saveDraftSpy = vi
-        .spyOn(planningDraftRepository, "saveDraft")
-        .mockImplementationOnce(
-          () =>
-            new Promise((resolve) => {
-              resolveSave = () => {
-                resolve(undefined);
-              };
-            }),
-        );
-      const stub = buildStubGeolocationSource();
-      render(
-        <RidingScreen
-          route={route}
-          geolocationSource={stub.source}
-          mapFactory={buildStubMapFactory().factory}
-          onNavigateToPlanning={onNavigateToPlanning}
-        />,
-      );
-
-      await user.click(await screen.findByRole("button", { name: "Reverse route" }));
-
-      await waitFor(() => {
-        expect(screen.getByRole("button", { name: "Reversing route…" })).toBeDisabled();
-      });
-
-      // Edit copy is disabled while the reverse operation is genuinely
-      // in-flight (activeOperationKind !== null), so this click is a
-      // no-op at the DOM level too.
-      expect(
-        screen.getByRole("button", { name: "Edit copy in Planning" }),
-      ).toBeDisabled();
-
-      resolveSave?.();
-      await waitFor(() => {
-        expect(onNavigateToPlanning).toHaveBeenCalledTimes(1);
-      });
-
-      saveDraftSpy.mockRestore();
-    });
-
-    it("rapid double-click on Reverse route alone creates exactly one draft write and one navigation call", async () => {
+    it("rapid double-click creates exactly one draft write and one navigation call", async () => {
       const user = userEvent.setup();
       const onNavigateToPlanning = vi.fn();
       const saveDraftSpy = vi.spyOn(planningDraftRepository, "saveDraft");
@@ -4731,8 +4434,8 @@ describe("RidingScreen", () => {
         />,
       );
 
-      const reverseButton = await screen.findByRole("button", { name: "Reverse route" });
-      await user.dblClick(reverseButton);
+      const editCopyButton = await screen.findByRole("button", { name: "Edit copy" });
+      await user.dblClick(editCopyButton);
 
       await waitFor(() => {
         expect(onNavigateToPlanning).toHaveBeenCalledTimes(1);

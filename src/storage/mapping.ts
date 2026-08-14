@@ -166,9 +166,9 @@ export function fromStoredRideState(stored: StoredRideState): RestoredRideState 
   };
 }
 
-/** The origin of the waypoints an "Edit copy in Planning" draft was seeded
- * with — see domain/editableWaypoints.ts's EditableWaypointsResult.origin,
- * which this mirrors exactly for storage. */
+/** The origin of the waypoints an "Edit copy" draft was seeded with — see
+ * domain/editableWaypoints.ts's EditableWaypointsResult.origin, which this
+ * mirrors exactly for storage. */
 export type EditCopyWaypointsOrigin = "exact" | "derived";
 
 function isEditCopyWaypointsOrigin(value: unknown): value is EditCopyWaypointsOrigin {
@@ -176,7 +176,11 @@ function isEditCopyWaypointsOrigin(value: unknown): value is EditCopyWaypointsOr
 }
 
 /** Which "editable copy" operation seeded a Planning draft — "forward"
- * (Edit copy in Planning) or "reverse" (Reverse route). See
+ * (Edit copy) or "reverse" (legacy only: a pre-ride Reverse route action
+ * that seeded a draft this way existed from v0.3.17 until backlog item 38
+ * removed it — reversing a route is now an ordinary, repeatable Planning
+ * edit that never touches this field at all, see
+ * waypointHistoryReducer's "reverse" case). See
  * StoredPlanningDraft.editCopyOperation's own doc comment for the
  * compatibility rationale. */
 export type EditCopyOperation = "forward" | "reverse";
@@ -195,7 +199,7 @@ export interface PlanningDraftContent {
   avoidFerries: boolean;
   profile: RoutingProfile;
   /** Set together, or neither set at all — present only when this draft
-   * was created via "Edit copy in Planning" (see RidingScreen.tsx). Purely
+   * was created via "Edit copy" (see RidingScreen.tsx). Purely
    * informational: drives PlanningScreen's read-only notice, never gates
    * Save/Export or routing behaviour. */
   editCopySourceRouteId?: string;
