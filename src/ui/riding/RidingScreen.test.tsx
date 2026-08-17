@@ -3990,6 +3990,37 @@ describe("RidingScreen", () => {
       source: { kind: "gpx-import" },
     };
 
+    // Backlog item 47: a synthetic waypoint-seam entry (produced by
+    // stitchPlannedRouteLegs.ts at an internal multi-leg boundary, no
+    // instruction of its own) must never be presented — the panel must skip
+    // straight through to the next real turn.
+    const plannerRouteWithWaypointSeam: PlannedRoute = {
+      ...route,
+      id: "route-with-waypoint-seam",
+      manoeuvres: [
+        {
+          distanceFromStartMetres: routePoints[5]?.distanceFromStartMetres ?? 0,
+          type: "left",
+          instruction: "Turn left onto Ridge Road",
+        },
+        {
+          distanceFromStartMetres: routePoints[8]?.distanceFromStartMetres ?? 0,
+          type: "waypoint",
+        },
+        {
+          distanceFromStartMetres: routePoints[12]?.distanceFromStartMetres ?? 0,
+          type: "right",
+          instruction: "Turn right onto Church Lane",
+        },
+        {
+          distanceFromStartMetres: routePoints[15]?.distanceFromStartMetres ?? 0,
+          type: "finish",
+          instruction: "Arrive at your destination",
+        },
+      ],
+      source: { kind: "planner", provider: "openrouteservice", profile: "cycling-road" },
+    };
+
     it("does not show the next-manoeuvre panel before Start riding is tapped", () => {
       const stub = buildStubGeolocationSource();
       render(
@@ -4149,6 +4180,48 @@ describe("RidingScreen", () => {
         ),
       ).toBeInTheDocument();
       expect(screen.queryByText("Turn left onto Ridge Road")).not.toBeInTheDocument();
+    });
+
+    it("skips a synthetic waypoint-seam manoeuvre and shows the next real turn, never 'Waypoint'", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={plannerRouteWithWaypointSeam}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      // Well past the left turn (index 5) and its own tolerance, but
+      // nowhere near the waypoint seam (index 8) yet — the panel must
+      // already skip straight through to the real right turn rather than
+      // ever showing the seam once it's eventually reached.
+      stub.emitFix({
+        coordinate: pointAt(6),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      expect(await screen.findByText("Turn right onto Church Lane")).toBeInTheDocument();
+      expect(screen.queryByText("Turn left onto Ridge Road")).not.toBeInTheDocument();
+      expect(screen.queryByText("Waypoint")).not.toBeInTheDocument();
+
+      // Advance past the right turn's own tolerance, through the seam.
+      stub.emitFix({
+        coordinate: pointAt(13),
+        accuracyMetres: 5,
+        timestampMs: 2000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      expect(await screen.findByText("Arrive at your destination")).toBeInTheDocument();
+      expect(screen.queryByText("Turn right onto Church Lane")).not.toBeInTheDocument();
+      expect(screen.queryByText("Waypoint")).not.toBeInTheDocument();
     });
   });
 

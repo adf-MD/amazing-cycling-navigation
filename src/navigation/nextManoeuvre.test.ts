@@ -106,6 +106,111 @@ describe("selectNextManoeuvre", () => {
   });
 });
 
+describe("selectNextManoeuvre — synthetic waypoint-seam manoeuvres", () => {
+  // A "waypoint"-typed entry (stitchPlannedRouteLegs.ts, collapsing an
+  // internal multi-leg seam) carries no instruction and must never be
+  // presented — see CLAUDE.md backlog item 47.
+
+  it("pre-emptively skips a seam and selects the following real manoeuvre, well before the seam is physically reached", () => {
+    const manoeuvres = [
+      manoeuvre(500, "left"),
+      manoeuvre(1000, "waypoint"),
+      manoeuvre(1500, "right"),
+    ];
+    // Past the left turn's own tolerance, but nowhere near the seam yet.
+    const result = selectNextManoeuvre(manoeuvres, 600, 0);
+
+    // reachedIndex still tracks physical progress — the seam has not been
+    // physically reached, so it stays at the seam's own (unreached) index.
+    expect(result.reachedIndex).toBe(1);
+    // The presented selection looks straight through the seam to the real
+    // manoeuvre after it.
+    expect(result.selection?.index).toBe(2);
+    expect(result.selection?.manoeuvre.type).toBe("right");
+    expect(result.selection?.remainingDistanceMetres).toBe(900);
+  });
+
+  it("skips the seam even when a real manoeuvre shares its exact route distance", () => {
+    const manoeuvres = [
+      manoeuvre(500, "left"),
+      manoeuvre(1000, "waypoint"),
+      manoeuvre(1000, "right"),
+    ];
+    const distancePastLeftOnly = 600;
+    const result = selectNextManoeuvre(manoeuvres, distancePastLeftOnly, 0);
+
+    expect(result.selection?.index).toBe(2);
+    expect(result.selection?.manoeuvre.type).toBe("right");
+    expect(result.selection?.manoeuvre.distanceFromStartMetres).toBe(1000);
+  });
+
+  it("does not skip a real manoeuvre that follows closely behind a reached seam", () => {
+    // Mirrors the existing "two manoeuvres closer together than the
+    // tolerance" test above, but the first entry is now a seam — proves the
+    // type-based scan never interacts with the distance/tolerance logic.
+    const manoeuvres = [
+      manoeuvre(100, "waypoint"),
+      manoeuvre(105, "left"),
+      manoeuvre(2000, "finish"),
+    ];
+    const distancePastSeamOnly = 100 + MANOEUVRE_REACHED_TOLERANCE_METRES;
+    const result = selectNextManoeuvre(manoeuvres, distancePastSeamOnly, 0);
+
+    expect(result.reachedIndex).toBe(1);
+    expect(result.selection?.index).toBe(1);
+    expect(result.selection?.manoeuvre.type).toBe("left");
+    expect(result.selection?.manoeuvre.distanceFromStartMetres).toBe(105);
+    expect(result.selection?.remainingDistanceMetres).toBe(0);
+  });
+
+  it("never regresses to a skipped seam after a backward jitter in presentation distance", () => {
+    const manoeuvres = [
+      manoeuvre(500, "left"),
+      manoeuvre(1000, "waypoint"),
+      manoeuvre(1500, "right"),
+    ];
+    const first = selectNextManoeuvre(manoeuvres, 1020, 0);
+    expect(first.reachedIndex).toBe(2);
+    expect(first.selection?.manoeuvre.type).toBe("right");
+
+    // A stray fix nudges presentation distance backward, well below the
+    // seam's own distance — the seam must not reappear.
+    const second = selectNextManoeuvre(manoeuvres, 900, first.reachedIndex);
+    expect(second.reachedIndex).toBe(2);
+    expect(second.selection?.index).toBe(2);
+    expect(second.selection?.manoeuvre.type).toBe("right");
+  });
+
+  it("skips multiple adjacent synthetic waypoint seams with no real manoeuvre between them", () => {
+    // A realistic production shape: a middle leg with no turns of its own
+    // produces two adjacent collapsed seams, not one.
+    const manoeuvres = [
+      manoeuvre(500, "left"),
+      manoeuvre(1000, "waypoint"),
+      manoeuvre(1050, "waypoint"),
+      manoeuvre(1500, "right"),
+    ];
+    const result = selectNextManoeuvre(manoeuvres, 600, 0);
+
+    expect(result.reachedIndex).toBe(1);
+    expect(result.selection?.index).toBe(3);
+    expect(result.selection?.manoeuvre.type).toBe("right");
+    expect(result.selection?.manoeuvre.distanceFromStartMetres).toBe(1500);
+  });
+
+  it("returns no selection, with reachedIndex still consistent, when only synthetic waypoint seams remain ahead", () => {
+    const manoeuvres = [
+      manoeuvre(500, "left"),
+      manoeuvre(1000, "waypoint"),
+      manoeuvre(1600, "waypoint"),
+    ];
+    const result = selectNextManoeuvre(manoeuvres, 600, 0);
+
+    expect(result.selection).toBeNull();
+    expect(result.reachedIndex).toBe(1);
+  });
+});
+
 describe("classifyManoeuvreUrgency", () => {
   it("classifies 500 m and above as normal", () => {
     expect(classifyManoeuvreUrgency(500)).toBe("normal");

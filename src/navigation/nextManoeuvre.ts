@@ -13,13 +13,20 @@ import type { Manoeuvre } from "../domain/types.ts";
 export const MANOEUVRE_REACHED_TOLERANCE_METRES = 15;
 
 export interface NextManoeuvreSelection {
+  /** Index of the presented manoeuvre in the original manoeuvres array.
+   * Diverges from NextManoeuvreResult.reachedIndex whenever one or more
+   * synthetic waypoint-seam entries (stitchPlannedRouteLegs.ts) sit between
+   * reachedIndex and the next presentable manoeuvre — index always points
+   * at the latter, reachedIndex always tracks the former. */
   index: number;
   manoeuvre: Manoeuvre;
   remainingDistanceMetres: number;
 }
 
 export interface NextManoeuvreResult {
-  /** Feed this back in as previousReachedIndex on the next call. */
+  /** Feed this back in as previousReachedIndex on the next call. Tracks
+   * physical distance-based progress only — never adjusted for synthetic
+   * waypoint-seam entries, unlike NextManoeuvreSelection.index. */
   reachedIndex: number;
   selection: NextManoeuvreSelection | null;
 }
@@ -68,7 +75,27 @@ export function selectNextManoeuvre(
   reachedIndex = Math.max(reachedIndex, previousReachedIndex);
   reachedIndex = Math.min(reachedIndex, manoeuvres.length);
 
-  const manoeuvre = manoeuvres[reachedIndex];
+  // A synthetic waypoint-seam entry (stitchPlannedRouteLegs.ts, collapsing
+  // an internal leg boundary) carries no instruction and no actionable
+  // content, so it must never be presented — scan forward from reachedIndex
+  // to the next presentable manoeuvre. Deliberately distance-independent
+  // (type only, no MANOEUVRE_REACHED_TOLERANCE_METRES check): this both
+  // lets a seam be skipped pre-emptively, well before it is physically
+  // reached, and guarantees a real manoeuvre near a seam is never swallowed
+  // by proximity alone. displayIndex is a pure function of
+  // (manoeuvres, reachedIndex); since reachedIndex is already non-decreasing
+  // across calls, displayIndex inherits that same monotonicity for free —
+  // no separate state is needed to avoid regressing to an already-skipped
+  // seam.
+  let displayIndex = reachedIndex;
+  while (
+    displayIndex < manoeuvres.length &&
+    manoeuvres[displayIndex]?.type === "waypoint"
+  ) {
+    displayIndex += 1;
+  }
+
+  const manoeuvre = manoeuvres[displayIndex];
   if (!manoeuvre) {
     return { reachedIndex, selection: null };
   }
@@ -76,7 +103,7 @@ export function selectNextManoeuvre(
   return {
     reachedIndex,
     selection: {
-      index: reachedIndex,
+      index: displayIndex,
       manoeuvre,
       remainingDistanceMetres: Math.max(
         0,

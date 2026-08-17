@@ -23,6 +23,15 @@ const ROUTE_LENGTH_METRES = 1400;
 const ROUTE_SEGMENTS = 10;
 const LEFT_TURN_DISTANCE_METRES = 700;
 
+// Backlog item 47's own dedicated multi-leg fixture — distinct constants
+// (SEAM_ prefix) from the single-leg fixture above, since both are used
+// within the same file.
+const SEAM_LEG_SEGMENTS = 10;
+const SEAM_LEG_ONE_LENGTH_METRES = 700;
+const SEAM_LEFT_TURN_DISTANCE_METRES = 280; // local to leg one
+const SEAM_LEG_TWO_LENGTH_METRES = 700;
+const SEAM_RIGHT_TURN_DISTANCE_METRES = 420; // local to leg two
+
 function lonAtMetres(distanceMetres: number): number {
   return ROUTE_START_LON + distanceMetres / METRES_PER_DEGREE_LON;
 }
@@ -68,10 +77,14 @@ async function waitForCommittedRideProgress(
  * own first test, which relies on the same fact with a fixed mock
  * response). Known, fixed coordinates let this test drive geolocation to
  * precise distances along the route afterwards. The multi-leg
- * waypoint-seam-collapse behaviour is exercised directly and thoroughly in
- * stitchPlannedRouteLegs.test.ts; this spec deliberately keeps to a single
- * leg to stay focused on the Riding-side integration (provider mocking,
- * saved-route persistence, GPS-driven advancement, UI prominence).
+ * waypoint-seam-collapse behaviour itself (stitching two legs' manoeuvres
+ * into one "waypoint" entry) is exercised directly and thoroughly in
+ * stitchPlannedRouteLegs.test.ts; these two single-leg tests stay focused
+ * on the ordinary Riding-side integration (provider mocking, saved-route
+ * persistence, GPS-driven advancement, UI prominence). A dedicated later
+ * test in this file (CLAUDE.md backlog item 47) drives a genuinely
+ * stitched multi-leg route through this same Riding integration, proving
+ * the resulting synthetic "waypoint" seam is never presented.
  */
 function buildMockOrsResponse() {
   const coordinates = Array.from({ length: ROUTE_SEGMENTS + 1 }, (_, index) => {
@@ -96,6 +109,119 @@ function buildMockOrsResponse() {
                   type: 0,
                   instruction: "Turn left onto Church Lane",
                   way_points: [5, 10],
+                },
+                {
+                  distance: 0,
+                  duration: 0,
+                  type: 10,
+                  instruction: "Arrive at your destination",
+                  way_points: [10, 10],
+                },
+              ],
+            },
+          ],
+        },
+        geometry: { type: "LineString", coordinates },
+      },
+    ],
+  };
+}
+
+/**
+ * Leg one of a genuinely stitched 2-leg route (backlog item 47): a real
+ * left turn partway, then its own trailing finish (ORS type 10) at its own
+ * last point — the manoeuvre stitchPlannedRouteLegs.ts collapses with leg
+ * two's own leading start below into a single synthetic "waypoint" entry.
+ * Fixed, disconnected-from-clicks geometry, exactly like
+ * buildMockOrsResponse above, for precise geolocation driving afterwards.
+ */
+function buildMockOrsSeamLegOneResponse() {
+  const coordinates = Array.from({ length: SEAM_LEG_SEGMENTS + 1 }, (_, index) => {
+    const distanceMetres = (SEAM_LEG_ONE_LENGTH_METRES / SEAM_LEG_SEGMENTS) * index;
+    return [lonAtMetres(distanceMetres), ROUTE_LAT, 10];
+  });
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: {
+          summary: { distance: SEAM_LEG_ONE_LENGTH_METRES, duration: 150 },
+          segments: [
+            {
+              distance: SEAM_LEG_ONE_LENGTH_METRES,
+              duration: 150,
+              steps: [
+                {
+                  distance: SEAM_LEFT_TURN_DISTANCE_METRES,
+                  duration: 60,
+                  type: 0,
+                  instruction: "Turn left onto Mill Lane",
+                  way_points: [4, 4],
+                },
+                {
+                  distance: 0,
+                  duration: 0,
+                  type: 10,
+                  instruction: "Arrive at your destination",
+                  way_points: [10, 10],
+                },
+              ],
+            },
+          ],
+        },
+        geometry: { type: "LineString", coordinates },
+      },
+    ],
+  };
+}
+
+/**
+ * Leg two of the same stitched route: its own leading start (ORS type 11,
+ * required for stitchPlannedRouteLegs.ts's collapse condition), a real
+ * right turn partway, then its own trailing finish (the route's genuine,
+ * untouched final manoeuvre). Its geometry deliberately continues from leg
+ * one's own endpoint (SEAM_LEG_ONE_LENGTH_METRES), not restarting at 0 —
+ * each leg's own local distance is always computed fresh from its own
+ * points array regardless of real-world position, but the stitched route's
+ * actual geometry needs real-world continuity: leg two's first coordinate
+ * must exactly equal leg one's last so stitchPlannedRouteLegs.ts's
+ * exact-duplicate-seam-point dedup applies cleanly, and so later
+ * geolocation fixes driven via lonAtMetres land on a single continuous
+ * line rather than a route that geographically doubles back on itself.
+ */
+function buildMockOrsSeamLegTwoResponse() {
+  const coordinates = Array.from({ length: SEAM_LEG_SEGMENTS + 1 }, (_, index) => {
+    const distanceMetres =
+      SEAM_LEG_ONE_LENGTH_METRES +
+      (SEAM_LEG_TWO_LENGTH_METRES / SEAM_LEG_SEGMENTS) * index;
+    return [lonAtMetres(distanceMetres), ROUTE_LAT, 10];
+  });
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: {
+          summary: { distance: SEAM_LEG_TWO_LENGTH_METRES, duration: 150 },
+          segments: [
+            {
+              distance: SEAM_LEG_TWO_LENGTH_METRES,
+              duration: 150,
+              steps: [
+                {
+                  distance: 0,
+                  duration: 0,
+                  type: 11,
+                  instruction: "Head north-east",
+                  way_points: [0, 0],
+                },
+                {
+                  distance: SEAM_RIGHT_TURN_DISTANCE_METRES,
+                  duration: 90,
+                  type: 1,
+                  instruction: "Turn right onto Vale Close",
+                  way_points: [6, 6],
                 },
                 {
                   distance: 0,
@@ -384,6 +510,142 @@ test("preserves trusted manoeuvres through export and re-import, entirely offlin
   await expect(page.getByText("Arrive at your destination")).toBeVisible();
 
   expect(unexpectedOrsRequest).toBe(false);
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+// CLAUDE.md backlog item 47: a genuinely stitched multi-leg route's
+// internal synthetic "waypoint" seam manoeuvre must never be presented in
+// Riding — the panel must always skip straight through to the next real
+// turn instead.
+test("skips a synthetic waypoint-seam manoeuvre from a genuinely stitched multi-leg route, always showing the next real turn instead of 'Waypoint'", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+  // See planning.spec.ts's identical workaround: without this, the POST to
+  // the (page.route-mocked) ORS endpoint intermittently never reaches
+  // Playwright's request interception at all in this test environment.
+  await page.addInitScript(() => {
+    const originalFetch = fetch;
+    globalThis.fetch = (...args: Parameters<typeof fetch>) => originalFetch(...args);
+  });
+
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: ROUTE_LAT, longitude: ROUTE_START_LON });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByLabel("OpenRouteService API key").fill(DUMMY_KEY);
+  await page.getByRole("button", { name: "Save on this device" }).click();
+  await expect(
+    page.getByText(/key saved on this device, not yet verified/i),
+  ).toBeVisible();
+
+  // A genuinely stitched 2-leg route: each leg gets its own fixed,
+  // real-turn-carrying mocked response, assigned by request arrival order —
+  // the same mechanism planning.spec.ts's own "plans a route across three
+  // waypoints using exactly one routing request per section" test already
+  // relies on and proves (via its own requestedCoordinatePairs continuity
+  // assertion, reused below) for this exact "N clicks then one Calculate
+  // press" flow.
+  const requestedCoordinatePairs: (readonly number[])[][] = [];
+  let legRequestCount = 0;
+  await page.route(ORS_URL_GLOB, async (route) => {
+    const request = route.request();
+    if (request.method() === "POST") {
+      const body = request.postDataJSON() as { coordinates: (readonly number[])[] };
+      requestedCoordinatePairs.push(body.coordinates);
+      legRequestCount += 1;
+    }
+    const responseBody =
+      legRequestCount === 1
+        ? buildMockOrsSeamLegOneResponse()
+        : buildMockOrsSeamLegTwoResponse();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify(responseBody),
+    });
+  });
+
+  await page.getByRole("button", { name: "Plan" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await mapContainer.click({ position: { x: 100, y: 100 } });
+  await mapContainer.click({ position: { x: 200, y: 150 } });
+  await mapContainer.click({ position: { x: 300, y: 200 } });
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Waypoint 2", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Waypoint 3", exact: true }),
+  ).toBeVisible();
+
+  const calculateButton = page.getByRole("button", { name: /calculate route/i });
+  await expect(calculateButton).toBeEnabled();
+  await calculateButton.click();
+
+  const summaryRegion = page.getByRole("region", { name: "Route summary" });
+  await expect(summaryRegion).toBeVisible({ timeout: 15_000 });
+
+  // Two genuine two-coordinate leg requests, the shared waypoint lining up
+  // as the first leg's own end — a diagnostic canary for the arrival-order
+  // assumption above: if it were ever violated, this fails clearly rather
+  // than producing a confusing "wrong instruction shown" failure below.
+  expect(requestedCoordinatePairs).toHaveLength(2);
+  expect(requestedCoordinatePairs[0]).toHaveLength(2);
+  expect(requestedCoordinatePairs[1]).toHaveLength(2);
+  expect(requestedCoordinatePairs[1]?.[0]).toEqual(requestedCoordinatePairs[0]?.[1]);
+
+  const routeName = "E2E Seam Manoeuvre Route";
+  await page.getByLabel("Route name").fill(routeName);
+  await page.getByRole("button", { name: /save route/i }).click();
+
+  // Saving switches straight to Riding mode with the new route.
+  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+
+  await context.setGeolocation({ latitude: ROUTE_LAT, longitude: lonAtMetres(50) });
+  await page.getByRole("button", { name: "Start riding" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  await expect(page.getByText("Turn left onto Mill Lane")).toBeVisible();
+
+  // Well past the left turn's own tolerance, but well before the seam
+  // (700 m) — the panel must already be skipping straight past the
+  // not-yet-reached seam to the next real turn, never lingering on it and
+  // never showing "Waypoint".
+  await context.setGeolocation({
+    latitude: ROUTE_LAT,
+    longitude: lonAtMetres(SEAM_LEFT_TURN_DISTANCE_METRES + 50),
+  });
+  await expect(page.getByText("Turn right onto Vale Close")).toBeVisible();
+  await expect(page.getByText("Turn left onto Mill Lane")).toBeHidden();
+  await expect(page.getByText("Waypoint", { exact: true })).toHaveCount(0);
+
+  // Advance through the seam and past the right turn's own tolerance.
+  await context.setGeolocation({
+    latitude: ROUTE_LAT,
+    longitude: lonAtMetres(
+      SEAM_LEG_ONE_LENGTH_METRES + SEAM_RIGHT_TURN_DISTANCE_METRES + 50,
+    ),
+  });
+  await expect(page.getByText("Arrive at your destination")).toBeVisible();
+  await expect(page.getByText("Turn right onto Vale Close")).toBeHidden();
+  await expect(page.getByText("Waypoint", { exact: true })).toHaveCount(0);
+
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
