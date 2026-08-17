@@ -46,6 +46,76 @@ ${points}
 </gpx>`;
 }
 
+// Metres per degree of latitude — effectively latitude-independent (unlike
+// longitude), so a single approximate constant is fine given this spec's
+// generous distance margins.
+const METRES_PER_DEGREE_LAT = 111_320;
+const LOOP_SIDE_METRES = 300;
+const LOOP_PERIMETER_METRES = LOOP_SIDE_METRES * 4;
+const LOOP_LON_DELTA = LOOP_SIDE_METRES / METRES_PER_DEGREE_LON;
+const LOOP_LAT_DELTA = LOOP_SIDE_METRES / METRES_PER_DEGREE_LAT;
+// ~15 m south of the shared start/finish coordinate, continuing in side D's
+// own direction of travel — the "rider continued a few metres past the
+// finish looking for parking" field scenario.
+const LOOP_PAST_FINISH_LATITUDE = ROUTE_LAT - 15 / METRES_PER_DEGREE_LAT;
+
+/** A small square-loop route (~1.2 km perimeter) whose start and finish
+ * share the same coordinate — east along side A, north along side B, west
+ * along side C, south along side D back to the start. `distanceMetres` is
+ * cumulative distance around the perimeter, starting at the shared
+ * start/finish corner; `distanceMetres === LOOP_PERIMETER_METRES` returns
+ * that same shared coordinate. */
+function loopPositionAtMetres(distanceMetres: number): {
+  latitude: number;
+  longitude: number;
+} {
+  const clamped = Math.min(Math.max(distanceMetres, 0), LOOP_PERIMETER_METRES);
+  if (clamped <= LOOP_SIDE_METRES) {
+    const t = clamped / LOOP_SIDE_METRES;
+    return { latitude: ROUTE_LAT, longitude: ROUTE_START_LON + t * LOOP_LON_DELTA };
+  }
+  if (clamped <= 2 * LOOP_SIDE_METRES) {
+    const t = (clamped - LOOP_SIDE_METRES) / LOOP_SIDE_METRES;
+    return {
+      latitude: ROUTE_LAT + t * LOOP_LAT_DELTA,
+      longitude: ROUTE_START_LON + LOOP_LON_DELTA,
+    };
+  }
+  if (clamped <= 3 * LOOP_SIDE_METRES) {
+    const t = (clamped - 2 * LOOP_SIDE_METRES) / LOOP_SIDE_METRES;
+    return {
+      latitude: ROUTE_LAT + LOOP_LAT_DELTA,
+      longitude: ROUTE_START_LON + LOOP_LON_DELTA - t * LOOP_LON_DELTA,
+    };
+  }
+  const t = (clamped - 3 * LOOP_SIDE_METRES) / LOOP_SIDE_METRES;
+  return {
+    latitude: ROUTE_LAT + LOOP_LAT_DELTA - t * LOOP_LAT_DELTA,
+    longitude: ROUTE_START_LON,
+  };
+}
+
+/** A densely-sampled (60 m spacing) closed-loop GPX track — the first and
+ * final trkpt share the same coordinate, matching how a real closed-loop
+ * ride would be recorded. */
+function buildClosedLoopRouteGpx(): string {
+  const segmentMetres = 60;
+  const pointCount = LOOP_PERIMETER_METRES / segmentMetres + 1;
+  const points = Array.from({ length: pointCount }, (_, index) => {
+    const { latitude, longitude } = loopPositionAtMetres(segmentMetres * index);
+    return `      <trkpt lat="${String(latitude)}" lon="${String(longitude)}"><ele>10.0</ele></trkpt>`;
+  }).join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="acn-e2e-fixtures" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Closed-loop finish test route</name>
+    <trkseg>
+${points}
+    </trkseg>
+  </trk>
+</gpx>`;
+}
+
 test("ends a ride, returns to the empty Ride launcher, and survives a reload with no restored progress", async ({
   page,
   context,
@@ -113,6 +183,111 @@ test("ends a ride, returns to the empty Ride launcher, and survives a reload wit
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
   await expect(page.getByRole("button", { name: "Start riding" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Resume riding" })).toBeHidden();
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+// Regression coverage for a real iPhone field defect: on a closed-loop
+// route (shared start/finish coordinate), progress could snap from
+// near-total back to near-zero right at the finish — see
+// projection.test.ts's "closed-loop start/finish coincidence" tests and
+// RidingScreen.closedLoopCompletion.test.tsx for the lower-level proof.
+// This proves the same real, integrated projection-to-completion-to-
+// launcher path through actual geolocation-driven navigation, not just a
+// mocked/unit-level one.
+test("confirms route completion on a closed loop without snapping progress back to the start near the shared finish coordinate", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: ROUTE_LAT, longitude: ROUTE_START_LON });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await page.goto("/");
+  await page.getByLabel("Import GPX file").setInputFiles({
+    name: "closed-loop-finish-route.gpx",
+    mimeType: "application/gpx+xml",
+    buffer: Buffer.from(buildClosedLoopRouteGpx()),
+  });
+
+  const routeName = "closed-loop-finish-route";
+  const routeButton = page.getByRole("button", { name: routeName, exact: true });
+  await expect(routeButton).toBeVisible();
+  await routeButton.click();
+  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+
+  await page.getByRole("button", { name: "Start riding" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  async function setGeolocationAndAwaitRemainingKm(
+    distanceMetres: number,
+    remainingKm: string,
+  ): Promise<void> {
+    const { latitude, longitude } = loopPositionAtMetres(distanceMetres);
+    await context.setGeolocation({ latitude, longitude });
+    await expect(page.getByText(`Remaining: ${remainingKm} km`)).toBeVisible();
+  }
+
+  // Arm via two consecutive interior fixes (50%/58% progress around the
+  // loop), comfortably inside the 10%-80% interior-progress band and
+  // geographically far from the shared finish's departure radius. Each
+  // step waits for its own exact, distinctly-valued "Remaining" text —
+  // not merely a fixed delay — so every fix is confirmed genuinely
+  // applied (and progress genuinely advancing, never snapping back) before
+  // the next one is issued.
+  await setGeolocationAndAwaitRemainingKm(600, "0.6");
+  await expect(page.getByText("On route")).toBeVisible();
+  await setGeolocationAndAwaitRemainingKm(700, "0.5");
+
+  // Walk forward towards the finish in several intermediate steps (not one
+  // large jump — a large jump could itself trigger a legitimate reacquire
+  // that resolves to the coincident start regardless of whether the fix
+  // under test works, silently failing to exercise the bug at all).
+  await setGeolocationAndAwaitRemainingKm(800, "0.4");
+  await setGeolocationAndAwaitRemainingKm(900, "0.3");
+  await setGeolocationAndAwaitRemainingKm(1000, "0.2");
+  await setGeolocationAndAwaitRemainingKm(1100, "0.1");
+  await expect(page.getByText("Route complete")).toBeHidden();
+
+  // A single fix exactly at the shared finish coordinate is not enough on
+  // its own — the existing two-consecutive-fix completion requirement.
+  await setGeolocationAndAwaitRemainingKm(LOOP_PERIMETER_METRES, "0.0");
+  await expect(page.getByText("On route")).toBeVisible();
+  await expect(page.getByText("Route complete")).toBeHidden();
+
+  // A second consecutive fix, a few metres past the finish (the "looking
+  // for parking" field scenario), confirms completion without snapping
+  // progress back to the start.
+  await context.setGeolocation({
+    latitude: LOOP_PAST_FINISH_LATITUDE,
+    longitude: ROUTE_START_LON,
+  });
+  await expect(page.getByText("Route complete")).toBeVisible();
+  await expect(page.getByText("Remaining: 0.0 km")).toBeVisible();
+
+  const finishButton = page.getByRole("button", { name: "Finish ride" });
+  await expect(finishButton).toBeVisible();
+  await finishButton.click();
+
+  await expect(page.getByRole("heading", { name: "Ride" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resume route" })).toBeHidden();
+
+  // Generic finalisation/reload plumbing (route-shape-independent) is
+  // already fully proven by this file's straight-route test above —
+  // polling the persisted row down to null is enough to close the loop
+  // here without re-proving the full reload-and-reopen dance again.
+  await waitForClearedRideState(page);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);

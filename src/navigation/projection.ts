@@ -79,14 +79,26 @@ function nearestWithinRange(
   };
 }
 
+/**
+ * A windowed match is only distrusted as "clipped" when the specific edge
+ * it sits near was itself truncated by the search window — never merely
+ * because the *other* edge happened to be. Near a closed loop's finish,
+ * for example, the window's lower bound excludes the earlier part of the
+ * route (a genuine clip) while its upper bound sits exactly at the
+ * route's own natural, un-clipped final point; a match there must not be
+ * rejected on the strength of the unrelated lower-side clip, or a
+ * legitimate near-finish match falls through to a whole-route reacquire
+ * that can snap onto the geographically coincident start instead.
+ */
 function isClippedAtEdge(
   match: NearestMatch,
   range: IndexRange,
   pointCount: number,
 ): boolean {
-  const windowWasClipped = range.startIndex > 0 || range.endIndex < pointCount - 1;
-  if (!windowWasClipped) return false;
-  return match.pointIndex <= range.startIndex || match.pointIndex >= range.endIndex - 1;
+  const clippedAtStart = range.startIndex > 0 && match.pointIndex <= range.startIndex;
+  const clippedAtEnd =
+    range.endIndex < pointCount - 1 && match.pointIndex >= range.endIndex - 1;
+  return clippedAtStart || clippedAtEnd;
 }
 
 /**

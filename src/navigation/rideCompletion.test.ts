@@ -21,6 +21,7 @@ import {
   OUT_AND_BACK_TURNAROUND_INDEX,
 } from "../test/fixtures/outAndBackRoute.ts";
 import { SELF_INTERSECTING_ROUTE_POINTS } from "../test/fixtures/selfIntersectingRoute.ts";
+import { CLOSED_LOOP_ROUTE_POINTS as CLOSED_LOOP_POINTS } from "../test/fixtures/closedLoopRoute.ts";
 
 const OPEN_ROUTE_WAYPOINTS: readonly Coordinate[] = [
   [0, 51],
@@ -31,14 +32,6 @@ const OPEN_ROUTE_START = OPEN_ROUTE_POINTS[0]?.coordinate ?? [0, 51];
 const OPEN_ROUTE_FINAL = OPEN_ROUTE_POINTS.at(-1)?.coordinate ?? [0, 51];
 const OPEN_ROUTE_TOTAL = OPEN_ROUTE_POINTS.at(-1)?.distanceFromStartMetres ?? 0;
 
-const CLOSED_LOOP_WAYPOINTS: readonly Coordinate[] = [
-  [0, 51],
-  [0.01, 51],
-  [0.01, 51.01],
-  [0, 51.01],
-  [0, 51],
-];
-const CLOSED_LOOP_POINTS = buildRoutePointsFromWaypoints(CLOSED_LOOP_WAYPOINTS, 20);
 const CLOSED_LOOP_FINAL = CLOSED_LOOP_POINTS.at(-1)?.coordinate ?? [0, 51];
 const CLOSED_LOOP_START = CLOSED_LOOP_POINTS[0]?.coordinate ?? [0, 51];
 const CLOSED_LOOP_TOTAL = CLOSED_LOOP_POINTS.at(-1)?.distanceFromStartMetres ?? 0;

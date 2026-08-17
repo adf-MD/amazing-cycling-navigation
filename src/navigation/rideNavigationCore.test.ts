@@ -4,7 +4,9 @@ import {
   processFix,
   type RideNavigationCoreState,
 } from "./rideNavigationCore.ts";
+import type { ProjectionResult } from "./types.ts";
 import { buildRoutePointsFromWaypoints } from "../test/fixtures/routeGeometry.ts";
+import { CLOSED_LOOP_ROUTE_POINTS } from "../test/fixtures/closedLoopRoute.ts";
 import { OFF_ROUTE_BASE_METRES, POSSIBLY_OFF_ROUTE_BASE_METRES } from "./offRoute.ts";
 
 const ROUTE_POINTS = buildRoutePointsFromWaypoints(
@@ -165,6 +167,60 @@ describe("processFix", () => {
       const result = processFix(ROUTE_POINTS, possiblyFarCoordinate, 5, state);
       expect(result.coreState.offRouteMachineState.level).not.toBe("off-route");
       expect(result.coreState.lastReliableMatch).toEqual(result.coreState.lastMatch);
+    });
+  });
+
+  describe("closed loop", () => {
+    it("keeps lastMatch and lastReliableMatch advancing near the shared start/finish coordinate, with no reacquire at the finish", () => {
+      // Regression coverage one layer above projection.test.ts's own
+      // direct proof: walks every fixture point through processFix in
+      // sequence (mirroring how real fixes arrive), confirming the fixed
+      // projection layer's correctness survives into the values Riding
+      // actually presents. Deliberately does NOT assert on
+      // offRouteMachineState staying "on-route" as a proxy for "no false
+      // reacquire" — a reacquired fix classifies as "untrusted", not
+      // "off-route", and nextOffRouteState leaves the machine's state
+      // completely unchanged on "untrusted" either way, so that assertion
+      // would not have caught the original bug (it's exactly why the
+      // field defect produced no off-route warning at all).
+      let state: RideNavigationCoreState = INITIAL_RIDE_NAVIGATION_CORE_STATE;
+      let lastProjection: ProjectionResult | null = null;
+
+      for (const routePoint of CLOSED_LOOP_ROUTE_POINTS) {
+        const previousMatchDistance = state.lastMatch?.distanceFromStartMetres ?? 0;
+        const previousReliableDistance =
+          state.lastReliableMatch?.distanceFromStartMetres ?? 0;
+
+        const result = processFix(
+          CLOSED_LOOP_ROUTE_POINTS,
+          routePoint.coordinate,
+          5,
+          state,
+        );
+
+        expect(
+          result.coreState.lastMatch?.distanceFromStartMetres ?? 0,
+        ).toBeGreaterThanOrEqual(previousMatchDistance);
+        expect(
+          result.coreState.lastReliableMatch?.distanceFromStartMetres ?? 0,
+        ).toBeGreaterThanOrEqual(previousReliableDistance);
+
+        state = result.coreState;
+        lastProjection = result.projection;
+      }
+
+      const routeTotalDistanceMetres =
+        CLOSED_LOOP_ROUTE_POINTS.at(-1)?.distanceFromStartMetres ?? 0;
+
+      expect(lastProjection?.reacquired).toBe(false);
+      expect(state.lastMatch?.distanceFromStartMetres).toBeCloseTo(
+        routeTotalDistanceMetres,
+        0,
+      );
+      expect(state.lastReliableMatch?.distanceFromStartMetres).toBeCloseTo(
+        routeTotalDistanceMetres,
+        0,
+      );
     });
   });
 });
