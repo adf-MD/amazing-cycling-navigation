@@ -243,6 +243,15 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
             {preferencesError}
           </p>
         ) : null}
+
+        <details className="settings-disclosure">
+          <summary>How recalculation works</summary>
+          <p>
+            A route is calculated in sections between waypoints. The first calculation
+            uses one routing request per section; later edits normally recalculate only
+            changed sections.
+          </p>
+        </details>
       </section>
 
       <section className="panel stack" aria-labelledby="ors-settings-heading">

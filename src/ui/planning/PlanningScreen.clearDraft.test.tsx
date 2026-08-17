@@ -321,14 +321,16 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
   it("Cancel preserves the draft exactly, issues no storage call, and restores focus to the trigger", async () => {
     const map = createMockMapFactory();
     await renderWithMeaningfulDraft(map);
-    const trigger = clearDraftTriggerButton();
 
-    fireEvent.click(trigger);
+    fireEvent.click(clearDraftTriggerButton());
     const dialog = screen.getByRole("alertdialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(trigger).toHaveFocus();
+    // The trigger genuinely unmounts while the dialog is open (backlog
+    // item 49's in-place morph), so the button re-queried here is a
+    // freshly remounted DOM node, not the one captured before the click.
+    expect(clearDraftTriggerButton()).toHaveFocus();
     expect(mockedClearDraft).not.toHaveBeenCalled();
     expect(mockedGetPlanningPreferences).not.toHaveBeenCalled();
     expect(screen.getByDisplayValue("Evening loop")).toBeInTheDocument();
@@ -459,10 +461,9 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
   it("a clearDraft() rejection preserves the exact draft, shows an accessible error, and permits retry with focus restored", async () => {
     const map = createMockMapFactory();
     await renderWithMeaningfulDraft(map);
-    const trigger = clearDraftTriggerButton();
     mockedClearDraft.mockRejectedValueOnce(new Error("boom"));
 
-    fireEvent.click(trigger);
+    fireEvent.click(clearDraftTriggerButton());
     const dialog = screen.getByRole("alertdialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Clear draft" }));
 
@@ -482,14 +483,16 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
         "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.",
       ),
     ).toBeInTheDocument();
-    // Focus only lands on the trigger once it is genuinely re-enabled —
-    // the DOM has committed isClearing back to false by the time the
-    // clearDraftError-keyed effect runs.
-    expect(trigger).not.toBeDisabled();
-    expect(trigger).toHaveFocus();
+    // A failed clear closes the dialog and remounts the trigger (backlog
+    // item 49) — re-query it, then confirm focus only lands once it is
+    // genuinely re-enabled, i.e. the DOM has committed isClearing back
+    // to false by the time the focus-restoration effect runs.
+    const triggerAfterFailure = clearDraftTriggerButton();
+    expect(triggerAfterFailure).not.toBeDisabled();
+    expect(triggerAfterFailure).toHaveFocus();
 
     // Retry succeeds.
-    fireEvent.click(trigger);
+    fireEvent.click(triggerAfterFailure);
     const retryDialog = screen.getByRole("alertdialog");
     fireEvent.click(within(retryDialog).getByRole("button", { name: "Clear draft" }));
     await waitUntil(
@@ -739,5 +742,65 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
         "Your saved draft could not be loaded. Nothing in storage has been changed.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("renders the confirmation in the trigger's own action-card slot, replacing it in place (backlog item 49)", async () => {
+    const map = createMockMapFactory();
+    await renderWithMeaningfulDraft(map);
+
+    // Anchor on the "Change" disclosure's own wrapper via its visible
+    // text, not a CSS class — the trigger's slot is the very next
+    // sibling of it, both closed and open.
+    const changeDetails = screen.getByText("Change", { exact: true }).closest("details");
+    if (!changeDetails)
+      throw new Error("expected the Change disclosure to have a details ancestor");
+    const routingSummaryWrapper = changeDetails.parentElement;
+    if (!routingSummaryWrapper) {
+      throw new Error("expected the Change disclosure to have a parent element");
+    }
+
+    function clearDraftSlot(wrapper: HTMLElement): HTMLElement {
+      const slot = wrapper.nextElementSibling;
+      if (!(slot instanceof HTMLElement)) {
+        throw new Error("expected the routing-summary block to have a next sibling");
+      }
+      return slot;
+    }
+
+    expect(
+      within(clearDraftSlot(routingSummaryWrapper)).getByRole("button", {
+        name: "Clear draft",
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(clearDraftTriggerButton());
+
+    // Open: the confirmation occupies the exact same slot — nothing else
+    // was inserted between the routing-summary block and it, and the
+    // only "Clear draft"-named button left anywhere is the dialog's own
+    // confirm button — the trigger itself is gone, not merely duplicated.
+    const dialog = screen.getByRole("alertdialog");
+    expect(routingSummaryWrapper.nextElementSibling).toBe(dialog);
+    expect(screen.getAllByRole("button", { name: "Clear draft" })).toEqual([
+      within(dialog).getByRole("button", { name: "Clear draft" }),
+    ]);
+
+    // The rest of the action card stays rendered and visible.
+    expect(screen.getByRole("group", { name: "Waypoint actions" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /calculate route|try again|calculating/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(routingSummaryWrapper).getByText("Change", { exact: true }),
+    ).toBeInTheDocument();
+
+    // Cancel: the trigger reappears in the same slot, focused.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(
+      within(clearDraftSlot(routingSummaryWrapper)).getByRole("button", {
+        name: "Clear draft",
+      }),
+    ).toBeInTheDocument();
+    expect(clearDraftTriggerButton()).toHaveFocus();
   });
 });

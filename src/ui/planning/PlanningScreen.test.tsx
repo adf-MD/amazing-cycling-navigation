@@ -3680,14 +3680,23 @@ describe("PlanningScreen", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("explains that a route is calculated in per-waypoint sections", () => {
+  it("no longer explains recalculation inline — that moved to Settings (backlog item 48)", async () => {
+    await saveProviderKey("dummy-test-key");
     const map = createMockMapFactory();
     render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
     map.triggerLoad();
 
     expect(
-      screen.getByText(/calculated in sections between waypoints/i),
-    ).toBeInTheDocument();
+      screen.queryByText(/calculated in sections between waypoints/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("How recalculation works")).not.toBeInTheDocument();
+
+    // Provider-key status stays directly visible in Planning, never
+    // nested inside a <details> disclosure.
+    const statusHeadline = await screen.findByText(
+      "Key saved on this device, not yet verified",
+    );
+    expect(statusHeadline.closest("details")).toBeNull();
   });
 
   describe("edit-copy notice and planning provenance", () => {

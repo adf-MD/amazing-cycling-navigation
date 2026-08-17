@@ -1242,19 +1242,28 @@ export function PlanningScreen({
       });
   };
 
-  // Restores focus to the Clear-draft trigger once a failed clear has
-  // genuinely re-enabled it — an effect, not an imperative call inside the
-  // .catch() block below, for the exact reason RidingScreen.tsx's own
-  // finalizeError-keyed effect documents: at the moment .catch() runs,
-  // isClearing (driving the trigger's own disabled prop) has not yet
-  // committed to false, and .focus() on a still-disabled element silently
-  // no-ops. Keyed on clearDraftError's own object identity, which is fresh
-  // only for a genuinely new error, so this never re-fires on an unrelated
-  // re-render while the same error is still shown.
+  // Restores focus to the Clear-draft trigger once it has genuinely
+  // remounted AND become enabled. Backlog item 49 replaced the trigger's
+  // always-mounted row with a ternary that swaps it for the confirmation
+  // in place, so the trigger now genuinely unmounts while the dialog is
+  // open — an immediate .focus() call inside handleClearDraftCancel or
+  // the confirm-failure .catch() block below would target a ref that's
+  // still null/stale at that exact synchronous point. This effect
+  // re-checks the ref's live readiness on every render (no dependency
+  // array), rather than consuming the request unconditionally on the
+  // first post-set commit, so it is correct regardless of whether the
+  // triggering state change lands in one commit (Cancel/Escape, a single
+  // synchronous close) or two (the async .catch()/.finally() pair below,
+  // which in principle need not land in the same commit).
+  const pendingClearDraftFocusRef = useRef(false);
+
   useEffect(() => {
-    if (!clearDraftError) return;
-    clearDraftTriggerRef.current?.focus();
-  }, [clearDraftError]);
+    if (!pendingClearDraftFocusRef.current) return;
+    const trigger = clearDraftTriggerRef.current;
+    if (!trigger || trigger.disabled) return;
+    pendingClearDraftFocusRef.current = false;
+    trigger.focus();
+  });
 
   const handleClearDraftClick = () => {
     if (isClearDraftConfirmOpen || isClearingRef.current || isSavingRef.current) return;
@@ -1265,8 +1274,8 @@ export function PlanningScreen({
   const handleClearDraftCancel = () => {
     // Escape can bypass a disabled Cancel button, so guard here too.
     if (isClearingRef.current) return;
+    pendingClearDraftFocusRef.current = true;
     setIsClearDraftConfirmOpen(false);
-    clearDraftTriggerRef.current?.focus();
   };
 
   // Wipes the entire mutable Planning draft — waypoints, routed/stale
@@ -1351,6 +1360,7 @@ export function PlanningScreen({
         if (saveGenerationRef.current !== attemptGeneration) return;
         logError("planning-clear-draft", error);
         setClearDraftError("The draft could not be cleared on this device. Try again.");
+        pendingClearDraftFocusRef.current = true;
         setIsClearDraftConfirmOpen(false);
       })
       .finally(() => {
@@ -1681,21 +1691,13 @@ export function PlanningScreen({
               })}
             </p>
           ) : null}
-          <details className="settings-disclosure">
-            <summary>How recalculation works</summary>
-            <p>
-              A route is calculated in sections between waypoints. The first calculation
-              uses one routing request per section; later edits normally recalculate only
-              changed sections.
-            </p>
-          </details>
         </div>
 
-        <div className="row">
+        <div className="planning-routing-summary">
           <p className="field-hint">
             {describeCurrentDraftRoutingSummary(profile, avoidFerries)}
           </p>
-          <details className="settings-disclosure">
+          <details className="settings-disclosure settings-disclosure--compact">
             <summary>Change</summary>
             <div className="stack">
               <div>
@@ -1747,35 +1749,37 @@ export function PlanningScreen({
           </details>
         </div>
 
-        <div className="row">
-          <button
-            type="button"
-            className="btn-danger"
-            ref={clearDraftTriggerRef}
-            onClick={handleClearDraftClick}
-            disabled={isSaving || isClearing}
-          >
-            Clear draft
-          </button>
-          {clearDraftError ? (
-            <p className="field-error" role="alert">
-              {clearDraftError}
-            </p>
-          ) : null}
-        </div>
+        {isClearDraftConfirmOpen ? (
+          <ConfirmDialog
+            open={isClearDraftConfirmOpen}
+            title="Clear this draft?"
+            message="This removes all waypoints, the calculated route and other unsaved draft details. Saved routes are not affected."
+            confirmLabel={isClearing ? "Clearing…" : "Clear draft"}
+            cancelLabel="Cancel"
+            confirmDisabled={isClearing}
+            cancelDisabled={isClearing}
+            onConfirm={handleClearDraftConfirm}
+            onCancel={handleClearDraftCancel}
+          />
+        ) : (
+          <div className="row">
+            <button
+              type="button"
+              className="btn-danger"
+              ref={clearDraftTriggerRef}
+              onClick={handleClearDraftClick}
+              disabled={isSaving || isClearing}
+            >
+              Clear draft
+            </button>
+            {clearDraftError ? (
+              <p className="field-error" role="alert">
+                {clearDraftError}
+              </p>
+            ) : null}
+          </div>
+        )}
       </div>
-
-      <ConfirmDialog
-        open={isClearDraftConfirmOpen}
-        title="Clear this draft?"
-        message="This removes all waypoints, the calculated route and other unsaved draft details. Saved routes are not affected."
-        confirmLabel={isClearing ? "Clearing…" : "Clear draft"}
-        cancelLabel="Cancel"
-        confirmDisabled={isClearing}
-        cancelDisabled={isClearing}
-        onConfirm={handleClearDraftConfirm}
-        onCancel={handleClearDraftCancel}
-      />
 
       <div className="stack planning-section">
         <h2>Waypoints</h2>

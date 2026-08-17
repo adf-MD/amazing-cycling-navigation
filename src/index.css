@@ -880,6 +880,60 @@ button:focus-visible {
   align-items: center;
 }
 
+/* Planning's per-draft routing summary and its "Change" disclosure
+ * (backlog item 48): stacked, not a shared flex row, so opening "Change"
+ * — whose content is much wider than its closed label — only grows the
+ * block downward and never reflows or re-wraps the summary text beside
+ * it. Mirrors .planning-calculate-actions's own tight-vertical-grouping
+ * rationale. */
+.planning-routing-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* A compact variant of .settings-disclosure for Planning's "Change"
+ * trigger specifically (backlog item 48): the closed <summary> alone
+ * carries a border+padding box model matching the global button rule,
+ * so it renders at the same 44px min-height floor a button does, instead
+ * of that floor plus the base class's own outer border/padding stacked
+ * on top (62px). Settings' own disclosures are unaffected — they keep
+ * the base class alone. */
+.settings-disclosure--compact {
+  border: none;
+  padding: 0;
+}
+
+.settings-disclosure--compact > summary {
+  border: 1px solid var(--colour-border);
+  /* Matches the global button radius, not the base class's own
+   * --radius-sm — deliberate, since this variant is styled to read as a
+   * button. */
+  border-radius: var(--radius-md);
+  padding: var(--space-8) var(--space-16);
+  list-style: none;
+}
+
+/* Chromium/Firefox already suppress the native disclosure triangle once
+ * display:flex is set above, but Safari's own proprietary marker can
+ * persist regardless — suppress it explicitly so this variant reads as
+ * a plain button on every engine. */
+.settings-disclosure--compact > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-disclosure--compact[open] {
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-16) var(--space-12);
+}
+
+.settings-disclosure--compact[open] > summary {
+  border: none;
+  border-radius: 0;
+  padding: var(--space-8) 0 0;
+}
+
 .distance-badge-marker {
   display: flex;
   align-items: center;

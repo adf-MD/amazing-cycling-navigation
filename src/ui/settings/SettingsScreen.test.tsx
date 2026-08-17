@@ -245,6 +245,30 @@ describe("SettingsScreen", () => {
         screen.getByRole("link", { name: /openrouteservice key/i }).closest("details"),
       ).toBeNull();
     });
+
+    it("explains route-section recalculation in a collapsed disclosure inside Route planning (backlog item 48)", () => {
+      render(<SettingsScreen />);
+
+      const recalcDetails = screen
+        .getByText(/calculated in sections between waypoints/i)
+        .closest("details");
+      expect(recalcDetails).not.toBeNull();
+      expect(recalcDetails).not.toHaveAttribute("open");
+      expect(
+        screen.getByText("How recalculation works").closest("summary"),
+      ).not.toBeNull();
+
+      // Lives inside the Route planning panel specifically, not the
+      // OpenRouteService one.
+      const routePlanningSection = screen
+        .getByRole("heading", { name: "Route planning" })
+        .closest("section");
+      expect(routePlanningSection).toContainElement(recalcDetails);
+
+      // A distinct disclosure from the OpenRouteService key/data one.
+      const keyDataDetails = screen.getByText(/not encrypted/i).closest("details");
+      expect(keyDataDetails).not.toBe(recalcDetails);
+    });
   });
 
   describe("Avoid ferries by default", () => {

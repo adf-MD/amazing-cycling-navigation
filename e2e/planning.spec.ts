@@ -1267,14 +1267,51 @@ test.describe("phone viewport", () => {
     await expect(exportButton).toBeEnabled();
 
     // The compact routing summary and its "Change" disclosure (backlog
-    // item 36) must introduce no horizontal overflow either closed or
+    // items 36/48) must introduce no horizontal overflow either closed or
     // open, and every control it reveals must keep a real ≥44x44px touch
     // target — Vitest's css:false environment cannot verify this.
     const changeSummary = page.getByText("Change", { exact: true });
+    // The outer <details> control's own box, not <summary>'s: closed,
+    // <summary> itself carries the border/padding that makes it read as
+    // a button; open, that border/padding relocates onto the outer
+    // <details> instead (so the revealed content gets a frame) while
+    // <summary>'s own shrinks to 0 — <summary>'s own bounding box
+    // therefore legitimately relocates inward between states even though
+    // the rendered "Change" text does not move, so the control's overall
+    // position must be measured on <details>, not <summary>.
+    const changeDetails = changeSummary.locator("xpath=ancestor::details");
+    const routingSummary = page.getByText(/^routing:/i);
+    const undoButton = page.getByRole("button", { name: "Undo" });
     await changeSummary.scrollIntoViewIfNeeded();
-    const changeSummaryBox = await changeSummary.boundingBox();
-    if (!changeSummaryBox) throw new Error("expected the Change summary to have a box");
-    expect(changeSummaryBox.height).toBeGreaterThanOrEqual(44);
+
+    const [
+      changeDetailsClosedBox,
+      changeSummaryClosedBox,
+      routingSummaryClosedBox,
+      undoBox,
+    ] = await Promise.all([
+      changeDetails.boundingBox(),
+      changeSummary.boundingBox(),
+      routingSummary.boundingBox(),
+      undoButton.boundingBox(),
+    ]);
+    if (
+      !changeDetailsClosedBox ||
+      !changeSummaryClosedBox ||
+      !routingSummaryClosedBox ||
+      !undoBox
+    ) {
+      throw new Error("expected the routing-summary/Change/Undo controls to have a box");
+    }
+    expect(changeSummaryClosedBox.height).toBeGreaterThanOrEqual(44);
+    // The closed "Change" control's overall height (the outer <details>,
+    // which is where the base .settings-disclosure class's own extra
+    // border/padding lives — <summary>'s own height alone is always 44px
+    // regardless) matches an ordinary action button's, not merely the
+    // ≥44px floor (backlog item 48).
+    expect(Math.abs(changeDetailsClosedBox.height - undoBox.height)).toBeLessThanOrEqual(
+      1,
+    );
 
     await changeSummary.click();
     const draftRoadBike = page.getByRole("button", { name: "Road bike", exact: true });
@@ -1292,9 +1329,54 @@ test.describe("phone viewport", () => {
       expect(box.height).toBeGreaterThanOrEqual(44);
     }
 
+    // Opening "Change" must not shift the routing-summary text or the
+    // "Change" control itself horizontally, since its revealed content
+    // is much wider than its closed label (backlog item 48).
+    const [changeDetailsOpenBox, routingSummaryOpenBox] = await Promise.all([
+      changeDetails.boundingBox(),
+      routingSummary.boundingBox(),
+    ]);
+    if (!changeDetailsOpenBox || !routingSummaryOpenBox) {
+      throw new Error("expected the routing-summary/Change controls to have a box");
+    }
+    expect(
+      Math.abs(changeDetailsOpenBox.x - changeDetailsClosedBox.x),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(routingSummaryOpenBox.x - routingSummaryClosedBox.x),
+    ).toBeLessThanOrEqual(1);
+
     const openScrollWidths = await readScrollWidths();
     expect(openScrollWidths.documentWidth).toBeLessThanOrEqual(390);
     expect(openScrollWidths.bodyWidth).toBeLessThanOrEqual(390);
+
+    // Closing it again restores the exact original geometry.
+    await changeSummary.click();
+    const [
+      changeDetailsReclosedBox,
+      changeSummaryReclosedBox,
+      routingSummaryReclosedBox,
+    ] = await Promise.all([
+      changeDetails.boundingBox(),
+      changeSummary.boundingBox(),
+      routingSummary.boundingBox(),
+    ]);
+    if (
+      !changeDetailsReclosedBox ||
+      !changeSummaryReclosedBox ||
+      !routingSummaryReclosedBox
+    ) {
+      throw new Error("expected the routing-summary/Change controls to have a box");
+    }
+    expect(
+      Math.abs(changeSummaryReclosedBox.height - changeSummaryClosedBox.height),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(changeDetailsReclosedBox.x - changeDetailsClosedBox.x),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(routingSummaryReclosedBox.x - routingSummaryClosedBox.x),
+    ).toBeLessThanOrEqual(1);
 
     const finalScrollWidths = await readScrollWidths();
     expect(finalScrollWidths.documentWidth).toBeLessThanOrEqual(390);

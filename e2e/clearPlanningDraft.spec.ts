@@ -492,4 +492,67 @@ test.describe("phone viewport", () => {
       expect(isFullyWithin(confirmBox, { x: 0, y: 0, ...viewportSize })).toBe(true);
     }
   });
+
+  /** Reads whether the trigger's own action-card slot — the element
+   * immediately following the "Change" disclosure's own wrapper —
+   * currently holds the alertdialog, mirroring
+   * PlanningScreen.clearDraft.test.tsx's nextElementSibling-based proof
+   * of the same contract (backlog item 49). */
+  async function readClearDraftSlotRole(page: Page): Promise<string | null> {
+    return page.evaluate(() => {
+      const details = [...document.querySelectorAll("details")].find(
+        (d) => d.querySelector("summary")?.textContent === "Change",
+      );
+      const wrapper = details?.parentElement ?? null;
+      return wrapper?.nextElementSibling?.getAttribute("role") ?? null;
+    });
+  }
+
+  test("phone layout: the Clear-draft confirmation replaces the trigger in its own action-card slot, and the rest of the card stays visible", async ({
+    page,
+    context,
+  }) => {
+    await preparePage(page, context);
+    await configureProviderKey(page);
+    await mockOrsRequests(page);
+
+    await openPlanningAndAwaitFraming(page);
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    await mapContainer.click({ position: { x: 100, y: 150 } });
+    await mapContainer.click({ position: { x: 180, y: 220 } });
+    await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+
+    const trigger = page.getByRole("button", { name: "Clear draft" });
+    await trigger.scrollIntoViewIfNeeded();
+    expect(await readClearDraftSlotRole(page)).toBeNull();
+
+    await trigger.click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toBeVisible();
+    expect(await readClearDraftSlotRole(page)).toBe("alertdialog");
+    // Nothing else was inserted between the routing-summary block and
+    // the confirmation — the trigger no longer exists anywhere.
+    await expect(page.getByRole("button", { name: "Clear draft" })).toHaveCount(1);
+
+    // The rest of the action card stays rendered and visible while the
+    // confirmation is open, and Waypoints stays below both states.
+    await expect(page.getByRole("group", { name: "Waypoint actions" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /calculate route/i })).toBeVisible();
+    const waypointsHeading = page.getByRole("heading", { name: "Waypoints" });
+    await expect(waypointsHeading).toBeVisible();
+    const [dialogBox, waypointsBox] = await Promise.all([
+      dialog.boundingBox(),
+      waypointsHeading.boundingBox(),
+    ]);
+    if (!dialogBox || !waypointsBox) {
+      throw new Error("expected the dialog and Waypoints heading to lay out");
+    }
+    expect(dialogBox.y).toBeLessThan(waypointsBox.y);
+
+    // Cancel restores the trigger in the same slot, focused.
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toBeHidden();
+    expect(await readClearDraftSlotRole(page)).toBeNull();
+    await expect(page.getByRole("button", { name: "Clear draft" })).toBeFocused();
+  });
 });
