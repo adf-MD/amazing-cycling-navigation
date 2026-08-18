@@ -494,17 +494,23 @@ test.describe("phone viewport", () => {
   });
 
   /** Reads whether the trigger's own action-card slot — the element
-   * immediately following the "Change" disclosure's own wrapper —
+   * immediately following the "Change" routing disclosure itself —
    * currently holds the alertdialog, mirroring
    * PlanningScreen.clearDraft.test.tsx's nextElementSibling-based proof
-   * of the same contract (backlog item 49). */
+   * of the same contract (backlog item 49). A post-deployment item 48
+   * follow-up removed the single-child wrapper <div> this helper
+   * previously traversed through (details.parentElement) — the
+   * disclosure is now a direct child of the action card, so this reads
+   * details.nextElementSibling directly. The summary lookup now checks
+   * for the "Change" text anywhere inside <summary> (not an exact match)
+   * since that same follow-up nested it beside the routing value rather
+   * than as <summary>'s sole content. */
   async function readClearDraftSlotRole(page: Page): Promise<string | null> {
     return page.evaluate(() => {
-      const details = [...document.querySelectorAll("details")].find(
-        (d) => d.querySelector("summary")?.textContent === "Change",
+      const details = [...document.querySelectorAll("details")].find((d) =>
+        d.querySelector(".planning-routing-disclosure-action-label"),
       );
-      const wrapper = details?.parentElement ?? null;
-      return wrapper?.nextElementSibling?.getAttribute("role") ?? null;
+      return details?.nextElementSibling?.getAttribute("role") ?? null;
     });
   }
 

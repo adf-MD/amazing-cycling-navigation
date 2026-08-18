@@ -880,25 +880,26 @@ button:focus-visible {
   align-items: center;
 }
 
-/* Planning's per-draft routing summary and its "Change" disclosure
- * (backlog item 48): stacked, not a shared flex row, so opening "Change"
- * — whose content is much wider than its closed label — only grows the
- * block downward and never reflows or re-wraps the summary text beside
- * it. Mirrors .planning-calculate-actions's own tight-vertical-grouping
- * rationale. */
-.planning-routing-summary {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-}
-
 /* A compact variant of .settings-disclosure for Planning's "Change"
  * trigger specifically (backlog item 48): the closed <summary> alone
- * carries a border+padding box model matching the global button rule,
- * so it renders at the same 44px min-height floor a button does, instead
- * of that floor plus the base class's own outer border/padding stacked
- * on top (62px). Settings' own disclosures are unaffected — they keep
- * the base class alone. */
+ * carries a border+padding box model matching the global button rule, so
+ * opening/closing it only ever relocates that border/padding between
+ * <summary> (closed) and the outer <details> (open) — a continuous card
+ * either way, never two nested boxes. Settings' own disclosures are
+ * unaffected — they keep the base class alone.
+ *
+ * A post-deployment follow-up superseded this variant's original "closed
+ * <summary> matches an ordinary 44px button's height exactly" goal: real
+ * iPhone inspection found the routing summary text and "Change" as
+ * adjacent siblings (a separate muted paragraph beside a bold, bordered
+ * disclosure) didn't read as one unit, with "Change" visually dominating
+ * the actual routing state it was meant to be secondary to. The routing
+ * value now renders as the primary line *inside* this <summary> itself
+ * (see PlanningScreen.tsx and the .planning-routing-disclosure-* rules
+ * below), with "Change" and a chevron as a smaller, secondary line
+ * beneath it — so the closed header is legitimately taller than a single
+ * button now, by design, while still keeping a real ≥44×44px touch
+ * target. The border/padding-relocation mechanism itself is unchanged. */
 .settings-disclosure--compact {
   border: none;
   padding: 0;
@@ -932,6 +933,64 @@ button:focus-visible {
   border: none;
   border-radius: 0;
   padding: var(--space-8) 0 0;
+}
+
+/* The two-line hierarchy inside Planning's compact "Change" <summary>
+ * (post-deployment item 48 follow-up, see .settings-disclosure--compact's
+ * own comment above): the routing value above, "Change" plus a chevron
+ * below. width: 100% is required because <summary>'s own display:flex
+ * (the base .settings-disclosure summary rule) does not stretch a
+ * shrink-to-fit flex item to the row's own width by default — without it,
+ * a longer value ("General cycling · Ferries allowed") could overflow
+ * rather than wrap. No align-items override is needed here: flex's own
+ * default `stretch` already makes .planning-routing-disclosure-value and
+ * .planning-routing-disclosure-action each take this header's full width
+ * for free, the same reasoning this file already relies on for .stack's
+ * own default stretch elsewhere. */
+.planning-routing-disclosure-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+/* The primary line — full contrast, not the low-emphasis .field-hint
+ * treatment the previous, separate-paragraph presentation used. */
+.planning-routing-disclosure-value {
+  color: var(--colour-text);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* The secondary "Change" affordance: strictly smaller and lighter than
+ * .planning-routing-disclosure-value above (0.85rem/500 vs 1rem/600), so
+ * it never reads as more prominent than the routing state it changes.
+ * Accent-coloured as a non-exclusive actionable cue, reinforced by the
+ * chevron's own shape/rotation below — never colour alone. */
+.planning-routing-disclosure-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--colour-accent);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* Explicit, uniform open/closed indicator — deliberately not a reinstated
+ * native disclosure marker, which .settings-disclosure--compact's own
+ * summary::-webkit-details-marker rule above suppresses specifically
+ * because Safari's own proprietary marker rendering isn't consistent with
+ * Chromium/Firefox. Rotation is a real, non-colour state change; no
+ * dedicated prefers-reduced-motion handling is needed since the existing
+ * global `*, *::before, *::after` transition-duration override already
+ * covers it. */
+.planning-routing-disclosure-chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.settings-disclosure--compact[open] .planning-routing-disclosure-chevron {
+  transform: rotate(180deg);
 }
 
 .distance-badge-marker {

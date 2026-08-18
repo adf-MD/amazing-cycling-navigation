@@ -1266,54 +1266,92 @@ test.describe("phone viewport", () => {
     await exportButton.scrollIntoViewIfNeeded();
     await expect(exportButton).toBeEnabled();
 
-    // The compact routing summary and its "Change" disclosure (backlog
-    // items 36/48) must introduce no horizontal overflow either closed or
-    // open, and every control it reveals must keep a real ≥44x44px touch
-    // target — Vitest's css:false environment cannot verify this.
-    const changeSummary = page.getByText("Change", { exact: true });
+    // Post-deployment item 48 follow-up: the routing summary and its
+    // "Change" disclosure must read as one clearly hierarchical card — the
+    // current routing values primary, "Change" a smaller secondary
+    // affordance beneath them, both inside the same bordered <summary> —
+    // and introduce no horizontal overflow either closed or open, with
+    // every control it reveals keeping a real ≥44x44px touch target.
+    // Vitest's css:false environment cannot verify any of this.
+    const routingValue = page.getByText(/^routing:/i);
+    const changeLabel = page.getByText("Change", { exact: true });
+    // <summary> is the real disclosure header now — it holds both the
+    // routing value and the Change affordance, stacked. Traversed via
+    // xpath, mirroring this file's existing ancestor-lookup convention for
+    // <details> just below.
+    const disclosureSummary = changeLabel.locator("xpath=ancestor::summary");
+    // The action row (Change's label plus the chevron) — changeLabel's own
+    // immediate parent — used for overlap checks against the value line.
+    const actionRow = changeLabel.locator("xpath=..");
+    const chevron = page.locator(".planning-routing-disclosure-chevron");
     // The outer <details> control's own box, not <summary>'s: closed,
-    // <summary> itself carries the border/padding that makes it read as
-    // a button; open, that border/padding relocates onto the outer
+    // <summary> itself carries the border/padding that makes it read as a
+    // card header; open, that border/padding relocates onto the outer
     // <details> instead (so the revealed content gets a frame) while
     // <summary>'s own shrinks to 0 — <summary>'s own bounding box
     // therefore legitimately relocates inward between states even though
-    // the rendered "Change" text does not move, so the control's overall
+    // the rendered header content does not move, so the card's overall
     // position must be measured on <details>, not <summary>.
-    const changeDetails = changeSummary.locator("xpath=ancestor::details");
-    const routingSummary = page.getByText(/^routing:/i);
-    const undoButton = page.getByRole("button", { name: "Undo" });
-    await changeSummary.scrollIntoViewIfNeeded();
+    const changeDetails = changeLabel.locator("xpath=ancestor::details");
+    await disclosureSummary.scrollIntoViewIfNeeded();
 
-    const [
-      changeDetailsClosedBox,
-      changeSummaryClosedBox,
-      routingSummaryClosedBox,
-      undoBox,
-    ] = await Promise.all([
-      changeDetails.boundingBox(),
-      changeSummary.boundingBox(),
-      routingSummary.boundingBox(),
-      undoButton.boundingBox(),
-    ]);
+    const [summaryClosedBox, changeDetailsClosedBox, valueClosedBox, actionClosedBox] =
+      await Promise.all([
+        disclosureSummary.boundingBox(),
+        changeDetails.boundingBox(),
+        routingValue.boundingBox(),
+        actionRow.boundingBox(),
+      ]);
     if (
+      !summaryClosedBox ||
       !changeDetailsClosedBox ||
-      !changeSummaryClosedBox ||
-      !routingSummaryClosedBox ||
-      !undoBox
+      !valueClosedBox ||
+      !actionClosedBox
     ) {
-      throw new Error("expected the routing-summary/Change/Undo controls to have a box");
+      throw new Error("expected the routing-disclosure header controls to have a box");
     }
-    expect(changeSummaryClosedBox.height).toBeGreaterThanOrEqual(44);
-    // The closed "Change" control's overall height (the outer <details>,
-    // which is where the base .settings-disclosure class's own extra
-    // border/padding lives — <summary>'s own height alone is always 44px
-    // regardless) matches an ordinary action button's, not merely the
-    // ≥44px floor (backlog item 48).
-    expect(Math.abs(changeDetailsClosedBox.height - undoBox.height)).toBeLessThanOrEqual(
-      1,
+
+    // The whole <summary> is the tappable header, not just the word
+    // "Change" — a real ≥44x44px touch target (backlog item 48's own
+    // requirement, restated here since <summary> now carries far more
+    // content than a single closed label).
+    expect(summaryClosedBox.width).toBeGreaterThanOrEqual(44);
+    expect(summaryClosedBox.height).toBeGreaterThanOrEqual(44);
+
+    // The routing value sits above "Change" within the header, neither
+    // overlaps the other, and both stay inside the bordered <details>
+    // card — a hierarchy proof, not (any more) an exact-button-height
+    // match, which this follow-up deliberately supersedes.
+    expect(valueClosedBox.y).toBeLessThan(actionClosedBox.y);
+    expect(intersects(valueClosedBox, actionClosedBox)).toBe(false);
+    expect(isFullyWithin(valueClosedBox, changeDetailsClosedBox)).toBe(true);
+    expect(isFullyWithin(actionClosedBox, changeDetailsClosedBox)).toBe(true);
+
+    // "Change" must read as secondary, not dominant: strictly smaller and
+    // no heavier than the routing value it sits beneath — Vitest's
+    // css:false environment cannot see computed font-size/font-weight at
+    // all.
+    const [valueFontSize, valueFontWeight, changeFontSize, changeFontWeight] =
+      await Promise.all([
+        routingValue.evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize)),
+        routingValue.evaluate((el) =>
+          Number.parseInt(getComputedStyle(el).fontWeight, 10),
+        ),
+        changeLabel.evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize)),
+        changeLabel.evaluate((el) =>
+          Number.parseInt(getComputedStyle(el).fontWeight, 10),
+        ),
+      ]);
+    expect(changeFontSize).toBeLessThan(valueFontSize);
+    expect(changeFontWeight).toBeLessThanOrEqual(valueFontWeight);
+
+    const closedChevronTransform = await chevron.evaluate(
+      (el) => getComputedStyle(el).transform,
     );
 
-    await changeSummary.click();
+    // The entire header is tappable, not just the word "Change" or the
+    // chevron — clicking the routing-value text itself must open it too.
+    await routingValue.click();
     const draftRoadBike = page.getByRole("button", { name: "Road bike", exact: true });
     const draftGeneralCycling = page.getByRole("button", {
       name: "General cycling",
@@ -1329,58 +1367,92 @@ test.describe("phone viewport", () => {
       expect(box.height).toBeGreaterThanOrEqual(44);
     }
 
-    // Opening "Change" must not shift the routing-summary text or the
-    // "Change" control itself horizontally, since its revealed content
-    // is much wider than its closed label (backlog item 48).
-    const [changeDetailsOpenBox, routingSummaryOpenBox] = await Promise.all([
+    // The chevron communicates open/closed via a real shape change (never
+    // colour alone), and the routing value stays visible in the same
+    // header while open — there is exactly one copy of it, and of
+    // "Change", anywhere on screen (no separate paragraph left outside
+    // the disclosure, and no duplicate inside the revealed content).
+    const openChevronTransform = await chevron.evaluate(
+      (el) => getComputedStyle(el).transform,
+    );
+    expect(openChevronTransform).not.toBe(closedChevronTransform);
+    await expect(routingValue).toBeVisible();
+    await expect(page.getByText(/^routing:/i)).toHaveCount(1);
+    await expect(page.getByText("Change", { exact: true })).toHaveCount(1);
+
+    // Opening the header must not shift the outer disclosure card
+    // horizontally or resize it, since its revealed content is much wider
+    // than its closed header (backlog item 48).
+    const [changeDetailsOpenBox, routingValueOpenBox] = await Promise.all([
       changeDetails.boundingBox(),
-      routingSummary.boundingBox(),
+      routingValue.boundingBox(),
     ]);
-    if (!changeDetailsOpenBox || !routingSummaryOpenBox) {
-      throw new Error("expected the routing-summary/Change controls to have a box");
+    if (!changeDetailsOpenBox || !routingValueOpenBox) {
+      throw new Error("expected the routing-disclosure controls to have a box");
     }
     expect(
       Math.abs(changeDetailsOpenBox.x - changeDetailsClosedBox.x),
     ).toBeLessThanOrEqual(1);
     expect(
-      Math.abs(routingSummaryOpenBox.x - routingSummaryClosedBox.x),
+      Math.abs(changeDetailsOpenBox.width - changeDetailsClosedBox.width),
     ).toBeLessThanOrEqual(1);
+    expect(isFullyWithin(routingValueOpenBox, changeDetailsOpenBox)).toBe(true);
 
     const openScrollWidths = await readScrollWidths();
     expect(openScrollWidths.documentWidth).toBeLessThanOrEqual(390);
     expect(openScrollWidths.bodyWidth).toBeLessThanOrEqual(390);
 
-    // Closing it again restores the exact original geometry.
-    await changeSummary.click();
-    const [
-      changeDetailsReclosedBox,
-      changeSummaryReclosedBox,
-      routingSummaryReclosedBox,
-    ] = await Promise.all([
+    // Closing it again restores the exact original geometry — the card
+    // only ever grew downward, never sideways.
+    await routingValue.click();
+    const [changeDetailsReclosedBox, summaryReclosedBox] = await Promise.all([
       changeDetails.boundingBox(),
-      changeSummary.boundingBox(),
-      routingSummary.boundingBox(),
+      disclosureSummary.boundingBox(),
     ]);
-    if (
-      !changeDetailsReclosedBox ||
-      !changeSummaryReclosedBox ||
-      !routingSummaryReclosedBox
-    ) {
-      throw new Error("expected the routing-summary/Change controls to have a box");
+    if (!changeDetailsReclosedBox || !summaryReclosedBox) {
+      throw new Error("expected the routing-disclosure controls to have a box");
     }
     expect(
-      Math.abs(changeSummaryReclosedBox.height - changeSummaryClosedBox.height),
+      Math.abs(summaryReclosedBox.height - summaryClosedBox.height),
     ).toBeLessThanOrEqual(1);
     expect(
       Math.abs(changeDetailsReclosedBox.x - changeDetailsClosedBox.x),
     ).toBeLessThanOrEqual(1);
     expect(
-      Math.abs(routingSummaryReclosedBox.x - routingSummaryClosedBox.x),
+      Math.abs(changeDetailsReclosedBox.width - changeDetailsClosedBox.width),
     ).toBeLessThanOrEqual(1);
 
-    const finalScrollWidths = await readScrollWidths();
-    expect(finalScrollWidths.documentWidth).toBeLessThanOrEqual(390);
-    expect(finalScrollWidths.bodyWidth).toBeLessThanOrEqual(390);
+    const reclosedScrollWidths = await readScrollWidths();
+    expect(reclosedScrollWidths.documentWidth).toBeLessThanOrEqual(390);
+    expect(reclosedScrollWidths.bodyWidth).toBeLessThanOrEqual(390);
+
+    // A longer state (General cycling · Ferries allowed) must remain just
+    // as usable: still no overlap between the value and the action row,
+    // still fully contained within the card, still no overflow.
+    await routingValue.click();
+    await draftGeneralCycling.click();
+    await draftFerriesCheckbox.click();
+    await expect(
+      page.getByText("Routing: General cycling · Ferries allowed", { exact: true }),
+    ).toBeVisible();
+
+    const [longerValueBox, longerActionBox, longerDetailsBox] = await Promise.all([
+      routingValue.boundingBox(),
+      actionRow.boundingBox(),
+      changeDetails.boundingBox(),
+    ]);
+    if (!longerValueBox || !longerActionBox || !longerDetailsBox) {
+      throw new Error(
+        "expected the longer-state routing-disclosure controls to have a box",
+      );
+    }
+    expect(intersects(longerValueBox, longerActionBox)).toBe(false);
+    expect(isFullyWithin(longerValueBox, longerDetailsBox)).toBe(true);
+    expect(isFullyWithin(longerActionBox, longerDetailsBox)).toBe(true);
+
+    const longerScrollWidths = await readScrollWidths();
+    expect(longerScrollWidths.documentWidth).toBeLessThanOrEqual(390);
+    expect(longerScrollWidths.bodyWidth).toBeLessThanOrEqual(390);
 
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
     expect(consoleErrors).toEqual([]);

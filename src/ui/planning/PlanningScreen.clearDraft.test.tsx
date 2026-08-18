@@ -748,27 +748,28 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     const map = createMockMapFactory();
     await renderWithMeaningfulDraft(map);
 
-    // Anchor on the "Change" disclosure's own wrapper via its visible
-    // text, not a CSS class — the trigger's slot is the very next
-    // sibling of it, both closed and open.
+    // Anchor on the "Change" disclosure itself via its visible text, not
+    // a CSS class — the trigger's slot is the very next sibling of it,
+    // both closed and open. A post-deployment item 48 follow-up removed
+    // the single-child wrapper <div> this test previously traversed
+    // through (changeDetails.parentElement) — the disclosure is now a
+    // direct child of the action card, so this is a strictly simpler,
+    // equally-precise expression of the same "renders immediately after
+    // the routing disclosure" fact.
     const changeDetails = screen.getByText("Change", { exact: true }).closest("details");
     if (!changeDetails)
       throw new Error("expected the Change disclosure to have a details ancestor");
-    const routingSummaryWrapper = changeDetails.parentElement;
-    if (!routingSummaryWrapper) {
-      throw new Error("expected the Change disclosure to have a parent element");
-    }
 
-    function clearDraftSlot(wrapper: HTMLElement): HTMLElement {
-      const slot = wrapper.nextElementSibling;
+    function clearDraftSlot(afterElement: HTMLElement): HTMLElement {
+      const slot = afterElement.nextElementSibling;
       if (!(slot instanceof HTMLElement)) {
-        throw new Error("expected the routing-summary block to have a next sibling");
+        throw new Error("expected the routing disclosure to have a next sibling");
       }
       return slot;
     }
 
     expect(
-      within(clearDraftSlot(routingSummaryWrapper)).getByRole("button", {
+      within(clearDraftSlot(changeDetails)).getByRole("button", {
         name: "Clear draft",
       }),
     ).toBeInTheDocument();
@@ -776,11 +777,11 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     fireEvent.click(clearDraftTriggerButton());
 
     // Open: the confirmation occupies the exact same slot — nothing else
-    // was inserted between the routing-summary block and it, and the
-    // only "Clear draft"-named button left anywhere is the dialog's own
+    // was inserted between the routing disclosure and it, and the only
+    // "Clear draft"-named button left anywhere is the dialog's own
     // confirm button — the trigger itself is gone, not merely duplicated.
     const dialog = screen.getByRole("alertdialog");
-    expect(routingSummaryWrapper.nextElementSibling).toBe(dialog);
+    expect(changeDetails.nextElementSibling).toBe(dialog);
     expect(screen.getAllByRole("button", { name: "Clear draft" })).toEqual([
       within(dialog).getByRole("button", { name: "Clear draft" }),
     ]);
@@ -791,13 +792,13 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
       screen.getByRole("button", { name: /calculate route|try again|calculating/i }),
     ).toBeInTheDocument();
     expect(
-      within(routingSummaryWrapper).getByText("Change", { exact: true }),
+      within(changeDetails).getByText("Change", { exact: true }),
     ).toBeInTheDocument();
 
     // Cancel: the trigger reappears in the same slot, focused.
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(
-      within(clearDraftSlot(routingSummaryWrapper)).getByRole("button", {
+      within(clearDraftSlot(changeDetails)).getByRole("button", {
         name: "Clear draft",
       }),
     ).toBeInTheDocument();

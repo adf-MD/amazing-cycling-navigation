@@ -3028,6 +3028,106 @@ describe("PlanningScreen", () => {
     ).toBeInTheDocument();
   });
 
+  describe("routing disclosure hierarchy (backlog item 48 follow-up)", () => {
+    const DEFAULT_VALUE_TEXT = "Routing: Road bike · Ferries avoided";
+
+    it("nests the routing value and Change inside the same <summary>, which belongs to the routing-controls disclosure", () => {
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      const value = screen.getByText(DEFAULT_VALUE_TEXT, { exact: true });
+      const changeLabel = screen.getByText("Change", { exact: true });
+      const summary = value.closest("summary");
+      if (!summary)
+        throw new Error("expected the routing value to have a summary ancestor");
+      // Both live inside the very same <summary> — not two adjacent
+      // elements, and not a separate paragraph beside a bordered
+      // <details> (the presentation this follow-up replaces).
+      expect(changeLabel.closest("summary")).toBe(summary);
+
+      // That <summary> is the header of the disclosure that reveals the
+      // current-draft profile/ferries controls once opened.
+      const details = summary.closest("details");
+      if (!details) throw new Error("expected the summary to have a details ancestor");
+      fireEvent.click(changeLabel);
+      expect(
+        within(details).getByRole("group", {
+          name: "Cycling profile for this draft",
+        }),
+      ).toBeInTheDocument();
+      expect(
+        within(details).getByRole("checkbox", {
+          name: "Avoid ferries for this draft",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("shows the routing value above Change within the header, with no separate copy outside the disclosure", () => {
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      expect(screen.getAllByText(DEFAULT_VALUE_TEXT, { exact: true })).toHaveLength(1);
+      expect(screen.getAllByText("Change", { exact: true })).toHaveLength(1);
+
+      const value = screen.getByText(DEFAULT_VALUE_TEXT, { exact: true });
+      const changeLabel = screen.getByText("Change", { exact: true });
+      // DOM order within the header: the routing value precedes Change.
+      expect(
+        value.compareDocumentPosition(changeLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it("exposes the current profile and ferry policy, and that the header can be changed, before it is opened", () => {
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      const summary = screen
+        .getByText(DEFAULT_VALUE_TEXT, { exact: true })
+        .closest("summary");
+      if (!summary)
+        throw new Error("expected the routing value to have a summary ancestor");
+      // Both facts are visible, non-hidden text within the one native
+      // disclosure trigger — <summary>'s own accessible name is computed
+      // from exactly this content (name-from-content), so a screen-reader
+      // user can determine the selected profile and ferry policy, and
+      // that the control can be activated to change them, before opening
+      // it.
+      expect(
+        within(summary).getByText(DEFAULT_VALUE_TEXT, { exact: true }),
+      ).toBeVisible();
+      expect(within(summary).getByText("Change", { exact: true })).toBeVisible();
+      // The chevron is purely decorative — never part of the accessible
+      // name or announced content.
+      const chevron = summary.querySelector(".planning-routing-disclosure-chevron");
+      expect(chevron).toHaveAttribute("aria-hidden", "true");
+    });
+
+    it("updates the same header's value when the profile or ferry policy changes, without duplicating it", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+      await user.click(screen.getByText("Change", { exact: true }));
+
+      await user.click(screen.getByRole("button", { name: "General cycling" }));
+      await user.click(
+        screen.getByRole("checkbox", { name: "Avoid ferries for this draft" }),
+      );
+
+      expect(
+        screen.getAllByText("Routing: General cycling · Ferries allowed", {
+          exact: true,
+        }),
+      ).toHaveLength(1);
+      expect(
+        screen.queryByText(DEFAULT_VALUE_TEXT, { exact: true }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   describe("cycling profile selector", () => {
     // buildRoute(10)'s geometry is denser than the fixture's own 2
     // waypoints (required for canSaveOrExportPlan's own "denser than

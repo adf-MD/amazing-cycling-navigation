@@ -219,9 +219,14 @@ function describeEditCopyNotice(meta: {
 
 /** The always-visible compact routing-preference summary shown beside
  * Calculate, e.g. "Routing: Road bike · Ferries avoided" — always the
- * current draft's own live profile/avoidFerries state (editable via the
- * adjacent Change disclosure), never the Settings default, which only
- * ever seeds a genuinely fresh draft (see the hydration effect below). */
+ * current draft's own live profile/avoidFerries state, never the Settings
+ * default, which only ever seeds a genuinely fresh draft (see the hydration
+ * effect below). Rendered as the primary line inside the "Change"
+ * disclosure's own <summary> (a post-deployment item 48 follow-up), not
+ * beside it: real iPhone inspection found the earlier separate, muted
+ * paragraph next to a bold, bordered "Change" control didn't read as one
+ * unit, with "Change" visually dominating the actual routing state it was
+ * meant to be secondary to. */
 function describeCurrentDraftRoutingSummary(
   profile: RoutingProfile,
   avoidFerries: boolean,
@@ -1693,61 +1698,68 @@ export function PlanningScreen({
           ) : null}
         </div>
 
-        <div className="planning-routing-summary">
-          <p className="field-hint">
-            {describeCurrentDraftRoutingSummary(profile, avoidFerries)}
-          </p>
-          <details className="settings-disclosure settings-disclosure--compact">
-            <summary>Change</summary>
-            <div className="stack">
-              <div>
-                <div
-                  role="group"
-                  aria-label="Cycling profile for this draft"
-                  className="cycling-profile-group"
-                >
-                  {ROUTING_PROFILES.map((metadata) => {
-                    const isSelected = profile === metadata.value;
-                    return (
-                      <button
-                        key={metadata.value}
-                        type="button"
-                        className={
-                          isSelected
-                            ? "cycling-profile-button is-selected"
-                            : "cycling-profile-button"
-                        }
-                        aria-pressed={isSelected}
-                        onClick={() => {
-                          noteHydrationOverriddenByUserEdit("profile");
-                          setProfile(metadata.value);
-                        }}
-                      >
-                        {metadata.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="field-hint">{describeRoutingProfile(profile)}</p>
-              </div>
-              <label className="setting-row" htmlFor="planning-avoid-ferries-checkbox">
-                <input
-                  id="planning-avoid-ferries-checkbox"
-                  type="checkbox"
-                  className="setting-row-checkbox"
-                  checked={avoidFerries}
-                  onChange={(event) => {
-                    noteHydrationOverriddenByUserEdit("avoidFerries");
-                    setAvoidFerries(event.target.checked);
-                  }}
-                />
-                <span className="setting-row-text">
-                  <span className="setting-row-title">Avoid ferries for this draft</span>
+        <details className="settings-disclosure settings-disclosure--compact">
+          <summary>
+            <span className="planning-routing-disclosure-header">
+              <span className="planning-routing-disclosure-value">
+                {describeCurrentDraftRoutingSummary(profile, avoidFerries)}
+              </span>
+              <span className="planning-routing-disclosure-action">
+                <span className="planning-routing-disclosure-action-label">Change</span>
+                <span className="planning-routing-disclosure-chevron" aria-hidden="true">
+                  ▾
                 </span>
-              </label>
+              </span>
+            </span>
+          </summary>
+          <div className="stack">
+            <div>
+              <div
+                role="group"
+                aria-label="Cycling profile for this draft"
+                className="cycling-profile-group"
+              >
+                {ROUTING_PROFILES.map((metadata) => {
+                  const isSelected = profile === metadata.value;
+                  return (
+                    <button
+                      key={metadata.value}
+                      type="button"
+                      className={
+                        isSelected
+                          ? "cycling-profile-button is-selected"
+                          : "cycling-profile-button"
+                      }
+                      aria-pressed={isSelected}
+                      onClick={() => {
+                        noteHydrationOverriddenByUserEdit("profile");
+                        setProfile(metadata.value);
+                      }}
+                    >
+                      {metadata.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="field-hint">{describeRoutingProfile(profile)}</p>
             </div>
-          </details>
-        </div>
+            <label className="setting-row" htmlFor="planning-avoid-ferries-checkbox">
+              <input
+                id="planning-avoid-ferries-checkbox"
+                type="checkbox"
+                className="setting-row-checkbox"
+                checked={avoidFerries}
+                onChange={(event) => {
+                  noteHydrationOverriddenByUserEdit("avoidFerries");
+                  setAvoidFerries(event.target.checked);
+                }}
+              />
+              <span className="setting-row-text">
+                <span className="setting-row-title">Avoid ferries for this draft</span>
+              </span>
+            </label>
+          </div>
+        </details>
 
         {isClearDraftConfirmOpen ? (
           <ConfirmDialog
