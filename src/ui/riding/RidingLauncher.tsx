@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PlannedRoute } from "../../domain/types.ts";
 import { systemClock, type Clock } from "../../platform/clock.ts";
 import { logError } from "../../platform/errorLog.ts";
@@ -199,6 +199,13 @@ export function RidingLauncher({
   // Synchronous guard against a rapid double End-ride/Discard submission —
   // mirrors RidingScreen.tsx's own isFinalizeActionPendingRef idiom.
   const isClearActionPendingRef = useRef(false);
+  // The clear trigger unmounts/remounts as its confirmation opens/closes
+  // (item 50's in-place confirmation morph — see renderClearAction below),
+  // so Cancel/Escape and a failed clear both record a pending focus request
+  // here instead of calling .focus() directly — mirrors
+  // PlanningScreen.tsx's pendingClearDraftFocusRef and RidingScreen.tsx's
+  // pendingEndRideFocusRef exactly (items 49/50).
+  const pendingClearFocusRef = useRef(false);
 
   // Exactly one clear action is ever offered at a time — sessionState.status
   // alone determines which, so no separate "which action is this dialog
@@ -241,20 +248,29 @@ export function RidingLauncher({
         message: LAUNCHER_CLEAR_ACTION_COPY[action].errorMessage,
       });
       setIsClearConfirmOpen(false);
-      // Focus restoration is handled by the effect below, not directly
-      // here — mirrors RidingScreen.tsx's own performFinalizeRide: the
-      // trigger is still disabled in the DOM at this exact synchronous
-      // point, so a direct .focus() call here would silently no-op.
+      // Restoring focus is deferred to the pending-ref effect below rather
+      // than called directly here — mirrors RidingScreen.tsx's own
+      // performFinalizeRide: the trigger is still disabled/absent in the
+      // DOM at this exact synchronous point, so a direct .focus() call
+      // here would silently no-op.
+      pendingClearFocusRef.current = true;
     } finally {
       isClearActionPendingRef.current = false;
       setActiveClearAction(null);
     }
   };
 
+  // A no-deps effect re-checks pendingClearFocusRef's readiness (mounted
+  // AND enabled) on every render, rather than consuming the request
+  // unconditionally on the first post-set commit — mirrors
+  // PlanningScreen.tsx's pendingClearDraftFocusRef effect exactly.
   useEffect(() => {
-    if (!clearError) return;
-    clearTriggerRef.current?.focus();
-  }, [clearError]);
+    if (!pendingClearFocusRef.current) return;
+    const trigger = clearTriggerRef.current;
+    if (!trigger || trigger.disabled) return;
+    pendingClearFocusRef.current = false;
+    trigger.focus();
+  });
 
   const handleClearTriggerClick = () => {
     if (isClearConfirmOpen || isClearActionPendingRef.current) return;
@@ -265,9 +281,63 @@ export function RidingLauncher({
   const handleClearCancel = () => {
     // Escape can bypass a disabled Cancel button, so guard here too.
     if (isClearActionPendingRef.current) return;
+    pendingClearFocusRef.current = true;
     setIsClearConfirmOpen(false);
-    clearTriggerRef.current?.focus();
   };
+
+  // Renders the current clear action (End ride / Discard unfinished ride) in
+  // place: either the trigger button (plus any error) or the confirmation
+  // itself, never both — called from whichever single panel is currently
+  // active below, so the ConfirmDialog JSX exists at exactly one call site
+  // and can never mount twice, since the three panels are themselves
+  // mutually exclusive (backlog item 50's in-place confirmation morph,
+  // mirroring RidingScreen.tsx's own renderEndRideAction and
+  // PlanningScreen.tsx's Clear-draft treatment from item 49). Closes over
+  // the already-derived clearAction rather than taking a parameter, since a
+  // panel only ever calls this when clearAction already corresponds to it.
+  function renderClearAction(): ReactNode {
+    if (!clearAction) return null;
+    const copy = LAUNCHER_CLEAR_ACTION_COPY[clearAction];
+    if (isClearConfirmOpen) {
+      return (
+        <ConfirmDialog
+          open={isClearConfirmOpen}
+          title={copy.dialogTitle}
+          message={copy.dialogMessage}
+          confirmLabel={
+            activeClearAction === clearAction
+              ? copy.confirmPendingLabel
+              : copy.confirmLabel
+          }
+          cancelLabel="Cancel"
+          confirmDisabled={activeClearAction === clearAction}
+          cancelDisabled={activeClearAction === clearAction}
+          onConfirm={() => {
+            void performClearSession(clearAction);
+          }}
+          onCancel={handleClearCancel}
+        />
+      );
+    }
+    return (
+      <>
+        <button
+          type="button"
+          className="btn-danger"
+          ref={clearTriggerRef}
+          onClick={handleClearTriggerClick}
+          disabled={activeClearAction !== null}
+        >
+          {copy.confirmLabel}
+        </button>
+        {clearError?.action === clearAction ? (
+          <p className="field-error" role="alert">
+            {clearError.message}
+          </p>
+        ) : null}
+      </>
+    );
+  }
 
   // "Start free roam" — persists a fresh, minimal free-roam session row
   // BEFORE calling onOpenFreeRoam, so a storage failure keeps the rider on
@@ -386,20 +456,7 @@ export function RidingLauncher({
           >
             Resume route
           </button>
-          <button
-            type="button"
-            className="btn-danger"
-            ref={clearTriggerRef}
-            onClick={handleClearTriggerClick}
-            disabled={activeClearAction !== null}
-          >
-            End ride
-          </button>
-          {clearError?.action === "end-ride" ? (
-            <p className="field-error" role="alert">
-              {clearError.message}
-            </p>
-          ) : null}
+          <div className="ride-launcher-clear-row stack">{renderClearAction()}</div>
         </div>
       ) : null}
 
@@ -410,61 +467,15 @@ export function RidingLauncher({
           <button type="button" className="btn-primary" onClick={onOpenFreeRoam}>
             Resume free roam
           </button>
-          <button
-            type="button"
-            className="btn-danger"
-            ref={clearTriggerRef}
-            onClick={handleClearTriggerClick}
-            disabled={activeClearAction !== null}
-          >
-            End ride
-          </button>
-          {clearError?.action === "end-free-roam" ? (
-            <p className="field-error" role="alert">
-              {clearError.message}
-            </p>
-          ) : null}
+          <div className="ride-launcher-clear-row stack">{renderClearAction()}</div>
         </div>
       ) : null}
 
       {hydrationStatus === "ready" && sessionState.status === "unresumable" ? (
         <div className="panel stack">
           <p>{describeUnresumableReason(sessionState.reason)}</p>
-          <button
-            type="button"
-            className="btn-danger"
-            ref={clearTriggerRef}
-            onClick={handleClearTriggerClick}
-            disabled={activeClearAction !== null}
-          >
-            Discard unfinished ride
-          </button>
-          {clearError?.action === "discard-unfinished" ? (
-            <p className="field-error" role="alert">
-              {clearError.message}
-            </p>
-          ) : null}
+          <div className="ride-launcher-clear-row stack">{renderClearAction()}</div>
         </div>
-      ) : null}
-
-      {clearAction ? (
-        <ConfirmDialog
-          open={isClearConfirmOpen}
-          title={LAUNCHER_CLEAR_ACTION_COPY[clearAction].dialogTitle}
-          message={LAUNCHER_CLEAR_ACTION_COPY[clearAction].dialogMessage}
-          confirmLabel={
-            activeClearAction === clearAction
-              ? LAUNCHER_CLEAR_ACTION_COPY[clearAction].confirmPendingLabel
-              : LAUNCHER_CLEAR_ACTION_COPY[clearAction].confirmLabel
-          }
-          cancelLabel="Cancel"
-          confirmDisabled={activeClearAction === clearAction}
-          cancelDisabled={activeClearAction === clearAction}
-          onConfirm={() => {
-            void performClearSession(clearAction);
-          }}
-          onCancel={handleClearCancel}
-        />
       ) : null}
     </section>
   );

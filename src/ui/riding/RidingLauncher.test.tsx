@@ -179,14 +179,108 @@ describe("RidingLauncher", () => {
 
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(endRideButton).toHaveFocus();
+    // The trigger genuinely unmounts while the confirmation is open
+    // (backlog item 50's in-place confirmation morph), so the button
+    // re-queried here is a freshly remounted DOM node, not the one captured
+    // before the click.
+    const restoredEndRideButton = screen.getByRole("button", { name: "End ride" });
+    expect(restoredEndRideButton).toHaveFocus();
     expect(await getActiveRideState()).toBeDefined();
 
-    await user.click(endRideButton);
+    await user.click(restoredEndRideButton);
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(endRideButton).toHaveFocus();
+    expect(screen.getByRole("button", { name: "End ride" })).toHaveFocus();
     expect(await getActiveRideState()).toBeDefined();
+  });
+
+  it("the resumable-route End-ride confirmation replaces the trigger in its own panel slot, with Resume route and route info staying visible (backlog item 50)", async () => {
+    await db.routes.put(route);
+    await setActiveRideState(buildRideState());
+    const user = userEvent.setup();
+    const { container } = render(
+      <RidingLauncher
+        onResumeRoute={vi.fn()}
+        onChooseRoute={vi.fn()}
+        onOpenFreeRoam={vi.fn()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "End ride" }));
+
+    // .ride-launcher-clear-row is a persistent action-slot container: it
+    // stays mounted and now contains the confirmation directly, rather than
+    // the confirmation being appended elsewhere on the page.
+    const clearRow = container.querySelector(".ride-launcher-clear-row");
+    const dialog = await screen.findByRole("alertdialog");
+    expect(clearRow).not.toBeNull();
+    expect(clearRow?.contains(dialog)).toBe(true);
+    // The trigger never coexists with the confirmation — the only
+    // "End ride"-named button left anywhere is the dialog's own confirm
+    // button.
+    expect(screen.getAllByRole("button", { name: "End ride" })).toEqual([
+      within(dialog).getByRole("button", { name: "End ride" }),
+    ]);
+    // The rest of the panel stays visible and unaffected.
+    expect(screen.getByRole("heading", { name: route.name })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resume route" })).toBeInTheDocument();
+  });
+
+  it("the resumable-free-roam End-ride confirmation replaces the trigger in its own panel slot, with Resume free roam staying visible (backlog item 50)", async () => {
+    await setActiveRideState({
+      id: "active",
+      kind: "free-roam",
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: null,
+    });
+    const user = userEvent.setup();
+    const { container } = render(
+      <RidingLauncher
+        onResumeRoute={vi.fn()}
+        onChooseRoute={vi.fn()}
+        onOpenFreeRoam={vi.fn()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "End ride" }));
+
+    const clearRow = container.querySelector(".ride-launcher-clear-row");
+    const dialog = await screen.findByRole("alertdialog");
+    expect(clearRow).not.toBeNull();
+    expect(clearRow?.contains(dialog)).toBe(true);
+    expect(screen.getAllByRole("button", { name: "End ride" })).toEqual([
+      within(dialog).getByRole("button", { name: "End ride" }),
+    ]);
+    expect(screen.getByRole("button", { name: "Resume free roam" })).toBeInTheDocument();
+  });
+
+  it("the unresumable Discard confirmation replaces the trigger in its own panel slot, with the explanation staying visible (backlog item 50)", async () => {
+    await setActiveRideState(buildRideState());
+    const user = userEvent.setup();
+    const { container } = render(
+      <RidingLauncher
+        onResumeRoute={vi.fn()}
+        onChooseRoute={vi.fn()}
+        onOpenFreeRoam={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Discard unfinished ride" }),
+    );
+
+    const clearRow = container.querySelector(".ride-launcher-clear-row");
+    const dialog = await screen.findByRole("alertdialog");
+    expect(clearRow).not.toBeNull();
+    expect(clearRow?.contains(dialog)).toBe(true);
+    expect(screen.getAllByRole("button", { name: "Discard unfinished ride" })).toEqual([
+      within(dialog).getByRole("button", { name: "Discard unfinished ride" }),
+    ]);
+    expect(
+      screen.getByText(
+        "This unfinished ride refers to a route that's no longer in your library, so it can't be resumed.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("confirming End ride clears the row and reverts to Choose a route", async () => {
@@ -297,13 +391,20 @@ describe("RidingLauncher", () => {
       within(cancelDialog).getByText("Discard unfinished ride?"),
     ).toBeInTheDocument();
     await user.click(within(cancelDialog).getByRole("button", { name: "Cancel" }));
-    expect(discardButton).toHaveFocus();
+    // The trigger genuinely unmounts while the confirmation is open
+    // (backlog item 50's in-place confirmation morph), so the button
+    // re-queried here is a freshly remounted DOM node, not the one captured
+    // before the click.
+    const restoredDiscardButton = screen.getByRole("button", {
+      name: "Discard unfinished ride",
+    });
+    expect(restoredDiscardButton).toHaveFocus();
     expect(await getActiveRideState()).toBeDefined();
 
     const clearSpy = vi
       .spyOn(rideStateRepository, "clearActiveRideState")
       .mockRejectedValueOnce(new Error("boom"));
-    await user.click(discardButton);
+    await user.click(restoredDiscardButton);
     const failDialog = await screen.findByRole("alertdialog");
     await user.click(
       within(failDialog).getByRole("button", { name: "Discard unfinished ride" }),

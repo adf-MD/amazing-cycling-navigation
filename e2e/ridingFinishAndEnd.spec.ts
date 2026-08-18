@@ -164,6 +164,29 @@ test("ends a ride, returns to the empty Ride launcher, and survives a reload wit
       "Navigation progress for this ride will be cleared. The saved route will remain in your library.",
     ),
   ).toBeVisible();
+
+  // .ride-end-ride-row is a persistent action-slot container (backlog item
+  // 50): it stays mounted and now contains the confirmation directly,
+  // rather than the confirmation being appended elsewhere on the page. The
+  // route heading and on-route status stay visible around it throughout.
+  const dialogInsideEndRideRow = await page.evaluate(() => {
+    const row = document.querySelector(".ride-end-ride-row");
+    const alertDialog = document.querySelector('[role="alertdialog"]');
+    return Boolean(row && alertDialog && row.contains(alertDialog));
+  });
+  expect(dialogInsideEndRideRow).toBe(true);
+  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+  await expect(page.getByText("On route")).toBeVisible();
+
+  // Cancel restores the trigger in the same slot, focused, with progress
+  // untouched.
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(endRideButton).toBeFocused();
+  expect(await readActiveRideStateRow(page)).not.toBeNull();
+
+  await endRideButton.click();
+  await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "End ride" }).click();
 
   // Empty Ride launcher — the route is no longer open, but remains saved
@@ -277,7 +300,12 @@ test("confirms route completion on a closed loop without snapping progress back 
 
   const finishButton = page.getByRole("button", { name: "Finish ride" });
   await expect(finishButton).toBeVisible();
+  // Finish ride stays confirmation-free and separate from End ride's own
+  // in-place morph (backlog item 50) — no alertdialog exists before the
+  // click, and clicking finalises directly with no confirmation appearing.
+  await expect(page.getByRole("alertdialog")).toBeHidden();
   await finishButton.click();
+  await expect(page.getByRole("alertdialog")).toBeHidden();
 
   await expect(page.getByRole("heading", { name: "Ride" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
@@ -386,4 +414,69 @@ test("conservatively confirms route completion only after consecutive fixes, and
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
+});
+
+test.describe("390px phone viewport", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("the End-ride confirmation replaces the trigger with no horizontal overflow, and both stay real ≥44×44px touch targets", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: ROUTE_LAT, longitude: ROUTE_START_LON });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+    await page.goto("/");
+    await page.getByLabel("Import GPX file").setInputFiles({
+      name: "finish-end-route.gpx",
+      mimeType: "application/gpx+xml",
+      buffer: Buffer.from(buildStraightRouteGpx()),
+    });
+
+    const routeName = "finish-end-route";
+    await page.getByRole("button", { name: routeName, exact: true }).click();
+    await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+
+    await page.getByRole("button", { name: "Start riding" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    await context.setGeolocation({ latitude: ROUTE_LAT, longitude: lonAtMetres(400) });
+    await expect(page.getByText("On route")).toBeVisible();
+
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(390);
+
+    const endRideButton = page.getByRole("button", { name: "End ride" });
+    await expect(endRideButton).toBeVisible();
+    const triggerBox = await endRideButton.boundingBox();
+    expect(triggerBox?.width ?? 0).toBeGreaterThanOrEqual(44);
+    expect(triggerBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+    await endRideButton.click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toBeVisible();
+
+    const dialogInsideEndRideRow = await page.evaluate(() => {
+      const row = document.querySelector(".ride-end-ride-row");
+      const alertDialog = document.querySelector('[role="alertdialog"]');
+      return Boolean(row && alertDialog && row.contains(alertDialog));
+    });
+    expect(dialogInsideEndRideRow).toBe(true);
+    const scrollWidthWithDialog = await page.evaluate(
+      () => document.documentElement.scrollWidth,
+    );
+    expect(scrollWidthWithDialog).toBeLessThanOrEqual(390);
+
+    const cancelButton = dialog.getByRole("button", { name: "Cancel" });
+    const cancelBox = await cancelButton.boundingBox();
+    expect(cancelBox?.width ?? 0).toBeGreaterThanOrEqual(44);
+    expect(cancelBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+    await cancelButton.click();
+    await expect(dialog).toBeHidden();
+    await expect(endRideButton).toBeFocused();
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  });
 });

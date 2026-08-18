@@ -832,12 +832,15 @@ test.describe("Riding: pre-ride climb chart layout", () => {
     await endRideRow.getByRole("button", { name: "End ride" }).click();
     const endRideDialog = page.getByRole("alertdialog");
     await expect(endRideDialog).toBeVisible();
-    const dialogFollowsEndRideRow = await page.evaluate(() => {
+    // .ride-end-ride-row stays mounted (a persistent action-slot container,
+    // backlog item 50) and now contains the confirmation directly, rather
+    // than the confirmation rendering as a separate sibling after it.
+    const dialogInsideEndRideRow = await page.evaluate(() => {
       const row = document.querySelector(".ride-end-ride-row");
       const alertDialog = document.querySelector('[role="alertdialog"]');
-      return row?.nextElementSibling === alertDialog;
+      return Boolean(row && alertDialog && row.contains(alertDialog));
     });
-    expect(dialogFollowsEndRideRow).toBe(true);
+    expect(dialogInsideEndRideRow).toBe(true);
 
     const scrollWidthWithDialogOpen = await page.evaluate(
       () => document.documentElement.scrollWidth,

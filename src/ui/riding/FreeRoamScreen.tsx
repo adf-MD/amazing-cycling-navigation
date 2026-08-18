@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { MapView } from "../../map/MapView.tsx";
 import type { MapFactory } from "../../map/mapAdapter.ts";
 import type { GeolocationError, GeolocationSource } from "../../platform/geolocation.ts";
@@ -152,6 +152,13 @@ export function FreeRoamScreen({
   // Synchronous guard against a rapid double End-ride submission, mirroring
   // RidingScreen.tsx's own isFinalizeActionPendingRef idiom.
   const isFinalizeActionPendingRef = useRef(false);
+  // The End-ride trigger unmounts/remounts as its confirmation opens/closes
+  // (item 50's in-place confirmation morph — see renderEndRideAction below),
+  // so Cancel/Escape and a failed finalisation both record a pending focus
+  // request here instead of calling .focus() directly — mirrors
+  // PlanningScreen.tsx's pendingClearDraftFocusRef and RidingScreen.tsx's
+  // identically-named ref exactly (items 49/50).
+  const pendingEndRideFocusRef = useRef(false);
 
   const performFinalizeRide = async () => {
     if (isFinalizeActionPendingRef.current) return;
@@ -178,19 +185,28 @@ export function FreeRoamScreen({
       logError("free-roam-end-ride", error);
       setFinalizeError("The ride could not be ended on this device. Try again.");
       setIsEndRideConfirmOpen(false);
-      // Focus restoration is handled by the effect below, not directly
-      // here — see RidingScreen.tsx's identical rationale: the trigger is
-      // still disabled in the DOM at this exact synchronous point.
+      // Restoring focus is deferred to the pending-ref effect below rather
+      // than called directly here — see RidingScreen.tsx's identical
+      // rationale: the trigger is still disabled/absent in the DOM at this
+      // exact synchronous point.
+      pendingEndRideFocusRef.current = true;
     } finally {
       isFinalizeActionPendingRef.current = false;
       setIsFinalizing(false);
     }
   };
 
+  // A no-deps effect re-checks pendingEndRideFocusRef's readiness (mounted
+  // AND enabled) on every render, rather than consuming the request
+  // unconditionally on the first post-set commit — mirrors
+  // PlanningScreen.tsx's pendingClearDraftFocusRef effect exactly.
   useEffect(() => {
-    if (!finalizeError) return;
-    endRideTriggerRef.current?.focus();
-  }, [finalizeError]);
+    if (!pendingEndRideFocusRef.current) return;
+    const trigger = endRideTriggerRef.current;
+    if (!trigger || trigger.disabled) return;
+    pendingEndRideFocusRef.current = false;
+    trigger.focus();
+  });
 
   const handleEndRideClick = () => {
     if (isEndRideConfirmOpen || isFinalizeActionPendingRef.current) return;
@@ -201,9 +217,52 @@ export function FreeRoamScreen({
   const handleEndRideCancel = () => {
     // Escape can bypass a disabled Cancel button, so guard here too.
     if (isFinalizeActionPendingRef.current) return;
+    pendingEndRideFocusRef.current = true;
     setIsEndRideConfirmOpen(false);
-    endRideTriggerRef.current?.focus();
   };
+
+  // Renders the End-ride action in place: either the trigger button (plus
+  // any error) or the confirmation itself, never both — backlog item 50's
+  // in-place confirmation morph, mirroring RidingScreen.tsx's own
+  // renderEndRideAction and PlanningScreen.tsx's Clear-draft treatment
+  // (item 49).
+  function renderEndRideAction(): ReactNode {
+    if (isEndRideConfirmOpen) {
+      return (
+        <ConfirmDialog
+          open={isEndRideConfirmOpen}
+          title="End this ride?"
+          message="Your free roam position and camera state will be cleared."
+          confirmLabel={isFinalizing ? "Ending ride…" : "End ride"}
+          cancelLabel="Cancel"
+          confirmDisabled={isFinalizing}
+          cancelDisabled={isFinalizing}
+          onConfirm={() => {
+            void performFinalizeRide();
+          }}
+          onCancel={handleEndRideCancel}
+        />
+      );
+    }
+    return (
+      <>
+        <button
+          type="button"
+          className="btn-danger"
+          ref={endRideTriggerRef}
+          onClick={handleEndRideClick}
+          disabled={isFinalizing}
+        >
+          End ride
+        </button>
+        {finalizeError ? (
+          <p className="field-error" role="alert">
+            {finalizeError}
+          </p>
+        ) : null}
+      </>
+    );
+  }
 
   return (
     <section className="screen" aria-label="Free roam">
@@ -225,36 +284,7 @@ export function FreeRoamScreen({
         </p>
       ) : null}
 
-      <div className="ride-end-ride-row">
-        <button
-          type="button"
-          className="btn-danger"
-          ref={endRideTriggerRef}
-          onClick={handleEndRideClick}
-          disabled={isFinalizing}
-        >
-          End ride
-        </button>
-        {finalizeError ? (
-          <p className="field-error" role="alert">
-            {finalizeError}
-          </p>
-        ) : null}
-      </div>
-
-      <ConfirmDialog
-        open={isEndRideConfirmOpen}
-        title="End this ride?"
-        message="Your free roam position and camera state will be cleared."
-        confirmLabel={isFinalizing ? "Ending ride…" : "End ride"}
-        cancelLabel="Cancel"
-        confirmDisabled={isFinalizing}
-        cancelDisabled={isFinalizing}
-        onConfirm={() => {
-          void performFinalizeRide();
-        }}
-        onCancel={handleEndRideCancel}
-      />
+      <div className="ride-end-ride-row">{renderEndRideAction()}</div>
 
       {nav.geolocationStatus === "error" && nav.geolocationError ? (
         <div role="alert" className="ride-alert-panel">

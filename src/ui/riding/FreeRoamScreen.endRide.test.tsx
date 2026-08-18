@@ -117,13 +117,56 @@ describe("FreeRoamScreen End ride", () => {
     await user.click(endRideButton);
     await user.click(await screen.findByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(endRideButton).toHaveFocus();
+    // The trigger genuinely unmounts while the confirmation is open
+    // (backlog item 50's in-place confirmation morph), so the button
+    // re-queried here is a freshly remounted DOM node, not the one captured
+    // before the click.
+    const restoredEndRideButton = screen.getByRole("button", { name: "End ride" });
+    expect(restoredEndRideButton).toHaveFocus();
     expect(await getActiveRideState()).toBeDefined();
 
-    await user.click(endRideButton);
+    await user.click(restoredEndRideButton);
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(endRideButton).toHaveFocus();
+    expect(screen.getByRole("button", { name: "End ride" })).toHaveFocus();
+  });
+
+  it("the alertdialog replaces the End-ride trigger inside its own action-row slot, with the heading, status and map staying mounted (backlog item 50)", async () => {
+    const user = userEvent.setup();
+    const fake = buildFakeGeolocationSource();
+    const { container } = render(
+      <FreeRoamScreen
+        geolocationSource={fake.source}
+        mapFactory={createMockMapFactory().factory}
+      />,
+    );
+    act(() => {
+      fake.watches[0]?.emitFix({
+        coordinate: [0, 51],
+        accuracyMetres: 8,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+    });
+
+    await user.click(await screen.findByRole("button", { name: "End ride" }));
+
+    // .ride-end-ride-row is a persistent action-slot container: it stays
+    // mounted and now contains the confirmation directly, rather than the
+    // confirmation being appended elsewhere on the page.
+    const endRideRow = container.querySelector(".ride-end-ride-row");
+    const dialog = await screen.findByRole("alertdialog");
+    expect(endRideRow).not.toBeNull();
+    expect(endRideRow?.contains(dialog)).toBe(true);
+    // The trigger never coexists with the confirmation.
+    expect(screen.getAllByRole("button", { name: "End ride" })).toEqual([
+      within(dialog).getByRole("button", { name: "End ride" }),
+    ]);
+    // Surrounding content stays visible and unaffected while the
+    // confirmation is open.
+    expect(screen.getByRole("heading", { name: "Free roam" })).toBeInTheDocument();
+    expect(screen.getByTestId("map-container")).toBeInTheDocument();
   });
 
   it("confirming End ride clears the persisted session and calls onRideFinalized only after storage is genuinely cleared", async () => {

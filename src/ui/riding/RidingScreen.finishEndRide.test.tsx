@@ -204,15 +204,99 @@ describe("RidingScreen Finish/End ride", () => {
 
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(endRideButton).toHaveFocus();
+    // The trigger genuinely unmounts while the confirmation is open
+    // (backlog item 50's in-place confirmation morph), so the button
+    // re-queried here is a freshly remounted DOM node, not the one captured
+    // before the click — mirrors PlanningScreen.clearDraft.test.tsx's own
+    // established precedent for the identical scenario.
+    const restoredEndRideButton = screen.getByRole("button", { name: "End ride" });
+    expect(restoredEndRideButton).toHaveFocus();
     expect(await getActiveRideState()).toBeDefined();
-    expect(screen.getByRole("button", { name: "End ride" })).toBeInTheDocument();
 
     // Escape behaves the same way.
-    await user.click(endRideButton);
+    await user.click(restoredEndRideButton);
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(endRideButton).toHaveFocus();
+    expect(screen.getByRole("button", { name: "End ride" })).toHaveFocus();
+  });
+
+  it("the active-tracking End-ride confirmation replaces the trigger in its own action-row slot, with route status and the map staying mounted (backlog item 50)", async () => {
+    const user = userEvent.setup();
+    const fake = buildFakeGeolocationSource();
+    const { container } = render(
+      <RidingScreen
+        route={route}
+        geolocationSource={fake.source}
+        mapFactory={createMockMapFactory().factory}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+    act(() => {
+      fake.watches[0]?.emitFix(midpointFix(1000));
+    });
+    await user.click(await screen.findByRole("button", { name: "End ride" }));
+
+    // .ride-end-ride-row is a persistent action-slot container: it stays
+    // mounted and now contains the confirmation directly, rather than the
+    // confirmation being appended elsewhere on the page.
+    const endRideRow = container.querySelector(".ride-end-ride-row");
+    const dialog = await screen.findByRole("alertdialog");
+    expect(endRideRow).not.toBeNull();
+    expect(endRideRow?.contains(dialog)).toBe(true);
+    // The trigger never coexists with the confirmation — the only
+    // "End ride"-named button left anywhere is the dialog's own confirm
+    // button.
+    expect(screen.getAllByRole("button", { name: "End ride" })).toEqual([
+      within(dialog).getByRole("button", { name: "End ride" }),
+    ]);
+    // Surrounding content stays visible and unaffected while the
+    // confirmation is open.
+    expect(screen.getByRole("heading", { name: route.name })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /No trusted turn information is available|Turn information is unavailable/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("map-container")).toBeInTheDocument();
+  });
+
+  it("the resumable pre-ride End-ride confirmation replaces the trigger in its own panel position, with Resume riding and Edit copy staying visible (backlog item 50)", async () => {
+    await setActiveRideState({
+      id: "active",
+      routeId: route.id,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: { coordinate: MIDPOINT_COORDINATE, accuracyMetres: 6, timestampMs: 1000 },
+      lastMatchedPointIndex: 10,
+      matchedDistanceFromStartMetres: route.distanceMetres / 2,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+    });
+    const user = userEvent.setup();
+    const { container } = render(
+      <RidingScreen
+        route={route}
+        geolocationSource={buildFakeGeolocationSource().source}
+        mapFactory={createMockMapFactory().factory}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "End ride" }));
+
+    // The resumable pre-ride panel's own action-slot wrapper — distinct
+    // from .ride-end-ride-row (the active-tracking one), preserving the
+    // existing assertion elsewhere that .ride-end-ride-row stays absent in
+    // this idle/resumable state.
+    const panelRow = container.querySelector(".ride-end-ride-panel-row");
+    const dialog = await screen.findByRole("alertdialog");
+    expect(panelRow).not.toBeNull();
+    expect(panelRow?.contains(dialog)).toBe(true);
+    expect(container.querySelector(".ride-end-ride-row")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "End ride" })).toEqual([
+      within(dialog).getByRole("button", { name: "End ride" }),
+    ]);
+    // The rest of the pre-ride panel stays visible and unaffected.
+    expect(screen.getByRole("button", { name: "Resume riding" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit copy" })).toBeInTheDocument();
   });
 
   it("confirming End ride clears storage once and returns to Start riding for the same route", async () => {
@@ -389,7 +473,13 @@ describe("RidingScreen Finish/End ride", () => {
     act(() => {
       fake.watches[0]?.emitFix(nearEndFix(3000));
     });
+    // Finish ride stays confirmation-free and separate from End ride's own
+    // in-place morph (backlog item 50) — no alertdialog exists at all
+    // before the click, and clicking Finish ride finalises directly with
+    // no confirmation ever appearing.
+    expect(screen.queryByRole("alertdialog")).toBeNull();
     await user.click(await screen.findByRole("button", { name: "Finish ride" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
 
     await waitFor(async () => {
       expect(await getActiveRideState()).toBeUndefined();
@@ -613,7 +703,11 @@ describe("RidingScreen onRideFinalized", () => {
       }),
     );
 
-    await user.click(endRideButton);
+    // The trigger genuinely unmounts while the confirmation is open
+    // (backlog item 50's in-place confirmation morph), so re-query it here
+    // rather than reusing the reference captured before the first click —
+    // a click on the earlier, now-detached node would silently no-op.
+    await user.click(screen.getByRole("button", { name: "End ride" }));
     await user.keyboard("{Escape}");
 
     expect(onRideFinalized).not.toHaveBeenCalled();

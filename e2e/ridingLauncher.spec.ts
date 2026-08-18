@@ -181,13 +181,37 @@ test("the launcher can end an unfinished ride directly, without ever resuming GP
 
   // Never clicking "Resume route" — the launcher's own End ride must work
   // directly on the unresumed session.
-  await expect(page.getByRole("button", { name: "Resume route" })).toBeVisible();
+  const resumeButton = page.getByRole("button", { name: "Resume route" });
+  await expect(resumeButton).toBeVisible();
   const endRideButton = page.getByRole("button", { name: "End ride" });
   await expect(endRideButton).toBeVisible();
   await endRideButton.click();
 
   const dialog = page.getByRole("alertdialog");
   await expect(dialog.getByText("End this ride?")).toBeVisible();
+
+  // .ride-launcher-clear-row is a persistent action-slot container
+  // (backlog item 50): it stays mounted and now contains the confirmation
+  // directly, rather than the confirmation being appended elsewhere on the
+  // page. Resume route and the route's own info stay visible around it.
+  const dialogInsideClearRow = await page.evaluate(() => {
+    const row = document.querySelector(".ride-launcher-clear-row");
+    const alertDialog = document.querySelector('[role="alertdialog"]');
+    return Boolean(row && alertDialog && row.contains(alertDialog));
+  });
+  expect(dialogInsideClearRow).toBe(true);
+  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+  await expect(resumeButton).toBeVisible();
+
+  // Cancel restores the trigger in the same slot, focused, with the row
+  // untouched.
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(endRideButton).toBeFocused();
+  expect(await readActiveRideStateRow(page)).not.toBeNull();
+
+  await endRideButton.click();
+  await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "End ride" }).click();
 
   await waitForClearedRideState(page);
@@ -242,9 +266,28 @@ test("a session whose route has been deleted offers only a confirmed Discard, dr
   await discardButton.click();
   const cancelDialog = page.getByRole("alertdialog");
   await expect(cancelDialog.getByText("Discard unfinished ride?")).toBeVisible();
+
+  // .ride-launcher-clear-row is a persistent action-slot container
+  // (backlog item 50): it stays mounted and now contains the confirmation
+  // directly, rather than the confirmation being appended elsewhere on the
+  // page. The explanation for why this session can't be resumed stays
+  // visible around it.
+  const dialogInsideClearRow = await page.evaluate(() => {
+    const row = document.querySelector(".ride-launcher-clear-row");
+    const alertDialog = document.querySelector('[role="alertdialog"]');
+    return Boolean(row && alertDialog && row.contains(alertDialog));
+  });
+  expect(dialogInsideClearRow).toBe(true);
+  await expect(
+    page.getByText(
+      "This unfinished ride refers to a route that's no longer in your library, so it can't be resumed.",
+    ),
+  ).toBeVisible();
+
   await cancelDialog.getByRole("button", { name: "Cancel" }).click();
   expect(await readActiveRideStateRow(page)).not.toBeNull();
   await expect(discardButton).toBeVisible();
+  await expect(discardButton).toBeFocused();
 
   await discardButton.click();
   const confirmDialog = page.getByRole("alertdialog");

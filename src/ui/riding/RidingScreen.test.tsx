@@ -1340,7 +1340,7 @@ describe("RidingScreen", () => {
       expect((endRideRow?.compareDocumentPosition(mapContainer) ?? 0) & 4).toBe(4);
     });
 
-    it("renders the opened End-ride confirmation immediately after the top action row", async () => {
+    it("renders the opened End-ride confirmation in place, inside the same action row, replacing the trigger (backlog item 50)", async () => {
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
       const { container } = render(
@@ -1354,9 +1354,18 @@ describe("RidingScreen", () => {
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       await user.click(await screen.findByRole("button", { name: "End ride" }));
 
+      // .ride-end-ride-row stays mounted (a persistent action-slot
+      // container, item 50) and now contains the dialog directly, rather
+      // than the dialog rendering as a separate sibling after it.
       const endRideRow = container.querySelector(".ride-end-ride-row");
       const dialog = await screen.findByRole("alertdialog");
-      expect(endRideRow?.nextElementSibling).toBe(dialog);
+      expect(endRideRow?.contains(dialog)).toBe(true);
+      // The original trigger no longer coexists with the confirmation — the
+      // only "End ride"-named button left anywhere is the dialog's own
+      // confirm button (whose label happens to match the trigger's).
+      expect(screen.getAllByRole("button", { name: "End ride" })).toEqual([
+        within(dialog).getByRole("button", { name: "End ride" }),
+      ]);
     });
 
     it("shows no End-ride action in a clean pre-ride state", () => {

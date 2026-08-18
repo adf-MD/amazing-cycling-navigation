@@ -200,12 +200,34 @@ test("End ride from the active screen clears the row and returns to the empty la
   await startFreeRoam(page, context);
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-  await page.getByRole("button", { name: "End ride" }).click();
+  const endRideButton = page.getByRole("button", { name: "End ride" });
+  await endRideButton.click();
   const dialog = page.getByRole("alertdialog");
   await expect(
     dialog.getByText("Your free roam position and camera state will be cleared."),
   ).toBeVisible();
-  await dialog.getByRole("button", { name: "End ride" }).click();
+
+  // .ride-end-ride-row is a persistent action-slot container (backlog item
+  // 50): it stays mounted and now contains the confirmation directly,
+  // rather than the confirmation being appended elsewhere on the page. The
+  // heading/status/map stay visible around it throughout.
+  const dialogInsideEndRideRow = await page.evaluate(() => {
+    const row = document.querySelector(".ride-end-ride-row");
+    const alertDialog = document.querySelector('[role="alertdialog"]');
+    return Boolean(row && alertDialog && row.contains(alertDialog));
+  });
+  expect(dialogInsideEndRideRow).toBe(true);
+  await expect(page.getByRole("heading", { level: 1, name: "Free roam" })).toBeVisible();
+  await expect(page.getByTestId("map-container")).toBeVisible();
+
+  // Cancel restores the trigger in the same slot, focused.
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(endRideButton).toBeFocused();
+
+  await endRideButton.click();
+  await expect(page.getByRole("alertdialog")).toBeVisible();
+  await page.getByRole("alertdialog").getByRole("button", { name: "End ride" }).click();
 
   await waitForClearedRideState(page);
   await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
@@ -228,10 +250,25 @@ test("End ride from the unresumed launcher works directly, without ever resuming
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
   await page.getByRole("button", { name: "Ride", exact: true }).click();
 
-  await expect(page.getByRole("button", { name: "Resume free roam" })).toBeVisible();
+  const resumeButton = page.getByRole("button", { name: "Resume free roam" });
+  await expect(resumeButton).toBeVisible();
   const endRideButton = page.getByRole("button", { name: "End ride" });
   await endRideButton.click();
   const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+
+  // .ride-launcher-clear-row is a persistent action-slot container
+  // (backlog item 50): it stays mounted and now contains the confirmation
+  // directly. Resume free roam and its own panel context stay visible
+  // around it, unaffected.
+  const dialogInsideClearRow = await page.evaluate(() => {
+    const row = document.querySelector(".ride-launcher-clear-row");
+    const alertDialog = document.querySelector('[role="alertdialog"]');
+    return Boolean(row && alertDialog && row.contains(alertDialog));
+  });
+  expect(dialogInsideClearRow).toBe(true);
+  await expect(resumeButton).toBeVisible();
+
   await dialog.getByRole("button", { name: "End ride" }).click();
 
   await waitForClearedRideState(page);
@@ -352,6 +389,15 @@ test.describe("390px phone viewport", () => {
       () => document.documentElement.scrollWidth,
     );
     expect(scrollWidthWithDialog).toBeLessThanOrEqual(390);
+
+    // Cancel restores the trigger in the same slot, still a real ≥44×44px
+    // touch target, focused.
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(endRideButton).toBeFocused();
+    const restoredBox = await endRideButton.boundingBox();
+    expect(restoredBox?.width ?? 0).toBeGreaterThanOrEqual(44);
+    expect(restoredBox?.height ?? 0).toBeGreaterThanOrEqual(44);
 
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
   });
