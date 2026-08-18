@@ -5,7 +5,11 @@ import { RidingScreen } from "./RidingScreen.tsx";
 import { db } from "../../storage/db.ts";
 import * as planningDraftRepository from "../../storage/planningDraftRepository.ts";
 import { getDraft, saveDraft } from "../../storage/planningDraftRepository.ts";
-import { setActiveRideState } from "../../storage/rideStateRepository.ts";
+import {
+  getActiveRideState,
+  setActiveRideState,
+} from "../../storage/rideStateRepository.ts";
+import * as rideStateRepository from "../../storage/rideStateRepository.ts";
 import type {
   GeolocationError,
   GeolocationFix,
@@ -1409,6 +1413,221 @@ describe("RidingScreen", () => {
       // A resumable-but-still-idle state must not also render the separate
       // active-tracking End-ride row this slice introduced.
       expect(container.querySelector(".ride-end-ride-row")).toBeNull();
+    });
+  });
+
+  describe("Back to Ride options (item 51)", () => {
+    async function seedResumableRideState() {
+      await setActiveRideState({
+        id: "active",
+        routeId: route.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: pointAt(0), accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 0,
+        matchedDistanceFromStartMetres: 0,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+      });
+    }
+
+    it("renders directly after Start riding and before Edit copy, in a clean pre-ride state", () => {
+      const { container } = render(
+        <RidingScreen
+          route={route}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      const startButton = screen.getByRole("button", { name: "Start riding" });
+      const backButton = screen.getByRole("button", { name: "Back to Ride options" });
+      const editCopyButton = screen.getByRole("button", { name: "Edit copy" });
+
+      expect(backButton).toHaveClass("btn-secondary");
+      expect(container.querySelector(".ride-start-panel")?.contains(backButton)).toBe(
+        true,
+      );
+      // DOCUMENT_POSITION_FOLLOWING (4).
+      expect(startButton.compareDocumentPosition(backButton) & 4).toBe(4);
+      expect(backButton.compareDocumentPosition(editCopyButton) & 4).toBe(4);
+    });
+
+    it("also renders in a resumable pre-ride state, still directly after Resume riding and before Edit copy", async () => {
+      await seedResumableRideState();
+      const { container } = render(
+        <RidingScreen
+          route={route}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      const resumeButton = await screen.findByRole("button", { name: "Resume riding" });
+      const backButton = screen.getByRole("button", { name: "Back to Ride options" });
+      const editCopyButton = screen.getByRole("button", { name: "Edit copy" });
+
+      expect(container.querySelector(".ride-start-panel")?.contains(backButton)).toBe(
+        true,
+      );
+      expect(
+        container.querySelector(".ride-end-ride-panel-row")?.contains(backButton),
+      ).toBe(false);
+      // DOCUMENT_POSITION_FOLLOWING (4).
+      expect(resumeButton.compareDocumentPosition(backButton) & 4).toBe(4);
+      expect(backButton.compareDocumentPosition(editCopyButton) & 4).toBe(4);
+    });
+
+    it("is absent once the GPS watch has genuinely started", async () => {
+      const user = userEvent.setup();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      await screen.findByRole("button", { name: "End ride" });
+
+      expect(screen.queryByRole("button", { name: "Back to Ride options" })).toBeNull();
+    });
+
+    it("remains absent through a transient GPS error mid-ride", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      await screen.findByRole("button", { name: "End ride" });
+      stub.emitError({ reason: "position-unavailable", message: "unavailable" });
+
+      expect(await screen.findByRole("alert")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Back to Ride options" })).toBeNull();
+    });
+
+    it("clicking it in a clean pre-ride state calls onReturnToRideLauncher, with no geolocation watch, no camera change, and no onRideFinalized call", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const mapStub = buildStubMapFactory();
+      const onReturnToRideLauncher = vi.fn();
+      const onRideFinalized = vi.fn();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={mapStub.factory}
+          onReturnToRideLauncher={onReturnToRideLauncher}
+          onRideFinalized={onRideFinalized}
+        />,
+      );
+
+      const setCameraCallsBefore = mapStub.setCameraSpy.mock.calls.length;
+      const fitBoundsCallsBefore = mapStub.fitBoundsSpy.mock.calls.length;
+
+      await user.click(screen.getByRole("button", { name: "Back to Ride options" }));
+
+      expect(onReturnToRideLauncher).toHaveBeenCalledTimes(1);
+      expect(stub.watchPositionSpy).not.toHaveBeenCalled();
+      expect(onRideFinalized).not.toHaveBeenCalled();
+      expect(mapStub.setCameraSpy.mock.calls.length).toBe(setCameraCallsBefore);
+      expect(mapStub.fitBoundsSpy.mock.calls.length).toBe(fitBoundsCallsBefore);
+    });
+
+    it("clicking it in a resumable pre-ride state calls onReturnToRideLauncher, with no geolocation watch, no camera change, and no onRideFinalized call", async () => {
+      await seedResumableRideState();
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const mapStub = buildStubMapFactory();
+      const onReturnToRideLauncher = vi.fn();
+      const onRideFinalized = vi.fn();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={mapStub.factory}
+          onReturnToRideLauncher={onReturnToRideLauncher}
+          onRideFinalized={onRideFinalized}
+        />,
+      );
+
+      await screen.findByRole("button", { name: "Resume riding" });
+      const setCameraCallsBefore = mapStub.setCameraSpy.mock.calls.length;
+      const fitBoundsCallsBefore = mapStub.fitBoundsSpy.mock.calls.length;
+
+      await user.click(screen.getByRole("button", { name: "Back to Ride options" }));
+
+      expect(onReturnToRideLauncher).toHaveBeenCalledTimes(1);
+      expect(stub.watchPositionSpy).not.toHaveBeenCalled();
+      expect(onRideFinalized).not.toHaveBeenCalled();
+      expect(mapStub.setCameraSpy.mock.calls.length).toBe(setCameraCallsBefore);
+      expect(mapStub.fitBoundsSpy.mock.calls.length).toBe(fitBoundsCallsBefore);
+    });
+
+    it("does not touch persisted storage — a still-unfinished route rideState row is unchanged after clicking it", async () => {
+      await seedResumableRideState();
+      const user = userEvent.setup();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      // Merely mounting RidingScreen on an existing resumable row already
+      // normalises/expands its stored fields (camera, wake-lock, elevation
+      // view, etc.) via useRideNavigation's own mount-time hydration —
+      // unrelated to this action and out of scope here. Snapshot once that
+      // settles (findByRole flushes React's effects), so this test proves
+      // only that clicking the button itself causes no further write.
+      await screen.findByRole("button", { name: "Resume riding" });
+      const settledState = await getActiveRideState();
+
+      await user.click(screen.getByRole("button", { name: "Back to Ride options" }));
+
+      expect(await getActiveRideState()).toEqual(settledState);
+    });
+
+    it("disables Back to Ride options while an End-ride finalize is genuinely in flight, and re-enables it once that finalize fails", async () => {
+      await seedResumableRideState();
+      let rejectClear: ((reason?: unknown) => void) | undefined;
+      const clearSpy = vi
+        .spyOn(rideStateRepository, "clearActiveRideState")
+        .mockReturnValue(
+          new Promise((_resolve, reject) => {
+            rejectClear = reject;
+          }),
+        );
+      const user = userEvent.setup();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await screen.findByRole("button", { name: "Resume riding" });
+      const backButton = screen.getByRole("button", { name: "Back to Ride options" });
+      expect(backButton).toBeEnabled();
+
+      await user.click(screen.getByRole("button", { name: "End ride" }));
+      const dialog = await screen.findByRole("alertdialog");
+      await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+
+      expect(backButton).toBeDisabled();
+
+      rejectClear?.(new Error("boom"));
+      await screen.findByRole("alert");
+
+      expect(backButton).toBeEnabled();
+      clearSpy.mockRestore();
     });
   });
 

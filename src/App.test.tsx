@@ -484,6 +484,102 @@ describe("App — Ride launcher session recovery", () => {
   });
 });
 
+describe("App — Back to Ride options (item 51)", () => {
+  beforeEach(async () => {
+    await db.routes.clear();
+    await db.rideState.clear();
+    await db.routeLibraryPreferences.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  function stubGeolocationWatch() {
+    const watchPositionSpy = vi.fn();
+    // Preserve navigator.onLine (read explicitly, as a primitive, rather
+    // than spreading the Navigator instance — which would both lose its
+    // prototype and, since onLine is typically an inherited accessor
+    // rather than an own property, likely not even carry the value across)
+    // so RidingScreen's offline banner (useOnlineStatus) isn't perturbed as
+    // a side effect of stubbing geolocation.watchPosition.
+    vi.stubGlobal("navigator", {
+      onLine: navigator.onLine,
+      geolocation: { watchPosition: watchPositionSpy, getCurrentPosition: vi.fn() },
+    });
+    return watchPositionSpy;
+  }
+
+  it("returns a clean pre-ride route screen to the empty Ride launcher, without starting geolocation or touching storage", async () => {
+    const user = userEvent.setup();
+    const scrollToSpy = installScrollToSpy();
+    const watchPositionSpy = stubGeolocationWatch();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    await user.click(screen.getByRole("button", { name: "Route A" }));
+
+    expect(screen.getByRole("heading", { name: "Route A" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
+
+    const scrollCallsBeforeReturn = scrollToSpy.mock.calls.length;
+    await user.click(screen.getByRole("button", { name: "Back to Ride options" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Choose a route" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Route A" })).toBeNull();
+    expect(watchPositionSpy).not.toHaveBeenCalled();
+    expect(scrollToSpy.mock.calls.length).toBeGreaterThan(scrollCallsBeforeReturn);
+    expect(await getActiveRideState()).toBeUndefined();
+    expect(await db.routes.count()).toBe(1);
+  });
+
+  it("returns a resumed (still-idle) route screen to the launcher, leaving the persisted session exactly as it was", async () => {
+    const user = userEvent.setup();
+    const watchPositionSpy = stubGeolocationWatch();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    const [importedRoute] = await db.routes.toArray();
+    if (!importedRoute) throw new Error("expected an imported route");
+
+    await setActiveRideState({
+      id: "active",
+      routeId: importedRoute.id,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: { coordinate: [0, 51], accuracyMetres: 6, timestampMs: 1000 },
+      lastMatchedPointIndex: 0,
+      matchedDistanceFromStartMetres: 0,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+    await user.click(await screen.findByRole("button", { name: "Resume route" }));
+
+    // Mounting RidingScreen on an existing resumable row already normalises/
+    // expands its stored fields (camera, wake-lock, elevation view, etc.)
+    // via useRideNavigation's own mount-time hydration — unrelated to this
+    // action. Snapshot once that settles, so this test proves only that
+    // returning to the launcher itself causes no further write.
+    expect(
+      await screen.findByRole("button", { name: "Resume riding" }),
+    ).toBeInTheDocument();
+    const settledState = await getActiveRideState();
+
+    await user.click(screen.getByRole("button", { name: "Back to Ride options" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Resume route" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "End ride" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resume riding" })).toBeNull();
+    expect(watchPositionSpy).not.toHaveBeenCalled();
+    expect(await getActiveRideState()).toEqual(settledState);
+  });
+});
+
 describe("App — Free roam", () => {
   beforeEach(async () => {
     await db.routes.clear();

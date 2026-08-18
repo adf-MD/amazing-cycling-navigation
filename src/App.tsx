@@ -126,17 +126,57 @@ function App({ mapFactory }: AppProps) {
     notifyNewRideContent();
   };
 
+  // Shared two-line body behind every non-finalising reset back to the
+  // empty/resumable Ride launcher while staying on screen === "riding":
+  // resets the in-memory ridingContent pointer to "none" and notifies
+  // useResetScrollForNewRideContent so the view scrolls back to the top,
+  // exactly as opening any other new Ride content already does. Used by
+  // handleRideFinalized (only once that caller's own persisted-storage
+  // clear has already resolved) and handleReturnToRideLauncher (which
+  // never touches storage at all) — see backlog item 51. Deliberately NOT
+  // used by handleNavigate's own free-roam-specific reset below: that path
+  // is leaving the "riding" screen entirely (a different, deliberately
+  // silent scroll contract — see its own comment) and also clears
+  // blockedRouteOpenReason, neither of which belongs in this helper.
+  const resetRidingContentToLauncher = () => {
+    setRidingContent(NONE_RIDING_CONTENT);
+    notifyNewRideContent();
+  };
+
   // The sole success-path integration point from RidingScreen's/
   // FreeRoamScreen's shared End ride/Finish ride finalisation lifecycle.
   // Called only once the underlying navigation hook's finish() has already
   // cleared the persisted active-ride row and the screen's own runtime
-  // cleanup has already applied. Clearing ridingContent here (never
-  // elsewhere) is what actually unmounts the active screen and mounts the
-  // empty Ride launcher in its place; screen deliberately stays "riding"
-  // throughout.
+  // cleanup has already applied. ridingContent can now be reset to "none"
+  // by three distinct paths — this one (post-finalisation), handleNavigate's
+  // free-roam-specific nav-away reset, and handleReturnToRideLauncher below
+  // (backlog item 51's explicit, pre-ride-only, non-destructive action) —
+  // but this remains the ONLY one of the three that follows a persisted-
+  // storage clear; the other two reset only this in-memory pointer while a
+  // still-unfinished session's storage row is left completely untouched, so
+  // the Ride launcher's own re-hydration keeps reflecting it correctly.
+  // Delegates its body to resetRidingContentToLauncher, shared with
+  // handleReturnToRideLauncher, rather than duplicating it. Clearing
+  // ridingContent here is what actually unmounts the active screen and
+  // shows the empty Ride launcher in its place; screen deliberately stays
+  // "riding" throughout.
   const handleRideFinalized = () => {
-    setRidingContent(NONE_RIDING_CONTENT);
-    notifyNewRideContent();
+    resetRidingContentToLauncher();
+  };
+
+  // Fired by RidingScreen's pre-ride-only "Back to Ride options" action
+  // (backlog item 51) — a synchronous, non-destructive reset: performs no
+  // persisted mutation of any kind, and never starts or stops geolocation,
+  // camera, or wake-lock state. Delegates to the same
+  // resetRidingContentToLauncher helper handleRideFinalized uses, since the
+  // in-memory effect is identical (drop back to whatever the Ride launcher
+  // state storage actually reflects); the two differ only in whether a
+  // persisted-storage clear preceded the call, which is entirely
+  // RidingScreen's own concern. Not wired to FreeRoamScreen — out of scope
+  // for item 51, which is pre-ride-panel-only and FreeRoamScreen has no
+  // idle panel to place an equivalent action in.
+  const handleReturnToRideLauncher = () => {
+    resetRidingContentToLauncher();
   };
 
   const handleNavigateToSettings = () => {
@@ -223,6 +263,7 @@ function App({ mapFactory }: AppProps) {
               onRidingActiveChange={setIsRidingActive}
               onNavigateToPlanning={handleNavigateToPlanning}
               onRideFinalized={handleRideFinalized}
+              onReturnToRideLauncher={handleReturnToRideLauncher}
             />
           ) : ridingContent.kind === "free-roam" ? (
             <FreeRoamScreen

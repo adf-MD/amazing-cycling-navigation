@@ -52,6 +52,41 @@ ${points}
 </gpx>`;
 }
 
+/** Transparently wraps navigator.geolocation.watchPosition with a call
+ * counter exposed on window, before any app script runs — must be
+ * registered before the navigation whose behaviour is under test (a
+ * page.goto or page.reload), since addInitScript only applies to
+ * navigations that occur after registration. Delegates to the real
+ * implementation unchanged, so context.setGeolocation-driven fixes still
+ * work elsewhere in a test; only counts invocations. Kept file-local per
+ * this repo's established no-shared-e2e-helpers convention (see this
+ * file's own other local helpers) — the first consumer of this need. */
+async function installGeolocationWatchCounter(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const geolocation = navigator.geolocation;
+    const original = geolocation.watchPosition.bind(geolocation);
+    (
+      window as unknown as { __e2eWatchPositionCallCount: number }
+    ).__e2eWatchPositionCallCount = 0;
+    geolocation.watchPosition = (
+      ...args: Parameters<typeof geolocation.watchPosition>
+    ) => {
+      (
+        window as unknown as { __e2eWatchPositionCallCount: number }
+      ).__e2eWatchPositionCallCount += 1;
+      return original(...args);
+    };
+  });
+}
+
+async function readWatchPositionCallCount(page: Page): Promise<number> {
+  return page.evaluate(
+    () =>
+      (window as unknown as { __e2eWatchPositionCallCount?: number })
+        .__e2eWatchPositionCallCount ?? 0,
+  );
+}
+
 /** Imports the fixture route, opens it, starts riding and advances the fix
  * partway along the route so a real, persisted rideState row exists —
  * shared setup for all three tests below. Leaves the rider on the active
@@ -220,6 +255,161 @@ test("the launcher can end an unfinished ride directly, without ever resuming GP
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
+});
+
+// Proves backlog item 51 (pre-ride return to the Ride launcher): a new
+// "Back to Ride options" action on RidingScreen's own idle/pre-ride panel
+// returns to the launcher without ending/finishing the ride, without ever
+// starting a geolocation watch, and without touching persisted storage.
+
+test("Back to Ride options returns a clean pre-ride route screen to the empty launcher, without ever starting a geolocation watch", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: ROUTE_LAT, longitude: ROUTE_START_LON });
+  await installGeolocationWatchCounter(page);
+
+  const routeName = "ride-launcher-back-to-options-clean";
+  await page.goto("/");
+  await page.getByLabel("Import GPX file").setInputFiles({
+    name: `${routeName}.gpx`,
+    mimeType: "application/gpx+xml",
+    buffer: Buffer.from(buildStraightRouteGpx()),
+  });
+  await page.getByRole("button", { name: routeName, exact: true }).click();
+  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start riding" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Back to Ride options" }).click();
+
+  await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: routeName })).toBeHidden();
+  expect(await readActiveRideStateRow(page)).toBeNull();
+  expect(await readSavedRouteId(page, routeName)).not.toBeNull();
+  expect(await readWatchPositionCallCount(page)).toBe(0);
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("Back to Ride options returns a resumed (still-idle) route screen to the launcher, leaving the persisted session exactly intact", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  const routeName = "ride-launcher-back-to-options-resumed";
+  await establishUnfinishedRide(page, context, routeName);
+
+  await installGeolocationWatchCounter(page);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Ride", exact: true }).click();
+  await page.getByRole("button", { name: "Resume route" }).click();
+  await expect(page.getByRole("button", { name: "Resume riding" })).toBeVisible();
+  expect(await readWatchPositionCallCount(page)).toBe(0);
+
+  // Mounting the resumed pre-ride screen already normalises/expands the
+  // stored row's fields (e.g. cameraMode reverts from establishUnfinishedRide's
+  // own "following", left over from actively riding, to "overview") via
+  // useRideNavigation's own mount-time hydration — unrelated to this
+  // action. Snapshot once that's settled, so this test proves only that
+  // returning to the launcher itself causes no further write.
+  const settledRow = await readActiveRideStateRow(page);
+
+  await page.getByRole("button", { name: "Back to Ride options" }).click();
+
+  await expect(page.getByRole("button", { name: "Resume route" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resume riding" })).toBeHidden();
+  expect(await readWatchPositionCallCount(page)).toBe(0);
+  expect(await readActiveRideStateRow(page)).toEqual(settledRow);
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test.describe("390px phone viewport", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("Back to Ride options has no horizontal overflow and a real >=44x44px touch target, in a clean and a resumable pre-ride state", async ({
+    page,
+    context,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: ROUTE_LAT, longitude: ROUTE_START_LON });
+
+    const routeName = "ride-launcher-back-to-options-viewport";
+    await page.goto("/");
+    await page.getByLabel("Import GPX file").setInputFiles({
+      name: `${routeName}.gpx`,
+      mimeType: "application/gpx+xml",
+      buffer: Buffer.from(buildStraightRouteGpx()),
+    });
+    await page.getByRole("button", { name: routeName, exact: true }).click();
+    await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(390);
+    const cleanBox = await page
+      .getByRole("button", { name: "Back to Ride options" })
+      .boundingBox();
+    expect(cleanBox?.width ?? 0).toBeGreaterThanOrEqual(44);
+    expect(cleanBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+    await page.getByRole("button", { name: "Start riding" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    await context.setGeolocation({ latitude: ROUTE_LAT, longitude: lonAtMetres(400) });
+    await expect(page.getByText("On route")).toBeVisible();
+    const routeId = await readSavedRouteId(page, routeName);
+    await expect
+      .poll(() => readActiveRideStateRow(page), { timeout: 10_000 })
+      .toMatchObject({ kind: "route", routeId });
+
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+    await page.getByRole("button", { name: "Ride", exact: true }).click();
+    await page.getByRole("button", { name: "Resume route" }).click();
+    await expect(page.getByRole("button", { name: "Resume riding" })).toBeVisible();
+
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(390);
+    const resumableBox = await page
+      .getByRole("button", { name: "Back to Ride options" })
+      .boundingBox();
+    expect(resumableBox?.width ?? 0).toBeGreaterThanOrEqual(44);
+    expect(resumableBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
 });
 
 test("a session whose route has been deleted offers only a confirmed Discard, driven entirely through real UI", async ({

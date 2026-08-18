@@ -92,6 +92,24 @@ export interface RidingScreenProps {
    * already fully succeeded by this point, so a bug in the caller's own
    * handler must never be reported as a finalisation failure. */
   onRideFinalized?: () => void;
+  /** Called when the rider taps the pre-ride-only "Back to Ride options"
+   * action (backlog item 51) — a synchronous, non-destructive reset with
+   * no confirmation, no persisted-storage write, and no geolocation/
+   * camera/wake-lock side effect of any kind. Only ever rendered while
+   * nav.geolocationStatus === "idle" (this screen's own idle/pre-ride
+   * panel), for both a clean and a resumable pre-ride state alike; never
+   * once GPS tracking has genuinely started — watching/error already have
+   * their own separate End-ride lifecycle instead. Disabled while
+   * activeFinalizeSource !== null, to avoid unmounting this screen while
+   * an End-ride finalize it started moments earlier is still writing to
+   * storage (see this prop's own render-site comment for the exact race).
+   * App.tsx is the only current caller; it resets its own in-memory
+   * ridingContent pointer to "none" in response, which is what actually
+   * unmounts this screen and shows the Ride launcher in its place —
+   * mirrors onRideFinalized's "caller decides what to do with the
+   * notification" shape, but never touches persisted rideState the way a
+   * completed End/Finish ride does. */
+  onReturnToRideLauncher?: () => void;
 }
 
 const DEFAULT_CAMERA_STATE: StoredCameraState = {
@@ -147,6 +165,7 @@ export function RidingScreen({
   onRidingActiveChange,
   onNavigateToPlanning,
   onRideFinalized,
+  onReturnToRideLauncher,
 }: RidingScreenProps) {
   // Bridges useRideCamera's current camera state into useRideNavigation's
   // persistence. Both hooks are called in this same render, and
@@ -784,6 +803,16 @@ export function RidingScreen({
             onClick={handleStart}
           >
             {nav.currentFix ? "Resume riding" : "Start riding"}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              onReturnToRideLauncher?.();
+            }}
+            disabled={activeFinalizeSource !== null}
+          >
+            Back to Ride options
           </button>
           <button
             type="button"
