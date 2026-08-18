@@ -16,6 +16,7 @@ import {
   type PlanningOverlay,
   type RouteFeatureOverlay,
   type WarningOverlay,
+  type ZoomCameraTarget,
 } from "../../map/MapView.tsx";
 import type { MapFactory } from "../../map/mapAdapter.ts";
 import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
@@ -123,6 +124,13 @@ const NORTH_UP_BEARING_TOLERANCE_DEGREES = 0.5;
 /** See NORTH_UP_BEARING_TOLERANCE_DEGREES. Pitch never wraps, so a plain
  * absolute-value comparison is sufficient here. */
 const NORTH_UP_PITCH_TOLERANCE_DEGREES = 0.5;
+
+/** The zoom-level delta a single Zoom in/out button press applies (see
+ * handleZoomIn/handleZoomOut below) — MapLibre's own already-established
+ * single-level step (mapAdapter.ts's changeZoomBy simply adds this to the
+ * map's current zoom and lets MapLibre clamp the result to the style's
+ * valid range), never a separate configurable product setting. */
+const PLANNING_ZOOM_STEP = 1;
 
 function buildDefaultAdapter(): RoutingProvider {
   return new OpenRouteServiceAdapter({
@@ -362,6 +370,7 @@ export function PlanningScreen({
   const [centreTarget, setCentreTarget] = useState<CentreCameraTarget | null>(null);
   const [orientNorthTarget, setOrientNorthTarget] =
     useState<OrientNorthCameraTarget | null>(null);
+  const [zoomTarget, setZoomTarget] = useState<ZoomCameraTarget | null>(null);
   // Null until the map's camera has genuinely settled at least once —
   // deliberately not defaulted to {bearingDegrees: 0, pitchDegrees: 0},
   // which would make the north-up control report pressed before the map
@@ -893,23 +902,29 @@ export function PlanningScreen({
   }, [state.present.waypoints]);
 
   // Set true the instant the rider manually pans/pinches/rotates/pitches
-  // the map, or explicitly taps Locate me — blocks a still-in-flight
-  // automatic fresh-session framing result, or a still-pending restored/
-  // seeded-waypoint hydration fit (see pendingWaypointHydrationBounds and
-  // the fresh-session location effect below, which is where this ref is
-  // actually consulted for that path), from later overriding whatever the
-  // rider has since done themselves. Never reset back to false. North-up
-  // taps deliberately do NOT set this: orientation-only, no coordinate
-  // framing of its own, so it carries no "the rider already has a view
-  // they care about" signal the way a pan or Locate-me tap does.
+  // the map, explicitly taps Locate me, or presses a Zoom in/out button
+  // (see noteManualCameraControl below, shared by the onUserCameraInteraction
+  // prop and handleZoomIn/handleZoomOut — backlog item 52) — blocks a
+  // still-in-flight automatic fresh-session framing result, or a
+  // still-pending restored/seeded-waypoint hydration fit (see
+  // pendingWaypointHydrationBounds and the fresh-session location effect
+  // below, which is where this ref is actually consulted for that path),
+  // from later overriding whatever the rider has since done themselves.
+  // Never reset back to false. North-up taps deliberately do NOT set this:
+  // orientation-only, no coordinate framing of its own, so it carries no
+  // "the rider already has a view they care about" signal the way a pan,
+  // Locate-me tap, or zoom press does.
   const hasManualCameraActionRef = useRef(false);
-  // Set true only by a genuine pan/pinch/rotate/pitch gesture — never by a
-  // Locate-me tap, successful or not, unlike hasManualCameraActionRef
-  // above. Used solely by handleLocateMe to decide whether the session's
-  // one-time regional box-fit is still available: a prior *failed*
-  // Locate-me attempt establishes no camera view at all (nothing moved),
-  // so it must not by itself force every later successful attempt into
-  // recentre-only mode — only an actual gesture, or a framing that has
+  // Set true by a genuine pan/pinch/rotate/pitch gesture, or a Zoom in/out
+  // button press (via the same shared noteManualCameraControl callback) —
+  // never by a Locate-me tap, successful or not, unlike
+  // hasManualCameraActionRef above. Used solely by handleLocateMe to decide
+  // whether the session's one-time regional box-fit is still available: a
+  // prior *failed* Locate-me attempt establishes no camera view at all
+  // (nothing moved), so it must not by itself force every later successful
+  // attempt into recentre-only mode — only an actual gesture, a zoom press
+  // (which, like a gesture, genuinely and synchronously moves the camera
+  // the instant it's pressed — backlog item 52), or a framing that has
   // already genuinely been applied, should do that (see
   // hasAppliedInitialFramingRef below).
   const hasManualGestureRef = useRef(false);
@@ -946,24 +961,27 @@ export function PlanningScreen({
   // — hasManualCameraActionRef/hasAppliedInitialFramingRef must only ever
   // be read from one effect (the underlying React-Compiler-backed lint
   // rule for these two refs — both mutated from plain callbacks
-  // (handleLocateMe, onUserCameraInteraction) — flags a second reader
-  // effect as unsound, since it can no longer verify the two stay
-  // consistent across independently-scheduled effects). Keeping the
+  // (handleLocateMe, onUserCameraInteraction, and — per backlog item 52 —
+  // handleZoomIn/handleZoomOut via the shared noteManualCameraControl
+  // callback) — flags a second reader effect as unsound, since it can no
+  // longer verify the two stay consistent across independently-scheduled
+  // effects). Keeping the
   // restored-waypoint fit's guard checks here, alongside the fresh-
   // session fit's own identical checks, is what keeps this the only
   // reader. hasRequestedInitialLocationRef's existing "run my meaningful
   // body once per mount" guard is reused for both concerns.
   //
-  // A third caller of this same discipline: handleClearDraftConfirm below
-  // resets hasRequestedInitialLocationRef/hasAppliedInitialFramingRef/
-  // hasManualCameraActionRef/hasManualGestureRef to their fresh-mount
-  // values and bumps freshSessionFramingToken (a dependency of this
-  // effect) after a successful Clear draft, so this effect's meaningful
-  // body runs again exactly once — as if Planning had never held a draft
-  // — without becoming a second reader of the two refs the comment above
-  // restricts to this one effect (handleClearDraftConfirm is a plain
-  // callback that only writes them, mirroring handleLocateMe/
-  // onUserCameraInteraction).
+  // A fourth caller of this same discipline (after handleLocateMe,
+  // onUserCameraInteraction, and handleZoomIn/handleZoomOut above):
+  // handleClearDraftConfirm below resets hasRequestedInitialLocationRef/
+  // hasAppliedInitialFramingRef/hasManualCameraActionRef/hasManualGestureRef
+  // to their fresh-mount values and bumps freshSessionFramingToken (a
+  // dependency of this effect) after a successful Clear draft, so this
+  // effect's meaningful body runs again exactly once — as if Planning had
+  // never held a draft — without becoming a second reader of the two refs
+  // the comment above restricts to this one effect (handleClearDraftConfirm
+  // is a plain callback that only writes them, mirroring handleLocateMe/
+  // onUserCameraInteraction/handleZoomIn/handleZoomOut).
   const hasRequestedInitialLocationRef = useRef(false);
   useEffect(() => {
     if (hydrationStatus !== "ready" || hasRequestedInitialLocationRef.current) return;
@@ -1056,6 +1074,35 @@ export function PlanningScreen({
   const handleRequestNorthUp = useCallback(() => {
     setOrientNorthTarget({ requestId: generateId() });
   }, []);
+
+  // Shared by MapView's onUserCameraInteraction prop (fired only for a
+  // genuine pan/pinch/rotate/pitch gesture) and the Zoom in/out button
+  // handlers below (backlog item 52) — a zoom-button press genuinely and
+  // synchronously changes the camera exactly like a real gesture, so it
+  // must have the same "manual camera control" consequences: both
+  // hasManualCameraActionRef and hasManualGestureRef become true, and
+  // isCameraSettled goes false until the resulting camera move (here,
+  // changeZoomBy's own short ease) genuinely settles. Deliberately NOT
+  // wired through MapLibreLike.onUserCameraInteraction itself, which stays
+  // gesture-only (see its own doc comment in mapAdapter.ts) — this is an
+  // explicit Planning-level state transition invoked directly wherever
+  // it's needed. A plain callback only, never read inside an effect — see
+  // hasManualCameraActionRef/hasManualGestureRef's own doc comments above.
+  const noteManualCameraControl = useCallback(() => {
+    hasManualCameraActionRef.current = true;
+    hasManualGestureRef.current = true;
+    setIsCameraSettled(false);
+  }, []);
+
+  const handleZoomIn = useCallback(() => {
+    noteManualCameraControl();
+    setZoomTarget({ delta: PLANNING_ZOOM_STEP, requestId: generateId() });
+  }, [noteManualCameraControl]);
+
+  const handleZoomOut = useCallback(() => {
+    noteManualCameraControl();
+    setZoomTarget({ delta: -PLANNING_ZOOM_STEP, requestId: generateId() });
+  }, [noteManualCameraControl]);
 
   const isNorthUpTopDown =
     settledOrientation !== null &&
@@ -1537,12 +1584,9 @@ export function PlanningScreen({
           centreTarget={centreTarget}
           orientNorthTarget={orientNorthTarget}
           boundsTarget={boundsTarget}
+          zoomTarget={zoomTarget}
           suppressInitialOverviewFit={suppressInitialOverviewFit}
-          onUserCameraInteraction={() => {
-            hasManualCameraActionRef.current = true;
-            hasManualGestureRef.current = true;
-            setIsCameraSettled(false);
-          }}
+          onUserCameraInteraction={noteManualCameraControl}
           onCameraSettled={(camera) => {
             setCrosshairCoordinate(camera.coordinate);
             setSettledOrientation({
@@ -1571,6 +1615,24 @@ export function PlanningScreen({
         >
           {describeCrosshairAction(interactionMode, state.present.waypoints)}
         </button>
+        <div className="planning-map-zoom-controls">
+          <button
+            type="button"
+            className="planning-map-control"
+            onClick={handleZoomIn}
+            aria-label="Zoom in"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="planning-map-control"
+            onClick={handleZoomOut}
+            aria-label="Zoom out"
+          >
+            −
+          </button>
+        </div>
         <div className="planning-map-controls">
           <button
             type="button"

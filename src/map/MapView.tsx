@@ -321,6 +321,21 @@ export interface OrientNorthCameraTarget {
   requestId: string;
 }
 
+/** An explicit "change zoom by a fixed step" camera command — Planning's
+ * Zoom in/out controls (backlog item 52). Deduped by `requestId`, not by
+ * value, exactly like CentreCameraTarget/OrientNorthCameraTarget — two
+ * consecutive Zoom-in presses carry an identical `delta` but must both
+ * apply. `delta` is always relative to the map's current zoom at the
+ * moment it's applied (see mapAdapter.ts's changeZoomBy), never an
+ * absolute target. Planning-only; Riding never supplies this (a separate
+ * Riding/free-roam zoom control is backlog item 53). */
+export interface ZoomCameraTarget {
+  delta: number;
+  /** Distinct per issuance — generate via src/platform/idGenerator.ts's
+   * generateId(). */
+  requestId: string;
+}
+
 /** Planning's map chrome (waypoint markers, dashed unrouted-preview line,
  * tap-to-place), grouped into one prop rather than several unrelated
  * ones. Never used by Riding mode — when absent, the underlying sources
@@ -423,6 +438,9 @@ export interface MapViewProps {
   /** An explicit "reorient to north-up/top-down" request — see
    * OrientNorthCameraTarget. Planning-only; Riding never supplies this. */
   orientNorthTarget?: OrientNorthCameraTarget | null;
+  /** An explicit "change zoom by a fixed step" request — see
+   * ZoomCameraTarget. Planning-only; Riding never supplies this. */
+  zoomTarget?: ZoomCameraTarget | null;
   /** Skips the automatic "fit to route" once the map is ready — used when
    * resuming a ride that wasn't in overview mode before suspension, so
    * the restored following/free camera isn't briefly overridden by a
@@ -493,6 +511,7 @@ export function MapView({
   boundsTarget = null,
   centreTarget = null,
   orientNorthTarget = null,
+  zoomTarget = null,
   suppressInitialOverviewFit = false,
   onUserCameraInteraction,
   onCameraSettled,
@@ -552,6 +571,10 @@ export function MapView({
   // lastAppliedBoundsRequestIdRef rather than lastAppliedCameraTargetRef.
   const lastAppliedCentreRequestIdRef = useRef<string | null>(null);
   const lastAppliedOrientNorthRequestIdRef = useRef<string | null>(null);
+  // Deduped by requestId, not by value — mirrors lastAppliedCentreRequestIdRef/
+  // lastAppliedOrientNorthRequestIdRef, since two consecutive Zoom-in
+  // presses (identical delta) must both apply. See ZoomCameraTarget.
+  const lastAppliedZoomRequestIdRef = useRef<string | null>(null);
   const [loadState, setLoadState] = useState<MapLoadState>("loading");
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
@@ -632,6 +655,7 @@ export function MapView({
     lastAppliedBoundsRequestIdRef.current = null;
     lastAppliedCentreRequestIdRef.current = null;
     lastAppliedOrientNorthRequestIdRef.current = null;
+    lastAppliedZoomRequestIdRef.current = null;
 
     function recordAttempt(category: MapDiagnosticCategory, justResumed = false): void {
       recordMapAttempt({
@@ -1335,6 +1359,23 @@ export function MapView({
     lastAppliedOrientNorthRequestIdRef.current = orientNorthTarget.requestId;
     mapRef.current?.setCamera(null, null, 0, 0, { animate: true, followOffset: false });
   }, [orientNorthTarget, styleStructurallyReady]);
+
+  // Executes an explicit "change zoom by a fixed step" request (Planning's
+  // Zoom in/out controls, backlog item 52) — deduped by requestId, like
+  // centreTarget/orientNorthTarget above, not by value: a repeated
+  // identical delta (two consecutive Zoom-in presses) must still re-apply
+  // each time. Deliberately does NOT eagerly read back getZoom() the way
+  // the boundsTarget effect does: changeZoomBy always eases (see
+  // mapAdapter.ts), so an immediate read would capture the pre-transition
+  // zoom — the existing onCameraSettled handler above already catches up
+  // once the ease genuinely finishes, exactly like the animate:true
+  // cameraTarget/centreTarget effects above already rely on.
+  useEffect(() => {
+    if (!styleStructurallyReady || !zoomTarget) return;
+    if (lastAppliedZoomRequestIdRef.current === zoomTarget.requestId) return;
+    lastAppliedZoomRequestIdRef.current = zoomTarget.requestId;
+    mapRef.current?.changeZoomBy(zoomTarget.delta);
+  }, [zoomTarget, styleStructurallyReady]);
 
   useEffect(() => {
     if (!styleStructurallyReady) return;

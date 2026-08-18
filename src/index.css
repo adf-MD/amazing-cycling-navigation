@@ -549,7 +549,10 @@ button:focus-visible {
  * controls (RidingScreen.tsx) stay inline/bottom-right and are
  * intentionally left untouched here — these two Planning buttons are the
  * only ones sharing this styling, so a small dedicated class replaces
- * duplicating Riding's inline pressed-state ternary a third time. */
+ * duplicating Riding's inline pressed-state ternary a third time. See
+ * .planning-map-zoom-controls below for Planning's separate top-left Zoom
+ * in/out cluster (backlog item 52) — spatially separate from this pair by
+ * construction, so the two clusters can never be mistaken for one group. */
 .planning-map-controls {
   position: absolute;
   top: 8px;
@@ -586,6 +589,22 @@ button:focus-visible {
  * above, so padding is the only property that needs reasserting here. */
 .planning-map-control {
   padding: 0;
+}
+
+/* Planning's Zoom in/out cluster (backlog item 52) — top-left, mirroring
+ * .planning-map-controls' top-right Locate-me/North-up cluster exactly but
+ * reflected onto the opposite corner, so the two clusters can never be
+ * mistaken for one group and never overlap regardless of viewport width.
+ * Reuses .planning-map-control for individual button shape/size (48px
+ * circular touch target); only the cluster's own position differs. */
+.planning-map-zoom-controls {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* Fixed at the exact visual/geographic centre of MapView's own container
@@ -1324,13 +1343,17 @@ button:focus-visible {
  * blocking messages that used to sit in normal document flow inside the
  * fixed-height map wrapper, where they could overflow below the visible
  * map area exactly like .map-attribution's own comment already warns
- * against for attribution text. right:64px clears
- * .planning-map-controls' 48px button column plus its own 8px inset and
- * the overlay's own 8px inset. */
+ * against for attribution text. right:64px clears .planning-map-controls'
+ * 48px button column plus its own 8px inset and the overlay's own 8px
+ * inset; left:64px clears the new .planning-map-zoom-controls' identical
+ * 48px column plus insets (backlog item 52) by the same 8+48+8 arithmetic
+ * — both share z-index:5 and this overlay is a later DOM sibling, so
+ * without this an active status message would render on top of the new
+ * Zoom in/out buttons. */
 .planning-map-status-overlay {
   position: absolute;
   top: 8px;
-  left: 8px;
+  left: 64px;
   right: 64px;
   z-index: 5;
   display: flex;

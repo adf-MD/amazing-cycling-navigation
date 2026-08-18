@@ -99,6 +99,7 @@ function buildNoopMapFactory(): MapFactory {
       onCameraSettled: () => undefined,
       setCamera: () => undefined,
       centreOn: () => undefined,
+      changeZoomBy: () => undefined,
       resize: () => undefined,
       onMapTap: () => undefined,
       queryTopWarningFeatureAt: () => null,

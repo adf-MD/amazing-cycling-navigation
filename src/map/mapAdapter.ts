@@ -37,6 +37,13 @@ const FOLLOW_EASE_DURATION_MS = 600;
  * an unrelated camera-motion concern from this single one-shot recentre. */
 const CENTRE_EASE_DURATION_MS = 600;
 
+/** Duration of a Zoom in/out button's ease (see changeZoomBy) — a quick,
+ * deliberate step matching one discrete button press, distinct from
+ * FOLLOW_EASE_DURATION_MS/CENTRE_EASE_DURATION_MS even though shorter:
+ * those describe a continuous follow and a one-shot recentre, this is a
+ * fixed single zoom-level step with nothing else to travel. */
+const ZOOM_EASE_DURATION_MS = 300;
+
 /** Half-width/height, in CSS pixels, of the small screen-space box used
  * to hit-test a tapped warning segment or route feature — independent of
  * geographic zoom, so a thin line stays comfortably tappable on a phone
@@ -325,6 +332,18 @@ export interface MapLibreLike {
    * (see setCamera, which always writes bearing/pitch explicitly and so
    * cannot express "leave orientation alone"). */
   centreOn(coordinate: Coordinate, options: { animate: boolean }): void;
+  /** Changes only the camera's zoom, by the given signed delta relative to
+   * its current level, leaving centre, bearing and pitch genuinely
+   * untouched by never including them in the underlying easeTo call —
+   * mirrors centreOn's own "omitted field = unchanged" MapLibre semantics
+   * for the complementary field. Always eases; there is no jump/instant
+   * variant, since every caller is a discrete Zoom in/out button press with
+   * no restore/resume use case needing an instant jump. MapLibre's own zoom
+   * setter clamps the resulting value to the style's min/max zoom
+   * internally, so this needs no clamping logic of its own. Used by
+   * Planning's zoom in/out controls (backlog item 52), which must never
+   * disturb whatever centre/bearing/pitch the rider already has. */
+  changeZoomBy(delta: number): void;
   /** Recomputes the map's size from its container. Needed after the container's
    * on-screen size changes post-creation (e.g. iOS Safari/PWA chrome settling
    * after first paint) — otherwise fitBounds/camera maths use stale dimensions. */
@@ -685,6 +704,14 @@ export class MapLibreAdapter implements MapLibreLike {
     } else {
       this.map.jumpTo({ center });
     }
+  }
+
+  changeZoomBy(delta: number): void {
+    this.map.easeTo({
+      zoom: this.map.getZoom() + delta,
+      duration: ZOOM_EASE_DURATION_MS,
+      essential: true,
+    });
   }
 
   resize(): void {

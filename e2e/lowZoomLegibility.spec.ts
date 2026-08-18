@@ -168,11 +168,13 @@ test.describe("Planning: waypoint marker zoom scaling", () => {
     // baseline: "a Planning route with approximately 14 numbered
     // waypoints"), tightly packed within the visible map area — no route
     // calculation needed, since this test only exercises marker
-    // presentation, not routing.
+    // presentation, not routing. The x base offset (70, not 40) clears
+    // .planning-map-zoom-controls (top:8px left:8px, ~48px wide — backlog
+    // item 52).
     const waypointCount = 14;
     for (let index = 0; index < waypointCount; index += 1) {
       await mapContainer.click({
-        position: { x: 40 + (index % 7) * 35, y: 40 + Math.floor(index / 7) * 70 },
+        position: { x: 70 + (index % 7) * 35, y: 40 + Math.floor(index / 7) * 70 },
       });
     }
 

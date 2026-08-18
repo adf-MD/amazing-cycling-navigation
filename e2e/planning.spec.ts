@@ -488,6 +488,51 @@ test("reloading Planning after placing waypoints and a route name recovers the s
     expect(isFullyWithin(markerBox, mapBox)).toBe(true);
   }
 
+  const CENTRE_CHANGE_TOLERANCE_DEGREES = 1e-4; // ~11 m, mirrors the Locate-me test's own tolerance
+
+  // Backlog item 52: Planning's top-left Zoom in/out controls change only
+  // zoom, at the map's current centre — never pan/recentre, never touch
+  // bearing/pitch, and never restart Locate-me's own state machine.
+  const locateButton = page.getByRole("button", { name: "Locate me" });
+  const zoomInButton = page.getByRole("button", { name: "Zoom in" });
+  const zoomOutButton = page.getByRole("button", { name: "Zoom out" });
+  const centreBeforeZoom = await mapContainer.getAttribute("data-camera-center");
+  const bearingBeforeZoom = await mapContainer.getAttribute("data-camera-bearing");
+  const pitchBeforeZoom = await mapContainer.getAttribute("data-camera-pitch");
+  const zoomBeforeZoomIn = await mapContainer.getAttribute("data-camera-zoom");
+
+  await zoomInButton.click();
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-zoom"))
+    .not.toBe(zoomBeforeZoomIn);
+  const zoomAfterZoomIn = await mapContainer.getAttribute("data-camera-zoom");
+  expect(Number(zoomAfterZoomIn)).toBeGreaterThan(Number(zoomBeforeZoomIn));
+
+  await zoomOutButton.click();
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-zoom"))
+    .not.toBe(zoomAfterZoomIn);
+  const zoomAfterZoomOut = await mapContainer.getAttribute("data-camera-zoom");
+  expect(Number(zoomAfterZoomOut)).toBeLessThan(Number(zoomAfterZoomIn));
+
+  const centreAfterZoom = await mapContainer.getAttribute("data-camera-center");
+  if (!centreAfterZoom || !centreBeforeZoom) {
+    throw new Error("expected a settled camera centre before and after zooming");
+  }
+  const [lonBeforeZoom, latBeforeZoom] = centreBeforeZoom.split(",").map(Number);
+  const [lonAfterZoom, latAfterZoom] = centreAfterZoom.split(",").map(Number);
+  expect(Math.abs(lonAfterZoom - lonBeforeZoom)).toBeLessThanOrEqual(
+    CENTRE_CHANGE_TOLERANCE_DEGREES,
+  );
+  expect(Math.abs(latAfterZoom - latBeforeZoom)).toBeLessThanOrEqual(
+    CENTRE_CHANGE_TOLERANCE_DEGREES,
+  );
+  expect(await mapContainer.getAttribute("data-camera-bearing")).toBe(bearingBeforeZoom);
+  expect(await mapContainer.getAttribute("data-camera-pitch")).toBe(pitchBeforeZoom);
+
+  expect(await locateButton.textContent()).not.toBe("Locating…");
+  await expect(page.getByText("Your location could not be determined.")).toHaveCount(0);
+
   // A genuine manual pan (mirrors the "Locate me recentres..." test's own
   // deterministic technique — an unmodified ArrowRight via MapLibre's
   // KeyboardHandler, not a synthetic drag) must not be undone by a
@@ -495,7 +540,6 @@ test("reloading Planning after placing waypoints and a route name recovers the s
   await mapContainer.locator("canvas").focus();
   const centreBeforePan = await mapContainer.getAttribute("data-camera-center");
   await page.keyboard.press("ArrowRight");
-  const CENTRE_CHANGE_TOLERANCE_DEGREES = 1e-4; // ~11 m, mirrors the Locate-me test's own tolerance
   await expect
     .poll(async () => {
       const centre = await mapContainer.getAttribute("data-camera-center");
@@ -1233,6 +1277,33 @@ test.describe("phone viewport", () => {
     expect(intersects(attributionBox, locateBox)).toBe(false);
     expect(intersects(attributionBox, northUpBox)).toBe(false);
 
+    // Backlog item 52: the new top-left Zoom in/out cluster is a real
+    // ≥44×44px touch target, fully inside the map, with a genuine gap
+    // between the two buttons and no intersection with the top-right
+    // Locate-me/North-up cluster or the attribution.
+    const zoomInButton = page.getByRole("button", { name: "Zoom in" });
+    const zoomOutButton = page.getByRole("button", { name: "Zoom out" });
+    const [zoomInBox, zoomOutBox] = await Promise.all([
+      zoomInButton.boundingBox(),
+      zoomOutButton.boundingBox(),
+    ]);
+    if (!zoomInBox || !zoomOutBox) {
+      throw new Error("expected both zoom controls to have a bounding box");
+    }
+    expect(zoomInBox.width).toBeGreaterThanOrEqual(44);
+    expect(zoomInBox.height).toBeGreaterThanOrEqual(44);
+    expect(zoomOutBox.width).toBeGreaterThanOrEqual(44);
+    expect(zoomOutBox.height).toBeGreaterThanOrEqual(44);
+    expect(isFullyWithin(zoomInBox, wrapperBox)).toBe(true);
+    expect(isFullyWithin(zoomOutBox, wrapperBox)).toBe(true);
+    expect(intersects(zoomInBox, zoomOutBox)).toBe(false);
+    expect(intersects(zoomInBox, locateBox)).toBe(false);
+    expect(intersects(zoomInBox, northUpBox)).toBe(false);
+    expect(intersects(zoomOutBox, locateBox)).toBe(false);
+    expect(intersects(zoomOutBox, northUpBox)).toBe(false);
+    expect(intersects(zoomInBox, attributionBox)).toBe(false);
+    expect(intersects(zoomOutBox, attributionBox)).toBe(false);
+
     // Two waypoints placed via direct map taps, exactly like the desktop
     // flow above.
     await mapContainer.click({ position: { x: 100, y: 100 } });
@@ -1468,8 +1539,10 @@ test.describe("phone viewport", () => {
   // direct map taps — this never contacts OpenRouteService, since
   // Calculate route is a separate, explicit action — at positions clear of
   // the top-right Locate-me/north-up control column
-  // (.planning-map-controls, top:8px right:8px, ~48px wide) so every tap
-  // reliably lands on the map itself, not a control.
+  // (.planning-map-controls, top:8px right:8px, ~48px wide) and the
+  // top-left Zoom in/out column (.planning-map-zoom-controls, top:8px
+  // left:8px, ~48px wide — backlog item 52) so every tap reliably lands on
+  // the map itself, not a control.
   test("phone layout: a double-digit waypoint count keeps Delete on the same row as Select/Move, unselected and selected, with no horizontal overflow", async ({
     page,
   }) => {
@@ -1500,7 +1573,7 @@ test.describe("phone viewport", () => {
     const mapContainer = page.locator('[data-testid="map-container"]');
     await expect(mapContainer.locator("canvas")).toBeVisible();
 
-    const TAP_X_POSITIONS = [40, 110, 180, 250];
+    const TAP_X_POSITIONS = [70, 110, 180, 250];
     const TAP_Y_POSITIONS = [60, 110, 160];
     let waypointCount = 0;
     for (const y of TAP_Y_POSITIONS) {
@@ -1632,8 +1705,9 @@ test.describe("phone viewport", () => {
 
     // 9 distinct waypoints via direct map taps — a subset of the item-34
     // test's own proven-safe tap grid, clear of .planning-map-controls
-    // (top:8px right:8px, ~48px wide).
-    const TAP_X_POSITIONS = [40, 110, 180];
+    // (top:8px right:8px, ~48px wide) and .planning-map-zoom-controls
+    // (top:8px left:8px, ~48px wide — backlog item 52).
+    const TAP_X_POSITIONS = [70, 110, 180];
     const TAP_Y_POSITIONS = [60, 110, 160];
     let waypointCount = 0;
     for (const y of TAP_Y_POSITIONS) {

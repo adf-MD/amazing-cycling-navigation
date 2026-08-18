@@ -140,6 +140,33 @@ describe("MapLibreAdapter", () => {
     expect(fake.easeTo).not.toHaveBeenCalled();
   });
 
+  it("changeZoomBy (positive delta) eases the zoom only, relative to the current zoom, never specifying centre, bearing, pitch or offset", () => {
+    const fake = buildFakeMapLibreMap();
+    const adapter = buildAdapter(fake);
+
+    adapter.changeZoomBy(1);
+
+    expect(fake.easeTo).toHaveBeenCalledOnce();
+    const [options] = fake.easeTo.mock.calls[0] as [Record<string, unknown>];
+    expect(options.zoom).toBe(13); // fake getZoom() returns 12
+    expect(options.essential).toBe(true);
+    expect(options).not.toHaveProperty("center");
+    expect(options).not.toHaveProperty("bearing");
+    expect(options).not.toHaveProperty("pitch");
+    expect(options).not.toHaveProperty("offset");
+    expect(fake.jumpTo).not.toHaveBeenCalled();
+  });
+
+  it("changeZoomBy (negative delta) eases to a lower zoom, relative to the current zoom", () => {
+    const fake = buildFakeMapLibreMap();
+    const adapter = buildAdapter(fake);
+
+    adapter.changeZoomBy(-1);
+
+    const [options] = fake.easeTo.mock.calls[0] as [Record<string, unknown>];
+    expect(options.zoom).toBe(11);
+  });
+
   it("onCameraSettled reports centre, zoom, bearing and pitch together on moveend", () => {
     const fake = buildFakeMapLibreMap({ lng: 3, lat: 4 });
     const adapter = buildAdapter(fake);

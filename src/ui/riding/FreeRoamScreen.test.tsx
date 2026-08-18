@@ -60,6 +60,7 @@ function buildStubMapFactory(): {
       onCameraSettled: () => undefined,
       setCamera: setCameraSpy,
       centreOn: () => undefined,
+      changeZoomBy: () => undefined,
       resize: () => undefined,
       onMapTap: () => undefined,
       queryTopWarningFeatureAt: () => null,

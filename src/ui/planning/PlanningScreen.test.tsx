@@ -41,6 +41,7 @@ interface MockMapHandle {
   setRouteFeatureHit: (routeFeatureId: string | null) => void;
   setCameraSpy: ReturnType<typeof vi.fn>;
   centreOnSpy: ReturnType<typeof vi.fn>;
+  changeZoomBySpy: ReturnType<typeof vi.fn>;
   fitBoundsSpy: ReturnType<typeof vi.fn>;
   addLineLayerSpy: ReturnType<typeof vi.fn>;
   sources: Map<string, GeoJSON.FeatureCollection>;
@@ -63,6 +64,7 @@ function createMockMapFactory(): MockMapHandle {
   let routeFeatureHitId: string | null = null;
   const setCameraSpy = vi.fn();
   const centreOnSpy = vi.fn();
+  const changeZoomBySpy = vi.fn();
   const fitBoundsSpy = vi.fn();
   const addLineLayerSpy = vi.fn();
   const sources = new Map<string, GeoJSON.FeatureCollection>();
@@ -103,6 +105,7 @@ function createMockMapFactory(): MockMapHandle {
       },
       setCamera: setCameraSpy,
       centreOn: centreOnSpy,
+      changeZoomBy: changeZoomBySpy,
       resize: () => undefined,
       onMapTap: (listener) => {
         mapTapListener = listener;
@@ -122,6 +125,7 @@ function createMockMapFactory(): MockMapHandle {
     factory,
     setCameraSpy,
     centreOnSpy,
+    changeZoomBySpy,
     fitBoundsSpy,
     addLineLayerSpy,
     sources,
@@ -1608,6 +1612,145 @@ describe("PlanningScreen", () => {
         animate: true,
         followOffset: false,
       });
+    });
+  });
+
+  describe("Zoom controls", () => {
+    it("renders accessible Zoom in/Zoom out controls", async () => {
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      expect(await screen.findByRole("button", { name: "Zoom in" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Zoom out" })).toBeInTheDocument();
+    });
+
+    it("a Zoom in press calls changeZoomBy with a positive step, touching no other camera method", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await user.click(await screen.findByRole("button", { name: "Zoom in" }));
+
+      expect(map.changeZoomBySpy).toHaveBeenCalledWith(1);
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
+      expect(map.centreOnSpy).not.toHaveBeenCalled();
+      expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+    });
+
+    it("a Zoom out press calls changeZoomBy with the equal and opposite negative step", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await user.click(await screen.findByRole("button", { name: "Zoom out" }));
+
+      expect(map.changeZoomBySpy).toHaveBeenCalledWith(-1);
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
+      expect(map.centreOnSpy).not.toHaveBeenCalled();
+      expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+    });
+
+    it("issues a fresh changeZoomBy call on each of two consecutive Zoom in presses", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      const zoomInButton = await screen.findByRole("button", { name: "Zoom in" });
+      await user.click(zoomInButton);
+      await user.click(zoomInButton);
+
+      expect(map.changeZoomBySpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("disables placement while a zoom press's own camera move is in flight, and re-enables once it settles", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      map.triggerCameraSettled([0, 51]);
+      const crosshairButton = screen.getByRole("button", { name: "Add waypoint here" });
+      expect(crosshairButton).toBeEnabled();
+
+      await user.click(await screen.findByRole("button", { name: "Zoom in" }));
+      expect(crosshairButton).toBeDisabled();
+
+      map.triggerCameraSettled([0, 51], { zoom: 15 });
+      expect(crosshairButton).toBeEnabled();
+    });
+
+    it("never requests geolocation for a zoom press, and never restarts Locate-me's own state machine", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      });
+
+      await user.click(await screen.findByRole("button", { name: "Zoom in" }));
+
+      expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("button", { name: "Locate me" })).toHaveTextContent("⌖");
+    });
+
+    it("a zoom press before the fresh-session location resolves prevents the fresh-session box-fit once it later resolves", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      let resolveLocation: ((coordinate: Coordinate | null) => void) | undefined;
+      const requestApproximateLocation = vi.fn(
+        () =>
+          new Promise<Coordinate | null>((resolve) => {
+            resolveLocation = resolve;
+          }),
+      );
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      });
+
+      await user.click(await screen.findByRole("button", { name: "Zoom in" }));
+      resolveLocation?.([-1.5, 53.8]);
+
+      await waitFor(() => {
+        expect(map.sources.get("acn-position")).toEqual(
+          buildPositionFeatureCollection([-1.5, 53.8]),
+        );
+      });
+      expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+    });
+
+    it("does not affect placed waypoint/draft DOM state", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await addWaypointViaCrosshair(map, user, [0, 51]);
+      await addWaypointViaCrosshair(map, user, [0.01, 51]);
+
+      await user.click(await screen.findByRole("button", { name: "Zoom in" }));
+
+      expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Waypoint 2" })).toBeInTheDocument();
     });
   });
 

@@ -103,6 +103,7 @@ interface MockMapHandle {
   getZoomSpy: ReturnType<typeof vi.fn>;
   setCameraSpy: ReturnType<typeof vi.fn>;
   centreOnSpy: ReturnType<typeof vi.fn>;
+  changeZoomBySpy: ReturnType<typeof vi.fn>;
   addLineLayerSpy: ReturnType<typeof vi.fn>;
   addImageSpy: ReturnType<typeof vi.fn>;
   addSymbolLayerSpy: ReturnType<typeof vi.fn>;
@@ -157,6 +158,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
   const getZoomSpy = vi.fn(() => 14);
   const setCameraSpy = vi.fn();
   const centreOnSpy = vi.fn();
+  const changeZoomBySpy = vi.fn();
   const addLineLayerSpy = vi.fn();
   const addImageSpy = vi.fn();
   const addSymbolLayerSpy = vi.fn();
@@ -227,6 +229,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
       },
       setCamera: setCameraSpy,
       centreOn: centreOnSpy,
+      changeZoomBy: changeZoomBySpy,
       resize: resizeSpy,
       onMapTap: (listener) => {
         mapTapListener = listener;
@@ -248,6 +251,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
     getZoomSpy,
     setCameraSpy,
     centreOnSpy,
+    changeZoomBySpy,
     addLineLayerSpy,
     addImageSpy,
     addSymbolLayerSpy,
@@ -1211,6 +1215,66 @@ describe("MapView", () => {
     });
   });
 
+  it("applies a zoomTarget via changeZoomBy once ready", () => {
+    const mock = createMockMapFactory();
+    render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        zoomTarget={{ delta: 1, requestId: "request-1" }}
+      />,
+    );
+
+    mock.triggerLoad();
+
+    expect(mock.changeZoomBySpy).toHaveBeenCalledWith(1);
+  });
+
+  it("does not re-apply a zoomTarget with the same requestId, even as a new object", () => {
+    const mock = createMockMapFactory();
+    const zoomTarget = { delta: 1, requestId: "request-1" };
+    const { rerender } = render(
+      <MapView points={points} mapFactory={mock.factory} zoomTarget={zoomTarget} />,
+    );
+    mock.triggerLoad();
+    expect(mock.changeZoomBySpy).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        zoomTarget={{ ...zoomTarget }}
+      />,
+    );
+
+    expect(mock.changeZoomBySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-applies changeZoomBy on a second zoomTarget request even with an identical delta — two consecutive Zoom-in presses", () => {
+    const mock = createMockMapFactory();
+    const { rerender } = render(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        zoomTarget={{ delta: 1, requestId: "request-1" }}
+      />,
+    );
+    mock.triggerLoad();
+    expect(mock.changeZoomBySpy).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <MapView
+        points={points}
+        mapFactory={mock.factory}
+        zoomTarget={{ delta: 1, requestId: "request-2" }}
+      />,
+    );
+
+    expect(mock.changeZoomBySpy).toHaveBeenCalledTimes(2);
+    expect(mock.changeZoomBySpy).toHaveBeenNthCalledWith(1, 1);
+    expect(mock.changeZoomBySpy).toHaveBeenNthCalledWith(2, 1);
+  });
+
   it("sets the route coordinate-count once real, non-empty route data is submitted", () => {
     const mock = createMockMapFactory();
     render(<MapView points={points} mapFactory={mock.factory} />);
@@ -1810,6 +1874,32 @@ describe("MapView", () => {
         animate: true,
         followOffset: false,
       });
+    });
+
+    it("retry preserves and re-applies a still-current zoomTarget", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          zoomTarget={{ delta: 1, requestId: "request-1" }}
+        />,
+      );
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+      expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+      mock.changeZoomBySpy.mockClear();
+
+      act(() => {
+        screen.getByTestId("retry-map-imagery-button").click();
+      });
+      mock.triggerLoad();
+
+      expect(mock.changeZoomBySpy).toHaveBeenCalledWith(1);
     });
 
     it("retries at most once automatically when the browser goes online while fallback is active", () => {

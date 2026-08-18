@@ -99,6 +99,7 @@ function createMockMapFactory(): MockMapHandle {
       onCameraSettled: () => undefined,
       setCamera: () => undefined,
       centreOn: () => undefined,
+      changeZoomBy: () => undefined,
       resize: () => undefined,
       onMapTap: (listener) => {
         mapTapListener = listener;

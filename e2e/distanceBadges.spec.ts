@@ -123,7 +123,9 @@ test.describe("Planning", () => {
     await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
     const mapContainer = page.locator('[data-testid="map-container"]');
-    await mapContainer.click({ position: { x: 60, y: 100 } });
+    // x:80 clears .planning-map-zoom-controls (top:8px left:8px, ~48px
+    // wide — backlog item 52), which x:60 sat only 4px short of.
+    await mapContainer.click({ position: { x: 80, y: 100 } });
     await mapContainer.click({ position: { x: 400, y: 200 } });
     await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
 
@@ -191,7 +193,9 @@ test.describe("Planning", () => {
     await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
     const mapContainer = page.locator('[data-testid="map-container"]');
-    await mapContainer.click({ position: { x: 60, y: 100 } });
+    // x:80 clears .planning-map-zoom-controls (top:8px left:8px, ~48px
+    // wide — backlog item 52), which x:60 sat only 4px short of.
+    await mapContainer.click({ position: { x: 80, y: 100 } });
     await mapContainer.click({ position: { x: 400, y: 200 } });
     await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
 
