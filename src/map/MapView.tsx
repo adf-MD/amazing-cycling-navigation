@@ -322,13 +322,14 @@ export interface OrientNorthCameraTarget {
 }
 
 /** An explicit "change zoom by a fixed step" camera command — Planning's
- * Zoom in/out controls (backlog item 52). Deduped by `requestId`, not by
+ * Zoom in/out controls (backlog item 52), and Riding's/free roam's own
+ * equivalent controls (backlog item 53). Deduped by `requestId`, not by
  * value, exactly like CentreCameraTarget/OrientNorthCameraTarget — two
  * consecutive Zoom-in presses carry an identical `delta` but must both
  * apply. `delta` is always relative to the map's current zoom at the
  * moment it's applied (see mapAdapter.ts's changeZoomBy), never an
- * absolute target. Planning-only; Riding never supplies this (a separate
- * Riding/free-roam zoom control is backlog item 53). */
+ * absolute target. Fully generic — every caller shares this one command
+ * shape and the one `zoomTarget` effect below. */
 export interface ZoomCameraTarget {
   delta: number;
   /** Distinct per issuance — generate via src/platform/idGenerator.ts's
@@ -439,7 +440,8 @@ export interface MapViewProps {
    * OrientNorthCameraTarget. Planning-only; Riding never supplies this. */
   orientNorthTarget?: OrientNorthCameraTarget | null;
   /** An explicit "change zoom by a fixed step" request — see
-   * ZoomCameraTarget. Planning-only; Riding never supplies this. */
+   * ZoomCameraTarget. Shared by Planning (item 52) and Riding/free roam
+   * (item 53) alike; every caller reuses this same generic command. */
   zoomTarget?: ZoomCameraTarget | null;
   /** Skips the automatic "fit to route" once the map is ready — used when
    * resuming a ride that wasn't in overview mode before suspension, so

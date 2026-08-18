@@ -222,9 +222,17 @@ export interface StoredRouteRideState {
    * comment below). */
   cameraMode?: RideCameraMode;
   /** Only meaningful (non-null) when cameraMode is "free" — the rider's
-   * manually chosen camera position/zoom, restored on resume so a
-   * suspended ride doesn't silently snap back to "following". */
+   * manually chosen camera position, restored on resume so a suspended
+   * ride doesn't silently snap back to "following". */
   cameraCoordinate?: Coordinate | null;
+  /** Meaningful in two different camera modes (backlog item 53): while
+   * cameraMode is "free", the rider's manually settled pan zoom, exactly
+   * as cameraCoordinate above; while cameraMode is "following", the
+   * rider's selected follow zoom
+   * (src/ui/riding/rideCamera.ts's RideCameraState.followZoomLevel),
+   * broadening this same field's contract rather than adding a second
+   * overlapping stored zoom value. A missing/invalid value defaults to
+   * NAVIGATION_ZOOM at the camera reducer, never here. */
   cameraZoom?: number | null;
   /** Only meaningful when cameraMode is "free" — the rider's manually
    * chosen bearing/pitch, restored on resume. Optional/non-indexed for
@@ -306,7 +314,13 @@ export interface StoredFreeRoamRideState {
   startedAt: string;
   lastFix: StoredGpsFix | null;
   cameraMode?: RideCameraMode;
+  /** Only meaningful (non-null) when cameraMode is "free" — mirrors
+   * StoredRouteRideState.cameraCoordinate's identical meaning/defaulting. */
   cameraCoordinate?: Coordinate | null;
+  /** Meaningful in two different camera modes — mirrors
+   * StoredRouteRideState.cameraZoom's identical broadened contract
+   * (backlog item 53): the settled pan zoom while "free", the rider's
+   * selected follow zoom while "following". */
   cameraZoom?: number | null;
   cameraBearingDegrees?: number;
   cameraPitchDegrees?: number;

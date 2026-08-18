@@ -305,8 +305,12 @@ button:focus-visible {
 /* Positioned overlay inside MapView's own (position: relative) root, so it
  * never depends on document flow beneath the map — the map canvas itself
  * fills 100% of its fixed-height parent, so anything rendered after it in
- * normal flow would overflow below the visible map area. max-width leaves
- * clear of Riding's two 48px, right:12 camera control buttons. Sits over
+ * normal flow would overflow below the visible map area. Both of Riding's
+ * camera-control clusters (.ride-map-zoom-controls,
+ * .ride-map-camera-controls — backlog item 53) sit at the top of the map,
+ * clear of this bottom-left corner entirely; max-width is kept as a
+ * general safeguard against attribution text running the full width of a
+ * very narrow viewport, not to clear any specific control. Sits over
  * variable map imagery rather than the app's own background, so it uses a
  * fixed translucent-black/white pairing instead of --colour-bg/--colour-text
  * — those swap for the app's light/dark scheme, not the map underneath.
@@ -545,11 +549,12 @@ button:focus-visible {
 
 /* Planning's own two map controls (Locate me, north-up) — top-right,
  * clear of the centred crosshair, the bottom-centre "Add waypoint here"
- * button, and .map-attribution's bottom-left corner. Riding's equivalent
- * controls (RidingScreen.tsx) stay inline/bottom-right and are
- * intentionally left untouched here — these two Planning buttons are the
- * only ones sharing this styling, so a small dedicated class replaces
- * duplicating Riding's inline pressed-state ternary a third time. See
+ * button, and .map-attribution's bottom-left corner. Riding/free-roam's
+ * own equivalent North-up/Follow cluster (RidingScreen.tsx/
+ * FreeRoamScreen.tsx, .ride-map-camera-controls — backlog item 53) now
+ * shares this same top-right corner convention, but stays its own,
+ * Riding-specific class rather than reusing this one, matching this
+ * file's established Planning/Riding class-separation convention. See
  * .planning-map-zoom-controls below for Planning's separate top-left Zoom
  * in/out cluster (backlog item 52) — spatially separate from this pair by
  * construction, so the two clusters can never be mistaken for one group. */
@@ -1186,15 +1191,18 @@ button:focus-visible {
   }
 }
 
-/* Riding's own two camera controls — bottom-right stack, mirroring
- * .planning-map-control's shape/pressed-state swap but at Riding's own
- * position (two buttons at different bottom offsets, not Planning's
- * top-right stack). Pressed-state colours stay literal (not
- * var(--colour-on-accent)/var(--colour-bg)) to reproduce today's inline
- * styling exactly, not to silently change dark-mode contrast. */
+/* Riding's own shape/press-state vocabulary for a 48px circular map
+ * control button (backlog item 53) — positioning now lives on each
+ * cluster's own wrapper below (.ride-map-zoom-controls /
+ * .ride-map-camera-controls), mirroring Planning's own
+ * .planning-map-controls/.planning-map-zoom-controls wrapper-plus-shared-
+ * button-class split, so a real flex gap and shared z-index are available
+ * the same way Planning's two clusters already have them. Previously each
+ * button was individually position:absolute with no wrapper at all and no
+ * gap mechanism. Pressed-state colours stay literal (not
+ * var(--colour-on-accent)/var(--colour-bg)) to reproduce the original
+ * inline styling exactly, not to silently change dark-mode contrast. */
 .ride-map-control {
-  position: absolute;
-  right: 12px;
   min-width: 48px;
   min-height: 48px;
   padding: 0;
@@ -1206,23 +1214,62 @@ button:focus-visible {
 }
 
 .ride-map-control--north-up {
-  bottom: 72px;
   font-size: 1rem;
   font-weight: 700;
 }
 
-/* Deliberately no font-weight here — today's inline Follow-location
+/* Deliberately no font-weight here — the original inline Follow-location
  * button never set one (only North-up did), so it inherits normal
  * weight; a blanket weight on .ride-map-control would silently bold it. */
 .ride-map-control--follow {
-  bottom: 12px;
   font-size: 0.75rem;
+}
+
+/* backlog item 53's Zoom in/out buttons — same plain bold-glyph styling
+ * as north-up's "N", since both are single-character icons. */
+.ride-map-control--zoom {
+  font-size: 1rem;
+  font-weight: 700;
 }
 
 .ride-map-control.is-pressed {
   border: none;
   background: var(--colour-accent);
   color: #ffffff;
+}
+
+/* backlog item 53: Riding/free-roam's own Zoom in/out cluster — top-left,
+ * mirroring .planning-map-zoom-controls' position exactly (same 8px inset,
+ * same z-index) but as its own Riding-specific class, per this file's
+ * established convention of keeping Planning/Riding presentational
+ * classes separate for similar concepts. Shown only while genuinely
+ * active tracking (nav.geolocationStatus === "watching"), matching
+ * .ride-map-camera-controls' own gate below. */
+.ride-map-zoom-controls {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* backlog item 53: Riding/free-roam's North-up/Follow cluster, moved from
+ * its previous bottom-right position (right:12, per-button bottom offset,
+ * no wrapper) to top-right — spatially separate from the zoom cluster
+ * above by construction, mirroring Planning's own top-right
+ * .planning-map-controls placement while staying its own class. Order
+ * preserved: North-up first, Follow second below it (same relative order
+ * the old bottom:72/bottom:12 offsets produced). */
+.ride-map-camera-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* Fills in the previously orphan .riding-climb-progress class (see

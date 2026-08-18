@@ -37,6 +37,9 @@ const DEFAULT_CAMERA_STATE: StoredCameraState = {
   pitchDegrees: 0,
 };
 
+// Mirrors RidingScreen.tsx's identical RIDING_ZOOM_STEP (backlog item 53).
+const RIDING_ZOOM_STEP = 1;
+
 function formatGeolocationError(error: GeolocationError): string {
   switch (error.reason) {
     case "permission-denied":
@@ -107,6 +110,16 @@ export function FreeRoamScreen({
       lastReliableBearingDegrees: camera.persistableLastReliableBearingDegrees,
     };
   }, [camera.persistableCameraState, camera.persistableLastReliableBearingDegrees]);
+
+  // Zoom in/out (backlog item 53) — mirrors RidingScreen.tsx's identical
+  // handlers exactly, including never calling camera.reportUserInteraction.
+  const { requestZoom: cameraRequestZoom } = camera;
+  const handleZoomIn = useCallback(() => {
+    cameraRequestZoom(RIDING_ZOOM_STEP);
+  }, [cameraRequestZoom]);
+  const handleZoomOut = useCallback(() => {
+    cameraRequestZoom(-RIDING_ZOOM_STEP);
+  }, [cameraRequestZoom]);
 
   // Reports whether this session is genuinely GPS-active back to App, for
   // the sticky/static main-navigation contract — identical rationale and
@@ -323,6 +336,7 @@ export function FreeRoamScreen({
           currentPosition={nav.currentFix?.coordinate}
           mapFactory={mapFactory}
           cameraTarget={camera.cameraTarget}
+          zoomTarget={camera.zoomTarget}
           suppressInitialOverviewFit={true}
           onUserCameraInteraction={camera.reportUserInteraction}
           onCameraSettled={(settled) => {
@@ -335,30 +349,50 @@ export function FreeRoamScreen({
           }}
         />
         {nav.geolocationStatus === "watching" ? (
-          <button
-            type="button"
-            onClick={camera.requestNorthUp}
-            aria-label="North-up, top-down view"
-            aria-pressed={camera.isNorthUpTopDown}
-            className={`ride-map-control ride-map-control--north-up${
-              camera.isNorthUpTopDown ? " is-pressed" : ""
-            }`}
-          >
-            N
-          </button>
+          <div className="ride-map-zoom-controls">
+            <button
+              type="button"
+              onClick={handleZoomIn}
+              aria-label="Zoom in"
+              className="ride-map-control ride-map-control--zoom"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              onClick={handleZoomOut}
+              aria-label="Zoom out"
+              className="ride-map-control ride-map-control--zoom"
+            >
+              −
+            </button>
+          </div>
         ) : null}
         {nav.geolocationStatus === "watching" ? (
-          <button
-            type="button"
-            onClick={camera.requestFollow}
-            aria-label="Follow my location"
-            aria-pressed={camera.mode === "following"}
-            className={`ride-map-control ride-map-control--follow${
-              camera.mode === "following" ? " is-pressed" : ""
-            }`}
-          >
-            {camera.mode === "following" && camera.awaitingFreshFix ? "Waiting…" : "⌖"}
-          </button>
+          <div className="ride-map-camera-controls">
+            <button
+              type="button"
+              onClick={camera.requestNorthUp}
+              aria-label="North-up, top-down view"
+              aria-pressed={camera.isNorthUpTopDown}
+              className={`ride-map-control ride-map-control--north-up${
+                camera.isNorthUpTopDown ? " is-pressed" : ""
+              }`}
+            >
+              N
+            </button>
+            <button
+              type="button"
+              onClick={camera.requestFollow}
+              aria-label="Follow my location"
+              aria-pressed={camera.mode === "following"}
+              className={`ride-map-control ride-map-control--follow${
+                camera.mode === "following" ? " is-pressed" : ""
+              }`}
+            >
+              {camera.mode === "following" && camera.awaitingFreshFix ? "Waiting…" : "⌖"}
+            </button>
+          </div>
         ) : null}
       </div>
     </section>

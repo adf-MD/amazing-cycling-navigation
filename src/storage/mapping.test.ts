@@ -165,6 +165,39 @@ describe("toStoredRideState / fromStoredRideState", () => {
     });
   });
 
+  it("round-trips a following camera state's non-default follow zoom (backlog item 53)", () => {
+    // Broadens StoredCameraState.zoom's contract: while "following", it
+    // now carries the rider's selected follow zoom, exactly like a "free"
+    // state's zoom already round-tripped — not the sentinel null the test
+    // above asserts for an unresolved (never-zoomed) following state.
+    const stored = toStoredRideState(
+      "route-1",
+      "2026-01-01T00:00:00.000Z",
+      fix,
+      coreState,
+      upcoming5km,
+      {
+        mode: "following",
+        coordinate: null,
+        zoom: 18.5,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      },
+      false,
+      null,
+      false,
+    );
+    const restored = fromStoredRideState(stored);
+
+    expect(restored.cameraState).toEqual({
+      mode: "following",
+      coordinate: null,
+      zoom: 18.5,
+      bearingDegrees: 0,
+      pitchDegrees: 0,
+    });
+  });
+
   it("round-trips a free camera state's saved position, zoom, bearing and pitch", () => {
     const freeCamera: StoredCameraState = {
       mode: "free",
@@ -670,6 +703,26 @@ describe("toStoredFreeRoamState / fromStoredFreeRoamState", () => {
     expect(restored.cameraState).toEqual(freeRoamCamera);
     expect(restored.lastReliableBearingDegrees).toBe(95);
     expect(restored.wakeLockDesired).toBe(true);
+  });
+
+  it("round-trips a following camera state's non-default follow zoom (backlog item 53)", () => {
+    // Mirrors toStoredRideState's identical broadened-zoom-contract test.
+    const stored = toStoredFreeRoamState(
+      "2026-01-01T00:00:00.000Z",
+      fix,
+      { ...freeRoamCamera, zoom: 18.5 },
+      95,
+      false,
+    );
+    const restored = fromStoredFreeRoamState(stored);
+
+    expect(restored.cameraState).toEqual({
+      mode: "following",
+      coordinate: null,
+      zoom: 18.5,
+      bearingDegrees: 0,
+      pitchDegrees: 0,
+    });
   });
 
   it("never persists speed or heading, and restores null for both", () => {

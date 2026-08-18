@@ -8,6 +8,14 @@ import type { OffRouteLevel, RideCameraMode } from "../../navigation/types.ts";
 
 export type { RideCameraMode };
 
+/** Stable navigation zoom while following, chosen to match the existing
+ * fitBounds `maxZoom` cap already used for the route-overview framing
+ * (src/map/mapAdapter.ts), so following doesn't zoom further than the
+ * overview ever would. Declared before RideCameraState/
+ * INITIAL_RIDE_CAMERA_STATE below, which now depend on it directly for
+ * followZoomLevel's default. */
+export const NAVIGATION_ZOOM = 16;
+
 export interface RideCameraState {
   mode: RideCameraMode;
   /** True only while mode is "following" but no fresh fix has been eased
@@ -25,6 +33,14 @@ export interface RideCameraState {
    * following session never anchors its first command's dead-band check
    * to a stale bearing left over from an earlier session. */
   lastCommandedBearingDegrees: number | null;
+  /** The zoom level to use for the next following camera command — the
+   * default NAVIGATION_ZOOM, a value chosen via the zoom controls, or
+   * (once reconciled) the real settled zoom after MapLibre's own min/max
+   * clamping (see the "follow-zoom-settled" event below). Persists across
+   * a temporary departure from "following" (a manual gesture or
+   * north-up) within the same mounted session — only route-opened or a
+   * full session reset return it to NAVIGATION_ZOOM. */
+  followZoomLevel: number;
 }
 
 export const INITIAL_RIDE_CAMERA_STATE: RideCameraState = {
@@ -32,6 +48,7 @@ export const INITIAL_RIDE_CAMERA_STATE: RideCameraState = {
   awaitingFreshFix: false,
   lastFollowedCoordinate: null,
   lastCommandedBearingDegrees: null,
+  followZoomLevel: NAVIGATION_ZOOM,
 };
 
 /** A camera move for MapView to actually execute. `animate: true` is a
@@ -97,7 +114,24 @@ export type RideCameraEvent =
       zoom: number | null;
       bearingDegrees: number;
       pitchDegrees: number;
-    };
+    }
+  /** Dispatched by the zoom controls (backlog item 53) — never changes
+   * mode/awaitingFreshFix/lastFollowedCoordinate/lastCommandedBearingDegrees
+   * and never produces a command: the actual on-screen zoom change always
+   * travels through MapView's separate zoomTarget/changeZoomBy path, so
+   * this event's only job is remembering what zoom the next following
+   * command should use. Applied unconditionally regardless of current
+   * mode (not gated on "following") — the simplest, most predictable
+   * behaviour, and the best continuity if the rider zooms while
+   * free-panning then re-engages Follow. */
+  | { type: "follow-zoom-changed"; delta: number }
+  /** Dispatched only from the hook's camera-settled handling (never from
+   * a button) to reconcile followZoomLevel with MapLibre's real settled
+   * zoom, including its own min/max clamping. Deliberately a no-op unless
+   * genuinely following with an already-issued command (mode ===
+   * "following" && !awaitingFreshFix) — see the reducer's own case for
+   * why the awaitingFreshFix guard is essential, not optional. */
+  | { type: "follow-zoom-settled"; zoom: number };
 
 export interface RideCameraTransition {
   state: RideCameraState;
@@ -108,12 +142,6 @@ export interface RideCameraTransition {
    * while already free doesn't pause anything either. */
   pausedToast: boolean;
 }
-
-/** Stable navigation zoom while following, chosen to match the existing
- * fitBounds `maxZoom` cap already used for the route-overview framing
- * (src/map/mapAdapter.ts), so following doesn't zoom further than the
- * overview ever would. */
-export const NAVIGATION_ZOOM = 16;
 
 /** Fixes within this distance of the last-followed coordinate are treated
  * as GPS noise or a stationary rider, not real movement — below typical
@@ -153,10 +181,11 @@ const NO_COMMAND: RideCameraTransition["command"] = null;
 function followCommand(
   coordinate: Coordinate,
   bearingDegrees: number,
+  zoomLevel: number,
 ): RideCameraCommand {
   return {
     coordinate,
-    zoom: NAVIGATION_ZOOM,
+    zoom: zoomLevel,
     bearingDegrees,
     pitchDegrees: FOLLOW_PITCH_DEGREES,
     animate: true,
@@ -271,6 +300,7 @@ export function rideCameraReducer(
           awaitingFreshFix: false,
           lastFollowedCoordinate: null,
           lastCommandedBearingDegrees: null,
+          followZoomLevel: state.followZoomLevel,
         },
         command: NO_COMMAND,
         pausedToast: wasFollowing,
@@ -285,6 +315,7 @@ export function rideCameraReducer(
           awaitingFreshFix: false,
           lastFollowedCoordinate: null,
           lastCommandedBearingDegrees: null,
+          followZoomLevel: state.followZoomLevel,
         },
         command: {
           coordinate: null,
@@ -311,9 +342,14 @@ export function rideCameraReducer(
             awaitingFreshFix: false,
             lastFollowedCoordinate: event.freshCoordinate,
             lastCommandedBearingDegrees: bearingDegrees,
+            followZoomLevel: state.followZoomLevel,
           },
           command: {
-            ...followCommand(event.freshCoordinate, bearingDegrees),
+            ...followCommand(
+              event.freshCoordinate,
+              bearingDegrees,
+              state.followZoomLevel,
+            ),
             requestId: event.requestId,
           },
           pausedToast: false,
@@ -325,6 +361,7 @@ export function rideCameraReducer(
           awaitingFreshFix: true,
           lastFollowedCoordinate: null,
           lastCommandedBearingDegrees: null,
+          followZoomLevel: state.followZoomLevel,
         },
         command: NO_COMMAND,
         pausedToast: false,
@@ -364,8 +401,9 @@ export function rideCameraReducer(
           awaitingFreshFix: false,
           lastFollowedCoordinate: coordinate,
           lastCommandedBearingDegrees: bearingDegrees,
+          followZoomLevel: state.followZoomLevel,
         },
-        command: followCommand(coordinate, bearingDegrees),
+        command: followCommand(coordinate, bearingDegrees, state.followZoomLevel),
         pausedToast: false,
       };
     }
@@ -378,6 +416,9 @@ export function rideCameraReducer(
             awaitingFreshFix: false,
             lastFollowedCoordinate: null,
             lastCommandedBearingDegrees: null,
+            // No meaningful prior follow zoom to restore into free mode —
+            // only a "following" restore below carries a real one.
+            followZoomLevel: NAVIGATION_ZOOM,
           },
           command:
             event.coordinate && event.zoom !== null
@@ -394,12 +435,17 @@ export function rideCameraReducer(
         };
       }
       if (event.mode === "following") {
+        const restoredFollowZoom =
+          event.zoom !== null && Number.isFinite(event.zoom)
+            ? event.zoom
+            : NAVIGATION_ZOOM;
         return {
           state: {
             mode: "following",
             awaitingFreshFix: true,
             lastFollowedCoordinate: null,
             lastCommandedBearingDegrees: null,
+            followZoomLevel: restoredFollowZoom,
           },
           command: NO_COMMAND,
           pausedToast: false,
@@ -407,6 +453,34 @@ export function rideCameraReducer(
       }
       return {
         state: INITIAL_RIDE_CAMERA_STATE,
+        command: NO_COMMAND,
+        pausedToast: false,
+      };
+    }
+
+    case "follow-zoom-changed":
+      return {
+        state: { ...state, followZoomLevel: state.followZoomLevel + event.delta },
+        command: NO_COMMAND,
+        pausedToast: false,
+      };
+
+    case "follow-zoom-settled": {
+      if (
+        state.mode !== "following" ||
+        state.awaitingFreshFix ||
+        state.followZoomLevel === event.zoom
+      ) {
+        // Reference-stable no-op: either there's no genuinely active
+        // following command yet to reconcile against (a stray settle from
+        // MapView's own unrelated overview-fit, or a restore still
+        // awaiting its first fresh fix, must never overwrite a just-
+        // restored/chosen zoom — see this event's own doc comment), or
+        // the settled zoom already matches, so nothing has changed.
+        return { state, command: NO_COMMAND, pausedToast: false };
+      }
+      return {
+        state: { ...state, followZoomLevel: event.zoom },
         command: NO_COMMAND,
         pausedToast: false,
       };

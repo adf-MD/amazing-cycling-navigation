@@ -365,4 +365,151 @@ describe("useFreeRoamCamera", () => {
       expect(result.current.awaitingFreshFix).toBe(true);
     });
   });
+
+  describe("zoom controls (backlog item 53)", () => {
+    it("requestZoom issues a distinct zoomTarget requestId for repeated presses", () => {
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: null,
+          isStale: false,
+          restoredCameraState: null,
+          restoredLastReliableBearingDegrees: null,
+        }),
+      );
+
+      act(() => {
+        result.current.requestZoom(1);
+      });
+      const first = result.current.zoomTarget;
+      expect(first).toMatchObject({ delta: 1 });
+
+      act(() => {
+        result.current.requestZoom(1);
+      });
+      const second = result.current.zoomTarget;
+      expect(second?.requestId).not.toBe(first?.requestId);
+    });
+
+    it("a zoom request keeps Follow engaged with no paused toast", () => {
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: FRESH_FIX,
+          isStale: false,
+          restoredCameraState: null,
+          restoredLastReliableBearingDegrees: null,
+        }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      expect(result.current.mode).toBe("following");
+
+      act(() => {
+        result.current.requestZoom(1);
+      });
+
+      expect(result.current.mode).toBe("following");
+      expect(result.current.showPausedToast).toBe(false);
+    });
+
+    it("reportCameraSettled while following reconciles persistableCameraState.zoom to the settled value", () => {
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: FRESH_FIX,
+          isStale: false,
+          restoredCameraState: null,
+          restoredLastReliableBearingDegrees: null,
+        }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      act(() => {
+        result.current.requestZoom(1);
+      });
+      act(() => {
+        result.current.reportCameraSettled(FRESH_FIX.coordinate, 16.9, 90, 35);
+      });
+
+      expect(result.current.persistableCameraState).toMatchObject({
+        mode: "following",
+        zoom: 16.9,
+      });
+    });
+
+    it("initialFramingCommand's zoom uses restoredCameraState.zoom when present and finite", () => {
+      const restored: StoredCameraState = {
+        mode: "following",
+        coordinate: null,
+        zoom: 18.5,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      };
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: STALE_FIX,
+          isStale: true,
+          restoredCameraState: restored,
+          restoredLastReliableBearingDegrees: 123,
+        }),
+      );
+
+      expect(result.current.cameraTarget).toMatchObject({
+        coordinate: STALE_FIX.coordinate,
+        zoom: 18.5,
+        animate: false,
+      });
+    });
+
+    it("initialFramingCommand falls back to NAVIGATION_ZOOM when restoredCameraState.zoom is absent, null or non-finite", () => {
+      const cases: StoredCameraState[] = [
+        {
+          mode: "following",
+          coordinate: null,
+          zoom: null,
+          bearingDegrees: 0,
+          pitchDegrees: 0,
+        },
+        {
+          mode: "following",
+          coordinate: null,
+          zoom: Number.NaN,
+          bearingDegrees: 0,
+          pitchDegrees: 0,
+        },
+      ];
+
+      for (const restored of cases) {
+        const { result } = renderHook(() =>
+          useFreeRoamCamera({
+            currentFix: STALE_FIX,
+            isStale: true,
+            restoredCameraState: restored,
+            restoredLastReliableBearingDegrees: null,
+          }),
+        );
+
+        expect(result.current.cameraTarget).toMatchObject({ zoom: NAVIGATION_ZOOM });
+      }
+    });
+
+    it("a brand-new (non-restored) session starts with the default NAVIGATION_ZOOM in its first following command", () => {
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: FRESH_FIX,
+          isStale: false,
+          restoredCameraState: null,
+          restoredLastReliableBearingDegrees: null,
+        }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+
+      expect(result.current.cameraTarget).toMatchObject({ zoom: NAVIGATION_ZOOM });
+    });
+  });
 });

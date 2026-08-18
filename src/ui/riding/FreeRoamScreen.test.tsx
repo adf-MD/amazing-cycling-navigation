@@ -4,6 +4,7 @@ import { StrictMode } from "react";
 import userEvent from "@testing-library/user-event";
 import { FreeRoamScreen } from "./FreeRoamScreen.tsx";
 import { db } from "../../storage/db.ts";
+import type { Coordinate } from "../../domain/types.ts";
 import type { GeolocationError, GeolocationFix } from "../../platform/geolocation.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
@@ -26,12 +27,28 @@ function buildStubMapFactory(): {
   factory: MapFactory;
   triggerLoad: () => void;
   triggerUserCameraInteraction: () => void;
+  triggerCameraSettled: (camera: {
+    coordinate: Coordinate;
+    zoom: number;
+    bearingDegrees: number;
+    pitchDegrees: number;
+  }) => void;
   setCameraSpy: ReturnType<typeof vi.fn>;
+  changeZoomBySpy: ReturnType<typeof vi.fn>;
 } {
   let loadListener: (() => void) | undefined;
   let styleLoadedListener: (() => void) | undefined;
   let userCameraInteractionListener: (() => void) | undefined;
+  let cameraSettledListener:
+    | ((camera: {
+        coordinate: Coordinate;
+        zoom: number;
+        bearingDegrees: number;
+        pitchDegrees: number;
+      }) => void)
+    | undefined;
   const setCameraSpy = vi.fn();
+  const changeZoomBySpy = vi.fn();
   const factory: MapFactory = () => {
     const map: MapLibreLike = {
       onLoad: (listener) => {
@@ -57,10 +74,12 @@ function buildStubMapFactory(): {
       onUserCameraInteraction: (listener) => {
         userCameraInteractionListener = listener;
       },
-      onCameraSettled: () => undefined,
+      onCameraSettled: (listener) => {
+        cameraSettledListener = listener;
+      },
       setCamera: setCameraSpy,
       centreOn: () => undefined,
-      changeZoomBy: () => undefined,
+      changeZoomBy: changeZoomBySpy,
       resize: () => undefined,
       onMapTap: () => undefined,
       queryTopWarningFeatureAt: () => null,
@@ -78,7 +97,9 @@ function buildStubMapFactory(): {
       loadListener?.();
     },
     triggerUserCameraInteraction: () => userCameraInteractionListener?.(),
+    triggerCameraSettled: (camera) => cameraSettledListener?.(camera),
     setCameraSpy,
+    changeZoomBySpy,
   };
 }
 
@@ -194,6 +215,76 @@ describe("FreeRoamScreen", () => {
 
     await user.click(followButton);
     expect(followButton).toHaveAttribute("aria-pressed", "true");
+  });
+
+  describe("Zoom controls (backlog item 53)", () => {
+    it("render with correct accessible names and glyphs (free roam has no idle state to hide behind)", () => {
+      const fake = buildFakeGeolocationSource();
+      render(
+        <FreeRoamScreen
+          geolocationSource={fake.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      const zoomInButton = screen.getByRole("button", { name: "Zoom in" });
+      const zoomOutButton = screen.getByRole("button", { name: "Zoom out" });
+      expect(zoomInButton).toHaveTextContent("+");
+      expect(zoomOutButton).toHaveTextContent("−");
+    });
+
+    it("pressing Zoom in calls changeZoomBy(1); pressing Zoom out calls changeZoomBy(-1)", async () => {
+      const user = userEvent.setup();
+      const fake = buildFakeGeolocationSource();
+      const map = buildStubMapFactory();
+      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Zoom in" }));
+      expect(map.changeZoomBySpy).toHaveBeenLastCalledWith(1);
+
+      await user.click(screen.getByRole("button", { name: "Zoom out" }));
+      expect(map.changeZoomBySpy).toHaveBeenLastCalledWith(-1);
+    });
+
+    it("a zoom press keeps Follow's aria-pressed true and shows no paused toast, while never calling setCamera", async () => {
+      const user = userEvent.setup();
+      const fake = buildFakeGeolocationSource();
+      const map = buildStubMapFactory();
+      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      map.triggerLoad();
+      act(() => {
+        fake.watches[0]?.emitFix(SAMPLE_FIX);
+      });
+      map.setCameraSpy.mockClear();
+
+      await user.click(screen.getByRole("button", { name: "Zoom in" }));
+
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.queryByText("Map follow paused.")).toBeNull();
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
+    });
+
+    it("a genuine manual gesture still pauses Follow and shows the toast, unaffected by the new zoom controls", async () => {
+      const fake = buildFakeGeolocationSource();
+      const map = buildStubMapFactory();
+      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      map.triggerLoad();
+      act(() => {
+        fake.watches[0]?.emitFix(SAMPLE_FIX);
+      });
+
+      map.triggerUserCameraInteraction();
+
+      expect(await screen.findByText("Map follow paused.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
   });
 
   it("shows no route-shaped UI at all — no elevation profile, manoeuvre panel or climb selector", () => {

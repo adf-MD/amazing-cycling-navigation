@@ -94,6 +94,12 @@ test("map attribution stays inside the map and clear of the elevation controls a
   }
 
   expect(isFullyWithin(attributionBox, mapBox)).toBe(true);
+  // Camera controls moved from bottom-right to top-right (backlog item
+  // 53) — attribution's bottom-left corner no longer shares any edge with
+  // them, so these checks are now a baseline sanity check rather than the
+  // narrow proof they originally were; see the dedicated
+  // "top-left Zoom and top-right North-up/Follow clusters" test below for
+  // the actual geometry proof of the new layout.
   expect(intersects(attributionBox, followBox)).toBe(false);
   expect(intersects(attributionBox, northUpBox)).toBe(false);
 
@@ -102,6 +108,103 @@ test("map attribution stays inside the map and clear of the elevation controls a
   // longer appear attached to the map's edge.
   const gap = elevationBox.y - (mapBox.y + mapBox.height);
   expect(gap).toBeGreaterThanOrEqual(4);
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+// Backlog item 53: proves the new top-left Zoom in/out cluster and the
+// moved top-right North-up/Follow cluster, with real bounding-box
+// geometry against the running app — mirroring planning.spec.ts's own
+// item-52 phone-viewport proof for the equivalent Planning controls.
+test("Riding: top-left Zoom and top-right North-up/Follow clusters are separate, fully contained, real touch targets", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await page.goto("/");
+  await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
+  await page.getByRole("button", { name: "smoke-route", exact: true }).click();
+  await page.getByRole("button", { name: "Start riding" }).click();
+
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await expect(mapContainer.locator("canvas")).toBeVisible();
+
+  const zoomInButton = page.getByRole("button", { name: "Zoom in" });
+  const zoomOutButton = page.getByRole("button", { name: "Zoom out" });
+  const northUpButton = page.getByRole("button", { name: "North-up, top-down view" });
+  const followButton = page.getByRole("button", { name: "Follow my location" });
+  const attribution = page.getByTestId("map-attribution");
+  await expect(zoomInButton).toBeVisible();
+  await expect(zoomOutButton).toBeVisible();
+  await expect(northUpButton).toBeVisible();
+  await expect(followButton).toBeVisible();
+
+  const [mapBox, zoomInBox, zoomOutBox, northUpBox, followBox, attributionBox] =
+    await Promise.all([
+      mapContainer.boundingBox(),
+      zoomInButton.boundingBox(),
+      zoomOutButton.boundingBox(),
+      northUpButton.boundingBox(),
+      followButton.boundingBox(),
+      attribution.boundingBox(),
+    ]);
+  if (
+    !mapBox ||
+    !zoomInBox ||
+    !zoomOutBox ||
+    !northUpBox ||
+    !followBox ||
+    !attributionBox
+  ) {
+    throw new Error("expected all located map-chrome elements to have a bounding box");
+  }
+
+  // All four controls fully inside the map.
+  expect(isFullyWithin(zoomInBox, mapBox)).toBe(true);
+  expect(isFullyWithin(zoomOutBox, mapBox)).toBe(true);
+  expect(isFullyWithin(northUpBox, mapBox)).toBe(true);
+  expect(isFullyWithin(followBox, mapBox)).toBe(true);
+
+  // Real ≥44×44px touch targets.
+  for (const box of [zoomInBox, zoomOutBox, northUpBox, followBox]) {
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+  }
+
+  // A real gap within each cluster.
+  expect(intersects(zoomInBox, zoomOutBox)).toBe(false);
+  expect(intersects(northUpBox, followBox)).toBe(false);
+
+  // The top-left Zoom cluster and the top-right North-up/Follow cluster
+  // never intersect each other.
+  expect(intersects(zoomInBox, northUpBox)).toBe(false);
+  expect(intersects(zoomInBox, followBox)).toBe(false);
+  expect(intersects(zoomOutBox, northUpBox)).toBe(false);
+  expect(intersects(zoomOutBox, followBox)).toBe(false);
+
+  // Neither cluster intersects the map attribution.
+  expect(intersects(zoomInBox, attributionBox)).toBe(false);
+  expect(intersects(zoomOutBox, attributionBox)).toBe(false);
+  expect(intersects(northUpBox, attributionBox)).toBe(false);
+  expect(intersects(followBox, attributionBox)).toBe(false);
+
+  // No horizontal overflow at this phone viewport.
+  const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(scrollWidth).toBeLessThanOrEqual(390);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);

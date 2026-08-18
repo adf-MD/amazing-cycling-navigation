@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { Coordinate } from "../../domain/types.ts";
 import type { GeolocationFix } from "../../platform/geolocation.ts";
+import { generateId } from "../../platform/idGenerator.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
+import type { ZoomCameraTarget } from "../../map/MapView.tsx";
 import {
   INITIAL_RIDE_CAMERA_STATE,
   NAVIGATION_ZOOM,
@@ -64,9 +66,22 @@ const INITIAL_HOOK_STATE: HookState = {
 // with no dynamic latch needed.
 function hookReducer(state: HookState, event: HookEvent): HookState {
   if (event.type === "camera-settled") {
-    if (state.camera.mode !== "free") return state;
+    // Mirrors useRideCamera.ts's own identical camera-settled handling —
+    // always routed through the pure reducer so followZoomLevel is
+    // reconciled to MapLibre's real settled zoom while genuinely
+    // following, reference-stable when nothing changed.
+    const zoomReconciled = rideCameraReducer(state.camera, {
+      type: "follow-zoom-settled",
+      zoom: event.zoom,
+    }).state;
+    if (state.camera.mode !== "free") {
+      return zoomReconciled === state.camera
+        ? state
+        : { ...state, camera: zoomReconciled };
+    }
     return {
       ...state,
+      camera: zoomReconciled,
       freeCameraPosition: {
         coordinate: event.coordinate,
         zoom: event.zoom,
@@ -142,6 +157,10 @@ export interface UseFreeRoamCameraResult {
   requestFollow: () => void;
   reportUserInteraction: () => void;
   requestNorthUp: () => void;
+  /** See useRideCamera.ts's own identical zoomTarget doc comment. */
+  zoomTarget: ZoomCameraTarget | null;
+  /** See useRideCamera.ts's own identical requestZoom doc comment. */
+  requestZoom: (delta: number) => void;
   isNorthUpTopDown: boolean;
   reportCameraSettled: (
     coordinate: Coordinate,
@@ -290,6 +309,14 @@ export function useFreeRoamCamera({
     dispatch({ type: "route-opened" });
   }, []);
 
+  // Mirrors useRideCamera.ts's own identical zoomTarget/requestZoom pair.
+  const [zoomTarget, setZoomTarget] = useState<ZoomCameraTarget | null>(null);
+
+  const requestZoom = useCallback((delta: number) => {
+    setZoomTarget({ delta, requestId: generateId() });
+    dispatch({ type: "follow-zoom-changed", delta });
+  }, []);
+
   const reportCameraSettled = useCallback(
     (
       coordinate: Coordinate,
@@ -312,25 +339,41 @@ export function useFreeRoamCamera({
   const freeZoom = state.freeCameraPosition?.zoom ?? null;
   const freeBearing = state.freeCameraPosition?.bearingDegrees ?? 0;
   const freePitch = state.freeCameraPosition?.pitchDegrees ?? 0;
-  const persistableCameraState = useMemo<StoredCameraState>(
-    () =>
-      state.camera.mode === "free" && freeCoordinate !== null
-        ? {
-            mode: "free",
-            coordinate: freeCoordinate,
-            zoom: freeZoom,
-            bearingDegrees: freeBearing,
-            pitchDegrees: freePitch,
-          }
-        : {
-            mode: state.camera.mode,
-            coordinate: null,
-            zoom: null,
-            bearingDegrees: 0,
-            pitchDegrees: 0,
-          },
-    [state.camera.mode, freeCoordinate, freeZoom, freeBearing, freePitch],
-  );
+  const persistableCameraState = useMemo<StoredCameraState>(() => {
+    if (state.camera.mode === "free" && freeCoordinate !== null) {
+      return {
+        mode: "free",
+        coordinate: freeCoordinate,
+        zoom: freeZoom,
+        bearingDegrees: freeBearing,
+        pitchDegrees: freePitch,
+      };
+    }
+    if (state.camera.mode === "following") {
+      // Mirrors useRideCamera.ts's own identical broadened contract.
+      return {
+        mode: "following",
+        coordinate: null,
+        zoom: state.camera.followZoomLevel,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      };
+    }
+    return {
+      mode: state.camera.mode,
+      coordinate: null,
+      zoom: null,
+      bearingDegrees: 0,
+      pitchDegrees: 0,
+    };
+  }, [
+    state.camera.mode,
+    state.camera.followZoomLevel,
+    freeCoordinate,
+    freeZoom,
+    freeBearing,
+    freePitch,
+  ]);
 
   const isNorthUpTopDown =
     state.camera.mode === "free" &&
@@ -353,15 +396,23 @@ export function useFreeRoamCamera({
   // bookkeeping needed for any of the three.
   const initialFramingCommand = useMemo<RideCameraCommand | null>(() => {
     if (!currentFix || !isStale) return null;
+    // Sources zoom directly from restoredCameraState.zoom (backlog item
+    // 53) — mirrors exactly how bearingDegrees already sources from
+    // restoredLastReliableBearingDegrees as a raw prop rather than through
+    // state.camera, avoiding any hook-internal dispatch/render lag.
+    const restoredZoom = restoredCameraState?.zoom ?? null;
     return {
       coordinate: currentFix.coordinate,
-      zoom: NAVIGATION_ZOOM,
+      zoom:
+        restoredZoom !== null && Number.isFinite(restoredZoom)
+          ? restoredZoom
+          : NAVIGATION_ZOOM,
       bearingDegrees: restoredLastReliableBearingDegrees ?? 0,
       pitchDegrees: 0,
       animate: false,
       followOffset: false,
     };
-  }, [currentFix, isStale, restoredLastReliableBearingDegrees]);
+  }, [currentFix, isStale, restoredCameraState, restoredLastReliableBearingDegrees]);
 
   const cameraTarget =
     state.cameraTarget ??
@@ -375,6 +426,8 @@ export function useFreeRoamCamera({
     requestFollow,
     reportUserInteraction,
     requestNorthUp,
+    zoomTarget,
+    requestZoom,
     isNorthUpTopDown,
     reportCameraSettled,
     persistableCameraState,

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { Coordinate, RoutePoint } from "../../domain/types.ts";
 import type { GeolocationFix } from "../../platform/geolocation.ts";
+import { generateId } from "../../platform/idGenerator.ts";
 import { routeTangentBearingDegrees } from "../../navigation/bearing.ts";
 import type { OffRouteLevel } from "../../navigation/types.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
+import type { ZoomCameraTarget } from "../../map/MapView.tsx";
 import {
   INITIAL_RIDE_CAMERA_STATE,
   rideCameraReducer,
@@ -79,9 +81,26 @@ const INITIAL_HOOK_STATE: HookState = {
 
 function hookReducer(state: HookState, event: HookEvent): HookState {
   if (event.type === "camera-settled") {
-    if (state.camera.mode !== "free") return state;
+    // Always routed through the pure reducer (never bypassed) so
+    // followZoomLevel is reconciled to MapLibre's real settled zoom while
+    // genuinely following — see rideCamera.ts's "follow-zoom-settled"
+    // event for the awaitingFreshFix guard that stops an unrelated
+    // overview-fit settle from corrupting a just-restored/chosen zoom.
+    // Reference-stable when nothing changed (mirrors the previous
+    // early-return-on-not-free no-op exactly in that case), so this never
+    // adds a re-render on every ordinary moveend while following.
+    const zoomReconciled = rideCameraReducer(state.camera, {
+      type: "follow-zoom-settled",
+      zoom: event.zoom,
+    }).state;
+    if (state.camera.mode !== "free") {
+      return zoomReconciled === state.camera
+        ? state
+        : { ...state, camera: zoomReconciled };
+    }
     return {
       ...state,
+      camera: zoomReconciled,
       freeCameraPosition: {
         coordinate: event.coordinate,
         zoom: event.zoom,
@@ -169,6 +188,15 @@ export interface UseRideCameraResult {
    * following and enters "free"; from "free", stays free and just resets
    * bearing/pitch, preserving centre/zoom either way. */
   requestNorthUp: () => void;
+  /** The zoom-only command for MapView's own `zoomTarget` prop (backlog
+   * item 53) — for RidingScreen to pass straight through. Never touches
+   * centre/bearing/pitch/mode; never calls reportUserInteraction. */
+  zoomTarget: ZoomCameraTarget | null;
+  /** Issues a relative zoom change (e.g. ±1). Keeps Follow engaged with no
+   * pause toast — this is a deliberate, settled product decision: zooming
+   * while still being followed is a normal riding action, distinct from a
+   * genuine manual pan/rotate/pitch gesture. */
+  requestZoom: (delta: number) => void;
   /** True once the camera is free AND its last-settled orientation is
    * genuinely north-up/top-down — based on the real settled readback, not
    * optimistic intent, so it only reports true once a north-up transition
@@ -370,6 +398,20 @@ export function useRideCamera({
     dispatch({ type: "route-opened" });
   }, []);
 
+  // The zoom-only command MapView actually applies (via mapAdapter.ts's
+  // changeZoomBy) — a wholly separate channel from cameraTarget/setCamera,
+  // deduped by requestId like Planning's own identical mechanism
+  // (PlanningScreen.tsx's zoomTarget/generateId() convention), not the
+  // monotonic counter used for cameraTarget's explicit north-up/follow
+  // requestId above (that counter's "never crypto.randomUUID()" rule is
+  // specific to RideCameraCommand's own requestId contract).
+  const [zoomTarget, setZoomTarget] = useState<ZoomCameraTarget | null>(null);
+
+  const requestZoom = useCallback((delta: number) => {
+    setZoomTarget({ delta, requestId: generateId() });
+    dispatch({ type: "follow-zoom-changed", delta });
+  }, []);
+
   const reportCameraSettled = useCallback(
     (
       coordinate: Coordinate,
@@ -396,25 +438,46 @@ export function useRideCamera({
   const freeZoom = state.freeCameraPosition?.zoom ?? null;
   const freeBearing = state.freeCameraPosition?.bearingDegrees ?? 0;
   const freePitch = state.freeCameraPosition?.pitchDegrees ?? 0;
-  const persistableCameraState = useMemo<StoredCameraState>(
-    () =>
-      state.camera.mode === "free" && freeCoordinate !== null
-        ? {
-            mode: "free",
-            coordinate: freeCoordinate,
-            zoom: freeZoom,
-            bearingDegrees: freeBearing,
-            pitchDegrees: freePitch,
-          }
-        : {
-            mode: state.camera.mode,
-            coordinate: null,
-            zoom: null,
-            bearingDegrees: 0,
-            pitchDegrees: 0,
-          },
-    [state.camera.mode, freeCoordinate, freeZoom, freeBearing, freePitch],
-  );
+  const persistableCameraState = useMemo<StoredCameraState>(() => {
+    if (state.camera.mode === "free" && freeCoordinate !== null) {
+      return {
+        mode: "free",
+        coordinate: freeCoordinate,
+        zoom: freeZoom,
+        bearingDegrees: freeBearing,
+        pitchDegrees: freePitch,
+      };
+    }
+    if (state.camera.mode === "following") {
+      // Broadens StoredCameraState.zoom's existing contract (backlog item
+      // 53) rather than adding a second overlapping stored field: while
+      // "free" it's the settled pan zoom as above; while "following" it's
+      // the rider's selected follow zoom, restored via
+      // rideCameraReducer's own "restore" case, defaulting to
+      // NAVIGATION_ZOOM there — never here — for an invalid/missing value.
+      return {
+        mode: "following",
+        coordinate: null,
+        zoom: state.camera.followZoomLevel,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      };
+    }
+    return {
+      mode: state.camera.mode,
+      coordinate: null,
+      zoom: null,
+      bearingDegrees: 0,
+      pitchDegrees: 0,
+    };
+  }, [
+    state.camera.mode,
+    state.camera.followZoomLevel,
+    freeCoordinate,
+    freeZoom,
+    freeBearing,
+    freePitch,
+  ]);
 
   const isNorthUpTopDown =
     state.camera.mode === "free" &&
@@ -431,6 +494,8 @@ export function useRideCamera({
     requestFollow,
     reportUserInteraction,
     requestNorthUp,
+    zoomTarget,
+    requestZoom,
     isNorthUpTopDown,
     reportCameraSettled,
     persistableCameraState,

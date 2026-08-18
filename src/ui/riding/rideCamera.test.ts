@@ -33,6 +33,7 @@ function followingState(overrides: Partial<RideCameraState> = {}): RideCameraSta
     awaitingFreshFix: false,
     lastFollowedCoordinate: START,
     lastCommandedBearingDegrees: 0,
+    followZoomLevel: NAVIGATION_ZOOM,
     ...overrides,
   };
 }
@@ -53,10 +54,18 @@ describe("rideCameraReducer", () => {
           awaitingFreshFix: false,
           lastFollowedCoordinate: null,
           lastCommandedBearingDegrees: null,
+          followZoomLevel: NAVIGATION_ZOOM,
         },
         { type: "route-opened" },
       );
       expect(result.state.mode).toBe("overview");
+    });
+
+    it("resets followZoomLevel to NAVIGATION_ZOOM from a non-default value", () => {
+      const result = rideCameraReducer(followingState({ followZoomLevel: 18.5 }), {
+        type: "route-opened",
+      });
+      expect(result.state.followZoomLevel).toBe(NAVIGATION_ZOOM);
     });
   });
 
@@ -72,6 +81,7 @@ describe("rideCameraReducer", () => {
         awaitingFreshFix: false,
         lastFollowedCoordinate: START,
         lastCommandedBearingDegrees: 0,
+        followZoomLevel: NAVIGATION_ZOOM,
       });
       expect(result.command).toEqual({
         coordinate: START,
@@ -94,6 +104,7 @@ describe("rideCameraReducer", () => {
         awaitingFreshFix: true,
         lastFollowedCoordinate: null,
         lastCommandedBearingDegrees: null,
+        followZoomLevel: NAVIGATION_ZOOM,
       });
       expect(result.command).toBeNull();
     });
@@ -136,6 +147,54 @@ describe("rideCameraReducer", () => {
       });
       expect(result.command).toBeNull();
     });
+
+    it("uses the current followZoomLevel, not the raw NAVIGATION_ZOOM constant, when they differ", () => {
+      const state: RideCameraState = {
+        mode: "free",
+        awaitingFreshFix: false,
+        lastFollowedCoordinate: null,
+        lastCommandedBearingDegrees: null,
+        followZoomLevel: 18.5,
+      };
+      const result = rideCameraReducer(state, {
+        type: "follow-requested",
+        freshCoordinate: START,
+        bearingContext: NEUTRAL_BEARING_CONTEXT,
+      });
+      expect(result.command?.zoom).toBe(18.5);
+      expect(result.state.followZoomLevel).toBe(18.5);
+    });
+
+    it("without a fresh coordinate, preserves the existing followZoomLevel rather than resetting it", () => {
+      const state: RideCameraState = {
+        mode: "overview",
+        awaitingFreshFix: false,
+        lastFollowedCoordinate: null,
+        lastCommandedBearingDegrees: null,
+        followZoomLevel: 18.5,
+      };
+      const result = rideCameraReducer(state, {
+        type: "follow-requested",
+        freshCoordinate: null,
+        bearingContext: NEUTRAL_BEARING_CONTEXT,
+      });
+      expect(result.state.followZoomLevel).toBe(18.5);
+    });
+
+    it("leaving Follow (user-interaction) then re-engaging reuses the preserved followZoomLevel, not NAVIGATION_ZOOM", () => {
+      const following = followingState({ followZoomLevel: 18.5 });
+      const paused = rideCameraReducer(following, { type: "user-interaction" });
+      expect(paused.state.mode).toBe("free");
+      expect(paused.state.followZoomLevel).toBe(18.5);
+
+      const resumed = rideCameraReducer(paused.state, {
+        type: "follow-requested",
+        freshCoordinate: SIGNIFICANT_MOVE,
+        bearingContext: NEUTRAL_BEARING_CONTEXT,
+      });
+      expect(resumed.command?.zoom).toBe(18.5);
+      expect(resumed.state.followZoomLevel).toBe(18.5);
+    });
   });
 
   describe("fresh-fix", () => {
@@ -145,6 +204,7 @@ describe("rideCameraReducer", () => {
         awaitingFreshFix: true,
         lastFollowedCoordinate: null,
         lastCommandedBearingDegrees: null,
+        followZoomLevel: NAVIGATION_ZOOM,
       };
       const result = rideCameraReducer(pending, {
         type: "fresh-fix",
@@ -179,6 +239,7 @@ describe("rideCameraReducer", () => {
         awaitingFreshFix: false,
         lastFollowedCoordinate: null,
         lastCommandedBearingDegrees: null,
+        followZoomLevel: NAVIGATION_ZOOM,
       };
       const result = rideCameraReducer(free, {
         type: "fresh-fix",
@@ -297,6 +358,39 @@ describe("rideCameraReducer", () => {
       expect(result.command?.bearingDegrees).toBe(100);
       expect(result.state.lastCommandedBearingDegrees).toBe(100);
     });
+
+    it("uses the current followZoomLevel for the produced command's zoom", () => {
+      const state = followingState({
+        lastFollowedCoordinate: START,
+        followZoomLevel: 18.5,
+      });
+      const result = rideCameraReducer(state, {
+        type: "fresh-fix",
+        coordinate: SIGNIFICANT_MOVE,
+        bearingContext: NEUTRAL_BEARING_CONTEXT,
+      });
+      expect(result.command?.zoom).toBe(18.5);
+      expect(result.state.followZoomLevel).toBe(18.5);
+    });
+
+    it("several consecutive fixes with genuine movement never reset a previously-set followZoomLevel", () => {
+      let state = followingState({ lastFollowedCoordinate: START, followZoomLevel: 19 });
+      const coordinates: Coordinate[] = [
+        [0, 51.0001],
+        [0, 51.0002],
+        [0, 51.0003],
+      ];
+      for (const coordinate of coordinates) {
+        const result = rideCameraReducer(state, {
+          type: "fresh-fix",
+          coordinate,
+          bearingContext: NEUTRAL_BEARING_CONTEXT,
+        });
+        expect(result.command?.zoom).toBe(19);
+        expect(result.state.followZoomLevel).toBe(19);
+        state = result.state;
+      }
+    });
   });
 
   describe("user-interaction", () => {
@@ -309,6 +403,7 @@ describe("rideCameraReducer", () => {
         awaitingFreshFix: false,
         lastFollowedCoordinate: null,
         lastCommandedBearingDegrees: null,
+        followZoomLevel: NAVIGATION_ZOOM,
       });
       expect(result.command).toBeNull();
       expect(result.pausedToast).toBe(false);
@@ -327,6 +422,7 @@ describe("rideCameraReducer", () => {
         awaitingFreshFix: true,
         lastFollowedCoordinate: null,
         lastCommandedBearingDegrees: null,
+        followZoomLevel: NAVIGATION_ZOOM,
       };
       const result = rideCameraReducer(pending, { type: "user-interaction" });
       expect(result.state.mode).toBe("free");
@@ -339,6 +435,7 @@ describe("rideCameraReducer", () => {
         awaitingFreshFix: false,
         lastFollowedCoordinate: null,
         lastCommandedBearingDegrees: null,
+        followZoomLevel: NAVIGATION_ZOOM,
       };
       const result = rideCameraReducer(free, { type: "user-interaction" });
       expect(result.state).toEqual(free);
@@ -359,6 +456,13 @@ describe("rideCameraReducer", () => {
       });
       expect(result.state.mode).toBe("following");
     });
+
+    it("preserves followZoomLevel across a departure from following (retains, never resets)", () => {
+      const result = rideCameraReducer(followingState({ followZoomLevel: 18.5 }), {
+        type: "user-interaction",
+      });
+      expect(result.state.followZoomLevel).toBe(18.5);
+    });
   });
 
   describe("north-up-requested", () => {
@@ -369,6 +473,7 @@ describe("rideCameraReducer", () => {
         awaitingFreshFix: false,
         lastFollowedCoordinate: null,
         lastCommandedBearingDegrees: null,
+        followZoomLevel: NAVIGATION_ZOOM,
       });
       expect(result.command).toEqual({
         coordinate: null,
@@ -387,6 +492,7 @@ describe("rideCameraReducer", () => {
         awaitingFreshFix: true,
         lastFollowedCoordinate: null,
         lastCommandedBearingDegrees: null,
+        followZoomLevel: NAVIGATION_ZOOM,
       };
       const result = rideCameraReducer(pending, { type: "north-up-requested" });
       expect(result.state.mode).toBe("free");
@@ -399,6 +505,7 @@ describe("rideCameraReducer", () => {
         awaitingFreshFix: false,
         lastFollowedCoordinate: null,
         lastCommandedBearingDegrees: null,
+        followZoomLevel: NAVIGATION_ZOOM,
       };
       const result = rideCameraReducer(free, { type: "north-up-requested" });
       expect(result.state.mode).toBe("free");
@@ -425,6 +532,13 @@ describe("rideCameraReducer", () => {
       const result = rideCameraReducer(followingState(), { type: "north-up-requested" });
       expect(result.command?.requestId).toBeUndefined();
     });
+
+    it("preserves followZoomLevel across a departure from following (retains, never resets)", () => {
+      const result = rideCameraReducer(followingState({ followZoomLevel: 18.5 }), {
+        type: "north-up-requested",
+      });
+      expect(result.state.followZoomLevel).toBe(18.5);
+    });
   });
 
   describe("restore", () => {
@@ -442,8 +556,45 @@ describe("rideCameraReducer", () => {
         awaitingFreshFix: true,
         lastFollowedCoordinate: null,
         lastCommandedBearingDegrees: null,
+        followZoomLevel: NAVIGATION_ZOOM,
       });
       expect(result.command).toBeNull();
+    });
+
+    it("restores into following with a valid persisted zoom, using it instead of NAVIGATION_ZOOM", () => {
+      const result = rideCameraReducer(INITIAL_RIDE_CAMERA_STATE, {
+        type: "restore",
+        mode: "following",
+        coordinate: null,
+        zoom: 18.5,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      expect(result.state.followZoomLevel).toBe(18.5);
+    });
+
+    it("restores into following with a null persisted zoom, falling back to NAVIGATION_ZOOM", () => {
+      const result = rideCameraReducer(INITIAL_RIDE_CAMERA_STATE, {
+        type: "restore",
+        mode: "following",
+        coordinate: null,
+        zoom: null,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      expect(result.state.followZoomLevel).toBe(NAVIGATION_ZOOM);
+    });
+
+    it("restores into following with a non-finite persisted zoom, falling back to NAVIGATION_ZOOM", () => {
+      const result = rideCameraReducer(INITIAL_RIDE_CAMERA_STATE, {
+        type: "restore",
+        mode: "following",
+        coordinate: null,
+        zoom: Number.NaN,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      expect(result.state.followZoomLevel).toBe(NAVIGATION_ZOOM);
     });
 
     it("restores into free with a saved position, bearing and pitch, issuing one instant (non-animated) jump", () => {
@@ -460,6 +611,7 @@ describe("rideCameraReducer", () => {
         awaitingFreshFix: false,
         lastFollowedCoordinate: null,
         lastCommandedBearingDegrees: null,
+        followZoomLevel: NAVIGATION_ZOOM,
       });
       expect(result.command).toEqual({
         coordinate: START,
@@ -499,9 +651,126 @@ describe("rideCameraReducer", () => {
     });
   });
 
+  describe("follow-zoom-changed", () => {
+    it("while following, changes only followZoomLevel by exactly delta, no command, no paused toast", () => {
+      const state = followingState({ followZoomLevel: 16 });
+      const result = rideCameraReducer(state, { type: "follow-zoom-changed", delta: 1 });
+      expect(result.state).toEqual({ ...state, followZoomLevel: 17 });
+      expect(result.command).toBeNull();
+      expect(result.pausedToast).toBe(false);
+    });
+
+    it("while following, a negative delta decreases followZoomLevel", () => {
+      const state = followingState({ followZoomLevel: 16 });
+      const result = rideCameraReducer(state, { type: "follow-zoom-changed", delta: -1 });
+      expect(result.state.followZoomLevel).toBe(15);
+    });
+
+    // Deliberate design decision, not left implicit: the actual on-screen
+    // zoom change always travels through MapView's separate
+    // zoomTarget/changeZoomBy path, entirely independent of camera mode —
+    // so followZoomLevel is updated unconditionally regardless of mode,
+    // for the simplest, most predictable behaviour and the best
+    // continuity if the rider zooms while free-panning then re-engages
+    // Follow (see the "follow-requested" describe block above for that
+    // continuity proof).
+    it("while free, followZoomLevel still updates (applied unconditionally, not gated on following)", () => {
+      const free: RideCameraState = {
+        mode: "free",
+        awaitingFreshFix: false,
+        lastFollowedCoordinate: null,
+        lastCommandedBearingDegrees: null,
+        followZoomLevel: NAVIGATION_ZOOM,
+      };
+      const result = rideCameraReducer(free, { type: "follow-zoom-changed", delta: 2 });
+      expect(result.state.followZoomLevel).toBe(NAVIGATION_ZOOM + 2);
+      expect(result.state.mode).toBe("free");
+      expect(result.command).toBeNull();
+    });
+
+    it("never changes mode, awaitingFreshFix, lastFollowedCoordinate or lastCommandedBearingDegrees", () => {
+      const state = followingState({
+        lastFollowedCoordinate: START,
+        lastCommandedBearingDegrees: 42,
+      });
+      const result = rideCameraReducer(state, { type: "follow-zoom-changed", delta: 1 });
+      expect(result.state.mode).toBe(state.mode);
+      expect(result.state.awaitingFreshFix).toBe(state.awaitingFreshFix);
+      expect(result.state.lastFollowedCoordinate).toEqual(state.lastFollowedCoordinate);
+      expect(result.state.lastCommandedBearingDegrees).toBe(
+        state.lastCommandedBearingDegrees,
+      );
+    });
+  });
+
+  describe("follow-zoom-settled", () => {
+    it("while following with an already-issued command (awaitingFreshFix false), reconciles followZoomLevel to the settled zoom", () => {
+      const state = followingState({ followZoomLevel: 17 });
+      const result = rideCameraReducer(state, {
+        type: "follow-zoom-settled",
+        zoom: 16.847,
+      });
+      expect(result.state.followZoomLevel).toBe(16.847);
+      expect(result.command).toBeNull();
+      expect(result.pausedToast).toBe(false);
+    });
+
+    it("while following but still awaitingFreshFix (e.g. just restored), is a reference-stable no-op", () => {
+      const state: RideCameraState = {
+        mode: "following",
+        awaitingFreshFix: true,
+        lastFollowedCoordinate: null,
+        lastCommandedBearingDegrees: null,
+        followZoomLevel: 18.5,
+      };
+      const result = rideCameraReducer(state, {
+        type: "follow-zoom-settled",
+        zoom: 6, // e.g. an unrelated overview-fit settle
+      });
+      expect(result.state).toBe(state);
+      expect(result.state.followZoomLevel).toBe(18.5);
+    });
+
+    it("while free, is a no-op", () => {
+      const free: RideCameraState = {
+        mode: "free",
+        awaitingFreshFix: false,
+        lastFollowedCoordinate: null,
+        lastCommandedBearingDegrees: null,
+        followZoomLevel: NAVIGATION_ZOOM,
+      };
+      const result = rideCameraReducer(free, {
+        type: "follow-zoom-settled",
+        zoom: 12,
+      });
+      expect(result.state).toBe(free);
+    });
+
+    it("while overview, is a no-op", () => {
+      const result = rideCameraReducer(INITIAL_RIDE_CAMERA_STATE, {
+        type: "follow-zoom-settled",
+        zoom: 8,
+      });
+      expect(result.state).toBe(INITIAL_RIDE_CAMERA_STATE);
+    });
+
+    it("returns the exact same state reference when the settled zoom already matches", () => {
+      const state = followingState({ followZoomLevel: 17 });
+      const result = rideCameraReducer(state, {
+        type: "follow-zoom-settled",
+        zoom: 17,
+      });
+      expect(result.state).toBe(state);
+    });
+  });
+
   it("FOLLOW_MIN_MOVEMENT_METRES is a small, sub-GPS-accuracy threshold", () => {
     expect(FOLLOW_MIN_MOVEMENT_METRES).toBeGreaterThan(0);
     expect(FOLLOW_MIN_MOVEMENT_METRES).toBeLessThan(10);
+  });
+
+  it("INITIAL_RIDE_CAMERA_STATE.followZoomLevel defaults to NAVIGATION_ZOOM", () => {
+    expect(INITIAL_RIDE_CAMERA_STATE.followZoomLevel).toBe(NAVIGATION_ZOOM);
   });
 });
 

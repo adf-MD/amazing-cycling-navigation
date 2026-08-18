@@ -120,6 +120,11 @@ const DEFAULT_CAMERA_STATE: StoredCameraState = {
   pitchDegrees: 0,
 };
 
+// MapLibre's own already-established single-level step, mirroring
+// PlanningScreen.tsx's identical PLANNING_ZOOM_STEP — never a
+// configurable product setting (backlog item 53).
+const RIDING_ZOOM_STEP = 1;
+
 const EDIT_COPY_DIALOG_TITLE = "Replace your current draft?";
 const EDIT_COPY_DIALOG_MESSAGE =
   "Editing this route will replace your unsaved draft in Planning. This route itself will remain unchanged.";
@@ -190,6 +195,18 @@ export function RidingScreen({
   useEffect(() => {
     cameraStateRef.current = camera.persistableCameraState;
   }, [camera.persistableCameraState]);
+
+  // Zoom in/out (backlog item 53) — never calls camera.reportUserInteraction,
+  // so a zoom press keeps Follow engaged with no "Map follow paused" toast,
+  // a deliberate product decision (zooming while followed is a normal
+  // riding action, unlike a genuine manual pan/rotate/pitch gesture).
+  const { requestZoom: cameraRequestZoom } = camera;
+  const handleZoomIn = useCallback(() => {
+    cameraRequestZoom(RIDING_ZOOM_STEP);
+  }, [cameraRequestZoom]);
+  const handleZoomOut = useCallback(() => {
+    cameraRequestZoom(-RIDING_ZOOM_STEP);
+  }, [cameraRequestZoom]);
 
   // Reports whether this ride is genuinely GPS-active back to App, purely
   // so the sticky/static main-navigation contract (navPositionMode.ts)
@@ -920,6 +937,7 @@ export function RidingScreen({
           routeFeatureOverlay={routeFeatureOverlay}
           gradientOverlay={{ segments: microDetailSegments }}
           cameraTarget={camera.cameraTarget}
+          zoomTarget={camera.zoomTarget}
           suppressInitialOverviewFit={camera.hasActionableCameraTarget}
           onUserCameraInteraction={camera.reportUserInteraction}
           onCameraSettled={(settled) => {
@@ -932,30 +950,50 @@ export function RidingScreen({
           }}
         />
         {nav.geolocationStatus === "watching" ? (
-          <button
-            type="button"
-            onClick={camera.requestNorthUp}
-            aria-label="North-up, top-down view"
-            aria-pressed={camera.isNorthUpTopDown}
-            className={`ride-map-control ride-map-control--north-up${
-              camera.isNorthUpTopDown ? " is-pressed" : ""
-            }`}
-          >
-            N
-          </button>
+          <div className="ride-map-zoom-controls">
+            <button
+              type="button"
+              onClick={handleZoomIn}
+              aria-label="Zoom in"
+              className="ride-map-control ride-map-control--zoom"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              onClick={handleZoomOut}
+              aria-label="Zoom out"
+              className="ride-map-control ride-map-control--zoom"
+            >
+              −
+            </button>
+          </div>
         ) : null}
         {nav.geolocationStatus === "watching" ? (
-          <button
-            type="button"
-            onClick={camera.requestFollow}
-            aria-label="Follow my location"
-            aria-pressed={camera.mode === "following"}
-            className={`ride-map-control ride-map-control--follow${
-              camera.mode === "following" ? " is-pressed" : ""
-            }`}
-          >
-            {camera.mode === "following" && camera.awaitingFreshFix ? "Waiting…" : "⌖"}
-          </button>
+          <div className="ride-map-camera-controls">
+            <button
+              type="button"
+              onClick={camera.requestNorthUp}
+              aria-label="North-up, top-down view"
+              aria-pressed={camera.isNorthUpTopDown}
+              className={`ride-map-control ride-map-control--north-up${
+                camera.isNorthUpTopDown ? " is-pressed" : ""
+              }`}
+            >
+              N
+            </button>
+            <button
+              type="button"
+              onClick={camera.requestFollow}
+              aria-label="Follow my location"
+              aria-pressed={camera.mode === "following"}
+              className={`ride-map-control ride-map-control--follow${
+                camera.mode === "following" ? " is-pressed" : ""
+              }`}
+            >
+              {camera.mode === "following" && camera.awaitingFreshFix ? "Waiting…" : "⌖"}
+            </button>
+          </div>
         ) : null}
       </div>
 

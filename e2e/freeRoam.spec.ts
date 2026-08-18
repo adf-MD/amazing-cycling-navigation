@@ -12,6 +12,50 @@ const ORS_URL_GLOB = "https://api.heigit.org/**";
 const START = { latitude: 51.5, longitude: -0.1 };
 const MOVED = { latitude: 51.5006, longitude: -0.1 }; // ~67 m north
 
+// Mirrors layout.spec.ts's own identical helpers — duplicated locally per
+// this repo's established no-shared-e2e-helpers-across-specs convention.
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function isFullyWithin(inner: Box, outer: Box): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  );
+}
+
+function intersects(a: Box, b: Box): boolean {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
+
+// Mirrors ridingCamera.spec.ts's own identical numbersClose/centresClose
+// pair and its doc comment — duplicated locally per this repo's
+// established no-shared-e2e-helpers-across-specs convention.
+const CAMERA_VALUE_TOLERANCE = 1e-6;
+
+function numbersClose(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  return Math.abs(Number.parseFloat(a) - Number.parseFloat(b)) < CAMERA_VALUE_TOLERANCE;
+}
+
+function centresClose(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  const [aLon, aLat] = a.split(",");
+  const [bLon, bLat] = b.split(",");
+  return numbersClose(aLon, bLon) && numbersClose(aLat, bLat);
+}
+
 /** Deterministic replacement for a fixed sleep, mirroring
  * ridingLauncher.spec.ts's own identical helper — duplicated locally per
  * this repo's established no-shared-e2e-helpers-across-specs convention. */
@@ -335,6 +379,105 @@ test("a saved route cannot silently replace an unfinished free-roam session, and
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
 });
 
+// Mirrors ridingCamera.spec.ts's own identically-purposed zoom-persistence
+// test (backlog item 53), adapted to free roam's own reload/resume path
+// ("Resume free roam" via the Ride launcher, not a named route).
+test("zoom while followed persists across a later GPS fix, storage, reload and Resume free roam", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await startFreeRoam(page, context);
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  const followButton = page.getByRole("button", { name: "Follow my location" });
+  const zoomInButton = page.getByRole("button", { name: "Zoom in" });
+
+  // 1. Wait for the real followed camera to genuinely settle.
+  await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).toBe("35");
+
+  // 2. Capture the settled camera before zooming.
+  const centreBeforeZoom = await mapContainer.getAttribute("data-camera-center");
+  const bearingBeforeZoom = await mapContainer.getAttribute("data-camera-bearing");
+  const pitchBeforeZoom = await mapContainer.getAttribute("data-camera-pitch");
+  const zoomBeforeZoom = await mapContainer.getAttribute("data-camera-zoom");
+
+  // 3. Press Zoom in; wait for a genuine, numerically greater zoom.
+  await zoomInButton.click();
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-zoom"))
+    .not.toBe(zoomBeforeZoom);
+  const zoomAfterZoom = await mapContainer.getAttribute("data-camera-zoom");
+  expect(Number(zoomAfterZoom)).toBeGreaterThan(Number(zoomBeforeZoom));
+
+  // 4. Follow stays engaged; no paused toast.
+  await expect(followButton).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Map follow paused.")).toHaveCount(0);
+
+  // 5. Centre/bearing/pitch untouched by the zoom command itself.
+  expect(
+    centresClose(await mapContainer.getAttribute("data-camera-center"), centreBeforeZoom),
+  ).toBe(true);
+  expect(await mapContainer.getAttribute("data-camera-bearing")).toBe(bearingBeforeZoom);
+  expect(await mapContainer.getAttribute("data-camera-pitch")).toBe(pitchBeforeZoom);
+
+  // 6. A later accepted GPS fix re-centres the followed camera without
+  // resetting the selected zoom.
+  await context.setGeolocation(MOVED);
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-center"))
+    .not.toBe(centreBeforeZoom);
+  expect(await mapContainer.getAttribute("data-camera-zoom")).toBe(zoomAfterZoom);
+
+  // 7. The selected zoom is genuinely committed to IndexedDB.
+  await expect
+    .poll(() => readActiveRideStateRow(page), { timeout: 10_000 })
+    .toMatchObject({
+      kind: "free-roam",
+      cameraMode: "following",
+      cameraZoom: Number(zoomAfterZoom),
+    });
+
+  // 8. Reload; the same established contract as route sessions — GPS/camera
+  // do not restart until Resume free roam is explicitly pressed (the zoom
+  // controls, gated on genuinely-watching status, are absent until then).
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+  await page.getByRole("button", { name: "Ride", exact: true }).click();
+  const resumeButton = page.getByRole("button", { name: "Resume free roam" });
+  await expect(resumeButton).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start free roam" })).toBeHidden();
+  await expect(zoomInButton).toBeHidden();
+
+  // 9. Resuming restores the selected zoom, stable through the first
+  // fresh fix and a further one beyond it.
+  await resumeButton.click();
+  await expect(page.getByRole("heading", { level: 1, name: "Free roam" })).toBeVisible();
+  const centreAfterResume = await mapContainer.getAttribute("data-camera-center");
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-zoom"))
+    .toBe(zoomAfterZoom);
+
+  await context.setGeolocation(START);
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-center"))
+    .not.toBe(centreAfterResume);
+  expect(await mapContainer.getAttribute("data-camera-zoom")).toBe(zoomAfterZoom);
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
 test("the local fallback map style still shows the position marker and camera controls", async ({
   page,
   context,
@@ -381,6 +524,39 @@ test.describe("390px phone viewport", () => {
     const followBox = await followButton.boundingBox();
     expect(followBox?.width ?? 0).toBeGreaterThanOrEqual(44);
     expect(followBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+    // Backlog item 53: the top-left Zoom in/out cluster and the top-right
+    // North-up/Follow cluster, mirroring layout.spec.ts's own equivalent
+    // Riding proof for the same two clusters.
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    const zoomInButton = page.getByRole("button", { name: "Zoom in" });
+    const zoomOutButton = page.getByRole("button", { name: "Zoom out" });
+    const northUpButton = page.getByRole("button", {
+      name: "North-up, top-down view",
+    });
+    const [mapBox, zoomInBox, zoomOutBox, northUpBox] = await Promise.all([
+      mapContainer.boundingBox(),
+      zoomInButton.boundingBox(),
+      zoomOutButton.boundingBox(),
+      northUpButton.boundingBox(),
+    ]);
+    if (!mapBox || !zoomInBox || !zoomOutBox || !northUpBox || !followBox) {
+      throw new Error("expected all located map-chrome elements to have a bounding box");
+    }
+    expect(isFullyWithin(zoomInBox, mapBox)).toBe(true);
+    expect(isFullyWithin(zoomOutBox, mapBox)).toBe(true);
+    expect(isFullyWithin(northUpBox, mapBox)).toBe(true);
+    expect(isFullyWithin(followBox, mapBox)).toBe(true);
+    for (const box of [zoomInBox, zoomOutBox, northUpBox, followBox]) {
+      expect(box.width).toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+    expect(intersects(zoomInBox, zoomOutBox)).toBe(false);
+    expect(intersects(northUpBox, followBox)).toBe(false);
+    expect(intersects(zoomInBox, northUpBox)).toBe(false);
+    expect(intersects(zoomInBox, followBox)).toBe(false);
+    expect(intersects(zoomOutBox, northUpBox)).toBe(false);
+    expect(intersects(zoomOutBox, followBox)).toBe(false);
 
     await endRideButton.click();
     const dialog = page.getByRole("alertdialog");

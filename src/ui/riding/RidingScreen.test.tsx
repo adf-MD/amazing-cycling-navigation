@@ -162,6 +162,7 @@ function buildStubMapFactory(): {
   setCameraSpy: ReturnType<typeof vi.fn>;
   getZoomSpy: ReturnType<typeof vi.fn>;
   fitBoundsSpy: ReturnType<typeof vi.fn>;
+  changeZoomBySpy: ReturnType<typeof vi.fn>;
 } {
   let loadListener: (() => void) | undefined;
   let styleLoadedListener: (() => void) | undefined;
@@ -178,6 +179,7 @@ function buildStubMapFactory(): {
   const setCameraSpy = vi.fn();
   const getZoomSpy = vi.fn(() => 14);
   const fitBoundsSpy = vi.fn();
+  const changeZoomBySpy = vi.fn();
   const factory: MapFactory = () => {
     const map: MapLibreLike = {
       onLoad: (listener) => {
@@ -212,7 +214,7 @@ function buildStubMapFactory(): {
       },
       setCamera: setCameraSpy,
       centreOn: () => undefined,
-      changeZoomBy: () => undefined,
+      changeZoomBy: changeZoomBySpy,
       resize: () => undefined,
       onMapTap: () => undefined,
       queryTopWarningFeatureAt: () => null,
@@ -239,6 +241,7 @@ function buildStubMapFactory(): {
     setCameraSpy,
     getZoomSpy,
     fitBoundsSpy,
+    changeZoomBySpy,
   };
 }
 
@@ -3802,6 +3805,165 @@ describe("RidingScreen", () => {
         "aria-pressed",
         "true",
       );
+    });
+  });
+
+  describe("Zoom controls (backlog item 53)", () => {
+    it("Zoom in/Zoom out are absent before Start riding is tapped", () => {
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={buildFakeGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      expect(screen.queryByRole("button", { name: "Zoom in" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Zoom out" })).toBeNull();
+    });
+
+    it("Zoom in/Zoom out are absent during a geolocation error, alongside North-up/Follow", async () => {
+      const user = userEvent.setup();
+      const fake = buildFakeGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={fake.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      fake.watches[0]?.emitError({ reason: "timeout", message: "timed out" });
+      await screen.findByRole("alert");
+
+      expect(screen.queryByRole("button", { name: "Zoom in" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Zoom out" })).toBeNull();
+    });
+
+    it("Zoom in/Zoom out render with correct accessible names and glyphs once watching", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+
+      const zoomInButton = screen.getByRole("button", { name: "Zoom in" });
+      const zoomOutButton = screen.getByRole("button", { name: "Zoom out" });
+      expect(zoomInButton).toHaveTextContent("+");
+      expect(zoomOutButton).toHaveTextContent("−");
+    });
+
+    it("pressing Zoom in calls changeZoomBy(1); pressing Zoom out calls changeZoomBy(-1)", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+
+      await user.click(screen.getByRole("button", { name: "Zoom in" }));
+      expect(map.changeZoomBySpy).toHaveBeenLastCalledWith(1);
+
+      await user.click(screen.getByRole("button", { name: "Zoom out" }));
+      expect(map.changeZoomBySpy).toHaveBeenLastCalledWith(-1);
+    });
+
+    it("a zoom press keeps Follow's aria-pressed true and shows no paused toast, while never calling setCamera", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+      map.setCameraSpy.mockClear();
+
+      await user.click(screen.getByRole("button", { name: "Zoom in" }));
+
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.queryByText("Map follow paused.")).toBeNull();
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
+    });
+
+    it("a genuine manual gesture still pauses Follow and shows the toast, unaffected by the new zoom controls", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+
+      map.triggerUserCameraInteraction();
+
+      expect(await screen.findByText("Map follow paused.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+
+    it("North-up and Follow keep their existing accessible names and aria-pressed wiring once wrapped in the new cluster", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+
+      const northUpButton = screen.getByRole("button", {
+        name: "North-up, top-down view",
+      });
+      const followButton = screen.getByRole("button", { name: "Follow my location" });
+      expect(northUpButton).toHaveAttribute("aria-pressed", "false");
+      expect(followButton).toHaveAttribute("aria-pressed", "true");
     });
   });
 

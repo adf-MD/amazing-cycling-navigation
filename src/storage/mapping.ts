@@ -124,6 +124,16 @@ export interface StoredCameraState {
   mode: RideCameraMode;
   /** Only meaningful when mode is "free"; null otherwise. */
   coordinate: Coordinate | null;
+  /** Meaningful in two different modes, holding two different things
+   * (backlog item 53): while "free", the rider's manually settled pan
+   * zoom, exactly as before; while "following", the rider's selected
+   * follow zoom (see src/ui/riding/rideCamera.ts's
+   * RideCameraState.followZoomLevel) — broadening this same field's
+   * contract rather than adding a second overlapping stored zoom value.
+   * null while "overview", or for a row written before this field
+   * existed. A missing/invalid value defaults to NAVIGATION_ZOOM at the
+   * camera reducer, never here — this storage layer never depends on a
+   * UI camera constant. */
   zoom: number | null;
   /** Always concrete (unlike coordinate/zoom) — bearing/pitch have a
    * sensible default (0/0, north-up/top-down) even when not "free", so
