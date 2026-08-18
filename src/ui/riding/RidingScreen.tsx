@@ -54,6 +54,7 @@ import { RouteFeatureDetailsPanel } from "../shared/RouteFeatureDetailsPanel.tsx
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 import { RidingClimbProgressPanel } from "./RidingClimbProgressPanel.tsx";
 import { RidingClimbSelector } from "./RidingClimbSelector.tsx";
+import { RidingImmersiveHeader } from "./RidingImmersiveHeader.tsx";
 import { RidingNextManoeuvrePanel } from "./RidingNextManoeuvrePanel.tsx";
 import { RidingRouteCompletionPanel } from "./RidingRouteCompletionPanel.tsx";
 import { RidingStatusStrip } from "./RidingStatusStrip.tsx";
@@ -111,6 +112,19 @@ export interface RidingScreenProps {
    * notification" shape, but never touches persisted rideState the way a
    * completed End/Finish ride does. */
   onReturnToRideLauncher?: () => void;
+  /** Called once a successful Pause (backlog item 55) has fully completed —
+   * after nav.pause()'s own write-the-resumable-snapshot-then-stop
+   * lifecycle has already resolved. Unlike onRideFinalized, Pause never
+   * clears persisted storage — the active-ride row stays present and
+   * resumable, so App.tsx's response (resetting only its own in-memory
+   * ridingContent pointer back to "none") drops the rider onto a Ride
+   * launcher that immediately offers Resume route for this same session.
+   * Never called on a genuine storage failure or a duplicate/re-entrant
+   * submission. If the callback itself throws, that's logged only (see
+   * performPauseRide) — the pause has already fully succeeded by this
+   * point, so a bug in the caller's own handler must never be reported as
+   * a pause failure. */
+  onRidePaused?: () => void;
 }
 
 const DEFAULT_CAMERA_STATE: StoredCameraState = {
@@ -172,6 +186,7 @@ export function RidingScreen({
   onNavigateToPlanning,
   onRideFinalized,
   onReturnToRideLauncher,
+  onRidePaused,
 }: RidingScreenProps) {
   // Bridges useRideCamera's current camera state into useRideNavigation's
   // persistence. Both hooks are called in this same render, and
@@ -210,8 +225,11 @@ export function RidingScreen({
   }, [cameraRequestZoom]);
 
   // Reports whether this ride is genuinely GPS-active back to App, purely
-  // so the sticky/static main-navigation contract (navPositionMode.ts)
-  // can react to it. nav.geolocationStatus is the app's own authoritative
+  // so the immersive-Riding-shell contract (immersiveRidingShell.ts,
+  // backlog item 55 — MainNavigation and its wrapping <header> genuinely
+  // absent while active, replaced by this screen's own compact
+  // Pause/title/End header) can react to it. nav.geolocationStatus is the
+  // app's own authoritative
   // ride-tracking state and is already used for this exact "is riding
   // genuinely under way" boundary elsewhere in this file — the wake-lock
   // gate, the next-manoeuvre panel, and the map's active/overview class
@@ -535,6 +553,34 @@ export function RidingScreen({
   // finalizeError-identity effect below and never touches this latch.
   const pendingEndRideFocusRef = useRef(false);
 
+  // Pause — the reversible, non-destructive counterpart to End/Finish ride
+  // (backlog item 55). Deliberately separate state from
+  // activeFinalizeSource/finalizeError above, not a widened union: Pause
+  // doesn't finalize anything, and mutual exclusion between Pause and
+  // End/Finish is enforced primarily here at the screen level (each
+  // action's own guard cross-checks the other's ref — see
+  // performPauseRide/performFinalizeRide below), with useRideNavigation's
+  // own isPausingRef/isFinalizingRef serving only as a defensive backstop.
+  // Pause's own button never unmounts (no confirmation swaps it out — see
+  // "Pause must not require a destructive confirmation"), so it needs no
+  // pendingEndRideFocusRef-style unmount-dance; a plain finalizeError-
+  // identity-style effect below is sufficient.
+  const pauseButtonRef = useRef<HTMLButtonElement>(null);
+  const [isPausePending, setIsPausePending] = useState(false);
+  const [pauseError, setPauseError] = useState<string | null>(null);
+  // Synchronous guard against a rapid double Pause submission, mirroring
+  // isFinalizeActionPendingRef above. Also the primary, bidirectional
+  // mutual-exclusion mechanism against End/Finish: performPauseRide checks
+  // isFinalizeActionPendingRef before starting, and performFinalizeRide
+  // checks this ref before starting — each screen-level guard cross-checks
+  // the other's ref directly, which is what actually prevents Pause and
+  // End/Finish from ever reaching useRideNavigation concurrently in
+  // practice (the hook's own isPausingRef/isFinalizingRef cross-check is
+  // only a defensive backstop beneath this, and is itself asymmetric for
+  // an unrelated eslint-plugin-react-hooks reason — see that ref's own
+  // declaration comment in useRideNavigation.ts).
+  const isPauseActionPendingRef = useRef(false);
+
   const completion = useRouteCompletionCandidate({
     routeId: route.id,
     isRideActive: nav.geolocationStatus === "watching",
@@ -564,7 +610,10 @@ export function RidingScreen({
   }
 
   const performFinalizeRide = async (source: "end" | "finish") => {
-    if (isFinalizeActionPendingRef.current) return;
+    // Cross-guard with Pause, so End/Finish is blocked while a Pause is
+    // genuinely in flight (backlog item 55) — the primary, bidirectional
+    // enforcement; see isPauseActionPendingRef's own declaration comment.
+    if (isFinalizeActionPendingRef.current || isPauseActionPendingRef.current) return;
     isFinalizeActionPendingRef.current = true;
     setActiveFinalizeSource(source);
     setFinalizeError(null);
@@ -615,6 +664,46 @@ export function RidingScreen({
       setActiveFinalizeSource(null);
     }
   };
+
+  // Pause (backlog item 55) — reversible, no confirmation. Mirrors
+  // performFinalizeRide's own try/catch/finally shape, but never touches
+  // camera.resetCamera()/completion.reset()/reachedManoeuvreIndex — Pause
+  // preserves progress, camera choice, climb-dismissal and
+  // completion-armed state exactly as they were; only End/Finish reset
+  // them.
+  const performPauseRide = async () => {
+    if (isPauseActionPendingRef.current || isFinalizeActionPendingRef.current) return;
+    isPauseActionPendingRef.current = true;
+    setIsPausePending(true);
+    setPauseError(null);
+    try {
+      await nav.pause();
+      // The pause has now fully succeeded — the resumable snapshot is
+      // written and the watch is stopped. Notify the caller with its own
+      // nested try/catch, mirroring performFinalizeRide's identical
+      // rationale: a throw here indicates only a bug in the caller's own
+      // handler, never a genuine pause failure.
+      try {
+        onRidePaused?.();
+      } catch (callbackError) {
+        logError("riding-ride-paused-callback", callbackError);
+      }
+    } catch (error) {
+      logError("riding-pause-ride", error);
+      setPauseError("The ride could not be paused on this device. Try again.");
+    } finally {
+      isPauseActionPendingRef.current = false;
+      setIsPausePending(false);
+    }
+  };
+
+  // Pause's own button never unmounts (no confirmation swaps it out), so
+  // this follows Finish-ride's existing plain-effect pattern below, not
+  // the pendingEndRideFocusRef unmount-dance End-ride needs.
+  useEffect(() => {
+    if (!pauseError) return;
+    pauseButtonRef.current?.focus();
+  }, [pauseError]);
 
   // Finish ride's own trigger never unmounts (RidingRouteCompletionPanel has
   // no confirmation dialog to swap in), so a plain finalizeError-identity
@@ -770,7 +859,7 @@ export function RidingScreen({
           className="btn-danger"
           ref={endRideTriggerRef}
           onClick={handleEndRideClick}
-          disabled={activeFinalizeSource !== null}
+          disabled={activeFinalizeSource !== null || isPausePending}
         >
           End ride
         </button>
@@ -794,12 +883,41 @@ export function RidingScreen({
         />
       ) : null}
 
-      <div className="ride-route-header">
-        <h1 className="screen-title">{route.name}</h1>
-        <p className="route-card-meta">
-          {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
-        </p>
-      </div>
+      {nav.geolocationStatus === "idle" ? (
+        <div className="ride-route-header">
+          <h1 className="screen-title">{route.name}</h1>
+          <p className="route-card-meta">
+            {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
+          </p>
+        </div>
+      ) : (
+        // The immersive Pause/title/End header (backlog item 55), plus
+        // its own error/confirmation rows immediately beneath it — a
+        // deliberate relocation, superseding item 40's "directly after
+        // the offline notice" ordering for this active case only, per
+        // item 55's own "show the full-width inline confirmation
+        // immediately below the compact header" requirement.
+        <>
+          <RidingImmersiveHeader
+            title={route.name}
+            pauseLabel={isPausePending ? "Pausing…" : "Pause"}
+            onPause={() => {
+              void performPauseRide();
+            }}
+            pauseDisabled={isPausePending || activeFinalizeSource !== null}
+            pauseButtonRef={pauseButtonRef}
+            endAction={!isEndRideConfirmOpen ? renderEndRideAction() : null}
+          />
+          {pauseError ? (
+            <p className="field-error" role="alert">
+              {pauseError}
+            </p>
+          ) : null}
+          {isEndRideConfirmOpen ? (
+            <div className="ride-end-ride-confirm-row">{renderEndRideAction()}</div>
+          ) : null}
+        </>
+      )}
 
       {!online ? (
         <p role="status" className="status-row">
@@ -866,9 +984,7 @@ export function RidingScreen({
             <div className="ride-end-ride-panel-row stack">{renderEndRideAction()}</div>
           ) : null}
         </div>
-      ) : (
-        <div className="ride-end-ride-row">{renderEndRideAction()}</div>
-      )}
+      ) : null}
 
       {nav.geolocationStatus === "error" && nav.geolocationError ? (
         <div role="alert" className="ride-alert-panel">
@@ -911,6 +1027,7 @@ export function RidingScreen({
           }}
           onKeepRiding={completion.dismiss}
           isFinishing={activeFinalizeSource === "finish"}
+          disabled={isPausePending}
           error={finalizeError?.source === "finish" ? finalizeError.message : null}
           finishButtonRef={finishRideButtonRef}
         />

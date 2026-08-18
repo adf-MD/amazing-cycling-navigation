@@ -7,6 +7,13 @@ export interface RidingRouteCompletionPanelProps {
    * both buttons so a rapid double click can't submit twice, and swaps the
    * Finish-ride label to make the pending state visible. */
   isFinishing: boolean;
+  /** True while an unrelated transition (Pause — backlog item 55) is
+   * genuinely in flight, blocking both buttons without claiming Finish
+   * ride itself is in progress: unlike isFinishing, this never changes the
+   * Finish-ride label, since the panel isn't the one doing the work.
+   * Defaults to false via omission — every pre-existing caller is
+   * unaffected. */
+  disabled?: boolean;
   error: string | null;
   finishButtonRef: RefObject<HTMLButtonElement | null>;
 }
@@ -25,6 +32,7 @@ export function RidingRouteCompletionPanel({
   onFinish,
   onKeepRiding,
   isFinishing,
+  disabled = false,
   error,
   finishButtonRef,
 }: RidingRouteCompletionPanelProps) {
@@ -37,7 +45,7 @@ export function RidingRouteCompletionPanel({
           className="btn-primary"
           ref={finishButtonRef}
           onClick={onFinish}
-          disabled={isFinishing}
+          disabled={isFinishing || disabled}
         >
           {isFinishing ? "Finishing ride…" : "Finish ride"}
         </button>
@@ -45,7 +53,7 @@ export function RidingRouteCompletionPanel({
           type="button"
           className="btn-secondary"
           onClick={onKeepRiding}
-          disabled={isFinishing}
+          disabled={isFinishing || disabled}
         >
           Keep riding
         </button>

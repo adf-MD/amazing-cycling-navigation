@@ -238,13 +238,16 @@ describe("RidingScreen Finish/End ride", () => {
     });
     await user.click(await screen.findByRole("button", { name: "End ride" }));
 
-    // .ride-end-ride-row is a persistent action-slot container: it stays
-    // mounted and now contains the confirmation directly, rather than the
-    // confirmation being appended elsewhere on the page.
-    const endRideRow = container.querySelector(".ride-end-ride-row");
+    // The immersive header's own End slot goes empty once the
+    // confirmation opens, and the confirmation renders as its own
+    // full-width row immediately after the header (backlog item 55
+    // restructures item 50's original .ride-end-ride-row container).
+    const header = container.querySelector(".riding-immersive-header");
+    const confirmRow = container.querySelector(".ride-end-ride-confirm-row");
     const dialog = await screen.findByRole("alertdialog");
-    expect(endRideRow).not.toBeNull();
-    expect(endRideRow?.contains(dialog)).toBe(true);
+    expect(header).not.toBeNull();
+    expect(confirmRow).not.toBeNull();
+    expect(confirmRow?.contains(dialog)).toBe(true);
     // The trigger never coexists with the confirmation — the only
     // "End ride"-named button left anywhere is the dialog's own confirm
     // button.

@@ -9,6 +9,7 @@ import { isWakeLockSupported, type WakeLockSource } from "../../platform/wakeLoc
 import type { StoredCameraState } from "../../storage/mapping.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
 import { FreeRoamStatusStrip } from "./FreeRoamStatusStrip.tsx";
+import { RidingImmersiveHeader } from "./RidingImmersiveHeader.tsx";
 import { RidingWakeLockControl } from "./RidingWakeLockControl.tsx";
 import { useFreeRoamCamera } from "./useFreeRoamCamera.ts";
 import { useFreeRoamNavigation } from "./useFreeRoamNavigation.ts";
@@ -27,6 +28,14 @@ export interface FreeRoamScreenProps {
    * clears its own ride-content selection in response, which is what
    * actually unmounts this screen and shows the empty Ride launcher again. */
   onRideFinalized?: () => void;
+  /** Called once a successful Pause (backlog item 55) has fully completed —
+   * mirrors RidingScreen.tsx's identically-named/shaped prop exactly,
+   * including the "storage retained, only the watch stopped, callback fires
+   * last and its own failure is only ever logged" contract. App.tsx is the
+   * only current caller; it resets its own in-memory ride-content pointer
+   * in response, dropping the rider onto a Ride launcher that immediately
+   * offers Resume free roam for this same session. */
+  onRidePaused?: () => void;
 }
 
 const DEFAULT_CAMERA_STATE: StoredCameraState = {
@@ -84,6 +93,7 @@ export function FreeRoamScreen({
   wakeLockSource,
   onRidingActiveChange,
   onRideFinalized,
+  onRidePaused,
 }: FreeRoamScreenProps) {
   // Bridges useFreeRoamCamera's current camera state and last-reliable
   // bearing into useFreeRoamNavigation's persistence — see
@@ -122,8 +132,9 @@ export function FreeRoamScreen({
   }, [cameraRequestZoom]);
 
   // Reports whether this session is genuinely GPS-active back to App, for
-  // the sticky/static main-navigation contract — identical rationale and
-  // mechanism to RidingScreen.tsx's own equivalent effect.
+  // the immersive-Riding-shell contract (immersiveRidingShell.ts, backlog
+  // item 55) — identical rationale and mechanism to RidingScreen.tsx's own
+  // equivalent effect.
   useEffect(() => {
     onRidingActiveChange?.(nav.geolocationStatus !== "idle");
     return () => {
@@ -173,8 +184,19 @@ export function FreeRoamScreen({
   // identically-named ref exactly (items 49/50).
   const pendingEndRideFocusRef = useRef(false);
 
+  // Pause (backlog item 55) — mirrors RidingScreen.tsx's identical Pause
+  // state/refs exactly, including the "separate state from
+  // isFinalizing/finalizeError, not a widened union" rationale and the
+  // "screen-level cross-guard is the primary mutual-exclusion enforcement"
+  // rationale (see RidingScreen.tsx's own isPauseActionPendingRef comment).
+  const pauseButtonRef = useRef<HTMLButtonElement>(null);
+  const [isPausePending, setIsPausePending] = useState(false);
+  const [pauseError, setPauseError] = useState<string | null>(null);
+  const isPauseActionPendingRef = useRef(false);
+
   const performFinalizeRide = async () => {
-    if (isFinalizeActionPendingRef.current) return;
+    // Cross-guard with Pause — see isPauseActionPendingRef's own comment.
+    if (isFinalizeActionPendingRef.current || isPauseActionPendingRef.current) return;
     isFinalizeActionPendingRef.current = true;
     setIsFinalizing(true);
     setFinalizeError(null);
@@ -208,6 +230,38 @@ export function FreeRoamScreen({
       setIsFinalizing(false);
     }
   };
+
+  // Pause (backlog item 55) — mirrors RidingScreen.tsx's identical
+  // performPauseRide exactly (reversible, no confirmation), minus the
+  // route-progress/completion/manoeuvre no-ops it has none of.
+  const performPauseRide = async () => {
+    if (isPauseActionPendingRef.current || isFinalizeActionPendingRef.current) return;
+    isPauseActionPendingRef.current = true;
+    setIsPausePending(true);
+    setPauseError(null);
+    try {
+      await nav.pause();
+      try {
+        onRidePaused?.();
+      } catch (callbackError) {
+        logError("free-roam-ride-paused-callback", callbackError);
+      }
+    } catch (error) {
+      logError("free-roam-pause-ride", error);
+      setPauseError("Free roam could not be paused on this device. Try again.");
+    } finally {
+      isPauseActionPendingRef.current = false;
+      setIsPausePending(false);
+    }
+  };
+
+  // Pause's own button never unmounts (no confirmation swaps it out), so
+  // this follows a plain finalizeError-identity-style effect, not the
+  // pendingEndRideFocusRef unmount-dance End-ride needs.
+  useEffect(() => {
+    if (!pauseError) return;
+    pauseButtonRef.current?.focus();
+  }, [pauseError]);
 
   // A no-deps effect re-checks pendingEndRideFocusRef's readiness (mounted
   // AND enabled) on every render, rather than consuming the request
@@ -264,7 +318,7 @@ export function FreeRoamScreen({
           className="btn-danger"
           ref={endRideTriggerRef}
           onClick={handleEndRideClick}
-          disabled={isFinalizing}
+          disabled={isFinalizing || isPausePending}
         >
           End ride
         </button>
@@ -288,7 +342,29 @@ export function FreeRoamScreen({
         />
       ) : null}
 
-      <h1 className="screen-title">Free roam</h1>
+      {/* The immersive Pause/title/End header (backlog item 55) — renders
+       * unconditionally, mirroring the unconditional <h1>/.ride-end-ride-row
+       * it replaces: this screen has no idle/pre-ride panel of its own (see
+       * this component's own doc comment), so there is no non-immersive
+       * state to special-case the way RidingScreen's idle branch does. */}
+      <RidingImmersiveHeader
+        title="Free roam"
+        pauseLabel={isPausePending ? "Pausing…" : "Pause"}
+        onPause={() => {
+          void performPauseRide();
+        }}
+        pauseDisabled={isPausePending || isFinalizing}
+        pauseButtonRef={pauseButtonRef}
+        endAction={!isEndRideConfirmOpen ? renderEndRideAction() : null}
+      />
+      {pauseError ? (
+        <p className="field-error" role="alert">
+          {pauseError}
+        </p>
+      ) : null}
+      {isEndRideConfirmOpen ? (
+        <div className="ride-end-ride-confirm-row">{renderEndRideAction()}</div>
+      ) : null}
 
       {!online ? (
         <p role="status" className="status-row">
@@ -296,8 +372,6 @@ export function FreeRoamScreen({
           unavailable.
         </p>
       ) : null}
-
-      <div className="ride-end-ride-row">{renderEndRideAction()}</div>
 
       {nav.geolocationStatus === "error" && nav.geolocationError ? (
         <div role="alert" className="ride-alert-panel">

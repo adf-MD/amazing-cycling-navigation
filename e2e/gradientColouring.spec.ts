@@ -815,32 +815,44 @@ test.describe("Riding: pre-ride climb chart layout", () => {
     await expect(page.locator(".ride-profile-panel")).toBeHidden();
     await expect(page.locator(".ride-elevation-section")).toBeVisible();
 
-    // The now-active End-ride trigger sits at the top of the screen,
-    // ahead of the map, and its confirmation opens immediately after it.
-    const endRideRow = page.locator(".ride-end-ride-row");
-    await expect(endRideRow).toBeVisible();
-    const endRideRowPrecedesMap = await page.evaluate(() => {
-      const row = document.querySelector(".ride-end-ride-row");
+    // The now-active immersive header (backlog item 55, superseding item
+    // 40's own .ride-end-ride-row structure) sits at the very top of the
+    // screen, ahead of the map, with its End-ride trigger inside the
+    // header's own End slot; its confirmation opens as its own row
+    // immediately after the header.
+    const immersiveHeader = page.locator(".riding-immersive-header");
+    await expect(immersiveHeader).toBeVisible();
+    const headerPrecedesMap = await page.evaluate(() => {
+      const header = document.querySelector(".riding-immersive-header");
       const mapContainer = document.querySelector('[data-testid="map-container"]');
-      if (!row || !mapContainer) return false;
+      if (!header || !mapContainer) return false;
       return Boolean(
-        row.compareDocumentPosition(mapContainer) & Node.DOCUMENT_POSITION_FOLLOWING,
+        header.compareDocumentPosition(mapContainer) & Node.DOCUMENT_POSITION_FOLLOWING,
       );
     });
-    expect(endRideRowPrecedesMap).toBe(true);
+    expect(headerPrecedesMap).toBe(true);
 
-    await endRideRow.getByRole("button", { name: "End ride" }).click();
+    await immersiveHeader.getByRole("button", { name: "End ride" }).click();
     const endRideDialog = page.getByRole("alertdialog");
     await expect(endRideDialog).toBeVisible();
-    // .ride-end-ride-row stays mounted (a persistent action-slot container,
-    // backlog item 50) and now contains the confirmation directly, rather
-    // than the confirmation rendering as a separate sibling after it.
-    const dialogInsideEndRideRow = await page.evaluate(() => {
-      const row = document.querySelector(".ride-end-ride-row");
+    // The header's own End slot goes empty once the confirmation opens
+    // (backlog item 55's "replace the End trigger with the confirmation
+    // in place" requirement), and the confirmation renders as its own
+    // full-width row immediately after the header — superseding item 50's
+    // original .ride-end-ride-row single-container structure.
+    const dialogFollowsHeaderDirectly = await page.evaluate(() => {
+      const header = document.querySelector(".riding-immersive-header");
+      const endSlot = document.querySelector(".riding-immersive-header-end");
+      const confirmRow = document.querySelector(".ride-end-ride-confirm-row");
       const alertDialog = document.querySelector('[role="alertdialog"]');
-      return Boolean(row && alertDialog && row.contains(alertDialog));
+      if (!header || !endSlot || !confirmRow || !alertDialog) return false;
+      return (
+        !endSlot.contains(alertDialog) &&
+        header.nextElementSibling === confirmRow &&
+        confirmRow.contains(alertDialog)
+      );
     });
-    expect(dialogInsideEndRideRow).toBe(true);
+    expect(dialogFollowsHeaderDirectly).toBe(true);
 
     const scrollWidthWithDialogOpen = await page.evaluate(
       () => document.documentElement.scrollWidth,

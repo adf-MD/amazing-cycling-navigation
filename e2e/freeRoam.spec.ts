@@ -251,16 +251,24 @@ test("End ride from the active screen clears the row and returns to the empty la
     dialog.getByText("Your free roam position and camera state will be cleared."),
   ).toBeVisible();
 
-  // .ride-end-ride-row is a persistent action-slot container (backlog item
-  // 50): it stays mounted and now contains the confirmation directly,
-  // rather than the confirmation being appended elsewhere on the page. The
+  // The immersive header's own End slot (backlog item 55, superseding
+  // item 50's original .ride-end-ride-row single-container structure)
+  // goes empty once the confirmation opens, and the confirmation renders
+  // as its own full-width row immediately after the header. The
   // heading/status/map stay visible around it throughout.
-  const dialogInsideEndRideRow = await page.evaluate(() => {
-    const row = document.querySelector(".ride-end-ride-row");
+  const dialogFollowsHeaderDirectly = await page.evaluate(() => {
+    const header = document.querySelector(".riding-immersive-header");
+    const endSlot = document.querySelector(".riding-immersive-header-end");
+    const confirmRow = document.querySelector(".ride-end-ride-confirm-row");
     const alertDialog = document.querySelector('[role="alertdialog"]');
-    return Boolean(row && alertDialog && row.contains(alertDialog));
+    if (!header || !endSlot || !confirmRow || !alertDialog) return false;
+    return (
+      !endSlot.contains(alertDialog) &&
+      header.nextElementSibling === confirmRow &&
+      confirmRow.contains(alertDialog)
+    );
   });
-  expect(dialogInsideEndRideRow).toBe(true);
+  expect(dialogFollowsHeaderDirectly).toBe(true);
   await expect(page.getByRole("heading", { level: 1, name: "Free roam" })).toBeVisible();
   await expect(page.getByTestId("map-container")).toBeVisible();
 
@@ -330,6 +338,14 @@ test("a saved route cannot silently replace an unfinished free-roam session, and
   await expect
     .poll(() => readActiveRideStateRow(page), { timeout: 10_000 })
     .toMatchObject({ kind: "free-roam" });
+
+  // The global nav is genuinely absent while free roam is actively
+  // tracking (backlog item 55) — Pause first to reach Routes, exactly as
+  // a rider genuinely would, rather than the pre-item-55 direct nav click.
+  // The row stays present/resumable across Pause, so the conflict guard
+  // below is exercised identically either way.
+  await page.getByRole("button", { name: "Pause" }).click();
+  await expect(page.getByRole("button", { name: "Resume free roam" })).toBeVisible();
 
   await page.getByRole("button", { name: "Routes" }).click();
   await page.getByLabel("Import GPX file").setInputFiles({

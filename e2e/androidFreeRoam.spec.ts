@@ -40,9 +40,12 @@ test("starts free roam, shows a live position, and persists a recoverable sessio
   await expect(page.locator('[data-testid="map-container"] canvas')).toBeVisible();
   await expect(page.getByText(/GPS accuracy:/)).toBeVisible();
 
-  // The header leaves sticky flow the instant free roam is genuinely
-  // watching — mirrors androidRiding.spec.ts's own identical contract.
-  await expect(page.locator("header")).toHaveCSS("position", "static");
+  // The global nav header is genuinely absent the instant free roam is
+  // genuinely watching (backlog item 55, superseding the old "static"
+  // contract) — replaced by FreeRoamScreen's own immersive header.
+  // Mirrors androidRiding.spec.ts's own identical contract.
+  await expect(page.locator("header.app-header--sticky")).toHaveCount(0);
+  await expect(page.locator("header.riding-immersive-header")).toBeVisible();
 
   await expect
     .poll(() => readActiveRideStateRow(page), { timeout: 10_000 })

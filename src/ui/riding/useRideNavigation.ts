@@ -94,6 +94,24 @@ export interface RideNavigationState {
    * own re-entrancy as a silent no-op; RidingScreen owns the primary
    * duplicate-submission UX guard. */
   finish: () => Promise<void>;
+  /** The reversible counterpart to finish() (backlog item 55): writes a
+   * resumable snapshot of the current in-memory session — reading the
+   * camera state fresh at call time via getCameraState(), never waiting
+   * for another fix — then, only once that write has succeeded, stops the
+   * geolocation watch. Unlike finish(), this never calls
+   * clearActiveRideState() and never resets currentFix, coreState,
+   * elevationViewMode, wakeLockDesired, dismissedClimbFeatureId,
+   * restoredCameraState or completionArmed — the persisted row and every
+   * piece of in-memory progress/preference state stay exactly as they
+   * were, ready for the rider to resume. A rejected write leaves the ride
+   * completely untouched (watch and wake lock still live) so the caller
+   * can show a retryable error. Guards its own re-entrancy, and against
+   * racing an in-flight finish(), as a silent no-op — this direction only
+   * (finish() does not symmetrically guard against an in-flight pause() at
+   * the hook level; see isPausingRef's own declaration comment for why).
+   * RidingScreen owns the primary, bidirectional duplicate-submission and
+   * mutual-exclusion UX guard. */
+  pause: () => Promise<void>;
   /** Non-null only once a persisted camera state for this exact route has
    * actually been restored — a genuinely new ride has nothing to
    * restore, so useRideCamera's own default "overview" state is already
@@ -181,6 +199,20 @@ export function useRideNavigation(
   // genuine fix arriving mid-finalisation should still update in-memory
   // state normally — harmless on success (overwritten by finish()'s own
   // reset) and exactly the correct live state to show on failure.
+  //
+  // Also read (never written) by pause() below, so a Pause attempt is
+  // blocked while a Finish/End finalisation is genuinely in flight —
+  // finish() does NOT symmetrically read isPausingRef in return (see that
+  // ref's own comment for why: eslint-plugin-react-hooks'
+  // react-hooks/immutability rule flags a ref's mutation site once that
+  // same ref is also referenced from a second, separate useCallback, and
+  // finish() mutates this ref already). This asymmetry is acceptable
+  // because the hook-level guard here is only ever a defensive backstop —
+  // RidingScreen's own isFinalizeActionPendingRef/isPauseActionPendingRef
+  // cross-guard is the primary, bidirectional enforcement that actually
+  // prevents either transition from reaching this hook while the other is
+  // in flight; nothing in this hook's own public contract is required to
+  // independently re-prove that guarantee.
   const isFinalizingRef = useRef(false);
   const routePoints = route.points;
 
@@ -289,6 +321,9 @@ export function useRideNavigation(
   // does this stop the watch (reusing stop()) and reset every piece of
   // in-memory session state a fresh ride should start clean from.
   const finish = useCallback(async () => {
+    // Deliberately does not also check isPausingRef here — see that ref's
+    // own declaration comment for why (a react-hooks/immutability lint
+    // constraint) and why the asymmetry is safe in practice.
     if (isFinalizingRef.current) return;
     isFinalizingRef.current = true;
     try {
@@ -310,6 +345,84 @@ export function useRideNavigation(
     setCompletionArmed(false);
     isFinalizingRef.current = false;
   }, [stop]);
+
+  // Set synchronously as pause()'s first statement, before any await — same
+  // rationale as isFinalizingRef above, but for the non-destructive Pause
+  // transition (backlog item 55): prevents a late fix's persistence-effect
+  // write, or a duplicate Pause submission, from racing the final snapshot
+  // write below. Read (never written) by the persistence effect. pause()
+  // itself also reads isFinalizingRef, so it is blocked while a
+  // Finish/End finalisation is in flight — but that direction is not
+  // symmetric: finish() does not read isPausingRef, since doing so (a
+  // ref mutated inside one useCallback, also read from a second, separate
+  // useCallback) trips eslint-plugin-react-hooks' react-hooks/immutability
+  // rule. This one-directional hook-level guard is a defensive backstop
+  // only; RidingScreen's own isFinalizeActionPendingRef/
+  // isPauseActionPendingRef cross-guard is the primary, bidirectional
+  // enforcement that actually prevents either transition from reaching
+  // this hook while the other is in flight.
+  const isPausingRef = useRef(false);
+
+  // The reversible counterpart to finish(): writes a resumable snapshot of
+  // the current in-memory session, then stops the watch — never clears
+  // persisted storage, and never resets currentFix/coreState/
+  // elevationViewMode/wakeLockDesired/dismissedClimbFeatureId/
+  // restoredCameraState/completionArmed. Follows finish()'s own
+  // write(-or-clear)-before-stop template: the watch is only torn down
+  // once the write has actually succeeded, so a rejected write leaves the
+  // ride fully live/resumable (watch and wake lock untouched) for a retry.
+  // A fix arriving during the write's own await (the watch is still
+  // nominally live until stop() runs) updates in-memory state harmlessly
+  // via the ordinary handleFix path but is never persisted — the
+  // persistence effect's own isPausingRef guard blocks that — and is
+  // simply dropped, since the screen unmounts moments after a successful
+  // pause anyway.
+  const pause = useCallback(async () => {
+    if (isPausingRef.current || isFinalizingRef.current) return;
+    isPausingRef.current = true;
+    try {
+      // A Pause before the first fix must still create a valid resumable
+      // row (never return to a launcher with nothing to resume) — mirrors
+      // handleFix's own lazy-default idiom, applied eagerly here.
+      startedAtRef.current ??= new Date(clock.now()).toISOString();
+      await setActiveRideState(
+        toStoredRideState(
+          route.id,
+          startedAtRef.current,
+          currentFix,
+          coreState,
+          elevationViewMode,
+          getCameraState(), // fresh synchronous read, not the persistence
+          // effect's own deps-gated cache — matters after a camera-only
+          // gesture or zoom change with no accompanying fix
+          wakeLockDesired,
+          dismissedClimbFeatureId,
+          completionArmed,
+        ),
+      );
+    } catch (error) {
+      isPausingRef.current = false;
+      throw error; // ride stays fully live/resumable; caller shows a retryable error
+    }
+    // Only on success — bumps the watch generation (invalidating any late
+    // callback from the stopped watch), tears down the watch, and sets
+    // status back to "idle", which is what makes RidingWakeLockControl
+    // unmount and release the wake lock for free, exactly as it already
+    // does for finish().
+    stop();
+    isPausingRef.current = false;
+  }, [
+    clock,
+    route.id,
+    currentFix,
+    coreState,
+    elevationViewMode,
+    getCameraState,
+    wakeLockDesired,
+    dismissedClimbFeatureId,
+    completionArmed,
+    stop,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -357,7 +470,7 @@ export function useRideNavigation(
   // needed. Reads the camera state fresh via getCameraState() rather
   // than depending on it directly (see the option's doc comment).
   useEffect(() => {
-    if (isFinalizingRef.current) return;
+    if (isFinalizingRef.current || isPausingRef.current) return;
     if (currentFix === null || startedAtRef.current === null) return;
     setActiveRideState(
       toStoredRideState(
@@ -482,6 +595,7 @@ export function useRideNavigation(
     setCompletionArmed,
     start,
     finish,
+    pause,
     restoredCameraState,
   };
 }

@@ -23,18 +23,22 @@ export interface MainNavigationProps {
 /**
  * Compact, equal-width main navigation — five icon-and-label
  * destinations. This component has no positioning opinion of its own:
- * App.tsx renders it inside its own `<header>`, and it is that `<header>`
- * — not this `<nav>` — that carries the state-dependent sticky/static
- * modifier class (see navPositionMode.ts and index.css's
- * `.app-header--sticky`). A `<nav>` whose own containing block is a
- * `<header>` only as tall as the nav itself has almost no room to stay
- * stuck before scrolling away with that too-short parent — sticky must
- * sit on an ancestor whose containing block spans the full page, which
- * here is `<header>` itself (contained by `.app-shell`, not by this
- * nav). The active destination is never colour alone: it also gets a
- * soft accent surface plus an inset ring (see `.main-nav-button` in
- * index.css), and `aria-current="page"` is the single source of truth
- * both for assistive technology and for that visual cue.
+ * App.tsx renders it inside its own `<header className="app-header--sticky">`
+ * whenever the app shell is not in immersive-Riding mode (see
+ * immersiveRidingShell.ts) — while immersive, App.tsx renders neither this
+ * component nor its wrapping `<header>` at all, replaced entirely by
+ * RidingScreen's/FreeRoamScreen's own compact Pause/title/End header
+ * (backlog item 55). It is that `<header>` — not this `<nav>` — that
+ * carries the sticky positioning (see index.css's `.app-header--sticky`).
+ * A `<nav>` whose own containing block is a `<header>` only as tall as the
+ * nav itself has almost no room to stay stuck before scrolling away with
+ * that too-short parent — sticky must sit on an ancestor whose containing
+ * block spans the full page, which here is `<header>` itself (contained
+ * by `.app-shell`, not by this nav). The active destination is never
+ * colour alone: it also gets a soft accent surface plus an inset ring
+ * (see `.main-nav-button` in index.css), and `aria-current="page"` is the
+ * single source of truth both for assistive technology and for that
+ * visual cue.
  */
 export function MainNavigation({ screen, onNavigate }: MainNavigationProps) {
   return (

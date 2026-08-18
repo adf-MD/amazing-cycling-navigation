@@ -21,6 +21,18 @@
    * this to a synthetic non-zero value without needing real safe-area
    * emulation from the browser under test. */
   --safe-area-inset-top: env(safe-area-inset-top, 0px);
+  /* The same indirection, for the remaining three sides — added for
+   * backlog item 55's immersive Riding shell, whose Playwright coverage
+   * needs to verify safe-area behaviour on all four sides despite
+   * Chromium not genuinely emulating env(safe-area-inset-*). .app-shell's
+   * own padding below already consumed the raw env() functions
+   * unconditionally for right/bottom/left before this item; routing them
+   * through named custom properties changes nothing in production (the
+   * resolved values are identical) but makes them independently
+   * overridable in a test the same way --safe-area-inset-top already is. */
+  --safe-area-inset-right: env(safe-area-inset-right, 0px);
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-inset-left: env(safe-area-inset-left, 0px);
   --space-4: 4px;
   --space-8: 8px;
   --space-12: 12px;
@@ -96,21 +108,26 @@ body {
  * is already border-box globally, so this padding doesn't add to the
  * shell's own height.
  *
- * The top component is cancelled (see the :has() rule immediately below)
- * whenever a sticky header is present: that header incorporates the same
- * inset into its own padding instead (see .app-header--sticky), so its
- * own opaque box can cover the strip continuously while scrolling —
- * see that rule's own comment for the full root-cause and fix
- * derivation (item 34). Active Riding's static header has no opaque box
- * of its own for this strip, so .app-shell's own padding-top keeps doing
- * this job unchanged there, exactly as before. */
+ * The top component is cancelled (see the two :has() rules immediately
+ * below) whenever a sticky header, or the immersive Riding shell's own
+ * header (backlog item 55), is present: each incorporates the same inset
+ * into its own padding instead (see .app-header--sticky and
+ * .riding-immersive-header respectively), so its own opaque box can cover
+ * the strip continuously while scrolling — see .app-header--sticky's own
+ * comment for the full root-cause and fix derivation (item 34). Item 55
+ * superseded item 24's old "static" header, which had no opaque box of
+ * its own and so relied on this padding doing the job instead — active
+ * Riding now always has one of these two opaque headers, so this
+ * fallback path is never actually reached during active Riding any more,
+ * only on every other screen. */
 .app-shell {
   min-height: 100vh;
-  padding: var(--safe-area-inset-top) env(safe-area-inset-right, 0px)
-    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  padding: var(--safe-area-inset-top) var(--safe-area-inset-right)
+    var(--safe-area-inset-bottom) var(--safe-area-inset-left);
 }
 
-.app-shell:has(> .app-header--sticky) {
+.app-shell:has(> .app-header--sticky),
+.app-shell:has(.riding-immersive-header) {
   padding-top: 0;
 }
 
@@ -287,6 +304,17 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--space-16);
+}
+
+/* Cancels this screen's own top padding whenever the immersive Riding
+ * header (backlog item 55) is present, mirroring .app-shell's identical
+ * :has() cancellation above and for the same reason: the header
+ * incorporates the safe-area-inset-top into its own padding instead, so
+ * nothing should reserve that space twice. Left/right/bottom padding is
+ * untouched — still needed for the header's own negative-margin breakout
+ * (see .riding-immersive-header) and for every other child of .screen. */
+.screen:has(.riding-immersive-header) {
+  padding-top: 0;
 }
 
 .stack {
@@ -1043,6 +1071,78 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+/* The compact, persistent Pause/title/End header shown while route Riding
+ * or free roam is genuinely GPS-active (backlog item 55), replacing
+ * MainNavigation for the duration — see immersiveRidingShell.ts and
+ * RidingImmersiveHeader.tsx. Sticky (not fixed), so it stays pinned to
+ * the viewport top while the rest of the active-riding content scrolls
+ * beneath it: its containing block is .screen, which spans the full
+ * height of this screen's own content (every status/manoeuvre/map/
+ * elevation section beneath it), giving it plenty of room to remain
+ * stuck — unlike the item-24 bug .main-nav's own doc comment describes,
+ * where a too-short containing block left no room to stick at all.
+ *
+ * The negative horizontal margin breaks this element out of .screen's
+ * own --space-16 padding for an edge-to-edge look, landing exactly at
+ * .app-shell's own content-box edge — which is already safe-area-inset
+ * adjusted, since .app-shell's own padding reserves
+ * --safe-area-inset-right/left unconditionally on every screen (not just
+ * this one). This header's own horizontal padding is therefore plain
+ * --space-16, not --safe-area-inset-right/left + --space-16: adding the
+ * inset again here would double-count it, since .app-shell already
+ * reserved that space one level up — the breakout only escapes .screen's
+ * padding, not .app-shell's.
+ *
+ * top's safe-area inset, by contrast, genuinely does belong here: unlike
+ * the horizontal insets, nothing else reserves it while this header is
+ * present — see the .app-shell/.screen :has() cancellations above, which
+ * remove their own top padding specifically so this element's own
+ * padding-top is the only thing reserving that space, mirroring
+ * .app-header--sticky's own item-34 fix exactly (a sticky element's
+ * one-time ancestor padding cannot continuously cover the strip while
+ * scrolled — only the sticky element's own box, at every scroll
+ * position, can). */
+.riding-immersive-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  margin: 0 calc(-1 * var(--space-16));
+  padding: calc(var(--safe-area-inset-top) + var(--space-8)) var(--space-16)
+    var(--space-8) var(--space-16);
+  background: var(--colour-bg);
+  border-bottom: 1px solid var(--colour-border);
+}
+
+/* Single-line truncation so a long route name can never push Pause or End
+ * ride out of the viewport — the accessible name is still the full,
+ * untruncated text content (this only affects painting), and the
+ * component's own `title` attribute additionally surfaces it on
+ * hover/long-press. flex:1 1 auto plus min-width:0 is what lets this
+ * shrink below its own content's natural width inside the flex row
+ * (without min-width:0, a flex item's default min-width:auto would
+ * prevent it from ever shrinking past its longest unbroken run of text,
+ * defeating the ellipsis). */
+.riding-immersive-header-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0 var(--space-8);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+.riding-immersive-header-end {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
 }
 
 /* Quieter than default so the wake-lock control's optional status/info

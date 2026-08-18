@@ -165,16 +165,24 @@ test("ends a ride, returns to the empty Ride launcher, and survives a reload wit
     ),
   ).toBeVisible();
 
-  // .ride-end-ride-row is a persistent action-slot container (backlog item
-  // 50): it stays mounted and now contains the confirmation directly,
-  // rather than the confirmation being appended elsewhere on the page. The
-  // route heading and on-route status stay visible around it throughout.
-  const dialogInsideEndRideRow = await page.evaluate(() => {
-    const row = document.querySelector(".ride-end-ride-row");
+  // The immersive header's own End slot (backlog item 55, superseding
+  // item 50's original .ride-end-ride-row single-container structure)
+  // goes empty once the confirmation opens, and the confirmation renders
+  // as its own full-width row immediately after the header. The route
+  // heading and on-route status stay visible around it throughout.
+  const dialogFollowsHeaderDirectly = await page.evaluate(() => {
+    const header = document.querySelector(".riding-immersive-header");
+    const endSlot = document.querySelector(".riding-immersive-header-end");
+    const confirmRow = document.querySelector(".ride-end-ride-confirm-row");
     const alertDialog = document.querySelector('[role="alertdialog"]');
-    return Boolean(row && alertDialog && row.contains(alertDialog));
+    if (!header || !endSlot || !confirmRow || !alertDialog) return false;
+    return (
+      !endSlot.contains(alertDialog) &&
+      header.nextElementSibling === confirmRow &&
+      confirmRow.contains(alertDialog)
+    );
   });
-  expect(dialogInsideEndRideRow).toBe(true);
+  expect(dialogFollowsHeaderDirectly).toBe(true);
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
   await expect(page.getByText("On route")).toBeVisible();
 
@@ -457,12 +465,19 @@ test.describe("390px phone viewport", () => {
     const dialog = page.getByRole("alertdialog");
     await expect(dialog).toBeVisible();
 
-    const dialogInsideEndRideRow = await page.evaluate(() => {
-      const row = document.querySelector(".ride-end-ride-row");
+    const dialogFollowsHeaderDirectly = await page.evaluate(() => {
+      const header = document.querySelector(".riding-immersive-header");
+      const endSlot = document.querySelector(".riding-immersive-header-end");
+      const confirmRow = document.querySelector(".ride-end-ride-confirm-row");
       const alertDialog = document.querySelector('[role="alertdialog"]');
-      return Boolean(row && alertDialog && row.contains(alertDialog));
+      if (!header || !endSlot || !confirmRow || !alertDialog) return false;
+      return (
+        !endSlot.contains(alertDialog) &&
+        header.nextElementSibling === confirmRow &&
+        confirmRow.contains(alertDialog)
+      );
     });
-    expect(dialogInsideEndRideRow).toBe(true);
+    expect(dialogFollowsHeaderDirectly).toBe(true);
     const scrollWidthWithDialog = await page.evaluate(
       () => document.documentElement.scrollWidth,
     );

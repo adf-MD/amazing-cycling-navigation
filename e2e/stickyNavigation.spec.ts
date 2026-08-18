@@ -4,15 +4,22 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 
-// Proves the sticky/static primary-navigation contract recorded in
-// CLAUDE.md backlog item 24: App.tsx's own <header> (which wraps
-// MainNavigation) stays pinned to the top of the viewport on every
-// screen except while a ride is genuinely being GPS-tracked, where it
-// returns to normal document flow so the riding dashboard gets full
-// space. A wholly independent, new spec file per this repo's documented
-// no-shared-e2e-helpers convention — it never imports from, and shares
-// no fixture/camera interaction with, planning.spec.ts's hardened
-// "pressing Northwards twice" tests.
+// Proves the sticky primary-navigation contract recorded in CLAUDE.md
+// backlog item 24, as superseded by item 55: App.tsx's own <header>
+// (which wraps MainNavigation) stays pinned to the top of the viewport
+// on every screen except while a ride is genuinely being GPS-tracked,
+// where it is now genuinely ABSENT from the DOM entirely (not merely
+// non-sticky, as item 24 originally shipped) — replaced by RidingScreen's/
+// FreeRoamScreen's own persistent Pause/title/End header
+// (.riding-immersive-header, see RidingImmersiveHeader.tsx and
+// immersiveRidingShell.ts). A wholly independent, new spec file per this
+// repo's documented no-shared-e2e-helpers convention — it never imports
+// from, and shares no fixture/camera interaction with, planning.spec.ts's
+// hardened "pressing Northwards twice" tests. The new immersive header's
+// own full safe-area (all four sides) and orientation-change coverage
+// lives in e2e/ridingImmersiveShell.spec.ts instead, alongside its Pause
+// lifecycle — this file stays scoped to the global nav header's own
+// sticky/absent contract.
 //
 // The sticky declaration lives on <header>, not on .main-nav itself: a
 // sticky element's stuck range is bounded by its own containing block,
@@ -32,10 +39,22 @@ const FIXTURE_GPX_PATH = fileURLToPath(
   new URL("./fixtures/smoke-route.gpx", import.meta.url),
 );
 
-// There is exactly one <header> in the app shell (App.tsx), always
-// wrapping MainNavigation — no need to scope the selector further.
+// Scoped to .app-header--sticky specifically (App.tsx's own global nav
+// header, unconditionally carrying that class whenever it renders at all
+// — see App.tsx) rather than a bare "header" selector: while a ride is
+// actively tracking, RidingScreen's/FreeRoamScreen's own immersive header
+// (.riding-immersive-header, backlog item 55) is ALSO a genuine <header>
+// element, and the two are mutually exclusive but a bare selector would
+// blur that distinction. This locator resolves to zero elements whenever
+// the global nav header is genuinely absent (the item-55 case) — callers
+// must use .toHaveCount(0) rather than assuming a bounding box always
+// exists.
 function headerLocator(page: Page) {
-  return page.locator("header");
+  return page.locator("header.app-header--sticky");
+}
+
+function immersiveHeaderLocator(page: Page) {
+  return page.locator("header.riding-immersive-header");
 }
 
 test.use({ viewport: { width: 390, height: 844 } });
@@ -137,7 +156,7 @@ test("stays pinned on Diagnostics while scrolled", async ({ page }) => {
   expect(Math.abs(scrolledBox.y - topBox.y)).toBeLessThan(2);
 });
 
-test("scrolls out of view while a ride is actively tracked, and back once scrolled to the top", async ({
+test("the global nav header is genuinely absent while a ride is actively tracked, replaced by a persistent immersive header that stays pinned even when scrolled (backlog item 55)", async ({
   page,
   context,
 }) => {
@@ -151,34 +170,40 @@ test("scrolls out of view while a ride is actively tracked, and back once scroll
   await page.getByRole("button", { name: "Start riding" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-  const header = headerLocator(page);
-  await expect(header).toHaveCSS("position", "static");
+  // The global nav header (and MainNavigation with it) is genuinely
+  // absent — not merely repositioned, item 24's original "static" state.
+  await expect(headerLocator(page)).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0);
 
+  const immersiveHeader = immersiveHeaderLocator(page);
+  await expect(immersiveHeader).toBeVisible();
+
+  // RidingWakeLockControl renders before this header in document order
+  // (unchanged from before item 55 — see this header's own CSS comment),
+  // so at rest (scroll 0) the header's own natural flow position sits
+  // below that control, not yet genuinely "stuck" — sticky positioning
+  // only pins an element once its natural position would otherwise
+  // scroll past the target `top` offset. Unlike item 24's original
+  // "static, scrolls away" header, item 55's own "persistent" header
+  // stays pinned at the true viewport top once genuinely stuck — proven
+  // by scrolling to the very bottom of this page's own (here, modest)
+  // scrollable range and confirming it settles at y ≈ 0, not by
+  // comparing two different scroll positions against each other (this
+  // page's total scrollable range is too small for a reliable two-step
+  // "partially, then further" comparison).
   await page.evaluate(() => {
     window.scrollTo(0, document.documentElement.scrollHeight);
   });
-  await expect
-    .poll(async () => {
-      const box = await header.boundingBox();
-      return box ? box.y + box.height : null;
-    })
-    .toBeLessThanOrEqual(0); // fully scrolled above the visible viewport
-
-  await page.evaluate(() => {
-    window.scrollTo(0, 0);
-  });
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
-  await expect(header).toHaveCSS("position", "static"); // never becomes sticky merely by reaching the top
-
-  const restoredBox = await header.boundingBox();
-  if (!restoredBox) throw new Error("expected the header to be back in the viewport");
-  expect(restoredBox.y).toBeGreaterThanOrEqual(0);
-  expect(restoredBox.y).toBeLessThan(200);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  const scrolledBox = await immersiveHeader.boundingBox();
+  if (!scrolledBox) throw new Error("expected the immersive header to still be visible");
+  expect(scrolledBox.y).toBeGreaterThanOrEqual(0);
+  expect(scrolledBox.y).toBeLessThan(2);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
 });
 
-test("restores sticky positioning immediately on navigating away while the ride stays active/resumable in the background", async ({
+test("Pause restores the global nav header immediately, and the route stays resumable in the background", async ({
   page,
   context,
 }) => {
@@ -192,19 +217,19 @@ test("restores sticky positioning immediately on navigating away while the ride 
   await page.getByRole("button", { name: "Start riding" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-  const header = headerLocator(page);
-  await expect(header).toHaveCSS("position", "static");
+  await expect(headerLocator(page)).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Settings" }).click();
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-  await expect(header).toHaveCSS("position", "sticky");
+  // Unlike item 24's original design (leaving an active ride via
+  // MainNavigation, e.g. tapping "Settings"), that path no longer exists
+  // once MainNavigation is genuinely absent (backlog item 55) — Pause is
+  // now the only way to leave an active ride reversibly.
+  await page.getByRole("button", { name: "Pause" }).click();
+  await expect(page.getByRole("button", { name: "Resume route" })).toBeVisible();
+  await expect(headerLocator(page)).toHaveCSS("position", "sticky");
 
-  // The ride was never explicitly stopped, only navigated away from — a
-  // plain nav-tab return shows Resume riding (idle + restored fix), and
-  // the header stays sticky there too.
-  await page.getByRole("button", { name: "Ride" }).click();
+  await page.getByRole("button", { name: "Resume route" }).click();
   await expect(page.getByRole("button", { name: "Resume riding" })).toBeVisible();
-  await expect(header).toHaveCSS("position", "sticky");
+  await expect(headerLocator(page)).toHaveCSS("position", "sticky");
 });
 
 test("every top-level screen other than active Riding renders the header sticky", async ({
@@ -356,10 +381,15 @@ test.describe("synthetic safe-area inset (iOS status-bar strip coverage)", () =>
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
   });
 
-  test("active Riding keeps the header static under a synthetic safe-area inset, without the sticky-only lower buffer", async ({
+  test("the global nav header stays genuinely absent under a synthetic safe-area inset while active Riding shows its own immersive header instead", async ({
     page,
     context,
   }) => {
+    // This test only proves the global header's own absence under a
+    // synthetic inset — the immersive header's own full safe-area
+    // behaviour (all four sides, including this same synthetic-inset
+    // technique) is covered in e2e/ridingImmersiveShell.spec.ts instead,
+    // alongside the rest of its Pause-lifecycle coverage.
     await useSyntheticSafeAreaInsetTop(page);
     await context.grantPermissions(["geolocation"]);
     await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
@@ -371,10 +401,7 @@ test.describe("synthetic safe-area inset (iOS status-bar strip coverage)", () =>
     await page.getByRole("button", { name: "Start riding" }).click();
     await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-    const header = headerLocator(page);
-    await expect(header).toHaveCSS("position", "static");
-    // The sticky-only lower buffer must not leak into the static header —
-    // the base `header` rule's own padding-bottom (0) stays unmodified.
-    await expect(header).toHaveCSS("padding-bottom", "0px");
+    await expect(headerLocator(page)).toHaveCount(0);
+    await expect(immersiveHeaderLocator(page)).toBeVisible();
   });
 });

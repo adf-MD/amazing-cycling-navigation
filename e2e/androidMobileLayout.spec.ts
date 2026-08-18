@@ -51,7 +51,7 @@ test("no horizontal overflow, sticky header, and usable touch targets across the
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
 
-  const header = page.locator("header");
+  const header = page.locator("header.app-header--sticky");
 
   // Every MainNavigation destination: usable touch target, sticky header,
   // no horizontal overflow.
@@ -89,12 +89,14 @@ test("no horizontal overflow, sticky header, and usable touch targets across the
     throw new Error("expected the Start riding button to have a bounding box");
   expect(startBox.height).toBeGreaterThanOrEqual(TOUCH_TARGET_MIN_PX);
 
-  // Starting to track genuinely leaves the header out of sticky flow —
-  // the same contract stickyNavigation.spec.ts proves at a different
+  // Starting to track genuinely removes the global nav header from the
+  // DOM (backlog item 55, superseding the old "static" contract) — the
+  // same contract stickyNavigation.spec.ts proves at a different
   // (iPhone-shaped) viewport, reproven here under Android emulation.
   await startButton.click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
-  await expect(header).toHaveCSS("position", "static");
+  await expect(header).toHaveCount(0);
+  await expect(page.locator("header.riding-immersive-header")).toBeVisible();
 
   const followButton = page.getByRole("button", { name: "Follow my location" });
   const northButton = page.getByRole("button", { name: "North-up, top-down view" });

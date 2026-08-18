@@ -75,6 +75,39 @@ describe("RidingRouteCompletionPanel", () => {
     );
   });
 
+  it("disabled (e.g. an unrelated Pause in flight) blocks both buttons without claiming Finish itself is in progress", () => {
+    render(
+      <RidingRouteCompletionPanel
+        onFinish={vi.fn()}
+        onKeepRiding={vi.fn()}
+        isFinishing={false}
+        disabled
+        error={null}
+        finishButtonRef={createRef<HTMLButtonElement>()}
+      />,
+    );
+
+    // Label stays "Finish ride" — this panel isn't the one doing the work.
+    const finishButton = screen.getByRole("button", { name: "Finish ride" });
+    expect(finishButton).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Keep riding" })).toBeDisabled();
+  });
+
+  it("defaults disabled to false when omitted, matching every pre-existing caller", () => {
+    render(
+      <RidingRouteCompletionPanel
+        onFinish={vi.fn()}
+        onKeepRiding={vi.fn()}
+        isFinishing={false}
+        error={null}
+        finishButtonRef={createRef<HTMLButtonElement>()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Finish ride" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Keep riding" })).toBeEnabled();
+  });
+
   it("attaches finishButtonRef to the Finish-ride button", () => {
     const ref = createRef<HTMLButtonElement>();
     render(

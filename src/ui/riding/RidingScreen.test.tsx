@@ -1320,7 +1320,7 @@ describe("RidingScreen", () => {
       expect(climbSelectorSection.nextElementSibling).toBe(detailsSection);
     });
 
-    it("keeps the sole active End-ride trigger ahead of status/manoeuvre/map content in DOM order", async () => {
+    it("keeps the sole active End-ride trigger, inside the immersive header's End slot, ahead of status/manoeuvre/map content in DOM order (item 55 supersedes item 40's .ride-end-ride-row structure)", async () => {
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
       const { container } = render(
@@ -1334,20 +1334,22 @@ describe("RidingScreen", () => {
       await user.click(screen.getByRole("button", { name: "Start riding" }));
 
       const endRideButton = await screen.findByRole("button", { name: "End ride" });
-      const endRideRow = container.querySelector(".ride-end-ride-row");
-      expect(endRideRow).not.toBeNull();
-      expect(endRideRow?.contains(endRideButton)).toBe(true);
+      const header = container.querySelector(".riding-immersive-header");
+      const endSlot = container.querySelector(".riding-immersive-header-end");
+      expect(header).not.toBeNull();
+      expect(endSlot).not.toBeNull();
+      expect(endSlot?.contains(endRideButton)).toBe(true);
       const nextManoeuvrePanel = await screen.findByText(
         "No trusted turn information is available for this imported GPX. Follow the route line on the map.",
       );
       const mapContainer = screen.getByTestId("map-container");
 
       // DOCUMENT_POSITION_FOLLOWING (4).
-      expect((endRideRow?.compareDocumentPosition(nextManoeuvrePanel) ?? 0) & 4).toBe(4);
-      expect((endRideRow?.compareDocumentPosition(mapContainer) ?? 0) & 4).toBe(4);
+      expect((header?.compareDocumentPosition(nextManoeuvrePanel) ?? 0) & 4).toBe(4);
+      expect((header?.compareDocumentPosition(mapContainer) ?? 0) & 4).toBe(4);
     });
 
-    it("renders the opened End-ride confirmation in place, inside the same action row, replacing the trigger (backlog item 50)", async () => {
+    it("renders the opened End-ride confirmation immediately below the immersive header, replacing the trigger in its own slot (backlog item 50, restructured by item 55)", async () => {
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
       const { container } = render(
@@ -1361,12 +1363,17 @@ describe("RidingScreen", () => {
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       await user.click(await screen.findByRole("button", { name: "End ride" }));
 
-      // .ride-end-ride-row stays mounted (a persistent action-slot
-      // container, item 50) and now contains the dialog directly, rather
-      // than the dialog rendering as a separate sibling after it.
-      const endRideRow = container.querySelector(".ride-end-ride-row");
+      // The header's own End slot goes empty once the confirmation opens
+      // (item 55 requirement: "replace the End trigger with the
+      // confirmation in place"), and the confirmation renders as its own
+      // full-width row immediately after the header.
+      const header = container.querySelector(".riding-immersive-header");
+      const endSlot = container.querySelector(".riding-immersive-header-end");
+      const confirmRow = container.querySelector(".ride-end-ride-confirm-row");
       const dialog = await screen.findByRole("alertdialog");
-      expect(endRideRow?.contains(dialog)).toBe(true);
+      expect(endSlot?.contains(dialog)).toBe(false);
+      expect(confirmRow?.contains(dialog)).toBe(true);
+      expect(header?.nextElementSibling).toBe(confirmRow);
       // The original trigger no longer coexists with the confirmation — the
       // only "End ride"-named button left anywhere is the dialog's own
       // confirm button (whose label happens to match the trigger's).

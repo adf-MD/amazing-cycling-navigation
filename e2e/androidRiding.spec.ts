@@ -104,10 +104,12 @@ test("shows the route, follows the GPS fix, and keeps camera controls operable, 
   await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
   await expect(northButton).toHaveAttribute("aria-pressed", "true");
 
-  // The header leaves sticky flow the instant geolocation is genuinely
-  // watching — mirrors stickyNavigation.spec.ts's own contract, proven
+  // The global nav header is genuinely absent the instant geolocation is
+  // genuinely watching (backlog item 55, superseding the old "static"
+  // contract) — mirrors stickyNavigation.spec.ts's own contract, proven
   // again here under Android device emulation.
-  await expect(page.locator("header")).toHaveCSS("position", "static");
+  await expect(page.locator("header.app-header--sticky")).toHaveCount(0);
+  await expect(page.locator("header.riding-immersive-header")).toBeVisible();
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);

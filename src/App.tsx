@@ -13,7 +13,7 @@ import { RidingLauncher } from "./ui/riding/RidingLauncher.tsx";
 import { RidingScreen } from "./ui/riding/RidingScreen.tsx";
 import { SettingsScreen } from "./ui/settings/SettingsScreen.tsx";
 import { MainNavigation, type Screen } from "./ui/shared/MainNavigation.tsx";
-import { deriveNavPositionMode } from "./ui/shared/navPositionMode.ts";
+import { isImmersiveRidingShell } from "./ui/shared/immersiveRidingShell.ts";
 import { useResetScrollForNewRideContent } from "./ui/shared/useResetScrollForNewRideContent.ts";
 
 export interface AppProps {
@@ -49,7 +49,13 @@ function App({ mapFactory }: AppProps) {
   const routesScrollYRef = useRef<number | null>(null);
   const routesSearchQueryRef = useRef<string>("");
   const notifyNewRideContent = useResetScrollForNewRideContent(screen);
-  const positionMode = deriveNavPositionMode(screen, isRidingActive);
+  // Whether the app shell is in immersive-Riding mode (backlog item 55):
+  // MainNavigation and its wrapping <header> render at all only when this
+  // is false — while true, RidingScreen's/FreeRoamScreen's own compact
+  // Pause/title/End header replaces them entirely, not merely repositions
+  // them (see immersiveRidingShell.ts, which supersedes item 24's old
+  // "static-but-visible" nav state for this one case).
+  const isImmersive = isImmersiveRidingShell(screen, isRidingActive);
 
   // rideState is a singleton row — a route session and a free-roam session
   // can never both be "the current unfinished session" simultaneously.
@@ -130,14 +136,31 @@ function App({ mapFactory }: AppProps) {
   // empty/resumable Ride launcher while staying on screen === "riding":
   // resets the in-memory ridingContent pointer to "none" and notifies
   // useResetScrollForNewRideContent so the view scrolls back to the top,
-  // exactly as opening any other new Ride content already does. Used by
-  // handleRideFinalized (only once that caller's own persisted-storage
-  // clear has already resolved) and handleReturnToRideLauncher (which
-  // never touches storage at all) — see backlog item 51. Deliberately NOT
-  // used by handleNavigate's own free-roam-specific reset below: that path
-  // is leaving the "riding" screen entirely (a different, deliberately
-  // silent scroll contract — see its own comment) and also clears
-  // blockedRouteOpenReason, neither of which belongs in this helper.
+  // exactly as opening any other new Ride content already does.
+  //
+  // ridingContent can be reset to "none" by four distinct paths, each with
+  // its own storage contract:
+  // - handleRideFinalized (End/Finish ride, below): storage already
+  //   cleared by the caller's own finish() before this fires — the empty
+  //   launcher shows no resumable session.
+  // - handleRidePaused (Pause, below, backlog item 55): storage
+  //   deliberately NOT cleared — the caller's own pause() already wrote a
+  //   fresh resumable snapshot and stopped the watch before this fires, so
+  //   the launcher immediately re-hydrates into Resume route/Resume free
+  //   roam for this same session.
+  // - handleReturnToRideLauncher (backlog item 51, below): no active watch
+  //   ever existed for this call and no persisted-storage mutation of any
+  //   kind occurs — a still-unfinished session's row (if any) is left
+  //   completely untouched.
+  // - handleNavigate's own free-roam-specific inline reset, which
+  //   deliberately does NOT call this helper at all: that path is leaving
+  //   the "riding" screen entirely (a different, deliberately silent
+  //   scroll contract — see its own comment) and also clears
+  //   blockedRouteOpenReason, neither of which belongs here.
+  //
+  // In every one of the first three cases, this helper's own job is only
+  // ever "drop back to whatever the Ride launcher's own re-hydration from
+  // storage already reflects" — never a storage mutation itself.
   const resetRidingContentToLauncher = () => {
     setRidingContent(NONE_RIDING_CONTENT);
     notifyNewRideContent();
@@ -147,20 +170,26 @@ function App({ mapFactory }: AppProps) {
   // FreeRoamScreen's shared End ride/Finish ride finalisation lifecycle.
   // Called only once the underlying navigation hook's finish() has already
   // cleared the persisted active-ride row and the screen's own runtime
-  // cleanup has already applied. ridingContent can now be reset to "none"
-  // by three distinct paths — this one (post-finalisation), handleNavigate's
-  // free-roam-specific nav-away reset, and handleReturnToRideLauncher below
-  // (backlog item 51's explicit, pre-ride-only, non-destructive action) —
-  // but this remains the ONLY one of the three that follows a persisted-
-  // storage clear; the other two reset only this in-memory pointer while a
-  // still-unfinished session's storage row is left completely untouched, so
-  // the Ride launcher's own re-hydration keeps reflecting it correctly.
-  // Delegates its body to resetRidingContentToLauncher, shared with
-  // handleReturnToRideLauncher, rather than duplicating it. Clearing
-  // ridingContent here is what actually unmounts the active screen and
-  // shows the empty Ride launcher in its place; screen deliberately stays
-  // "riding" throughout.
+  // cleanup has already applied. Delegates its body to
+  // resetRidingContentToLauncher — see that helper's own comment for how
+  // this fits alongside handleRidePaused/handleReturnToRideLauncher.
+  // Clearing ridingContent here is what actually unmounts the active
+  // screen and shows the empty Ride launcher in its place; screen
+  // deliberately stays "riding" throughout.
   const handleRideFinalized = () => {
+    resetRidingContentToLauncher();
+  };
+
+  // The sole success-path integration point from RidingScreen's/
+  // FreeRoamScreen's shared Pause lifecycle (backlog item 55). Called only
+  // once the underlying navigation hook's pause() has already written a
+  // fresh resumable snapshot and stopped the watch — storage is
+  // deliberately NOT cleared (contrast with handleRideFinalized above), so
+  // the Ride launcher this drops the rider onto immediately re-hydrates
+  // into Resume route/Resume free roam for this same, still-unfinished
+  // session. Delegates to the same resetRidingContentToLauncher helper;
+  // screen deliberately stays "riding" throughout.
+  const handleRidePaused = () => {
     resetRidingContentToLauncher();
   };
 
@@ -223,9 +252,11 @@ function App({ mapFactory }: AppProps) {
 
   return (
     <div className="app-shell">
-      <header className={positionMode === "sticky" ? "app-header--sticky" : undefined}>
-        <MainNavigation screen={screen} onNavigate={handleNavigate} />
-      </header>
+      {isImmersive ? null : (
+        <header className="app-header--sticky">
+          <MainNavigation screen={screen} onNavigate={handleNavigate} />
+        </header>
+      )}
 
       {needRefresh ? (
         <div role="status">
@@ -264,12 +295,14 @@ function App({ mapFactory }: AppProps) {
               onNavigateToPlanning={handleNavigateToPlanning}
               onRideFinalized={handleRideFinalized}
               onReturnToRideLauncher={handleReturnToRideLauncher}
+              onRidePaused={handleRidePaused}
             />
           ) : ridingContent.kind === "free-roam" ? (
             <FreeRoamScreen
               mapFactory={mapFactory}
               onRidingActiveChange={setIsRidingActive}
               onRideFinalized={handleRideFinalized}
+              onRidePaused={handleRidePaused}
             />
           ) : (
             <RidingLauncher

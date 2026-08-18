@@ -34,6 +34,10 @@ export interface FreeRoamNavigationState {
    * `finish` doc comment for the full race-safety rationale; this mirrors
    * it exactly (clear storage first, only then reset in-memory state). */
   finish: () => Promise<void>;
+  /** The reversible counterpart to finish() (backlog item 55) — mirrors
+   * useRideNavigation.ts's own `pause` doc comment exactly, using
+   * getPersistableSnapshot() for a fresh camera+bearing read at call time. */
+  pause: () => Promise<void>;
   /** Non-null only once a persisted camera state for this free-roam
    * session has actually been restored. */
   restoredCameraState: StoredCameraState | null;
@@ -112,6 +116,14 @@ export function useFreeRoamNavigation(
   const watchGenerationRef = useRef(0);
   const statusRef = useRef<GeolocationWatchStatus>("idle");
   const startedAtRef = useRef<string | null>(null);
+  // Also read (never written) by pause() below, so a Pause attempt is
+  // blocked while a Finish/End finalisation is in flight — finish() does
+  // NOT symmetrically read isPausingRef in return; see that ref's own
+  // declaration comment (mirrors useRideNavigation.ts's identical
+  // asymmetry and rationale exactly — a react-hooks/immutability lint
+  // constraint, safe because the hook-level guard is only ever a
+  // defensive backstop beneath FreeRoamScreen's own primary,
+  // bidirectional cross-guard).
   const isFinalizingRef = useRef(false);
 
   const setStatus = useCallback((next: GeolocationWatchStatus) => {
@@ -175,6 +187,10 @@ export function useFreeRoamNavigation(
   }, [setStatus]);
 
   const finish = useCallback(async () => {
+    // Deliberately does not also check isPausingRef here — see
+    // isFinalizingRef's own declaration comment above for why (a
+    // react-hooks/immutability lint constraint) and why the asymmetry is
+    // safe in practice.
     if (isFinalizingRef.current) return;
     isFinalizingRef.current = true;
     try {
@@ -193,6 +209,40 @@ export function useFreeRoamNavigation(
     setRestoredLastReliableBearingDegrees(null);
     isFinalizingRef.current = false;
   }, [stop]);
+
+  // See useRideNavigation.ts's identical field for the full rationale —
+  // copied verbatim, since none of it is route-specific (backlog item 55).
+  const isPausingRef = useRef(false);
+
+  // The reversible counterpart to finish() — mirrors
+  // useRideNavigation.ts's own pause() exactly, using
+  // getPersistableSnapshot() for a fresh camera+bearing read at call time.
+  // Free roam's row already exists pre-mount (RidingLauncher's own
+  // "Start free roam" seed), but this still needs to run to write the
+  // *final* current snapshot (position, camera, wake-lock preference)
+  // over that initial row before stopping the watch.
+  const pause = useCallback(async () => {
+    if (isPausingRef.current || isFinalizingRef.current) return;
+    isPausingRef.current = true;
+    try {
+      startedAtRef.current ??= new Date(clock.now()).toISOString();
+      const snapshot = getPersistableSnapshot();
+      await setActiveRideState(
+        toStoredFreeRoamState(
+          startedAtRef.current,
+          currentFix,
+          snapshot.cameraState,
+          snapshot.lastReliableBearingDegrees,
+          wakeLockDesired,
+        ),
+      );
+    } catch (error) {
+      isPausingRef.current = false;
+      throw error;
+    }
+    stop();
+    isPausingRef.current = false;
+  }, [clock, currentFix, getPersistableSnapshot, wakeLockDesired, stop]);
 
   useEffect(() => {
     return () => {
@@ -228,9 +278,10 @@ export function useFreeRoamNavigation(
   }, []);
 
   // Persist after every accepted fix — mirrors useRideNavigation's own
-  // persistence effect exactly, including the isFinalizingRef guard.
+  // persistence effect exactly, including the isFinalizingRef/isPausingRef
+  // guards.
   useEffect(() => {
-    if (isFinalizingRef.current) return;
+    if (isFinalizingRef.current || isPausingRef.current) return;
     if (currentFix === null || startedAtRef.current === null) return;
     const snapshot = getPersistableSnapshot();
     setActiveRideState(
@@ -287,6 +338,7 @@ export function useFreeRoamNavigation(
     setWakeLockDesired,
     start,
     finish,
+    pause,
     restoredCameraState,
     restoredLastReliableBearingDegrees,
   };
