@@ -12,6 +12,7 @@ import { formatDistanceKm } from "./routeSummary.ts";
 import {
   buildElevationChartGeometry,
   buildElevationChartMarkerGeometry,
+  distanceToX,
   pathFromSegment,
   splitSegmentAtX,
   xPixelToDistanceMetres,
@@ -56,6 +57,17 @@ export interface ElevationChartSelectedRange {
   endDistanceMetres: number;
 }
 
+/** One relative "ahead of the rider" distance guide (backlog item 54) —
+ * `distanceFromStartMetres` is route-global, the same space as `domain`/
+ * `marker`/`points`; `aheadMetres` is pre-computed by the caller (this
+ * component never infers 2 km vs 10 km, or which offsets apply — it only
+ * draws exactly what it's given, with no filtering/clamping of its own,
+ * mirroring how `marker`/`selectedRangeMetres` are trusted verbatim). */
+export interface ElevationChartDistanceGuideInput {
+  distanceFromStartMetres: number;
+  aheadMetres: number;
+}
+
 export interface ElevationChartProps {
   points: readonly RoutePoint[];
   /** Horizontal axis bounds, in route-global metres. Defaults to the
@@ -95,6 +107,17 @@ export interface ElevationChartProps {
    * resolves to a distance, even one that lands on an ordinary section;
    * it is the caller's job to decide that means no selection change. */
   onTapDistance?: (distanceMetres: number) => void;
+  /** Relative "ahead of the rider" distance guides (backlog item 54) —
+   * e.g. one +1 km guide for a 2 km rolling window, four +2/+4/+6/+8 km
+   * guides for a 10 km one. Route-global, consistent with `domain`/
+   * `marker`. Rendered beneath the profile/marker (paints first, directly
+   * after the tap-target rect) so they never obscure the elevation line,
+   * marker dot, or a selected-feature stroke bump, and are always
+   * `pointerEvents="none"` so they never intercept
+   * `rect.elevation-chart-tap-target`. Omitting this prop (or passing an
+   * empty array) renders no guides and no guide caption — every existing
+   * caller is unaffected. */
+  distanceGuides?: readonly ElevationChartDistanceGuideInput[];
   /** Renders a filled area under the profile, down to the chart's own
    * padded lower elevation bound, coloured per detailed local-gradient
    * band — the Climb view's own presentation. Has no effect unless
@@ -104,7 +127,7 @@ export interface ElevationChartProps {
    * lower-opacity completed portion and a prominent remaining portion; with
    * no marker, the whole fill renders at one uniform (remaining-style)
    * opacity — the pre-ride whole-climb preview's own presentation, which
-   * has no rider progress to split against. Full/2/5/10 km views and
+   * has no rider progress to split against. Full/2/10 km views and
    * Planning must never set this. */
   areaFill?: boolean;
   /** Overrides the default "Elevation profile"/"Elevation profile chart"
@@ -143,6 +166,31 @@ const DETAIL_STROKE_WIDTH = 3;
  * range never rely on colour alone even against its own unselected
  * siblings at the same level. */
 const SELECTED_STROKE_WIDTH_BONUS = 1;
+/** Distance-guide dash pattern (backlog item 54) — deliberately distinct
+ * from both STALE_MARKER_DASHARRAY ("4 3") and COMPLETED_DASHARRAY
+ * ("5 4"), so a guide is never confusable with the stale-progress-marker
+ * or completed-segment treatments even at a glance outdoors. */
+const DISTANCE_GUIDE_DASHARRAY = "2 4";
+/** A short tick, not a full-height line like the position marker's — a
+ * restrained, non-dominant vertical treatment (backlog item 54). */
+const DISTANCE_GUIDE_TICK_HEIGHT = 14;
+const DISTANCE_GUIDE_LABEL_Y = 24;
+const DISTANCE_GUIDE_STROKE_WIDTH = 1;
+/** Pixel distance from either chart edge inside which a guide's label
+ * anchor flips from centred to edge-aligned, so a guide at/near the right
+ * edge of a route-end-truncated window never renders clipped/overflowing
+ * text (backlog item 54's explicit requirement). */
+const DISTANCE_GUIDE_EDGE_MARGIN_PIXELS = 24;
+
+function distanceGuideLabel(aheadMetres: number): string {
+  return `+${String(aheadMetres / 1000)} km`;
+}
+
+function distanceGuideTextAnchor(x: number, width: number): "start" | "middle" | "end" {
+  if (x < DISTANCE_GUIDE_EDGE_MARGIN_PIXELS) return "start";
+  if (x > width - DISTANCE_GUIDE_EDGE_MARGIN_PIXELS) return "end";
+  return "middle";
+}
 
 /**
  * Plots whatever elevation series the caller provides — normally the
@@ -163,6 +211,7 @@ export function ElevationChart({
   gradientSegments,
   selectedRangeMetres = null,
   onTapDistance,
+  distanceGuides = [],
   areaFill = false,
   ariaLabel,
   width = DEFAULT_WIDTH,
@@ -316,6 +365,39 @@ export function ElevationChart({
             className="elevation-chart-tap-target"
           />
         )}
+        {distanceGuides.length > 0 && (
+          <g pointerEvents="none">
+            {distanceGuides.map((guide) => {
+              const x = distanceToX(guide.distanceFromStartMetres, resolvedDomain, width);
+              return (
+                <g key={guide.aheadMetres}>
+                  <line
+                    x1={x}
+                    x2={x}
+                    y1={0}
+                    y2={DISTANCE_GUIDE_TICK_HEIGHT}
+                    stroke="currentColor"
+                    strokeWidth={DISTANCE_GUIDE_STROKE_WIDTH}
+                    strokeOpacity={0.5}
+                    strokeDasharray={DISTANCE_GUIDE_DASHARRAY}
+                    className="elevation-chart-distance-guide"
+                  />
+                  <text
+                    x={x}
+                    y={DISTANCE_GUIDE_LABEL_Y}
+                    textAnchor={distanceGuideTextAnchor(x, width)}
+                    fontSize={9}
+                    fill="currentColor"
+                    fillOpacity={0.7}
+                    className="elevation-chart-distance-guide-label"
+                  >
+                    {distanceGuideLabel(guide.aheadMetres)}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        )}
         {geometry.segments.map((segment, index) => {
           const features = featureRuns?.[index];
           const details = detailRuns?.[index];
@@ -465,6 +547,13 @@ export function ElevationChart({
           {marker.stale ? "Last known position: " : "Current route position: "}
           {formatDistanceKm(marker.distanceFromStartMetres)} of{" "}
           {formatDistanceKm(resolvedDomain.endDistanceMetres)}.
+        </p>
+      )}
+      {distanceGuides.length > 0 && (
+        <p className="elevation-chart-distance-guides-caption">
+          {`Distance guides ahead: ${distanceGuides
+            .map((guide) => distanceGuideLabel(guide.aheadMetres))
+            .join(", ")}.`}
         </p>
       )}
     </figure>

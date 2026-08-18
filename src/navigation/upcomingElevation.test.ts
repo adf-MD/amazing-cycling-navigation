@@ -6,8 +6,10 @@ import {
   ELEVATION_WINDOW_OPTIONS_METRES,
   buildFullProfileMarker,
   interpolateRoutePointAt,
+  selectElevationDistanceGuides,
   selectUpcomingElevationWindow,
 } from "./upcomingElevation.ts";
+import type { UpcomingElevationWindow } from "./upcomingElevation.ts";
 import type { RoutePoint } from "../domain/types.ts";
 
 function buildPoints(distances: readonly number[]): RoutePoint[] {
@@ -23,12 +25,12 @@ const ROUTE_POINTS = buildPoints(
 );
 
 describe("elevation window options", () => {
-  it("defaults to 5 km", () => {
-    expect(DEFAULT_ELEVATION_WINDOW_METRES).toBe(5000);
+  it("defaults to 2 km", () => {
+    expect(DEFAULT_ELEVATION_WINDOW_METRES).toBe(2000);
   });
 
-  it("offers exactly 2 km, 5 km and 10 km", () => {
-    expect(ELEVATION_WINDOW_OPTIONS_METRES).toEqual([2000, 5000, 10000]);
+  it("offers exactly 2 km and 10 km", () => {
+    expect(ELEVATION_WINDOW_OPTIONS_METRES).toEqual([2000, 10000]);
   });
 });
 
@@ -43,14 +45,14 @@ describe("selectUpcomingElevationWindow", () => {
     ]);
   });
 
-  it("uses the 5 km default window", () => {
+  it("uses the 2 km default window", () => {
     const result = selectUpcomingElevationWindow(
       ROUTE_POINTS,
       0,
       DEFAULT_ELEVATION_WINDOW_METRES,
     );
-    expect(result.endDistanceMetres).toBe(5000);
-    expect(result.points).toHaveLength(6);
+    expect(result.endDistanceMetres).toBe(2000);
+    expect(result.points).toHaveLength(3);
   });
 
   it("selects the full 10 km window when the route is long enough", () => {
@@ -68,29 +70,28 @@ describe("selectUpcomingElevationWindow", () => {
   });
 
   it("returns a single point when the rider is at the very end of the route", () => {
-    const result = selectUpcomingElevationWindow(ROUTE_POINTS, 20000, 5000);
+    const result = selectUpcomingElevationWindow(ROUTE_POINTS, 20000, 10000);
     expect(result.startDistanceMetres).toBe(20000);
     expect(result.endDistanceMetres).toBe(20000);
     expect(result.points.map((p) => p.distanceFromStartMetres)).toEqual([20000]);
   });
 
   it("returns an empty window for an empty route", () => {
-    const result = selectUpcomingElevationWindow([], 0, 5000);
+    const result = selectUpcomingElevationWindow([], 0, 2000);
     expect(result.points).toEqual([]);
     expect(result.endDistanceMetres).toBe(0);
   });
 });
 
 describe("elevation view mode options", () => {
-  it("defaults to a 5 km upcoming view", () => {
-    expect(DEFAULT_ELEVATION_VIEW_MODE).toEqual({ kind: "upcoming", windowMetres: 5000 });
+  it("defaults to a 2 km upcoming view", () => {
+    expect(DEFAULT_ELEVATION_VIEW_MODE).toEqual({ kind: "upcoming", windowMetres: 2000 });
   });
 
-  it("offers Full followed by the 2/5/10 km upcoming options, in that order", () => {
+  it("offers Full followed by the 2/10 km upcoming options, in that order", () => {
     expect(ELEVATION_VIEW_MODE_OPTIONS).toEqual([
       { kind: "full" },
       { kind: "upcoming", windowMetres: 2000 },
-      { kind: "upcoming", windowMetres: 5000 },
       { kind: "upcoming", windowMetres: 10000 },
     ]);
   });
@@ -148,9 +149,11 @@ describe("interpolateRoutePointAt", () => {
 });
 
 describe("selectUpcomingElevationWindow boundary interpolation", () => {
-  // Spaced 5000 m apart so windowMetres can stay a real ElevationWindowMetres
-  // option (2000/5000/10000) while matched/end distances still land
-  // strictly mid-segment for the cases that need that.
+  // Spaced 5000 m apart: a 2 km window's matched/end distances always land
+  // strictly mid-segment (exercising interpolation), and a 10 km window
+  // lands exactly two points ahead of wherever it starts — matching the
+  // two remaining ElevationWindowMetres options (2000/10000) after
+  // backlog item 54 retired the 5 km option.
   const points: RoutePoint[] = [
     { coordinate: [0, 51], elevationMetres: 0, distanceFromStartMetres: 0 },
     { coordinate: [0.01, 51], elevationMetres: 100, distanceFromStartMetres: 5000 },
@@ -167,17 +170,19 @@ describe("selectUpcomingElevationWindow boundary interpolation", () => {
   });
 
   it("interpolates a synthetic end point when the window end falls mid-segment", () => {
-    const result = selectUpcomingElevationWindow(points, 2000, 5000);
+    const result = selectUpcomingElevationWindow(points, 2000, 10000);
 
-    expect(result.endDistanceMetres).toBe(7000);
+    expect(result.endDistanceMetres).toBe(12000);
     const last = result.points.at(-1);
-    expect(last?.distanceFromStartMetres).toBe(7000);
-    expect(last?.elevationMetres).toBeCloseTo(80, 5);
+    expect(last?.distanceFromStartMetres).toBe(12000);
+    expect(last?.elevationMetres).toBeCloseTo(62, 5);
   });
 
   it("does not duplicate a point when a window boundary lands exactly on an existing point", () => {
-    const result = selectUpcomingElevationWindow(points, 5000, 5000);
-    expect(result.points.map((p) => p.distanceFromStartMetres)).toEqual([5000, 10000]);
+    const result = selectUpcomingElevationWindow(points, 5000, 10000);
+    expect(result.points.map((p) => p.distanceFromStartMetres)).toEqual([
+      5000, 10000, 15000,
+    ]);
   });
 
   it("keeps elevation null when a boundary interpolates across a point with unknown elevation", () => {
@@ -188,6 +193,90 @@ describe("selectUpcomingElevationWindow boundary interpolation", () => {
     ];
     const result = selectUpcomingElevationWindow(pointsWithGap, 2000, 2000);
     expect(result.points[0]?.elevationMetres).toBeNull();
+  });
+});
+
+describe("selectElevationDistanceGuides", () => {
+  it("returns exactly one +1 km guide for a 2 km window", () => {
+    const window: UpcomingElevationWindow = {
+      points: [],
+      startDistanceMetres: 3000,
+      endDistanceMetres: 5000,
+    };
+    expect(selectElevationDistanceGuides(window, 2000)).toEqual([
+      { aheadMetres: 1000, distanceFromStartMetres: 4000 },
+    ]);
+  });
+
+  it("returns four guides at +2/+4/+6/+8 km, in ascending order, for a 10 km window", () => {
+    const window: UpcomingElevationWindow = {
+      points: [],
+      startDistanceMetres: 0,
+      endDistanceMetres: 10000,
+    };
+    expect(selectElevationDistanceGuides(window, 10000)).toEqual([
+      { aheadMetres: 2000, distanceFromStartMetres: 2000 },
+      { aheadMetres: 4000, distanceFromStartMetres: 4000 },
+      { aheadMetres: 6000, distanceFromStartMetres: 6000 },
+      { aheadMetres: 8000, distanceFromStartMetres: 8000 },
+    ]);
+  });
+
+  it("shifts every guide by the same delta as the window's own start advances", () => {
+    const earlier: UpcomingElevationWindow = {
+      points: [],
+      startDistanceMetres: 1000,
+      endDistanceMetres: 11000,
+    };
+    const later: UpcomingElevationWindow = {
+      points: [],
+      startDistanceMetres: 2000,
+      endDistanceMetres: 12000,
+    };
+    expect(selectElevationDistanceGuides(later, 10000)).toEqual(
+      selectElevationDistanceGuides(earlier, 10000).map((guide) => ({
+        ...guide,
+        distanceFromStartMetres: guide.distanceFromStartMetres + 1000,
+      })),
+    );
+  });
+
+  it("omits a guide whose route-global distance exceeds the window's own (route-end-clamped) end", () => {
+    const window: UpcomingElevationWindow = {
+      points: [],
+      startDistanceMetres: 43000,
+      endDistanceMetres: 45000,
+    };
+    expect(selectElevationDistanceGuides(window, 10000)).toEqual([
+      { aheadMetres: 2000, distanceFromStartMetres: 45000 },
+    ]);
+  });
+
+  it("includes a guide exactly at the window's own end (boundary-inclusive)", () => {
+    const window: UpcomingElevationWindow = {
+      points: [],
+      startDistanceMetres: 37000,
+      endDistanceMetres: 45000,
+    };
+    const guides = selectElevationDistanceGuides(window, 10000);
+    expect(guides.at(-1)).toEqual({ aheadMetres: 8000, distanceFromStartMetres: 45000 });
+  });
+
+  it("returns an empty array for a single-point window (rider at the exact route end)", () => {
+    const window: UpcomingElevationWindow = {
+      points: [],
+      startDistanceMetres: 20000,
+      endDistanceMetres: 20000,
+    };
+    expect(selectElevationDistanceGuides(window, 2000)).toEqual([]);
+    expect(selectElevationDistanceGuides(window, 10000)).toEqual([]);
+  });
+
+  it("composes with selectUpcomingElevationWindow: a 2 km window at distance 3500 yields the +1 km guide at 4500", () => {
+    const window = selectUpcomingElevationWindow(ROUTE_POINTS, 3500, 2000);
+    expect(selectElevationDistanceGuides(window, 2000)).toEqual([
+      { aheadMetres: 1000, distanceFromStartMetres: 4500 },
+    ]);
   });
 });
 

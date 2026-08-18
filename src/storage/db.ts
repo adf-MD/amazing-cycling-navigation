@@ -6,12 +6,24 @@ import type {
   RideCameraMode,
 } from "../navigation/types.ts";
 
+/** Storage-only: legacy rows may still contain the retired 5 km window
+ * option, in either shape (tagged or legacy-bare — see
+ * `StoredRouteRideState.elevationWindowMetres` below). Admits `5000` in
+ * addition to the live `ElevationWindowMetres` (backlog item 54 narrowed
+ * that to `2000 | 10000` only) so a genuine historical row can be
+ * represented without an unsafe cast anywhere; `src/storage/mapping.ts`'s
+ * `resolveElevationViewMode` explicitly normalises a stored `5000` (either
+ * shape) to `2000` on read. New writes can never contain `5000` — the live
+ * `ElevationViewMode`/`ElevationWindowMetres` types make it
+ * unconstructable at every write call site. */
+export type StoredElevationWindowMetres = ElevationWindowMetres | 5000;
+
 /** Mirrors `ElevationViewMode` (`src/navigation/types.ts`) for persistence.
  * Kept as a separate type (rather than reusing `ElevationViewMode`
  * directly) so a future change to the in-app type's shape doesn't silently
  * change what's already on disk. */
 export type StoredElevationViewMode =
-  { kind: "full" } | { kind: "upcoming"; windowMetres: ElevationWindowMetres };
+  { kind: "full" } | { kind: "upcoming"; windowMetres: StoredElevationWindowMetres };
 
 /** Discriminates what kind of active ride session a `StoredRideState` row
  * represents — see `StoredRouteRideState.kind`'s own doc comment for the
@@ -197,8 +209,10 @@ export interface StoredRouteRideState {
    * only this. New rows write `elevationViewMode` instead and leave this
    * undefined; src/storage/mapping.ts's fromStoredRideState reads whichever
    * is present, preferring `elevationViewMode`. Optional/non-indexed, so
-   * widening it from required to optional needs no schema version bump. */
-  elevationWindowMetres?: ElevationWindowMetres;
+   * widening it from required to optional needs no schema version bump.
+   * May also legitimately hold the retired `5000` value —
+   * `resolveElevationViewMode` normalises it to `2000` on read. */
+  elevationWindowMetres?: StoredElevationWindowMetres;
   /** The rider's selected elevation-profile view (Full, or a rolling
    * window). Optional because rows written before this field existed only
    * have the legacy `elevationWindowMetres` above. Not indexed, so adding

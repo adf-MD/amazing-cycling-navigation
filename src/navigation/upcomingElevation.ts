@@ -7,10 +7,10 @@ import type { ElevationViewMode, ElevationWindowMetres } from "./types.ts";
  * the exact left edge, or a marker onto the whole route ("full").
  */
 
-export const DEFAULT_ELEVATION_WINDOW_METRES: ElevationWindowMetres = 5000;
+export const DEFAULT_ELEVATION_WINDOW_METRES: ElevationWindowMetres = 2000;
 
 export const ELEVATION_WINDOW_OPTIONS_METRES: readonly ElevationWindowMetres[] = [
-  2000, 5000, 10000,
+  2000, 10000,
 ];
 
 export const DEFAULT_ELEVATION_VIEW_MODE: ElevationViewMode = {
@@ -162,4 +162,54 @@ export function buildFullProfileMarker(
     return null;
   }
   return { markerDistanceFromStartMetres: point.distanceFromStartMetres, point };
+}
+
+/** Route-global position and relative "ahead of the rider" meaning for one
+ * distance guide on a rolling upcoming-elevation chart (backlog item 54).
+ * `distanceFromStartMetres` is in the same route-global space as
+ * `UpcomingElevationWindow`'s own bounds and `ElevationChart`'s `domain`/
+ * `marker` contracts — never rebased. `aheadMetres` is the value actually
+ * shown to the rider ("+1 km" etc.) and is carried alongside the resolved
+ * distance so a caller/renderer never has to re-derive it by subtracting
+ * the window's own start back out. */
+export interface ElevationDistanceGuide {
+  distanceFromStartMetres: number;
+  aheadMetres: number;
+}
+
+/** Which "+N km ahead" guides each standard rolling window offers — the
+ * 2 km view gets one (+1 km), the 10 km view gets four (+2/+4/+6/+8 km),
+ * per backlog item 54's required outcome. Keyed by the live
+ * `ElevationWindowMetres`, so this can never drift out of sync with
+ * `ELEVATION_WINDOW_OPTIONS_METRES` without a compile error. */
+const ELEVATION_DISTANCE_GUIDE_OFFSETS_METRES: Readonly<
+  Record<ElevationWindowMetres, readonly number[]>
+> = {
+  2000: [1000],
+  10000: [2000, 4000, 6000, 8000],
+};
+
+/**
+ * The relative distance guides for one rolling upcoming-elevation window —
+ * a small, stateless, route-global derivation re-run fresh every call, so
+ * "each guide's position advances with the window as the rider advances"
+ * and "guides beyond the (already route-end-clamped) window are omitted
+ * near the finish" both fall out for free with no special-case tracking:
+ * this always reflects the live `window` it's given. A guide whose
+ * resolved route-global distance would fall AT OR BEFORE the window's own
+ * end distance is kept (boundary-inclusive — a guide landing exactly at a
+ * route-end-truncated window's own edge must still render, per backlog
+ * item 54's "handle a marker at/near the right edge" requirement); a guide
+ * past it is omitted, never clamped/hidden by the caller.
+ */
+export function selectElevationDistanceGuides(
+  window: UpcomingElevationWindow,
+  windowMetres: ElevationWindowMetres,
+): ElevationDistanceGuide[] {
+  return ELEVATION_DISTANCE_GUIDE_OFFSETS_METRES[windowMetres]
+    .map((aheadMetres) => ({
+      aheadMetres,
+      distanceFromStartMetres: window.startDistanceMetres + aheadMetres,
+    }))
+    .filter((guide) => guide.distanceFromStartMetres <= window.endDistanceMetres);
 }

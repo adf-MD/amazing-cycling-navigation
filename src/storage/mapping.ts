@@ -25,26 +25,51 @@ function isElevationWindowMetres(value: number): value is ElevationWindowMetres 
   return (ELEVATION_WINDOW_OPTIONS_METRES as readonly number[]).includes(value);
 }
 
+/** Normalises a raw stored window value — which may still legitimately be
+ * the retired 5 km option, in either shape (see
+ * `StoredElevationWindowMetres`) — to a live `ElevationWindowMetres`.
+ * `5000` is normalised EXPLICITLY to `2000` here, a deliberate branch
+ * distinct from "malformed" (not a value that only happens to coincide
+ * with the current default). Returns `undefined` for anything else, which
+ * the caller falls through past. */
+function normalizeStoredElevationWindowMetres(
+  value: number,
+): ElevationWindowMetres | undefined {
+  if (isElevationWindowMetres(value)) return value;
+  if (value === 5000) return 2000;
+  return undefined;
+}
+
 /**
  * Resolves the stored elevation view, preferring the new tagged
  * `elevationViewMode` field. Falls back to the legacy numeric
  * `elevationWindowMetres` for rows written before `elevationViewMode`
- * existed, and to the 5 km default for anything malformed or absent —
- * never rejects a row outright.
+ * existed, and to the 2 km default for anything malformed or absent —
+ * never rejects a row outright. Precedence, most to least specific: a
+ * modern tagged window (2000/10000) wins outright; a tagged retired 5000
+ * window normalises to 2000 without consulting the legacy bare field at
+ * all; only a tagged value that is neither (genuinely invalid/future)
+ * falls back to the legacy bare field, itself normalised the same way; a
+ * malformed/absent legacy field resolves to the 2 km default.
  */
 function resolveElevationViewMode(stored: StoredRouteRideState): ElevationViewMode {
   const mode = stored.elevationViewMode;
   if (mode?.kind === "full") {
     return mode;
   }
-  if (mode?.kind === "upcoming" && isElevationWindowMetres(mode.windowMetres)) {
-    return mode;
+  if (mode?.kind === "upcoming") {
+    const windowMetres = normalizeStoredElevationWindowMetres(mode.windowMetres);
+    if (windowMetres !== undefined) {
+      return { kind: "upcoming", windowMetres };
+    }
   }
-  if (
-    stored.elevationWindowMetres !== undefined &&
-    isElevationWindowMetres(stored.elevationWindowMetres)
-  ) {
-    return { kind: "upcoming", windowMetres: stored.elevationWindowMetres };
+  if (stored.elevationWindowMetres !== undefined) {
+    const windowMetres = normalizeStoredElevationWindowMetres(
+      stored.elevationWindowMetres,
+    );
+    if (windowMetres !== undefined) {
+      return { kind: "upcoming", windowMetres };
+    }
   }
   return DEFAULT_ELEVATION_VIEW_MODE;
 }

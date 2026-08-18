@@ -722,6 +722,223 @@ describe("ElevationChart", () => {
     });
   });
 
+  describe("distance guides (backlog item 54)", () => {
+    it("renders no guide elements when distanceGuides is omitted", () => {
+      const points = buildPoints([
+        [0, 10],
+        [1000, 40],
+      ]);
+      const { container } = render(<ElevationChart points={points} />);
+      expect(container.querySelector("line.elevation-chart-distance-guide")).toBeNull();
+    });
+
+    it("renders no guide elements when distanceGuides is an empty array", () => {
+      const points = buildPoints([
+        [0, 10],
+        [1000, 40],
+      ]);
+      const { container } = render(
+        <ElevationChart points={points} distanceGuides={[]} />,
+      );
+      expect(container.querySelector("line.elevation-chart-distance-guide")).toBeNull();
+    });
+
+    it("renders a guide line at the pixel position implied by its route-global distance", () => {
+      const points = buildPoints([
+        [0, 10],
+        [1000, 40],
+      ]);
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          distanceGuides={[{ distanceFromStartMetres: 250, aheadMetres: 1000 }]}
+        />,
+      );
+      const guideLine = container.querySelector("line.elevation-chart-distance-guide");
+      expect(guideLine).not.toBeNull();
+      // Default domain [0, 1000] over default width 320: 250 m -> x = 80.
+      expect(guideLine?.getAttribute("x1")).toBe("80");
+      expect(guideLine?.getAttribute("x2")).toBe("80");
+    });
+
+    it("labels each guide using the relative +N km format", () => {
+      const points = buildPoints([
+        [0, 10],
+        [10000, 40],
+      ]);
+      render(
+        <ElevationChart
+          points={points}
+          domain={{ startDistanceMetres: 0, endDistanceMetres: 10000 }}
+          distanceGuides={[
+            { distanceFromStartMetres: 2000, aheadMetres: 2000 },
+            { distanceFromStartMetres: 4000, aheadMetres: 4000 },
+            { distanceFromStartMetres: 8000, aheadMetres: 8000 },
+          ]}
+        />,
+      );
+      expect(screen.getByText("+2 km")).toBeInTheDocument();
+      expect(screen.getByText("+4 km")).toBeInTheDocument();
+      expect(screen.getByText("+8 km")).toBeInTheDocument();
+    });
+
+    it("gives guides a dash pattern distinct from both the stale-marker and completed-segment dash patterns", () => {
+      const points = buildPoints([
+        [0, 10],
+        [1000, 40],
+      ]);
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          marker={{ distanceFromStartMetres: 500, elevationMetres: 25, stale: true }}
+          distanceGuides={[{ distanceFromStartMetres: 250, aheadMetres: 1000 }]}
+        />,
+      );
+      const guideLine = container.querySelector("line.elevation-chart-distance-guide");
+      const markerLine = container.querySelector("line.elevation-chart-marker");
+      const completedPath = container.querySelector("path.elevation-chart-completed");
+
+      const guideDasharray = guideLine?.getAttribute("stroke-dasharray");
+      const markerDasharray = markerLine?.getAttribute("stroke-dasharray");
+      const completedDasharray = completedPath?.getAttribute("stroke-dasharray");
+
+      expect(guideDasharray).not.toBeNull();
+      expect(guideDasharray).not.toBe(markerDasharray);
+      expect(guideDasharray).not.toBe(completedDasharray);
+    });
+
+    it("renders guides before every profile path, so the profile paints over them", () => {
+      const points = buildPoints([
+        [0, 10],
+        [500, 40],
+        [1000, 25],
+      ]);
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          distanceGuides={[{ distanceFromStartMetres: 250, aheadMetres: 1000 }]}
+        />,
+      );
+      const guideLine = container.querySelector("line.elevation-chart-distance-guide");
+      const profilePaths = Array.from(container.querySelectorAll("path"));
+      expect(guideLine).not.toBeNull();
+      expect(profilePaths.length).toBeGreaterThan(0);
+      for (const path of profilePaths) {
+        // DOCUMENT_POSITION_FOLLOWING (4): path comes after the guide line.
+        const position = guideLine?.compareDocumentPosition(path) ?? 0;
+        expect(position & 4).toBe(4);
+      }
+    });
+
+    it("keeps distance guides from intercepting the chart's tap target", () => {
+      const points = buildPoints([
+        [0, 10],
+        [1000, 40],
+      ]);
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 320,
+        height: 96,
+        right: 320,
+        bottom: 96,
+        x: 0,
+        y: 0,
+        toJSON: () => "",
+      });
+      const onTapDistance = vi.fn<(distanceMetres: number) => void>();
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          onTapDistance={onTapDistance}
+          distanceGuides={[{ distanceFromStartMetres: 250, aheadMetres: 1000 }]}
+        />,
+      );
+      const hitTarget = container.querySelector("rect.elevation-chart-tap-target");
+      if (!hitTarget) throw new Error("expected a tap-target rect");
+      // Tap exactly where the guide at 250 m is drawn (x = 80).
+      fireEvent.click(hitTarget, { clientX: 80, clientY: 10 });
+
+      expect(onTapDistance).toHaveBeenCalledTimes(1);
+      expect(onTapDistance.mock.calls[0]?.[0]).toBeCloseTo(250, -1);
+      vi.restoreAllMocks();
+    });
+
+    it("flips the label anchor away from the domain edges so text does not overflow", () => {
+      const points = buildPoints([
+        [0, 10],
+        [1000, 40],
+      ]);
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          distanceGuides={[
+            { distanceFromStartMetres: 10, aheadMetres: 1000 },
+            { distanceFromStartMetres: 500, aheadMetres: 2000 },
+            { distanceFromStartMetres: 990, aheadMetres: 4000 },
+          ]}
+        />,
+      );
+      const labels = Array.from(
+        container.querySelectorAll("text.elevation-chart-distance-guide-label"),
+      );
+      expect(labels).toHaveLength(3);
+      expect(labels[0]?.getAttribute("text-anchor")).toBe("start");
+      expect(labels[1]?.getAttribute("text-anchor")).toBe("middle");
+      expect(labels[2]?.getAttribute("text-anchor")).toBe("end");
+    });
+
+    it("renders no guide caption when distanceGuides is empty or omitted", () => {
+      const points = buildPoints([
+        [0, 10],
+        [1000, 40],
+      ]);
+      const omitted = render(<ElevationChart points={points} />);
+      expect(
+        omitted.container.querySelector(".elevation-chart-distance-guides-caption"),
+      ).toBeNull();
+      omitted.unmount();
+
+      const empty = render(<ElevationChart points={points} distanceGuides={[]} />);
+      expect(
+        empty.container.querySelector(".elevation-chart-distance-guides-caption"),
+      ).toBeNull();
+    });
+
+    it("renders a plain, non-live-region caption listing every guide's label, without disturbing the chart's own accessible name", () => {
+      const points = buildPoints([
+        [0, 10],
+        [10000, 40],
+      ]);
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          domain={{ startDistanceMetres: 0, endDistanceMetres: 10000 }}
+          distanceGuides={[
+            { distanceFromStartMetres: 2000, aheadMetres: 2000 },
+            { distanceFromStartMetres: 4000, aheadMetres: 4000 },
+            { distanceFromStartMetres: 6000, aheadMetres: 6000 },
+            { distanceFromStartMetres: 8000, aheadMetres: 8000 },
+          ]}
+        />,
+      );
+      const caption = container.querySelector(".elevation-chart-distance-guides-caption");
+      expect(caption).not.toBeNull();
+      expect(caption?.textContent).toContain("+2 km");
+      expect(caption?.textContent).toContain("+4 km");
+      expect(caption?.textContent).toContain("+6 km");
+      expect(caption?.textContent).toContain("+8 km");
+      expect(caption?.getAttribute("aria-live")).toBeNull();
+
+      expect(
+        screen.getByRole("img", { name: "Elevation profile chart" }),
+      ).toBeInTheDocument();
+      expect(
+        container.querySelector('figure[aria-label="Elevation profile"]'),
+      ).not.toBeNull();
+    });
+  });
+
   describe("chart tap interaction", () => {
     afterEach(() => {
       vi.restoreAllMocks();

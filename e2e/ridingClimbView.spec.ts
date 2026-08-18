@@ -111,10 +111,12 @@ test("auto-selects Climb view on entering each recognised climb, respects a manu
   expect(fillColours.size).toBeGreaterThan(1);
 
   // Manually selecting a standard view dismisses Climb for the rest of
-  // this climb.
-  await page.getByRole("button", { name: "5 km" }).click();
+  // this climb — "10 km" is deliberately distinct from the app's own
+  // default "2 km" view, so this action is unambiguously a genuine
+  // manual selection, not a no-op against an already-selected default.
+  await page.getByRole("button", { name: "10 km" }).click();
   await expect(climbButton).toHaveAttribute("aria-pressed", "false");
-  await expect(page.getByRole("button", { name: "5 km" })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "10 km" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -126,7 +128,7 @@ test("auto-selects Climb view on entering each recognised climb, respects a manu
     longitude: lonAtMetresAlongFixture(CLIMB_1_MID_METRES + 200),
     accuracy: 5,
   });
-  await expect(page.getByRole("button", { name: "5 km" })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "10 km" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );

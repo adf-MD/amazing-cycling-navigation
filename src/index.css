@@ -336,7 +336,7 @@ button:focus-visible {
 
 /* A deliberate gap below the map, replacing the accidental spacing the
  * previously flow-positioned attribution used to leave behind. Wraps so
- * five buttons (Full/2 km/5 km/10 km/Climb) never force horizontal
+ * four buttons (Full/2 km/10 km/Climb) never force horizontal
  * scroll on a narrow phone. */
 .elevation-window-group {
   margin-top: 10px;

@@ -38,6 +38,7 @@ import type { ElevationViewMode } from "../../navigation/types.ts";
 import {
   ELEVATION_VIEW_MODE_OPTIONS,
   interpolateRoutePointAt,
+  selectElevationDistanceGuides,
 } from "../../navigation/upcomingElevation.ts";
 import { getDraft, saveDraft } from "../../storage/planningDraftRepository.ts";
 import { getPlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
@@ -1155,6 +1156,19 @@ export function RidingScreen({
                 window.endDistanceMetres,
               );
               displayedMicroSegments = windowMicroSegments;
+              // elevationProfileDisplay is derived 1:1 from elevationViewMode
+              // in useRideNavigation.ts, so elevationViewMode.kind is
+              // provably "upcoming" here too — TS can't see that
+              // correlation across the two separately-returned hook
+              // values, so this narrows defensively rather than asserting.
+              const windowMetres =
+                nav.elevationViewMode.kind === "upcoming"
+                  ? nav.elevationViewMode.windowMetres
+                  : null;
+              const distanceGuides =
+                windowMetres !== null
+                  ? selectElevationDistanceGuides(window, windowMetres)
+                  : [];
               chart = (
                 <ElevationChart
                   points={window.points}
@@ -1166,6 +1180,7 @@ export function RidingScreen({
                   gradientSegments={windowMicroSegments}
                   selectedRangeMetres={chartSelectedRangeMetres}
                   onTapDistance={handleChartTapDistance}
+                  distanceGuides={distanceGuides}
                 />
               );
             }

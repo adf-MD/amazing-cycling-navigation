@@ -316,19 +316,18 @@ describe("RidingScreen", () => {
   it("shows the entire elevation profile before riding starts, then switches to the windowed view once riding", async () => {
     const user = userEvent.setup();
     const stub = buildStubGeolocationSource();
-    // A peak past the default 5 km window, so the full pre-ride profile
-    // (10-90 m) and the windowed in-ride profile (10-20 m) are provably
-    // different, not just "some chart rendered".
+    // A peak past the default 2 km window, so the full pre-ride profile
+    // (10-90 m) and the windowed in-ride profile are provably different,
+    // not just "some chart rendered".
     const elevationRoute: PlannedRoute = {
       ...route,
       points: densifyElevationRoute([
         { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
-        { coordinate: [0.01, 51], elevationMetres: 20, distanceFromStartMetres: 2000 },
-        { coordinate: [0.02, 51], elevationMetres: 15, distanceFromStartMetres: 4000 },
-        { coordinate: [0.03, 51], elevationMetres: 90, distanceFromStartMetres: 7000 },
-        { coordinate: [0.04, 51], elevationMetres: 80, distanceFromStartMetres: 8000 },
+        { coordinate: [0.005, 51], elevationMetres: 15, distanceFromStartMetres: 1000 },
+        { coordinate: [0.02, 51], elevationMetres: 90, distanceFromStartMetres: 4000 },
+        { coordinate: [0.025, 51], elevationMetres: 80, distanceFromStartMetres: 5000 },
       ]),
-      distanceMetres: 8000,
+      distanceMetres: 5000,
     };
     render(
       <RidingScreen
@@ -355,11 +354,11 @@ describe("RidingScreen", () => {
     });
     expect(elevationWindowGroup).toBeInTheDocument();
     expect(elevationWindowGroup).toHaveClass("elevation-window-group");
-    // Default 5 km window from distance 0 runs [0, 5000], which includes an
-    // interpolated boundary sample at 5000 m (between the 4000 m/15 m and
-    // 7000 m/90 m points) rather than stopping at the last raw point
+    // Default 2 km window from distance 0 runs [0, 2000], which includes an
+    // interpolated boundary sample at 2000 m (between the 1000 m/15 m and
+    // 4000 m/90 m points) rather than stopping at the last raw point
     // before the window edge — the literal fix for the rebasing bug: the
-    // old behaviour would have shown 10–20 m here, clipping the boundary
+    // old behaviour would have shown 10–15 m here, clipping the boundary
     // instead of interpolating it.
     expect(await screen.findByText(/10–40 m/)).toBeInTheDocument();
   });
@@ -616,8 +615,8 @@ describe("RidingScreen", () => {
       headingDegrees: null,
     });
 
-    const fiveKmButton = await screen.findByRole("button", { name: "5 km" });
-    expect(fiveKmButton).toHaveAttribute("aria-pressed", "true");
+    const twoKmButton = await screen.findByRole("button", { name: "2 km" });
+    expect(twoKmButton).toHaveAttribute("aria-pressed", "true");
 
     await user.click(screen.getByRole("button", { name: "10 km" }));
 
@@ -625,7 +624,7 @@ describe("RidingScreen", () => {
       "aria-pressed",
       "true",
     );
-    expect(fiveKmButton).toHaveAttribute("aria-pressed", "false");
+    expect(twoKmButton).toHaveAttribute("aria-pressed", "false");
   });
 
   it("shows a Full-mode marker and accessible position text for the current route position when Full is selected", async () => {
@@ -955,7 +954,7 @@ describe("RidingScreen", () => {
         headingDegrees: null,
       });
 
-      // Default view is the 5 km window. Once the fix lands, the rider is
+      // Default view is the 2 km window. Once the fix lands, the rider is
       // "on" the whole-route climb, so it becomes active and its detailed
       // local-gradient colouring appears alongside the unchanged macro
       // category — both derived from the identical full-route feature
@@ -2122,12 +2121,12 @@ describe("RidingScreen", () => {
       emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
       await screen.findByRole("button", { name: "Climb" });
 
-      await user.click(screen.getByRole("button", { name: "5 km" }));
+      await user.click(screen.getByRole("button", { name: "10 km" }));
       expect(screen.getByRole("button", { name: "Climb" })).toHaveAttribute(
         "aria-pressed",
         "false",
       );
-      expect(screen.getByRole("button", { name: "5 km" })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: "10 km" })).toHaveAttribute(
         "aria-pressed",
         "true",
       );
@@ -2166,8 +2165,8 @@ describe("RidingScreen", () => {
       await waitFor(() => {
         expect(screen.queryByRole("button", { name: "Climb" })).toBeNull();
       });
-      // Falls back to the app's default 5 km view, never explicitly chosen.
-      expect(screen.getByRole("button", { name: "5 km" })).toHaveAttribute(
+      // Falls back to the app's default 2 km view, never explicitly chosen.
+      expect(screen.getByRole("button", { name: "2 km" })).toHaveAttribute(
         "aria-pressed",
         "true",
       );
@@ -2374,7 +2373,7 @@ describe("RidingScreen", () => {
       expect(chartSvg.querySelectorAll("path.elevation-chart-area-fill")).toHaveLength(0);
     });
 
-    it("appends the Climb button after the four standard buttons, without disturbing their order", async () => {
+    it("appends the Climb button after the three standard buttons, without disturbing their order", async () => {
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
       render(
@@ -2391,7 +2390,7 @@ describe("RidingScreen", () => {
       const labels = within(group)
         .getAllByRole("button")
         .map((button) => button.textContent);
-      expect(labels).toEqual(["Full", "2 km", "5 km", "10 km", "Climb"]);
+      expect(labels).toEqual(["Full", "2 km", "10 km", "Climb"]);
     });
 
     it("restores a climb-view dismissal for the current climb id across suspension/reload", async () => {
@@ -2407,7 +2406,7 @@ describe("RidingScreen", () => {
         lastMatchedPointIndex: CLIMB_1_MID_METRES / 50,
         matchedDistanceFromStartMetres: CLIMB_1_MID_METRES,
         offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
-        elevationViewMode: { kind: "upcoming", windowMetres: 5000 },
+        elevationViewMode: { kind: "upcoming", windowMetres: 10000 },
         lastReliableMatchedPointIndex: CLIMB_1_MID_METRES / 50,
         lastReliableMatchedDistanceFromStartMetres: CLIMB_1_MID_METRES,
         dismissedClimbFeatureId: "climb-460",
@@ -2423,7 +2422,7 @@ describe("RidingScreen", () => {
 
       const climbButton = await screen.findByRole("button", { name: "Climb" });
       expect(climbButton).toHaveAttribute("aria-pressed", "false");
-      expect(screen.getByRole("button", { name: "5 km" })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: "10 km" })).toHaveAttribute(
         "aria-pressed",
         "true",
       );
@@ -5051,6 +5050,259 @@ describe("RidingScreen", () => {
       expect(saveDraftSpy).toHaveBeenCalledTimes(1);
 
       saveDraftSpy.mockRestore();
+    });
+  });
+
+  describe("Elevation distance guides (backlog item 54)", () => {
+    // A real geodesic lon/lat-per-metre conversion (mirrors the two-climb
+    // fixture's own identical technique above) so a fix genuinely
+    // route-matches near the intended distance via turf-based projection,
+    // not merely a label.
+    const LON_PER_METRE = 1 / (111_320 * Math.cos((51 * Math.PI) / 180));
+    function lonAtDistance(distanceMetres: number): number {
+      return distanceMetres * LON_PER_METRE;
+    }
+
+    // A dedicated 20 km fixture (the file's shared `route` const is only
+    // ~700 m, too short to exercise the 10 km window or a truncated
+    // window near the finish). Real distance/elevation variation, no
+    // recognised climb needed for these tests.
+    const distanceGuideRoute: PlannedRoute = {
+      ...route,
+      id: "distance-guide-route",
+      points: densifyElevationRoute(
+        Array.from({ length: 11 }, (_, index) => ({
+          coordinate: [lonAtDistance(index * 2000), 51] as const,
+          elevationMetres: index % 2 === 0 ? 10 : 20,
+          distanceFromStartMetres: index * 2000,
+        })),
+        100,
+      ),
+      distanceMetres: 20000,
+    };
+
+    function coordinateAtDistance(distanceMetres: number): Coordinate {
+      const point = distanceGuideRoute.points.find(
+        (p) => Math.abs(p.distanceFromStartMetres - distanceMetres) < 1,
+      );
+      if (!point) {
+        throw new Error(
+          `distance-guide fixture has no point near ${String(distanceMetres)}m`,
+        );
+      }
+      return point.coordinate;
+    }
+
+    function emitFixAtDistance(
+      stub: ReturnType<typeof buildStubGeolocationSource>,
+      distanceMetres: number,
+      timestampMs = 1000,
+    ): void {
+      stub.emitFix({
+        coordinate: coordinateAtDistance(distanceMetres),
+        accuracyMetres: 5,
+        timestampMs,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+    }
+
+    function guideLabels(): string[] {
+      return Array.from(
+        document.querySelectorAll("text.elevation-chart-distance-guide-label"),
+      ).map((element) => element.textContent);
+    }
+
+    it("shows a single +1 km guide with the default 2 km view", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={distanceGuideRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAtDistance(stub, 2000);
+
+      await screen.findByRole("group", { name: "Elevation profile view" });
+      await waitFor(() => {
+        expect(guideLabels()).toEqual(["+1 km"]);
+      });
+    });
+
+    it("shows four guides (+2/+4/+6/+8 km) after switching to the 10 km view", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={distanceGuideRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAtDistance(stub, 2000);
+      await screen.findByRole("group", { name: "Elevation profile view" });
+
+      await user.click(screen.getByRole("button", { name: "10 km" }));
+
+      await waitFor(() => {
+        expect(guideLabels()).toEqual(["+2 km", "+4 km", "+6 km", "+8 km"]);
+      });
+    });
+
+    it("keeps a guide's pixel position constant relative to the window as the rider advances", async () => {
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={distanceGuideRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAtDistance(stub, 2000, 1000);
+      await waitFor(() => {
+        expect(guideLabels()).toEqual(["+1 km"]);
+      });
+      const firstX = document
+        .querySelector("line.elevation-chart-distance-guide")
+        ?.getAttribute("x1");
+      expect(firstX).toBeTruthy();
+
+      // Advances well within the unrouted, un-truncated part of the
+      // route, so the 2 km window's own +1 km guide keeps the same
+      // relative fraction of the window regardless of the rider's
+      // absolute route-global position.
+      emitFixAtDistance(stub, 6000, 2000);
+      await waitFor(() => {
+        const currentX = document
+          .querySelector("line.elevation-chart-distance-guide")
+          ?.getAttribute("x1");
+        expect(currentX).toBe(firstX);
+      });
+    });
+
+    it("omits guides beyond the truncated window near the route finish", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={distanceGuideRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      // 500 m remain to the finish — less than the 2 km view's own
+      // +1 km offset, so the window is truncated short of that guide.
+      emitFixAtDistance(stub, 19500);
+
+      await screen.findByRole("group", { name: "Elevation profile view" });
+      await waitFor(() => {
+        expect(guideLabels()).toEqual([]);
+      });
+    });
+
+    it("never renders distance guides in the Full view", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={distanceGuideRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAtDistance(stub, 2000);
+      await waitFor(() => {
+        expect(guideLabels()).toEqual(["+1 km"]);
+      });
+
+      await user.click(await screen.findByRole("button", { name: "Full" }));
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Full" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+      });
+      expect(guideLabels()).toEqual([]);
+    });
+
+    it("never renders distance guides in the pre-ride whole-route chart", () => {
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={distanceGuideRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      expect(guideLabels()).toEqual([]);
+    });
+
+    it("renders a plain, non-live-region caption listing the guide labels", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={distanceGuideRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAtDistance(stub, 2000);
+      await waitFor(() => {
+        expect(guideLabels()).toEqual(["+1 km"]);
+      });
+
+      const caption = document.querySelector(".elevation-chart-distance-guides-caption");
+      expect(caption).not.toBeNull();
+      expect(caption?.textContent).toContain("+1 km");
+      expect(caption?.getAttribute("aria-live")).toBeNull();
+    });
+
+    it("a tap still resolves correctly near a guide's position — guides do not intercept the tap target", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 320,
+        height: 96,
+        right: 320,
+        bottom: 96,
+        x: 0,
+        y: 0,
+        toJSON: () => "",
+      });
+      render(
+        <RidingScreen
+          route={distanceGuideRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAtDistance(stub, 2000);
+      await waitFor(() => {
+        expect(guideLabels()).toEqual(["+1 km"]);
+      });
+
+      const hitTarget = document.querySelector("rect.elevation-chart-tap-target");
+      if (!hitTarget) throw new Error("expected a tap-target rect");
+      // Clicks exactly where the +1 km guide is drawn (window [2000,4000],
+      // guide at 3000 -> x = 160, the chart's horizontal midpoint) — the
+      // guide must not swallow this event; the chart's own existing tap
+      // machinery (proven elsewhere) is what actually resolves it.
+      fireEvent.click(hitTarget, { clientX: 160, clientY: 48 });
+
+      vi.restoreAllMocks();
     });
   });
 });

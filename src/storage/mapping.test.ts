@@ -53,7 +53,7 @@ const overviewCamera: StoredCameraState = {
   pitchDegrees: 0,
 };
 
-const upcoming5km: ElevationViewMode = { kind: "upcoming", windowMetres: 5000 };
+const upcoming10km: ElevationViewMode = { kind: "upcoming", windowMetres: 10000 };
 
 describe("toStoredRideState / fromStoredRideState", () => {
   it("round-trips matched distance, off-route state and elevation view mode", () => {
@@ -62,7 +62,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       "2026-01-01T00:00:00.000Z",
       fix,
       coreState,
-      upcoming5km,
+      upcoming10km,
       overviewCamera,
       false,
       null,
@@ -71,7 +71,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     const restored = fromStoredRideState(stored);
 
     expect(restored.core).toEqual(coreState);
-    expect(restored.elevationViewMode).toEqual(upcoming5km);
+    expect(restored.elevationViewMode).toEqual(upcoming10km);
     expect(restored.lastFix?.coordinate).toEqual(fix.coordinate);
     expect(restored.lastFix?.accuracyMetres).toBe(fix.accuracyMetres);
     expect(restored.lastFix?.timestampMs).toBe(fix.timestampMs);
@@ -83,7 +83,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       "2026-01-01T00:00:00.000Z",
       fix,
       coreState,
-      upcoming5km,
+      upcoming10km,
       overviewCamera,
       false,
       null,
@@ -99,7 +99,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       "2026-01-01T00:00:00.000Z",
       fix,
       coreState,
-      upcoming5km,
+      upcoming10km,
       overviewCamera,
       false,
       null,
@@ -142,7 +142,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       "2026-01-01T00:00:00.000Z",
       fix,
       coreState,
-      upcoming5km,
+      upcoming10km,
       {
         mode: "following",
         coordinate: null,
@@ -175,7 +175,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       "2026-01-01T00:00:00.000Z",
       fix,
       coreState,
-      upcoming5km,
+      upcoming10km,
       {
         mode: "following",
         coordinate: null,
@@ -211,7 +211,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       "2026-01-01T00:00:00.000Z",
       fix,
       coreState,
-      upcoming5km,
+      upcoming10km,
       freeCamera,
       false,
       null,
@@ -287,7 +287,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       expect(fromStoredRideState(stored).elevationViewMode).toEqual({ kind: "full" });
     });
 
-    it.each([2000, 5000, 10000] as const)(
+    it.each([2000, 10000] as const)(
       "round-trips a %d m upcoming window",
       (windowMetres) => {
         const stored = toStoredRideState(
@@ -326,7 +326,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       });
     });
 
-    it("defaults to the 5 km upcoming view when neither elevation field is present", () => {
+    it("defaults to the 2 km upcoming view when neither elevation field is present", () => {
       const rowWithNeitherField: StoredRouteRideState = {
         id: "active",
         routeId: "route-1",
@@ -339,11 +339,11 @@ describe("toStoredRideState / fromStoredRideState", () => {
 
       expect(fromStoredRideState(rowWithNeitherField).elevationViewMode).toEqual({
         kind: "upcoming",
-        windowMetres: 5000,
+        windowMetres: 2000,
       });
     });
 
-    it("falls back to the 5 km upcoming view for a malformed windowMetres value", () => {
+    it("falls back to the 2 km default view for a malformed (non-5000) windowMetres value", () => {
       const malformedRow: StoredRouteRideState = {
         id: "active",
         routeId: "route-1",
@@ -359,7 +359,67 @@ describe("toStoredRideState / fromStoredRideState", () => {
 
       expect(fromStoredRideState(malformedRow).elevationViewMode).toEqual({
         kind: "upcoming",
-        windowMetres: 5000,
+        windowMetres: 2000,
+      });
+    });
+
+    it("normalises a stored TAGGED retired 5000 m window to 2000 m", () => {
+      const taggedRetiredRow: StoredRouteRideState = {
+        id: "active",
+        routeId: "route-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        lastFix: null,
+        lastMatchedPointIndex: 0,
+        matchedDistanceFromStartMetres: 0,
+        offRouteMachineState: coreState.offRouteMachineState,
+        elevationViewMode: { kind: "upcoming", windowMetres: 5000 },
+      };
+
+      expect(fromStoredRideState(taggedRetiredRow).elevationViewMode).toEqual({
+        kind: "upcoming",
+        windowMetres: 2000,
+      });
+    });
+
+    it("normalises a stored legacy BARE 5000 m window to 2000 m", () => {
+      const bareRetiredRow: StoredRouteRideState = {
+        id: "active",
+        routeId: "route-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        lastFix: null,
+        lastMatchedPointIndex: 0,
+        matchedDistanceFromStartMetres: 0,
+        offRouteMachineState: coreState.offRouteMachineState,
+        elevationWindowMetres: 5000,
+      };
+
+      expect(fromStoredRideState(bareRetiredRow).elevationViewMode).toEqual({
+        kind: "upcoming",
+        windowMetres: 2000,
+      });
+    });
+
+    it("a tagged retired 5000 m window normalises to 2000 m even when a different, valid legacy bare field is also present — proving explicit normalisation, not accidental fallthrough to the bare field", () => {
+      const rowWithBothFields: StoredRouteRideState = {
+        id: "active",
+        routeId: "route-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        lastFix: null,
+        lastMatchedPointIndex: 0,
+        matchedDistanceFromStartMetres: 0,
+        offRouteMachineState: coreState.offRouteMachineState,
+        elevationViewMode: { kind: "upcoming", windowMetres: 5000 },
+        elevationWindowMetres: 10000,
+      };
+
+      // If the tagged 5000 were merely treated as "invalid tagged value",
+      // resolution would fall through to the valid legacy bare field
+      // (10000) instead — this test proves that does NOT happen: the
+      // tagged 5000 is recognised and normalised explicitly, before the
+      // bare field is ever consulted.
+      expect(fromStoredRideState(rowWithBothFields).elevationViewMode).toEqual({
+        kind: "upcoming",
+        windowMetres: 2000,
       });
     });
   });
@@ -377,7 +437,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         "2026-01-01T00:00:00.000Z",
         fix,
         coreWithFrozenProgress,
-        upcoming5km,
+        upcoming10km,
         overviewCamera,
         false,
         null,
@@ -428,7 +488,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         "2026-01-01T00:00:00.000Z",
         fix,
         coreState,
-        upcoming5km,
+        upcoming10km,
         overviewCamera,
         true,
         null,
@@ -466,7 +526,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         "2026-01-01T00:00:00.000Z",
         fix,
         coreState,
-        upcoming5km,
+        upcoming10km,
         overviewCamera,
         false,
         "climb-1200",
@@ -483,7 +543,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         "2026-01-01T00:00:00.000Z",
         fix,
         coreState,
-        upcoming5km,
+        upcoming10km,
         overviewCamera,
         false,
         null,
@@ -521,7 +581,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         "2026-01-01T00:00:00.000Z",
         fix,
         coreState,
-        upcoming5km,
+        upcoming10km,
         overviewCamera,
         false,
         null,
@@ -581,7 +641,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         "2026-01-01T00:00:00.000Z",
         fix,
         coreState,
-        upcoming5km,
+        upcoming10km,
         overviewCamera,
         false,
         null,
