@@ -2559,6 +2559,228 @@ describe("RidingScreen", () => {
 
       vi.restoreAllMocks();
     });
+
+    describe("Map-view climb cue (backlog item 57)", () => {
+      it("is absent outside a climb and appears without an automatic switch to Profile on entering one", async () => {
+        const user = userEvent.setup();
+        const stub = buildStubGeolocationSource();
+        render(
+          <RidingScreen
+            route={twoClimbRoute}
+            geolocationSource={stub.source}
+            mapFactory={buildStubMapFactory().factory}
+          />,
+        );
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+        emitFixAt(stub, BETWEEN_CLIMBS_METRES, 1000);
+        await screen.findByText("On route");
+        expect(screen.getByRole("button", { name: "Map" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        expect(screen.queryByRole("button", { name: "View climb" })).toBeNull();
+
+        emitFixAt(stub, CLIMB_1_MID_METRES, 2000);
+
+        expect(
+          await screen.findByRole("button", { name: "View climb" }),
+        ).toBeInTheDocument();
+        // Entering the climb must never itself switch views — the rider
+        // stays exactly where they were.
+        expect(screen.getByRole("button", { name: "Map" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        expect(screen.getByRole("button", { name: "Profile" })).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        );
+      });
+
+      it("is not duplicated in the DOM and does not render inside the hidden Profile pane", async () => {
+        const user = userEvent.setup();
+        const stub = buildStubGeolocationSource();
+        render(
+          <RidingScreen
+            route={twoClimbRoute}
+            geolocationSource={stub.source}
+            mapFactory={buildStubMapFactory().factory}
+          />,
+        );
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+        emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
+        await screen.findByRole("button", { name: "View climb" });
+
+        // getByText (unlike getByRole) does not respect aria-hidden, so
+        // this genuinely proves there is no second, hidden copy sitting in
+        // the Profile pane while the cue is visible on Map.
+        expect(screen.getAllByText("Climb active")).toHaveLength(1);
+        expect(screen.getAllByRole("button", { name: "View climb" })).toHaveLength(1);
+      });
+
+      it("switching to Profile via View climb selects Climb view in one action, with the existing progress panel visible", async () => {
+        const user = userEvent.setup();
+        const stub = buildStubGeolocationSource();
+        render(
+          <RidingScreen
+            route={twoClimbRoute}
+            geolocationSource={stub.source}
+            mapFactory={buildStubMapFactory().factory}
+          />,
+        );
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+        emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
+        await user.click(await screen.findByRole("button", { name: "View climb" }));
+
+        expect(screen.getByRole("button", { name: "Profile" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        expect(screen.getByRole("button", { name: "Map" })).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        );
+        expect(screen.getByRole("button", { name: "Climb" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        const panel = screen.getByRole("region", { name: "Climb progress" });
+        expect(
+          within(panel).getByRole("heading", { name: "Climb 1 · Uncategorised" }),
+        ).toBeInTheDocument();
+      });
+
+      it("stays absent on Map for the rest of the climb once a standard view dismisses it", async () => {
+        const user = userEvent.setup();
+        const stub = buildStubGeolocationSource();
+        render(
+          <RidingScreen
+            route={twoClimbRoute}
+            geolocationSource={stub.source}
+            mapFactory={buildStubMapFactory().factory}
+          />,
+        );
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+        emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
+        await switchToProfile(user);
+        await user.click(await screen.findByRole("button", { name: "10 km" }));
+        await switchToMap(user);
+
+        expect(screen.queryByRole("button", { name: "View climb" })).toBeNull();
+
+        // A further fix still inside the same climb must not reopen it.
+        emitFixAt(stub, CLIMB_1_MID_METRES + 50, 2000);
+        expect(screen.queryByRole("button", { name: "View climb" })).toBeNull();
+      });
+
+      it("re-offers the cue on Map for a later, distinct climb, and it can be opened normally", async () => {
+        const user = userEvent.setup();
+        const stub = buildStubGeolocationSource();
+        render(
+          <RidingScreen
+            route={twoClimbRoute}
+            geolocationSource={stub.source}
+            mapFactory={buildStubMapFactory().factory}
+          />,
+        );
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+        emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
+        await switchToProfile(user);
+        await user.click(await screen.findByRole("button", { name: "Full" }));
+        await switchToMap(user);
+        expect(screen.queryByRole("button", { name: "View climb" })).toBeNull();
+
+        emitFixAt(stub, CLIMB_2_MID_METRES, 2000);
+
+        await user.click(await screen.findByRole("button", { name: "View climb" }));
+        expect(screen.getByRole("button", { name: "Profile" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        expect(
+          screen.getByRole("heading", { name: "Climb 2 · Category 3" }),
+        ).toBeInTheDocument();
+      });
+
+      it("removes the cue once the rider leaves the recognised climb", async () => {
+        const user = userEvent.setup();
+        const stub = buildStubGeolocationSource();
+        render(
+          <RidingScreen
+            route={twoClimbRoute}
+            geolocationSource={stub.source}
+            mapFactory={buildStubMapFactory().factory}
+          />,
+        );
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+        emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
+        await screen.findByRole("button", { name: "View climb" });
+
+        emitFixAt(stub, BETWEEN_CLIMBS_METRES, 2000);
+
+        await waitFor(() => {
+          expect(screen.queryByRole("button", { name: "View climb" })).toBeNull();
+        });
+      });
+
+      it("entering, viewing and dismissing a climb never starts a second geolocation watch or issues extra camera/zoom calls", async () => {
+        const user = userEvent.setup();
+        const stub = buildStubGeolocationSource();
+        const mapStub = buildStubMapFactory();
+        render(
+          <RidingScreen
+            route={twoClimbRoute}
+            geolocationSource={stub.source}
+            mapFactory={mapStub.factory}
+          />,
+        );
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+        expect(stub.watchPositionSpy).toHaveBeenCalledOnce();
+
+        emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
+        await screen.findByRole("button", { name: "View climb" });
+        const setCameraCallsBefore = mapStub.setCameraSpy.mock.calls.length;
+        const changeZoomCallsBefore = mapStub.changeZoomBySpy.mock.calls.length;
+
+        await user.click(screen.getByRole("button", { name: "View climb" }));
+        await switchToMap(user);
+        await user.click(await screen.findByRole("button", { name: "View climb" }));
+        await switchToProfile(user);
+        await user.click(await screen.findByRole("button", { name: "10 km" }));
+
+        expect(stub.watchPositionSpy).toHaveBeenCalledOnce();
+        expect(mapStub.setCameraSpy.mock.calls.length).toBe(setCameraCallsBefore);
+        expect(mapStub.changeZoomBySpy.mock.calls.length).toBe(changeZoomCallsBefore);
+      });
+
+      it("keeps the status title's text byte-identical across repeated fixes within the same climb", async () => {
+        const user = userEvent.setup();
+        const stub = buildStubGeolocationSource();
+        const { container } = render(
+          <RidingScreen
+            route={twoClimbRoute}
+            geolocationSource={stub.source}
+            mapFactory={buildStubMapFactory().factory}
+          />,
+        );
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+        emitFixAt(stub, CLIMB_1_MID_METRES - 100, 1000);
+        await screen.findByRole("button", { name: "View climb" });
+        const titleBefore = container.querySelector(".ride-climb-cue-title");
+        expect(titleBefore).toHaveAttribute("role", "status");
+        const before = titleBefore?.textContent;
+
+        emitFixAt(stub, CLIMB_1_MID_METRES, 2000);
+        emitFixAt(stub, CLIMB_1_MID_METRES + 100, 3000);
+
+        await waitFor(() => {
+          expect(screen.getByRole("button", { name: "View climb" })).toBeInTheDocument();
+        });
+        const after = container.querySelector(".ride-climb-cue-title")?.textContent;
+        expect(after).toBe(before);
+        expect(after).toBe("Climb active");
+      });
+    });
   });
 
   it("keeps the Full-mode elevation marker pinned at the last reliable position once strongly off-route", async () => {

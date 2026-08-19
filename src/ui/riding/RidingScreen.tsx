@@ -55,6 +55,7 @@ import { GradientColoursDisclosure } from "../shared/GradientColoursDisclosure.t
 import { GradientSegmentDetailsPanel } from "../shared/GradientSegmentDetailsPanel.tsx";
 import { RouteFeatureDetailsPanel } from "../shared/RouteFeatureDetailsPanel.tsx";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
+import { RidingClimbCue } from "./RidingClimbCue.tsx";
 import { RidingClimbProgressPanel } from "./RidingClimbProgressPanel.tsx";
 import { RidingClimbSelector } from "./RidingClimbSelector.tsx";
 import { RidingCompactManoeuvreCue } from "./RidingCompactManoeuvreCue.tsx";
@@ -1466,6 +1467,36 @@ export function RidingScreen({
             <p role="status" className="ride-map-paused-toast">
               Map follow paused.
             </p>
+          ) : null}
+          {/* backlog item 57: a non-disruptive climb cue, Map-view-only.
+           * Pure derivation, no new state: effectiveElevationView.kind
+           * already encodes "there is an active climb, not manually
+           * dismissed for this climb" (see climbElevationView.ts's
+           * selectEffectiveElevationView), the same condition that already
+           * drives the Profile pane's own Climb chart branch above. The
+           * geolocationStatus !== "idle" guard matters here, not just as a
+           * defensive mirror of RidingNextManoeuvrePanel's own gate — this
+           * map container is unconditionally mounted (including for the
+           * idle pre-ride preview), so a resumable session with stale
+           * climb state must not show the cue before Resume riding is
+           * pressed. Positioned top-centre (not bottom, alongside the
+           * existing bottom-centre paused-follow toast and bottom-left
+           * attribution) so it never needs pixel-offset coordination with
+           * a transient sibling; the 64px side insets mirror
+           * .planning-map-status-overlay's own arithmetic for clearing a
+           * 48px .ride-map-control column plus its own 8px inset (see
+           * .ride-climb-cue's own CSS comment). */}
+          {nav.geolocationStatus !== "idle" &&
+          activeView === "map" &&
+          effectiveElevationView.kind === "climb" &&
+          activeClimb !== null &&
+          climbProgressMetrics !== null ? (
+            <RidingClimbCue
+              metrics={climbProgressMetrics}
+              onViewClimb={() => {
+                setActiveView("profile");
+              }}
+            />
           ) : null}
         </div>
 
