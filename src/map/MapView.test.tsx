@@ -312,9 +312,18 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
 }
 
 function firstCallOrder(spy: ReturnType<typeof vi.fn>): number {
-  const [order] = spy.mock.invocationCallOrder;
+  return nthCallOrder(spy, 0);
+}
+
+/** The Nth call's own invocationCallOrder — used, alongside firstCallOrder
+ * above, to prove ordering across a *re*-application (e.g. a second
+ * resize()-then-setCamera pair), not just the first. */
+function nthCallOrder(spy: ReturnType<typeof vi.fn>, index: number): number {
+  const order: number | undefined = spy.mock.invocationCallOrder[index];
   if (order === undefined) {
-    throw new Error("expected spy to have been called");
+    throw new Error(
+      `expected spy to have been called at least ${String(index + 1)} time(s)`,
+    );
   }
   return order;
 }
@@ -694,6 +703,85 @@ describe("MapView", () => {
       animate: true,
       followOffset: true,
     });
+  });
+
+  // Regression coverage for CLAUDE.md item 63 (the "re-pressing Follow
+  // location..." race): mirrors "resizes the map before fitting a
+  // boundsTarget's bounds" below exactly — a followOffset:true command's
+  // setCamera converts a pixel offset into a geographic delta using
+  // MapLibre's cached transform dimensions, computed synchronously at
+  // call time, so those dimensions must be freshly resynced immediately
+  // before every application, not just the first.
+  it("resizes the map before applying a cameraTarget's setCamera", () => {
+    const mock = createMockMapFactory();
+    // No route points: isolates resize/setCamera calls to the cameraTarget
+    // effect alone, rather than also counting the route-overview fit's own
+    // resize-then-fitBounds pair — mirrors "resizes the map before fitting
+    // a boundsTarget's bounds" below exactly.
+    render(
+      <MapView
+        points={[]}
+        mapFactory={mock.factory}
+        cameraTarget={{
+          coordinate: [0, 51],
+          zoom: 16,
+          bearingDegrees: 90,
+          pitchDegrees: 35,
+          animate: true,
+          followOffset: true,
+          requestId: "request-1",
+        }}
+      />,
+    );
+
+    mock.triggerLoad();
+
+    expect(mock.resizeSpy).toHaveBeenCalledOnce();
+    expect(mock.setCameraSpy).toHaveBeenCalledOnce();
+    expect(firstCallOrder(mock.resizeSpy)).toBeLessThan(
+      firstCallOrder(mock.setCameraSpy),
+    );
+  });
+
+  it("resizes the map again before re-applying a cameraTarget with a new requestId", () => {
+    const mock = createMockMapFactory();
+    const target = {
+      coordinate: [-0.1, 51.5] as Coordinate,
+      zoom: 16,
+      bearingDegrees: 0,
+      pitchDegrees: 35,
+      animate: true,
+      followOffset: true,
+      requestId: "request-1",
+    };
+    // No route points — see the previous test's own isolation rationale.
+    const { rerender } = render(
+      <MapView points={[]} mapFactory={mock.factory} cameraTarget={target} />,
+    );
+    mock.triggerLoad();
+    expect(mock.resizeSpy).toHaveBeenCalledOnce();
+    expect(mock.setCameraSpy).toHaveBeenCalledOnce();
+
+    // The actual re-press-Follow scenario: byte-identical values, only a
+    // fresh requestId (see CameraTarget's own doc comment) — still a
+    // genuine re-application, so resize() must fire again too, not just
+    // on the first application.
+    rerender(
+      <MapView
+        points={[]}
+        mapFactory={mock.factory}
+        cameraTarget={{ ...target, requestId: "request-2" }}
+      />,
+    );
+
+    expect(mock.resizeSpy).toHaveBeenCalledTimes(2);
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(2);
+    // Compare the SECOND call's own order for each spy (index 1) — proves
+    // resize() precedes setCamera on the re-application too, not just the
+    // first.
+    expect(nthCallOrder(mock.resizeSpy, 1)).toBeLessThan(
+      nthCallOrder(mock.setCameraSpy, 1),
+    );
   });
 
   it("applies a non-animated (restore) cameraTarget via setCamera", () => {

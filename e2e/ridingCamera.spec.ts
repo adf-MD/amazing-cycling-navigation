@@ -45,6 +45,32 @@ function centresClose(a: string | null, b: string | null): boolean {
   return numbersClose(aLon, bLon) && numbersClose(aLat, bLat);
 }
 
+interface CameraAttributeSnapshot {
+  centre: string | null;
+  bearing: string | null;
+  pitch: string | null;
+  zoom: string | null;
+}
+
+/**
+ * Reads all four data-camera-* attributes in a single Playwright
+ * page.evaluate() round-trip rather than four separate sequential
+ * getAttribute() calls, so a moveend that lands between what would
+ * otherwise be four independent awaits (each its own async round-trip to
+ * the browser) can never tear the snapshot across two different settle
+ * events — the four values are always read from the exact same instant.
+ */
+async function readCameraAttributesAtomically(
+  mapContainer: Locator,
+): Promise<CameraAttributeSnapshot> {
+  return mapContainer.evaluate((element) => ({
+    centre: element.getAttribute("data-camera-center"),
+    bearing: element.getAttribute("data-camera-bearing"),
+    pitch: element.getAttribute("data-camera-pitch"),
+    zoom: element.getAttribute("data-camera-zoom"),
+  }));
+}
+
 /**
  * Deterministically establishes a genuine manual rotation and tilt via
  * MapLibre's own built-in KeyboardHandler rather than a synthetic
@@ -158,17 +184,15 @@ test("Riding: re-pressing Follow location with an unchanged GPS fix, after a man
   await expect(followButton).toHaveAttribute("aria-pressed", "true");
 
   // Wait for the follow camera itself to genuinely settle, then capture
-  // it — this test never emits a second, different GPS fix, so a correct
-  // re-press must reproduce these exact values. Polling on pitch "35"
+  // it atomically (see readCameraAttributesAtomically) — this test never
+  // emits a second, different GPS fix, so a correct re-press must
+  // reproduce these exact values. Polling on pitch "35"
   // (FOLLOW_PITCH_DEGREES, distinct from the route's own initial overview
   // fit, which never tilts) is the reliable "follow has landed" signal —
   // polling on centre alone would be satisfied early by that unrelated
   // overview-fit transition, which also has a non-"0,0" centre.
   await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).toBe("35");
-  const followedCentre = await mapContainer.getAttribute("data-camera-center");
-  const followedBearing = await mapContainer.getAttribute("data-camera-bearing");
-  const followedPitch = await mapContainer.getAttribute("data-camera-pitch");
-  const followedZoom = await mapContainer.getAttribute("data-camera-zoom");
+  const followed = await readCameraAttributesAtomically(mapContainer);
 
   // Deterministically establishes a genuine manual rotation and tilt via
   // MapLibre's own built-in KeyboardHandler, replacing a synthetic
@@ -184,7 +208,7 @@ test("Riding: re-pressing Follow location with an unchanged GPS fix, after a man
   await expect(followButton).toHaveAttribute("aria-pressed", "false");
   await expect
     .poll(() => mapContainer.getAttribute("data-camera-bearing"))
-    .not.toBe(followedBearing);
+    .not.toBe(followed.bearing);
 
   // No new/different geolocation is set here — deliberately the same
   // stationary fix as before. This is the scenario this task's fix
@@ -194,15 +218,12 @@ test("Riding: re-pressing Follow location with an unchanged GPS fix, after a man
   await expect(followButton).toHaveAttribute("aria-pressed", "true");
   await expect
     .poll(async () => {
-      const centre = await mapContainer.getAttribute("data-camera-center");
-      const bearing = await mapContainer.getAttribute("data-camera-bearing");
-      const pitch = await mapContainer.getAttribute("data-camera-pitch");
-      const zoom = await mapContainer.getAttribute("data-camera-zoom");
+      const current = await readCameraAttributesAtomically(mapContainer);
       return (
-        centresClose(centre, followedCentre) &&
-        numbersClose(bearing, followedBearing) &&
-        numbersClose(pitch, followedPitch) &&
-        numbersClose(zoom, followedZoom)
+        centresClose(current.centre, followed.centre) &&
+        numbersClose(current.bearing, followed.bearing) &&
+        numbersClose(current.pitch, followed.pitch) &&
+        numbersClose(current.zoom, followed.zoom)
       );
     })
     .toBe(true);

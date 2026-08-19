@@ -1274,6 +1274,31 @@ export function MapView({
   // reapplication even though the resulting values are byte-identical —
   // otherwise a repeated press after an intervening manual gesture would
   // be silently swallowed by the value check alone.
+  //
+  // Resizes first, mirroring the boundsTarget effect's own established
+  // resize()-then-camera-op ordering below (added for the same reason: the
+  // container's on-screen size can settle late, otherwise camera maths use
+  // stale dimensions) — closes a confirmed, evidence-backed race in a live
+  // "following" command specifically. A followOffset:true command's
+  // easeTo (mapAdapter.ts's setCamera) converts its pixel offset into a
+  // geographic delta using MapLibre's cached transform width/height,
+  // computed once, synchronously, at the exact moment setCamera() is
+  // called. Direct instrumentation of this effect (temporarily logging
+  // each setCamera call's actual container rect alongside every moveend)
+  // confirmed .ride-map-container--immersive's flex-fill box genuinely
+  // resizes during the first second or two of an active ride, before
+  // settling — ResizeObserver's own callback is asynchronous, so without
+  // this resize() call, two setCamera invocations landing on either side
+  // of that settle can each compute a geographically different
+  // offset-adjusted centre from an otherwise identical command (the exact
+  // failure this closes: CLAUDE.md item 63, "re-pressing Follow location
+  // with an unchanged GPS fix, after a manual gesture, resumes
+  // following"). MapLibre's own resize() (see mapAdapter.ts) is cheap and
+  // idempotent, and this call is unconditional — not gated on
+  // followOffset — for consistency with boundsTarget's own unconditional
+  // call and to cover any future offset-sensitive command sharing this
+  // effect; it has no observable effect on a north-up (offset-free)
+  // command beyond an extra, harmless resync.
   useEffect(() => {
     if (!styleStructurallyReady || !cameraTarget) return;
     const lon = cameraTarget.coordinate ? cameraTarget.coordinate[0] : null;
@@ -1302,6 +1327,7 @@ export function MapView({
       followOffset: cameraTarget.followOffset,
       requestId: cameraTarget.requestId,
     };
+    mapRef.current?.resize();
     mapRef.current?.setCamera(
       cameraTarget.coordinate,
       cameraTarget.zoom,
