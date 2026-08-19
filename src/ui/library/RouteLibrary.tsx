@@ -91,6 +91,11 @@ export function RouteLibrary({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const hasAppliedScrollRestoreRef = useRef(false);
   const lastRenamedIdRef = useRef<string | null>(null);
+  // The name handleRename actually wrote for lastRenamedIdRef, so the
+  // consuming effect below can tell "routes hasn't reflected this rename
+  // yet" apart from "nothing rename-related is happening" — see that
+  // effect's own doc comment.
+  const lastRenamedNameRef = useRef<string | null>(null);
   // Set on a successful pin/unpin, consumed by the focus-restoration effect
   // below. Accepted, narrow gap (same class as lastRenamedIdRef's own
   // documented one): pinning a second route before the first one's effect
@@ -148,19 +153,38 @@ export function RouteLibrary({
   // overwrites this marker, so the first route's stranding goes
   // uncorrected — local IndexedDB writes round-trip in low single-digit
   // milliseconds, so this window is sub-perceptible.
+  // A second, genuinely pre-existing defect (found by direct reading, not
+  // just this file's own e2e suite): this effect's deps, [viewRoutes,
+  // routes], fire it on *any* render where either changed while the
+  // marker was set — not only the render caused by this rename's own
+  // write landing. An unrelated viewRoutes/routes-changing render (a
+  // different route's pin/unpin, a search-query change) arriving before
+  // this rename's write lands used to null the marker anyway, so the
+  // genuine orphaning correction — once the live query did catch up —
+  // was silently skipped. lastRenamedNameRef (set by handleRename
+  // alongside the id) is what closes this: the marker is only evaluated
+  // and consumed once routes demonstrably reflects this rename's own
+  // outcome — the route's name matches what was written, or the route no
+  // longer exists — never on an unrelated re-render in between.
   useEffect(() => {
     const renamedId = lastRenamedIdRef.current;
     if (renamedId) {
-      const previous = previousViewRoutesRef.current;
-      const wasVisible = previous.some((route) => route.id === renamedId);
-      const stillVisible = viewRoutes.some((route) => route.id === renamedId);
-      const stillExists = (routes ?? []).some((route) => route.id === renamedId);
-      if (wasVisible && !stillVisible && stillExists) {
-        const focusTargetId = computeFocusRouteIdAfterDelete(previous, renamedId);
-        const target = focusTargetId ? nameButtonRefs.current.get(focusTargetId) : null;
-        (target ?? searchInputRef.current)?.focus();
+      const currentRoute = (routes ?? []).find((route) => route.id === renamedId);
+      const outcomeKnown =
+        !currentRoute || currentRoute.name === lastRenamedNameRef.current;
+      if (outcomeKnown) {
+        const previous = previousViewRoutesRef.current;
+        const wasVisible = previous.some((route) => route.id === renamedId);
+        const stillVisible = viewRoutes.some((route) => route.id === renamedId);
+        const stillExists = currentRoute !== undefined;
+        if (wasVisible && !stillVisible && stillExists) {
+          const focusTargetId = computeFocusRouteIdAfterDelete(previous, renamedId);
+          const target = focusTargetId ? nameButtonRefs.current.get(focusTargetId) : null;
+          (target ?? searchInputRef.current)?.focus();
+        }
+        lastRenamedIdRef.current = null;
+        lastRenamedNameRef.current = null;
       }
-      lastRenamedIdRef.current = null;
     }
     previousViewRoutesRef.current = viewRoutes;
   }, [viewRoutes, routes]);
@@ -186,6 +210,18 @@ export function RouteLibrary({
   // pinPendingIds dependency and its disabled check below exist to close
   // that gap — the marker is only consumed once the button is genuinely
   // focusable, whichever of the two updates lands second.
+  // A third, independently-timed input to that same disabled check —
+  // RouteListItem's own `isPinPending || isDeleting` — went uncovered by
+  // the two dependencies above until this fix: if this route's own pin
+  // write settled while an *unrelated* route's delete was still in
+  // flight, the button stayed disabled for a reason neither `groups` nor
+  // `pinPendingIds` reflects, and once that unrelated delete's own
+  // `isDeleting → false` transition later landed with no accompanying
+  // `groups`/`pinPendingIds` change, this effect never re-ran and the
+  // marker was stranded permanently. `isDeleting` is now a third
+  // dependency, read the same indirect way as `pinPendingIds` — only via
+  // `button.disabled`, never directly in the body — so the marker
+  // retries on whichever of all three updates lands last.
   useEffect(() => {
     const targetId = pendingPinFocusIdRef.current;
     if (!targetId) return;
@@ -193,7 +229,7 @@ export function RouteLibrary({
     if (!button || button.disabled) return;
     button.focus();
     pendingPinFocusIdRef.current = null;
-  }, [groups, pinPendingIds]);
+  }, [groups, pinPendingIds, isDeleting]);
 
   const handleImported = (result: GpxImportResult) => {
     setNotices(result.notices);
@@ -210,7 +246,18 @@ export function RouteLibrary({
 
   const handleRename = (id: string, name: string) => {
     lastRenamedIdRef.current = id;
+    lastRenamedNameRef.current = name;
     renameRoute(id, name).catch((error: unknown) => {
+      // A failed write's outcome can never become "known" to the
+      // consuming effect above (routes will never reflect it), so the
+      // marker must be cleared explicitly here rather than left to
+      // strand — but only if it's still the one this call itself set, to
+      // preserve the existing "second rename overwrites the marker"
+      // behaviour documented on that effect.
+      if (lastRenamedIdRef.current === id && lastRenamedNameRef.current === name) {
+        lastRenamedIdRef.current = null;
+        lastRenamedNameRef.current = null;
+      }
       logError("route-rename", error);
     });
   };

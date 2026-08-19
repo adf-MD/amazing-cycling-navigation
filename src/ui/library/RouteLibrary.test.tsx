@@ -407,7 +407,9 @@ describe("RouteLibrary", () => {
       await waitFor(() => {
         expect(screen.getByText("No routes match “alpine”.")).toBeInTheDocument();
       });
-      expect(screen.getByLabelText("Search routes")).toHaveFocus();
+      await waitFor(() => {
+        expect(screen.getByLabelText("Search routes")).toHaveFocus();
+      });
     });
 
     it("renaming a route out of the active filter moves focus to the next surviving visible route", async () => {
@@ -447,11 +449,13 @@ describe("RouteLibrary", () => {
       await waitFor(() => {
         expect(document.querySelector(`[data-route-id="${climbRoute.id}"]`)).toBeNull();
       });
-      expect(
-        within(getListItemByRouteId(ridgeRoute.id)).getByRole("button", {
-          name: "Alpine Ridge",
-        }),
-      ).toHaveFocus();
+      await waitFor(() => {
+        expect(
+          within(getListItemByRouteId(ridgeRoute.id)).getByRole("button", {
+            name: "Alpine Ridge",
+          }),
+        ).toHaveFocus();
+      });
     });
 
     it("renaming the only route matching the active filter moves focus to the search field", async () => {
@@ -475,7 +479,85 @@ describe("RouteLibrary", () => {
       await waitFor(() => {
         expect(screen.getByText("No routes match “alpine”.")).toBeInTheDocument();
       });
-      expect(screen.getByLabelText("Search routes")).toHaveFocus();
+      await waitFor(() => {
+        expect(screen.getByLabelText("Search routes")).toHaveFocus();
+      });
+    });
+
+    it("an intervening unrelated re-render does not drop the pending rename-focus marker before the write lands", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Ridge.gpx");
+      await importFixture(user, "Alpine Climb.gpx");
+      // listRoutes() returns newest-first, and Alpine Climb was imported
+      // last (more recent), so it's index 0.
+      const [climbRoute, ridgeRoute] = (await routesRepository.listRoutes()) as [
+        PlannedRoute,
+        PlannedRoute,
+      ];
+
+      const search = screen.getByLabelText("Search routes");
+      await user.type(search, "alpine");
+      await waitFor(() => {
+        expect(getVisibleRouteNames()).toEqual(["Alpine Climb", "Alpine Ridge"]);
+      });
+
+      let resolveRename: () => void = () => undefined;
+      const renameHeld = new Promise<void>((resolve) => {
+        resolveRename = resolve;
+      });
+      vi.spyOn(routesRepository, "renameRoute").mockImplementation(
+        async (id: string, name: string) => {
+          await renameHeld;
+          await db.routes.update(id, { name });
+        },
+      );
+
+      await user.click(
+        within(getListItemByRouteId(climbRoute.id)).getByRole("button", {
+          name: "Rename",
+        }),
+      );
+      const input = within(getListItemByRouteId(climbRoute.id)).getByLabelText(
+        "Route name",
+      );
+      await user.clear(input);
+      await user.type(input, "Mountain Pass");
+      await user.click(
+        within(getListItemByRouteId(climbRoute.id)).getByRole("button", { name: "Save" }),
+      );
+      // The rename's own write is still held pending. Force an unrelated,
+      // routes-driven re-render — a different route's pin — before it
+      // lands: pre-fix, this alone would silently discard the pending
+      // rename-focus marker, since the consuming effect nulled it on any
+      // viewRoutes/routes-changing render, not only the one caused by
+      // this rename's own write.
+      await user.click(
+        within(getListItemByRouteId(ridgeRoute.id)).getByRole("button", {
+          name: "Pin Alpine Ridge",
+        }),
+      );
+      await waitFor(() => {
+        expect(
+          within(getListItemByRouteId(ridgeRoute.id)).getByRole("button", {
+            name: "Unpin Alpine Ridge",
+          }),
+        ).toBeInTheDocument();
+      });
+
+      // Now let the rename's own write land.
+      resolveRename();
+
+      await waitFor(() => {
+        expect(document.querySelector(`[data-route-id="${climbRoute.id}"]`)).toBeNull();
+      });
+      await waitFor(() => {
+        expect(
+          within(getListItemByRouteId(ridgeRoute.id)).getByRole("button", {
+            name: "Alpine Ridge",
+          }),
+        ).toHaveFocus();
+      });
     });
   });
 
@@ -604,11 +686,13 @@ describe("RouteLibrary", () => {
       await waitFor(() => {
         expect(document.querySelector(`[data-route-id="${topRoute.id}"]`)).toBeNull();
       });
-      expect(
-        within(getListItemByRouteId(bottomRoute.id)).getByRole("button", {
-          name: bottomRoute.name,
-        }),
-      ).toHaveFocus();
+      await waitFor(() => {
+        expect(
+          within(getListItemByRouteId(bottomRoute.id)).getByRole("button", {
+            name: bottomRoute.name,
+          }),
+        ).toHaveFocus();
+      });
     });
 
     it("deleting the last of two routes moves focus to the previous surviving route's name button", async () => {
@@ -631,11 +715,13 @@ describe("RouteLibrary", () => {
       await waitFor(() => {
         expect(document.querySelector(`[data-route-id="${bottomRoute.id}"]`)).toBeNull();
       });
-      expect(
-        within(getListItemByRouteId(topRoute.id)).getByRole("button", {
-          name: topRoute.name,
-        }),
-      ).toHaveFocus();
+      await waitFor(() => {
+        expect(
+          within(getListItemByRouteId(topRoute.id)).getByRole("button", {
+            name: topRoute.name,
+          }),
+        ).toHaveFocus();
+      });
     });
 
     it("deleting the only remaining route moves focus to the Routes heading", async () => {
@@ -649,7 +735,9 @@ describe("RouteLibrary", () => {
       await waitFor(() => {
         expect(screen.getByText(/no routes saved yet/i)).toBeInTheDocument();
       });
-      expect(screen.getByRole("heading", { name: "Routes" })).toHaveFocus();
+      await waitFor(() => {
+        expect(screen.getByRole("heading", { name: "Routes" })).toHaveFocus();
+      });
     });
 
     it("shows an inline error and keeps the confirmation open when deletion fails, allowing cancel or retry", async () => {
@@ -920,6 +1008,83 @@ describe("RouteLibrary", () => {
       expect(getVisibleRouteNames()).toEqual(["Alpine Climb", "Zebra Loop"]);
     });
 
+    it("a pin write that resolves while an unrelated delete is in flight is not stranded once the delete settles", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Delete Me.gpx");
+      await importFixture(user, "Pin Me.gpx");
+      const allRoutes = await routesRepository.listRoutes();
+      const deleteTarget = allRoutes.find((route) => route.name === "Delete Me");
+      const pinTarget = allRoutes.find((route) => route.name === "Pin Me");
+      if (!deleteTarget || !pinTarget) throw new Error("fixture routes not found");
+
+      // Both writes are held on deferred promises so this test controls
+      // the exact interleaving deterministically, rather than depending
+      // on real IndexedDB timing.
+      let resolvePinWrite: () => void = () => undefined;
+      const pinWriteHeld = new Promise<void>((resolve) => {
+        resolvePinWrite = resolve;
+      });
+      vi.spyOn(routesRepository, "pinRoute").mockImplementation(async (id: string) => {
+        await pinWriteHeld;
+        await db.routes.update(id, { pinnedAt: new Date().toISOString() });
+      });
+
+      let resolveDeleteWrite: () => void = () => undefined;
+      const deleteWriteHeld = new Promise<void>((resolve) => {
+        resolveDeleteWrite = resolve;
+      });
+      vi.spyOn(routesRepository, "deleteRoute").mockImplementation(async (id: string) => {
+        await db.routes.delete(id); // real write: the live query still reacts.
+        await deleteWriteHeld; // holds the caller's own .then() (isDeleting=false) back.
+      });
+
+      // Start the pin write first, while the toggle is still enabled
+      // (isDeleting is still false) — the pin toggle becomes disabled the
+      // instant an unrelated delete starts (isDeleting is a single flag
+      // shared by every row), so the pin click must happen before that.
+      await user.click(
+        within(getListItemByRouteId(pinTarget.id)).getByRole("button", {
+          name: `Pin ${pinTarget.name}`,
+        }),
+      );
+
+      // Now start an unrelated delete on a different route — this sets
+      // isDeleting=true synchronously, before the pin write above has any
+      // chance to resolve.
+      await user.click(
+        within(getListItemByRouteId(deleteTarget.id)).getByRole("button", {
+          name: "Delete",
+        }),
+      );
+      await user.click(screen.getByRole("button", { name: "Delete route" }));
+
+      // Let the pin write land while isDeleting is still true — its own
+      // .then() sets the pending-focus marker, but the toggle stays
+      // disabled for a reason (isDeleting) the pre-fix dependency array
+      // never observed.
+      resolvePinWrite();
+      await waitFor(() => {
+        expect(
+          within(getListItemByRouteId(pinTarget.id)).getByRole("button", {
+            name: `Unpin ${pinTarget.name}`,
+          }),
+        ).toBeDisabled();
+      });
+
+      // Now let the unrelated delete settle, clearing isDeleting with no
+      // accompanying groups/pinPendingIds change.
+      resolveDeleteWrite();
+
+      await waitFor(() => {
+        expect(
+          within(getListItemByRouteId(pinTarget.id)).getByRole("button", {
+            name: `Unpin ${pinTarget.name}`,
+          }),
+        ).toHaveFocus();
+      });
+    });
+
     it("a failed pin write keeps the previous order and shows an inline error", async () => {
       const user = userEvent.setup();
       vi.spyOn(routesRepository, "pinRoute").mockRejectedValueOnce(
@@ -1013,7 +1178,9 @@ describe("RouteLibrary", () => {
       await waitFor(() => {
         expect(document.querySelector(`[data-route-id="${climbRoute.id}"]`)).toBeNull();
       });
-      expect(screen.getByRole("button", { name: "Zebra Loop" })).toHaveFocus();
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Zebra Loop" })).toHaveFocus();
+      });
     });
   });
 });
