@@ -287,7 +287,7 @@ describe("FreeRoamScreen", () => {
     });
   });
 
-  it("shows no route-shaped UI at all — no elevation profile, manoeuvre panel or climb selector", () => {
+  it("shows no route-shaped UI at all — no elevation profile, manoeuvre panel, climb selector or Finish ride/completion", () => {
     const fake = buildFakeGeolocationSource();
     render(
       <FreeRoamScreen
@@ -304,6 +304,9 @@ describe("FreeRoamScreen", () => {
     expect(screen.queryByRole("group", { name: "Elevation profile view" })).toBeNull();
     expect(screen.queryByText(/Remaining:/)).toBeNull();
     expect(screen.queryByText(/^On route$|^Off route$|^Possibly off route$/)).toBeNull();
+    expect(screen.queryByText("Route complete")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Finish ride" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /keep riding/i })).toBeNull();
   });
 
   describe("wake lock control", () => {
@@ -358,7 +361,7 @@ describe("FreeRoamScreen", () => {
     });
   });
 
-  it("never renders a Map/Profile switcher — the fixed Map/Profile shell (backlog item 56) is route-Riding-only in this slice", () => {
+  it("never renders a Map/Profile switcher — free roam has no route profile to switch to (backlog item 58)", () => {
     render(
       <FreeRoamScreen
         geolocationSource={buildFakeGeolocationSource().source}
@@ -369,6 +372,75 @@ describe("FreeRoamScreen", () => {
     expect(screen.queryByRole("group", { name: "Riding view" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Map" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Profile" })).toBeNull();
+  });
+
+  describe("Immersive fixed shell (backlog item 58)", () => {
+    it("renders the immersive header with centre text 'Free roam', with the global nav's own concerns entirely absent from this screen", () => {
+      render(
+        <FreeRoamScreen
+          geolocationSource={buildFakeGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Free roam" }),
+      ).toBeInTheDocument();
+      expect(document.querySelector("header.riding-immersive-header")).not.toBeNull();
+    });
+
+    it("marks the screen as the fixed, non-scrolling immersive shell", () => {
+      const { container } = render(
+        <FreeRoamScreen
+          geolocationSource={buildFakeGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      const section = container.querySelector("section.screen");
+      expect(section).not.toBeNull();
+      expect(section).toHaveClass("riding-fixed-shell");
+    });
+
+    it("wraps the map in the flex-filling immersive content area, never the pre-item-58 --active/--overview vocabulary", () => {
+      const { container } = render(
+        <FreeRoamScreen
+          geolocationSource={buildFakeGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      const contentArea = container.querySelector(".ride-content-area");
+      expect(contentArea).not.toBeNull();
+      expect(contentArea).toHaveClass("ride-content-area--immersive");
+
+      const mapContainer = container.querySelector(".ride-map-container");
+      expect(mapContainer).not.toBeNull();
+      expect(mapContainer).toHaveClass("ride-map-container--immersive");
+      expect(mapContainer).not.toHaveClass("ride-map-container--active");
+      expect(mapContainer).not.toHaveClass("ride-map-container--overview");
+      expect(contentArea).toContainElement(mapContainer as HTMLElement);
+    });
+
+    it("renders the paused toast inside the map container itself, as a non-layout-affecting overlay, not the shared status stack", async () => {
+      const fake = buildFakeGeolocationSource();
+      const map = buildStubMapFactory();
+      const { container } = render(
+        <FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />,
+      );
+      map.triggerLoad();
+      act(() => {
+        fake.watches[0]?.emitFix(SAMPLE_FIX);
+      });
+
+      map.triggerUserCameraInteraction();
+
+      const toast = await screen.findByText("Map follow paused.");
+      expect(toast).toHaveClass("ride-map-paused-toast");
+      const mapContainer = container.querySelector(".ride-map-container");
+      expect(mapContainer).not.toBeNull();
+      expect(mapContainer).toContainElement(toast);
+    });
   });
 
   describe("onRidingActiveChange", () => {

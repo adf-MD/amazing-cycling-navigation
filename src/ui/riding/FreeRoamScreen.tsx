@@ -71,8 +71,9 @@ function formatGeolocationError(error: GeolocationError): string {
  * RidingScreen: reuses that screen's already-proven pieces (the hook-bridge
  * pattern, the offline notice, End-ride/ConfirmDialog, the geolocation-
  * error/waiting-for-fix states, North-up/Follow controls, the wake-lock
- * control, MapView itself) but owns none of RidingScreen's route-specific
- * machinery.
+ * control, MapView itself, and — backlog item 58 — the immersive header
+ * and fixed, flex-filling map shell) but owns none of RidingScreen's
+ * route-specific machinery.
  *
  * Unlike RidingScreen, this screen has no internal idle/pre-ride panel: it
  * calls start() unconditionally on mount. This is safe specifically because
@@ -85,6 +86,20 @@ function formatGeolocationError(error: GeolocationError): string {
  * still-selected FreeRoamScreen that would otherwise auto-restart GPS with
  * no fresh tap. This deliberately does NOT apply to an open route session
  * (RidingScreen's own two-tap idle-panel pattern is untouched).
+ *
+ * Backlog item 58 gives this screen the same fixed, non-scrolling,
+ * flex-filling map layout RidingScreen's own active Map view has (item 56)
+ * — applied unconditionally here, never gated on geolocationStatus, since
+ * (per the paragraph above) this screen has no genuine idle UI state to
+ * preserve the old scrolling/320px layout for; gating it would only
+ * introduce a one-frame flash between the two layouts during the brief tick
+ * before the mount effect below calls start(), which this screen's own
+ * already-unconditional RidingImmersiveHeader rendering already accepts an
+ * equivalent trade-off for. There is deliberately no Map/Profile switcher
+ * here (free roam has no route profile to switch to) and no
+ * RidingCompactManoeuvreCue/RidingClimbCue/RidingRouteCompletionPanel
+ * (all route-specific, item 56/57/29 machinery this screen must never
+ * grow an approximation of).
  */
 export function FreeRoamScreen({
   geolocationSource,
@@ -332,12 +347,14 @@ export function FreeRoamScreen({
   }
 
   return (
-    <section className="screen" aria-label="Free roam">
+    <section className="screen riding-fixed-shell" aria-label="Free roam">
       {/* The immersive Pause/title/End header (backlog item 55) — renders
        * unconditionally, mirroring the unconditional <h1>/.ride-end-ride-row
        * it replaces: this screen has no idle/pre-ride panel of its own (see
        * this component's own doc comment), so there is no non-immersive
-       * state to special-case the way RidingScreen's idle branch does. */}
+       * state to special-case the way RidingScreen's idle branch does. The
+       * fixed shell (riding-fixed-shell, backlog item 58) above is applied
+       * unconditionally for the identical reason. */}
       <RidingImmersiveHeader
         title="Free roam"
         pauseLabel={isPausePending ? "Pausing…" : "Pause"}
@@ -400,78 +417,95 @@ export function FreeRoamScreen({
         />
       ) : null}
 
-      {camera.showPausedToast ? <p role="status">Map follow paused.</p> : null}
-
-      <div
-        className={`ride-map-container${
-          nav.geolocationStatus !== "idle"
-            ? " ride-map-container--active"
-            : " ride-map-container--overview"
-        }`}
-      >
-        <MapView
-          points={[]}
-          currentPosition={nav.currentFix?.coordinate}
-          mapFactory={mapFactory}
-          cameraTarget={camera.cameraTarget}
-          zoomTarget={camera.zoomTarget}
-          suppressInitialOverviewFit={true}
-          onUserCameraInteraction={camera.reportUserInteraction}
-          onCameraSettled={(settled) => {
-            camera.reportCameraSettled(
-              settled.coordinate,
-              settled.zoom,
-              settled.bearingDegrees,
-              settled.pitchDegrees,
-            );
-          }}
-        />
-        {nav.geolocationStatus === "watching" ? (
-          <div className="ride-map-zoom-controls">
-            <button
-              type="button"
-              onClick={handleZoomIn}
-              aria-label="Zoom in"
-              className="ride-map-control ride-map-control--zoom"
-            >
-              +
-            </button>
-            <button
-              type="button"
-              onClick={handleZoomOut}
-              aria-label="Zoom out"
-              className="ride-map-control ride-map-control--zoom"
-            >
-              −
-            </button>
-          </div>
-        ) : null}
-        {nav.geolocationStatus === "watching" ? (
-          <div className="ride-map-camera-controls">
-            <button
-              type="button"
-              onClick={camera.requestNorthUp}
-              aria-label="North-up, top-down view"
-              aria-pressed={camera.isNorthUpTopDown}
-              className={`ride-map-control ride-map-control--north-up${
-                camera.isNorthUpTopDown ? " is-pressed" : ""
-              }`}
-            >
-              N
-            </button>
-            <button
-              type="button"
-              onClick={camera.requestFollow}
-              aria-label="Follow my location"
-              aria-pressed={camera.mode === "following"}
-              className={`ride-map-control ride-map-control--follow${
-                camera.mode === "following" ? " is-pressed" : ""
-              }`}
-            >
-              {camera.mode === "following" && camera.awaitingFreshFix ? "Waiting…" : "⌖"}
-            </button>
-          </div>
-        ) : null}
+      {/* The fixed, flex-filling immersive map shell (backlog item 58) —
+       * mirrors RidingScreen.tsx's own .ride-content-area/--immersive
+       * wrapper exactly, but with only the map as its single child: free
+       * roam has no Profile pane to stack alongside it, so there's no
+       * toggle/visibility logic here, just the one always-visible pane. */}
+      <div className="ride-content-area ride-content-area--immersive">
+        <div className="ride-map-container ride-map-container--immersive">
+          <MapView
+            points={[]}
+            currentPosition={nav.currentFix?.coordinate}
+            mapFactory={mapFactory}
+            cameraTarget={camera.cameraTarget}
+            zoomTarget={camera.zoomTarget}
+            suppressInitialOverviewFit={true}
+            onUserCameraInteraction={camera.reportUserInteraction}
+            onCameraSettled={(settled) => {
+              camera.reportCameraSettled(
+                settled.coordinate,
+                settled.zoom,
+                settled.bearingDegrees,
+                settled.pitchDegrees,
+              );
+            }}
+          />
+          {nav.geolocationStatus === "watching" ? (
+            <div className="ride-map-zoom-controls">
+              <button
+                type="button"
+                onClick={handleZoomIn}
+                aria-label="Zoom in"
+                className="ride-map-control ride-map-control--zoom"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                onClick={handleZoomOut}
+                aria-label="Zoom out"
+                className="ride-map-control ride-map-control--zoom"
+              >
+                −
+              </button>
+            </div>
+          ) : null}
+          {nav.geolocationStatus === "watching" ? (
+            <div className="ride-map-camera-controls">
+              <button
+                type="button"
+                onClick={camera.requestNorthUp}
+                aria-label="North-up, top-down view"
+                aria-pressed={camera.isNorthUpTopDown}
+                className={`ride-map-control ride-map-control--north-up${
+                  camera.isNorthUpTopDown ? " is-pressed" : ""
+                }`}
+              >
+                N
+              </button>
+              <button
+                type="button"
+                onClick={camera.requestFollow}
+                aria-label="Follow my location"
+                aria-pressed={camera.mode === "following"}
+                className={`ride-map-control ride-map-control--follow${
+                  camera.mode === "following" ? " is-pressed" : ""
+                }`}
+              >
+                {camera.mode === "following" && camera.awaitingFreshFix
+                  ? "Waiting…"
+                  : "⌖"}
+              </button>
+            </div>
+          ) : null}
+          {/* Moved inside the map container as a non-layout-affecting
+           * overlay (backlog item 58, mirroring RidingScreen.tsx's
+           * identical item-56 fix and its own doc comment on why): it
+           * previously sat in the shared status stack above this now
+           * flex-filling map, and its own transient appear/dismiss cycle
+           * would measurably resize the map (the shared stack's height
+           * directly determines how much space
+           * .ride-map-container--immersive's flex:1 has left), which would
+           * in turn shift the reported camera centre via the follow-offset
+           * recalculation on resize — the exact regression item 56 already
+           * found and fixed for RidingScreen. */}
+          {camera.showPausedToast ? (
+            <p role="status" className="ride-map-paused-toast">
+              Map follow paused.
+            </p>
+          ) : null}
+        </div>
       </div>
     </section>
   );

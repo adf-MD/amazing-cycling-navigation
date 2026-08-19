@@ -6,7 +6,16 @@ import { readActiveRideStateRow } from "./support/rideStateDb.ts";
 // Proves backlog item 42 (route-less free roam): a live GPS position on the
 // ordinary map with camera follow, reachable and recoverable entirely
 // through the Ride launcher, with no OpenRouteService dependency at any
-// point and no silent conflict with a saved route.
+// point and no silent conflict with a saved route. Backlog item 58 added
+// this screen's own fixed, non-scrolling immersive shell (mirroring
+// backlog item 56's identical layout for route Riding).
+
+// A real service worker registering mid-test can render an unrelated
+// "Ready to work offline" banner outside .screen, adding height this
+// file's own no-scroll/dominant-map assertions (backlog item 58) would
+// otherwise (correctly) flag — mirrors ridingMapProfileViews.spec.ts's own
+// identical, file-wide precedent and rationale.
+test.use({ serviceWorkers: "block" });
 
 const ORS_URL_GLOB = "https://api.heigit.org/**";
 const START = { latitude: 51.5, longitude: -0.1 };
@@ -37,6 +46,16 @@ function intersects(a: Box, b: Box): boolean {
     a.y < b.y + b.height &&
     a.y + a.height > b.y
   );
+}
+
+// Mirrors stickyNavigation.spec.ts's own identical pair — duplicated
+// locally per this repo's established no-shared-e2e-helpers convention.
+function globalNavHeaderLocator(page: Page) {
+  return page.locator("header.app-header--sticky");
+}
+
+function immersiveHeaderLocator(page: Page) {
+  return page.locator("header.riding-immersive-header");
 }
 
 // Mirrors ridingCamera.spec.ts's own identical numbersClose/centresClose
@@ -78,6 +97,35 @@ async function establishManualRotation(page: Page, mapContainer: Locator): Promi
   await expect
     .poll(() => mapContainer.getAttribute("data-camera-bearing"))
     .not.toBe(bearingBefore);
+}
+
+// Mirrors ridingImmersiveShell.spec.ts's own identical helper — duplicated
+// locally per this repo's established no-shared-e2e-helpers convention.
+async function useSyntheticSafeAreaInsets(
+  page: Page,
+  insetsPx: { top: number; right: number; bottom: number; left: number },
+): Promise<void> {
+  await page.addInitScript((insets) => {
+    const applyTo = (html: Element) => {
+      const style = (html as HTMLElement).style;
+      style.setProperty("--safe-area-inset-top", `${String(insets.top)}px`);
+      style.setProperty("--safe-area-inset-right", `${String(insets.right)}px`);
+      style.setProperty("--safe-area-inset-bottom", `${String(insets.bottom)}px`);
+      style.setProperty("--safe-area-inset-left", `${String(insets.left)}px`);
+    };
+    const existingHtml = document.querySelector("html");
+    if (existingHtml) {
+      applyTo(existingHtml);
+    } else {
+      new MutationObserver((_mutations, observer) => {
+        const html = document.querySelector("html");
+        if (html) {
+          applyTo(html);
+          observer.disconnect();
+        }
+      }).observe(document, { childList: true });
+    }
+  }, insetsPx);
 }
 
 async function startFreeRoam(page: Page, context: BrowserContext) {
@@ -125,6 +173,92 @@ test("Start free roam shows a live position on the map, with zero OpenRouteServi
   await expect(page.getByText(/GPS accuracy:/)).toBeVisible();
 
   expect(orsRequested).toBe(false);
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+// Backlog item 58: free roam adopts the same fixed, non-scrolling,
+// flex-filling immersive shell RidingScreen's own Map view has (backlog
+// item 56) — mirrors ridingMapProfileViews.spec.ts's "defaults to Map,
+// with a substantially larger map..." test and
+// stickyNavigation.spec.ts's item-56 "no page scroll" rewrite, scoped down
+// to what free roam actually has: no Map/Profile switcher (there is no
+// Profile view to switch to) and no route-only actions (Finish ride/Route
+// complete — free roam has no destination).
+test("enters the fixed immersive shell with a dominant, flex-filling map, no Map/Profile switcher and no route-only actions", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await startFreeRoam(page, context);
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  // The global nav is genuinely absent — not merely repositioned — and the
+  // compact immersive header shows in its place, exactly as it already
+  // does for active route Riding (backlog item 55).
+  await expect(globalNavHeaderLocator(page)).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0);
+  await expect(immersiveHeaderLocator(page)).toBeVisible();
+
+  // The map is substantially larger than the old fixed pre-item-58 320px
+  // preview height, and dominates the viewport — free roam has no
+  // pre-transition state of its own to compare against directly (unlike
+  // route Riding's idle-then-active pair), so this compares against the
+  // old fixed height and the viewport's own size instead.
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  const mapBox = await mapContainer.boundingBox();
+  const viewportHeight = page.viewportSize()?.height;
+  if (!mapBox) throw new Error("expected the map to have a bounding box");
+  if (viewportHeight === undefined) throw new Error("expected a viewport height");
+  expect(mapBox.height).toBeGreaterThan(320);
+  expect(mapBox.height).toBeGreaterThan(viewportHeight * 0.5);
+
+  // No Map/Profile switcher — free roam has no route profile to switch to.
+  await expect(page.getByRole("group", { name: "Riding view" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Map", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Profile", exact: true })).toHaveCount(0);
+
+  // No route-only actions — free roam has no destination.
+  await expect(page.getByRole("button", { name: "Finish ride" })).toHaveCount(0);
+  await expect(page.getByText("Route complete")).toHaveCount(0);
+
+  // Zoom (top-left) and camera (top-right) clusters both stay fully within
+  // the now-dominant map, and don't overlap each other.
+  const zoomIn = page.getByRole("button", { name: "Zoom in" });
+  const zoomOut = page.getByRole("button", { name: "Zoom out" });
+  const northUp = page.getByRole("button", { name: "North-up, top-down view" });
+  const follow = page.getByRole("button", { name: "Follow my location" });
+  const [zoomInBox, zoomOutBox, northUpBox, followBox] = await Promise.all([
+    zoomIn.boundingBox(),
+    zoomOut.boundingBox(),
+    northUp.boundingBox(),
+    follow.boundingBox(),
+  ]);
+  if (!zoomInBox || !zoomOutBox || !northUpBox || !followBox) {
+    throw new Error("expected every map control to have a bounding box");
+  }
+  expect(isFullyWithin(zoomInBox, mapBox)).toBe(true);
+  expect(isFullyWithin(zoomOutBox, mapBox)).toBe(true);
+  expect(isFullyWithin(northUpBox, mapBox)).toBe(true);
+  expect(isFullyWithin(followBox, mapBox)).toBe(true);
+  expect(intersects(zoomInBox, northUpBox)).toBe(false);
+  expect(intersects(zoomOutBox, followBox)).toBe(false);
+  expect(zoomInBox.x).toBeLessThan(northUpBox.x);
+
+  // The whole active free-roam screen fits within one viewport — no
+  // page-level scroll is needed to reach the header, status stack or map.
+  const scrollHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+  expect(scrollHeight).toBeLessThanOrEqual(viewportHeight);
+
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
@@ -590,6 +724,70 @@ test.describe("390px phone viewport", () => {
     const restoredBox = await endRideButton.boundingBox();
     expect(restoredBox?.width ?? 0).toBeGreaterThanOrEqual(44);
     expect(restoredBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  });
+
+  // Backlog item 58's own genuinely new CSS mechanism: unlike route
+  // Riding's active branch, free roam's fixed shell has no Map/Profile
+  // switcher below .ride-content-area--immersive to fold the bottom
+  // safe-area inset into (see .ride-immersive-switcher), so a dedicated
+  // :last-child rule folds it into the content area itself instead —
+  // mirrors ridingImmersiveShell.spec.ts's own synthetic-safe-area-inset
+  // technique, scoped to prove specifically that new rule.
+  test("respects a synthetic four-sided safe-area inset — the header sits at the true top, and the map leaves clearance above the bottom inset with no switcher to fold it into", async ({
+    page,
+    context,
+  }) => {
+    await useSyntheticSafeAreaInsets(page, { top: 59, right: 20, bottom: 34, left: 20 });
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+    await startFreeRoam(page, context);
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    // FreeRoamScreen's own wake-lock control already renders after the
+    // header (item 56's own correction, carried into this screen from the
+    // start), so the header is the fixed shell's own first child and
+    // already sits at the true viewport top at rest — no scroll needed,
+    // unlike route Riding's own equivalent phone-viewport safe-area test.
+    const header = immersiveHeaderLocator(page);
+    const headerBox = await header.boundingBox();
+    if (!headerBox)
+      throw new Error("expected the immersive header to have a bounding box");
+    expect(headerBox.y).toBeGreaterThanOrEqual(0);
+    expect(headerBox.y).toBeLessThan(2);
+
+    const pauseButton = page.getByRole("button", { name: "Pause" });
+    const endButton = page.getByRole("button", { name: "End ride" });
+    for (const control of [pauseButton, endButton]) {
+      const box = await control.boundingBox();
+      if (!box) throw new Error("expected a header control to have a bounding box");
+      expect(box.width).toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+      expect(box.x).toBeGreaterThanOrEqual(headerBox.x - 1);
+      expect(box.x + box.width).toBeLessThanOrEqual(headerBox.x + headerBox.width + 1);
+    }
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    const mapBox = await mapContainer.boundingBox();
+    const viewportHeight = page.viewportSize()?.height;
+    if (!mapBox) throw new Error("expected the map to have a bounding box");
+    if (viewportHeight === undefined) throw new Error("expected a viewport height");
+    // The gap between the map's own bottom edge and the true viewport
+    // bottom should genuinely match the synthetic bottom inset (within a
+    // couple of pixels of rounding tolerance) — proving
+    // .ride-content-area--immersive:last-child's own padding-bottom is
+    // what's creating this clearance, not left to a coincidence of the
+    // fixed shell's own height.
+    const gapBelowMap = viewportHeight - (mapBox.y + mapBox.height);
+    expect(gapBelowMap).toBeGreaterThanOrEqual(34 - 2);
+    expect(gapBelowMap).toBeLessThanOrEqual(34 + 2);
+
+    const widths = await page.evaluate(() => ({
+      documentWidth: document.documentElement.scrollWidth,
+      bodyWidth: document.body.scrollWidth,
+    }));
+    expect(widths.documentWidth).toBeLessThanOrEqual(390);
+    expect(widths.bodyWidth).toBeLessThanOrEqual(390);
 
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
   });
