@@ -332,6 +332,43 @@ describe("FreeRoamScreen", () => {
 
       expect(screen.queryByText("Keep screen awake")).toBeNull();
     });
+
+    it("renders the immersive header (and its title) before the compact wake-lock control in DOM order", () => {
+      // Backlog item 56 corrects the same real, screenshot-evidenced field
+      // finding RidingScreen.test.tsx's equivalent test documents: the
+      // wake-lock control previously rendered before the header, so at
+      // scrollY 0 the header's own natural flow position sat below it
+      // rather than at the true viewport top.
+      vi.stubGlobal("navigator", { onLine: true, wakeLock: { request: vi.fn() } });
+      const fakeWakeLock = buildFakeWakeLockSource();
+      render(
+        <FreeRoamScreen
+          geolocationSource={buildFakeGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+          wakeLockSource={fakeWakeLock.source}
+        />,
+      );
+
+      const checkbox = screen.getByRole("checkbox", { name: /keep screen awake/i });
+      const heading = screen.getByRole("heading", { name: "Free roam" });
+
+      expect(
+        heading.compareDocumentPosition(checkbox) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+  });
+
+  it("never renders a Map/Profile switcher — the fixed Map/Profile shell (backlog item 56) is route-Riding-only in this slice", () => {
+    render(
+      <FreeRoamScreen
+        geolocationSource={buildFakeGeolocationSource().source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+
+    expect(screen.queryByRole("group", { name: "Riding view" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Map" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Profile" })).toBeNull();
   });
 
   describe("onRidingActiveChange", () => {

@@ -68,6 +68,9 @@ test("auto-selects Climb view on entering each recognised climb, respects a manu
 
   await page.getByRole("button", { name: "Start riding" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+  // Active Riding defaults to the Map view (backlog item 56) — the Climb
+  // button and progress panel live in the Profile pane.
+  await page.getByRole("button", { name: "Profile" }).click();
 
   // Before entering the first climb, Climb is not offered.
   await expect(page.getByRole("button", { name: "Climb" })).toBeHidden();

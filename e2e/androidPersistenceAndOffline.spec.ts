@@ -248,6 +248,9 @@ test("a saved route stays usable — route, progress and elevation — with the 
     await expect(page.getByText(/^Offline/)).toBeVisible();
     await expect(page.locator('[data-testid="map-container"] canvas')).toBeVisible();
     await expect(page.getByText(/On route|Possibly off route|Off route/)).toBeVisible();
+    // Active Riding now defaults to the Map view (backlog item 56) — the
+    // elevation section lives in the separate Profile pane.
+    await page.getByRole("button", { name: "Profile" }).click();
     await expect(
       page.getByRole("group", { name: "Elevation profile view" }),
     ).toBeVisible();

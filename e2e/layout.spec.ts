@@ -42,7 +42,7 @@ test.use({ viewport: { width: 390, height: 844 } });
 // one test needs it too, to reliably mock the tile-style request.
 test.use({ serviceWorkers: "block" });
 
-test("map attribution stays inside the map and clear of the elevation controls and camera buttons", async ({
+test("map attribution stays inside the map and clear of the camera buttons", async ({
   page,
   context,
 }) => {
@@ -68,28 +68,27 @@ test("map attribution stays inside the map and clear of the elevation controls a
   const mapContainer = page.locator('[data-testid="map-container"]');
   await expect(mapContainer.locator("canvas")).toBeVisible();
 
-  // Both camera buttons and the elevation-window group visible together is
-  // the richest simultaneous-controls scenario for this layout check.
+  // Active Riding now defaults to, and this test stays on, the Map view
+  // (backlog item 56) — the elevation-window group lives in the separate
+  // Profile pane and can no longer be simultaneously visible with the
+  // camera buttons at all, so checking their relative geometry is no
+  // longer meaningful here; the Profile pane's own layout is covered by
+  // ridingElevationWindows.spec.ts's phone-viewport test instead.
   const followButton = page.getByRole("button", { name: "Follow my location" });
   const northUpButton = page.getByRole("button", { name: "North-up, top-down view" });
-  const elevationGroup = page.getByRole("group", { name: "Elevation profile view" });
   await expect(followButton).toBeVisible();
   await expect(northUpButton).toBeVisible();
-  await expect(elevationGroup).toBeVisible();
 
   const attribution = page.getByTestId("map-attribution");
   await expect(attribution).toBeVisible();
 
-  const [mapBox, attributionBox, followBox, northUpBox, elevationBox] = await Promise.all(
-    [
-      mapContainer.boundingBox(),
-      attribution.boundingBox(),
-      followButton.boundingBox(),
-      northUpButton.boundingBox(),
-      elevationGroup.boundingBox(),
-    ],
-  );
-  if (!mapBox || !attributionBox || !followBox || !northUpBox || !elevationBox) {
+  const [mapBox, attributionBox, followBox, northUpBox] = await Promise.all([
+    mapContainer.boundingBox(),
+    attribution.boundingBox(),
+    followButton.boundingBox(),
+    northUpButton.boundingBox(),
+  ]);
+  if (!mapBox || !attributionBox || !followBox || !northUpBox) {
     throw new Error("expected all located elements to have a bounding box");
   }
 
@@ -102,12 +101,6 @@ test("map attribution stays inside the map and clear of the elevation controls a
   // the actual geometry proof of the new layout.
   expect(intersects(attributionBox, followBox)).toBe(false);
   expect(intersects(attributionBox, northUpBox)).toBe(false);
-
-  // A real, deliberate gap — not pinned to an exact pixel value, since a
-  // minor CSS tweak shouldn't make this flaky, only prove the controls no
-  // longer appear attached to the map's edge.
-  const gap = elevationBox.y - (mapBox.y + mapBox.height);
-  expect(gap).toBeGreaterThanOrEqual(4);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);

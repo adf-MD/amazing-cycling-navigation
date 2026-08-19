@@ -813,6 +813,10 @@ test.describe("Riding: pre-ride climb chart layout", () => {
     await expect(page.locator(".ride-start-panel")).toBeHidden();
     await expect(page.getByRole("combobox", { name: "Recognised climbs" })).toBeHidden();
     await expect(page.locator(".ride-profile-panel")).toBeHidden();
+    // Active Riding now defaults to the Map view (backlog item 56) — the
+    // elevation section lives in the separate, initially aria-hidden
+    // Profile pane, reachable via the Map/Profile switcher.
+    await page.getByRole("button", { name: "Profile" }).click();
     await expect(page.locator(".ride-elevation-section")).toBeVisible();
 
     // The now-active immersive header (backlog item 55, superseding item

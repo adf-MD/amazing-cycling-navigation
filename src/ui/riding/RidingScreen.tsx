@@ -33,7 +33,10 @@ import {
   computeClimbProgressMetrics,
   selectEffectiveElevationView,
 } from "../../navigation/climbElevationView.ts";
-import { selectNextManoeuvre } from "../../navigation/nextManoeuvre.ts";
+import {
+  classifyManoeuvreUrgency,
+  selectNextManoeuvre,
+} from "../../navigation/nextManoeuvre.ts";
 import type { ElevationViewMode } from "../../navigation/types.ts";
 import {
   ELEVATION_VIEW_MODE_OPTIONS,
@@ -54,6 +57,7 @@ import { RouteFeatureDetailsPanel } from "../shared/RouteFeatureDetailsPanel.tsx
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 import { RidingClimbProgressPanel } from "./RidingClimbProgressPanel.tsx";
 import { RidingClimbSelector } from "./RidingClimbSelector.tsx";
+import { RidingCompactManoeuvreCue } from "./RidingCompactManoeuvreCue.tsx";
 import { RidingImmersiveHeader } from "./RidingImmersiveHeader.tsx";
 import { RidingNextManoeuvrePanel } from "./RidingNextManoeuvrePanel.tsx";
 import { RidingRouteCompletionPanel } from "./RidingRouteCompletionPanel.tsx";
@@ -299,6 +303,16 @@ export function RidingScreen({
   } | null>(null);
   const [selectedGradientSegment, setSelectedGradientSegment] =
     useState<ClassifiedSegment<MicroDetailVisualKey> | null>(null);
+
+  // Which of the two fixed active-Riding views is shown (backlog item 56).
+  // Presentation-only, deliberately not persisted: defaults to "map" on
+  // mount and is reset to "map" only inside handleStart's own idle-only
+  // branch below (a genuinely fresh Start or an explicit Resume-riding
+  // tap), never on the mid-ride "Try again" retry path — a rider who was
+  // reviewing Profile through a transient GPS error must not be yanked
+  // back to Map. A Pause->relaunch->Resume cycle gets a fresh "map" default
+  // for free, since this whole screen unmounts on Pause.
+  const [activeView, setActiveView] = useState<"map" | "profile">("map");
 
   // Tracks the furthest manoeuvre reliably reached so far, so selection
   // stays monotonic (never regresses on GPS jitter) — derived during
@@ -821,6 +835,12 @@ export function RidingScreen({
     if (nav.geolocationStatus === "idle") {
       setExplicitFeatureSelection({ routeId: route.id, featureId: null });
       setSelectedGradientSegment(null);
+      // Default to the Map view on a genuinely fresh Start or an explicit
+      // Resume-riding tap (backlog item 56) — same idle-only branch, so
+      // the mid-ride "Try again" retry path (the else case this handler
+      // also backs) leaves whichever view the rider already had open
+      // untouched.
+      setActiveView("map");
     }
     nav.start();
     camera.requestFollow();
@@ -872,17 +892,282 @@ export function RidingScreen({
     );
   }
 
-  return (
-    <section className="screen" aria-label="Riding">
-      {isWakeLockSupported() && nav.geolocationStatus !== "idle" ? (
-        <RidingWakeLockControl
-          desired={nav.wakeLockDesired}
-          onToggleDesired={nav.setWakeLockDesired}
-          wakeLockSource={wakeLockSource}
-          clock={clock}
-        />
-      ) : null}
+  // True while the shown manoeuvre/distance is based on the rider's last
+  // reliable position rather than a fresh, on-route fix — shared by both
+  // the full Map-view panel and the compact Profile-view cue below so the
+  // two never disagree on this qualifier.
+  const isManoeuvreFrozen = nav.isStale || nav.offRouteLevel === "off-route";
+  // Reuses the exact same, already-computed nextManoeuvre selection and
+  // the existing exported classifyManoeuvreUrgency (backlog item 56) — no
+  // new navigation logic. showCompactManoeuvreCue is recomputed fresh
+  // every render, so the compact cue disappears automatically once the
+  // manoeuvre is passed or its urgency returns to "normal", with no
+  // explicit "hide" action needed.
+  const manoeuvreUrgency = nextManoeuvre
+    ? classifyManoeuvreUrgency(nextManoeuvre.remainingDistanceMetres)
+    : null;
+  // Gated on activeView === "profile" (not just "not idle") so the compact
+  // cue is only ever actually mounted while Profile is genuinely selected —
+  // unlike the always-mounted Map/Profile panes themselves (kept mounted
+  // for GradientColoursDisclosure's uncontrolled <details> state and
+  // <MapView>'s continuity), the compact cue is stateless and has no such
+  // requirement, so conditionally rendering it avoids ever having its
+  // instruction text sit duplicated in the DOM alongside the full Map-view
+  // panel's identical text at the same time (aria-hidden/visibility hide it
+  // visually and from the accessibility tree either way, but a plain
+  // text-content query does not respect either).
+  const showCompactManoeuvreCue =
+    nav.geolocationStatus !== "idle" &&
+    activeView === "profile" &&
+    nextManoeuvre !== null &&
+    manoeuvreUrgency !== null &&
+    manoeuvreUrgency !== "normal";
 
+  // The Route-profile card's inner content (window selector, chart/climb
+  // branch, disclosures, detail panels) — hoisted, unchanged, out of the
+  // JSX below (backlog item 56) so it can be referenced from both the
+  // idle .ride-profile-panel and the active .ride-profile-pane--immersive
+  // without writing it twice. Purely a relocation: no calculation here
+  // changed from before this slice.
+  const elevationSectionBody = (
+    <>
+      {nav.matchedDistanceFromStartMetres !== null ? (
+        <div
+          role="group"
+          aria-label="Elevation profile view"
+          className="elevation-window-group"
+        >
+          {ELEVATION_VIEW_MODE_OPTIONS.map((mode) => {
+            const isSelected =
+              effectiveElevationView.kind !== "climb" &&
+              isSameElevationViewMode(effectiveElevationView, mode);
+            return (
+              <button
+                key={elevationViewModeKey(mode)}
+                type="button"
+                className={`elevation-window-button${isSelected ? " is-selected" : ""}`}
+                aria-pressed={isSelected}
+                onClick={() => {
+                  nav.setElevationViewMode(mode);
+                  // Manually picking a standard view while inside a climb
+                  // dismisses Climb view for the remainder of that climb —
+                  // see climbElevationView.ts's selectEffectiveElevationView.
+                  if (activeClimb !== null) {
+                    nav.setDismissedClimbFeatureId(activeClimb.id);
+                  }
+                }}
+              >
+                {elevationViewModeLabel(mode)}
+              </button>
+            );
+          })}
+          {activeClimb !== null ? (
+            <button
+              type="button"
+              className={`elevation-window-button${
+                effectiveElevationView.kind === "climb" ? " is-selected" : ""
+              }`}
+              aria-pressed={effectiveElevationView.kind === "climb"}
+              onClick={() => {
+                // Un-dismisses the active climb — safe unconditionally,
+                // since a dismissal only ever matters when it matches the
+                // currently active climb's own id.
+                nav.setDismissedClimbFeatureId(null);
+              }}
+            >
+              Climb
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {/* Before any matched progress (live or restored), show the whole
+       * route with no marker. Once there's matched progress, Full mode
+       * shows the whole route with a progress marker and Upcoming mode
+       * shows a rebased rolling window. Macro route-feature colouring
+       * (routeFeatures) always covers the whole route regardless of view;
+       * only the detailed micro overlay (gradientSegments, already
+       * narrowed to the selected-or-active feature) is further clipped to
+       * the current window, so the legend never lists a detail class that
+       * isn't currently on screen. */}
+      {(() => {
+        let displayedMicroSegments = microDetailSegments;
+        // Defaults to microDetailFeature (the same feature
+        // displayedMicroSegments already reflects in every other branch);
+        // only the new Climb branch below ever reassigns this to a
+        // different feature (activeClimb), so GradientColoursDisclosure's
+        // climb-band gate stays correct even when a rider has an unrelated
+        // explicit selection elsewhere while also actively climbing.
+        let displayedMicroDetailFeature: RouteFeature | null = microDetailFeature;
+        let chart: ReactNode;
+        let climbProgressPanel: ReactNode = null;
+
+        if (nav.matchedDistanceFromStartMetres === null) {
+          chart = (
+            <ElevationChart
+              points={displayPoints}
+              routeFeatures={routeFeatures}
+              gradientSegments={microDetailSegments}
+              selectedRangeMetres={chartSelectedRangeMetres}
+              onTapDistance={handleChartTapDistance}
+            />
+          );
+        } else if (
+          activeClimb !== null &&
+          effectiveElevationView.kind === "climb" &&
+          climbProgressMetrics !== null
+        ) {
+          const climbViewModel = buildClimbChartViewModel(
+            {
+              kind: "active-current-climb",
+              marker: {
+                distanceFromStartMetres:
+                  climbProgressMetrics.clampedPresentationDistanceMetres,
+                elevationMetres: climbProgressMetrics.currentElevationMetres,
+                stale: nav.isStale,
+              },
+            },
+            activeClimb,
+            displayPoints,
+            activeClimbDetailSegments,
+          );
+          displayedMicroSegments = activeClimbDetailSegments;
+          displayedMicroDetailFeature = activeClimb;
+          chart = (
+            <ElevationChart
+              points={climbViewModel.points}
+              domain={climbViewModel.domain}
+              gradientSegments={climbViewModel.gradientSegments}
+              areaFill={climbViewModel.areaFill}
+              selectedRangeMetres={chartSelectedRangeMetres}
+              onTapDistance={handleChartTapDistance}
+              marker={climbViewModel.marker}
+            />
+          );
+          climbProgressPanel = (
+            <RidingClimbProgressPanel
+              climb={activeClimb}
+              climbNumber={climbs.findIndex((climb) => climb.id === activeClimb.id) + 1}
+              metrics={climbProgressMetrics}
+            />
+          );
+        } else if (nav.elevationProfileDisplay.kind === "full") {
+          chart = (
+            <ElevationChart
+              points={displayPoints}
+              routeFeatures={routeFeatures}
+              gradientSegments={microDetailSegments}
+              selectedRangeMetres={chartSelectedRangeMetres}
+              onTapDistance={handleChartTapDistance}
+              marker={
+                nav.elevationProfileDisplay.marker
+                  ? {
+                      distanceFromStartMetres:
+                        nav.elevationProfileDisplay.marker.markerDistanceFromStartMetres,
+                      elevationMetres:
+                        nav.elevationProfileDisplay.marker.point.elevationMetres,
+                      stale: nav.isStale,
+                    }
+                  : null
+              }
+            />
+          );
+        } else {
+          const window = nav.elevationProfileDisplay.window;
+          const windowMicroSegments = clipClassifiedSegments(
+            microDetailSegments,
+            window.startDistanceMetres,
+            window.endDistanceMetres,
+          );
+          displayedMicroSegments = windowMicroSegments;
+          // elevationProfileDisplay is derived 1:1 from elevationViewMode
+          // in useRideNavigation.ts, so elevationViewMode.kind is
+          // provably "upcoming" here too — TS can't see that
+          // correlation across the two separately-returned hook
+          // values, so this narrows defensively rather than asserting.
+          const windowMetres =
+            nav.elevationViewMode.kind === "upcoming"
+              ? nav.elevationViewMode.windowMetres
+              : null;
+          const distanceGuides =
+            windowMetres !== null
+              ? selectElevationDistanceGuides(window, windowMetres)
+              : [];
+          chart = (
+            <ElevationChart
+              points={window.points}
+              domain={{
+                startDistanceMetres: window.startDistanceMetres,
+                endDistanceMetres: window.endDistanceMetres,
+              }}
+              routeFeatures={routeFeatures}
+              gradientSegments={windowMicroSegments}
+              selectedRangeMetres={chartSelectedRangeMetres}
+              onTapDistance={handleChartTapDistance}
+              distanceGuides={distanceGuides}
+            />
+          );
+        }
+
+        return (
+          <>
+            {climbProgressPanel}
+            {chart}
+            <GradientColoursDisclosure
+              presentClimbBands={
+                displayedMicroDetailFeature?.kind === "climb"
+                  ? new Set(
+                      displayedMicroSegments.map(
+                        (segment) => segment.visualKey as ClimbGradientBand,
+                      ),
+                    )
+                  : new Set()
+              }
+              presentVisualKeys={
+                new Set(
+                  routeFeatures.map((feature) =>
+                    feature.kind === "climb" ? feature.category : feature.band,
+                  ),
+                )
+              }
+            />
+            {nav.geolocationStatus === "idle" ? (
+              <RidingClimbSelector
+                climbs={climbs}
+                selectedClimbId={
+                  selectedFeature?.kind === "climb" ? selectedFeature.id : null
+                }
+                onSelectClimb={(id) => {
+                  if (id) {
+                    selectRouteFeature(id);
+                  } else {
+                    handleClearRouteFeatureSelection();
+                  }
+                }}
+              />
+            ) : null}
+            <RouteFeatureDetailsPanel
+              feature={microDetailFeature}
+              climbNumber={preRideClimbNumber}
+              detailChart={preRideClimbChart}
+              onClear={selectedFeature ? handleClearRouteFeatureSelection : undefined}
+            />
+            <GradientSegmentDetailsPanel
+              segment={selectedGradientSegment}
+              startElevationMetres={selectedSegmentStartElevationMetres}
+              endElevationMetres={selectedSegmentEndElevationMetres}
+              onClear={handleClearGradientSegmentSelection}
+            />
+          </>
+        );
+      })()}
+    </>
+  );
+
+  return (
+    <section
+      className={`screen${nav.geolocationStatus !== "idle" ? " riding-fixed-shell" : ""}`}
+      aria-label="Riding"
+    >
       {nav.geolocationStatus === "idle" ? (
         <div className="ride-route-header">
           <h1 className="screen-title">{route.name}</h1>
@@ -918,6 +1203,24 @@ export function RidingScreen({
           ) : null}
         </>
       )}
+
+      {/* Wake-lock control moved to directly after the header block
+       * (backlog item 56, correcting a post-item-55 field finding): it
+       * previously rendered before RidingImmersiveHeader, so at rest
+       * (scrollY 0) the header's own natural flow position sat below this
+       * control's own space rather than at the true viewport top. Moving
+       * it here — still gated on the exact same condition — puts the
+       * header first in document order, matching FreeRoamScreen's
+       * identical fix. It also becomes the first of the "shared" status
+       * items below, visible regardless of which fixed view is active. */}
+      {isWakeLockSupported() && nav.geolocationStatus !== "idle" ? (
+        <RidingWakeLockControl
+          desired={nav.wakeLockDesired}
+          onToggleDesired={nav.setWakeLockDesired}
+          wakeLockSource={wakeLockSource}
+          clock={clock}
+        />
+      ) : null}
 
       {!online ? (
         <p role="status" className="status-row">
@@ -1011,12 +1314,18 @@ export function RidingScreen({
         />
       ) : null}
 
-      {nav.geolocationStatus !== "idle" ? (
+      {/* Map-exclusive (backlog item 56): the full panel has no idle
+       * counterpart and holds no state of its own, so it's simply omitted
+       * — not merely hidden — while Profile is selected, matching the
+       * Profile mock-ups and freeing that view's own space for elevation
+       * content. Profile gets its own compact, near/imminent-only cue
+       * instead (see showCompactManoeuvreCue below). */}
+      {nav.geolocationStatus !== "idle" && activeView === "map" ? (
         <RidingNextManoeuvrePanel
           sourceKind={route.source.kind}
           isTrusted={isTrustedForNavigation}
           selection={nextManoeuvre}
-          isFrozen={nav.isStale || nav.offRouteLevel === "off-route"}
+          isFrozen={isManoeuvreFrozen}
         />
       ) : null}
 
@@ -1033,329 +1342,197 @@ export function RidingScreen({
         />
       ) : null}
 
-      {camera.showPausedToast ? <p role="status">Map follow paused.</p> : null}
-
-      {/* Shown before Start riding is tapped, too — the whole route is
-       * already known and privacy-safe (no live location involved), so
-       * there's no reason to wait for a GPS fix to preview it. MapView
-       * always frames the entire route regardless of ride progress. */}
+      {/* backlog item 56: the fixed Map/Profile shell. Both .ride-map-container
+       * and the Profile pane below are unconditionally rendered — present with
+       * the same shape in idle and active, only className/style/aria-hidden
+       * differ — so <MapView>'s own JSX call site never moves or gets wrapped
+       * differently and never remounts, and GradientColoursDisclosure's
+       * uncontrolled <details> state survives every idle<->active and
+       * Map<->Profile transition. While idle this wrapper is a plain flex
+       * column (visually identical to before this slice); while active it
+       * becomes a position:relative flex:1 box with both children absolutely
+       * stacked inset:0, toggled only via inline visibility/pointerEvents (not
+       * display:none) so the map's own rendered box size never changes on
+       * toggle — no resize risk to reason about. */}
       <div
-        className={`ride-map-container${
-          nav.geolocationStatus !== "idle"
-            ? " ride-map-container--active"
-            : " ride-map-container--overview"
+        className={`ride-content-area${
+          nav.geolocationStatus !== "idle" ? " ride-content-area--immersive" : ""
         }`}
       >
-        <MapView
-          points={route.points}
-          matchedDistanceFromStartMetres={nav.matchedDistanceFromStartMetres ?? 0}
-          distanceBadgeProgressMetres={nav.presentationDistanceFromStartMetres}
-          currentPosition={nav.currentFix?.coordinate}
-          mapFactory={mapFactory}
-          routeFeatureOverlay={routeFeatureOverlay}
-          gradientOverlay={{ segments: microDetailSegments }}
-          cameraTarget={camera.cameraTarget}
-          zoomTarget={camera.zoomTarget}
-          suppressInitialOverviewFit={camera.hasActionableCameraTarget}
-          onUserCameraInteraction={camera.reportUserInteraction}
-          onCameraSettled={(settled) => {
-            camera.reportCameraSettled(
-              settled.coordinate,
-              settled.zoom,
-              settled.bearingDegrees,
-              settled.pitchDegrees,
-            );
-          }}
-        />
-        {nav.geolocationStatus === "watching" ? (
-          <div className="ride-map-zoom-controls">
-            <button
-              type="button"
-              onClick={handleZoomIn}
-              aria-label="Zoom in"
-              className="ride-map-control ride-map-control--zoom"
-            >
-              +
-            </button>
-            <button
-              type="button"
-              onClick={handleZoomOut}
-              aria-label="Zoom out"
-              className="ride-map-control ride-map-control--zoom"
-            >
-              −
-            </button>
-          </div>
-        ) : null}
-        {nav.geolocationStatus === "watching" ? (
-          <div className="ride-map-camera-controls">
-            <button
-              type="button"
-              onClick={camera.requestNorthUp}
-              aria-label="North-up, top-down view"
-              aria-pressed={camera.isNorthUpTopDown}
-              className={`ride-map-control ride-map-control--north-up${
-                camera.isNorthUpTopDown ? " is-pressed" : ""
-              }`}
-            >
-              N
-            </button>
-            <button
-              type="button"
-              onClick={camera.requestFollow}
-              aria-label="Follow my location"
-              aria-pressed={camera.mode === "following"}
-              className={`ride-map-control ride-map-control--follow${
-                camera.mode === "following" ? " is-pressed" : ""
-              }`}
-            >
-              {camera.mode === "following" && camera.awaitingFreshFix ? "Waiting…" : "⌖"}
-            </button>
-          </div>
-        ) : null}
-      </div>
-
-      <div
-        className={
-          nav.geolocationStatus === "idle" ? "panel stack ride-profile-panel" : undefined
-        }
-      >
-        {nav.geolocationStatus === "idle" ? <h2>Route profile</h2> : null}
-        <div className="ride-elevation-section">
-          {nav.matchedDistanceFromStartMetres !== null ? (
-            <div
-              role="group"
-              aria-label="Elevation profile view"
-              className="elevation-window-group"
-            >
-              {ELEVATION_VIEW_MODE_OPTIONS.map((mode) => {
-                const isSelected =
-                  effectiveElevationView.kind !== "climb" &&
-                  isSameElevationViewMode(effectiveElevationView, mode);
-                return (
-                  <button
-                    key={elevationViewModeKey(mode)}
-                    type="button"
-                    className={`elevation-window-button${isSelected ? " is-selected" : ""}`}
-                    aria-pressed={isSelected}
-                    onClick={() => {
-                      nav.setElevationViewMode(mode);
-                      // Manually picking a standard view while inside a climb
-                      // dismisses Climb view for the remainder of that climb —
-                      // see climbElevationView.ts's selectEffectiveElevationView.
-                      if (activeClimb !== null) {
-                        nav.setDismissedClimbFeatureId(activeClimb.id);
-                      }
-                    }}
-                  >
-                    {elevationViewModeLabel(mode)}
-                  </button>
-                );
-              })}
-              {activeClimb !== null ? (
-                <button
-                  type="button"
-                  className={`elevation-window-button${
-                    effectiveElevationView.kind === "climb" ? " is-selected" : ""
-                  }`}
-                  aria-pressed={effectiveElevationView.kind === "climb"}
-                  onClick={() => {
-                    // Un-dismisses the active climb — safe unconditionally,
-                    // since a dismissal only ever matters when it matches the
-                    // currently active climb's own id.
-                    nav.setDismissedClimbFeatureId(null);
-                  }}
-                >
-                  Climb
-                </button>
-              ) : null}
+        {/* Shown before Start riding is tapped, too — the whole route is
+         * already known and privacy-safe (no live location involved), so
+         * there's no reason to wait for a GPS fix to preview it. MapView
+         * always frames the entire route regardless of ride progress. */}
+        <div
+          className={`ride-map-container${
+            nav.geolocationStatus !== "idle"
+              ? " ride-map-container--immersive"
+              : " ride-map-container--overview"
+          }`}
+          style={
+            nav.geolocationStatus !== "idle"
+              ? {
+                  visibility: activeView === "map" ? "visible" : "hidden",
+                  pointerEvents: activeView === "map" ? undefined : "none",
+                }
+              : undefined
+          }
+          aria-hidden={
+            nav.geolocationStatus !== "idle" ? activeView !== "map" : undefined
+          }
+        >
+          <MapView
+            points={route.points}
+            matchedDistanceFromStartMetres={nav.matchedDistanceFromStartMetres ?? 0}
+            distanceBadgeProgressMetres={nav.presentationDistanceFromStartMetres}
+            currentPosition={nav.currentFix?.coordinate}
+            mapFactory={mapFactory}
+            routeFeatureOverlay={routeFeatureOverlay}
+            gradientOverlay={{ segments: microDetailSegments }}
+            cameraTarget={camera.cameraTarget}
+            zoomTarget={camera.zoomTarget}
+            suppressInitialOverviewFit={camera.hasActionableCameraTarget}
+            onUserCameraInteraction={camera.reportUserInteraction}
+            onCameraSettled={(settled) => {
+              camera.reportCameraSettled(
+                settled.coordinate,
+                settled.zoom,
+                settled.bearingDegrees,
+                settled.pitchDegrees,
+              );
+            }}
+          />
+          {nav.geolocationStatus === "watching" ? (
+            <div className="ride-map-zoom-controls">
+              <button
+                type="button"
+                onClick={handleZoomIn}
+                aria-label="Zoom in"
+                className="ride-map-control ride-map-control--zoom"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                onClick={handleZoomOut}
+                aria-label="Zoom out"
+                className="ride-map-control ride-map-control--zoom"
+              >
+                −
+              </button>
             </div>
           ) : null}
-          {/* Before any matched progress (live or restored), show the whole
-           * route with no marker. Once there's matched progress, Full mode
-           * shows the whole route with a progress marker and Upcoming mode
-           * shows a rebased rolling window. Macro route-feature colouring
-           * (routeFeatures) always covers the whole route regardless of view;
-           * only the detailed micro overlay (gradientSegments, already
-           * narrowed to the selected-or-active feature) is further clipped to
-           * the current window, so the legend never lists a detail class that
-           * isn't currently on screen. */}
-          {(() => {
-            let displayedMicroSegments = microDetailSegments;
-            // Defaults to microDetailFeature (the same feature
-            // displayedMicroSegments already reflects in every other branch);
-            // only the new Climb branch below ever reassigns this to a
-            // different feature (activeClimb), so GradientColoursDisclosure's
-            // climb-band gate stays correct even when a rider has an unrelated
-            // explicit selection elsewhere while also actively climbing.
-            let displayedMicroDetailFeature: RouteFeature | null = microDetailFeature;
-            let chart: ReactNode;
-            let climbProgressPanel: ReactNode = null;
+          {nav.geolocationStatus === "watching" ? (
+            <div className="ride-map-camera-controls">
+              <button
+                type="button"
+                onClick={camera.requestNorthUp}
+                aria-label="North-up, top-down view"
+                aria-pressed={camera.isNorthUpTopDown}
+                className={`ride-map-control ride-map-control--north-up${
+                  camera.isNorthUpTopDown ? " is-pressed" : ""
+                }`}
+              >
+                N
+              </button>
+              <button
+                type="button"
+                onClick={camera.requestFollow}
+                aria-label="Follow my location"
+                aria-pressed={camera.mode === "following"}
+                className={`ride-map-control ride-map-control--follow${
+                  camera.mode === "following" ? " is-pressed" : ""
+                }`}
+              >
+                {camera.mode === "following" && camera.awaitingFreshFix
+                  ? "Waiting…"
+                  : "⌖"}
+              </button>
+            </div>
+          ) : null}
+          {/* Moved inside the map container as a non-layout-affecting
+           * overlay (backlog item 56) — it previously sat in the shared
+           * status stack above the fixed shell's flex-fill map, and its
+           * own transient appear/dismiss cycle measurably resized the map
+           * (the shared stack's height directly determines how much space
+           * .ride-map-container--immersive's flex:1 has left), which in
+           * turn shifted the reported camera centre by a small but
+           * real amount via the follow-offset recalculation on resize — a
+           * genuine regression a real e2e test caught. A toast about the
+           * map's own camera state belongs over the map, not in a
+           * layout-affecting position, and is naturally Map-view-exclusive
+           * this way (no reason to show it while Profile is selected). */}
+          {camera.showPausedToast ? (
+            <p role="status" className="ride-map-paused-toast">
+              Map follow paused.
+            </p>
+          ) : null}
+        </div>
 
-            if (nav.matchedDistanceFromStartMetres === null) {
-              chart = (
-                <ElevationChart
-                  points={displayPoints}
-                  routeFeatures={routeFeatures}
-                  gradientSegments={microDetailSegments}
-                  selectedRangeMetres={chartSelectedRangeMetres}
-                  onTapDistance={handleChartTapDistance}
-                />
-              );
-            } else if (
-              activeClimb !== null &&
-              effectiveElevationView.kind === "climb" &&
-              climbProgressMetrics !== null
-            ) {
-              const climbViewModel = buildClimbChartViewModel(
-                {
-                  kind: "active-current-climb",
-                  marker: {
-                    distanceFromStartMetres:
-                      climbProgressMetrics.clampedPresentationDistanceMetres,
-                    elevationMetres: climbProgressMetrics.currentElevationMetres,
-                    stale: nav.isStale,
-                  },
-                },
-                activeClimb,
-                displayPoints,
-                activeClimbDetailSegments,
-              );
-              displayedMicroSegments = activeClimbDetailSegments;
-              displayedMicroDetailFeature = activeClimb;
-              chart = (
-                <ElevationChart
-                  points={climbViewModel.points}
-                  domain={climbViewModel.domain}
-                  gradientSegments={climbViewModel.gradientSegments}
-                  areaFill={climbViewModel.areaFill}
-                  selectedRangeMetres={chartSelectedRangeMetres}
-                  onTapDistance={handleChartTapDistance}
-                  marker={climbViewModel.marker}
-                />
-              );
-              climbProgressPanel = (
-                <RidingClimbProgressPanel
-                  climb={activeClimb}
-                  climbNumber={
-                    climbs.findIndex((climb) => climb.id === activeClimb.id) + 1
-                  }
-                  metrics={climbProgressMetrics}
-                />
-              );
-            } else if (nav.elevationProfileDisplay.kind === "full") {
-              chart = (
-                <ElevationChart
-                  points={displayPoints}
-                  routeFeatures={routeFeatures}
-                  gradientSegments={microDetailSegments}
-                  selectedRangeMetres={chartSelectedRangeMetres}
-                  onTapDistance={handleChartTapDistance}
-                  marker={
-                    nav.elevationProfileDisplay.marker
-                      ? {
-                          distanceFromStartMetres:
-                            nav.elevationProfileDisplay.marker
-                              .markerDistanceFromStartMetres,
-                          elevationMetres:
-                            nav.elevationProfileDisplay.marker.point.elevationMetres,
-                          stale: nav.isStale,
-                        }
-                      : null
-                  }
-                />
-              );
-            } else {
-              const window = nav.elevationProfileDisplay.window;
-              const windowMicroSegments = clipClassifiedSegments(
-                microDetailSegments,
-                window.startDistanceMetres,
-                window.endDistanceMetres,
-              );
-              displayedMicroSegments = windowMicroSegments;
-              // elevationProfileDisplay is derived 1:1 from elevationViewMode
-              // in useRideNavigation.ts, so elevationViewMode.kind is
-              // provably "upcoming" here too — TS can't see that
-              // correlation across the two separately-returned hook
-              // values, so this narrows defensively rather than asserting.
-              const windowMetres =
-                nav.elevationViewMode.kind === "upcoming"
-                  ? nav.elevationViewMode.windowMetres
-                  : null;
-              const distanceGuides =
-                windowMetres !== null
-                  ? selectElevationDistanceGuides(window, windowMetres)
-                  : [];
-              chart = (
-                <ElevationChart
-                  points={window.points}
-                  domain={{
-                    startDistanceMetres: window.startDistanceMetres,
-                    endDistanceMetres: window.endDistanceMetres,
-                  }}
-                  routeFeatures={routeFeatures}
-                  gradientSegments={windowMicroSegments}
-                  selectedRangeMetres={chartSelectedRangeMetres}
-                  onTapDistance={handleChartTapDistance}
-                  distanceGuides={distanceGuides}
-                />
-              );
-            }
-
-            return (
-              <>
-                {climbProgressPanel}
-                {chart}
-                <GradientColoursDisclosure
-                  presentClimbBands={
-                    displayedMicroDetailFeature?.kind === "climb"
-                      ? new Set(
-                          displayedMicroSegments.map(
-                            (segment) => segment.visualKey as ClimbGradientBand,
-                          ),
-                        )
-                      : new Set()
-                  }
-                  presentVisualKeys={
-                    new Set(
-                      routeFeatures.map((feature) =>
-                        feature.kind === "climb" ? feature.category : feature.band,
-                      ),
-                    )
-                  }
-                />
-                {nav.geolocationStatus === "idle" ? (
-                  <RidingClimbSelector
-                    climbs={climbs}
-                    selectedClimbId={
-                      selectedFeature?.kind === "climb" ? selectedFeature.id : null
-                    }
-                    onSelectClimb={(id) => {
-                      if (id) {
-                        selectRouteFeature(id);
-                      } else {
-                        handleClearRouteFeatureSelection();
-                      }
-                    }}
-                  />
-                ) : null}
-                <RouteFeatureDetailsPanel
-                  feature={microDetailFeature}
-                  climbNumber={preRideClimbNumber}
-                  detailChart={preRideClimbChart}
-                  onClear={selectedFeature ? handleClearRouteFeatureSelection : undefined}
-                />
-                <GradientSegmentDetailsPanel
-                  segment={selectedGradientSegment}
-                  startElevationMetres={selectedSegmentStartElevationMetres}
-                  endElevationMetres={selectedSegmentEndElevationMetres}
-                  onClear={handleClearGradientSegmentSelection}
-                />
-              </>
-            );
-          })()}
+        <div
+          className={
+            nav.geolocationStatus === "idle"
+              ? "panel stack ride-profile-panel"
+              : "ride-profile-pane--immersive"
+          }
+          style={
+            nav.geolocationStatus !== "idle"
+              ? {
+                  visibility: activeView === "profile" ? "visible" : "hidden",
+                  pointerEvents: activeView === "profile" ? undefined : "none",
+                }
+              : undefined
+          }
+          aria-hidden={
+            nav.geolocationStatus !== "idle" ? activeView !== "profile" : undefined
+          }
+        >
+          {nav.geolocationStatus === "idle" ? <h2>Route profile</h2> : null}
+          <div className="ride-elevation-section">
+            {/* A compact, near/imminent-only cue (backlog item 56) — see
+             * RidingCompactManoeuvreCue's own doc comment. TypeScript's
+             * aliased-condition narrowing already infers nextManoeuvre is
+             * non-null here from showCompactManoeuvreCue's own definition
+             * (one of its && terms), so no separate re-check is needed. */}
+            {showCompactManoeuvreCue ? (
+              <RidingCompactManoeuvreCue
+                selection={nextManoeuvre}
+                isFrozen={isManoeuvreFrozen}
+              />
+            ) : null}
+            {elevationSectionBody}
+          </div>
         </div>
       </div>
+
+      {nav.geolocationStatus !== "idle" ? (
+        <div role="group" aria-label="Riding view" className="ride-immersive-switcher">
+          <button
+            type="button"
+            className={`ride-immersive-switcher-button${
+              activeView === "map" ? " is-selected" : ""
+            }`}
+            aria-pressed={activeView === "map"}
+            onClick={() => {
+              setActiveView("map");
+            }}
+          >
+            Map
+          </button>
+          <button
+            type="button"
+            className={`ride-immersive-switcher-button${
+              activeView === "profile" ? " is-selected" : ""
+            }`}
+            aria-pressed={activeView === "profile"}
+            onClick={() => {
+              setActiveView("profile");
+            }}
+          >
+            Profile
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }

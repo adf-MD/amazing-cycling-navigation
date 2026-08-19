@@ -131,6 +131,23 @@ body {
   padding-top: 0;
 }
 
+/* backlog item 56: active route Riding's fixed, non-scrolling Map/Profile
+ * shell (.riding-fixed-shell, on .screen — see below) additionally needs
+ * .app-shell's own bottom safe-area padding cancelled, for the identical
+ * inset-double-counting reason the top-padding rule above already exists:
+ * .screen's own height is pinned to exactly 100dvh, so any further bottom
+ * padding here would push the whole shell past the true viewport height
+ * and force a small amount of page-level scroll. The bottom safe-area
+ * inset is instead folded into .ride-immersive-switcher's own
+ * padding-bottom, mirroring .riding-immersive-header's identical pattern
+ * for the top. Scoped to .riding-fixed-shell specifically (not the shared
+ * .riding-immersive-header selector above) since FreeRoamScreen uses that
+ * same header class but keeps its own ordinary scrolling .screen — this
+ * fixed-shell treatment is route-Riding-only in this slice. */
+.app-shell:has(.riding-fixed-shell) {
+  padding-bottom: 0;
+}
+
 /* A duplicate `min-height` declaration (100vh then 100dvh) is the usual
  * way to write a fallback, but this project's production CSS minifier
  * collapses same-property duplicates and drops the fallback — verified
@@ -315,6 +332,35 @@ button:focus-visible {
  * (see .riding-immersive-header) and for every other child of .screen. */
 .screen:has(.riding-immersive-header) {
   padding-top: 0;
+}
+
+/* backlog item 56: active route Riding's fixed, non-scrolling Map/Profile
+ * shell — applied only to RidingScreen's own active-branch <section>
+ * (never FreeRoamScreen's, and never the idle/pre-ride branch, which
+ * stays the ordinary scrolling .screen above unchanged). Pins the whole
+ * screen to exactly the viewport height so nothing needs to scroll to
+ * reach the header, the shared status stack, either fixed view, or the
+ * Map/Profile switcher — the flex:1 .ride-content-area (see below)
+ * absorbs whatever space is left after every other child's own natural
+ * height. overflow: hidden is a defensive backstop: in ordinary use every
+ * child's height sums to exactly this box's own height by construction,
+ * so nothing should ever need clipping; it only bites in genuinely
+ * extreme cases (very large system text plus many simultaneous status
+ * messages), which is an accepted, documented trade-off rather than a
+ * design goal. The base .screen rule's own gap (16px) is left unchanged
+ * — it already gives a reasonable, uniform gap between the header, the
+ * shared status items, the content area and the switcher; the header and
+ * switcher additionally each escape it entirely on their own outer edges
+ * via their own negative margins (see .riding-immersive-header and
+ * .ride-immersive-switcher). */
+.screen.riding-fixed-shell {
+  height: 100vh;
+  overflow: hidden;
+}
+@supports (height: 100dvh) {
+  .screen.riding-fixed-shell {
+    height: 100dvh;
+  }
 }
 
 .stack {
@@ -1372,6 +1418,24 @@ button:focus-visible {
   gap: 8px;
 }
 
+/* backlog item 56: a non-layout-affecting overlay, bottom-centred over the
+ * map itself (clear of the top-left zoom cluster and top-right camera
+ * cluster) — see RidingScreen.tsx's own comment on why this moved out of
+ * the shared status stack above the map. */
+.ride-map-paused-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  z-index: 5;
+  margin: 0;
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-md);
+  background: var(--colour-bg);
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+}
+
 /* Fills in the previously orphan .riding-climb-progress class (see
  * RidingClimbProgressPanel.tsx) — a compact bordered/elevated card,
  * mirroring .panel/.route-card's own treatment. No JSX change needed. */
@@ -1409,6 +1473,179 @@ button:focus-visible {
 .elevation-window-button.is-selected {
   background-color: var(--colour-bg-elevated);
   box-shadow: 0 0 0 2px var(--colour-border);
+}
+
+/* --- Riding: fixed Map/Profile shell (backlog item 56) --- */
+
+/* Wraps .ride-map-container and the Profile pane, in both idle and active
+ * Riding — see RidingScreen.tsx's own comment on why both children are
+ * always unconditionally rendered here. Base rule (idle, and shared with
+ * every other screen that never gains --immersive) is a plain flex
+ * column, replicating the 16px gap the map preview and "Route profile"
+ * panel already had as ordinary flex siblings of .screen before this
+ * slice — a pure relocation, no visual change for idle. */
+.ride-content-area {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+/* Active Riding only: becomes the flex:1 region that absorbs whatever
+ * height is left in .riding-fixed-shell after every other child's own
+ * natural height, and the positioned ancestor both fixed-view children
+ * stack inside (see .ride-map-container--immersive/.ride-profile-pane--immersive
+ * below) — each is position: absolute; inset: 0 within this box, so both
+ * always occupy the identical, constant-size box regardless of which is
+ * currently toggled visible. min-height: 0 is required, not decorative:
+ * without it a flex item's default min-height: auto would prevent this
+ * box from ever shrinking below its own content's natural height, which
+ * would defeat the fixed-viewport contract entirely on a route with a
+ * tall Profile pane. */
+.ride-content-area--immersive {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  /* Defensive backstop, one level above .ride-map-container--immersive's
+   * own overflow: hidden: at an unusually short landscape viewport where
+   * genuinely little space is left after the shared status stack,
+   * .ride-map-container--immersive's own min-height: 160px floor can force
+   * its box to grow past this element's own bottom edge (a real,
+   * confirmed e2e finding — an absolutely positioned child with both
+   * top/bottom set, whose min-height cannot be satisfied within that
+   * inset, has its bottom offset recomputed rather than staying at 0),
+   * which would otherwise let the map canvas visually extend into, and
+   * intercept clicks on, the Map/Profile switcher immediately below. */
+  overflow: hidden;
+}
+
+/* Active Riding only: replaces .ride-map-container--active's fixed/clamped
+ * height (still used unchanged by FreeRoamScreen and the idle preview)
+ * with a genuine flex-fill — the map takes whatever space
+ * .ride-content-area--immersive has left after the shared status stack
+ * above it, rather than a pre-computed pixel/dvh value. This is a
+ * deliberate departure from --active's own round(nearest, 46dvh, 20px)
+ * snap (see that rule's own extensive comment): that technique only
+ * applies to a static calc()/dvh expression, and a flex-computed size
+ * can't be expressed that way. Verified instead with a real drag-rotate/
+ * pitch gesture test at the actual rendered heights (mirroring backlog
+ * items 21/23/34's own established method for this exact class of
+ * MapLibre bug), rather than reintroducing the snap for a value it can't
+ * apply to. height: auto clears the base .ride-map-container rule's own
+ * fixed height: 320px, letting position: absolute; inset: 0 (from the
+ * .ride-content-area--immersive > selector below) determine the real
+ * size instead. min-height is a defensive floor only, for extreme cases
+ * where very little space is left after the shared status stack — see
+ * .screen.riding-fixed-shell's own comment on why that's an accepted
+ * trade-off rather than a design goal. */
+.ride-content-area--immersive > .ride-map-container--immersive {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  min-height: 160px;
+  /* Deliberately different from --overview's own documented choice to omit
+   * this: --overview's own note is about a position: absolute element
+   * (e.g. .map-attribution) whose edge could sit flush against the box and
+   * get clipped, which doesn't apply here (attribution stays within
+   * bounds by its own design, confirmed by layout.spec.ts's own existing
+   * isFullyWithin proof). This clips a different, real, confirmed problem
+   * instead: MapView's own plain, unpositioned status banners (e.g.
+   * data-testid="map-fallback-banner") render as ordinary normal-flow
+   * block children with no explicit height budget, so once this container
+   * shrank from --active's old bounded height to this rule's own flex-fill
+   * sizing, an overflowing banner could extend past the map's own box far
+   * enough to visually cover, and intercept clicks on, the Map/Profile
+   * switcher sitting immediately after .ride-content-area in the DOM — a
+   * genuine regression a real e2e test caught. */
+  overflow: hidden;
+}
+
+/* Active Riding only: the Profile pane, replacing idle's .panel.stack
+ * .ride-profile-panel treatment. Stacks in the identical box
+ * .ride-map-container--immersive occupies (see the selector above) via
+ * the same position: absolute; inset: 0 mechanism. overflow-y: auto is
+ * the bounded internal-scroll fallback for secondary Profile content
+ * under very large system text or an unusually short landscape viewport
+ * — the header, shared status stack and Map/Profile switcher never
+ * scroll; only this pane's own content can, and only when it genuinely
+ * doesn't fit. */
+.ride-content-area--immersive > .ride-profile-pane--immersive {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* The Map/Profile switcher — active Riding only. Mirrors
+ * .riding-immersive-header's own edge-to-edge negative-margin technique
+ * (safe here because this is a plain flex item, not position: sticky —
+ * the negative-margin/sticky interaction documented on
+ * .app-header--sticky above only applies to a sticky element), folding
+ * the bottom safe-area inset into its own padding rather than relying on
+ * .screen's own padding, which .app-shell:has(.riding-fixed-shell) above
+ * already cancels for the identical double-counting reason. */
+.ride-immersive-switcher {
+  flex: 0 0 auto;
+  display: flex;
+  gap: var(--space-8);
+  margin: 0 calc(-1 * var(--space-16)) calc(-1 * var(--space-16));
+  padding: var(--space-8) var(--space-16)
+    calc(var(--safe-area-inset-bottom) + var(--space-8));
+  border-top: 1px solid var(--colour-border);
+  background: var(--colour-bg);
+}
+
+/* Sized and spaced for comfortable use while cycling — comfortably above
+ * the global 44px touch-target floor. */
+.ride-immersive-switcher-button {
+  flex: 1 1 0;
+  min-height: 48px;
+  font-weight: 700;
+}
+
+/* Mirrors .elevation-window-button.is-selected/.main-nav-button[aria-current]
+ * exactly: never colour alone, a soft accent surface plus an inset ring,
+ * driven by the same boolean already backing aria-pressed. */
+.ride-immersive-switcher-button.is-selected {
+  background: var(--colour-accent-soft);
+  box-shadow: inset 0 0 0 2px var(--colour-accent);
+  color: var(--colour-accent);
+}
+
+/* The compact, near/imminent-only manoeuvre cue shown at the top of the
+ * Profile pane (backlog item 56) — see RidingCompactManoeuvreCue.tsx's
+ * own doc comment for when it appears. A single-line card: icon,
+ * ellipsis-truncated instruction, distance. */
+.ride-compact-manoeuvre-cue {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-md);
+  background: var(--colour-bg-elevated);
+}
+
+/* Visually shortened to one line via ellipsis — the element's own text
+ * content (and hence its accessible name/role="status" announcement)
+ * stays complete, mirroring .riding-immersive-header-title's identical
+ * established truncation pattern. */
+.ride-compact-manoeuvre-instruction {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.ride-compact-manoeuvre-distance {
+  flex: 0 0 auto;
+  margin: 0;
+  font-weight: 700;
 }
 
 /* --- Riding: pre-ride route briefing (visual slice 6) --- */

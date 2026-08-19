@@ -73,6 +73,24 @@ function pointAt(index: number): Coordinate {
   return routePoints[index]?.coordinate ?? [0, 51];
 }
 
+/** Active Riding now defaults to the Map view (backlog item 56) — Profile's
+ * own content (elevation window buttons, chart, climb progress/selector,
+ * gradient/feature detail panels) is aria-hidden and effectively
+ * unreachable via role-based queries until this is called. Deliberately not
+ * gated on any precondition: every call site already knows it's mid- or
+ * post-Start in an active ride. */
+async function switchToProfile(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  await user.click(await screen.findByRole("button", { name: "Profile" }));
+}
+
+/** The Map view's own counterpart — see switchToProfile's own doc comment.
+ * Needed wherever a test must return to Map-view-only controls (e.g. the
+ * zoom/camera buttons) after having switched to Profile earlier in the
+ * same test. */
+async function switchToMap(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  await user.click(await screen.findByRole("button", { name: "Map" }));
+}
+
 /** Linearly interpolates intermediate points between each consecutive
  * "keyframe" so a route shaped by a few widely-spaced elevation/position
  * waypoints — a convenient shorthand for defining a fixture's overall
@@ -348,6 +366,7 @@ describe("RidingScreen", () => {
       speedMetresPerSecond: null,
       headingDegrees: null,
     });
+    await switchToProfile(user);
 
     const elevationWindowGroup = await screen.findByRole("group", {
       name: "Elevation profile view",
@@ -435,7 +454,7 @@ describe("RidingScreen", () => {
     expect(screen.getByText("On route")).toBeInTheDocument();
   });
 
-  it("switches the map wrapper from the pre-ride overview class to the active-riding size class once riding starts", async () => {
+  it("switches the map wrapper from the pre-ride overview class to the active fixed-shell class once riding starts", async () => {
     const user = userEvent.setup();
     const stub = buildStubGeolocationSource();
     const { container } = render(
@@ -449,11 +468,14 @@ describe("RidingScreen", () => {
     const mapWrapper = container.querySelector(".ride-map-container");
     expect(mapWrapper).not.toBeNull();
     expect(mapWrapper).toHaveClass("ride-map-container--overview");
-    expect(mapWrapper).not.toHaveClass("ride-map-container--active");
+    expect(mapWrapper).not.toHaveClass("ride-map-container--immersive");
 
     await user.click(screen.getByRole("button", { name: "Start riding" }));
 
-    expect(mapWrapper).toHaveClass("ride-map-container--active");
+    // backlog item 56: --active's fixed/clamped height is superseded by
+    // --immersive's flex-fill sizing for the active fixed shell — --active
+    // itself is untouched and still used by FreeRoamScreen/the idle preview.
+    expect(mapWrapper).toHaveClass("ride-map-container--immersive");
     expect(mapWrapper).not.toHaveClass("ride-map-container--overview");
   });
 
@@ -614,6 +636,7 @@ describe("RidingScreen", () => {
       speedMetresPerSecond: null,
       headingDegrees: null,
     });
+    await switchToProfile(user);
 
     const twoKmButton = await screen.findByRole("button", { name: "2 km" });
     expect(twoKmButton).toHaveAttribute("aria-pressed", "true");
@@ -655,6 +678,7 @@ describe("RidingScreen", () => {
       speedMetresPerSecond: null,
       headingDegrees: null,
     });
+    await switchToProfile(user);
 
     await user.click(await screen.findByRole("button", { name: "Full" }));
 
@@ -890,6 +914,7 @@ describe("RidingScreen", () => {
         speedMetresPerSecond: null,
         headingDegrees: null,
       });
+      await switchToProfile(user);
       expect(
         await screen.findByRole("heading", { name: "Category 2 climb" }),
       ).toBeInTheDocument();
@@ -953,6 +978,7 @@ describe("RidingScreen", () => {
         speedMetresPerSecond: null,
         headingDegrees: null,
       });
+      await switchToProfile(user);
 
       // Default view is the 2 km window. Once the fix lands, the rider is
       // "on" the whole-route climb, so it becomes active and its detailed
@@ -1003,6 +1029,7 @@ describe("RidingScreen", () => {
         headingDegrees: null,
       });
       await screen.findByText("On route");
+      await switchToProfile(user);
       expect(
         screen.getByRole("heading", { name: "Uncategorised climb" }),
       ).toBeInTheDocument();
@@ -1060,6 +1087,7 @@ describe("RidingScreen", () => {
         speedMetresPerSecond: null,
         headingDegrees: null,
       });
+      await switchToProfile(user);
       await user.click(await screen.findByRole("button", { name: "Full" }));
 
       // The rider is already on the climb, so it's "active" and its
@@ -1221,6 +1249,7 @@ describe("RidingScreen", () => {
         speedMetresPerSecond: null,
         headingDegrees: null,
       });
+      await switchToProfile(user);
       await user.click(await screen.findByRole("button", { name: "Full" }));
 
       // Explicitly drill into the active climb's own local-gradient
@@ -1243,7 +1272,11 @@ describe("RidingScreen", () => {
       await user.click(screen.getByRole("button", { name: "Try again" }));
 
       // The idle-only guard means this retry must NOT have cleared the
-      // mid-ride segment selection, unlike a genuine fresh pre-ride start.
+      // mid-ride segment selection, unlike a genuine fresh pre-ride start —
+      // and, incidentally, proves activeView stayed "profile" (backlog item
+      // 56) across the retry too, since this region is only reachable while
+      // Profile is genuinely selected and no further switchToProfile call
+      // was needed to find it here.
       expect(
         screen.getByRole("region", { name: "Gradient segment details" }),
       ).toBeInTheDocument();
@@ -2079,6 +2112,7 @@ describe("RidingScreen", () => {
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAt(stub, CLIMB_1_MID_METRES);
+      await switchToProfile(user);
 
       const climbButton = await screen.findByRole("button", { name: "Climb" });
       expect(climbButton).toHaveAttribute("aria-pressed", "true");
@@ -2104,6 +2138,7 @@ describe("RidingScreen", () => {
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAt(stub, CLIMB_1_MID_METRES - 100, 1000);
+      await switchToProfile(user);
       await screen.findByRole("button", { name: "Climb" });
       emitFixAt(stub, CLIMB_1_MID_METRES, 2000);
       emitFixAt(stub, CLIMB_1_MID_METRES + 100, 3000);
@@ -2126,6 +2161,7 @@ describe("RidingScreen", () => {
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
+      await switchToProfile(user);
       await screen.findByRole("button", { name: "Climb" });
 
       await user.click(screen.getByRole("button", { name: "10 km" }));
@@ -2166,6 +2202,7 @@ describe("RidingScreen", () => {
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
+      await switchToProfile(user);
       await screen.findByRole("button", { name: "Climb" });
 
       emitFixAt(stub, BETWEEN_CLIMBS_METRES, 2000);
@@ -2191,6 +2228,7 @@ describe("RidingScreen", () => {
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
+      await switchToProfile(user);
       await user.click(await screen.findByRole("button", { name: "Full" }));
       expect(screen.getByRole("button", { name: "Climb" })).toHaveAttribute(
         "aria-pressed",
@@ -2240,6 +2278,7 @@ describe("RidingScreen", () => {
         speedMetresPerSecond: null,
         headingDegrees: null,
       });
+      await switchToProfile(user);
 
       await screen.findByText("On route");
       expect(
@@ -2295,6 +2334,7 @@ describe("RidingScreen", () => {
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
+      await switchToProfile(user);
       await screen.findByRole("button", { name: "Climb" });
       const distanceTextBefore = screen.getByText(/completed/).textContent;
 
@@ -2344,6 +2384,7 @@ describe("RidingScreen", () => {
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAt(stub, CLIMB_1_MID_METRES);
+      await switchToProfile(user);
 
       const chartSvg = await screen.findByRole("img", {
         name: "Elevation profile chart",
@@ -2372,6 +2413,7 @@ describe("RidingScreen", () => {
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAt(stub, CLIMB_1_MID_METRES);
+      await switchToProfile(user);
       await user.click(await screen.findByRole("button", { name: "Full" }));
 
       const chartSvg = await screen.findByRole("img", {
@@ -2392,6 +2434,7 @@ describe("RidingScreen", () => {
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAt(stub, CLIMB_1_MID_METRES);
+      await switchToProfile(user);
 
       const group = await screen.findByRole("group", { name: "Elevation profile view" });
       const labels = within(group)
@@ -2488,6 +2531,7 @@ describe("RidingScreen", () => {
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAt(stub, CLIMB_1_MID_METRES);
+      await switchToProfile(user);
       await screen.findByRole("button", { name: "Climb" });
 
       const hitTarget = (
@@ -2545,6 +2589,7 @@ describe("RidingScreen", () => {
       headingDegrees: null,
     });
     await screen.findByText("On route");
+    await switchToProfile(user);
 
     await user.click(await screen.findByRole("button", { name: "Full" }));
     const positionTextBeforeOffRoute = (
@@ -2596,7 +2641,17 @@ describe("RidingScreen", () => {
     });
     expect(followButton).toHaveAttribute("aria-pressed", "true");
 
+    // Switching to Profile to change the elevation view mode (backlog item
+    // 56) is itself a Map/Profile view toggle, not "switching the elevation
+    // view mode" in this test's own sense — its own camera-preservation
+    // contract is covered separately (see "Map<->Profile<->Map preserves
+    // camera state" below). Returning to Map afterward is what actually
+    // proves this test's claim: the Follow/North-up buttons' own state
+    // (captured before the round trip) is unaffected by having changed the
+    // elevation view mode in between.
+    await switchToProfile(user);
     await user.click(await screen.findByRole("button", { name: "Full" }));
+    await switchToMap(user);
 
     expect(followButton).toHaveAttribute("aria-pressed", "true");
     expect(
@@ -2801,6 +2856,7 @@ describe("RidingScreen", () => {
 
       expect(await screen.findByText("On route")).toBeInTheDocument();
       expect(screen.getByText(/Remaining:/)).toBeInTheDocument();
+      await switchToProfile(user);
       expect(
         screen.getByRole("group", { name: "Elevation profile view" }),
       ).toBeInTheDocument();
@@ -2835,10 +2891,11 @@ describe("RidingScreen", () => {
       // The rest of the ride UI is untouched by the map's own tile failure.
       expect(screen.getByText("On route")).toBeInTheDocument();
       expect(screen.getByText(/Remaining:/)).toBeInTheDocument();
+      expect(screen.getByTestId("map-container")).toBeInTheDocument();
+      await switchToProfile(user);
       expect(
         screen.getByRole("group", { name: "Elevation profile view" }),
       ).toBeInTheDocument();
-      expect(screen.getByTestId("map-container")).toBeInTheDocument();
     });
   });
 
@@ -4274,6 +4331,7 @@ describe("RidingScreen", () => {
         headingDegrees: null,
       });
       await screen.findByText("On route");
+      await switchToProfile(user);
       await user.click(screen.getByRole("button", { name: "2 km" }));
       const remainingBefore = screen.getByText(/Remaining:/).textContent;
 
@@ -4293,6 +4351,9 @@ describe("RidingScreen", () => {
       });
       expect(screen.getByText("On route")).toBeInTheDocument();
       expect(screen.getByText(/Remaining:/).textContent).toBe(remainingBefore);
+      // Reachable via a plain getByRole with no further switchToProfile
+      // call — proves Try again also preserved activeView === "profile"
+      // (backlog item 56), not just the elevation-view selection itself.
       expect(screen.getByRole("button", { name: "2 km" })).toHaveAttribute(
         "aria-pressed",
         "true",
@@ -4697,7 +4758,13 @@ describe("RidingScreen", () => {
       ).not.toBeChecked();
     });
 
-    it("renders the compact wake-lock control before the route title in DOM order", async () => {
+    it("renders the immersive header (and its route title) before the compact wake-lock control in DOM order", async () => {
+      // Backlog item 56 corrects a real, screenshot-evidenced field finding
+      // from item 55: the wake-lock control previously rendered before the
+      // header, so at scrollY 0 the header's own natural flow position sat
+      // below it rather than at the true viewport top. This test's own
+      // title/assertion is deliberately inverted from its pre-item-56 form
+      // (which asserted the opposite, now-incorrect order).
       vi.stubGlobal("navigator", { onLine: true, wakeLock: { request: vi.fn() } });
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
@@ -4717,7 +4784,7 @@ describe("RidingScreen", () => {
       const heading = screen.getByRole("heading", { name: route.name });
 
       expect(
-        checkbox.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING,
+        heading.compareDocumentPosition(checkbox) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     });
 
@@ -5132,6 +5199,7 @@ describe("RidingScreen", () => {
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAtDistance(stub, 2000);
+      await switchToProfile(user);
 
       await screen.findByRole("group", { name: "Elevation profile view" });
       await waitFor(() => {
@@ -5151,6 +5219,7 @@ describe("RidingScreen", () => {
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAtDistance(stub, 2000);
+      await switchToProfile(user);
       await screen.findByRole("group", { name: "Elevation profile view" });
 
       await user.click(screen.getByRole("button", { name: "10 km" }));
@@ -5207,6 +5276,7 @@ describe("RidingScreen", () => {
       // 500 m remain to the finish — less than the 2 km view's own
       // +1 km offset, so the window is truncated short of that guide.
       emitFixAtDistance(stub, 19500);
+      await switchToProfile(user);
 
       await screen.findByRole("group", { name: "Elevation profile view" });
       await waitFor(() => {
@@ -5226,6 +5296,7 @@ describe("RidingScreen", () => {
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAtDistance(stub, 2000);
+      await switchToProfile(user);
       await waitFor(() => {
         expect(guideLabels()).toEqual(["+1 km"]);
       });

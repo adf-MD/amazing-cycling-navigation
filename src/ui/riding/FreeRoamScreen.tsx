@@ -333,15 +333,6 @@ export function FreeRoamScreen({
 
   return (
     <section className="screen" aria-label="Free roam">
-      {isWakeLockSupported() && nav.geolocationStatus !== "idle" ? (
-        <RidingWakeLockControl
-          desired={nav.wakeLockDesired}
-          onToggleDesired={nav.setWakeLockDesired}
-          wakeLockSource={wakeLockSource}
-          clock={clock}
-        />
-      ) : null}
-
       {/* The immersive Pause/title/End header (backlog item 55) — renders
        * unconditionally, mirroring the unconditional <h1>/.ride-end-ride-row
        * it replaces: this screen has no idle/pre-ride panel of its own (see
@@ -364,6 +355,19 @@ export function FreeRoamScreen({
       ) : null}
       {isEndRideConfirmOpen ? (
         <div className="ride-end-ride-confirm-row">{renderEndRideAction()}</div>
+      ) : null}
+
+      {/* Wake-lock control moved to directly after the header block
+       * (backlog item 56, correcting a post-item-55 field finding) — see
+       * RidingScreen.tsx's identical fix for the full root-cause. Still
+       * gated on the exact same condition, unchanged. */}
+      {isWakeLockSupported() && nav.geolocationStatus !== "idle" ? (
+        <RidingWakeLockControl
+          desired={nav.wakeLockDesired}
+          onToggleDesired={nav.setWakeLockDesired}
+          wakeLockSource={wakeLockSource}
+          clock={clock}
+        />
       ) : null}
 
       {!online ? (

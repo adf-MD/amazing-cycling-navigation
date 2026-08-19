@@ -173,7 +173,7 @@ test.describe("compact control on a narrow phone viewport", () => {
   // the project's primary target device.
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("the compact row sits above the route title, and its info popover overlays without displacing layout", async ({
+  test("the compact row sits below the immersive header (and its route title), and its info popover overlays without displacing layout", async ({
     page,
     context,
   }) => {
@@ -212,7 +212,13 @@ test.describe("compact control on a narrow phone viewport", () => {
     if (!checkboxBox || !headingBoxBefore) {
       throw new Error("expected the checkbox and route title to have a bounding box");
     }
-    expect(checkboxBox.y).toBeLessThan(headingBoxBefore.y);
+    // Backlog item 56 corrects a real, screenshot-evidenced field finding
+    // from item 55: the wake-lock control previously rendered before the
+    // immersive header, so at rest the header sat below it rather than at
+    // the true viewport top. This assertion is deliberately inverted from
+    // its pre-item-56 form (which asserted the opposite, now-incorrect
+    // order).
+    expect(checkboxBox.y).toBeGreaterThan(headingBoxBefore.y);
 
     await expect(page.getByText(/keeps the display on/i)).toBeHidden();
 
@@ -256,10 +262,12 @@ test.describe("compact control on a narrow phone viewport", () => {
 
     await infoButton.click();
     // The popover overlays the route title by design, so click a target
-    // unambiguously outside the whole Riding section instead: the
-    // app-level header's own top-left padding (index.css's `header`
-    // rule), which sits above <main> entirely and has no interactive
-    // element at this position.
+    // unambiguously outside RidingWakeLockControl's own subtree instead.
+    // During active Riding (backlog item 56) the global app-level header
+    // is genuinely absent from the DOM — <header> now matches only the
+    // immersive Pause/title/End header, itself part of the Riding section
+    // rather than outside it — but its own left padding (before the Pause
+    // button) is still a safe, non-interactive click target.
     await page.locator("header").click({ position: { x: 4, y: 4 } });
     await expect(popover).toBeHidden();
 

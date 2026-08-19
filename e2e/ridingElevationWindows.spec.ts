@@ -48,6 +48,13 @@ async function openRouteAndStartRiding(page: Page) {
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 }
 
+/** Active Riding now defaults to the Map view (backlog item 56) — the
+ * elevation window group/chart/guides live in the Profile pane, which is
+ * aria-hidden until this is called. */
+async function switchToProfile(page: Page) {
+  await page.getByRole("button", { name: "Profile" }).click();
+}
+
 function guideLabelLocator(page: Page) {
   return page.locator("text.elevation-chart-distance-guide-label");
 }
@@ -77,6 +84,7 @@ test("offers the reduced Full/2 km/10 km button set, with 2 km selected on a fre
 
   await page.goto("/");
   await openRouteAndStartRiding(page);
+  await switchToProfile(page);
 
   const group = page.getByRole("group", { name: "Elevation profile view" });
   await expect(group).toBeVisible();
@@ -122,6 +130,7 @@ test("the 10 km view shows all four +2/+4/+6/+8 km guides at a mid-route positio
 
   await page.goto("/");
   await openRouteAndStartRiding(page);
+  await switchToProfile(page);
 
   // 10 km mark: comfortably mid-route, so a 10 km window (ending at
   // 20 km) is never route-end-truncated against this 25 km fixture.
@@ -169,6 +178,7 @@ test("guides are progressively omitted as the rider approaches the route finish 
 
   await page.goto("/");
   await openRouteAndStartRiding(page);
+  await switchToProfile(page);
 
   // 10,000 m with the 10 km window still comfortably inside the route
   // (10,000 + 10,000 = 20,000 <= 25,000 total) — all four guides present.
@@ -227,6 +237,7 @@ test.describe("phone viewport", () => {
 
     await page.goto("/");
     await openRouteAndStartRiding(page);
+    await switchToProfile(page);
 
     await context.setGeolocation({
       latitude: FIXTURE_LAT,

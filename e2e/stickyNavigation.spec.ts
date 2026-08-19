@@ -178,27 +178,32 @@ test("the global nav header is genuinely absent while a ride is actively tracked
   const immersiveHeader = immersiveHeaderLocator(page);
   await expect(immersiveHeader).toBeVisible();
 
-  // RidingWakeLockControl renders before this header in document order
-  // (unchanged from before item 55 — see this header's own CSS comment),
-  // so at rest (scroll 0) the header's own natural flow position sits
-  // below that control, not yet genuinely "stuck" — sticky positioning
-  // only pins an element once its natural position would otherwise
-  // scroll past the target `top` offset. Unlike item 24's original
-  // "static, scrolls away" header, item 55's own "persistent" header
-  // stays pinned at the true viewport top once genuinely stuck — proven
-  // by scrolling to the very bottom of this page's own (here, modest)
-  // scrollable range and confirming it settles at y ≈ 0, not by
-  // comparing two different scroll positions against each other (this
-  // page's total scrollable range is too small for a reliable two-step
-  // "partially, then further" comparison).
+  // Backlog item 56 supersedes this test's own pre-item-56 premise:
+  // active Riding's whole .screen is now a fixed, non-scrolling shell
+  // (.riding-fixed-shell, height: 100dvh; overflow: hidden) housing a
+  // shared status stack plus a Map/Profile toggle that both fit within
+  // one viewport by construction — RidingWakeLockControl also moved to
+  // render after this header (correcting the real, screenshot-evidenced
+  // field finding the old comment here used to describe), so the header
+  // is the fixed shell's own first child and sits at the true viewport
+  // top immediately, with no scrolling involved at all. The old proof
+  // technique (scroll to the bottom, confirm the header is still stuck
+  // at y ≈ 0) no longer applies, since there is nothing left to scroll —
+  // proving that directly is now the load-bearing assertion, ahead of the
+  // header's own position.
+  const scrollHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+  const viewportHeight = page.viewportSize()?.height;
+  if (viewportHeight === undefined) throw new Error("expected a viewport height");
+  expect(scrollHeight).toBeLessThanOrEqual(viewportHeight);
+
   await page.evaluate(() => {
     window.scrollTo(0, document.documentElement.scrollHeight);
   });
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
-  const scrolledBox = await immersiveHeader.boundingBox();
-  if (!scrolledBox) throw new Error("expected the immersive header to still be visible");
-  expect(scrolledBox.y).toBeGreaterThanOrEqual(0);
-  expect(scrolledBox.y).toBeLessThan(2);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  const headerBox = await immersiveHeader.boundingBox();
+  if (!headerBox) throw new Error("expected the immersive header to still be visible");
+  expect(headerBox.y).toBeGreaterThanOrEqual(0);
+  expect(headerBox.y).toBeLessThan(2);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
 });
