@@ -169,6 +169,13 @@ function buildStubGeolocationSource(): {
 function buildStubMapFactory(): {
   factory: MapFactory;
   triggerLoad: () => void;
+  /** Fires only "style.load", never "load" — lets a test independently
+   * sequence style-structural-readiness against Start/fix delivery
+   * (backlog item 66's own investigation), mirroring MapView.test.tsx's
+   * own mock, which already separates the two. triggerLoad() itself is
+   * unchanged and still fires both together for every existing test that
+   * doesn't care about the distinction. */
+  triggerStyleLoaded: () => void;
   triggerTileError: () => void;
   triggerUserCameraInteraction: () => void;
   triggerCameraSettled: (camera: {
@@ -253,6 +260,7 @@ function buildStubMapFactory(): {
       styleLoadedListener?.();
       loadListener?.();
     },
+    triggerStyleLoaded: () => styleLoadedListener?.(),
     triggerTileError: () => errorListener?.(),
     triggerUserCameraInteraction: () => userCameraInteractionListener?.(),
     triggerCameraSettled: (camera) => cameraSettledListener?.(camera),
@@ -3177,6 +3185,209 @@ describe("RidingScreen", () => {
       const followButton = screen.getByRole("button", { name: "Follow my location" });
       expect(followButton).toHaveTextContent("⌖");
       expect(followButton).toHaveAttribute("aria-pressed", "true");
+    });
+
+    // Backlog item 66's own investigation: a rider on a slow connection can
+    // tap "Start riding" well before the map style has loaded at all — the
+    // button has no gating on map readiness. This is the one previously
+    // uncovered, entirely ordinary ordering the investigation identified;
+    // every other test in this describe block calls map.triggerLoad()
+    // before Start, so style readiness has always already happened first.
+    it("recentres the camera on the first fresh fix even when Start is tapped before the map style is ready", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+
+      // Deliberately no map.triggerLoad()/triggerStyleLoaded() yet — Start
+      // and the first fix both land while styleStructurallyReady is still
+      // false.
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      // Neither MapView effect can touch the map yet — both are gated on
+      // styleStructurallyReady, which hasn't flipped true.
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
+      expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+
+      // Let useRideCamera's own fresh-fix effect (a *separate* passive
+      // effect from the one that set currentFix) fully dispatch and
+      // settle before style becomes ready — this isolates "style ready
+      // strictly after the fix has already been fully processed" from
+      // "style ready lands in the very same commit as the fix", which is
+      // a materially different ordering covered by its own sibling test
+      // below. The Follow button's text flips from "Waiting…" to "⌖" in
+      // the exact same reducer transition that produces the real
+      // command, so it's a faithful, already-established signal that the
+      // cascade has genuinely finished.
+      const followButton = screen.getByRole("button", { name: "Follow my location" });
+      await waitFor(() => expect(followButton).toHaveTextContent("⌖"));
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
+      expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+
+      // Style becomes structurally ready last, well after Start and the
+      // first fix — never call triggerLoad() here, only the style-only
+      // half, so the "load" event's own, separate readiness signal stays
+      // out of this test's scope entirely.
+      map.triggerStyleLoaded();
+
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledWith(
+          pointAt(0),
+          NAVIGATION_ZOOM,
+          expectedBearingAt(0),
+          FOLLOW_PITCH_DEGREES,
+          { animate: true, followOffset: true },
+        );
+      });
+      // hasActionableCameraTarget was already latched true by the fix
+      // that arrived before style readiness, so suppressInitialOverviewFit
+      // is already true by the time the overview effect's dependencies
+      // change — the rider must never see a whole-route overview flash
+      // (or worse, be stuck there) before the close-up follow position.
+      expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+      expect(followButton).toHaveAttribute("aria-pressed", "true");
+    });
+
+    // Backlog item 66's own candidate ordering 4: style readiness and the
+    // first fix landing in the very same React commit, rather than style
+    // readiness strictly following an already-fully-processed fix (the
+    // sibling test above). Unlike that test, this one calls
+    // triggerStyleLoaded() immediately after emitFix() with no intervening
+    // flush, so React can batch both updates into one render before
+    // useRideCamera's own fresh-fix effect (a *separate* passive effect)
+    // has had a chance to dispatch and update camera.cameraTarget/
+    // hasActionableCameraTarget. This is a genuine finding from this
+    // investigation, not a hypothesis: it reveals that
+    // suppressInitialOverviewFit can still be stale (false) in the exact
+    // commit where styleStructurallyReady first becomes true, causing one
+    // spurious overview fitBounds call before the real follow command
+    // catches up one render later. See CLAUDE.md item 66 for the full
+    // write-up of what this does and doesn't explain about the field
+    // report.
+    it("still eventually converges to the follow command when style becomes ready in the same commit as the first fix (a spurious intermediate overview fit is a separate, documented finding)", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      // No flush here, deliberately — see this test's own doc comment.
+      map.triggerStyleLoaded();
+
+      // The settled, final camera state must still be the followed
+      // position/zoom, never left at whatever a spurious overview fit
+      // produced.
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledWith(
+          pointAt(0),
+          NAVIGATION_ZOOM,
+          expectedBearingAt(0),
+          FOLLOW_PITCH_DEGREES,
+          { animate: true, followOffset: true },
+        );
+      });
+      expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      const followButton = screen.getByRole("button", { name: "Follow my location" });
+      expect(followButton).toHaveTextContent("⌖");
+      expect(followButton).toHaveAttribute("aria-pressed", "true");
+      // Pinned as a NAMED, explicit finding rather than left to pass
+      // silently: this specific ordering does produce one spurious
+      // whole-route overview fitBounds() call — a real, empirically
+      // confirmed defect at the React-effect level, not a hypothesis —
+      // sandwiched in before the correcting setCamera() above. It is
+      // deliberately NOT asserted as absent here (that assertion would
+      // fail, as discovered while writing this test), and NOT fixed in
+      // this investigation slice, per its own scope. See CLAUDE.md item
+      // 66 for why this alone does not reproduce the field-reported
+      // "stuck forever" symptom (the camera above still converges within
+      // the same session), and for the combined hypothesis this finding
+      // strengthens (a subsequent ease interruption landing in the
+      // ~600ms window this spurious fit's own easeTo would otherwise
+      // correct itself in).
+      expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // Backlog item 66's own candidate ordering: convergence must not
+    // depend on the rider having already moved, or on a second fix ever
+    // arriving — the reducer's "fresh-fix" case treats positionChanged as
+    // unconditionally true while awaitingFreshFix (rideCamera.ts), so the
+    // ordinary movement/bearing dead-band that gates a *later* fix can
+    // never eat the very first post-Start fix.
+    it("a stationary first fix, with no further fixes ever delivered, still converges to the follow command", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledWith(
+          pointAt(0),
+          NAVIGATION_ZOOM,
+          expectedBearingAt(0),
+          FOLLOW_PITCH_DEGREES,
+          { animate: true, followOffset: true },
+        );
+      });
+      expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+
+      // Simulate the real ease finishing at the followed position/zoom,
+      // with no second fix ever delivered — the settled camera must
+      // reflect the follow command, never remain at (or revert to) the
+      // overview, and settling must not itself trigger a redundant
+      // re-application.
+      map.triggerCameraSettled({
+        coordinate: pointAt(0),
+        zoom: NAVIGATION_ZOOM,
+        bearingDegrees: expectedBearingAt(0),
+        pitchDegrees: FOLLOW_PITCH_DEGREES,
+      });
+
+      const followButton = screen.getByRole("button", { name: "Follow my location" });
+      expect(followButton).toHaveTextContent("⌖");
+      expect(followButton).toHaveAttribute("aria-pressed", "true");
+      expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
     });
 
     it("keeps GPS progress updating in free mode without moving the camera again", async () => {

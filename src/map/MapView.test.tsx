@@ -1974,6 +1974,91 @@ describe("MapView", () => {
       });
     });
 
+    // Backlog item 66's own investigation, candidate ordering 8: a
+    // fallback/retry instance swap landing in the narrow window where a
+    // rider has tapped Start but no camera command exists yet (mirrors
+    // RidingScreen's own "follow-requested" with freshCoordinate: null —
+    // cameraTarget is still null, suppressInitialOverviewFit is still
+    // false), with the real command arriving only once the swap has
+    // settled. Unlike the sibling test above (an already-real
+    // cameraTarget surviving a retry unchanged), this one proves a
+    // null-then-real cameraTarget transition still lands correctly on
+    // the surviving instance even when a fallback swap happens in
+    // between — the overview effect correctly fires once (since
+    // suppressInitialOverviewFit is still false when the fallback
+    // instance's own style becomes ready), and the cameraTarget effect
+    // correctly re-fires and applies once the real command arrives
+    // afterwards, with lastAppliedCameraTargetRef having nothing stale
+    // to wrongly dedupe against (it was never written to by the
+    // overview fit, which is a completely separate mechanism).
+    it("a fallback swap landing before the first real camera command still applies that command once it arrives", () => {
+      const mock = createMockMapFactory();
+      const { rerender } = render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          cameraTarget={null}
+          suppressInitialOverviewFit={false}
+        />,
+      );
+
+      // The original style fails before it ever becomes structurally
+      // ready — switchToFallback() fires internally, without rerunning
+      // the outer map-creation effect.
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      expect(mock.constructedStyles).toHaveLength(2);
+
+      // The fallback instance's own style becomes ready — still no real
+      // camera command exists yet, so the overview fit correctly runs
+      // once, against the fallback instance.
+      mock.triggerLoad();
+      expect(mock.resizeSpy).toHaveBeenCalledOnce();
+      expect(mock.fitBoundsSpy).toHaveBeenCalledOnce();
+      expect(mock.setCameraSpy).not.toHaveBeenCalled();
+
+      // The real follow command finally arrives (mirrors the first
+      // accepted GPS fix, arriving after the fallback swap has already
+      // settled).
+      rerender(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          cameraTarget={{
+            coordinate: [0, 51],
+            zoom: 16,
+            bearingDegrees: 90,
+            pitchDegrees: 35,
+            animate: true,
+            followOffset: true,
+          }}
+          suppressInitialOverviewFit={true}
+        />,
+      );
+
+      expect(mock.setCameraSpy).toHaveBeenCalledOnce();
+      expect(mock.setCameraSpy).toHaveBeenCalledWith([0, 51], 16, 90, 35, {
+        animate: true,
+        followOffset: true,
+      });
+      // No second, redundant overview fit — suppressInitialOverviewFit
+      // was already true by the time the overview effect's own
+      // dependencies changed again.
+      expect(mock.fitBoundsSpy).toHaveBeenCalledOnce();
+      expect(mock.resizeSpy).toHaveBeenCalledTimes(2);
+      expect(nthCallOrder(mock.resizeSpy, 0)).toBeLessThan(
+        firstCallOrder(mock.fitBoundsSpy),
+      );
+      expect(nthCallOrder(mock.resizeSpy, 1)).toBeLessThan(
+        firstCallOrder(mock.setCameraSpy),
+      );
+      expect(firstCallOrder(mock.fitBoundsSpy)).toBeLessThan(
+        firstCallOrder(mock.setCameraSpy),
+      );
+    });
+
     it("retry preserves and re-applies a still-current boundsTarget", () => {
       const mock = createMockMapFactory();
       render(

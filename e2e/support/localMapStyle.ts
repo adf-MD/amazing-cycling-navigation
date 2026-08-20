@@ -73,6 +73,20 @@ export interface LocalMapStyleHandle {
   readonly unexpectedOpenFreeMapRequests: readonly string[];
 }
 
+export interface InstallLocalMapStyleOptions {
+  /** Delays fulfilling the recognised style request by this many
+   * milliseconds — deliberately still deterministic (a real delay, not a
+   * hung/unresolved promise), just late. Lets a test independently
+   * control whether "Start riding" (or any other action that mounts a
+   * map) happens before or after the map style becomes structurally
+   * ready, which is otherwise impossible to control since geolocation is
+   * always primed before `page.goto` and style fulfilment is otherwise
+   * as fast as Playwright's interception machinery allows (see backlog
+   * item 66's own investigation). Omitted or 0 preserves the original
+   * immediate-fulfil behaviour for every existing caller. */
+  styleDelayMs?: number;
+}
+
 /**
  * Registers page.route() interception for the OpenFreeMap tile host
  * before any map exists. Call this before `page.goto`, since map
@@ -95,12 +109,19 @@ export interface LocalMapStyleHandle {
  * page.route()'s interception (a documented Playwright limitation), so
  * callers must also add `test.use({ serviceWorkers: "block" })`.
  */
-export async function installLocalMapStyle(page: Page): Promise<LocalMapStyleHandle> {
+export async function installLocalMapStyle(
+  page: Page,
+  options: InstallLocalMapStyleOptions = {},
+): Promise<LocalMapStyleHandle> {
+  const { styleDelayMs = 0 } = options;
   const unexpectedOpenFreeMapRequests: string[] = [];
 
   await page.route(OPENFREEMAP_HOST_GLOB, async (route) => {
     const requestUrl = route.request().url();
     if (isRecognisedLibertyStyleRequest(requestUrl)) {
+      if (styleDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, styleDelayMs));
+      }
       await route.fulfill({
         status: 200,
         contentType: "application/json",

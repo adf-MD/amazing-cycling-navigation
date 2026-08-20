@@ -269,6 +269,79 @@ test("Riding: re-pressing Follow location with an unchanged GPS fix, after a man
   expect(consoleErrors).toEqual([]);
 });
 
+// Backlog item 66's own investigation: a rider on a slow connection can tap
+// "Start riding" well before the map style has loaded at all — "Start
+// riding" has no gating on map readiness anywhere in the app. No existing
+// test in this suite controls style-readiness timing relative to Start, or
+// asserts the settled data-camera-zoom value at all after a fresh Start —
+// every existing test here only polls pitch reaching "35" as its "Follow
+// has landed" signal. This is the one real-browser, real-MapLibre ground
+// truth check the investigation's static React-effect-model analysis
+// cannot fully settle on its own.
+test("Riding: a fresh Start whose first fix arrives well before the map style becomes ready still converges to the followed zoom", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation(ROUTE_START);
+
+  // Deliberately delays style fulfilment well past the point the mocked
+  // geolocation fix has almost certainly already been delivered (this
+  // file's own established ~750ms real fix-delivery-latency observation,
+  // from the investigation behind backlog item 63 — comfortably exceeded
+  // here by a wide margin).
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page, {
+    styleDelayMs: 2_000,
+  });
+
+  await page.goto("/");
+  await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
+  const routeButton = page.getByRole("button", { name: "smoke-route", exact: true });
+  await expect(routeButton).toBeVisible();
+  await routeButton.click();
+
+  // Deliberately does not use startRiding()'s own wait for map-loading to
+  // hide first — that wait itself depends on style readiness, which this
+  // test is deliberately delaying. "Start riding" itself has no such
+  // gating.
+  await page.getByRole("button", { name: "Start riding" }).click();
+
+  // Chromium's mocked geolocation typically delivers the first fix near-
+  // instantly, so the button's transient "Waiting…" state (before the
+  // reducer has produced a command at all) is too brief to reliably
+  // assert against here without introducing flakiness — the meaningful,
+  // load-bearing assertion is the eventual zoom convergence below, which
+  // is unaffected by exactly how fast the fix itself arrives.
+  const followButton = page.getByRole("button", { name: "Follow my location" });
+  await expect(followButton).toHaveAttribute("aria-pressed", "true");
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+
+  // Once the deliberately delayed style eventually loads, the camera must
+  // reach the followed zoom (NAVIGATION_ZOOM, rideCamera.ts) — never
+  // remain stuck at, or visibly settle at, a route-overview scale. Never a
+  // fixed sleep: the delayed route.fulfill() call itself already provides
+  // the deterministic gate; expect.poll only waits for the real,
+  // event-driven camera settle that follows it.
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-zoom"), { timeout: 15_000 })
+    .toBe("16");
+  await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).toBe("35");
+  await expect(followButton).toContainText("⌖");
+  await expect(followButton).toHaveAttribute("aria-pressed", "true");
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
 // ~67m north of ROUTE_START — a genuine movement well past
 // FOLLOW_MIN_MOVEMENT_METRES (3m), matching freeRoam.spec.ts's own
 // identically-purposed MOVED fixture.
