@@ -590,9 +590,61 @@ export function MapView({
   // lastAppliedOrientNorthRequestIdRef, since two consecutive Zoom-in
   // presses (identical delta) must both apply. See ZoomCameraTarget.
   const lastAppliedZoomRequestIdRef = useRef<string | null>(null);
+  // --- Camera preservation across a retry-triggered map recreation
+  // (backlog item 67) ---
+  // Continuously mirrors every genuine camera settle (gesture or
+  // programmatic), never reset across a retry — the map-creation effect's
+  // own reset block deliberately leaves this alone. Reuses the adapter's
+  // already-atomic onCameraSettled payload (mapAdapter.ts) rather than
+  // adding new getBearing()/getPitch() adapter methods, which would force
+  // updating every existing MapLibreLike test double across the codebase
+  // (the exact burden project?'s own doc comment already avoids by being
+  // optional).
+  const liveCameraSnapshotRef = useRef<{
+    coordinate: Coordinate;
+    zoom: number;
+    bearingDegrees: number;
+    pitchDegrees: number;
+  } | null>(null);
+  // True once a genuine user gesture (a real pan/pinch/rotate/pitch) has
+  // moved the camera since the last time any of cameraTarget/boundsTarget/
+  // centreTarget/orientNorthTarget actually applied a command — i.e. "the
+  // live camera is no longer represented by any of the caller's own
+  // one-shot/live target props". Deliberately never cleared by zoomTarget's
+  // own apply (see the zoomTarget effect below): changeZoomBy is relative,
+  // not pose-establishing, so an ordinary gesture-then-zoom sequence must
+  // not silently re-arm reapplication of an unrelated stale target. Never
+  // reset by the map-creation effect's reset block — must survive a retry
+  // so the reset block itself can consult it.
+  const hasCameraDivergedFromTargetsRef = useRef(false);
+  // Bumped once per attachMap() call (not once per outer-effect run —
+  // switchToFallback() calls attachMap() a second time within the same
+  // outer effect, with no retryToken bump, and that second call must count
+  // as its own generation too). Lets the two undeduplicated fit effects
+  // below (overview-fit, warning-selection-fit) each recognise "this is my
+  // first run against a freshly (re)created map instance" without needing
+  // their own retryToken-shaped dependency.
+  const attachGenerationRef = useRef(0);
+  // Set to the generation number that needs its camera restored from
+  // liveCameraSnapshotRef (see attachMap's own needsCameraSnapshotRestore
+  // local) — left untouched otherwise, since a stale lower generation
+  // number self-invalidates against the strictly-increasing counter above,
+  // needing no explicit "clear" step.
+  const cameraRestorePendingGenerationRef = useRef<number | null>(null);
+  // Each lets its own effect skip its own fit exactly once per flagged
+  // generation (respecting a just-applied camera restore), then resume
+  // completely normal behaviour for any later, unrelated dependency change
+  // within that same generation (e.g. a genuinely new warning selected).
+  const overviewFitSkippedForGenerationRef = useRef<number | null>(null);
+  const warningFitSkippedForGenerationRef = useRef<number | null>(null);
+  // At most one automatic retry per tile-error episode (mirrors
+  // hasAutoRetriedRef's identical role for the fallback episode) —
+  // independent of it, since the two episode kinds are structurally
+  // mutually exclusive (see onError below) and each deserves its own
+  // allowance.
+  const hasAutoRetriedTileErrorRef = useRef(false);
   const [loadState, setLoadState] = useState<MapLoadState>("loading");
   const [loadTimedOut, setLoadTimedOut] = useState(false);
-  const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
   const [tileErrorMessage, setTileErrorMessage] = useState<string | null>(null);
   const [usingFallbackStyle, setUsingFallbackStyle] = useState(false);
   const [routeSourceLoaded, setRouteSourceLoaded] = useState(false);
@@ -670,10 +722,16 @@ export function MapView({
     let resizeObserver: ResizeObserver | null = null;
     let routeSourceLoaded = false;
     let routeDataTimeoutId: number | undefined;
+    // Tracks a currently-active *tile-error* episode (backlog item 67) —
+    // distinct from usedFallback/hasLoaded, since a tile error can only
+    // ever occur once hasLoaded is already true. Mirrors the existing
+    // hasLoaded/styleReady/usedFallback/layersAdded convention: a fresh
+    // per-attach-cycle closure local, so it naturally resets on every new
+    // attach without needing its own explicit reset-block line.
+    let hasActiveTileError = false;
 
     setLoadState("loading");
     setLoadTimedOut(false);
-    setLoadErrorMessage(null);
     setTileErrorMessage(null);
     setUsingFallbackStyle(false);
     setRouteSourceLoaded(false);
@@ -683,10 +741,25 @@ export function MapView({
     setDistanceBadgeZoom(null);
     setStyleStructurallyReady(false);
     lastAppliedCameraTargetRef.current = null;
-    lastAppliedBoundsRequestIdRef.current = null;
-    lastAppliedCentreRequestIdRef.current = null;
-    lastAppliedOrientNorthRequestIdRef.current = null;
-    lastAppliedZoomRequestIdRef.current = null;
+    // The four one-shot dedup refs below are only reset when the live
+    // camera hasn't diverged from the caller's own target props since they
+    // were last applied — see hasCameraDivergedFromTargetsRef's own doc
+    // comment. Left alone (matching their current prop's requestId) when
+    // it has, so their effects correctly skip reapplying a now-stale
+    // target once styleStructurallyReady flips true again on the freshly
+    // (re)created instance, rather than silently overriding a rider's
+    // manual pan/rotate/pitch gesture with a stale bounds/centre/
+    // orientation/zoom request (backlog item 67). Every existing "retry
+    // preserves a still-current boundsTarget/centreTarget/
+    // orientNorthTarget/zoomTarget" test never places a gesture in
+    // between, so hasCameraDivergedFromTargetsRef stays false throughout
+    // them and this behaves exactly as before for those cases.
+    if (!hasCameraDivergedFromTargetsRef.current) {
+      lastAppliedBoundsRequestIdRef.current = null;
+      lastAppliedCentreRequestIdRef.current = null;
+      lastAppliedOrientNorthRequestIdRef.current = null;
+      lastAppliedZoomRequestIdRef.current = null;
+    }
 
     function recordAttempt(category: MapDiagnosticCategory, justResumed = false): void {
       recordMapAttempt({
@@ -907,6 +980,30 @@ export function MapView({
     }
 
     function attachMap(style: string | StyleSpecification): void {
+      // Backlog item 67: each attachMap() call is its own "generation" —
+      // including switchToFallback()'s second call within the SAME outer
+      // effect run (no retryToken bump involved). Captured once here,
+      // synchronously, so a gesture that lands after this point belongs
+      // to the NEXT generation, never retroactively to this one.
+      attachGenerationRef.current += 1;
+      const generation = attachGenerationRef.current;
+      // Captured as a VALUE here, synchronously, rather than merely
+      // noting "a restore is needed" and re-reading
+      // liveCameraSnapshotRef.current later inside onStyleLoaded: a
+      // spurious moveend can genuinely fire on the fresh instance before
+      // style.load (MapLibre settling at its own initial/default
+      // transform) and would otherwise clobber the ref in between these
+      // two points, restoring a bogus (0,0)/zero-zoom camera instead of
+      // the rider's actual last-known one. Freezing the value now closes
+      // that window without needing to gate onCameraSettled itself — see
+      // its own comment for why a broad gate there is wrong.
+      const cameraSnapshotToRestore = hasCameraDivergedFromTargetsRef.current
+        ? liveCameraSnapshotRef.current
+        : null;
+      if (cameraSnapshotToRestore !== null) {
+        cameraRestorePendingGenerationRef.current = generation;
+      }
+
       const map = mapFactory({ container, style });
       currentMap = map;
       mapRef.current = map;
@@ -920,6 +1017,26 @@ export function MapView({
         styleReady = true;
         addRouteAndPositionLayers(map);
         setStyleStructurallyReady(true);
+        // Restore the rider's own last-known-live camera onto this freshly
+        // (re)created instance before any React effect gets a chance to
+        // run — React's batching model guarantees this imperative call,
+        // inside a synchronous callback, precedes every
+        // styleStructurallyReady-gated effect's next commit. A plain
+        // instant jump, mirroring rideCamera.ts's own existing free-mode
+        // "restore" jump semantics (backlog item 67).
+        if (cameraSnapshotToRestore) {
+          const snapshot = cameraSnapshotToRestore;
+          map.setCamera(
+            snapshot.coordinate,
+            snapshot.zoom,
+            snapshot.bearingDegrees,
+            snapshot.pitchDegrees,
+            {
+              animate: false,
+              followOffset: false,
+            },
+          );
+        }
         // The style becoming structurally ready only proves the style
         // document itself loaded — it says nothing about whether the
         // route's GeoJSON source ever actually finishes processing (which
@@ -953,15 +1070,36 @@ export function MapView({
         // delivery, so treating those as recovery would clear the banner
         // on every route/position update instead of on genuine recovery.
         if (info.isSourceLoaded && !APP_OWNED_SOURCE_IDS.has(info.sourceId)) {
+          hasActiveTileError = false;
           setTileErrorMessage(null);
         }
       });
 
       map.onUserCameraInteraction(() => {
+        // Backlog item 67: a genuine gesture means the live camera is no
+        // longer represented by any of the caller's own target props —
+        // see hasCameraDivergedFromTargetsRef's own doc comment.
+        hasCameraDivergedFromTargetsRef.current = true;
         onUserCameraInteractionRef.current?.();
       });
 
       map.onCameraSettled((camera) => {
+        // Backlog item 67: deliberately NOT gated on styleReady. A
+        // brand-new MapLibre instance can fire its own internal
+        // pre-style-ready moveend settling at its initial/default
+        // transform — confirmed by direct real-browser instrumentation —
+        // and for an ordinary first attach with no app-issued camera
+        // command at all (e.g. Planning before geolocation resolves),
+        // THIS is the only settle that will ever fire, and is exactly
+        // what the rest of the app already relies on to flip
+        // isCameraSettled true. Gating this callback on styleReady was
+        // tried and reverted: it silently broke that ordinary case
+        // (confirmed via a real e2e regression, not merely reasoned
+        // about). The narrower, actually-needed protection against a
+        // spurious pre-load settle corrupting a pending camera restore
+        // lives in attachMap's own cameraSnapshotToRestore — captured as
+        // a value once, synchronously, rather than by re-reading
+        // liveCameraSnapshotRef.current later.
         // Keeps the data-camera-center diagnostic attribute correct for
         // every way the camera can now move (following ease, restore
         // jump, free-mode panning), not just the initial overview fit,
@@ -972,6 +1110,10 @@ export function MapView({
           bearingDegrees: camera.bearingDegrees,
           pitchDegrees: camera.pitchDegrees,
         });
+        // Backlog item 67: continuously mirrors the live, atomic settle
+        // payload so it survives a later retry's own reset — see
+        // liveCameraSnapshotRef's own doc comment.
+        liveCameraSnapshotRef.current = camera;
         // Quantised to the nearest whole zoom level, with a no-op guard
         // (skip the state update entirely when unchanged) — this, plus
         // only ever reading zoom here rather than per animation frame,
@@ -1047,6 +1189,20 @@ export function MapView({
         recordAttempt(mapErrorCategoryToDiagnostic(info.category));
 
         if (hasLoaded) {
+          // Backlog item 67: only a genuinely NEW tile-error episode
+          // re-arms hasAutoRetriedTileErrorRef — a repeated error while
+          // one is already active must not, mirroring
+          // switchToFallback()'s identical "does not create a retry loop
+          // from repeated errors" guarantee for the fallback episode.
+          if (!hasActiveTileError) {
+            hasActiveTileError = true;
+            hasAutoRetriedTileErrorRef.current = false;
+          }
+          // A tile error is "trouble" too, so a successful recovery (via
+          // a manual or automatic retry) correctly records
+          // imagery-recovered through the existing onLoad check below,
+          // exactly like the fallback-episode case already does.
+          hadTroubleRef.current = true;
           setTileErrorMessage(info.message);
           return;
         }
@@ -1059,7 +1215,6 @@ export function MapView({
         ) {
           if (usedFallback) {
             setLoadState("load-error");
-            setLoadErrorMessage(info.message);
             return;
           }
           switchToFallback();
@@ -1116,7 +1271,21 @@ export function MapView({
   // fallback) — the same "recreate against tileSource.styleUrl" path a
   // fresh mount takes. Route/position/camera are untouched by this: they
   // live in the caller's own state (see RidingScreen's useRideCamera) and
-  // are simply re-applied once the retried style becomes ready again.
+  // are simply re-applied once the retried style becomes ready again — or,
+  // absent a live target prop, restored from liveCameraSnapshotRef (see
+  // attachMap's own needsCameraSnapshotRestore, backlog item 67).
+  //
+  // Backlog item 67 also reuses this exact mechanism for the lighter
+  // post-load tile-error episode (tileErrorMessage !== null), rather than
+  // a second, source-scoped reload (MapLibre 6's RasterTileSource/
+  // VectorTileSource setTiles() would reload one source with no map
+  // teardown at all) — rejected because mapAdapter.ts's onError never
+  // forwards the failing sourceId through MapErrorInfo, MapView has no
+  // static handle on "the" basemap source id (only discovered reactively
+  // via onSourceData), a style can in principle carry more than one
+  // non-app-owned source, and the fallback-episode teardown machinery
+  // must exist regardless — a second mechanism would be strictly more
+  // total complexity for a narrow responsiveness win.
   function handleRetryImagery(): void {
     recordMapAttempt({
       timestampIso: new Date().toISOString(),
@@ -1128,14 +1297,26 @@ export function MapView({
     setRetryToken((token) => token + 1);
   }
 
-  // At most one automatic retry per fallback episode: guarded by
-  // hasAutoRetriedRef (reset only when fallback is freshly (re-)entered),
-  // regardless of how many of these events fire or in what combination —
-  // never a polling loop.
+  // At most one automatic retry per episode — independently for the
+  // fallback episode (hasAutoRetriedRef) and the lighter tile-error
+  // episode (hasAutoRetriedTileErrorRef, backlog item 67), each reset
+  // only when its own kind of trouble is freshly (re-)entered. The two
+  // episode kinds are structurally mutually exclusive (a tile error can
+  // only occur once hasLoaded is true; a fallback-triggering error only
+  // occurs before hasLoaded; FALLBACK_STYLE has no sources at all, so it
+  // can never itself produce a source-or-tile error) — never a polling
+  // loop, regardless of how many of these events fire or in what
+  // combination, since handleResume only ever runs in response to an
+  // actual browser-dispatched event, never self-triggered.
   useEffect(() => {
     function handleResume(): void {
-      if (!usingFallbackStyle || hasAutoRetriedRef.current) return;
-      hasAutoRetriedRef.current = true;
+      if (usingFallbackStyle && !hasAutoRetriedRef.current) {
+        hasAutoRetriedRef.current = true;
+      } else if (tileErrorMessage !== null && !hasAutoRetriedTileErrorRef.current) {
+        hasAutoRetriedTileErrorRef.current = true;
+      } else {
+        return;
+      }
       recordMapAttempt({
         timestampIso: new Date().toISOString(),
         tileProviderId: tileSource.id,
@@ -1159,7 +1340,7 @@ export function MapView({
       window.removeEventListener("online", handleResume);
       window.removeEventListener("pageshow", handlePageShow);
     };
-  }, [usingFallbackStyle, tileSource.id]);
+  }, [usingFallbackStyle, tileErrorMessage, tileSource.id]);
 
   useEffect(() => {
     if (!styleStructurallyReady) return;
@@ -1271,7 +1452,21 @@ export function MapView({
   useEffect(() => {
     if (!styleStructurallyReady) return;
 
-    if (!suppressInitialOverviewFit) {
+    // Backlog item 67: this effect has no dedup mechanism of its own (it
+    // deliberately re-fits whenever styleStructurallyReady cycles and
+    // suppressInitialOverviewFit allows it), so on a fresh generation it
+    // must defer, once, to a just-applied camera restore rather than
+    // silently overriding a rider's gesture-preserved camera — see
+    // cameraRestorePendingGenerationRef's own doc comment. A later,
+    // unrelated dependency change within the SAME generation (e.g. a new
+    // calculated route) still fits normally.
+    const generation = attachGenerationRef.current;
+    const shouldSkipForRestore =
+      cameraRestorePendingGenerationRef.current === generation &&
+      overviewFitSkippedForGenerationRef.current !== generation;
+    overviewFitSkippedForGenerationRef.current = generation;
+
+    if (!suppressInitialOverviewFit && !shouldSkipForRestore) {
       const bounds = computeBoundingBox(points.map((point) => point.coordinate));
       if (bounds) {
         mapRef.current?.resize();
@@ -1352,6 +1547,23 @@ export function MapView({
     if (sameValues && !isNewExplicitRequest) {
       return;
     }
+    // Backlog item 67: only a command that fully specifies coordinate AND
+    // zoom (the live "following" ease, or a free-mode restore jump) truly
+    // re-establishes the ENTIRE camera pose, making the live camera once
+    // again fully represented by this prop — see
+    // hasCameraDivergedFromTargetsRef's own doc comment. A null
+    // coordinate/zoom (Riding's own north-up-via-this-shared-pipeline,
+    // rideCamera.ts's "north-up-requested") deliberately leaves centre/
+    // zoom "unchanged" relative to whatever the map's CURRENT transform
+    // already is — a meaningless instruction on a freshly (re)created
+    // instance with no prior state, so it must NOT be treated as
+    // self-contained: doing so would incorrectly suppress the snapshot
+    // restore below, this exact site's own real-browser-confirmed
+    // regression during implementation (a north-up press right before a
+    // retry silently discarded the rider's panned position).
+    if (cameraTarget.coordinate !== null && cameraTarget.zoom !== null) {
+      hasCameraDivergedFromTargetsRef.current = false;
+    }
     lastAppliedCameraTargetRef.current = {
       lon,
       lat,
@@ -1384,6 +1596,14 @@ export function MapView({
     if (!styleStructurallyReady || !boundsTarget) return;
     if (lastAppliedBoundsRequestIdRef.current === boundsTarget.requestId) return;
     lastAppliedBoundsRequestIdRef.current = boundsTarget.requestId;
+    // Backlog item 67: unconditionally clears divergence (unlike
+    // centreTarget/orientNorthTarget below) — fitBounds is always fully
+    // self-contained, genuinely establishing coordinate, zoom AND
+    // bearing/pitch (hardcoded to 0/0 in mapAdapter.ts) together, so it
+    // remains correct and meaningful even on a freshly (re)created
+    // instance with no prior state — see the cameraTarget effect's own
+    // fuller note on why this distinction matters.
+    hasCameraDivergedFromTargetsRef.current = false;
     mapRef.current?.resize();
     mapRef.current?.fitBounds(boundsTarget.bounds);
     const center = mapRef.current?.getCenter();
@@ -1404,6 +1624,11 @@ export function MapView({
     if (!styleStructurallyReady || !centreTarget) return;
     if (lastAppliedCentreRequestIdRef.current === centreTarget.requestId) return;
     lastAppliedCentreRequestIdRef.current = centreTarget.requestId;
+    // Backlog item 67: deliberately never clears divergence here —
+    // centreOn only ever specifies coordinate, always leaving zoom/
+    // bearing/pitch "unchanged" relative to the map's current transform,
+    // which is meaningless on a freshly (re)created instance — see the
+    // cameraTarget effect's own identical, real-browser-confirmed note.
     mapRef.current?.centreOn(centreTarget.coordinate, { animate: true });
   }, [centreTarget, styleStructurallyReady]);
 
@@ -1420,6 +1645,11 @@ export function MapView({
     if (lastAppliedOrientNorthRequestIdRef.current === orientNorthTarget.requestId)
       return;
     lastAppliedOrientNorthRequestIdRef.current = orientNorthTarget.requestId;
+    // Backlog item 67: deliberately never clears divergence here — this
+    // command always passes a null coordinate/zoom (leaving them
+    // "unchanged"), which is meaningless on a freshly (re)created
+    // instance — see the cameraTarget effect's own identical,
+    // real-browser-confirmed note.
     mapRef.current?.setCamera(null, null, 0, 0, { animate: true, followOffset: false });
   }, [orientNorthTarget, styleStructurallyReady]);
 
@@ -1547,6 +1777,18 @@ export function MapView({
   // Riding's camera state.
   useEffect(() => {
     if (!styleStructurallyReady) return;
+    // Backlog item 67: mirrors the overview-fit effect's own generation-
+    // scoped "skip once, then resume normal behaviour" treatment — this
+    // effect also has no dedup mechanism of its own, so on a fresh
+    // generation it must defer, once, to a just-applied camera restore
+    // rather than silently overriding it. A later, genuinely new warning
+    // selected within the SAME generation still fits normally.
+    const generation = attachGenerationRef.current;
+    const shouldSkipForRestore =
+      cameraRestorePendingGenerationRef.current === generation &&
+      warningFitSkippedForGenerationRef.current !== generation;
+    warningFitSkippedForGenerationRef.current = generation;
+    if (shouldSkipForRestore) return;
     const bounds = computeSelectedWarningBounds(
       points,
       warningOverlayWarnings ?? [],
@@ -1592,41 +1834,89 @@ export function MapView({
         data-marker-zoom-band={deriveMarkerZoomBand(distanceBadgeZoom ?? Number.NaN)}
         style={{ width: "100%", height: "100%" }}
       />
-      {loadState === "loading" && !styleStructurallyReady ? (
-        <div role="status" data-testid="map-loading">
-          {loadTimedOut ? "Map is taking longer than expected to load." : "Loading map…"}
-        </div>
-      ) : null}
-      {styleStructurallyReady && !ready && !usingFallbackStyle ? (
-        <div role="status" data-testid="map-imagery-delayed-banner">
-          Map imagery is taking longer than usual to load. Your route and position are
-          still shown.
-        </div>
-      ) : null}
-      {loadState === "load-error" ? (
-        <div role="alert" data-testid="map-load-error">
-          Map failed to load.{loadErrorMessage ? ` (${loadErrorMessage})` : ""}
-        </div>
-      ) : null}
-      {tileErrorMessage !== null ? (
-        <div role="status" data-testid="tiles-unavailable-banner">
-          Map tiles unavailable. The route and your position are still shown.
-          {` (${tileErrorMessage})`}
-        </div>
-      ) : null}
-      {usingFallbackStyle && ready ? (
-        <div role="status" data-testid="map-fallback-banner">
-          Map imagery unavailable — showing your route on a plain background.
-          <button
-            type="button"
-            onClick={handleRetryImagery}
-            data-testid="retry-map-imagery-button"
-            style={{ display: "block", minHeight: 56, minWidth: 200, marginTop: 8 }}
+      {/* Backlog item 67: a single, always-rendered, map-owned overlay
+          slot for every status/error banner below — confirmed
+          structurally mutually exclusive with each other (traced every
+          combination of loadState/styleStructurallyReady/ready/
+          usingFallbackStyle/tileErrorMessage), so at most one ever
+          renders here at once. Contained within the map (never resizes
+          the fixed Riding shell), positioned to clear every known
+          sibling control cluster and .ride-climb-cue — see
+          .map-status-overlay's own CSS comment for the exact offset
+          rationale. Rider-facing text is always concise and
+          non-technical; the raw MapLibre error message is still passed
+          to logError/recordMapAttempt above, so full detail remains in
+          local Diagnostics. */}
+      <div className="map-status-overlay">
+        {loadState === "loading" && !styleStructurallyReady ? (
+          <div role="status" data-testid="map-loading" className="map-status-message">
+            {loadTimedOut
+              ? "Map is taking longer than expected to load."
+              : "Loading map…"}
+          </div>
+        ) : null}
+        {styleStructurallyReady && !ready && !usingFallbackStyle ? (
+          <div
+            role="status"
+            data-testid="map-imagery-delayed-banner"
+            className="map-status-message"
           >
-            Retry map imagery
-          </button>
-        </div>
-      ) : null}
+            Map imagery is taking longer than usual to load. Your route and position are
+            still shown.
+          </div>
+        ) : null}
+        {loadState === "load-error" ? (
+          <div
+            role="alert"
+            data-testid="map-load-error"
+            className="map-status-message map-status-message--alert"
+          >
+            Map failed to load. Check your connection and try again.
+            <button
+              type="button"
+              onClick={handleRetryImagery}
+              data-testid="retry-map-imagery-button"
+              className="map-status-retry-button"
+            >
+              Retry map imagery
+            </button>
+          </div>
+        ) : null}
+        {tileErrorMessage !== null ? (
+          <div
+            role="status"
+            data-testid="tiles-unavailable-banner"
+            className="map-status-message"
+          >
+            Map imagery unavailable. The route and your position are still shown.
+            <button
+              type="button"
+              onClick={handleRetryImagery}
+              data-testid="retry-map-imagery-button"
+              className="map-status-retry-button"
+            >
+              Retry map imagery
+            </button>
+          </div>
+        ) : null}
+        {usingFallbackStyle && ready ? (
+          <div
+            role="status"
+            data-testid="map-fallback-banner"
+            className="map-status-message"
+          >
+            Map imagery unavailable — showing your route on a plain background.
+            <button
+              type="button"
+              onClick={handleRetryImagery}
+              data-testid="retry-map-imagery-button"
+              className="map-status-retry-button"
+            >
+              Retry map imagery
+            </button>
+          </div>
+        ) : null}
+      </div>
       <div className="map-attribution" data-testid="map-attribution">
         ©{" "}
         <a href={tileSource.attribution.url} target="_blank" rel="noreferrer">

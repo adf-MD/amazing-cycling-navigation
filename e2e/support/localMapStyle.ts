@@ -149,3 +149,151 @@ export async function forceMapStyleFailure(page: Page): Promise<void> {
     await route.abort("failed");
   });
 }
+
+/** The path prefix this suite recognises as a controllable test tile
+ * request — matched on pathname only, like isRecognisedLibertyStyleRequest.
+ * Never a real OpenFreeMap path; a fictitious one under the same host so
+ * it's covered by the single OPENFREEMAP_HOST_GLOB route registration. */
+const TEST_TILE_PATH_PREFIX = "/e2e-test-tiles/";
+
+function isRecognisedTestTileRequest(requestUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(requestUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:" || parsed.hostname !== "tiles.openfreemap.org") {
+    return false;
+  }
+  return parsed.pathname.startsWith(TEST_TILE_PATH_PREFIX);
+}
+
+/**
+ * A local style declaring one real, controllable raster tile source —
+ * deliberately raster, not vector: MapLibre's error/sourcedata event
+ * machinery (see mapAdapter.ts's onError/onSourceData) is entirely
+ * source-type-agnostic, so a raster source is exactly as capable of
+ * exercising a genuine source-or-tile AJAXError and the sourcedata
+ * recovery signal, without needing to fabricate valid MVT protobuf tile
+ * bytes for zero behavioural difference in what's being tested (backlog
+ * item 67). Unlike LOCAL_LIBERTY_STYLE (sources: {}, so nothing is ever
+ * requested after it loads), this style causes MapLibre to actually issue
+ * tile requests the returned TileFailureController can fail/succeed.
+ */
+function buildLocalStyleWithTileSource(): StyleSpecification {
+  return {
+    version: 8,
+    sources: {
+      "acn-e2e-test-raster-source": {
+        type: "raster",
+        tiles: [`https://tiles.openfreemap.org${TEST_TILE_PATH_PREFIX}{z}/{x}/{y}.png`],
+        tileSize: 256,
+      },
+    },
+    layers: [
+      {
+        id: "acn-e2e-local-style-background",
+        type: "background",
+        paint: { "background-color": "#dedede" },
+      },
+      {
+        id: "acn-e2e-test-raster-layer",
+        type: "raster",
+        source: "acn-e2e-test-raster-source",
+      },
+    ],
+  };
+}
+
+/** A minimal, valid 1x1 transparent PNG — enough for a real browser's
+ * image decoder to accept a fulfilled tile request without error; pixel
+ * content is irrelevant to what this harness tests. */
+const TINY_TRANSPARENT_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+export interface TileFailureController {
+  /** Subsequent tile requests fail with a network-level abort (a genuine
+   * AJAXError, matching a real connectivity failure) until succeedTiles()
+   * is called. */
+  failTiles: () => void;
+  /** Subsequent tile requests succeed with a minimal fixed-colour PNG. */
+  succeedTiles: () => void;
+  /** Total tile requests observed so far, succeeded or failed — for
+   * polling "did a new request genuinely happen" rather than trusting
+   * elapsed time. */
+  requestCount: () => number;
+  /** Total style-document requests observed so far — one per genuine map
+   * (re)creation, regardless of how many individual tile requests (and
+   * any browser/MapLibre-internal retries of those, observed directly to
+   * occur independently of this app's own retry logic — see backlog item
+   * 67's own real-browser verification note) that attach then issues.
+   * A far more reliable proxy for "how many times did the app actually
+   * recreate the map" than requestCount, which can keep growing for a
+   * single recreation for reasons entirely outside the app's control. */
+  styleRequestCount: () => number;
+}
+
+/**
+ * Registers page.route() interception for the OpenFreeMap tile host,
+ * exactly like installLocalMapStyle, but serving a style with one real,
+ * controllable raster tile source instead of the sourceless
+ * LOCAL_LIBERTY_STYLE — so a test can deterministically fail, then
+ * succeed, genuine post-load tile requests (backlog item 67's own
+ * source-or-tile AJAXError/recovery scenario), which installLocalMapStyle
+ * alone cannot produce since its style has nothing to ever request a tile
+ * for. Call this instead of (never alongside) installLocalMapStyle/
+ * forceMapStyleFailure. Also requires `test.use({ serviceWorkers: "block" })`,
+ * for the same documented reason installLocalMapStyle does.
+ */
+export async function installLocalMapStyleWithTileSource(
+  page: Page,
+): Promise<TileFailureController> {
+  const style = buildLocalStyleWithTileSource();
+  let shouldFail = false;
+  let requestCount = 0;
+  let styleRequestCount = 0;
+
+  await page.route(OPENFREEMAP_HOST_GLOB, async (route) => {
+    const requestUrl = route.request().url();
+
+    if (isRecognisedLibertyStyleRequest(requestUrl)) {
+      styleRequestCount += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify(style),
+      });
+      return;
+    }
+
+    if (isRecognisedTestTileRequest(requestUrl)) {
+      requestCount += 1;
+      if (shouldFail) {
+        await route.abort("failed");
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: "image/png",
+          headers: { "Access-Control-Allow-Origin": "*" },
+          body: Buffer.from(TINY_TRANSPARENT_PNG_BASE64, "base64"),
+        });
+      }
+      return;
+    }
+
+    await route.abort("failed");
+  });
+
+  return {
+    failTiles: () => {
+      shouldFail = true;
+    },
+    succeedTiles: () => {
+      shouldFail = false;
+    },
+    requestCount: () => requestCount,
+    styleRequestCount: () => styleRequestCount,
+  };
+}

@@ -434,6 +434,92 @@ button:focus-visible {
   color: inherit;
 }
 
+/* Backlog item 67: a single, map-owned overlay slot for every one of
+ * MapView's own status/error banners (map-loading, map-imagery-delayed-
+ * banner, map-load-error, tiles-unavailable-banner, map-fallback-banner)
+ * — confirmed structurally mutually exclusive with each other, so this
+ * box only ever holds one message at a time. top:72px (not the 8px every
+ * other top-row overlay uses) is deliberate headroom clearing
+ * .ride-climb-cue's own worst-case rendered height (two lines of text
+ * plus var(--space-8) vertical padding, roughly 50-64px depending on
+ * platform font metrics) with a margin, since .ride-climb-cue resolves
+ * against the exact same positioned ancestor (.ride-map-container) and a
+ * rural climb correlates with worse cell coverage, making the two
+ * co-occurring more likely than chance, not less — see
+ * e2e/mapImageryRecovery.spec.ts's own automated non-overlap proof rather
+ * than treating this offset as verified by inspection alone. left/right:
+ * 64px mirrors .planning-map-status-overlay's/.ride-climb-cue's own
+ * established 48px-button-column-plus-two-8px-insets arithmetic, so this
+ * never collides with the zoom or camera/orientation control clusters on
+ * any of Planning/Riding/free roam. First-pass, reasoned values, not yet
+ * real-device verified — see CLAUDE.md's own item 23/53 precedent for
+ * this same humility about exact pixel placement.
+ *
+ * pointer-events:none is essential, not cosmetic: unlike every other
+ * top-row overlay here (which sits beside the map's own tappable centre),
+ * this one can appear directly OVER Planning's crosshair/waypoint-
+ * placement area — a real regression found by the full e2e suite during
+ * implementation (existing Planning map-tap tests started intercepting on
+ * the fallback banner). Only the retry button re-enables pointer events
+ * below, so the banner text is visually present but never blocks a tap
+ * meant for the map beneath it. */
+.map-status-overlay {
+  position: absolute;
+  top: 72px;
+  left: 64px;
+  right: 64px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  pointer-events: none;
+}
+
+/* Same fixed translucent-black/white pairing as .map-attribution/
+ * .planning-map-status-message, for the same reason: this sits over
+ * variable map imagery, not the app's own background, so it must not
+ * swap with the light/dark colour scheme. */
+.map-status-message {
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background-color: rgb(0 0 0 / 60%);
+  color: #ffffff;
+  font-size: 0.8rem;
+}
+
+/* A non-colour-alone distinction for the terminal map-load-error state —
+ * mirrors .route-delete-confirm's own existing left-border accent
+ * convention (paired with this banner's own distinct wording and its
+ * role="alert", never a colour-alone cue on its own). */
+.map-status-message--alert {
+  border-left: 4px solid var(--colour-danger);
+}
+
+/* Replaces the previous raw inline style on the fallback banner's own
+ * retry button — now shared by every retry-capable banner (at most one
+ * ever renders, so one shared data-testid and one shared class are both
+ * safe). min-height/min-width keep a real >=44x44px effective touch
+ * target without turning the notice into a dominant panel. pointer-
+ * events:auto re-enables clicking for this button specifically, since its
+ * ancestor .map-status-overlay is pointer-events:none (see that rule's
+ * own comment) — the one interactive element inside an otherwise
+ * click-through informational overlay. inline-flex (not block) is
+ * essential, not stylistic — a plain block button inside a block-level
+ * .map-status-message stretches to 100% of the overlay's own width (a
+ * real regression found by the full e2e suite: it was silently
+ * intercepting crosshair/waypoint-placement taps far past its own visible
+ * label, well within the pointer-events:none message text around it). */
+.map-status-retry-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 160px;
+  margin-top: var(--space-8);
+  pointer-events: auto;
+}
+
 /* A deliberate gap below the map, replacing the accidental spacing the
  * previously flow-positioned attribution used to leave behind. Wraps so
  * four buttons (Full/2 km/10 km/Climb) never force horizontal

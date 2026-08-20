@@ -1,6 +1,6 @@
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MapView } from "./MapView.tsx";
 import type {
   CreateMapOptions,
@@ -431,7 +431,8 @@ describe("MapView", () => {
     expect(mock.sources.has("acn-route-remaining")).toBe(true);
   });
 
-  it("shows a terminal load-error state, including the underlying message, if the fallback style also fails fatally", () => {
+  it("shows a terminal load-error state with a compact, non-technical message and a working Retry, while the raw message still reaches the error log", () => {
+    clearErrorLog();
     const mock = createMockMapFactory();
     render(<MapView points={points} mapFactory={mock.factory} />);
 
@@ -445,9 +446,16 @@ describe("MapView", () => {
     });
 
     expect(screen.queryByTestId("map-loading")).toBeNull();
-    expect(screen.getByTestId("map-load-error")).toHaveTextContent(
-      "fallback also failed",
+    const banner = screen.getByTestId("map-load-error");
+    expect(banner).toHaveTextContent(
+      "Map failed to load. Check your connection and try again.",
     );
+    expect(banner).not.toHaveTextContent("fallback also failed");
+    expect(
+      getRecentErrors().some((entry) => entry.message.includes("fallback also failed")),
+    ).toBe(true);
+
+    expect(screen.getByTestId("retry-map-imagery-button")).toBeInTheDocument();
   });
 
   it("says the map is taking longer than expected if the style isn't ready after the timeout", () => {
@@ -1559,7 +1567,8 @@ describe("MapView", () => {
     expect(mock.fitBoundsSpy).toHaveBeenCalledOnce();
   });
 
-  it("shows an explicit tiles-unavailable banner on a map error, keeping the route layer", () => {
+  it("shows an explicit, compact, non-technical tiles-unavailable banner with a working Retry on a map error, keeping the route layer, while the raw message still reaches the error log", () => {
+    clearErrorLog();
     const mock = createMockMapFactory();
     render(<MapView points={points} mapFactory={mock.factory} />);
     mock.triggerLoad();
@@ -1570,8 +1579,16 @@ describe("MapView", () => {
 
     const banner = screen.getByTestId("tiles-unavailable-banner");
     expect(banner).toBeInTheDocument();
-    expect(banner).toHaveTextContent("tile fetch failed");
+    expect(banner).toHaveTextContent(
+      "Map imagery unavailable. The route and your position are still shown.",
+    );
+    expect(banner).not.toHaveTextContent("tile fetch failed");
     expect(mock.sources.has("acn-route-remaining")).toBe(true);
+    expect(
+      getRecentErrors().some((entry) => entry.message.includes("tile fetch failed")),
+    ).toBe(true);
+
+    expect(within(banner).getByTestId("retry-map-imagery-button")).toBeInTheDocument();
   });
 
   it("removes the map instance on unmount", () => {
@@ -2217,6 +2234,690 @@ describe("MapView", () => {
 
       expect(mock.constructedStyles).toHaveLength(2);
       expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+    });
+
+    describe("tile-error episode: retry, no-loop, and camera preservation (backlog item 67)", () => {
+      it("triggers a genuine automatic retry for a post-load tile-error episode on an online event, with no camera-target prop mutation required", () => {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerLoad();
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+        expect(mock.constructedStyles).toHaveLength(1);
+
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+
+        expect(mock.constructedStyles).toHaveLength(2);
+        expect(mock.constructedStyles[1]).toBe(mock.constructedStyles[0]);
+        const [latest] = getRecentMapAttempts();
+        expect(latest?.category).toBe("auto-retry");
+      });
+
+      it("retries at most once automatically for a tile-error episode, even with repeated online/visibility events and repeated errors within it", () => {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerLoad();
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        mock.triggerError({
+          message: "another tile fetch failed",
+          category: "source-or-tile",
+        });
+
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        act(() => {
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+
+        expect(mock.constructedStyles).toHaveLength(2);
+      });
+
+      it("a later, distinct tile-error episode (after a successful recovery) gets its own new automatic-retry allowance", () => {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerLoad();
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        expect(mock.constructedStyles).toHaveLength(2);
+
+        // Recovery: the retried instance loads cleanly with no tile error.
+        mock.triggerLoad();
+        expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+
+        // A distinct, later episode.
+        mock.triggerError({
+          message: "a different tile fetch failed",
+          category: "source-or-tile",
+        });
+        expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+
+        expect(mock.constructedStyles).toHaveLength(3);
+      });
+
+      it('clicking "Retry map imagery" from the tiles-unavailable banner recreates the originally configured style, not the fallback', () => {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerLoad();
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        const banner = screen.getByTestId("tiles-unavailable-banner");
+
+        act(() => {
+          within(banner).getByTestId("retry-map-imagery-button").click();
+        });
+
+        expect(mock.constructedStyles).toHaveLength(2);
+        expect(mock.constructedStyles[1]).toBe(mock.constructedStyles[0]);
+      });
+
+      it("records imagery-recovered once a tile-error episode is resolved via retry", () => {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerLoad();
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        act(() => {
+          screen
+            .getByTestId("tiles-unavailable-banner")
+            .querySelector<HTMLButtonElement>('[data-testid="retry-map-imagery-button"]')
+            ?.click();
+        });
+        mock.triggerLoad();
+
+        const [latest] = getRecentMapAttempts();
+        expect(latest?.category).toBe("imagery-recovered");
+      });
+
+      it("preserves a manually free-panned camera (no cameraTarget) across a tile-error retry", () => {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerLoad();
+
+        mock.triggerUserCameraInteraction();
+        mock.triggerCameraSettled({
+          coordinate: [-2.5, 52.1],
+          zoom: 12,
+          bearingDegrees: 45,
+          pitchDegrees: 20,
+        });
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        mock.setCameraSpy.mockClear();
+
+        act(() => {
+          screen
+            .getByTestId("tiles-unavailable-banner")
+            .querySelector<HTMLButtonElement>('[data-testid="retry-map-imagery-button"]')
+            ?.click();
+        });
+        mock.triggerLoad();
+
+        expect(mock.setCameraSpy).toHaveBeenCalledWith([-2.5, 52.1], 12, 45, 20, {
+          animate: false,
+          followOffset: false,
+        });
+      });
+
+      // The following camera-preservation tests all use the tile-error
+      // retry path (not the fatal/fallback path): switchToFallback()'s own
+      // `if (styleReady || usedFallback) return;` guard means a fatal
+      // error can only ever activate fallback strictly BEFORE the style
+      // is structurally ready — which is exactly the window needed to
+      // first let boundsTarget/centreTarget/orientNorthTarget/the
+      // overview/warning-selection fits apply once. The lighter tile-
+      // error path (reachable only once hasLoaded, i.e. after a full
+      // triggerLoad()) has no such ordering conflict and directly
+      // exercises this backlog item's own new retry mechanism.
+      it("preserves a manually panned Planning camera by skipping a now-stale boundsTarget after a retry, rather than snapping back to it", () => {
+        const mock = createMockMapFactory();
+        render(
+          <MapView
+            points={[]}
+            mapFactory={mock.factory}
+            boundsTarget={{
+              bounds: { southWest: [-1.7, 53.6], northEast: [-1.3, 54.0] },
+              requestId: "request-1",
+            }}
+          />,
+        );
+        mock.triggerLoad();
+        expect(mock.fitBoundsSpy).toHaveBeenCalledTimes(1);
+
+        mock.triggerUserCameraInteraction();
+        mock.triggerCameraSettled({
+          coordinate: [-1.55, 53.75],
+          zoom: 13,
+          bearingDegrees: 30,
+          pitchDegrees: 10,
+        });
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        const banner = screen.getByTestId("tiles-unavailable-banner");
+        mock.fitBoundsSpy.mockClear();
+        mock.setCameraSpy.mockClear();
+
+        act(() => {
+          within(banner).getByTestId("retry-map-imagery-button").click();
+        });
+        mock.triggerLoad();
+
+        expect(mock.fitBoundsSpy).not.toHaveBeenCalled();
+        expect(mock.setCameraSpy).toHaveBeenCalledWith([-1.55, 53.75], 13, 30, 10, {
+          animate: false,
+          followOffset: false,
+        });
+      });
+
+      it("preserves a manually panned Planning camera by skipping a now-stale centreTarget after a retry", () => {
+        const mock = createMockMapFactory();
+        render(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            centreTarget={{ coordinate: [-1.5, 53.8], requestId: "request-1" }}
+          />,
+        );
+        mock.triggerLoad();
+        expect(mock.centreOnSpy).toHaveBeenCalledTimes(1);
+
+        mock.triggerUserCameraInteraction();
+        mock.triggerCameraSettled({
+          coordinate: [-1.55, 53.75],
+          zoom: 13,
+          bearingDegrees: 30,
+          pitchDegrees: 10,
+        });
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        const banner = screen.getByTestId("tiles-unavailable-banner");
+        mock.centreOnSpy.mockClear();
+        mock.setCameraSpy.mockClear();
+
+        act(() => {
+          within(banner).getByTestId("retry-map-imagery-button").click();
+        });
+        mock.triggerLoad();
+
+        expect(mock.centreOnSpy).not.toHaveBeenCalled();
+        expect(mock.setCameraSpy).toHaveBeenCalledWith([-1.55, 53.75], 13, 30, 10, {
+          animate: false,
+          followOffset: false,
+        });
+      });
+
+      it("preserves a manually panned Planning camera by skipping a now-stale orientNorthTarget after a retry", () => {
+        const mock = createMockMapFactory();
+        render(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            orientNorthTarget={{ requestId: "request-1" }}
+          />,
+        );
+        mock.triggerLoad();
+        expect(mock.setCameraSpy).toHaveBeenCalledTimes(1);
+
+        mock.triggerUserCameraInteraction();
+        mock.triggerCameraSettled({
+          coordinate: [-1.55, 53.75],
+          zoom: 13,
+          bearingDegrees: 30,
+          pitchDegrees: 10,
+        });
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        const banner = screen.getByTestId("tiles-unavailable-banner");
+        mock.setCameraSpy.mockClear();
+
+        act(() => {
+          within(banner).getByTestId("retry-map-imagery-button").click();
+        });
+        mock.triggerLoad();
+
+        // The stale orientNorthTarget must not re-apply its own (null,
+        // null, 0, 0, ...) command — only the diverged snapshot's own
+        // values may appear.
+        expect(mock.setCameraSpy).not.toHaveBeenCalledWith(null, null, 0, 0, {
+          animate: true,
+          followOffset: false,
+        });
+        expect(mock.setCameraSpy).toHaveBeenCalledWith([-1.55, 53.75], 13, 30, 10, {
+          animate: false,
+          followOffset: false,
+        });
+      });
+
+      it("a zoomTarget press does not clear divergence — a later retry still restores the diverged snapshot rather than reapplying a stale boundsTarget", () => {
+        const mock = createMockMapFactory();
+        const { rerender } = render(
+          <MapView
+            points={[]}
+            mapFactory={mock.factory}
+            boundsTarget={{
+              bounds: { southWest: [-1.7, 53.6], northEast: [-1.3, 54.0] },
+              requestId: "request-1",
+            }}
+          />,
+        );
+        mock.triggerLoad();
+
+        mock.triggerUserCameraInteraction();
+        mock.triggerCameraSettled({
+          coordinate: [-1.55, 53.75],
+          zoom: 13,
+          bearingDegrees: 30,
+          pitchDegrees: 10,
+        });
+
+        // An entirely ordinary, unrelated zoom press.
+        rerender(
+          <MapView
+            points={[]}
+            mapFactory={mock.factory}
+            boundsTarget={{
+              bounds: { southWest: [-1.7, 53.6], northEast: [-1.3, 54.0] },
+              requestId: "request-1",
+            }}
+            zoomTarget={{ delta: 1, requestId: "zoom-1" }}
+          />,
+        );
+        expect(mock.changeZoomBySpy).toHaveBeenCalledWith(1);
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        const banner = screen.getByTestId("tiles-unavailable-banner");
+        mock.fitBoundsSpy.mockClear();
+        mock.setCameraSpy.mockClear();
+
+        act(() => {
+          within(banner).getByTestId("retry-map-imagery-button").click();
+        });
+        mock.triggerLoad();
+
+        expect(mock.fitBoundsSpy).not.toHaveBeenCalled();
+        expect(mock.setCameraSpy).toHaveBeenCalledWith([-1.55, 53.75], 13, 30, 10, {
+          animate: false,
+          followOffset: false,
+        });
+      });
+
+      it("the overview-fit effect skips exactly once per generation after a diverged restore, then resumes normal behaviour for a later route change", () => {
+        const mock = createMockMapFactory();
+        const { rerender } = render(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            suppressInitialOverviewFit={false}
+          />,
+        );
+        mock.triggerLoad();
+        expect(mock.fitBoundsSpy).toHaveBeenCalledTimes(1);
+
+        mock.triggerUserCameraInteraction();
+        mock.triggerCameraSettled({
+          coordinate: [-2, 51.5],
+          zoom: 10,
+          bearingDegrees: 0,
+          pitchDegrees: 0,
+        });
+
+        mock.fitBoundsSpy.mockClear();
+        mock.setCameraSpy.mockClear();
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        const banner = screen.getByTestId("tiles-unavailable-banner");
+
+        act(() => {
+          within(banner).getByTestId("retry-map-imagery-button").click();
+        });
+        mock.triggerLoad();
+
+        // The overview-fit effect skipped its own fit for this generation
+        // — the restored snapshot is the final word instead.
+        expect(mock.fitBoundsSpy).not.toHaveBeenCalled();
+        expect(mock.setCameraSpy).toHaveBeenCalledWith([-2, 51.5], 10, 0, 0, {
+          animate: false,
+          followOffset: false,
+        });
+
+        // A later, genuinely new route within the SAME generation resumes
+        // completely normal overview-fit behaviour.
+        mock.fitBoundsSpy.mockClear();
+        const newPoints: RoutePoint[] = [
+          { coordinate: [1, 52], elevationMetres: 5, distanceFromStartMetres: 0 },
+          { coordinate: [1.001, 52], elevationMetres: 6, distanceFromStartMetres: 100 },
+        ];
+        rerender(
+          <MapView
+            points={newPoints}
+            mapFactory={mock.factory}
+            suppressInitialOverviewFit={false}
+          />,
+        );
+
+        expect(mock.fitBoundsSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it("the warning-selection auto-fit effect skips exactly once per generation after a diverged restore, then resumes normal behaviour for a later, genuinely new selection", () => {
+        const warnings: RouteWarning[] = [
+          {
+            kind: "questionable-surface",
+            startDistanceMetres: 50,
+            endDistanceMetres: 150,
+            message: "Questionable surface for a road bike.",
+          },
+          {
+            kind: "ford",
+            startDistanceMetres: 300,
+            endDistanceMetres: 350,
+            message: "Ford crossing.",
+          },
+        ];
+        const mock = createMockMapFactory();
+        const { rerender } = render(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            // Isolates fitBoundsSpy to the warning-selection-fit effect's
+            // own call — otherwise the overview-fit effect would also
+            // fire once on initial mount (non-empty points, defaults to
+            // unsuppressed), making the toHaveBeenCalledTimes(1) checks
+            // below ambiguous about which effect actually fired.
+            suppressInitialOverviewFit={true}
+            warningOverlay={{
+              warnings,
+              selectedWarningIndex: 0,
+              onSelectWarning: vi.fn(),
+            }}
+          />,
+        );
+        mock.triggerLoad();
+        expect(mock.fitBoundsSpy).toHaveBeenCalledTimes(1);
+
+        mock.triggerUserCameraInteraction();
+        mock.triggerCameraSettled({
+          coordinate: [-2, 51.5],
+          zoom: 10,
+          bearingDegrees: 0,
+          pitchDegrees: 0,
+        });
+
+        mock.fitBoundsSpy.mockClear();
+        mock.setCameraSpy.mockClear();
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        const banner = screen.getByTestId("tiles-unavailable-banner");
+
+        act(() => {
+          within(banner).getByTestId("retry-map-imagery-button").click();
+        });
+        mock.triggerLoad();
+
+        // The stale warning-selection fit skipped for this generation —
+        // the restored snapshot wins instead.
+        expect(mock.fitBoundsSpy).not.toHaveBeenCalled();
+        expect(mock.setCameraSpy).toHaveBeenCalledWith([-2, 51.5], 10, 0, 0, {
+          animate: false,
+          followOffset: false,
+        });
+
+        // A genuinely new selection within the SAME generation resumes
+        // completely normal auto-fit behaviour.
+        mock.fitBoundsSpy.mockClear();
+        rerender(
+          <MapView
+            points={warningPoints}
+            mapFactory={mock.factory}
+            suppressInitialOverviewFit={true}
+            warningOverlay={{
+              warnings,
+              selectedWarningIndex: 1,
+              onSelectWarning: vi.fn(),
+            }}
+          />,
+        );
+
+        expect(mock.fitBoundsSpy).toHaveBeenCalledWith({
+          southWest: [0.003, 51],
+          northEast: [0.0035, 51],
+        });
+      });
+
+      // A real, evidence-backed regression found via this backlog item's
+      // own real-browser Planning coverage during implementation: a
+      // gesture (pan), followed by orientNorthTarget/centreTarget/
+      // cameraTarget's own null-coordinate north-up case, followed by a
+      // retry, was silently discarding the rider's panned position — the
+      // "partial" command (leaving coordinate/zoom "unchanged") had
+      // incorrectly cleared hasCameraDivergedFromTargetsRef, suppressing
+      // the snapshot restore even though the command itself never
+      // supplied a real coordinate/zoom to fall back on for a freshly
+      // (re)created instance with no prior state. The three tests below
+      // pin this exact scenario at the unit level, not just via the
+      // real-browser proof that originally caught it.
+      it("a north-up press (orientNorthTarget) after a gesture does not suppress the diverged snapshot restore on a later retry", () => {
+        const mock = createMockMapFactory();
+        const { rerender } = render(
+          <MapView points={points} mapFactory={mock.factory} orientNorthTarget={null} />,
+        );
+        mock.triggerLoad();
+
+        mock.triggerUserCameraInteraction();
+        mock.triggerCameraSettled({
+          coordinate: [-1.55, 53.75],
+          zoom: 13,
+          bearingDegrees: 30,
+          pitchDegrees: 10,
+        });
+
+        // North-up, pressed after the gesture — settles with the SAME
+        // coordinate/zoom (unchanged) but bearing/pitch reset to 0.
+        rerender(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            orientNorthTarget={{ requestId: "request-1" }}
+          />,
+        );
+        mock.triggerCameraSettled({
+          coordinate: [-1.55, 53.75],
+          zoom: 13,
+          bearingDegrees: 0,
+          pitchDegrees: 0,
+        });
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        act(() => {
+          screen
+            .getByTestId("tiles-unavailable-banner")
+            .querySelector<HTMLButtonElement>('[data-testid="retry-map-imagery-button"]')
+            ?.click();
+        });
+        mock.setCameraSpy.mockClear();
+        mock.triggerLoad();
+
+        // Restores the full post-north-up pose — never a bare (null,
+        // null, 0, 0, ...) reapply, which would leave a freshly created
+        // instance's centre/zoom at whatever its own uninitialised
+        // default is, not the rider's real panned position.
+        expect(mock.setCameraSpy).toHaveBeenCalledWith([-1.55, 53.75], 13, 0, 0, {
+          animate: false,
+          followOffset: false,
+        });
+      });
+
+      it("a recentre press (centreTarget) after a gesture does not suppress the diverged snapshot restore on a later retry", () => {
+        const mock = createMockMapFactory();
+        const { rerender } = render(
+          <MapView points={points} mapFactory={mock.factory} centreTarget={null} />,
+        );
+        mock.triggerLoad();
+
+        mock.triggerUserCameraInteraction();
+        mock.triggerCameraSettled({
+          coordinate: [-1.55, 53.75],
+          zoom: 13,
+          bearingDegrees: 30,
+          pitchDegrees: 10,
+        });
+
+        rerender(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            centreTarget={{ coordinate: [-1.6, 53.8], requestId: "request-1" }}
+          />,
+        );
+        mock.triggerCameraSettled({
+          coordinate: [-1.6, 53.8],
+          zoom: 13,
+          bearingDegrees: 30,
+          pitchDegrees: 10,
+        });
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        act(() => {
+          screen
+            .getByTestId("tiles-unavailable-banner")
+            .querySelector<HTMLButtonElement>('[data-testid="retry-map-imagery-button"]')
+            ?.click();
+        });
+        mock.setCameraSpy.mockClear();
+        mock.triggerLoad();
+
+        expect(mock.setCameraSpy).toHaveBeenCalledWith([-1.6, 53.8], 13, 30, 10, {
+          animate: false,
+          followOffset: false,
+        });
+      });
+
+      it("Riding's own north-up (a null-coordinate cameraTarget command) after a gesture does not suppress the diverged snapshot restore on a later retry", () => {
+        const mock = createMockMapFactory();
+        const { rerender } = render(
+          <MapView points={points} mapFactory={mock.factory} cameraTarget={null} />,
+        );
+        mock.triggerLoad();
+
+        mock.triggerUserCameraInteraction();
+        mock.triggerCameraSettled({
+          coordinate: [0, 51],
+          zoom: 14,
+          bearingDegrees: 67,
+          pitchDegrees: 20,
+        });
+
+        // Mirrors rideCamera.ts's own "north-up-requested" command shape
+        // exactly: a null coordinate/zoom, only bearing/pitch specified.
+        rerender(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            cameraTarget={{
+              coordinate: null,
+              zoom: null,
+              bearingDegrees: 0,
+              pitchDegrees: 0,
+              animate: true,
+              followOffset: false,
+              requestId: "north-up-1",
+            }}
+          />,
+        );
+        mock.triggerCameraSettled({
+          coordinate: [0, 51],
+          zoom: 14,
+          bearingDegrees: 0,
+          pitchDegrees: 0,
+        });
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        act(() => {
+          screen
+            .getByTestId("tiles-unavailable-banner")
+            .querySelector<HTMLButtonElement>('[data-testid="retry-map-imagery-button"]')
+            ?.click();
+        });
+        mock.setCameraSpy.mockClear();
+        mock.triggerLoad();
+
+        expect(mock.setCameraSpy).toHaveBeenCalledWith([0, 51], 14, 0, 0, {
+          animate: false,
+          followOffset: false,
+        });
+      });
+
+      it("layer/source counts after a retry match a fresh mount's, proving no duplicate accumulation", () => {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerLoad();
+        const layerCountAfterMount = mock.layers.size;
+        const sourceCountAfterMount = mock.sources.size;
+
+        // A tile error after the map has genuinely already loaded once —
+        // the lighter, tile-error-specific retry path this backlog item
+        // adds, not the pre-existing fallback/retry mechanism.
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        const banner = screen.getByTestId("tiles-unavailable-banner");
+
+        act(() => {
+          within(banner).getByTestId("retry-map-imagery-button").click();
+        });
+        mock.triggerLoad();
+
+        expect(mock.layers.size).toBe(layerCountAfterMount);
+        expect(mock.sources.size).toBe(sourceCountAfterMount);
+      });
+
+      it("reinstalls real route and position source data after a tile-error retry, not just empty layers", () => {
+        const mock = createMockMapFactory();
+        render(
+          <MapView
+            points={points}
+            currentPosition={[0.0005, 51]}
+            mapFactory={mock.factory}
+          />,
+        );
+        mock.triggerLoad();
+        expect(mock.sources.get("acn-position")?.features[0]?.geometry).toEqual({
+          type: "Point",
+          coordinates: [0.0005, 51],
+        });
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        const banner = screen.getByTestId("tiles-unavailable-banner");
+
+        act(() => {
+          within(banner).getByTestId("retry-map-imagery-button").click();
+        });
+        mock.triggerLoad();
+
+        expect(mock.sources.get("acn-position")?.features[0]?.geometry).toEqual({
+          type: "Point",
+          coordinates: [0.0005, 51],
+        });
+        expect(
+          mock.sources.get("acn-route-remaining")?.features[0]?.geometry,
+        ).toMatchObject({
+          coordinates: [
+            [0, 51],
+            [0.001, 51],
+          ],
+        });
+      });
     });
   });
 
