@@ -5,6 +5,7 @@ import { generateId } from "../../platform/idGenerator.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
 import type { ZoomCameraTarget } from "../../map/MapView.tsx";
 import {
+  hasActionableFollowAnchor,
   INITIAL_RIDE_CAMERA_STATE,
   NAVIGATION_ZOOM,
   rideCameraReducer,
@@ -157,9 +158,11 @@ export interface UseFreeRoamCameraResult {
   requestFollow: () => void;
   reportUserInteraction: () => void;
   requestNorthUp: () => void;
-  /** See useRideCamera.ts's own identical zoomTarget doc comment. */
+  /** See useRideCamera.ts's own identical zoomTarget doc comment,
+   * including its backlog item 65 update. */
   zoomTarget: ZoomCameraTarget | null;
-  /** See useRideCamera.ts's own identical requestZoom doc comment. */
+  /** See useRideCamera.ts's own identical requestZoom doc comment,
+   * including its backlog item 65 update. */
   requestZoom: (delta: number) => void;
   isNorthUpTopDown: boolean;
   reportCameraSettled: (
@@ -274,6 +277,13 @@ export function useFreeRoamCamera({
     latestFixInfoRef.current = { currentFix, isStale };
   }, [currentFix, isStale]);
 
+  // See useRideCamera.ts's identical latestCameraStateRef doc comment
+  // (backlog item 65) for the full rationale — copied verbatim.
+  const latestCameraStateRef = useRef(state.camera);
+  useEffect(() => {
+    latestCameraStateRef.current = state.camera;
+  }, [state.camera]);
+
   // See useRideCamera.ts's identical nextCameraRequestIdRef doc comment for
   // the full requestId/dedup rationale — copied verbatim.
   const nextCameraRequestIdRef = useRef(0);
@@ -309,10 +319,20 @@ export function useFreeRoamCamera({
     dispatch({ type: "route-opened" });
   }, []);
 
-  // Mirrors useRideCamera.ts's own identical zoomTarget/requestZoom pair.
+  // Mirrors useRideCamera.ts's own identical zoomTarget/requestZoom pair,
+  // including its backlog item 65 anchored-vs-unanchored branching.
   const [zoomTarget, setZoomTarget] = useState<ZoomCameraTarget | null>(null);
 
   const requestZoom = useCallback((delta: number) => {
+    if (hasActionableFollowAnchor(latestCameraStateRef.current)) {
+      nextCameraRequestIdRef.current += 1;
+      dispatch({
+        type: "follow-zoom-changed",
+        delta,
+        requestId: String(nextCameraRequestIdRef.current),
+      });
+      return;
+    }
     setZoomTarget({ delta, requestId: generateId() });
     dispatch({ type: "follow-zoom-changed", delta });
   }, []);

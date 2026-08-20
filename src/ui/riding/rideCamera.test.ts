@@ -3,6 +3,7 @@ import {
   FOLLOW_MIN_MOVEMENT_METRES,
   FOLLOW_PITCH_DEGREES,
   GPS_COURSE_MIN_SPEED_METRES_PER_SECOND,
+  hasActionableFollowAnchor,
   INITIAL_RIDE_CAMERA_STATE,
   NAVIGATION_ZOOM,
   ROTATION_DEAD_BAND_DEGREES,
@@ -652,29 +653,81 @@ describe("rideCameraReducer", () => {
   });
 
   describe("follow-zoom-changed", () => {
-    it("while following, changes only followZoomLevel by exactly delta, no command, no paused toast", () => {
-      const state = followingState({ followZoomLevel: 16 });
-      const result = rideCameraReducer(state, { type: "follow-zoom-changed", delta: 1 });
+    // Backlog item 65: followingState()'s own defaults are an actionable
+    // anchor (lastFollowedCoordinate: START, lastCommandedBearingDegrees:
+    // 0), so this now also produces a real, anchored command — reissuing
+    // the already-committed coordinate/bearing/pitch at the new zoom,
+    // preserving the rider's below-centre screen anchor through the zoom
+    // (see followCommand and hasActionableFollowAnchor).
+    it("while genuinely following with an actionable anchor, changes followZoomLevel by delta AND produces an anchored command reusing the existing coordinate/bearing, carrying the given requestId", () => {
+      const state = followingState({
+        followZoomLevel: 16,
+        lastFollowedCoordinate: START,
+        lastCommandedBearingDegrees: 42,
+      });
+      const result = rideCameraReducer(state, {
+        type: "follow-zoom-changed",
+        delta: 1,
+        requestId: "5",
+      });
       expect(result.state).toEqual({ ...state, followZoomLevel: 17 });
-      expect(result.command).toBeNull();
+      expect(result.command).toEqual({
+        coordinate: START,
+        zoom: 17,
+        bearingDegrees: 42,
+        pitchDegrees: FOLLOW_PITCH_DEGREES,
+        animate: true,
+        followOffset: true,
+        requestId: "5",
+      });
       expect(result.pausedToast).toBe(false);
     });
 
-    it("while following, a negative delta decreases followZoomLevel", () => {
+    it("a negative delta decreases both followZoomLevel and the produced command's zoom together", () => {
       const state = followingState({ followZoomLevel: 16 });
-      const result = rideCameraReducer(state, { type: "follow-zoom-changed", delta: -1 });
+      const result = rideCameraReducer(state, {
+        type: "follow-zoom-changed",
+        delta: -1,
+        requestId: "1",
+      });
       expect(result.state.followZoomLevel).toBe(15);
+      expect(result.command?.zoom).toBe(15);
     });
 
-    // Deliberate design decision, not left implicit: the actual on-screen
-    // zoom change always travels through MapView's separate
-    // zoomTarget/changeZoomBy path, entirely independent of camera mode —
-    // so followZoomLevel is updated unconditionally regardless of mode,
-    // for the simplest, most predictable behaviour and the best
-    // continuity if the rider zooms while free-panning then re-engages
-    // Follow (see the "follow-requested" describe block above for that
-    // continuity proof).
-    it("while free, followZoomLevel still updates (applied unconditionally, not gated on following)", () => {
+    it("without a requestId, still produces a command (requestId is simply undefined) when actionable", () => {
+      const state = followingState({ followZoomLevel: 16 });
+      const result = rideCameraReducer(state, { type: "follow-zoom-changed", delta: 1 });
+      expect(result.command).not.toBeNull();
+      expect(result.command?.requestId).toBeUndefined();
+    });
+
+    it("while following but still awaiting the first fresh fix, followZoomLevel updates but no command is produced (never fabricates a coordinate)", () => {
+      const state: RideCameraState = {
+        mode: "following",
+        awaitingFreshFix: true,
+        lastFollowedCoordinate: null,
+        lastCommandedBearingDegrees: null,
+        followZoomLevel: 16,
+      };
+      const result = rideCameraReducer(state, {
+        type: "follow-zoom-changed",
+        delta: 1,
+        requestId: "1",
+      });
+      expect(result.state.followZoomLevel).toBe(17);
+      expect(result.command).toBeNull();
+    });
+
+    // Deliberate design decision, not left implicit: followZoomLevel is
+    // updated unconditionally regardless of mode, for the simplest, most
+    // predictable behaviour and the best continuity if the rider zooms
+    // while free-panning then re-engages Follow (see the
+    // "follow-requested" describe block above for that continuity
+    // proof) — but only a genuinely followed, actionable press ever
+    // produces a command (backlog item 65); free/overview zoom always
+    // routes through the ordinary unanchored zoomTarget/changeZoomBy
+    // path instead (useRideCamera.ts's requestZoom).
+    it("while free, followZoomLevel still updates (applied unconditionally, not gated on following), no command", () => {
       const free: RideCameraState = {
         mode: "free",
         awaitingFreshFix: false,
@@ -682,9 +735,23 @@ describe("rideCameraReducer", () => {
         lastCommandedBearingDegrees: null,
         followZoomLevel: NAVIGATION_ZOOM,
       };
-      const result = rideCameraReducer(free, { type: "follow-zoom-changed", delta: 2 });
+      const result = rideCameraReducer(free, {
+        type: "follow-zoom-changed",
+        delta: 2,
+        requestId: "1",
+      });
       expect(result.state.followZoomLevel).toBe(NAVIGATION_ZOOM + 2);
       expect(result.state.mode).toBe("free");
+      expect(result.command).toBeNull();
+    });
+
+    it("while overview, followZoomLevel still updates, no command", () => {
+      const result = rideCameraReducer(INITIAL_RIDE_CAMERA_STATE, {
+        type: "follow-zoom-changed",
+        delta: 1,
+        requestId: "1",
+      });
+      expect(result.state.followZoomLevel).toBe(NAVIGATION_ZOOM + 1);
       expect(result.command).toBeNull();
     });
 
@@ -693,13 +760,75 @@ describe("rideCameraReducer", () => {
         lastFollowedCoordinate: START,
         lastCommandedBearingDegrees: 42,
       });
-      const result = rideCameraReducer(state, { type: "follow-zoom-changed", delta: 1 });
+      const result = rideCameraReducer(state, {
+        type: "follow-zoom-changed",
+        delta: 1,
+        requestId: "1",
+      });
       expect(result.state.mode).toBe(state.mode);
       expect(result.state.awaitingFreshFix).toBe(state.awaitingFreshFix);
       expect(result.state.lastFollowedCoordinate).toEqual(state.lastFollowedCoordinate);
       expect(result.state.lastCommandedBearingDegrees).toBe(
         state.lastCommandedBearingDegrees,
       );
+    });
+  });
+
+  describe("hasActionableFollowAnchor", () => {
+    it("true only while following, not awaiting the first fix, with both a coordinate and a bearing already committed", () => {
+      expect(
+        hasActionableFollowAnchor(
+          followingState({
+            lastFollowedCoordinate: START,
+            lastCommandedBearingDegrees: 0,
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it("false while awaiting the first fresh fix", () => {
+      expect(
+        hasActionableFollowAnchor(
+          followingState({ awaitingFreshFix: true, lastFollowedCoordinate: null }),
+        ),
+      ).toBe(false);
+    });
+
+    it("false while free", () => {
+      const free: RideCameraState = {
+        mode: "free",
+        awaitingFreshFix: false,
+        lastFollowedCoordinate: START,
+        lastCommandedBearingDegrees: 0,
+        followZoomLevel: NAVIGATION_ZOOM,
+      };
+      expect(hasActionableFollowAnchor(free)).toBe(false);
+    });
+
+    it("false while overview", () => {
+      expect(hasActionableFollowAnchor(INITIAL_RIDE_CAMERA_STATE)).toBe(false);
+    });
+
+    it("false when lastFollowedCoordinate is null even though mode is following and not awaiting a fix", () => {
+      expect(
+        hasActionableFollowAnchor(
+          followingState({
+            lastFollowedCoordinate: null,
+            lastCommandedBearingDegrees: 0,
+          }),
+        ),
+      ).toBe(false);
+    });
+
+    it("false when lastCommandedBearingDegrees is null even though mode is following and not awaiting a fix", () => {
+      expect(
+        hasActionableFollowAnchor(
+          followingState({
+            lastFollowedCoordinate: START,
+            lastCommandedBearingDegrees: null,
+          }),
+        ),
+      ).toBe(false);
     });
   });
 

@@ -7,6 +7,7 @@ import type { OffRouteLevel } from "../../navigation/types.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
 import type { ZoomCameraTarget } from "../../map/MapView.tsx";
 import {
+  hasActionableFollowAnchor,
   INITIAL_RIDE_CAMERA_STATE,
   rideCameraReducer,
   type BearingContext,
@@ -188,14 +189,22 @@ export interface UseRideCameraResult {
    * following and enters "free"; from "free", stays free and just resets
    * bearing/pitch, preserving centre/zoom either way. */
   requestNorthUp: () => void;
-  /** The zoom-only command for MapView's own `zoomTarget` prop (backlog
-   * item 53) — for RidingScreen to pass straight through. Never touches
-   * centre/bearing/pitch/mode; never calls reportUserInteraction. */
+  /** The zoom-only, unanchored command for MapView's own `zoomTarget` prop
+   * (backlog item 53) — for RidingScreen to pass straight through. Never
+   * touches centre/bearing/pitch/mode; never calls reportUserInteraction.
+   * Left unset by a zoom press that instead updates cameraTarget (backlog
+   * item 65 — see requestZoom's own doc comment). */
   zoomTarget: ZoomCameraTarget | null;
   /** Issues a relative zoom change (e.g. ±1). Keeps Follow engaged with no
    * pause toast — this is a deliberate, settled product decision: zooming
    * while still being followed is a normal riding action, distinct from a
-   * genuine manual pan/rotate/pitch gesture. */
+   * genuine manual pan/rotate/pitch gesture. While genuinely following
+   * with an actionable anchor (hasActionableFollowAnchor, rideCamera.ts),
+   * re-anchors the rider's own coordinate at the new zoom via
+   * cameraTarget/setCamera, preserving the below-centre screen position
+   * (backlog item 65) — never the ordinary true-centre-relative
+   * zoomTarget/changeZoomBy path used otherwise (free/overview mode, or
+   * following but still awaiting the first fix). */
   requestZoom: (delta: number) => void;
   /** True once the camera is free AND its last-settled orientation is
    * genuinely north-up/top-down — based on the real settled readback, not
@@ -333,17 +342,31 @@ export function useRideCamera({
     };
   }, [currentFix, isStale, routePoints, matchedDistanceFromStartMetres, offRouteLevel]);
 
-  // Gives each explicit Northwards/Follow-location press its own request
-  // identity, so MapView can tell a genuine re-press (which must reapply
-  // even with byte-identical resulting camera values, e.g. after an
-  // intervening manual gesture) apart from an unrelated rerender. A plain
-  // monotonic counter — deliberately not a timestamp or crypto.randomUUID()
-  // — read and incremented only inside requestFollow/requestNorthUp below,
-  // each of which only actually runs once per real user click, so this
-  // stays safe under React 18 StrictMode's double-invoke of render/reducer
-  // code (which this ref is never read from). A remount resets this
-  // alongside MapView's own lastAppliedCameraTargetRef (freshly null), so
-  // no cross-remount collision is possible; an internal-only MapView
+  // Always the latest state.camera, for requestZoom below to read
+  // synchronously — dispatch() has no return value, so requestZoom must
+  // decide whether a press is genuinely followed (hasActionableFollowAnchor,
+  // backlog item 65) *before* dispatching, not from the dispatch's own
+  // result. Mirrors latestFixInfoRef's identical "always latest" idiom:
+  // safe because effects always commit before a subsequent user click can
+  // fire, so this is never stale at the moment requestZoom actually runs.
+  const latestCameraStateRef = useRef(state.camera);
+  useEffect(() => {
+    latestCameraStateRef.current = state.camera;
+  }, [state.camera]);
+
+  // Gives each explicit Northwards/Follow-location press, and now (backlog
+  // item 65) each anchored zoom press while genuinely following, its own
+  // request identity, so MapView can tell a genuine re-press (which must
+  // reapply even with byte-identical resulting camera values, e.g. after
+  // an intervening manual gesture) apart from an unrelated rerender. A
+  // plain monotonic counter — deliberately not a timestamp or
+  // crypto.randomUUID() — read and incremented only inside
+  // requestFollow/requestNorthUp/requestZoom below, each of which only
+  // actually runs once per real user click, so this stays safe under
+  // React 18 StrictMode's double-invoke of render/reducer code (which
+  // this ref is never read from). A remount resets this alongside
+  // MapView's own lastAppliedCameraTargetRef (freshly null), so no
+  // cross-remount collision is possible; an internal-only MapView
   // remount (style retry/fallback) also resets only that side, which is
   // equally harmless since the ref is null there too.
   const nextCameraRequestIdRef = useRef(0);
@@ -398,16 +421,42 @@ export function useRideCamera({
     dispatch({ type: "route-opened" });
   }, []);
 
-  // The zoom-only command MapView actually applies (via mapAdapter.ts's
-  // changeZoomBy) — a wholly separate channel from cameraTarget/setCamera,
-  // deduped by requestId like Planning's own identical mechanism
-  // (PlanningScreen.tsx's zoomTarget/generateId() convention), not the
-  // monotonic counter used for cameraTarget's explicit north-up/follow
-  // requestId above (that counter's "never crypto.randomUUID()" rule is
-  // specific to RideCameraCommand's own requestId contract).
+  // The zoom-only, unanchored command MapView applies via mapAdapter.ts's
+  // changeZoomBy — deduped by requestId like Planning's own identical
+  // mechanism (PlanningScreen.tsx's zoomTarget/generateId() convention),
+  // NOT the monotonic counter used for cameraTarget's explicit
+  // north-up/follow requestId above. Only actually set by requestZoom
+  // below while NOT genuinely following with an actionable anchor (see
+  // hasActionableFollowAnchor, rideCamera.ts) — a zoom press while
+  // genuinely following instead routes through cameraTarget/setCamera,
+  // reusing the monotonic counter above, so the rider's below-centre
+  // screen anchor is preserved through the zoom (backlog item 65). The
+  // two are mutually exclusive per press: requestZoom decides which one
+  // to use, since dispatch has no synchronous return value to branch on
+  // afterwards.
   const [zoomTarget, setZoomTarget] = useState<ZoomCameraTarget | null>(null);
 
   const requestZoom = useCallback((delta: number) => {
+    if (hasActionableFollowAnchor(latestCameraStateRef.current)) {
+      // Backlog item 65: reissue the already-committed follow coordinate/
+      // bearing at the new zoom through the SAME explicit-command channel
+      // North-up/explicit-Follow already use (cameraTarget/setCamera),
+      // preserving the rider's below-centre screen anchor through the
+      // zoom — never the ordinary true-centre-relative zoomTarget/
+      // changeZoomBy path, and never both for the same press (see
+      // RideCameraEvent's own "follow-zoom-changed" doc comment).
+      nextCameraRequestIdRef.current += 1;
+      dispatch({
+        type: "follow-zoom-changed",
+        delta,
+        requestId: String(nextCameraRequestIdRef.current),
+      });
+      return;
+    }
+    // Not genuinely following with an actionable anchor (free/overview,
+    // or following but still awaiting the first fix) — nothing to
+    // honestly anchor to, so fall back to the ordinary, unanchored zoom
+    // exactly as before item 65.
     setZoomTarget({ delta, requestId: generateId() });
     dispatch({ type: "follow-zoom-changed", delta });
   }, []);

@@ -4142,7 +4142,13 @@ describe("RidingScreen", () => {
       expect(zoomOutButton).toHaveTextContent("−");
     });
 
-    it("pressing Zoom in calls changeZoomBy(1); pressing Zoom out calls changeZoomBy(-1)", async () => {
+    // Zoom is pressed before any GPS fix is ever emitted: mode is
+    // "following" but still awaitingFreshFix, so hasActionableFollowAnchor
+    // (rideCamera.ts) is false and the press correctly falls back to the
+    // ordinary, unanchored changeZoomBy path (backlog item 65) — there is
+    // no rider coordinate yet to honestly anchor to. See the "genuinely
+    // following" tests below for the anchored case, once a fix exists.
+    it("before any accepted fix, pressing Zoom in calls changeZoomBy(1); pressing Zoom out calls changeZoomBy(-1)", async () => {
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
       const map = buildStubMapFactory();
@@ -4163,7 +4169,58 @@ describe("RidingScreen", () => {
       expect(map.changeZoomBySpy).toHaveBeenLastCalledWith(-1);
     });
 
-    it("a zoom press keeps Follow's aria-pressed true and shows no paused toast, while never calling setCamera", async () => {
+    // Backlog item 65: once genuinely following (an accepted fix already
+    // applied), a zoom press re-anchors via setCamera at the rider's own
+    // coordinate/bearing/pitch, instead of the ordinary unanchored
+    // changeZoomBy path — replaces this test's own prior "never calls
+    // setCamera" assertion, which described the pre-fix defect.
+    it("a zoom press while genuinely following re-anchors via setCamera at the rider's own coordinate, keeps Follow's aria-pressed true, and shows no paused toast", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+      map.setCameraSpy.mockClear();
+      map.changeZoomBySpy.mockClear();
+
+      await user.click(screen.getByRole("button", { name: "Zoom in" }));
+
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.queryByText("Map follow paused.")).toBeNull();
+      expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      expect(map.setCameraSpy).toHaveBeenLastCalledWith(
+        pointAt(0),
+        NAVIGATION_ZOOM + 1,
+        expectedBearingAt(0),
+        FOLLOW_PITCH_DEGREES,
+        { animate: true, followOffset: true },
+      );
+      // Only one camera operation per press — the unanchored fallback
+      // must not also fire for the same press.
+      expect(map.changeZoomBySpy).not.toHaveBeenCalled();
+    });
+
+    it("two consecutive zoom presses while genuinely following each re-anchor via setCamera, accumulating zoom", async () => {
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
       const map = buildStubMapFactory();
@@ -4189,13 +4246,25 @@ describe("RidingScreen", () => {
       map.setCameraSpy.mockClear();
 
       await user.click(screen.getByRole("button", { name: "Zoom in" }));
+      await user.click(screen.getByRole("button", { name: "Zoom in" }));
 
-      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
+      expect(map.setCameraSpy).toHaveBeenCalledTimes(2);
+      expect(map.setCameraSpy).toHaveBeenNthCalledWith(
+        1,
+        pointAt(0),
+        NAVIGATION_ZOOM + 1,
+        expectedBearingAt(0),
+        FOLLOW_PITCH_DEGREES,
+        { animate: true, followOffset: true },
       );
-      expect(screen.queryByText("Map follow paused.")).toBeNull();
-      expect(map.setCameraSpy).not.toHaveBeenCalled();
+      expect(map.setCameraSpy).toHaveBeenNthCalledWith(
+        2,
+        pointAt(0),
+        NAVIGATION_ZOOM + 2,
+        expectedBearingAt(0),
+        FOLLOW_PITCH_DEGREES,
+        { animate: true, followOffset: true },
+      );
     });
 
     it("a genuine manual gesture still pauses Follow and shows the toast, unaffected by the new zoom controls", async () => {

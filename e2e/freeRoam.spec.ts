@@ -58,9 +58,13 @@ function immersiveHeaderLocator(page: Page) {
   return page.locator("header.riding-immersive-header");
 }
 
-// Mirrors ridingCamera.spec.ts's own identical numbersClose/centresClose
-// pair and its doc comment — duplicated locally per this repo's
-// established no-shared-e2e-helpers-across-specs convention.
+// Mirrors ridingCamera.spec.ts's own identical numbersClose helper and
+// its doc comment — duplicated locally per this repo's established
+// no-shared-e2e-helpers-across-specs convention. Unlike ridingCamera.spec.ts,
+// this file has no remaining use for a centresClose sibling once backlog
+// item 65's own rewrite replaced its one call site with the projected
+// screen-anchor proof below (data-camera-center is not the rider's
+// screen position while following — see that proof's own comment).
 const CAMERA_VALUE_TOLERANCE = 1e-6;
 
 function numbersClose(a: string | null, b: string | null): boolean {
@@ -68,11 +72,51 @@ function numbersClose(a: string | null, b: string | null): boolean {
   return Math.abs(Number.parseFloat(a) - Number.parseFloat(b)) < CAMERA_VALUE_TOLERANCE;
 }
 
-function centresClose(a: string | null, b: string | null): boolean {
-  if (a === null || b === null) return a === b;
-  const [aLon, aLat] = a.split(",");
-  const [bLon, bLat] = b.split(",");
-  return numbersClose(aLon, bLon) && numbersClose(aLat, bLat);
+// Mirrors ridingCamera.spec.ts's own identical CameraAttributeSnapshot/
+// readCameraAttributesAtomically/ANCHOR_PIXEL_TOLERANCE/
+// anchorWithinTolerance quartet and its doc comments (backlog item 65) —
+// duplicated locally per this repo's established no-shared-e2e-helpers-
+// across-specs convention.
+interface CameraAttributeSnapshot {
+  centre: string | null;
+  bearing: string | null;
+  pitch: string | null;
+  zoom: string | null;
+  anchorX: string | null;
+  anchorY: string | null;
+}
+
+async function readCameraAttributesAtomically(
+  mapContainer: Locator,
+): Promise<CameraAttributeSnapshot> {
+  return mapContainer.evaluate((element) => ({
+    centre: element.getAttribute("data-camera-center"),
+    bearing: element.getAttribute("data-camera-bearing"),
+    pitch: element.getAttribute("data-camera-pitch"),
+    zoom: element.getAttribute("data-camera-zoom"),
+    anchorX: element.getAttribute("data-camera-follow-anchor-x"),
+    anchorY: element.getAttribute("data-camera-follow-anchor-y"),
+  }));
+}
+
+const ANCHOR_PIXEL_TOLERANCE = 2;
+
+function anchorWithinTolerance(
+  after: CameraAttributeSnapshot,
+  baseline: CameraAttributeSnapshot,
+): boolean {
+  if (
+    after.anchorX === null ||
+    after.anchorY === null ||
+    baseline.anchorX === null ||
+    baseline.anchorY === null
+  ) {
+    return false;
+  }
+  return (
+    Math.abs(Number(after.anchorX) - Number(baseline.anchorX)) < ANCHOR_PIXEL_TOLERANCE &&
+    Math.abs(Number(after.anchorY) - Number(baseline.anchorY)) < ANCHOR_PIXEL_TOLERANCE
+  );
 }
 
 /** Deterministic replacement for a fixed sleep, mirroring
@@ -552,41 +596,79 @@ test("zoom while followed persists across a later GPS fix, storage, reload and R
   const mapContainer = page.locator('[data-testid="map-container"]');
   const followButton = page.getByRole("button", { name: "Follow my location" });
   const zoomInButton = page.getByRole("button", { name: "Zoom in" });
+  const zoomOutButton = page.getByRole("button", { name: "Zoom out" });
 
   // 1. Wait for the real followed camera to genuinely settle.
   await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).toBe("35");
 
-  // 2. Capture the settled camera before zooming.
-  const centreBeforeZoom = await mapContainer.getAttribute("data-camera-center");
-  const bearingBeforeZoom = await mapContainer.getAttribute("data-camera-bearing");
-  const pitchBeforeZoom = await mapContainer.getAttribute("data-camera-pitch");
-  const zoomBeforeZoom = await mapContainer.getAttribute("data-camera-zoom");
+  // 2. Capture the settled camera before zooming, including the rider's
+  // own projected screen anchor (backlog item 65) — the actual invariant
+  // under test, captured atomically so it can never be torn across two
+  // different settle events.
+  const baseline = await readCameraAttributesAtomically(mapContainer);
+  expect(baseline.anchorX).not.toBeNull();
+  expect(baseline.anchorY).not.toBeNull();
 
-  // 3. Press Zoom in; wait for a genuine, numerically greater zoom.
+  // 3. Press Zoom in; wait for a genuine, numerically greater zoom, then
+  // read the post-settle snapshot atomically.
   await zoomInButton.click();
   await expect
     .poll(() => mapContainer.getAttribute("data-camera-zoom"))
-    .not.toBe(zoomBeforeZoom);
-  const zoomAfterZoom = await mapContainer.getAttribute("data-camera-zoom");
-  expect(Number(zoomAfterZoom)).toBeGreaterThan(Number(zoomBeforeZoom));
+    .not.toBe(baseline.zoom);
+  const afterZoomIn = await readCameraAttributesAtomically(mapContainer);
+  expect(Number(afterZoomIn.zoom)).toBeGreaterThan(Number(baseline.zoom));
 
   // 4. Follow stays engaged; no paused toast.
   await expect(followButton).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Map follow paused.")).toHaveCount(0);
 
-  // 5. Centre/bearing/pitch untouched by the zoom command itself.
-  expect(
-    centresClose(await mapContainer.getAttribute("data-camera-center"), centreBeforeZoom),
-  ).toBe(true);
-  expect(await mapContainer.getAttribute("data-camera-bearing")).toBe(bearingBeforeZoom);
-  expect(await mapContainer.getAttribute("data-camera-pitch")).toBe(pitchBeforeZoom);
+  // 5. Bearing/pitch compared via numbersClose's own tolerance, not
+  // strict equality (see ridingCamera.spec.ts's own identical comment
+  // for the full rationale). The map's own reported geographic centre
+  // (data-camera-center) is deliberately NOT compared: while genuinely
+  // following, it is a different, nearby geographic point from the
+  // rider's real position, which legitimately shifts geographically on
+  // zoom even though the rider's own on-screen position does not
+  // (backlog item 65). The invariant under test is the rider's own
+  // projected screen anchor, asserted next.
+  expect(numbersClose(afterZoomIn.bearing, baseline.bearing)).toBe(true);
+  expect(numbersClose(afterZoomIn.pitch, baseline.pitch)).toBe(true);
+  expect(anchorWithinTolerance(afterZoomIn, baseline)).toBe(true);
+
+  // 5b. Sequential zoom-out then zoom-in again, proving the anchor holds
+  // across repeated presses in both directions, not just a single
+  // zoom-in press.
+  await zoomOutButton.click();
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-zoom"))
+    .not.toBe(afterZoomIn.zoom);
+  const afterZoomOut = await readCameraAttributesAtomically(mapContainer);
+  expect(Number(afterZoomOut.zoom)).toBeLessThan(Number(afterZoomIn.zoom));
+  await expect(followButton).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Map follow paused.")).toHaveCount(0);
+  expect(numbersClose(afterZoomOut.bearing, baseline.bearing)).toBe(true);
+  expect(numbersClose(afterZoomOut.pitch, baseline.pitch)).toBe(true);
+  expect(anchorWithinTolerance(afterZoomOut, baseline)).toBe(true);
+
+  await zoomInButton.click();
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-zoom"))
+    .not.toBe(afterZoomOut.zoom);
+  const finalSnapshot = await readCameraAttributesAtomically(mapContainer);
+  const zoomAfterZoom = finalSnapshot.zoom;
+  expect(Number(finalSnapshot.zoom)).toBeGreaterThan(Number(afterZoomOut.zoom));
+  await expect(followButton).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Map follow paused.")).toHaveCount(0);
+  expect(numbersClose(finalSnapshot.bearing, baseline.bearing)).toBe(true);
+  expect(numbersClose(finalSnapshot.pitch, baseline.pitch)).toBe(true);
+  expect(anchorWithinTolerance(finalSnapshot, baseline)).toBe(true);
 
   // 6. A later accepted GPS fix re-centres the followed camera without
   // resetting the selected zoom.
   await context.setGeolocation(MOVED);
   await expect
     .poll(() => mapContainer.getAttribute("data-camera-center"))
-    .not.toBe(centreBeforeZoom);
+    .not.toBe(finalSnapshot.centre);
   expect(await mapContainer.getAttribute("data-camera-zoom")).toBe(zoomAfterZoom);
 
   // 7. The selected zoom is genuinely committed to IndexedDB.

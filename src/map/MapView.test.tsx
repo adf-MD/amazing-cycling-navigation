@@ -104,6 +104,12 @@ interface MockMapHandle {
   setCameraSpy: ReturnType<typeof vi.fn>;
   centreOnSpy: ReturnType<typeof vi.fn>;
   changeZoomBySpy: ReturnType<typeof vi.fn>;
+  /** Diagnostic-only (backlog item 65) — a deterministic linear mapping
+   * from coordinate to pixel, distinct enough per input that a test can
+   * tell two different coordinates apart by their projected values. */
+  projectSpy: ReturnType<
+    typeof vi.fn<(coordinate: Coordinate) => { x: number; y: number }>
+  >;
   addLineLayerSpy: ReturnType<typeof vi.fn>;
   addImageSpy: ReturnType<typeof vi.fn>;
   addSymbolLayerSpy: ReturnType<typeof vi.fn>;
@@ -159,6 +165,10 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
   const setCameraSpy = vi.fn();
   const centreOnSpy = vi.fn();
   const changeZoomBySpy = vi.fn();
+  const projectSpy = vi.fn((coordinate: Coordinate): { x: number; y: number } => ({
+    x: coordinate[0] * 100,
+    y: coordinate[1] * 100,
+  }));
   const addLineLayerSpy = vi.fn();
   const addImageSpy = vi.fn();
   const addSymbolLayerSpy = vi.fn();
@@ -230,6 +240,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
       setCamera: setCameraSpy,
       centreOn: centreOnSpy,
       changeZoomBy: changeZoomBySpy,
+      project: projectSpy,
       resize: resizeSpy,
       onMapTap: (listener) => {
         mapTapListener = listener;
@@ -252,6 +263,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
     setCameraSpy,
     centreOnSpy,
     changeZoomBySpy,
+    projectSpy,
     addLineLayerSpy,
     addImageSpy,
     addSymbolLayerSpy,
@@ -1361,6 +1373,91 @@ describe("MapView", () => {
     expect(mock.changeZoomBySpy).toHaveBeenCalledTimes(2);
     expect(mock.changeZoomBySpy).toHaveBeenNthCalledWith(1, 1);
     expect(mock.changeZoomBySpy).toHaveBeenNthCalledWith(2, 1);
+  });
+
+  describe("follow-anchor diagnostic (backlog item 65)", () => {
+    it("populates data-camera-follow-anchor-x/-y from project(currentPosition) once the camera settles", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          currentPosition={[1.5, 51.5]}
+          suppressInitialOverviewFit
+        />,
+      );
+      mock.triggerLoad();
+
+      mock.triggerCameraSettled({
+        coordinate: [-1.1, 52.2],
+        zoom: 12,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      expect(mock.projectSpy).toHaveBeenCalledWith([1.5, 51.5]);
+      const container = screen.getByTestId("map-container");
+      expect(container).toHaveAttribute("data-camera-follow-anchor-x", "150");
+      expect(container).toHaveAttribute("data-camera-follow-anchor-y", "5150");
+    });
+
+    it("stays empty when currentPosition is absent", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView points={points} mapFactory={mock.factory} suppressInitialOverviewFit />,
+      );
+      mock.triggerLoad();
+
+      mock.triggerCameraSettled({
+        coordinate: [-1.1, 52.2],
+        zoom: 12,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      expect(mock.projectSpy).not.toHaveBeenCalled();
+      const container = screen.getByTestId("map-container");
+      expect(container).toHaveAttribute("data-camera-follow-anchor-x", "");
+      expect(container).toHaveAttribute("data-camera-follow-anchor-y", "");
+    });
+
+    it("recomputes on a later settle, reflecting a changed currentPosition prop", () => {
+      const mock = createMockMapFactory();
+      const { rerender } = render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          currentPosition={[1.5, 51.5]}
+          suppressInitialOverviewFit
+        />,
+      );
+      mock.triggerLoad();
+      mock.triggerCameraSettled({
+        coordinate: [-1.1, 52.2],
+        zoom: 12,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      const container = screen.getByTestId("map-container");
+      expect(container).toHaveAttribute("data-camera-follow-anchor-x", "150");
+
+      rerender(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          currentPosition={[2, 51.5]}
+          suppressInitialOverviewFit
+        />,
+      );
+      mock.triggerCameraSettled({
+        coordinate: [-1.2, 52.3],
+        zoom: 13,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      expect(container).toHaveAttribute("data-camera-follow-anchor-x", "200");
+    });
   });
 
   it("sets the route coordinate-count once real, non-empty route data is submitted", () => {

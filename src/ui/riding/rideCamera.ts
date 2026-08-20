@@ -73,14 +73,18 @@ export interface RideCameraCommand {
    * reset: a restored free camera can carry its own manually-set nonzero
    * pitch, which must never get a following-style offset bias. */
   followOffset: boolean;
-  /** Present only for an explicit Northwards or Follow-location press —
-   * copied verbatim from the triggering event so MapView can dedupe this
-   * command by identity instead of value (see MapView.tsx's CameraTarget:
-   * without this, a repeated press producing byte-identical values after
-   * an intervening manual gesture is silently swallowed). Always
-   * undefined for an automatic fresh-fix update or a one-time restore
-   * jump, which stay purely value-deduped. Transient UI identity — never
-   * persisted (see StoredCameraState). */
+  /** Present only for an explicit Northwards or Follow-location press, or
+   * an explicit anchored zoom press while genuinely following (backlog
+   * item 65 — see hasActionableFollowAnchor and the "follow-zoom-changed"
+   * event below) — copied verbatim from the triggering event so MapView
+   * can dedupe this command by identity instead of value (see
+   * MapView.tsx's CameraTarget: without this, a repeated press producing
+   * byte-identical values after an intervening manual gesture is
+   * silently swallowed). Always undefined for an automatic fresh-fix
+   * update, a one-time restore jump, or an unanchored zoom press (not
+   * genuinely following, or awaiting the first fix), all of which stay
+   * purely value-deduped. Transient UI identity — never persisted (see
+   * StoredCameraState). */
   requestId?: string;
 }
 
@@ -115,16 +119,39 @@ export type RideCameraEvent =
       bearingDegrees: number;
       pitchDegrees: number;
     }
-  /** Dispatched by the zoom controls (backlog item 53) — never changes
-   * mode/awaitingFreshFix/lastFollowedCoordinate/lastCommandedBearingDegrees
-   * and never produces a command: the actual on-screen zoom change always
-   * travels through MapView's separate zoomTarget/changeZoomBy path, so
-   * this event's only job is remembering what zoom the next following
-   * command should use. Applied unconditionally regardless of current
-   * mode (not gated on "following") — the simplest, most predictable
-   * behaviour, and the best continuity if the rider zooms while
-   * free-panning then re-engages Follow. */
-  | { type: "follow-zoom-changed"; delta: number }
+  /** Dispatched by the zoom controls (backlog item 53) — always updates
+   * followZoomLevel unconditionally regardless of current mode (not
+   * gated on "following"), the simplest, most predictable behaviour, and
+   * the best continuity if the rider zooms while free-panning then
+   * re-engages Follow. Never changes mode/awaitingFreshFix/
+   * lastFollowedCoordinate/lastCommandedBearingDegrees.
+   *
+   * Backlog item 65: while genuinely following with an actionable anchor
+   * (hasActionableFollowAnchor below — a real, already-committed
+   * coordinate/bearing pair, never merely "mode is following", which
+   * also covers the pending state while awaiting the very first fresh
+   * fix) this ALSO produces a real command: the same coordinate/bearing/
+   * pitch already committed to the last following command, reissued at
+   * the new zoom via followCommand — reusing MapLibre's own offset-aware
+   * setCamera ease so the rider's screen anchor (below vertical centre)
+   * is preserved through the zoom, rather than the ordinary
+   * zoomTarget/changeZoomBy path's true-centre-relative zoom (a fixed
+   * pixel offset corresponds to a different geographic distance at each
+   * zoom level, so holding the map's own true-centre point fixed instead
+   * visibly drifts the rider's real position on screen). When NOT
+   * actionable (free/overview mode, or following but still awaiting the
+   * first fix — there is nothing yet to honestly anchor to), this
+   * produces no command, exactly as before item 65:
+   * useRideCamera.ts's/useFreeRoamCamera.ts's requestZoom instead falls
+   * back to the ordinary, unanchored zoomTarget/changeZoomBy path for
+   * that press. The two paths are mutually exclusive per press —
+   * requestZoom decides which one to use BEFORE dispatching (dispatch
+   * has no synchronous return value to branch on afterwards), via this
+   * exact same hasActionableFollowAnchor check against its own
+   * latest-camera-state ref, so a genuinely followed zoom is never both
+   * anchored (setCamera) AND unanchored (changeZoomBy) for the same
+   * button press. */
+  | { type: "follow-zoom-changed"; delta: number; requestId?: string }
   /** Dispatched only from the hook's camera-settled handling (never from
    * a button) to reconcile followZoomLevel with MapLibre's real settled
    * zoom, including its own min/max clamping. Deliberately a no-op unless
@@ -191,6 +218,35 @@ function followCommand(
     animate: true,
     followOffset: true,
   };
+}
+
+/** True only once a live following session has a real, already-committed
+ * coordinate/bearing pair to reissue an unrelated camera parameter
+ * (e.g. a zoom-only change, backlog item 65) against — never merely
+ * "mode is following", which also covers the pending state while
+ * awaiting the very first fresh fix, where there is nothing yet to
+ * honestly anchor to. A type predicate so a caller narrows
+ * lastFollowedCoordinate/lastCommandedBearingDegrees to non-null for
+ * free, without a non-null assertion. Exported and shared by exactly two
+ * call sites that must never drift apart: the reducer's own
+ * "follow-zoom-changed" case below, and useRideCamera.ts's/
+ * useFreeRoamCamera.ts's requestZoom, which must decide — before
+ * dispatching, since dispatch has no synchronous return value — whether
+ * a zoom press will produce a real anchored command or fall back to the
+ * ordinary unanchored zoom path, so the two can never both fire for the
+ * same press. */
+export function hasActionableFollowAnchor(
+  state: RideCameraState,
+): state is RideCameraState & {
+  lastFollowedCoordinate: Coordinate;
+  lastCommandedBearingDegrees: number;
+} {
+  return (
+    state.mode === "following" &&
+    !state.awaitingFreshFix &&
+    state.lastFollowedCoordinate !== null &&
+    state.lastCommandedBearingDegrees !== null
+  );
 }
 
 /**
@@ -458,12 +514,28 @@ export function rideCameraReducer(
       };
     }
 
-    case "follow-zoom-changed":
+    case "follow-zoom-changed": {
+      const followZoomLevel = state.followZoomLevel + event.delta;
+      if (!hasActionableFollowAnchor(state)) {
+        return {
+          state: { ...state, followZoomLevel },
+          command: NO_COMMAND,
+          pausedToast: false,
+        };
+      }
       return {
-        state: { ...state, followZoomLevel: state.followZoomLevel + event.delta },
-        command: NO_COMMAND,
+        state: { ...state, followZoomLevel },
+        command: {
+          ...followCommand(
+            state.lastFollowedCoordinate,
+            state.lastCommandedBearingDegrees,
+            followZoomLevel,
+          ),
+          requestId: event.requestId,
+        },
         pausedToast: false,
       };
+    }
 
     case "follow-zoom-settled": {
       if (

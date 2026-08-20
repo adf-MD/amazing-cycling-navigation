@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { useRideCamera, type UseRideCameraOptions } from "./useRideCamera.ts";
-import { NAVIGATION_ZOOM } from "./rideCamera.ts";
+import { FOLLOW_PITCH_DEGREES, NAVIGATION_ZOOM } from "./rideCamera.ts";
 import type { GeolocationFix } from "../../platform/geolocation.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
 
@@ -118,7 +118,13 @@ describe("useRideCamera", () => {
       expect(result.current.zoomTarget).toMatchObject({ delta: -1 });
     });
 
-    it("calling requestZoom while following keeps mode following and never touches cameraTarget", () => {
+    // Backlog item 65: a zoom press while genuinely following (an
+    // actionable fix already applied) re-anchors cameraTarget to the
+    // same coordinate/bearing/pitch at the new zoom, through
+    // cameraTarget/setCamera — never the ordinary unanchored
+    // zoomTarget/changeZoomBy path, so the two can never both fire for
+    // the same press.
+    it("calling requestZoom while genuinely following re-anchors cameraTarget to the same coordinate/bearing at the new zoom, keeps Follow engaged, and never touches zoomTarget", () => {
       const { result } = renderHook(() =>
         useRideCamera({ ...BASE_OPTIONS, currentFix: FRESH_FIX, isStale: false }),
       );
@@ -127,7 +133,14 @@ describe("useRideCamera", () => {
         result.current.requestFollow();
       });
       const cameraTargetBeforeZoom = result.current.cameraTarget;
-      expect(cameraTargetBeforeZoom).not.toBeNull();
+      expect(cameraTargetBeforeZoom).toMatchObject({
+        coordinate: FRESH_FIX.coordinate,
+        zoom: NAVIGATION_ZOOM,
+        bearingDegrees: 90,
+        pitchDegrees: FOLLOW_PITCH_DEGREES,
+        followOffset: true,
+      });
+      expect(result.current.zoomTarget).toBeNull();
 
       act(() => {
         result.current.requestZoom(1);
@@ -135,7 +148,87 @@ describe("useRideCamera", () => {
 
       expect(result.current.mode).toBe("following");
       expect(result.current.showPausedToast).toBe(false);
+      // cameraTarget updates (not preserved by reference) — the anchor
+      // coordinate/bearing/pitch/followOffset stay exactly the same,
+      // only zoom changes.
+      expect(result.current.cameraTarget).not.toBe(cameraTargetBeforeZoom);
+      expect(result.current.cameraTarget).toMatchObject({
+        coordinate: FRESH_FIX.coordinate,
+        zoom: NAVIGATION_ZOOM + 1,
+        bearingDegrees: 90,
+        pitchDegrees: FOLLOW_PITCH_DEGREES,
+        animate: true,
+        followOffset: true,
+      });
+      expect(result.current.cameraTarget?.requestId).toBeTruthy();
+      // Proves only ONE camera operation fires per press: the unanchored
+      // fallback (zoomTarget) never also fires for the same press.
+      expect(result.current.zoomTarget).toBeNull();
+    });
+
+    it("two consecutive anchored zoom presses each produce a distinct requestId and both apply, accumulating zoom", () => {
+      const { result } = renderHook(() =>
+        useRideCamera({ ...BASE_OPTIONS, currentFix: FRESH_FIX, isStale: false }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+
+      act(() => {
+        result.current.requestZoom(1);
+      });
+      const first = result.current.cameraTarget;
+      expect(first).toMatchObject({ zoom: NAVIGATION_ZOOM + 1 });
+
+      act(() => {
+        result.current.requestZoom(1);
+      });
+      const second = result.current.cameraTarget;
+      expect(second).toMatchObject({ zoom: NAVIGATION_ZOOM + 2 });
+      expect(second?.requestId).toBeTruthy();
+      expect(second?.requestId).not.toBe(first?.requestId);
+    });
+
+    it("requestZoom while following but still awaiting the first fresh fix falls back to the ordinary unanchored zoomTarget path, never fabricating a cameraTarget", () => {
+      const { result } = renderHook(() => useRideCamera(BASE_OPTIONS));
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      expect(result.current.mode).toBe("following");
+      expect(result.current.awaitingFreshFix).toBe(true);
+      expect(result.current.cameraTarget).toBeNull();
+
+      act(() => {
+        result.current.requestZoom(1);
+      });
+
+      expect(result.current.cameraTarget).toBeNull();
+      expect(result.current.zoomTarget).toMatchObject({ delta: 1 });
+    });
+
+    it("requestZoom while free (after a manual gesture) uses the ordinary unanchored zoomTarget path, cameraTarget unaffected", () => {
+      const { result } = renderHook(() =>
+        useRideCamera({ ...BASE_OPTIONS, currentFix: FRESH_FIX, isStale: false }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      act(() => {
+        result.current.reportUserInteraction();
+      });
+      expect(result.current.mode).toBe("free");
+      const cameraTargetBeforeZoom = result.current.cameraTarget;
+
+      act(() => {
+        result.current.requestZoom(1);
+      });
+
+      expect(result.current.mode).toBe("free");
       expect(result.current.cameraTarget).toBe(cameraTargetBeforeZoom);
+      expect(result.current.zoomTarget).toMatchObject({ delta: 1 });
     });
 
     it("after requestZoom, a subsequent fresh fix produces a following command whose zoom reflects the change", () => {

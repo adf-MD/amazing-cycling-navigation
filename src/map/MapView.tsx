@@ -323,13 +323,18 @@ export interface OrientNorthCameraTarget {
 
 /** An explicit "change zoom by a fixed step" camera command — Planning's
  * Zoom in/out controls (backlog item 52), and Riding's/free roam's own
- * equivalent controls (backlog item 53). Deduped by `requestId`, not by
- * value, exactly like CentreCameraTarget/OrientNorthCameraTarget — two
- * consecutive Zoom-in presses carry an identical `delta` but must both
- * apply. `delta` is always relative to the map's current zoom at the
- * moment it's applied (see mapAdapter.ts's changeZoomBy), never an
- * absolute target. Fully generic — every caller shares this one command
- * shape and the one `zoomTarget` effect below. */
+ * equivalent controls whenever NOT genuinely following with an
+ * actionable anchor (backlog item 53; the anchored case is superseded by
+ * backlog item 65 — see rideCamera.ts's hasActionableFollowAnchor and
+ * useRideCamera.ts's requestZoom, which instead route through
+ * CameraTarget/setCamera so the rider's below-centre screen position
+ * survives the zoom). Deduped by `requestId`, not by value, exactly like
+ * CentreCameraTarget/OrientNorthCameraTarget — two consecutive Zoom-in
+ * presses carry an identical `delta` but must both apply. `delta` is
+ * always relative to the map's current zoom at the moment it's applied
+ * (see mapAdapter.ts's changeZoomBy), never an absolute target. Fully
+ * generic — every caller shares this one command shape and the one
+ * `zoomTarget` effect below. */
 export interface ZoomCameraTarget {
   delta: number;
   /** Distinct per issuance — generate via src/platform/idGenerator.ts's
@@ -535,6 +540,14 @@ export function MapView({
   useEffect(() => {
     onCameraSettledRef.current = onCameraSettled;
   }, [onCameraSettled]);
+  // Diagnostic-only (see followAnchorPixel below, backlog item 65) — the
+  // onCameraSettled handler reads this rather than closing over
+  // currentPosition directly, since it's registered once inside the
+  // map-creation effect and must always see the latest prop.
+  const currentPositionRef = useRef(currentPosition);
+  useEffect(() => {
+    currentPositionRef.current = currentPosition;
+  }, [currentPosition]);
   const onMapTapRef = useRef(planningOverlay?.onMapTap);
   useEffect(() => {
     onMapTapRef.current = planningOverlay?.onMapTap;
@@ -594,6 +607,21 @@ export function MapView({
     bearingDegrees: number;
     pitchDegrees: number;
   } | null>(null);
+  // The current-position marker's own on-screen pixel position as of the
+  // last settle — diagnostic only (data-camera-follow-anchor-x/-y below,
+  // backlog item 65), mirroring cameraOrientation's identical purpose:
+  // lets a real-browser test prove that a genuinely followed zoom press
+  // keeps the rider's coordinate at the same screen pixel (the below-
+  // centre follow anchor), which the map's own reported centre
+  // (cameraCenter above) cannot show while following — see
+  // mapAdapter.ts's FOLLOW_VERTICAL_OFFSET_PX. Never read by any
+  // production decision logic. null whenever currentPosition is absent,
+  // or the map adapter doesn't implement the optional project() method
+  // (every test double that doesn't exercise this diagnostic).
+  const [followAnchorPixel, setFollowAnchorPixel] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   // The map's own zoom, rounded to the nearest whole level and updated
   // only when the camera settles (never per animation frame) — the sole
   // input, together with route length, to the adaptive distance-badge
@@ -651,6 +679,7 @@ export function MapView({
     setRouteSourceLoaded(false);
     setCameraCenter(null);
     setCameraOrientation(null);
+    setFollowAnchorPixel(null);
     setDistanceBadgeZoom(null);
     setStyleStructurallyReady(false);
     lastAppliedCameraTargetRef.current = null;
@@ -952,6 +981,12 @@ export function MapView({
           const rounded = Math.round(camera.zoom);
           return previous === rounded ? previous : rounded;
         });
+        // Diagnostic-only follow-anchor readback (backlog item 65) — see
+        // followAnchorPixel's own doc comment above. Computed on the same
+        // settle cadence as every other data-camera-* attribute, so it is
+        // always internally consistent with them (one React batch).
+        const position = currentPositionRef.current;
+        setFollowAnchorPixel(position ? (map.project?.(position) ?? null) : null);
         onCameraSettledRef.current?.(camera);
       });
 
@@ -1389,7 +1424,10 @@ export function MapView({
   }, [orientNorthTarget, styleStructurallyReady]);
 
   // Executes an explicit "change zoom by a fixed step" request (Planning's
-  // Zoom in/out controls, backlog item 52) — deduped by requestId, like
+  // Zoom in/out controls, backlog item 52, and Riding's/free roam's own
+  // controls whenever NOT genuinely following with an actionable anchor —
+  // see ZoomCameraTarget's own doc comment for the anchored case, which
+  // this effect never sees at all) — deduped by requestId, like
   // centreTarget/orientNorthTarget above, not by value: a repeated
   // identical delta (two consecutive Zoom-in presses) must still re-apply
   // each time. Deliberately does NOT eagerly read back getZoom() the way
@@ -1549,6 +1587,8 @@ export function MapView({
         data-camera-pitch={
           cameraOrientation ? String(cameraOrientation.pitchDegrees) : ""
         }
+        data-camera-follow-anchor-x={followAnchorPixel ? String(followAnchorPixel.x) : ""}
+        data-camera-follow-anchor-y={followAnchorPixel ? String(followAnchorPixel.y) : ""}
         data-marker-zoom-band={deriveMarkerZoomBand(distanceBadgeZoom ?? Number.NaN)}
         style={{ width: "100%", height: "100%" }}
       />

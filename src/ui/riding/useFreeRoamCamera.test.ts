@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { useFreeRoamCamera } from "./useFreeRoamCamera.ts";
-import { NAVIGATION_ZOOM } from "./rideCamera.ts";
+import { FOLLOW_PITCH_DEGREES, NAVIGATION_ZOOM } from "./rideCamera.ts";
 import type { GeolocationFix } from "../../platform/geolocation.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
 
@@ -411,6 +411,101 @@ describe("useFreeRoamCamera", () => {
 
       expect(result.current.mode).toBe("following");
       expect(result.current.showPausedToast).toBe(false);
+    });
+
+    // Backlog item 65 — mirrors useRideCamera.ts's own identical proof:
+    // free roam shares the exact same anchored-vs-unanchored mechanism,
+    // with no route geometry involved.
+    it("re-anchors cameraTarget to the same coordinate/bearing at the new zoom while genuinely following, never touching zoomTarget", () => {
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: FRESH_FIX,
+          isStale: false,
+          restoredCameraState: null,
+          restoredLastReliableBearingDegrees: null,
+        }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      const cameraTargetBeforeZoom = result.current.cameraTarget;
+      expect(cameraTargetBeforeZoom).toMatchObject({
+        coordinate: FRESH_FIX.coordinate,
+        zoom: NAVIGATION_ZOOM,
+        bearingDegrees: 90,
+        pitchDegrees: FOLLOW_PITCH_DEGREES,
+        followOffset: true,
+      });
+      expect(result.current.zoomTarget).toBeNull();
+
+      act(() => {
+        result.current.requestZoom(1);
+      });
+
+      expect(result.current.cameraTarget).not.toBe(cameraTargetBeforeZoom);
+      expect(result.current.cameraTarget).toMatchObject({
+        coordinate: FRESH_FIX.coordinate,
+        zoom: NAVIGATION_ZOOM + 1,
+        bearingDegrees: 90,
+        pitchDegrees: FOLLOW_PITCH_DEGREES,
+        followOffset: true,
+      });
+      expect(result.current.cameraTarget?.requestId).toBeTruthy();
+      expect(result.current.zoomTarget).toBeNull();
+    });
+
+    it("requestZoom while following but still awaiting the first fresh fix falls back to the unanchored zoomTarget path, never fabricating a cameraTarget", () => {
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: null,
+          isStale: false,
+          restoredCameraState: null,
+          restoredLastReliableBearingDegrees: null,
+        }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      expect(result.current.mode).toBe("following");
+      expect(result.current.awaitingFreshFix).toBe(true);
+      expect(result.current.cameraTarget).toBeNull();
+
+      act(() => {
+        result.current.requestZoom(1);
+      });
+
+      expect(result.current.cameraTarget).toBeNull();
+      expect(result.current.zoomTarget).toMatchObject({ delta: 1 });
+    });
+
+    it("requestZoom while free (after a manual gesture) uses the unanchored zoomTarget path, cameraTarget unaffected", () => {
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: FRESH_FIX,
+          isStale: false,
+          restoredCameraState: null,
+          restoredLastReliableBearingDegrees: null,
+        }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      act(() => {
+        result.current.reportUserInteraction();
+      });
+      expect(result.current.mode).toBe("free");
+      const cameraTargetBeforeZoom = result.current.cameraTarget;
+
+      act(() => {
+        result.current.requestZoom(1);
+      });
+
+      expect(result.current.mode).toBe("free");
+      expect(result.current.cameraTarget).toBe(cameraTargetBeforeZoom);
+      expect(result.current.zoomTarget).toMatchObject({ delta: 1 });
     });
 
     it("reportCameraSettled while following reconciles persistableCameraState.zoom to the settled value", () => {

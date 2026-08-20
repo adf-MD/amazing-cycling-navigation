@@ -342,8 +342,26 @@ export interface MapLibreLike {
    * setter clamps the resulting value to the style's min/max zoom
    * internally, so this needs no clamping logic of its own. Used by
    * Planning's zoom in/out controls (backlog item 52), which must never
-   * disturb whatever centre/bearing/pitch the rider already has. */
+   * disturb whatever centre/bearing/pitch the rider already has. A
+   * genuinely followed Riding/free-roam zoom press (backlog item 65)
+   * does NOT use this method at all — it instead reissues the rider's
+   * own already-committed coordinate/bearing at the new zoom through
+   * setCamera above (with followOffset: true), so the below-centre
+   * follow anchor is preserved through the zoom; this method's own
+   * true-centre-relative behaviour would otherwise visibly drift the
+   * rider's on-screen position. See rideCamera.ts's
+   * hasActionableFollowAnchor for the exact condition. */
   changeZoomBy(delta: number): void;
+  /** Projects a geographic coordinate to its current on-screen pixel
+   * position. Optional and diagnostic-only — added narrowly for real-
+   * browser proof that a genuinely followed zoom press (backlog item 65)
+   * keeps the rider's coordinate at the same screen pixel, never read by
+   * any production decision logic. Deliberately optional (not required,
+   * unlike every other method here) so the ~15 existing test doubles
+   * implementing this interface elsewhere in the codebase need no
+   * mechanical stub addition — only the handful that actually exercise
+   * this diagnostic implement it. */
+  project?(coordinate: Coordinate): { x: number; y: number };
   /** Recomputes the map's size from its container. Needed after the container's
    * on-screen size changes post-creation (e.g. iOS Safari/PWA chrome settling
    * after first paint) — otherwise fitBounds/camera maths use stale dimensions. */
@@ -712,6 +730,11 @@ export class MapLibreAdapter implements MapLibreLike {
       duration: ZOOM_EASE_DURATION_MS,
       essential: true,
     });
+  }
+
+  project(coordinate: Coordinate): { x: number; y: number } {
+    const point = this.map.project([coordinate[0], coordinate[1]]);
+    return { x: point.x, y: point.y };
   }
 
   resize(): void {

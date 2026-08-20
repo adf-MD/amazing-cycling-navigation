@@ -167,6 +167,19 @@ describe("MapLibreAdapter", () => {
     expect(options.zoom).toBe(11);
   });
 
+  // Backlog item 65's diagnostic-only readback (see MapLibreLike's own
+  // doc comment) — a thin, direct wrapper around the underlying MapLibre
+  // map's own project(), never used by any production decision logic.
+  it("project delegates to the underlying map's own project() and returns its x/y", () => {
+    const fake = buildFakeMapLibreMap();
+    const adapter = buildAdapter(fake);
+
+    const result = adapter.project([1.5, 51.5]);
+
+    expect(fake.project).toHaveBeenCalledWith([1.5, 51.5]);
+    expect(result).toEqual({ x: 100, y: 200 }); // fake project() always returns this
+  });
+
   it("onCameraSettled reports centre, zoom, bearing and pitch together on moveend", () => {
     const fake = buildFakeMapLibreMap({ lng: 3, lat: 4 });
     const adapter = buildAdapter(fake);
