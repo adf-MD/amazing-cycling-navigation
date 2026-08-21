@@ -1317,6 +1317,7 @@ export function RidingScreen({
             <RidingStatusStrip
               offRouteLevel={nav.offRouteLevel}
               distanceRemainingMetres={nav.distanceRemainingMetres}
+              remainingAscentMetres={nav.remainingAscentMetres}
               accuracyMetres={nav.currentFix.accuracyMetres}
               isStale={nav.isStale}
               fixAgeMs={fixAgeMs}

@@ -176,14 +176,22 @@ function computeAscentDescent(
   return { ascentMetres, descentMetres };
 }
 
+interface SmoothedElevationSeries {
+  sampleDistances: number[];
+  smoothed: number[];
+}
+
 /**
- * Ascent/descent from a route's points. Raw `RoutePoint.elevationMetres`
- * values are never mutated by this pipeline — it only reads them into a
- * separate resampled/smoothed series used purely for this calculation.
+ * Shared "known points -> resample -> smooth" pipeline behind both
+ * analyzeElevation and remainingAscentMetres below, so the two never
+ * drift into separate interpretations of the same series. Null only when
+ * the route has no known elevation anywhere.
  */
-export function analyzeElevation(points: readonly RoutePoint[]): ElevationAnalysis {
+function buildSmoothedElevationSeries(
+  points: readonly RoutePoint[],
+): SmoothedElevationSeries | null {
   if (!hasAnyElevation(points)) {
-    return { ascentMetres: null, descentMetres: null };
+    return null;
   }
 
   const known: KnownElevationPoint[] = points
@@ -198,5 +206,78 @@ export function analyzeElevation(points: readonly RoutePoint[]): ElevationAnalys
   const resampled = resampleElevations(known, sampleDistances);
   const smoothed = centredMovingAverage(resampled, SMOOTHING_WINDOW_SAMPLES);
 
-  return computeAscentDescent(smoothed, MIN_ASCENT_DELTA_METRES);
+  return { sampleDistances, smoothed };
+}
+
+/**
+ * Ascent/descent from a route's points. Raw `RoutePoint.elevationMetres`
+ * values are never mutated by this pipeline — it only reads them into a
+ * separate resampled/smoothed series used purely for this calculation.
+ */
+export function analyzeElevation(points: readonly RoutePoint[]): ElevationAnalysis {
+  const series = buildSmoothedElevationSeries(points);
+  if (series === null) {
+    return { ascentMetres: null, descentMetres: null };
+  }
+
+  return computeAscentDescent(series.smoothed, MIN_ASCENT_DELTA_METRES);
+}
+
+/**
+ * Remaining positive elevation gain — never a net delta — from
+ * `fromDistanceMetres` (clamped to the route) to the route's finish:
+ * every future climb's gain summed, via the exact same resample/smooth/
+ * reversal pipeline analyzeElevation uses for the whole-route total.
+ *
+ * At fromDistanceMetres 0 this is provably identical to
+ * analyzeElevation(points).ascentMetres, not merely close to it:
+ * buildSampleDistances always starts at exactly 0, so the seam lookup
+ * below lands on resampleElevations' "at or before the first known
+ * point" branch and returns the first smoothed sample verbatim (no
+ * interpolation arithmetic) — making the tail series passed to
+ * computeAscentDescent element-for-element the same array
+ * analyzeElevation itself would use.
+ *
+ * Returns null only when the route has no known elevation anywhere,
+ * matching analyzeElevation's own null policy — a genuinely flat or
+ * descending remainder is numeric 0, never conflated with "unknown".
+ */
+export function remainingAscentMetres(
+  points: readonly RoutePoint[],
+  fromDistanceMetres: number,
+): number | null {
+  const series = buildSmoothedElevationSeries(points);
+  if (series === null) {
+    return null;
+  }
+
+  const { sampleDistances, smoothed } = series;
+  const totalDistance = sampleDistances.at(-1) ?? 0;
+  const clampedFrom = Math.min(Math.max(fromDistanceMetres, 0), totalDistance);
+
+  // Re-expresses the already-resampled/smoothed grid as a KnownElevationPoint[]
+  // so the existing resampleElevations can locate/interpolate the seam value
+  // at clampedFrom, rather than writing a second bracket/lerp implementation.
+  const knownSeries: KnownElevationPoint[] = sampleDistances.map(
+    (distanceMetres, index) => {
+      const elevationMetres = smoothed[index];
+      if (elevationMetres === undefined) {
+        throw new Error("unreachable: smoothed series shorter than sampleDistances");
+      }
+      return { distanceMetres, elevationMetres };
+    },
+  );
+
+  const seamValue = resampleElevations(knownSeries, [clampedFrom])[0];
+  if (seamValue === undefined) {
+    throw new Error(
+      "unreachable: resampleElevations returned no value for a single target",
+    );
+  }
+
+  const afterIndex = sampleDistances.findIndex((distance) => distance > clampedFrom);
+  const tailRest = afterIndex === -1 ? [] : smoothed.slice(afterIndex);
+  const tail = [seamValue, ...tailRest];
+
+  return computeAscentDescent(tail, MIN_ASCENT_DELTA_METRES).ascentMetres;
 }

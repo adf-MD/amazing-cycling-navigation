@@ -3093,7 +3093,7 @@ describe("RidingScreen", () => {
       });
 
       expect(await screen.findByText("On route")).toBeInTheDocument();
-      expect(screen.getByText(/Remaining:/)).toBeInTheDocument();
+      expect(screen.getByText(/km ·/)).toBeInTheDocument();
       await switchToProfile(user);
       expect(
         screen.getByRole("group", { name: "Elevation profile view" }),
@@ -3128,7 +3128,7 @@ describe("RidingScreen", () => {
       expect(await screen.findByTestId("tiles-unavailable-banner")).toBeInTheDocument();
       // The rest of the ride UI is untouched by the map's own tile failure.
       expect(screen.getByText("On route")).toBeInTheDocument();
-      expect(screen.getByText(/Remaining:/)).toBeInTheDocument();
+      expect(screen.getByText(/km ·/)).toBeInTheDocument();
       expect(screen.getByTestId("map-container")).toBeInTheDocument();
       await switchToProfile(user);
       expect(
@@ -3422,7 +3422,7 @@ describe("RidingScreen", () => {
       await waitFor(() => {
         expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
       });
-      const remainingBefore = screen.getByText(/Remaining:/).textContent;
+      const remainingBefore = screen.getByText(/km ·/).textContent;
 
       map.triggerUserCameraInteraction();
       expect(await screen.findByText("Map follow paused.")).toBeInTheDocument();
@@ -3436,7 +3436,7 @@ describe("RidingScreen", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText(/Remaining:/).textContent).not.toBe(remainingBefore);
+        expect(screen.getByText(/km ·/).textContent).not.toBe(remainingBefore);
       });
       // Progress kept moving (assertion above), but the camera itself
       // never moved again once free — still exactly the one call from
@@ -3996,7 +3996,7 @@ describe("RidingScreen", () => {
       await waitFor(() => {
         expect(map.setCameraSpy).toHaveBeenCalledTimes(2);
       });
-      const remainingBefore = screen.getByText(/Remaining:/).textContent;
+      const remainingBefore = screen.getByText(/km ·/).textContent;
 
       stub.emitFix({
         coordinate: pointAt(8),
@@ -4007,7 +4007,7 @@ describe("RidingScreen", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText(/Remaining:/).textContent).not.toBe(remainingBefore);
+        expect(screen.getByText(/km ·/).textContent).not.toBe(remainingBefore);
       });
       expect(map.setCameraSpy).toHaveBeenCalledTimes(2);
     });
@@ -4843,7 +4843,7 @@ describe("RidingScreen", () => {
       await screen.findByText("On route");
       await switchToProfile(user);
       await user.click(screen.getByRole("button", { name: "2 km" }));
-      const remainingBefore = screen.getByText(/Remaining:/).textContent;
+      const remainingBefore = screen.getByText(/km ·/).textContent;
 
       fake.watches[0]?.emitError({ reason: "timeout", message: "timed out" });
       await screen.findByRole("alert");
@@ -4860,7 +4860,7 @@ describe("RidingScreen", () => {
         expect(screen.queryByRole("alert")).toBeNull();
       });
       expect(screen.getByText("On route")).toBeInTheDocument();
-      expect(screen.getByText(/Remaining:/).textContent).toBe(remainingBefore);
+      expect(screen.getByText(/km ·/).textContent).toBe(remainingBefore);
       // Reachable via a plain getByRole with no further switchToProfile
       // call — proves Try again also preserved activeView === "profile"
       // (backlog item 56), not just the elevation-view selection itself.

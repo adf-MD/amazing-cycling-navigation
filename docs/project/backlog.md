@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-**Item 69 is next.** Read it in full before starting.
+**Item 70 is next.** Read it in full before starting.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Each entry reproduces its original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this).
 
@@ -119,29 +119,6 @@ _Category: Platform compatibility_
       4. **Conflict and recovery coverage:** an inbound share must respect the existing unfinished route/free-roam conflict guard (item 42's fail-closed `checkFreeRoamConflict`-style pattern) and must never silently replace an active session or Planning draft; it must work after a fresh install/relaunch. Add Playwright coverage where meaningful, then require real Android Chrome acceptance — Chromium/Playwright emulation cannot prove real OS share-sheet registration, matching this project's existing, repeatedly-stated distinction between the `android-chrome` Playwright project and genuine physical-device verification (item 25).
     - If step 1 finds only an `Open with` path and no Share/Send path, document that conclusively and record that no pure static-PWA solution is currently available for this exact flow — do not propose a native wrapper, Trusted Web Activity, APK, or other Android-specific packaging as a workaround; that would be a major architecture departure and is explicitly not approved by this backlog item.
     - Requires the "## Explicit non-goals" edit recorded above (item 61's own cross-reference) — that section stays in the root `CLAUDE.md` and already carries this cross-reference.
-
----
-
-<a id="item-69"></a>
-
-## Item 69 — Remaining positive ascent in the active route summary
-
-_Category: Riding elevation enhancement_
-
-69. **Remaining positive ascent in the active route summary**
-    - A route-Riding information enhancement, distinct from the layout-only slice immediately above (item 68) because it introduces a new derived navigation metric rather than a presentation change to an existing one.
-    - Confirmed (exhaustive grep of `src/navigation/` and `src/ui/riding/`): no "remaining ascent"/whole-route "ascent remaining" metric exists anywhere today. The only ascent-adjacent values that exist are the static, pre-ride `route.ascentMetres` total shown via `formatAscent()` in the idle route header and in `RidingLauncher.tsx` — a total, not live/remaining — and `ClimbProgressMetrics.elevationRemainingMetres` (`climbElevationView.ts`), explicitly scoped, per its own doc comment, to only the currently active climb ("not the same value as elevationGainMetres... not a new cumulative-ascent calculation") and shown only inside `RidingClimbProgressPanel` — never a whole-route figure.
-    - Resolved architectural decision (settled here, not left to a future implementer to choose): use the frozen/reliable `presentationDistanceFromStartMetres`/`lastReliableMatch` progress source for remaining ascent, matching every other presentation value in this app — climb progress, next-manoeuvre selection, the elevation marker, route completion. `RidingStatusStrip.tsx`'s existing "Remaining: X km" figure, currently computed from the live, raw `matchedDistanceFromStartMetres` (`coreState.lastMatch?.distanceFromStartMetres`, per `useRideNavigation.ts`) rather than that frozen/reliable value, must be harmonised onto the same frozen/reliable progress source as an explicit, in-scope part of this same slice — not merely matched in wording, and not an optional follow-up — so the two figures on the compact status line can never disagree or jump independently under GPS jitter or off-route evidence.
-    - Existing whole-route ascent/descent calculation to reuse, not reimplement: `src/navigation/elevation.ts`'s `analyzeElevation` pipeline — filter known-elevation points, resample onto a fixed `RESAMPLE_STEP_METRES = 20` m grid, apply a centred `SMOOTHING_WINDOW_SAMPLES = 5`-sample moving average (~100 m window), then `computeAscentDescent`, a running-extremum/reversal-confirmation walk that only banks ascent once the series has reversed by at least `MIN_ASCENT_DELTA_METRES = 1` m from the tracked extremum.
-    - Desired compact presentation, verbatim:
-      ```
-      On route
-      61.5 km · 993 m ascent
-      GPS ±9 m · Live
-      ```
-      Both the distance and the ascent figure in that line are remaining values, not route totals. Provide an unambiguous accessible label distinguishing this from the route's original total ascent, since the compact visible wording alone could be misread as a total.
-    - Remaining ascent means the total future positive elevation gain from the rider's progress point onward — every future climb's gain summed, not merely the net elevation difference between the rider's position and the finish. Must handle missing/gapped elevation honestly, never inventing 0 m when unknown. No ascent metric for route-less free roam, which has no route/elevation data at all.
-    - Require deterministic unit coverage of the remaining-ascent calculation against `elevation.ts`'s existing constants/fixtures (a multi-climb route, a route with a gap in known elevation, a route with no remaining ascent near the finish), a `useRideNavigation`/status-strip test proving the figure advances/decreases correctly as progress advances, and real-device confirmation that the live figure is legible and updates sensibly while actually moving.
 
 ---
 

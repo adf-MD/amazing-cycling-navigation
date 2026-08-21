@@ -1417,14 +1417,16 @@ button:focus-visible {
   gap: var(--space-8);
 }
 
-/* The combined live status strip: route status, remaining distance, GPS
- * accuracy/staleness — one compact bordered row, never a table; wraps to
- * two lines on a narrow phone rather than scrolling horizontally. */
+/* The combined live status strip: route status, remaining metrics, GPS
+ * accuracy/staleness — three stacked lines in a compact bordered box,
+ * never a table. Shared with FreeRoamStatusStrip.tsx, which renders only
+ * its own single GPS line inside the same container/detail classes. Each
+ * line wraps internally via ordinary inline text reflow, rather than
+ * scrolling horizontally, at both normal and enlarged text sizes. */
 .ride-status-strip {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-4) var(--space-12);
+  flex-direction: column;
+  gap: var(--space-4);
   padding: var(--space-8) var(--space-12);
   border-radius: var(--radius-sm);
   border: 1px solid var(--colour-border);
@@ -1448,7 +1450,9 @@ button:focus-visible {
   color: var(--colour-danger);
 }
 
-.ride-status-strip-detail {
+.ride-status-strip-detail,
+.ride-status-strip-remaining,
+.ride-status-strip-gps {
   color: var(--colour-text-muted);
 }
 

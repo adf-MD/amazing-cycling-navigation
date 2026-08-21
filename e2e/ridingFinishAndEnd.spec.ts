@@ -266,7 +266,7 @@ test("confirms route completion on a closed loop without snapping progress back 
   ): Promise<void> {
     const { latitude, longitude } = loopPositionAtMetres(distanceMetres);
     await context.setGeolocation({ latitude, longitude });
-    await expect(page.getByText(`Remaining: ${remainingKm} km`)).toBeVisible();
+    await expect(page.getByText(`${remainingKm} km · 0 m ascent`)).toBeVisible();
   }
 
   // Arm via two consecutive interior fixes (50%/58% progress around the
@@ -304,7 +304,7 @@ test("confirms route completion on a closed loop without snapping progress back 
     longitude: ROUTE_START_LON,
   });
   await expect(page.getByText("Route complete")).toBeVisible();
-  await expect(page.getByText("Remaining: 0.0 km")).toBeVisible();
+  await expect(page.getByText("0.0 km · 0 m ascent")).toBeVisible();
 
   const finishButton = page.getByRole("button", { name: "Finish ride" });
   await expect(finishButton).toBeVisible();
@@ -381,7 +381,7 @@ test("conservatively confirms route completion only after consecutive fixes, and
     latitude: ROUTE_LAT,
     longitude: lonAtMetres(ROUTE_LENGTH_METRES),
   });
-  await expect(page.getByText("Remaining: 0.0 km")).toBeVisible();
+  await expect(page.getByText("0.0 km · 0 m ascent")).toBeVisible();
   await expect(page.getByText("Route complete")).toBeHidden();
 
   // A second consecutive fix at the finish confirms completion.

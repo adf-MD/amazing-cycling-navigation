@@ -135,7 +135,7 @@ describe("RidingScreen route-completion arming", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Remaining: 0.0 km")).toBeInTheDocument();
+      expect(screen.getByText("0.0 km · ascent unavailable")).toBeInTheDocument();
     });
     expect(screen.queryByText("Route complete")).toBeNull();
     expect(await getActiveRideState()).toBeDefined();
@@ -284,7 +284,7 @@ describe("RidingScreen route-completion arming", () => {
       fake.watches[1]?.emitFix(nearEndFix(6000));
     });
     await waitFor(() => {
-      expect(screen.getByText("Remaining: 0.0 km")).toBeInTheDocument();
+      expect(screen.getByText("0.0 km · ascent unavailable")).toBeInTheDocument();
     });
     expect(screen.queryByText("Route complete")).toBeNull();
   });
@@ -359,7 +359,7 @@ describe("RidingScreen route-completion arming", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Remaining: 0.0 km")).toBeInTheDocument();
+      expect(screen.getByText("0.0 km · ascent unavailable")).toBeInTheDocument();
     });
     expect(screen.queryByText("Route complete")).toBeNull();
   });

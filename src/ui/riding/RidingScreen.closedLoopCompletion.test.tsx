@@ -163,7 +163,7 @@ describe("RidingScreen closed-loop route completion", () => {
     // distance gate at all, since the false reacquire repeatedly pushes
     // reliable progress back towards zero.
     expect(await screen.findByText("Route complete")).toBeInTheDocument();
-    expect(screen.getByText("Remaining: 0.0 km")).toBeInTheDocument();
+    expect(screen.getByText("0.0 km · ascent unavailable")).toBeInTheDocument();
   });
 
   it("resuming a session armed and matched near the finish completes on the next eligible fixes without snapping to the start", async () => {

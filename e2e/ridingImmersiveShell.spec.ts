@@ -446,7 +446,7 @@ test("Finish ride restores the normal app shell exactly like Pause and End ride 
     latitude: ROUTE_LAT,
     longitude: lonAtMetres(ROUTE_LENGTH_METRES),
   });
-  await expect(page.getByText("Remaining: 0.0 km")).toBeVisible();
+  await expect(page.getByText("0.0 km · 0 m ascent")).toBeVisible();
   await expect(page.getByText("Route complete")).toBeHidden();
   await context.setGeolocation({
     latitude: ROUTE_LAT,

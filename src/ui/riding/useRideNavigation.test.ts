@@ -9,11 +9,12 @@ import type {
 } from "../../platform/geolocation.ts";
 import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
 import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry.ts";
-import type { PlannedRoute } from "../../domain/types.ts";
+import type { PlannedRoute, RoutePoint } from "../../domain/types.ts";
 import { db } from "../../storage/db.ts";
 import { getActiveRideState } from "../../storage/rideStateRepository.ts";
 import * as rideStateRepository from "../../storage/rideStateRepository.ts";
 import { DEFAULT_ELEVATION_VIEW_MODE } from "../../navigation/upcomingElevation.ts";
+import { OFF_ROUTE_BASE_METRES } from "../../navigation/offRoute.ts";
 
 const routePoints = buildRoutePointsFromWaypoints(
   [
@@ -35,6 +36,57 @@ const route: PlannedRoute = {
   warnings: [],
   source: { kind: "gpx-import" },
 };
+
+// A distinct route carrying real per-point elevation (routePoints above
+// always has elevationMetres: null) — a clean, steady 5% climb along the
+// route's own distance, so remaining ascent decreases predictably as
+// progress advances without depending on precise smoothing numerics.
+const elevatedRoutePoints: RoutePoint[] = routePoints.map((point) => ({
+  ...point,
+  elevationMetres: point.distanceFromStartMetres * 0.05,
+}));
+
+const elevatedRoute: PlannedRoute = {
+  ...route,
+  id: "route-elevated-1",
+  points: elevatedRoutePoints,
+};
+
+const onRoutePointA = routePoints[5];
+const onRoutePointB = routePoints[15];
+if (!onRoutePointA || !onRoutePointB) {
+  throw new Error("fixture missing point");
+}
+
+// Mirrors rideNavigationCore.test.ts's own off-route fixture exactly: far
+// enough (in latitude) to be raw-classified off-route from the very first
+// fix, which is what freezes lastReliableMatch immediately rather than
+// only once the debounced warning escalates.
+const FAR_COORDINATE: [number, number] = [
+  0.005,
+  51 + OFF_ROUTE_BASE_METRES / 111_000 + 0.001,
+];
+
+function fixAt(
+  coordinate: readonly [number, number],
+  timestampMs: number,
+): GeolocationFix {
+  return {
+    coordinate,
+    accuracyMetres: 5,
+    timestampMs,
+    speedMetresPerSecond: null,
+    headingDegrees: null,
+  };
+}
+
+function expectNumber(value: number | null): number {
+  expect(value).not.toBeNull();
+  if (value === null) {
+    throw new Error("expected a non-null number");
+  }
+  return value;
+}
 
 const SAMPLE_FIX: GeolocationFix = {
   coordinate: [0, 51],
@@ -654,5 +706,109 @@ describe("useRideNavigation finish()", () => {
     // row stays cleared once finish() actually resolves.
     expect(await getActiveRideState()).toBeUndefined();
     expect(result.current.currentFix).toBeNull();
+  });
+});
+
+describe("useRideNavigation remaining distance/ascent", () => {
+  it("are null before any fix, and non-null together once an on-route fix lands", () => {
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(elevatedRoute, { geolocationSource: fake.source }),
+    );
+
+    expect(result.current.distanceRemainingMetres).toBeNull();
+    expect(result.current.remainingAscentMetres).toBeNull();
+
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(fixAt(onRoutePointA.coordinate, 1000));
+    });
+
+    expect(result.current.distanceRemainingMetres).not.toBeNull();
+    expect(result.current.remainingAscentMetres).not.toBeNull();
+  });
+
+  it("decrease together as reliable progress advances", () => {
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(elevatedRoute, { geolocationSource: fake.source }),
+    );
+
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(fixAt(onRoutePointA.coordinate, 1000));
+    });
+    const distanceAtA = result.current.distanceRemainingMetres;
+    const ascentAtA = result.current.remainingAscentMetres;
+
+    act(() => {
+      fake.watches[0]?.emitFix(fixAt(onRoutePointB.coordinate, 2000));
+    });
+
+    expect(expectNumber(result.current.distanceRemainingMetres)).toBeLessThan(
+      expectNumber(distanceAtA),
+    );
+    expect(expectNumber(result.current.remainingAscentMetres)).toBeLessThan(
+      expectNumber(ascentAtA),
+    );
+  });
+
+  it("stay frozen while strongly off-route, even as the raw match keeps moving", () => {
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(elevatedRoute, { geolocationSource: fake.source }),
+    );
+
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(fixAt(onRoutePointA.coordinate, 1000));
+    });
+    const matchedBeforeOffRoute = result.current.matchedDistanceFromStartMetres;
+    const frozenDistance = result.current.distanceRemainingMetres;
+    const frozenAscent = result.current.remainingAscentMetres;
+
+    act(() => {
+      fake.watches[0]?.emitFix(fixAt(FAR_COORDINATE, 2000));
+    });
+
+    expect(result.current.matchedDistanceFromStartMetres).not.toBe(matchedBeforeOffRoute);
+    expect(result.current.distanceRemainingMetres).toBe(frozenDistance);
+    expect(result.current.remainingAscentMetres).toBe(frozenAscent);
+  });
+
+  it("release together once reliable matching resumes, advancing to a new position", () => {
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(elevatedRoute, { geolocationSource: fake.source }),
+    );
+
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(fixAt(onRoutePointA.coordinate, 1000));
+    });
+    const frozenDistance = result.current.distanceRemainingMetres;
+    const frozenAscent = result.current.remainingAscentMetres;
+
+    act(() => {
+      fake.watches[0]?.emitFix(fixAt(FAR_COORDINATE, 2000));
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(fixAt(onRoutePointB.coordinate, 3000));
+    });
+
+    expect(expectNumber(result.current.distanceRemainingMetres)).toBeLessThan(
+      expectNumber(frozenDistance),
+    );
+    expect(expectNumber(result.current.remainingAscentMetres)).toBeLessThan(
+      expectNumber(frozenAscent),
+    );
   });
 });

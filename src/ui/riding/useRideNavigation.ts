@@ -9,6 +9,7 @@ import {
 } from "../../platform/geolocation.ts";
 import type { OffRouteLevel, ElevationViewMode } from "../../navigation/types.ts";
 import { analyzeRouteElevationProfile } from "../../navigation/gradient.ts";
+import { remainingAscentMetres as remainingAscentFromDistance } from "../../navigation/elevation.ts";
 import {
   DEFAULT_ELEVATION_VIEW_MODE,
   buildFullProfileMarker,
@@ -56,6 +57,18 @@ export interface RideNavigationState {
    * `matchedDistanceFromStartMetres` directly. */
   presentationDistanceFromStartMetres: number | null;
   distanceRemainingMetres: number | null;
+  /** Remaining positive elevation gain (never a net delta) from the
+   * frozen/reliable presentationDistanceFromStartMetres to the route
+   * finish — every future climb's gain summed, via the same
+   * resample/smooth/reversal pipeline analyzeElevation uses for the
+   * whole-route total (navigation/elevation.ts's remainingAscentMetres).
+   * null exactly when distanceRemainingMetres is null (no reliable
+   * progress yet, or the route has no elevation data anywhere); a
+   * genuinely flat/descending remainder is numeric 0, never conflated
+   * with "unknown". Frozen alongside distanceRemainingMetres while
+   * strongly off-route (see presentationDistanceFromStartMetres's own
+   * comment above) — never derived from matchedDistanceFromStartMetres. */
+  remainingAscentMetres: number | null;
   offRouteLevel: OffRouteLevel;
   elevationViewMode: ElevationViewMode;
   elevationProfileDisplay: ElevationProfileDisplay;
@@ -538,9 +551,23 @@ export function useRideNavigation(
   const presentationDistanceFromStartMetres =
     coreState.lastReliableMatch?.distanceFromStartMetres ?? null;
   const distanceRemainingMetres =
-    matchedDistanceFromStartMetres === null
+    presentationDistanceFromStartMetres === null
       ? null
-      : Math.max(0, route.distanceMetres - matchedDistanceFromStartMetres);
+      : Math.max(0, route.distanceMetres - presentationDistanceFromStartMetres);
+
+  // Memoized, unlike distanceRemainingMetres's cheap inline subtraction
+  // above: remainingAscentFromDistance re-runs elevation.ts's full
+  // resample+smooth pass, which shouldn't repeat on renders triggered by
+  // unrelated state (wakeLockDesired, elevationViewMode, isStale, ...) —
+  // only when the route changes or a new reliable fix actually moves
+  // progress, mirroring elevationDisplayPoints's own memoization below.
+  const remainingAscentMetres = useMemo(
+    () =>
+      presentationDistanceFromStartMetres === null
+        ? null
+        : remainingAscentFromDistance(route.points, presentationDistanceFromStartMetres),
+    [route, presentationDistanceFromStartMetres],
+  );
 
   // Computed once per loaded route (route's identity is stable for the
   // component's lifetime; recomputing per GPS fix would be wasted work for
@@ -583,6 +610,7 @@ export function useRideNavigation(
     matchedDistanceFromStartMetres,
     presentationDistanceFromStartMetres,
     distanceRemainingMetres,
+    remainingAscentMetres,
     offRouteLevel: coreState.offRouteMachineState.level,
     elevationViewMode,
     elevationProfileDisplay,

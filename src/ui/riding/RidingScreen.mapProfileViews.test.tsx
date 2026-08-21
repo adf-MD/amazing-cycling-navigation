@@ -315,12 +315,12 @@ describe("RidingScreen — fixed Map/Profile shell (backlog item 56)", () => {
         fake.watches[0]?.emitFix(fixAt(pointAt(5), 1000));
       });
       await screen.findByText("On route");
-      const remainingBefore = screen.getByText(/Remaining:/).textContent;
+      const remainingBefore = screen.getByText(/km ·/).textContent;
 
       await switchToProfile(user);
       await switchToMap(user);
 
-      expect(screen.getByText(/Remaining:/).textContent).toBe(remainingBefore);
+      expect(screen.getByText(/km ·/).textContent).toBe(remainingBefore);
       expect(screen.getByText("On route")).toBeInTheDocument();
     });
 
@@ -445,7 +445,7 @@ describe("RidingScreen — fixed Map/Profile shell (backlog item 56)", () => {
       });
       await screen.findByText("On route");
 
-      expect(screen.getByText(/Remaining:/)).toBeInTheDocument();
+      expect(screen.getByText(/km ·/)).toBeInTheDocument();
       // route's source.kind is "gpx-import" with no trusted manoeuvres, so
       // RidingNextManoeuvrePanel shows its GPX-specific unavailable message
       // — proves the full Map-view panel is genuinely mounted and reachable.
@@ -490,7 +490,7 @@ describe("RidingScreen — fixed Map/Profile shell (backlog item 56)", () => {
         screen.getByText("Elevation data is not available for this route."),
       ).toBeInTheDocument();
       // Shared status content stays reachable regardless of the selected view.
-      expect(screen.getByText(/Remaining:/)).toBeInTheDocument();
+      expect(screen.getByText(/km ·/)).toBeInTheDocument();
       // Map-only content is not reachable while Profile is selected.
       expect(screen.queryByRole("button", { name: "Zoom in" })).toBeNull();
       expect(
