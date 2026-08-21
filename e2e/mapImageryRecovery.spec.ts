@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { BrowserContext, Locator, Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
 import { installLocalMapStyleWithTileSource } from "./support/localMapStyle.ts";
+import type { TileFailureController } from "./support/localMapStyle.ts";
 
 // Proves backlog item 67 (non-blocking map-imagery failure and genuine
 // reconnection recovery): a post-load tile failure shows a compact,
@@ -114,6 +115,76 @@ async function establishManualPan(page: Page, mapContainer: Locator): Promise<vo
     .not.toBe(centreBefore);
 }
 
+/**
+ * Waits for the map's OWN full initial load to genuinely settle — every
+ * initially in-view tile loaded or errored, MapLibre's own "load" event,
+ * exposed via data-map-ready (see MapView.tsx's diagnostic-only attribute)
+ * — before a test may safely fail a tile and expect the resulting error to
+ * be classified as a post-load tile-error episode.
+ *
+ * The weaker preconditions this file previously relied on alone — the
+ * "map-loading" testid hidden (only the STYLE DOCUMENT has loaded) and
+ * tiles.requestCount() > 0 (only that SOME tile request has happened) —
+ * do not guarantee this: MapView.tsx's own onError handler only reaches
+ * setTileErrorMessage once its internal hasLoaded is already true, so a
+ * tile deliberately failed before that discards the resulting error
+ * silently instead. Confirmed directly, via isolated single-worker
+ * instrumented runs against this exact file, as the actual cause of two
+ * real CI failures here (Deploy to GitHub Pages run 32401012094) — every
+ * onError event throughout both failures showed hasLoaded=false, never
+ * once true, from the very first tile request through the last. See
+ * CLAUDE.md's own item-67 follow-up entry for the full diagnosis.
+ */
+async function waitForMapFullyLoaded(mapContainer: Locator): Promise<void> {
+  await expect(mapContainer).toHaveAttribute("data-map-ready", "true", {
+    timeout: 15_000,
+  });
+}
+
+/**
+ * Enables tile failure, then proves — via failedTileRequestCount(), never
+ * merely assumed from a single action's own side effect — that a genuinely
+ * NEW tile request failed as a direct result, before returning. `action`
+ * is a plausible, in-scope rider interaction the caller supplies (a Zoom-in
+ * press for most call sites here; a further manual pan for the one test
+ * whose own camera-history assertions specifically require a pan, never a
+ * zoom, as the trigger); it may be invoked more than once — bounded — since
+ * MapLibre may already hold the first attempt's own tiles cached, and only
+ * the OBSERVED outcome, not the action itself, is trusted. Throws a
+ * diagnosing error distinguishing "no new request was ever made" from "a
+ * new request was made but did not fail" rather than only ever timing out
+ * on the banner assertion downstream with no causal evidence either way.
+ */
+async function triggerFreshTileFailure(
+  tiles: TileFailureController,
+  action: () => Promise<void>,
+): Promise<void> {
+  const failedBefore = tiles.failedTileRequestCount();
+  tiles.failTiles();
+
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    await action();
+    try {
+      await expect
+        .poll(() => tiles.failedTileRequestCount(), { timeout: 3_000 })
+        .toBeGreaterThan(failedBefore);
+      return;
+    } catch {
+      // Try again — see the doc comment above.
+    }
+  }
+
+  throw new Error(
+    `No tile request failed after failTiles() and ${String(MAX_ATTEMPTS)} ` +
+      `trigger attempts (failedTileRequestCount=` +
+      `${String(tiles.failedTileRequestCount())}, succeededTileRequestCount=` +
+      `${String(tiles.succeededTileRequestCount())}, baseline failed=` +
+      `${String(failedBefore)}). Either no new tile request was made, or ` +
+      `every request made since still succeeded.`,
+  );
+}
+
 interface Box {
   x: number;
   y: number;
@@ -178,8 +249,11 @@ test("route Riding: a compact, non-technical tiles-unavailable banner never bloc
   await importAndStartRiding(page);
   await expect.poll(() => tiles.requestCount()).toBeGreaterThan(0);
 
-  tiles.failTiles();
-  await page.getByRole("button", { name: "Zoom in" }).click();
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await waitForMapFullyLoaded(mapContainer);
+
+  const zoomIn = page.getByRole("button", { name: "Zoom in" });
+  await triggerFreshTileFailure(tiles, () => zoomIn.click());
 
   const banner = page.getByTestId("tiles-unavailable-banner");
   await expect(banner).toBeVisible({ timeout: 15_000 });
@@ -230,10 +304,11 @@ test("route Riding: genuine reconnection recovery — an online event with no ca
   // signal, since MapLibre fires an initial settled callback at its own
   // default (0,0) centre before any follow command lands.
   await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).toBe("35");
+  await waitForMapFullyLoaded(mapContainer);
   const baseline = await readCameraAttributesAtomically(mapContainer);
 
-  tiles.failTiles();
-  await page.getByRole("button", { name: "Zoom in" }).click();
+  const zoomIn = page.getByRole("button", { name: "Zoom in" });
+  await triggerFreshTileFailure(tiles, () => zoomIn.click());
   const banner = page.getByTestId("tiles-unavailable-banner");
   await expect(banner).toBeVisible({ timeout: 15_000 });
   const requestCountAtFailure = tiles.requestCount();
@@ -268,6 +343,7 @@ test("route Riding: a manually free-panned camera survives a tile-error retry un
 
   const mapContainer = page.locator('[data-testid="map-container"]');
   await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).toBe("35");
+  await waitForMapFullyLoaded(mapContainer);
 
   // A manual gesture pauses Follow (existing, unrelated behaviour) —
   // afterwards the camera is genuinely free-panned, not Follow-driven.
@@ -280,11 +356,12 @@ test("route Riding: a manually free-panned camera survives a tile-error retry un
   // Fails tiles, then pans again — the pan itself is what requests
   // genuinely new (now-failing) tiles for the newly-visible area, so the
   // camera is never disturbed by an unrelated action (e.g. a zoom) taken
-  // merely to trigger the failure. pannedCamera is captured only once
-  // this second, now-failing pan has itself fully settled, so it reflects
-  // the true final position the retry below must restore.
-  tiles.failTiles();
-  await establishManualPan(page, mapContainer);
+  // merely to trigger the failure, and triggerFreshTileFailure proves via
+  // failedTileRequestCount() that the pan genuinely produced one, rather
+  // than assuming it. pannedCamera is captured only once this second,
+  // now-failing pan has itself fully settled, so it reflects the true
+  // final position the retry below must restore.
+  await triggerFreshTileFailure(tiles, () => establishManualPan(page, mapContainer));
   const pannedCamera = await readCameraAttributesAtomically(mapContainer);
   const banner = page.getByTestId("tiles-unavailable-banner");
   await expect(banner).toBeVisible({ timeout: 15_000 });
@@ -346,19 +423,27 @@ test("free roam: tile-error retry preserves the camera and issues no additional 
 
   const mapContainer = page.locator('[data-testid="map-container"]');
   await expect.poll(() => mapContainer.getAttribute("data-camera-center")).not.toBe("");
+  await waitForMapFullyLoaded(mapContainer);
   const watchCountBefore = await readWatchPositionCallCount(page);
 
-  // Establishes a manually panned position, then uses Zoom in — guaranteed
-  // to request different z/x/y tiles regardless of pan distance, unlike a
+  // Establishes a manually panned position, then uses Zoom in — which
+  // requests different z/x/y tiles regardless of pan distance, unlike a
   // second pan (which may not reliably cross into a genuinely uncached
   // tile at this camera's zoom level and was observed to flake for
-  // exactly that reason) — as the deterministic failure trigger, mirroring
-  // the Planning test above. pannedCamera is captured last, immediately
-  // before the retry, so it reflects the exact live camera (including the
-  // zoom-in itself) the retry below must restore.
+  // exactly that reason) — as the failure trigger, mirroring the Planning
+  // test above. Requesting a different tile is NOT by itself a guarantee
+  // that the resulting failure is ever correctly surfaced as this app's
+  // own tiles-unavailable banner — see waitForMapFullyLoaded's own doc
+  // comment for the real CI failure that disproved exactly that earlier
+  // assumption. triggerFreshTileFailure proves, via
+  // failedTileRequestCount(), that a request genuinely failed before
+  // returning, rather than assuming the click's own side effect. pannedCamera
+  // is captured last, immediately before the retry, so it reflects the
+  // exact live camera (including the zoom-in itself) the retry below
+  // must restore.
   await establishManualPan(page, mapContainer);
-  tiles.failTiles();
-  await page.getByRole("button", { name: "Zoom in" }).click();
+  const zoomIn = page.getByRole("button", { name: "Zoom in" });
+  await triggerFreshTileFailure(tiles, () => zoomIn.click());
   const banner = page.getByTestId("tiles-unavailable-banner");
   await expect(banner).toBeVisible({ timeout: 15_000 });
   const pannedCamera = await readCameraAttributesAtomically(mapContainer);
@@ -398,16 +483,22 @@ test("Planning: a manually panned camera survives a tile-error retry, and the st
   await expect.poll(() => tiles.requestCount()).toBeGreaterThan(0);
 
   const mapContainer = page.locator('[data-testid="map-container"]');
+  await waitForMapFullyLoaded(mapContainer);
   // Establishes a manually panned position first. Planning's own initial
   // camera sits at a much lower (wider-area) zoom than Riding's followed
   // camera, where a single keyboard pan may not reliably cross into a
   // genuinely uncached tile — so, unlike the Riding/free-roam tests above,
-  // a Zoom in press (guaranteed to request different z/x/y tiles at any
-  // pan position, never already cached) is used as the deterministic
-  // failure trigger here instead of a second pan.
+  // a Zoom in press (requests different z/x/y tiles at any pan position,
+  // never already cached) is used as the failure trigger here instead of
+  // a second pan. Requesting a different tile is not by itself a
+  // guarantee the resulting failure ever surfaces correctly as this app's
+  // own banner — see waitForMapFullyLoaded's own doc comment — so
+  // triggerFreshTileFailure proves via failedTileRequestCount() that a
+  // request genuinely failed, rather than assuming the click's own side
+  // effect is sufficient on its own.
   await establishManualPan(page, mapContainer);
-  tiles.failTiles();
-  await page.getByRole("button", { name: "Zoom in" }).click();
+  const zoomIn = page.getByRole("button", { name: "Zoom in" });
+  await triggerFreshTileFailure(tiles, () => zoomIn.click());
   const banner = page.getByTestId("tiles-unavailable-banner");
   await expect(banner).toBeVisible({ timeout: 15_000 });
 
@@ -476,8 +567,11 @@ test("does not create a retry loop: repeated failures and repeated online events
   // run confirmed fires exactly once here regardless).
   expect(tiles.styleRequestCount()).toBe(1);
 
-  tiles.failTiles();
-  await page.getByRole("button", { name: "Zoom in" }).click();
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await waitForMapFullyLoaded(mapContainer);
+
+  const zoomIn = page.getByRole("button", { name: "Zoom in" });
+  await triggerFreshTileFailure(tiles, () => zoomIn.click());
   const banner = page.getByTestId("tiles-unavailable-banner");
   await expect(banner).toBeVisible({ timeout: 15_000 });
 
@@ -503,6 +597,21 @@ test("does not create a retry loop: repeated failures and repeated online events
   // working through its own load/tile-request/failure sequence again —
   // comparable in duration to the first failure above, hence the same
   // explicit timeout rather than the 5000ms default.
+  //
+  // Deliberately NOT gated on waitForMapFullyLoaded here (unlike every
+  // other call site in this file): a further, dedicated stress
+  // investigation of this exact checkpoint found that when a map is
+  // recreated while its tiles are STILL failing, MapLibre's own "load"
+  // event (this app's `hasLoaded`, and therefore data-map-ready) can fail
+  // to fire at all — confirmed directly against the unmodified baseline,
+  // reproducible independently of every change in this file. That is a
+  // separate, deeper, pre-existing reliability question about map
+  // recreation under sustained failure, distinct from the two harness
+  // preconditions this file's own item-67 follow-up fixes, and is
+  // recorded (not silently dropped) in CLAUDE.md's own item-67 follow-up
+  // entry for a future, dedicated investigation. Adding the same wait
+  // here would trade an intermittent flake for this checkpoint's own
+  // outright, deterministic failure whenever that condition is hit.
   await expect(banner).toBeVisible({ timeout: 15_000 });
   // Manual Retry still works after the automatic allowance is exhausted —
   // clicked while genuinely still failing, matching every other manual-
@@ -542,8 +651,11 @@ test("the map-status overlay never visually overlaps the active-climb cue when b
   const climbCue = page.getByText("Climb active");
   await expect(climbCue).toBeVisible({ timeout: 15_000 });
 
-  tiles.failTiles();
-  await page.getByRole("button", { name: "Zoom in" }).click();
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await waitForMapFullyLoaded(mapContainer);
+
+  const zoomIn = page.getByRole("button", { name: "Zoom in" });
+  await triggerFreshTileFailure(tiles, () => zoomIn.click());
   const banner = page.getByTestId("tiles-unavailable-banner");
   await expect(banner).toBeVisible({ timeout: 15_000 });
 
@@ -572,15 +684,17 @@ test.describe("390px phone viewport", () => {
     await importAndStartRiding(page);
     await expect.poll(() => tiles.requestCount()).toBeGreaterThan(0);
 
-    tiles.failTiles();
-    await page.getByRole("button", { name: "Zoom in" }).click();
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    await waitForMapFullyLoaded(mapContainer);
+
+    const zoomIn = page.getByRole("button", { name: "Zoom in" });
+    await triggerFreshTileFailure(tiles, () => zoomIn.click());
     const banner = page.getByTestId("tiles-unavailable-banner");
     await expect(banner).toBeVisible({ timeout: 15_000 });
 
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(390 + 1);
 
-    const mapContainer = page.locator('[data-testid="map-container"]');
     const mapBox = await mapContainer.boundingBox();
     const bannerBox = await banner.boundingBox();
     expect(mapBox).not.toBeNull();

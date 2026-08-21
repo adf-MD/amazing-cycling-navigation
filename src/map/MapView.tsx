@@ -1819,6 +1819,16 @@ export function MapView({
         data-testid="map-container"
         data-route-coordinate-count={routeCoordinateCount}
         data-route-loaded={routeSourceLoaded ? "true" : "false"}
+        // Diagnostic-only (map-imagery-recovery E2E hardening, see
+        // CLAUDE.md's own item-67 follow-up): mirrors the existing `ready`
+        // variable (loadState === "ready", MapLibre's own "load" event —
+        // every initially in-view tile settled) so a real-browser test can
+        // wait for the map's OWN full initial load to genuinely finish
+        // before deliberately failing a later tile, rather than the much
+        // weaker "at least one tile request happened" proxy. Never read by
+        // any production decision logic, mirroring data-route-loaded/
+        // data-camera-* above.
+        data-map-ready={ready ? "true" : "false"}
         data-camera-center={
           cameraCenter ? `${String(cameraCenter[0])},${String(cameraCenter[1])}` : ""
         }

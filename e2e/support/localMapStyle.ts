@@ -221,7 +221,9 @@ export interface TileFailureController {
   succeedTiles: () => void;
   /** Total tile requests observed so far, succeeded or failed — for
    * polling "did a new request genuinely happen" rather than trusting
-   * elapsed time. */
+   * elapsed time. Equal to failedTileRequestCount() + succeededTileRequestCount()
+   * at every point; kept for every existing caller that only needs "some
+   * request happened" (always true while shouldFail is still false). */
   requestCount: () => number;
   /** Total style-document requests observed so far — one per genuine map
    * (re)creation, regardless of how many individual tile requests (and
@@ -232,6 +234,21 @@ export interface TileFailureController {
    * recreate the map" than requestCount, which can keep growing for a
    * single recreation for reasons entirely outside the app's control. */
   styleRequestCount: () => number;
+  /** Total tile requests that were genuinely aborted (route.abort, a real
+   * network-level failure), i.e. requests seen while failTiles() was in
+   * effect at interception time. Backlog item 67 follow-up: proves a
+   * NEW tile request actually failed, rather than assuming a triggering
+   * action (a zoom press, a pan) necessarily produced one — see the two
+   * matching real CI failures this counter was added to diagnose and
+   * close. Never decreases; a caller wanting "did a fresh failure just
+   * happen" must capture a baseline first, as requestCount()'s own
+   * existing callers already do. */
+  failedTileRequestCount: () => number;
+  /** Total tile requests that were genuinely fulfilled (a real 200
+   * response), i.e. requests seen while failTiles() was NOT in effect at
+   * interception time. The complement of failedTileRequestCount() —
+   * together they always sum to requestCount(). */
+  succeededTileRequestCount: () => number;
 }
 
 /**
@@ -253,6 +270,8 @@ export async function installLocalMapStyleWithTileSource(
   let shouldFail = false;
   let requestCount = 0;
   let styleRequestCount = 0;
+  let failedTileRequestCount = 0;
+  let succeededTileRequestCount = 0;
 
   await page.route(OPENFREEMAP_HOST_GLOB, async (route) => {
     const requestUrl = route.request().url();
@@ -271,8 +290,10 @@ export async function installLocalMapStyleWithTileSource(
     if (isRecognisedTestTileRequest(requestUrl)) {
       requestCount += 1;
       if (shouldFail) {
+        failedTileRequestCount += 1;
         await route.abort("failed");
       } else {
+        succeededTileRequestCount += 1;
         await route.fulfill({
           status: 200,
           contentType: "image/png",
@@ -295,5 +316,7 @@ export async function installLocalMapStyleWithTileSource(
     },
     requestCount: () => requestCount,
     styleRequestCount: () => styleRequestCount,
+    failedTileRequestCount: () => failedTileRequestCount,
+    succeededTileRequestCount: () => succeededTileRequestCount,
   };
 }
