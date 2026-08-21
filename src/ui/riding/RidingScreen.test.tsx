@@ -823,8 +823,14 @@ describe("RidingScreen", () => {
         />,
       );
       fireEvent.click(screen.getByRole("button", { name: "Start riding" }));
+      expect(onRidingActiveChange).toHaveBeenLastCalledWith(true);
       onRidingActiveChange.mockClear();
 
+      // emitError calls the stub's listener directly, bypassing RTL's
+      // act() wrapping, so the resulting passive-effect flush isn't
+      // ordered against findByRole("alert")'s DOM-mutation polling below —
+      // wait for the callback's own settled value instead of asserting on
+      // it immediately after the alert appears.
       stub.emitError({ reason: "position-unavailable", message: "unavailable" });
 
       // The status genuinely changes ("watching" -> "error"), so the
@@ -832,7 +838,9 @@ describe("RidingScreen", () => {
       // its body re-fires `true` for the new status — what matters is
       // that the settled value stays `true` throughout a mid-ride error.
       await screen.findByRole("alert");
-      expect(onRidingActiveChange).toHaveBeenLastCalledWith(true);
+      await waitFor(() => {
+        expect(onRidingActiveChange).toHaveBeenLastCalledWith(true);
+      });
     });
 
     it("never throws when onRidingActiveChange is omitted", () => {
