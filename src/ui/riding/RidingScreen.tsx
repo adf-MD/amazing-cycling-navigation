@@ -261,6 +261,13 @@ export function RidingScreen({
   const now = useNow(clock);
   const fixAgeMs = nav.currentFix ? now - nav.currentFix.timestampMs : null;
   const online = useOnlineStatus();
+  // Gates the merged compact active-status area (backlog item 68) —
+  // preserves the wake-lock control's and RidingStatusStrip's own prior
+  // standalone gates exactly, just unioned so the wrapper only mounts
+  // when at least one of them would render.
+  const showActiveStatus =
+    (isWakeLockSupported() && nav.geolocationStatus !== "idle") ||
+    Boolean(nav.currentFix);
 
   // Computed once per loaded route (route's identity is stable for the
   // component's lifetime; recomputing per GPS fix would be wasted work for
@@ -1205,24 +1212,6 @@ export function RidingScreen({
         </>
       )}
 
-      {/* Wake-lock control moved to directly after the header block
-       * (backlog item 56, correcting a post-item-55 field finding): it
-       * previously rendered before RidingImmersiveHeader, so at rest
-       * (scrollY 0) the header's own natural flow position sat below this
-       * control's own space rather than at the true viewport top. Moving
-       * it here — still gated on the exact same condition — puts the
-       * header first in document order, matching FreeRoamScreen's
-       * identical fix. It also becomes the first of the "shared" status
-       * items below, visible regardless of which fixed view is active. */}
-      {isWakeLockSupported() && nav.geolocationStatus !== "idle" ? (
-        <RidingWakeLockControl
-          desired={nav.wakeLockDesired}
-          onToggleDesired={nav.setWakeLockDesired}
-          wakeLockSource={wakeLockSource}
-          clock={clock}
-        />
-      ) : null}
-
       {!online ? (
         <p role="status" className="status-row">
           Offline — the route, your position, progress and elevation still work; map
@@ -1305,14 +1294,35 @@ export function RidingScreen({
         </p>
       ) : null}
 
-      {nav.currentFix ? (
-        <RidingStatusStrip
-          offRouteLevel={nav.offRouteLevel}
-          distanceRemainingMetres={nav.distanceRemainingMetres}
-          accuracyMetres={nav.currentFix.accuracyMetres}
-          isStale={nav.isStale}
-          fixAgeMs={fixAgeMs}
-        />
+      {/* The compact shared active-status area (backlog item 68,
+       * correcting a post-item-56 field finding): the wake-lock control
+       * previously rendered in its own top-level slot directly after the
+       * header — this merges it into the same compact area as the
+       * route/GPS status line beneath it, without giving RidingStatusStrip
+       * itself any wake-lock props/logic. Each inner condition is exactly
+       * the gate its own element used standalone before (wake lock stays
+       * available while waiting for the first fix, i.e. before
+       * currentFix exists, matching its own prior behaviour). */}
+      {showActiveStatus ? (
+        <div className="ride-active-status">
+          {isWakeLockSupported() && nav.geolocationStatus !== "idle" ? (
+            <RidingWakeLockControl
+              desired={nav.wakeLockDesired}
+              onToggleDesired={nav.setWakeLockDesired}
+              wakeLockSource={wakeLockSource}
+              clock={clock}
+            />
+          ) : null}
+          {nav.currentFix ? (
+            <RidingStatusStrip
+              offRouteLevel={nav.offRouteLevel}
+              distanceRemainingMetres={nav.distanceRemainingMetres}
+              accuracyMetres={nav.currentFix.accuracyMetres}
+              isStale={nav.isStale}
+              fixAgeMs={fixAgeMs}
+            />
+          ) : null}
+        </div>
       ) : null}
 
       {/* Map-exclusive (backlog item 56): the full panel has no idle

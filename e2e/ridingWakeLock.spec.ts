@@ -70,7 +70,7 @@ async function setDocumentVisibility(page: Page, state: "visible" | "hidden") {
   }, state);
 }
 
-test("no Keep screen awake control appears when navigator.wakeLock is unsupported", async ({
+test("no Keep screen on control appears when navigator.wakeLock is unsupported", async ({
   page,
   context,
 }) => {
@@ -105,14 +105,14 @@ test("no Keep screen awake control appears when navigator.wakeLock is unsupporte
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
   await expect(
-    page.getByRole("checkbox", { name: /keep screen awake/i }),
+    page.getByRole("checkbox", { name: /keep screen on/i }),
   ).not.toBeAttached();
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
 
-test("enabling Keep screen awake requests a lock, releases while hidden, and reacquires when visible again", async ({
+test("enabling Keep screen on requests a lock, releases while hidden, and reacquires when visible again, with no visible success line", async ({
   page,
   context,
 }) => {
@@ -141,18 +141,35 @@ test("enabling Keep screen awake requests a lock, releases while hidden, and rea
   await page.getByRole("button", { name: "Start riding" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-  const checkbox = page.getByRole("checkbox", { name: /keep screen awake/i });
+  const checkbox = page.getByRole("checkbox", { name: /keep screen on/i });
   await expect(checkbox).toBeVisible();
   await expect(checkbox).not.toBeChecked();
 
+  // The success status text is visually hidden (backlog item 68 — a
+  // permanent visible "Screen staying awake." line was judged too much
+  // scarce vertical space), so its own visibility can't be asserted via
+  // toBeVisible()/toBeHidden() (a visually-hidden element still has a
+  // non-empty bounding box). Prove it via attachment instead — it is only
+  // ever mounted while the lock is genuinely active, exactly as before —
+  // plus a direct bounding-box check that activating it adds no height.
+  const control = page.locator(".ride-wake-lock-control");
+  const controlBoxBeforeActive = await control.boundingBox();
+  const status = page.getByText("Screen staying awake.");
+  await expect(status).not.toBeAttached();
+
   await checkbox.check();
-  await expect(page.getByText("Screen staying awake.")).toBeVisible();
+  await expect(status).toBeAttached();
+  const controlBoxAfterActive = await control.boundingBox();
+  if (!controlBoxBeforeActive || !controlBoxAfterActive) {
+    throw new Error("expected the wake-lock control to have a bounding box");
+  }
+  expect(controlBoxAfterActive.height).toBe(controlBoxBeforeActive.height);
 
   await setDocumentVisibility(page, "hidden");
-  await expect(page.getByText("Screen staying awake.")).toBeHidden();
+  await expect(status).not.toBeAttached();
 
   await setDocumentVisibility(page, "visible");
-  await expect(page.getByText("Screen staying awake.")).toBeVisible();
+  await expect(status).toBeAttached();
 
   await expect
     .poll(() =>
@@ -202,7 +219,7 @@ test.describe("compact control on a narrow phone viewport", () => {
     await page.getByRole("button", { name: "Start riding" }).click();
     await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-    const checkbox = page.getByRole("checkbox", { name: /keep screen awake/i });
+    const checkbox = page.getByRole("checkbox", { name: /keep screen on/i });
     const heading = page.getByRole("heading", { name: "smoke-route" });
     await expect(checkbox).toBeVisible();
     await expect(heading).toBeVisible();
@@ -212,17 +229,26 @@ test.describe("compact control on a narrow phone viewport", () => {
     if (!checkboxBox || !headingBoxBefore) {
       throw new Error("expected the checkbox and route title to have a bounding box");
     }
-    // Backlog item 56 corrects a real, screenshot-evidenced field finding
-    // from item 55: the wake-lock control previously rendered before the
-    // immersive header, so at rest the header sat below it rather than at
-    // the true viewport top. This assertion is deliberately inverted from
-    // its pre-item-56 form (which asserted the opposite, now-incorrect
-    // order).
+    // Item 56 first corrected a real, screenshot-evidenced field finding
+    // from item 55 (the wake-lock control previously rendered before the
+    // header). Item 68 relocated it again, into the shared compact
+    // active-status area alongside the route/GPS status line — still
+    // below the header, just further down than item 56's original
+    // "directly after the header" placement.
     expect(checkboxBox.y).toBeGreaterThan(headingBoxBefore.y);
+
+    // The checkbox itself is deliberately small (backlog item 68); its
+    // enclosing label is the real >=44x44px touch target instead.
+    const label = page.locator(".wake-lock-label");
+    const labelBox = await label.boundingBox();
+    if (!labelBox) {
+      throw new Error("expected the wake-lock label to have a bounding box");
+    }
+    expect(labelBox.height).toBeGreaterThanOrEqual(44);
 
     await expect(page.getByText(/keeps the display on/i)).toBeHidden();
 
-    const infoButton = page.getByRole("button", { name: "About Keep screen awake" });
+    const infoButton = page.getByRole("button", { name: "About Keep screen on" });
     await infoButton.click();
 
     const popover = page.getByRole("note");
@@ -272,7 +298,9 @@ test.describe("compact control on a narrow phone viewport", () => {
     await expect(popover).toBeHidden();
 
     await checkbox.check();
-    await expect(page.getByText("Screen staying awake.")).toBeVisible();
+    // Visually hidden, not visible — see the dedicated lifecycle test
+    // above for the full "no visible line added" proof.
+    await expect(page.getByText("Screen staying awake.")).toBeAttached();
 
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
     expect(consoleErrors).toEqual([]);

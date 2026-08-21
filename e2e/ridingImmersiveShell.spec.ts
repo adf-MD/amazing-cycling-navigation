@@ -300,10 +300,10 @@ test("Pause on route Riding releases the wake lock while preserving the rider's 
   await page.getByRole("button", { name: "Start riding" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-  const checkbox = page.getByRole("checkbox", { name: /keep screen awake/i });
+  const checkbox = page.getByRole("checkbox", { name: /keep screen on/i });
   await expect(checkbox).toBeVisible();
   await checkbox.check();
-  await expect(page.getByText("Screen staying awake.")).toBeVisible();
+  await expect(page.getByText("Screen staying awake.")).toBeAttached();
   let wakeLockState = await readWakeLockState(page);
   expect(wakeLockState.requestCount).toBe(1);
   expect(wakeLockState.lastReleased).toBe(false);
@@ -323,7 +323,7 @@ test("Pause on route Riding releases the wake lock while preserving the rider's 
   await page.getByRole("button", { name: "Resume riding" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-  const resumedCheckbox = page.getByRole("checkbox", { name: /keep screen awake/i });
+  const resumedCheckbox = page.getByRole("checkbox", { name: /keep screen on/i });
   await expect(resumedCheckbox).toBeChecked();
   await expect.poll(async () => (await readWakeLockState(page)).requestCount).toBe(2);
 
@@ -496,10 +496,10 @@ test("Pause on active free roam releases the wake lock, persists a resumable sna
   await expect(immersiveHeaderLocator(page)).toBeVisible();
   expect(await readWatchPositionCallCount(page)).toBe(1);
 
-  const checkbox = page.getByRole("checkbox", { name: /keep screen awake/i });
+  const checkbox = page.getByRole("checkbox", { name: /keep screen on/i });
   await expect(checkbox).toBeVisible();
   await checkbox.check();
-  await expect(page.getByText("Screen staying awake.")).toBeVisible();
+  await expect(page.getByText("Screen staying awake.")).toBeAttached();
 
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Pause" }).click();

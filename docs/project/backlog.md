@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-**Item 68 is next.** Read it in full before starting.
+**Item 69 is next.** Read it in full before starting.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Each entry reproduces its original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this).
 
@@ -119,26 +119,6 @@ _Category: Platform compatibility_
       4. **Conflict and recovery coverage:** an inbound share must respect the existing unfinished route/free-roam conflict guard (item 42's fail-closed `checkFreeRoamConflict`-style pattern) and must never silently replace an active session or Planning draft; it must work after a fresh install/relaunch. Add Playwright coverage where meaningful, then require real Android Chrome acceptance — Chromium/Playwright emulation cannot prove real OS share-sheet registration, matching this project's existing, repeatedly-stated distinction between the `android-chrome` Playwright project and genuine physical-device verification (item 25).
     - If step 1 finds only an `Open with` path and no Share/Send path, document that conclusively and record that no pure static-PWA solution is currently available for this exact flow — do not propose a native wrapper, Trusted Web Activity, APK, or other Android-specific packaging as a workaround; that would be a major architecture departure and is explicitly not approved by this backlog item.
     - Requires the "## Explicit non-goals" edit recorded above (item 61's own cross-reference) — that section stays in the root `CLAUDE.md` and already carries this cross-reference.
-
----
-
-<a id="item-68"></a>
-
-## Item 68 — Robust immersive header and compact shared wake-lock placement
-
-_Category: Immersive active-Riding redesign_
-
-68. **Robust immersive header and compact shared wake-lock placement**
-    - One presentation/accessibility slice for the shared active shell (route Riding and free roam alike, per items 55/56), not a rewrite of wake-lock lifecycle logic.
-    - Field evidence: a long route title ellipsised correctly, but the `Pause` button itself visibly shrank and its text escaped the button. The standalone `Keep screen awake` row — a checkbox, an information button, and (while active) a permanent status line — consumes scarce vertical space directly above the route status.
-    - Confirmed current implementation (source-verified), correcting the naive field impression rather than merely restating it. `RidingImmersiveHeader.tsx` renders three flex children directly: a bare Pause `<button className="btn-secondary">` with no wrapping element and no dedicated CSS class; `<h1 className="screen-title riding-immersive-header-title">`, styled `flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis` and correctly truncating; and `<div className="riding-immersive-header-end">{endAction}</div>`, styled `flex: 0 0 auto` and correctly protected from shrinking. The bare Pause button has no equivalent protection — no wrapper, no dedicated rule, no `white-space`/`text-overflow` handling — so as an ordinary flex child it inherits the browser default `flex-shrink: 1`, a confirmed, distinct gap versus the already-correct title and End. `RidingWakeLockControl.tsx` (rendered identically in `RidingScreen.tsx` and `FreeRoamScreen.tsx`, directly after the header block since item 56's placement fix, gated on `isWakeLockSupported() && geolocationStatus !== "idle"`) is already a single compact flex-wrap row (`.ride-wake-lock-control`) — a `<label>` with a checkbox plus the visible text "Keep screen awake"; an information button (`ⓘ`) toggling an anchored popover; a conditional `role="status"` span reading "Screen staying awake." while active; a conditional retry-alert row when unavailable — and is therefore not, at the control level, the "large checkbox and separate dominant information button" the field description implies at face value. What is not yet true is that it is integrated into the compact shared status stack — it remains its own standalone row, positioned between the header and the rest of the status content, consuming its own vertical slot.
-    - Settled contract:
-      - `Pause`, its longer pending label (whatever that exact current text is — not independently confirmed here, so this requirement is stated generically rather than against an invented quote), and `End ride` are non-shrinking, single-line, real ≥44×44 px touch targets. Only the title consumes the remaining width and ellipsises; its full accessible text remains available. Keep text labels rather than replacing Pause/End with ambiguous symbols.
-      - Move the wake-lock control into the compact active status area for both route Riding and free roam, using the concise visible label `Keep screen on` (renamed from `Keep screen awake`).
-      - The visible checkbox may stay small, but its complete label remains a ≥44×44 px target. Keep the information disclosure keyboard/touch accessible without giving it a visually dominant button.
-      - Do not show a permanent extra `Screen staying awake` line after success — remove that permanent line so success adds no extra line. A genuine failure and retry may still expand the compact status area clearly.
-      - Preserve `useScreenWakeLock`, desired-state persistence, visibility release/reacquisition, unsupported-browser omission, storage-first Pause/End behaviour (item 55) and all current failure/retry semantics untouched. Compose the existing control into the status presentation rather than making a presentational status component own wake-lock business logic.
-    - Require narrow-phone, long-title, pending-Pause-label, safe-area, portrait/landscape and enlarged-text coverage for both route Riding and free roam. Prove the actions neither overlap nor overflow, and that moving the control does not resize the map when only its transient popover opens.
 
 ---
 

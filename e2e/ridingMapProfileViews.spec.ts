@@ -261,8 +261,90 @@ test.describe("390×844 phone viewport", () => {
       throw new Error("expected Pause and End ride to have a bounding box");
     }
     expect(intersects(pauseBox, endBox)).toBe(false);
+    // Backlog item 68: a shrunk-but-non-overlapping, non-scrolling Pause
+    // button would still have passed the non-intersection/scroll-width
+    // checks above — this is the direct proof that would have caught the
+    // original field bug (Pause's own text escaping its shrunk button).
+    expect(pauseBox.width).toBeGreaterThanOrEqual(44);
+    expect(pauseBox.height).toBeGreaterThanOrEqual(44);
+    expect(endBox.width).toBeGreaterThanOrEqual(44);
+    expect(endBox.height).toBeGreaterThanOrEqual(44);
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(390);
+  });
+
+  test("Pause protects the wider pending 'Pausing…' label exactly as it protects the ordinary label, alongside a long route title", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: ROUTE_LAT, longitude: ROUTE_START_LON });
+    await installLocalMapStyle(page);
+
+    // Deterministic seam (backlog item 68, src/storage/rideStateRepository.ts):
+    // holds Pause's own persistence write open so the wider "Pausing…"
+    // label can be asserted against reliably, instead of racing a
+    // naturally fast transient state or adding a fixed sleep. Starts
+    // disarmed so it never delays any other write this screen makes
+    // before the test explicitly arms it for the one write it cares
+    // about (Start riding itself never persists, but this stays robust
+    // to a future write happening between load and the Pause click).
+    await page.addInitScript(() => {
+      const w = window as unknown as {
+        __acnE2eArmRideStateWriteDelay?: () => void;
+        __acnE2eRideStateWriteDelay?: () => Promise<void>;
+        __resolveRideStateWriteDelay?: () => void;
+      };
+      let armed = false;
+      w.__acnE2eArmRideStateWriteDelay = () => {
+        armed = true;
+      };
+      w.__acnE2eRideStateWriteDelay = () => {
+        if (!armed) return Promise.resolve();
+        return new Promise((resolve) => {
+          w.__resolveRideStateWriteDelay = resolve;
+        });
+      };
+    });
+
+    const longName =
+      "An implausibly long route name that should truncate visually rather than push the Pause and End ride actions out of the header";
+    await page.goto("/");
+    await importAndStartRiding(page, longName);
+
+    await page.evaluate(() => {
+      (
+        window as unknown as { __acnE2eArmRideStateWriteDelay?: () => void }
+      ).__acnE2eArmRideStateWriteDelay?.();
+    });
+    await page.getByRole("button", { name: "Pause" }).click();
+    const pausingButton = page.getByRole("button", { name: "Pausing…" });
+    await expect(pausingButton).toBeVisible();
+    await expect(pausingButton).toBeDisabled();
+
+    const pausingBox = await pausingButton.boundingBox();
+    if (!pausingBox) {
+      throw new Error("expected the pending Pause button to have a bounding box");
+    }
+    expect(pausingBox.width).toBeGreaterThanOrEqual(44);
+    expect(pausingBox.height).toBeGreaterThanOrEqual(44);
+
+    const heading = page.getByRole("heading", { name: longName });
+    const headingBox = await heading.boundingBox();
+    if (!headingBox) throw new Error("expected the route title to have a bounding box");
+    expect(intersects(pausingBox, headingBox)).toBe(false);
+
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(390);
+
+    // Release the held-open write so Pause completes and the test can
+    // assert the normal post-pause state rather than leaving it hanging.
+    await page.evaluate(() => {
+      (
+        window as unknown as { __resolveRideStateWriteDelay?: () => void }
+      ).__resolveRideStateWriteDelay?.();
+    });
+    await expect(page.getByRole("button", { name: "Resume route" })).toBeVisible();
   });
 
   test("End confirmation stays reachable inside the fixed shell with no horizontal overflow", async ({
@@ -299,6 +381,12 @@ test.describe("390×844 phone viewport", () => {
     page,
     context,
   }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "wakeLock", {
+        value: { request: () => Promise.resolve({ release: () => Promise.resolve() }) },
+        configurable: true,
+      });
+    });
     await context.grantPermissions(["geolocation"]);
     await context.setGeolocation({ latitude: ROUTE_LAT, longitude: ROUTE_START_LON });
     await installLocalMapStyle(page);
@@ -312,6 +400,28 @@ test.describe("390×844 phone viewport", () => {
     await page.evaluate(() => {
       document.documentElement.style.fontSize = "200%";
     });
+
+    const pauseButton = page.getByRole("button", { name: "Pause" });
+    const endButton = page.getByRole("button", { name: "End ride" });
+    const checkbox = page.getByRole("checkbox", { name: /keep screen on/i });
+    await expect(checkbox).toBeVisible();
+    const [pauseBoxLarge, endBoxLarge, checkboxLabelBox] = await Promise.all([
+      pauseButton.boundingBox(),
+      endButton.boundingBox(),
+      page.locator(".wake-lock-label").boundingBox(),
+    ]);
+    if (!pauseBoxLarge || !endBoxLarge || !checkboxLabelBox) {
+      throw new Error("expected Pause, End ride and the wake-lock label to have boxes");
+    }
+    // Backlog item 68: action controls stay fixed and usable at enlarged
+    // text — only the title (and Profile's own internal content) may
+    // scroll or reflow.
+    expect(intersects(pauseBoxLarge, endBoxLarge)).toBe(false);
+    expect(pauseBoxLarge.width).toBeGreaterThanOrEqual(44);
+    expect(pauseBoxLarge.height).toBeGreaterThanOrEqual(44);
+    expect(endBoxLarge.width).toBeGreaterThanOrEqual(44);
+    expect(endBoxLarge.height).toBeGreaterThanOrEqual(44);
+    expect(checkboxLabelBox.height).toBeGreaterThanOrEqual(44);
 
     await switchToProfile(page);
     const header = page.locator("header.riding-immersive-header");
@@ -530,14 +640,34 @@ test("wake-lock control and its popover remain usable from either view with no b
   await page.goto("/");
   await importAndStartRiding(page, "map-profile-wakelock-route");
 
-  const checkbox = page.getByRole("checkbox", { name: /keep screen awake/i });
+  const checkbox = page.getByRole("checkbox", { name: /keep screen on/i });
   await expect(checkbox).toBeVisible();
 
-  const infoButton = page.getByRole("button", { name: "About Keep screen awake" });
+  // Backlog item 68: the wake-lock control now lives further down the
+  // page, adjacent to the status strip rather than directly under the
+  // header — its transient popover must still be a pure overlay that
+  // never resizes the map beneath it.
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  const mapBoxBeforePopover = await mapContainer.boundingBox();
+  if (!mapBoxBeforePopover) {
+    throw new Error("expected the map container to have a bounding box");
+  }
+
+  const infoButton = page.getByRole("button", { name: "About Keep screen on" });
   await infoButton.click();
   await expect(page.getByRole("note")).toBeVisible();
+
+  const mapBoxDuringPopover = await mapContainer.boundingBox();
+  if (!mapBoxDuringPopover) {
+    throw new Error("expected the map container to have a bounding box");
+  }
+  expect(mapBoxDuringPopover).toEqual(mapBoxBeforePopover);
+
   await infoButton.click();
   await expect(page.getByRole("note")).toBeHidden();
+
+  const mapBoxAfterPopover = await mapContainer.boundingBox();
+  expect(mapBoxAfterPopover).toEqual(mapBoxBeforePopover);
 
   await switchToProfile(page);
   await expect(checkbox).toBeVisible();
@@ -552,6 +682,12 @@ test("portrait to landscape keeps the header, both views and the switcher usable
   page,
   context,
 }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "wakeLock", {
+      value: { request: () => Promise.resolve({ release: () => Promise.resolve() }) },
+      configurable: true,
+    });
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   await context.grantPermissions(["geolocation"]);
   await context.setGeolocation({ latitude: ROUTE_LAT, longitude: ROUTE_START_LON });
@@ -563,6 +699,21 @@ test("portrait to landscape keeps the header, both views and the switcher usable
   await page.setViewportSize({ width: 844, height: 390 });
 
   await expect(page.locator("header.riding-immersive-header")).toBeVisible();
+  // Backlog item 68: the merged wake-lock/status area's flex-wrap
+  // behaviour is untested at a much wider/shorter viewport — prove the
+  // checkbox stays reachable and non-overlapping post-rotation.
+  const checkbox = page.getByRole("checkbox", { name: /keep screen on/i });
+  await expect(checkbox).toBeVisible();
+  const pauseButton = page.getByRole("button", { name: "Pause" });
+  const [checkboxBox, pauseBoxLandscape] = await Promise.all([
+    checkbox.boundingBox(),
+    pauseButton.boundingBox(),
+  ]);
+  if (!checkboxBox || !pauseBoxLandscape) {
+    throw new Error("expected the checkbox and Pause to have bounding boxes");
+  }
+  expect(intersects(checkboxBox, pauseBoxLandscape)).toBe(false);
+
   await switchToProfile(page);
   await expect(page.getByRole("group", { name: "Elevation profile view" })).toBeVisible();
   await switchToMap(page);

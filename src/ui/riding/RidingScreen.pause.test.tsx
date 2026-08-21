@@ -457,7 +457,7 @@ describe("RidingScreen Pause (backlog item 55)", () => {
     });
 
     const checkbox = await screen.findByRole("checkbox", {
-      name: /keep screen awake/i,
+      name: /keep screen on/i,
     });
     await user.click(checkbox);
     act(() => {
@@ -471,7 +471,7 @@ describe("RidingScreen Pause (backlog item 55)", () => {
     await user.click(screen.getByRole("button", { name: "Pause" }));
 
     await waitFor(() => {
-      expect(screen.queryByRole("checkbox", { name: /keep screen awake/i })).toBeNull();
+      expect(screen.queryByRole("checkbox", { name: /keep screen on/i })).toBeNull();
     });
     expect(fakeWakeLock.instances[0]?.released).toBe(true);
 

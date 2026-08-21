@@ -513,10 +513,10 @@ describe("RidingScreen Finish/End ride", () => {
     act(() => {
       fake.watches[0]?.emitFix(midpointFix(1000));
     });
-    await user.click(await screen.findByRole("checkbox", { name: /keep screen awake/i }));
+    await user.click(await screen.findByRole("checkbox", { name: /keep screen on/i }));
     fakeWakeLock.instances[0]?.resolveRequest();
     await waitFor(() => {
-      expect(screen.getByRole("checkbox", { name: /keep screen awake/i })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: /keep screen on/i })).toBeChecked();
     });
 
     await user.click(screen.getByRole("button", { name: "End ride" }));

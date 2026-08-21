@@ -42,15 +42,17 @@ export function RidingImmersiveHeader({
 }: RidingImmersiveHeaderProps) {
   return (
     <header className="riding-immersive-header">
-      <button
-        type="button"
-        className="btn-secondary"
-        ref={pauseButtonRef}
-        onClick={onPause}
-        disabled={pauseDisabled}
-      >
-        {pauseLabel}
-      </button>
+      <div className="riding-immersive-header-start">
+        <button
+          type="button"
+          className="btn-secondary"
+          ref={pauseButtonRef}
+          onClick={onPause}
+          disabled={pauseDisabled}
+        >
+          {pauseLabel}
+        </button>
+      </div>
       <h1 className="screen-title riding-immersive-header-title" title={title}>
         {title}
       </h1>

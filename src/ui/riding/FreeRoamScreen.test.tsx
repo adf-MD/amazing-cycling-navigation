@@ -379,7 +379,7 @@ describe("FreeRoamScreen", () => {
         />,
       );
 
-      expect(screen.getByText("Keep screen awake")).toBeInTheDocument();
+      expect(screen.getByText("Keep screen on")).toBeInTheDocument();
     });
 
     it("does not render the wake-lock control when navigator.wakeLock is absent", () => {
@@ -391,15 +391,14 @@ describe("FreeRoamScreen", () => {
         />,
       );
 
-      expect(screen.queryByText("Keep screen awake")).toBeNull();
+      expect(screen.queryByText("Keep screen on")).toBeNull();
     });
 
     it("renders the immersive header (and its title) before the compact wake-lock control in DOM order", () => {
-      // Backlog item 56 corrects the same real, screenshot-evidenced field
-      // finding RidingScreen.test.tsx's equivalent test documents: the
-      // wake-lock control previously rendered before the header, so at
-      // scrollY 0 the header's own natural flow position sat below it
-      // rather than at the true viewport top.
+      // Backlog item 68 relocated the wake-lock control again, into the
+      // shared compact active-status area alongside the GPS status line —
+      // still after the header in document order, just further down than
+      // item 56's original "directly after the header" placement.
       vi.stubGlobal("navigator", { onLine: true, wakeLock: { request: vi.fn() } });
       const fakeWakeLock = buildFakeWakeLockSource();
       render(
@@ -410,7 +409,7 @@ describe("FreeRoamScreen", () => {
         />,
       );
 
-      const checkbox = screen.getByRole("checkbox", { name: /keep screen awake/i });
+      const checkbox = screen.getByRole("checkbox", { name: /keep screen on/i });
       const heading = screen.getByRole("heading", { name: "Free roam" });
 
       expect(

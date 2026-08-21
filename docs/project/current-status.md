@@ -43,6 +43,10 @@ This is the authoritative manual-test ledger. It records verification evidence o
 
 Do not treat the item above as fully verified until it has been tested on a moving road bicycle.
 
+### Outstanding: item 68's immersive header / compact wake-lock presentation
+
+- **Robust immersive header and compact shared wake-lock placement (item 68):** shipped with automated (Vitest/Playwright Chromium and Chromium-emulated Android) evidence only — no physical iPhone or Android verification is claimed yet. Distinct from the already-confirmed wake-lock _lifecycle_ evidence above ("Wake lock: previously verified separately..."), which concerns acquisition/release/reacquisition behaviour, not this item's presentation. Real-device acceptance still needed: the non-shrinking `Pause`/`Pausing…`/`End ride` header actions alongside a genuinely long route title, on both route Riding and free roam; real device text-size scaling (not merely a simulated root-font-size zoom); true portrait/landscape rotation and true iOS safe-area insets (not only Playwright's synthetic CSS-variable insets); the compact `Keep screen on` label and its small checkbox as real, comfortable touch targets; a genuine wake-lock failure/retry on-device; and that the wake-lock information popover never visibly shifts the map or the fixed shell when opened on a real phone.
+
 ---
 
 ## Monitored reliability observations

@@ -826,11 +826,13 @@ test.describe("390px phone viewport", () => {
     await startFreeRoam(page, context);
     await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-    // FreeRoamScreen's own wake-lock control already renders after the
-    // header (item 56's own correction, carried into this screen from the
-    // start), so the header is the fixed shell's own first child and
-    // already sits at the true viewport top at rest — no scroll needed,
-    // unlike route Riding's own equivalent phone-viewport safe-area test.
+    // FreeRoamScreen's own header renders unconditionally as the fixed
+    // shell's own first child (item 55), so it already sits at the true
+    // viewport top at rest — no scroll needed, unlike route Riding's own
+    // equivalent phone-viewport safe-area test. The wake-lock control now
+    // lives further down, in the shared compact active-status area
+    // (backlog item 68), not directly after the header as item 56 first
+    // placed it.
     const header = immersiveHeaderLocator(page);
     const headerBox = await header.boundingBox();
     if (!headerBox)
@@ -872,5 +874,70 @@ test.describe("390px phone viewport", () => {
     expect(widths.bodyWidth).toBeLessThanOrEqual(390);
 
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  });
+
+  test("Pause protects the wider pending 'Pausing…' label exactly as it protects the ordinary label", async ({
+    page,
+    context,
+  }) => {
+    // Deterministic seam (backlog item 68, src/storage/rideStateRepository.ts):
+    // holds Pause's own persistence write open so the wider "Pausing…"
+    // label can be asserted against reliably, instead of racing a
+    // naturally fast transient state or adding a fixed sleep. Starts
+    // disarmed so it never delays free roam's own initial persistence
+    // write on start — only the test's explicit Pause write, once armed.
+    await page.addInitScript(() => {
+      const w = window as unknown as {
+        __acnE2eArmRideStateWriteDelay?: () => void;
+        __acnE2eRideStateWriteDelay?: () => Promise<void>;
+        __resolveRideStateWriteDelay?: () => void;
+      };
+      let armed = false;
+      w.__acnE2eArmRideStateWriteDelay = () => {
+        armed = true;
+      };
+      w.__acnE2eRideStateWriteDelay = () => {
+        if (!armed) return Promise.resolve();
+        return new Promise((resolve) => {
+          w.__resolveRideStateWriteDelay = resolve;
+        });
+      };
+    });
+    await installLocalMapStyle(page);
+    await startFreeRoam(page, context);
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    await page.evaluate(() => {
+      (
+        window as unknown as { __acnE2eArmRideStateWriteDelay?: () => void }
+      ).__acnE2eArmRideStateWriteDelay?.();
+    });
+    await page.getByRole("button", { name: "Pause" }).click();
+    const pausingButton = page.getByRole("button", { name: "Pausing…" });
+    await expect(pausingButton).toBeVisible();
+    await expect(pausingButton).toBeDisabled();
+
+    const pausingBox = await pausingButton.boundingBox();
+    if (!pausingBox) {
+      throw new Error("expected the pending Pause button to have a bounding box");
+    }
+    expect(pausingBox.width).toBeGreaterThanOrEqual(44);
+    expect(pausingBox.height).toBeGreaterThanOrEqual(44);
+
+    const heading = page.getByRole("heading", { level: 1, name: "Free roam" });
+    const headingBox = await heading.boundingBox();
+    if (!headingBox) throw new Error("expected the title to have a bounding box");
+    expect(intersects(pausingBox, headingBox)).toBe(false);
+
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(390);
+
+    // Release the held-open write so the test can clean up normally.
+    await page.evaluate(() => {
+      (
+        window as unknown as { __resolveRideStateWriteDelay?: () => void }
+      ).__resolveRideStateWriteDelay?.();
+    });
+    await expect(page.getByRole("button", { name: "Resume free roam" })).toBeVisible();
   });
 });

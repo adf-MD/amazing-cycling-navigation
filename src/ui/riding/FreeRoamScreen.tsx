@@ -160,6 +160,13 @@ export function FreeRoamScreen({
   const now = useNow(clock);
   const fixAgeMs = nav.currentFix ? now - nav.currentFix.timestampMs : null;
   const online = useOnlineStatus();
+  // Gates the merged compact active-status area (backlog item 68) —
+  // preserves the wake-lock control's and FreeRoamStatusStrip's own prior
+  // standalone gates exactly, just unioned so the wrapper only mounts
+  // when at least one of them would render.
+  const showActiveStatus =
+    (isWakeLockSupported() && nav.geolocationStatus !== "idle") ||
+    Boolean(nav.currentFix);
 
   const { start: navStart } = nav;
   const { requestFollow: cameraRequestFollow } = camera;
@@ -374,19 +381,6 @@ export function FreeRoamScreen({
         <div className="ride-end-ride-confirm-row">{renderEndRideAction()}</div>
       ) : null}
 
-      {/* Wake-lock control moved to directly after the header block
-       * (backlog item 56, correcting a post-item-55 field finding) — see
-       * RidingScreen.tsx's identical fix for the full root-cause. Still
-       * gated on the exact same condition, unchanged. */}
-      {isWakeLockSupported() && nav.geolocationStatus !== "idle" ? (
-        <RidingWakeLockControl
-          desired={nav.wakeLockDesired}
-          onToggleDesired={nav.setWakeLockDesired}
-          wakeLockSource={wakeLockSource}
-          clock={clock}
-        />
-      ) : null}
-
       {!online ? (
         <p role="status" className="status-row">
           Offline — your position and camera controls still work; map imagery may be
@@ -409,12 +403,34 @@ export function FreeRoamScreen({
         </p>
       ) : null}
 
-      {nav.currentFix ? (
-        <FreeRoamStatusStrip
-          accuracyMetres={nav.currentFix.accuracyMetres}
-          isStale={nav.isStale}
-          fixAgeMs={fixAgeMs}
-        />
+      {/* The compact shared active-status area (backlog item 68,
+       * correcting a post-item-56 field finding): the wake-lock control
+       * previously rendered in its own top-level slot directly after the
+       * header — see RidingScreen.tsx's identical fix for the full
+       * root-cause. This merges it into the same compact area as the
+       * GPS status line beneath it, without giving FreeRoamStatusStrip
+       * itself any wake-lock props/logic. Each inner condition is exactly
+       * the gate its own element used standalone before (wake lock stays
+       * available while waiting for the first fix, i.e. before
+       * currentFix exists, matching its own prior behaviour). */}
+      {showActiveStatus ? (
+        <div className="ride-active-status">
+          {isWakeLockSupported() && nav.geolocationStatus !== "idle" ? (
+            <RidingWakeLockControl
+              desired={nav.wakeLockDesired}
+              onToggleDesired={nav.setWakeLockDesired}
+              wakeLockSource={wakeLockSource}
+              clock={clock}
+            />
+          ) : null}
+          {nav.currentFix ? (
+            <FreeRoamStatusStrip
+              accuracyMetres={nav.currentFix.accuracyMetres}
+              isStale={nav.isStale}
+              fixAgeMs={fixAgeMs}
+            />
+          ) : null}
+        </div>
       ) : null}
 
       {/* The fixed, flex-filling immersive map shell (backlog item 58) —

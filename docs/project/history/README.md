@@ -10,7 +10,7 @@ Five files, each covering a contiguous range of item numbers in ascending order 
 - [`items-30-38.md`](items-30-38.md)
 - [`items-39-48.md`](items-39-48.md)
 - [`items-49-55.md`](items-49-55.md) — also carries the shared items-55–58 design-reference caveat (see that file's own note)
-- [`items-56-67.md`](items-56-67.md) — also carries the shared items-55–58 design-reference caveat (see that file's own note)
+- [`items-56-68.md`](items-56-68.md) — also carries the shared items-55–58 design-reference caveat (see that file's own note)
 
 When a new item is completed, append it to whichever of these files its number naturally continues (in ascending numeric order). If that would push a file past roughly 150,000 characters, start a new range file (e.g. `items-74-NN.md`) instead of letting an existing file grow unbounded, and add it to the list above.
 

@@ -101,6 +101,39 @@ describe("RidingImmersiveHeader", () => {
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
 
+  it("wraps Pause in a non-shrinking start slot, for both the ordinary and pending label (backlog item 68)", () => {
+    const { rerender } = render(
+      <RidingImmersiveHeader
+        title="Evening loop"
+        pauseLabel="Pause"
+        onPause={() => undefined}
+        pauseDisabled={false}
+        endAction={<button type="button">End ride</button>}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Pause" }).closest("div")).toHaveClass(
+      "riding-immersive-header-start",
+    );
+    expect(screen.getByRole("button", { name: "End ride" }).closest("div")).toHaveClass(
+      "riding-immersive-header-end",
+    );
+
+    rerender(
+      <RidingImmersiveHeader
+        title="Evening loop"
+        pauseLabel="Pausing…"
+        onPause={() => undefined}
+        pauseDisabled={true}
+        endAction={<button type="button">End ride</button>}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Pausing…" }).closest("div")).toHaveClass(
+      "riding-immersive-header-start",
+    );
+  });
+
   it("forwards pauseButtonRef to the Pause button element", () => {
     let buttonElement: HTMLButtonElement | null = null;
     render(

@@ -402,6 +402,24 @@ button:focus-visible {
   flex-wrap: wrap;
 }
 
+/* Keeps content in the accessibility tree and announced by assistive
+ * tech while occupying no visible space — the standard offscreen-clip
+ * technique, not display:none (which would also remove it from the
+ * accessibility tree) and not opacity/visibility alone (which don't
+ * reliably prevent a visible gap in layout). First user: the wake-lock
+ * control's success status (backlog item 68). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Positioned overlay inside MapView's own (position: relative) root, so it
  * never depends on document flow beneath the map — the map canvas itself
  * fills 100% of its fixed-height parent, so anything rendered after it in
@@ -988,14 +1006,6 @@ button:focus-visible {
   width: 100%;
 }
 
-/* Matches the global `button` touch-target rule — a native
- * `<input type="checkbox">` has no equivalent default sizing rule of its
- * own. */
-.wake-lock-checkbox {
-  min-width: var(--touch-target-min);
-  min-height: var(--touch-target-min);
-}
-
 /* A neutral, bordered/elevated surface for a Settings section, mirroring
  * .route-card's own treatment (border/background/radius/shadow) — reused
  * as-is rather than introducing a second near-identical class, combined
@@ -1277,6 +1287,19 @@ button:focus-visible {
   border-bottom: 1px solid var(--colour-border);
 }
 
+/* Mirrors -end below (backlog item 68): without this wrapper, the bare
+ * Pause/`Pausing…` button was an ordinary flex child of the header and
+ * inherited the browser default flex-shrink:1, so a long route title
+ * could squeeze it until its own label text escaped the button — a
+ * confirmed field bug distinct from the title's own (already-correct)
+ * ellipsis handling below. flex:0 0 auto keeps this wrapper, and the
+ * button inside it, at natural content width regardless of title length. */
+.riding-immersive-header-start {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
 /* Single-line truncation so a long route name can never push Pause or End
  * ride out of the viewport — the accessible name is still the full,
  * untruncated text content (this only affects painting), and the
@@ -1303,11 +1326,95 @@ button:focus-visible {
   align-items: center;
 }
 
-/* Quieter than default so the wake-lock control's optional status/info
- * text never competes with the route title beneath it. */
+/* Quieter than default so the wake-lock control's optional info/failure
+ * text never competes with the route title beneath it. The success status
+ * text is hidden altogether rather than merely quiet — see
+ * .visually-hidden and .wake-lock-row below (backlog item 68). */
 .ride-wake-lock-control {
   font-size: 0.85rem;
   color: var(--colour-text-muted);
+}
+
+.wake-lock-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+/* The real ≥44x44px touch target (backlog item 68) — deliberately larger
+ * than the checkbox it wraps, since a native checkbox this small would
+ * otherwise fail the touch-target minimum on its own. Clicking/tapping
+ * anywhere in the label, not just the checkbox glyph, toggles the
+ * preference (native <label>/<input> association). */
+.wake-lock-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: var(--touch-target-min);
+  cursor: pointer;
+}
+
+/* Deliberately small (backlog item 68) — .wake-lock-label above is the
+ * real touch target, not this glyph. */
+.wake-lock-checkbox {
+  width: var(--space-16);
+  height: var(--space-16);
+  flex-shrink: 0;
+  accent-color: var(--colour-accent);
+}
+
+/* Visually quiet: relies on the base `button` rule for its real ≥44x44px
+ * touch target, but drops the default border/background so the
+ * disclosure reads as secondary to the checkbox label beside it. */
+.wake-lock-info-button {
+  border: none;
+  background: transparent;
+  color: var(--colour-text-muted);
+  padding: var(--space-8);
+}
+
+.wake-lock-popover {
+  position: absolute;
+  top: calc(100% + var(--space-4));
+  left: 0;
+  z-index: 20;
+  min-width: 220px;
+  max-width: calc(100vw - var(--space-32));
+  padding: var(--space-12);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--colour-border);
+  background: var(--colour-bg-elevated);
+  color: var(--colour-text);
+  box-shadow: var(--shadow-sm);
+}
+
+.wake-lock-popover p {
+  margin: 0 0 var(--space-8);
+}
+
+.wake-lock-failure-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+  margin-top: var(--space-8);
+}
+
+.wake-lock-failure-row p {
+  margin: 0;
+}
+
+/* Backlog item 68: the compact area shared by the wake-lock control and
+ * the route/GPS status line beneath it, so wake lock no longer occupies
+ * its own top-level screen slot. Its internal gap is tighter than the
+ * .screen stack's default --space-16 between top-level children,
+ * deliberately, since these rows are meant to read as one compact area. */
+.ride-active-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
 }
 
 /* The combined live status strip: route status, remaining distance, GPS

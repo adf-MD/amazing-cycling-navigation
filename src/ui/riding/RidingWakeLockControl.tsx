@@ -24,7 +24,12 @@ export interface RidingWakeLockControlProps {
  * `role="status"`/`role="alert"` element, which is itself what triggers
  * (or doesn't trigger) an assistive-technology announcement. This keeps
  * announcements to meaningful transitions only (activation, failure),
- * with no continuously-updating live region and no extra bookkeeping.
+ * with no continuously-updating live region and no extra bookkeeping. The
+ * success status element is visually hidden (backlog item 68 — a
+ * permanent visible "Screen staying awake." line was judged too much
+ * scarce vertical space for a compact shared status area) but stays
+ * mounted in the accessibility tree exactly as before, so the
+ * announcement itself is unchanged — only its visibility is.
  *
  * The always-visible battery/behaviour explanation lives behind a tap and
  * keyboard accessible information popover instead of permanent text, kept
@@ -80,17 +85,8 @@ export function RidingWakeLockControl({
 
   return (
     <div ref={controlRef} className="ride-wake-lock-control">
-      <div
-        ref={rowRef}
-        style={{
-          position: "relative",
-          display: "flex",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: "0.5rem",
-        }}
-      >
-        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+      <div ref={rowRef} className="wake-lock-row">
+        <label className="wake-lock-label">
           <input
             type="checkbox"
             className="wake-lock-checkbox"
@@ -99,12 +95,13 @@ export function RidingWakeLockControl({
               onToggleDesired(event.target.checked);
             }}
           />
-          Keep screen awake
+          Keep screen on
         </label>
         <button
           type="button"
+          className="wake-lock-info-button"
           ref={infoButtonRef}
-          aria-label="About Keep screen awake"
+          aria-label="About Keep screen on"
           aria-expanded={isInfoOpen}
           aria-controls={infoId}
           onClick={() => {
@@ -113,27 +110,14 @@ export function RidingWakeLockControl({
         >
           <span aria-hidden="true">ⓘ</span>
         </button>
-        {status === "active" ? <span role="status">Screen staying awake.</span> : null}
+        {status === "active" ? (
+          <span role="status" className="visually-hidden">
+            Screen staying awake.
+          </span>
+        ) : null}
         {isInfoOpen ? (
-          <div
-            id={infoId}
-            role="note"
-            style={{
-              position: "absolute",
-              top: "calc(100% + 6px)",
-              left: 0,
-              zIndex: 20,
-              minWidth: 220,
-              maxWidth: "calc(100vw - 2rem)",
-              padding: "0.75rem",
-              borderRadius: 8,
-              border: "1px solid var(--colour-border)",
-              background: "var(--colour-bg-elevated)",
-              color: "var(--colour-text)",
-              boxShadow: "0 2px 8px rgb(0 0 0 / 25%)",
-            }}
-          >
-            <p style={{ margin: "0 0 0.5rem" }}>
+          <div id={infoId} role="note" className="wake-lock-popover">
+            <p>
               Keeps the display on while Riding mode is visible. This may increase battery
               use.
             </p>
@@ -150,17 +134,8 @@ export function RidingWakeLockControl({
         ) : null}
       </div>
       {status === "unavailable" ? (
-        <div
-          role="alert"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            flexWrap: "wrap",
-            marginTop: "0.25rem",
-          }}
-        >
-          <p style={{ margin: 0 }}>The screen could not be kept awake.</p>
+        <div role="alert" className="wake-lock-failure-row">
+          <p>The screen could not be kept awake.</p>
           <button type="button" onClick={retry}>
             Tap to try again
           </button>

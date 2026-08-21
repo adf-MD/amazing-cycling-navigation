@@ -3015,7 +3015,7 @@ describe("RidingScreen", () => {
       await user.click(await screen.findByRole("button", { name: "Resume riding" }));
 
       expect(
-        await screen.findByRole("checkbox", { name: /keep screen awake/i }),
+        await screen.findByRole("checkbox", { name: /keep screen on/i }),
       ).toBeChecked();
       expect(fakeWakeLock.requestSpy).toHaveBeenCalledOnce();
       vi.unstubAllGlobals();
@@ -3049,7 +3049,7 @@ describe("RidingScreen", () => {
       await user.click(await screen.findByRole("button", { name: "Resume riding" }));
 
       expect(
-        await screen.findByRole("checkbox", { name: /keep screen awake/i }),
+        await screen.findByRole("checkbox", { name: /keep screen on/i }),
       ).not.toBeChecked();
       expect(fakeWakeLock.requestSpy).not.toHaveBeenCalled();
       vi.unstubAllGlobals();
@@ -5203,7 +5203,7 @@ describe("RidingScreen", () => {
 
       expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
       expect(
-        screen.queryByRole("checkbox", { name: /keep screen awake/i }),
+        screen.queryByRole("checkbox", { name: /keep screen on/i }),
       ).not.toBeInTheDocument();
     });
 
@@ -5232,7 +5232,7 @@ describe("RidingScreen", () => {
       });
 
       expect(
-        screen.queryByRole("checkbox", { name: /keep screen awake/i }),
+        screen.queryByRole("checkbox", { name: /keep screen on/i }),
       ).not.toBeInTheDocument();
       expect(fakeWakeLock.requestSpy).not.toHaveBeenCalled();
     });
@@ -5250,23 +5250,23 @@ describe("RidingScreen", () => {
       );
 
       expect(
-        screen.queryByRole("checkbox", { name: /keep screen awake/i }),
+        screen.queryByRole("checkbox", { name: /keep screen on/i }),
       ).not.toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: "Start riding" }));
 
       expect(
-        await screen.findByRole("checkbox", { name: /keep screen awake/i }),
+        await screen.findByRole("checkbox", { name: /keep screen on/i }),
       ).not.toBeChecked();
     });
 
     it("renders the immersive header (and its route title) before the compact wake-lock control in DOM order", async () => {
-      // Backlog item 56 corrects a real, screenshot-evidenced field finding
-      // from item 55: the wake-lock control previously rendered before the
-      // header, so at scrollY 0 the header's own natural flow position sat
-      // below it rather than at the true viewport top. This test's own
-      // title/assertion is deliberately inverted from its pre-item-56 form
-      // (which asserted the opposite, now-incorrect order).
+      // Item 56 first corrected a real, screenshot-evidenced field finding
+      // from item 55 (the wake-lock control previously rendered before the
+      // header). Item 68 relocated it again, into the shared compact
+      // active-status area alongside the GPS status line — still after the
+      // header in document order, just further down than item 56's
+      // original "directly after the header" placement.
       vi.stubGlobal("navigator", { onLine: true, wakeLock: { request: vi.fn() } });
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
@@ -5281,7 +5281,7 @@ describe("RidingScreen", () => {
       await user.click(screen.getByRole("button", { name: "Start riding" }));
 
       const checkbox = await screen.findByRole("checkbox", {
-        name: /keep screen awake/i,
+        name: /keep screen on/i,
       });
       const heading = screen.getByRole("heading", { name: route.name });
 
@@ -5303,9 +5303,9 @@ describe("RidingScreen", () => {
       );
 
       await user.click(screen.getByRole("button", { name: "Start riding" }));
-      await screen.findByRole("checkbox", { name: /keep screen awake/i });
+      await screen.findByRole("checkbox", { name: /keep screen on/i });
 
-      await user.click(screen.getByRole("button", { name: "About Keep screen awake" }));
+      await user.click(screen.getByRole("button", { name: "About Keep screen on" }));
 
       expect(
         screen.getByText(
@@ -5343,7 +5343,7 @@ describe("RidingScreen", () => {
       await user.click(await screen.findByRole("button", { name: "Start riding" }));
 
       expect(
-        await screen.findByRole("checkbox", { name: /keep screen awake/i }),
+        await screen.findByRole("checkbox", { name: /keep screen on/i }),
       ).not.toBeChecked();
       expect(fakeWakeLock.requestSpy).not.toHaveBeenCalled();
     });
