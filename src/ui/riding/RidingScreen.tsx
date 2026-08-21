@@ -72,6 +72,17 @@ import { useRouteCompletionCandidate } from "./useRouteCompletionCandidate.ts";
 
 export interface RidingScreenProps {
   route: PlannedRoute;
+  /** A one-use resume intent from App.tsx's launcher-driven cold recovery
+   * (backlog item 72) — set only when this screen was mounted via
+   * RidingLauncher's "Resume ride" action, undefined for every other entry
+   * path (a fresh route, an ordinary Routes-card reopen, a Planning-save-
+   * then-ride, or a still-mounted screen after an in-session Pause, whose
+   * token — if any — was already consumed on first mount and is never
+   * re-consumed). Consumed at most once per distinct value, only once
+   * restoration has genuinely completed for this exact route, via the same
+   * authoritative handleStart() transition the "Resume ride"/"Start riding"
+   * button itself uses. */
+  resumeIntentToken?: number;
   geolocationSource?: GeolocationSource;
   mapFactory?: MapFactory;
   clock?: Clock;
@@ -185,6 +196,7 @@ function elevationViewModeKey(mode: ElevationViewMode): string {
 
 export function RidingScreen({
   route,
+  resumeIntentToken,
   geolocationSource,
   mapFactory,
   clock = systemClock,
@@ -223,7 +235,8 @@ export function RidingScreen({
   // so a zoom press keeps Follow engaged with no "Map follow paused" toast,
   // a deliberate product decision (zooming while followed is a normal
   // riding action, unlike a genuine manual pan/rotate/pitch gesture).
-  const { requestZoom: cameraRequestZoom } = camera;
+  const { requestZoom: cameraRequestZoom, requestFollow: cameraRequestFollow } = camera;
+  const { start: navStart } = nav;
   const handleZoomIn = useCallback(() => {
     cameraRequestZoom(RIDING_ZOOM_STEP);
   }, [cameraRequestZoom]);
@@ -877,7 +890,12 @@ export function RidingScreen({
     editCopyButtonRef.current?.focus();
   }, []);
 
-  const handleStart = () => {
+  // useCallback-wrapped (backlog item 72) so it can be a dependency of the
+  // resume-intent consumption effect below without that effect refiring on
+  // every unrelated render — this is the ONE authoritative start
+  // transition, reused verbatim by the ordinary button, the mid-ride "Try
+  // again" retry, and the cold-recovery resume-intent auto-consume.
+  const handleStart = useCallback(() => {
     // Only clear a pre-ride selection when genuinely transitioning out of
     // the pre-ride (idle) state — this same handler also backs the
     // mid-ride "Try again" retry button (geolocationStatus === "error"),
@@ -898,9 +916,76 @@ export function RidingScreen({
       // untouched.
       setActiveView("map");
     }
-    nav.start();
-    camera.requestFollow();
-  };
+    navStart();
+    cameraRequestFollow();
+  }, [nav.geolocationStatus, navStart, cameraRequestFollow, route.id]);
+
+  // Consumes App.tsx's one-use cold-recovery resume intent (backlog item
+  // 72): waits for restoration to genuinely finish (both this route's own
+  // progress/preference restoration, via nav.restorationStatus, and — when
+  // there is a persisted camera state to restore at all — camera's own
+  // "restore" dispatch, via camera.hasAppliedRestoredCamera) before calling
+  // the SAME handleStart() the ordinary button uses. Gating on
+  // hasAppliedRestoredCamera specifically (rather than merely
+  // restorationStatus) is what guarantees the restore action is already
+  // enqueued/applied before requestFollow's "follow-requested" dispatch —
+  // React processes multiple dispatches made in one synchronous callback in
+  // call order, so this ordering is deterministic, not merely likely.
+  //
+  // consumedResumeIntentTokenRef guards against double-consuming a token —
+  // mirroring this codebase's existing watchGenerationRef/
+  // hydrationGenerationRef idioms, it mutates synchronously and
+  // immediately, so React Strict Mode's double-invoked effects (or any
+  // unrelated rerender) see the already-updated guard on their second pass
+  // even without an intervening commit. handleStart() is called from
+  // inside a single if-block whose test (shouldConsume) is a boolean
+  // combining that ref comparison with restoredForThisRoute — the ref is
+  // always updated to the latest token regardless of which branch runs, so
+  // a stale/missing/wrong-route row (restoredForThisRoute false) still
+  // marks the token consumed and falls through to the ordinary manual idle
+  // panel exactly once, never auto-starting a fresh ride and never
+  // retry-looping.
+  const consumedResumeIntentTokenRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (resumeIntentToken === undefined) return;
+    if (nav.restorationStatus !== "ready") return;
+    const cameraRestorationReady =
+      nav.restoredCameraState === null || camera.hasAppliedRestoredCamera;
+    if (!cameraRestorationReady) return;
+    const shouldConsume =
+      consumedResumeIntentTokenRef.current !== resumeIntentToken &&
+      nav.restoredForThisRoute;
+    if (shouldConsume) {
+      consumedResumeIntentTokenRef.current = resumeIntentToken;
+      handleStart();
+    } else {
+      consumedResumeIntentTokenRef.current = resumeIntentToken;
+    }
+  }, [
+    resumeIntentToken,
+    nav.restorationStatus,
+    nav.restoredForThisRoute,
+    nav.restoredCameraState,
+    camera.hasAppliedRestoredCamera,
+    handleStart,
+  ]);
+
+  // True only while a resume intent is present and restoration hasn't yet
+  // settled into a definite outcome — gates the idle panel's pending/error
+  // presentation below, so the ordinary Start/Resume buttons never flash on
+  // screen during the render(s) a cold-recovery resume spends waiting on
+  // restoration. Deliberately NOT derived from the guard ref above (ref
+  // values must not be read during render) — once restoration is ready and
+  // camera-ready, either handleStart() is about to fire (geolocationStatus
+  // will leave "idle" on the very next render, at which point this whole
+  // idle-panel block stops rendering regardless of this value) or the row
+  // never matched this route, in which case this correctly settles to
+  // false and the ordinary idle panel takes over.
+  const restorationSettled =
+    nav.restorationStatus === "ready" &&
+    (nav.restoredCameraState === null || camera.hasAppliedRestoredCamera);
+  const isConsumingResumeIntent =
+    resumeIntentToken !== undefined && !(restorationSettled && !nav.restoredForThisRoute);
 
   // Renders the End-ride action in place: either the trigger button (plus
   // any error) or the confirmation itself, never both — called from both of
@@ -1339,7 +1424,31 @@ export function RidingScreen({
         </p>
       ) : null}
 
-      {nav.geolocationStatus === "idle" ? (
+      {nav.geolocationStatus === "idle" && isConsumingResumeIntent ? (
+        nav.restorationStatus === "error" ? (
+          <div role="alert" className="ride-alert-panel">
+            <p>Your ride could not be restored on this device. Try again.</p>
+            <button type="button" className="btn-primary" onClick={nav.retryRestoration}>
+              Retry
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                onReturnToRideLauncher?.();
+              }}
+            >
+              Back to Ride options
+            </button>
+          </div>
+        ) : (
+          <p role="status" className="status-row">
+            Resuming your ride…
+          </p>
+        )
+      ) : null}
+
+      {nav.geolocationStatus === "idle" && !isConsumingResumeIntent ? (
         <div className="panel stack ride-start-panel">
           <p>
             {nav.currentFix
@@ -1351,7 +1460,7 @@ export function RidingScreen({
             className="btn-primary ride-start-panel-button"
             onClick={handleStart}
           >
-            {nav.currentFix ? "Resume riding" : "Start riding"}
+            {nav.currentFix ? "Resume ride" : "Start riding"}
           </button>
           <button
             type="button"

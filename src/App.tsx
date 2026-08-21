@@ -26,9 +26,19 @@ export interface AppProps {
 /** What the Ride screen is currently showing — an explicit discriminated
  * union rather than a nullable PlannedRoute, so a route session and a
  * route-less free-roam session (backlog item 42) can never be conflated.
- * Free roam is deliberately not represented as a fake PlannedRoute. */
+ * Free roam is deliberately not represented as a fake PlannedRoute.
+ *
+ * resumeIntentToken (backlog item 72) is a one-use resume intent: set only
+ * by handleResumeRoute (the launcher's own "Resume ride" action), never by
+ * handleOpenRoute/handleRouteSaved (an ordinary Routes-card reopen or a
+ * Planning-save-then-ride, both of which keep today's explicit-tap idle
+ * screen unchanged). RidingScreen consumes it at most once, only after its
+ * own restoration has genuinely completed, to start GPS and request Follow
+ * without a second in-screen tap. */
 type RidingContent =
-  { kind: "none" } | { kind: "route"; route: PlannedRoute } | { kind: "free-roam" };
+  | { kind: "none" }
+  | { kind: "route"; route: PlannedRoute; resumeIntentToken?: number }
+  | { kind: "free-roam" };
 
 const NONE_RIDING_CONTENT: RidingContent = { kind: "none" };
 
@@ -48,6 +58,10 @@ function App({ mapFactory }: AppProps) {
   const { needRefresh, offlineReady, updateNow, dismiss } = usePwaUpdate();
   const routesScrollYRef = useRef<number | null>(null);
   const routesSearchQueryRef = useRef<string>("");
+  // Plain monotonic counter (never a timestamp/uuid) for resumeIntentToken —
+  // mirrors useRideCamera.ts's own nextCameraRequestIdRef idiom (backlog
+  // item 72).
+  const nextResumeIntentTokenRef = useRef(0);
   const notifyNewRideContent = useResetScrollForNewRideContent(screen);
   // Whether the app shell is in immersive-Riding mode (backlog item 55):
   // MainNavigation and its wrapping <header> render at all only when this
@@ -115,10 +129,18 @@ function App({ mapFactory }: AppProps) {
   // not capture window.scrollY into routesScrollYRef the way handleOpenRoute
   // does: the rider is already on the Ride screen (the launcher), not
   // Routes, so capturing the launcher's own scroll offset here would
-  // wrongly overwrite the Routes-restore ref. Never starts geolocation
-  // itself.
+  // wrongly overwrite the Routes-restore ref. This function itself still
+  // never starts geolocation — it only generates a fresh one-use
+  // resumeIntentToken (backlog item 72) alongside the route; RidingScreen's
+  // own effect is what actually starts GPS and requests Follow, and only
+  // once its restoration has genuinely completed.
   const handleResumeRoute = (route: PlannedRoute) => {
-    setRidingContent({ kind: "route", route });
+    nextResumeIntentTokenRef.current += 1;
+    setRidingContent({
+      kind: "route",
+      route,
+      resumeIntentToken: nextResumeIntentTokenRef.current,
+    });
     setScreen("riding");
     notifyNewRideContent();
   };
@@ -143,11 +165,13 @@ function App({ mapFactory }: AppProps) {
   // - handleRideFinalized (End/Finish ride, below): storage already
   //   cleared by the caller's own finish() before this fires — the empty
   //   launcher shows no resumable session.
-  // - handleRidePaused (Pause, below, backlog item 55): storage
-  //   deliberately NOT cleared — the caller's own pause() already wrote a
-  //   fresh resumable snapshot and stopped the watch before this fires, so
-  //   the launcher immediately re-hydrates into Resume route/Resume free
-  //   roam for this same session.
+  // - handleRidePaused (Pause, below, backlog item 55; collapsed to one tap
+  //   for routes by item 72): storage deliberately NOT cleared — the
+  //   caller's own pause() already wrote a fresh resumable snapshot and
+  //   stopped the watch before this fires. handleRidePaused itself only
+  //   calls this helper for a free-roam session, which re-hydrates the
+  //   launcher into "Resume free roam"; a route session is left mounted
+  //   instead, so this helper is never invoked on that path at all.
   // - handleReturnToRideLauncher (backlog item 51, below): no active watch
   //   ever existed for this call and no persisted-storage mutation of any
   //   kind occurs — a still-unfinished session's row (if any) is left
@@ -184,13 +208,20 @@ function App({ mapFactory }: AppProps) {
   // FreeRoamScreen's shared Pause lifecycle (backlog item 55). Called only
   // once the underlying navigation hook's pause() has already written a
   // fresh resumable snapshot and stopped the watch — storage is
-  // deliberately NOT cleared (contrast with handleRideFinalized above), so
-  // the Ride launcher this drops the rider onto immediately re-hydrates
-  // into Resume route/Resume free roam for this same, still-unfinished
-  // session. Delegates to the same resetRidingContentToLauncher helper;
-  // screen deliberately stays "riding" throughout.
+  // deliberately NOT cleared (contrast with handleRideFinalized above).
+  //
+  // Backlog item 72 collapsed the route side of this to one tap: a route
+  // session's ridingContent is deliberately left untouched, so RidingScreen
+  // stays mounted and its own idle/pre-ride branch — already unconditional
+  // on nav.geolocationStatus leaving "watching" — renders the resumable
+  // "Resume ride" panel directly, with no launcher round-trip. Free roam
+  // keeps its existing, unaffected one-tap contract (FreeRoamScreen has no
+  // idle panel of its own, so it must still drop back to the launcher,
+  // which is what makes its own "Resume free roam" tap meaningful).
   const handleRidePaused = () => {
-    resetRidingContentToLauncher();
+    if (ridingContent.kind === "free-roam") {
+      resetRidingContentToLauncher();
+    }
   };
 
   // Fired by RidingScreen's pre-ride-only "Back to Ride options" action
@@ -229,9 +260,9 @@ function App({ mapFactory }: AppProps) {
   // fresh, explicit tap before GPS restarts — rather than silently
   // resuming a still-selected FreeRoamScreen instance. Deliberately NOT
   // applied when ridingContent is a route session: RidingScreen's own
-  // existing, tested, two-tap idle-panel pattern (an in-screen "Resume
-  // riding" button gates the restart on every remount regardless of
-  // whether selectedRoute/ridingContent stayed set) already satisfies the
+  // existing, tested idle-panel pattern (an in-screen "Resume ride" button
+  // gates the restart whenever no resumeIntentToken is present, e.g. this
+  // ordinary Routes-card/tab-navigation path) already satisfies the
   // identical requirement for routes, and changing that behaviour here is
   // out of scope for this slice.
   //
@@ -290,6 +321,7 @@ function App({ mapFactory }: AppProps) {
           (ridingContent.kind === "route" ? (
             <RidingScreen
               route={ridingContent.route}
+              resumeIntentToken={ridingContent.resumeIntentToken}
               mapFactory={mapFactory}
               onRidingActiveChange={setIsRidingActive}
               onNavigateToPlanning={handleNavigateToPlanning}

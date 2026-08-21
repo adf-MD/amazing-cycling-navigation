@@ -7,7 +7,7 @@ import { readActiveRideStateRow, readSavedRouteId } from "./support/rideStateDb.
 // post-finalisation route clearing): the launcher discovers a persisted
 // active-ride session itself, independent of App.tsx's own transient
 // selectedRoute (always null immediately after a reload), and offers
-// Resume route/End ride/Discard unfinished ride entirely from local
+// Resume ride/End ride/Discard unfinished ride entirely from local
 // storage — never contacting OpenRouteService merely to populate itself.
 
 const ORS_URL_GLOB = "https://api.heigit.org/**";
@@ -99,7 +99,7 @@ async function readWatchPositionCallCount(page: Page): Promise<number> {
  * the async, un-throttled setActiveRideState(...) write. A reload
  * immediately after only the UI assertion can race that write under CI
  * load, leaving the Ride launcher with no persisted session to recover and
- * so no Resume route/End ride/Discard button — exactly the failure mode
+ * so no Resume ride/End ride/Discard button — exactly the failure mode
  * that motivated the identical readSavedRouteId/readActiveRideStateRow
  * polling idiom already established in androidPersistenceAndOffline.spec.ts.
  * Reused here, not reinvented. */
@@ -143,7 +143,7 @@ async function establishUnfinishedRide(
     });
 }
 
-test("the launcher resumes a route session after a real reload, with zero OpenRouteService requests", async ({
+test("the launcher resumes a route session after a real reload with one tap, starting exactly one geolocation watch, with zero OpenRouteService requests (backlog item 72)", async ({
   page,
   context,
 }) => {
@@ -156,6 +156,10 @@ test("the launcher resumes a route session after a real reload, with zero OpenRo
   });
 
   const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  // Registered before establishUnfinishedRide's own first page.goto — the
+  // counter resets to 0 on every subsequent navigation (including the
+  // reload below), so it only ever reflects watches created after reload.
+  await installGeolocationWatchCounter(page);
 
   const routeName = "ride-launcher-resume-route";
   await establishUnfinishedRide(page, context, routeName);
@@ -176,17 +180,31 @@ test("the launcher resumes a route session after a real reload, with zero OpenRo
   await page.getByRole("button", { name: "Ride", exact: true }).click();
 
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
-  const resumeButton = page.getByRole("button", { name: "Resume route" });
+  const resumeButton = page.getByRole("button", { name: "Resume ride" });
   await expect(resumeButton).toBeVisible();
   await expect(page.getByRole("button", { name: "Start riding" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Choose a route" })).toBeHidden();
+  expect(await readWatchPositionCallCount(page)).toBe(0);
 
   await resumeButton.click();
 
-  // The persisted fix from before the reload restores immediately, so the
-  // pre-ride panel offers Resume riding, not Start riding.
-  await expect(page.getByRole("button", { name: "Resume riding" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Start riding" })).toBeHidden();
+  // One tap — no intermediate idle "Resume riding" screen — reaches
+  // active immersive tracking directly.
+  await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeHidden();
+  await expect.poll(() => readWatchPositionCallCount(page)).toBe(1);
+
+  // The restored fix/progress genuinely carried through the collapsed
+  // flow, not merely a fresh session started from scratch.
+  const routeId = await readSavedRouteId(page, routeName);
+  await expect
+    .poll(() => readActiveRideStateRow(page), { timeout: 10_000 })
+    .toMatchObject({
+      kind: "route",
+      routeId,
+      lastMatchedPointIndex: expect.any(Number),
+      matchedDistanceFromStartMetres: expect.any(Number),
+    });
 
   expect(unexpectedOrsRequest).toBe(false);
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
@@ -214,9 +232,9 @@ test("the launcher can end an unfinished ride directly, without ever resuming GP
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
   await page.getByRole("button", { name: "Ride", exact: true }).click();
 
-  // Never clicking "Resume route" — the launcher's own End ride must work
+  // Never clicking "Resume ride" — the launcher's own End ride must work
   // directly on the unresumed session.
-  const resumeButton = page.getByRole("button", { name: "Resume route" });
+  const resumeButton = page.getByRole("button", { name: "Resume ride" });
   await expect(resumeButton).toBeVisible();
   const endRideButton = page.getByRole("button", { name: "End ride" });
   await expect(endRideButton).toBeVisible();
@@ -228,7 +246,7 @@ test("the launcher can end an unfinished ride directly, without ever resuming GP
   // .ride-launcher-clear-row is a persistent action-slot container
   // (backlog item 50): it stays mounted and now contains the confirmation
   // directly, rather than the confirmation being appended elsewhere on the
-  // page. Resume route and the route's own info stay visible around it.
+  // page. Resume ride and the route's own info stay visible around it.
   const dialogInsideClearRow = await page.evaluate(() => {
     const row = document.querySelector(".ride-launcher-clear-row");
     const alertDialog = document.querySelector('[role="alertdialog"]');
@@ -251,7 +269,7 @@ test("the launcher can end an unfinished ride directly, without ever resuming GP
 
   await waitForClearedRideState(page);
   await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Resume route" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeHidden();
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
@@ -322,9 +340,12 @@ test("Back to Ride options returns a resumed (still-idle) route screen to the la
   await page.reload();
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Ride", exact: true }).click();
-  await page.getByRole("button", { name: "Resume route" }).click();
-  await expect(page.getByRole("button", { name: "Resume riding" })).toBeVisible();
+  // Reopens via the Routes-card (not the launcher's one-tap "Resume ride"
+  // action, out of scope for backlog item 72) — the ordinary reopen path
+  // still genuinely reaches an idle, restored-but-not-yet-started screen,
+  // which this test needs to exercise.
+  await page.getByRole("button", { name: routeName, exact: true }).click();
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeVisible();
   expect(await readWatchPositionCallCount(page)).toBe(0);
 
   // Mounting the resumed pre-ride screen already normalises/expands the
@@ -337,8 +358,10 @@ test("Back to Ride options returns a resumed (still-idle) route screen to the la
 
   await page.getByRole("button", { name: "Back to Ride options" }).click();
 
-  await expect(page.getByRole("button", { name: "Resume route" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Resume riding" })).toBeHidden();
+  // Drops back onto the Ride launcher (screen stays "riding"), which
+  // re-hydrates from the still-persisted row into its resumable state.
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "End ride" })).toBeVisible();
   expect(await readWatchPositionCallCount(page)).toBe(0);
   expect(await readActiveRideStateRow(page)).toEqual(settledRow);
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
@@ -394,9 +417,12 @@ test.describe("390px phone viewport", () => {
 
     await page.reload();
     await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
-    await page.getByRole("button", { name: "Ride", exact: true }).click();
-    await page.getByRole("button", { name: "Resume route" }).click();
-    await expect(page.getByRole("button", { name: "Resume riding" })).toBeVisible();
+    // Reopens via the Routes-card, not the launcher's one-tap "Resume ride"
+    // action (backlog item 72 leaves this path unaffected) — still the
+    // ordinary way to reach an idle, resumable pre-ride screen with "Back
+    // to Ride options" visible.
+    await page.getByRole("button", { name: routeName, exact: true }).click();
+    await expect(page.getByRole("button", { name: "Resume ride" })).toBeVisible();
 
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
@@ -449,7 +475,7 @@ test("a session whose route has been deleted offers only a confirmed Discard, dr
       "This unfinished ride refers to a route that's no longer in your library, so it can't be resumed.",
     ),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Resume route" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeHidden();
   const discardButton = page.getByRole("button", { name: "Discard unfinished ride" });
   await expect(discardButton).toBeVisible();
 

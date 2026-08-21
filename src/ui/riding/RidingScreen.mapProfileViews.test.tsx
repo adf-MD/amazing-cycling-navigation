@@ -186,7 +186,7 @@ describe("RidingScreen — fixed Map/Profile shell (backlog item 56)", () => {
       );
     });
 
-    it("defaults to the Map view on an explicit Resume riding tap after a restored session", async () => {
+    it("defaults to the Map view on an explicit Resume ride tap after a restored session", async () => {
       await setActiveRideState({
         id: "active",
         routeId: route.id,
@@ -212,7 +212,7 @@ describe("RidingScreen — fixed Map/Profile shell (backlog item 56)", () => {
       // No switcher exists at all before the ride is genuinely resumed —
       // idle state renders the old, unchanged scrolling layout.
       expect(screen.queryByRole("button", { name: "Map" })).toBeNull();
-      await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+      await user.click(await screen.findByRole("button", { name: "Resume ride" }));
 
       expect(await screen.findByRole("button", { name: "Map" })).toHaveAttribute(
         "aria-pressed",
@@ -244,7 +244,7 @@ describe("RidingScreen — fixed Map/Profile shell (backlog item 56)", () => {
 
       // Still Profile — Try again is handleStart's non-idle branch, which
       // deliberately never resets activeView (unlike a genuine fresh Start
-      // or Resume riding).
+      // or Resume ride).
       expect(screen.getByRole("button", { name: "Profile" })).toHaveAttribute(
         "aria-pressed",
         "true",
@@ -532,7 +532,7 @@ describe("RidingScreen — fixed Map/Profile shell (backlog item 56)", () => {
         />,
       );
 
-      await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+      await user.click(await screen.findByRole("button", { name: "Resume ride" }));
       act(() => {
         fake.watches[0]?.emitFix(nearEndFix(2000));
       });
@@ -582,7 +582,7 @@ describe("RidingScreen — fixed Map/Profile shell (backlog item 56)", () => {
         />,
       );
 
-      await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+      await user.click(await screen.findByRole("button", { name: "Resume ride" }));
       act(() => {
         fake.watches[0]?.emitFix(nearEndFix(2000));
       });

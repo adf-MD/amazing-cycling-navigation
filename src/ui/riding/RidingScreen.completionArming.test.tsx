@@ -313,7 +313,7 @@ describe("RidingScreen route-completion arming", () => {
       />,
     );
 
-    await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+    await user.click(await screen.findByRole("button", { name: "Resume ride" }));
     act(() => {
       fake.watches[0]?.emitFix(nearEndFix(2000));
     });
@@ -350,7 +350,7 @@ describe("RidingScreen route-completion arming", () => {
       />,
     );
 
-    await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+    await user.click(await screen.findByRole("button", { name: "Resume ride" }));
     act(() => {
       fake.watches[0]?.emitFix(nearEndFix(2000));
     });

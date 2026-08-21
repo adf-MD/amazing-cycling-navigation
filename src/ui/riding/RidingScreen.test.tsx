@@ -1,8 +1,9 @@
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RidingScreen } from "./RidingScreen.tsx";
-import { db } from "../../storage/db.ts";
+import { db, type StoredRideState } from "../../storage/db.ts";
 import * as planningDraftRepository from "../../storage/planningDraftRepository.ts";
 import { getDraft, saveDraft } from "../../storage/planningDraftRepository.ts";
 import {
@@ -739,7 +740,7 @@ describe("RidingScreen", () => {
       "true",
     );
 
-    await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+    await user.click(await screen.findByRole("button", { name: "Resume ride" }));
     stub.emitFix({
       coordinate: [0.005, 51],
       accuracyMetres: 5,
@@ -775,7 +776,7 @@ describe("RidingScreen", () => {
       expect(onRidingActiveChange).toHaveBeenLastCalledWith(false);
     });
 
-    it("stays false (awaiting Resume riding) when mounting with a restored fix, and only switches true once Resume riding is tapped", async () => {
+    it("stays false (awaiting Resume ride) when mounting with a restored fix, and only switches true once Resume ride is tapped", async () => {
       await setActiveRideState({
         id: "active",
         routeId: route.id,
@@ -803,11 +804,11 @@ describe("RidingScreen", () => {
       );
 
       expect(
-        await screen.findByRole("button", { name: "Resume riding" }),
+        await screen.findByRole("button", { name: "Resume ride" }),
       ).toBeInTheDocument();
       expect(onRidingActiveChange).toHaveBeenLastCalledWith(false);
 
-      await user.click(screen.getByRole("button", { name: "Resume riding" }));
+      await user.click(screen.getByRole("button", { name: "Resume ride" }));
       expect(onRidingActiveChange).toHaveBeenLastCalledWith(true);
     });
 
@@ -1443,7 +1444,7 @@ describe("RidingScreen", () => {
       expect(screen.queryByRole("button", { name: "End ride" })).toBeNull();
     });
 
-    it("still exposes Resume riding and End ride, inside the pre-ride panel, in a resumable pre-ride state", async () => {
+    it("still exposes Resume ride and End ride, inside the pre-ride panel, in a resumable pre-ride state", async () => {
       await setActiveRideState({
         id: "active",
         routeId: route.id,
@@ -1463,7 +1464,7 @@ describe("RidingScreen", () => {
       );
 
       expect(
-        await screen.findByRole("button", { name: "Resume riding" }),
+        await screen.findByRole("button", { name: "Resume ride" }),
       ).toBeInTheDocument();
       const endRideButton = screen.getByRole("button", { name: "End ride" });
       expect(container.querySelector(".ride-start-panel")?.contains(endRideButton)).toBe(
@@ -1510,7 +1511,7 @@ describe("RidingScreen", () => {
       expect(backButton.compareDocumentPosition(editCopyButton) & 4).toBe(4);
     });
 
-    it("also renders in a resumable pre-ride state, still directly after Resume riding and before Edit copy", async () => {
+    it("also renders in a resumable pre-ride state, still directly after Resume ride and before Edit copy", async () => {
       await seedResumableRideState();
       const { container } = render(
         <RidingScreen
@@ -1520,7 +1521,7 @@ describe("RidingScreen", () => {
         />,
       );
 
-      const resumeButton = await screen.findByRole("button", { name: "Resume riding" });
+      const resumeButton = await screen.findByRole("button", { name: "Resume ride" });
       const backButton = screen.getByRole("button", { name: "Back to Ride options" });
       const editCopyButton = screen.getByRole("button", { name: "Edit copy" });
 
@@ -1615,7 +1616,7 @@ describe("RidingScreen", () => {
         />,
       );
 
-      await screen.findByRole("button", { name: "Resume riding" });
+      await screen.findByRole("button", { name: "Resume ride" });
       const setCameraCallsBefore = mapStub.setCameraSpy.mock.calls.length;
       const fitBoundsCallsBefore = mapStub.fitBoundsSpy.mock.calls.length;
 
@@ -1645,7 +1646,7 @@ describe("RidingScreen", () => {
       // unrelated to this action and out of scope here. Snapshot once that
       // settles (findByRole flushes React's effects), so this test proves
       // only that clicking the button itself causes no further write.
-      await screen.findByRole("button", { name: "Resume riding" });
+      await screen.findByRole("button", { name: "Resume ride" });
       const settledState = await getActiveRideState();
 
       await user.click(screen.getByRole("button", { name: "Back to Ride options" }));
@@ -1672,7 +1673,7 @@ describe("RidingScreen", () => {
         />,
       );
 
-      await screen.findByRole("button", { name: "Resume riding" });
+      await screen.findByRole("button", { name: "Resume ride" });
       const backButton = screen.getByRole("button", { name: "Back to Ride options" });
       expect(backButton).toBeEnabled();
 
@@ -1978,7 +1979,7 @@ describe("RidingScreen", () => {
         />,
       );
 
-      // Still idle (the rider hasn't tapped "Resume riding" yet), so the
+      // Still idle (the rider hasn't tapped "Resume ride" yet), so the
       // pre-ride selector/panel/chart still show for the same dropdown-
       // selected climb without throwing. In this specific restored state,
       // the restored progress also makes the (unrelated, already-existing)
@@ -1989,7 +1990,7 @@ describe("RidingScreen", () => {
       // of this test is that nothing throws and the pre-ride preview
       // chart, specifically, still renders for the right climb.
       expect(
-        await screen.findByRole("button", { name: "Resume riding" }),
+        await screen.findByRole("button", { name: "Resume ride" }),
       ).toBeInTheDocument();
       expect(
         screen.getAllByRole("heading", { name: "Climb 1 · Category 2" }).length,
@@ -3063,7 +3064,7 @@ describe("RidingScreen", () => {
         // Resumable-but-idle: the ride has not been (re)started, so this
         // is still the pre-ride briefing, which must not gain the new
         // active-Riding-only Climb-preview affordance.
-        await screen.findByRole("button", { name: "Resume riding" });
+        await screen.findByRole("button", { name: "Resume ride" });
         expect(screen.queryByRole("button", { name: "Climb" })).toBeNull();
       });
 
@@ -3093,7 +3094,7 @@ describe("RidingScreen", () => {
             mapFactory={buildStubMapFactory().factory}
           />,
         );
-        await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+        await user.click(await screen.findByRole("button", { name: "Resume ride" }));
         await switchToProfile(user);
 
         const climbButton = await screen.findByRole("button", { name: "Climb" });
@@ -3202,7 +3203,7 @@ describe("RidingScreen", () => {
   });
 
   describe("restoration", () => {
-    it("restores a stale fix and prior progress, requiring an explicit Resume riding tap", async () => {
+    it("restores a stale fix and prior progress, requiring an explicit Resume ride tap", async () => {
       await setActiveRideState({
         id: "active",
         routeId: route.id,
@@ -3224,7 +3225,7 @@ describe("RidingScreen", () => {
       );
 
       expect(
-        await screen.findByRole("button", { name: "Resume riding" }),
+        await screen.findByRole("button", { name: "Resume ride" }),
       ).toBeInTheDocument();
       expect(screen.getByText(/Stale/)).toBeInTheDocument();
       expect(stub.watchPositionSpy).not.toHaveBeenCalled();
@@ -3252,7 +3253,7 @@ describe("RidingScreen", () => {
         />,
       );
 
-      await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+      await user.click(await screen.findByRole("button", { name: "Resume ride" }));
       expect(screen.getByText(/Stale/)).toBeInTheDocument();
 
       stub.emitFix({
@@ -3322,9 +3323,9 @@ describe("RidingScreen", () => {
       );
 
       // The wake-lock control (like the next-manoeuvre panel) only shows
-      // once riding is genuinely active, matching Resume riding's own
+      // once riding is genuinely active, matching Resume ride's own
       // existing "requires an explicit tap" behaviour above.
-      await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+      await user.click(await screen.findByRole("button", { name: "Resume ride" }));
 
       expect(
         await screen.findByRole("checkbox", { name: /keep screen on/i }),
@@ -3358,13 +3359,278 @@ describe("RidingScreen", () => {
         />,
       );
 
-      await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+      await user.click(await screen.findByRole("button", { name: "Resume ride" }));
 
       expect(
         await screen.findByRole("checkbox", { name: /keep screen on/i }),
       ).not.toBeChecked();
       expect(fakeWakeLock.requestSpy).not.toHaveBeenCalled();
       vi.unstubAllGlobals();
+    });
+  });
+
+  describe("cold-recovery resume intent (backlog item 72)", () => {
+    const RESUMABLE_ROW: StoredRideState = {
+      id: "active",
+      routeId: route.id,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: { coordinate: pointAt(5), accuracyMetres: 6, timestampMs: 1000 },
+      lastMatchedPointIndex: 5,
+      matchedDistanceFromStartMetres: routePoints[5]?.distanceFromStartMetres ?? 0,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+      elevationWindowMetres: 5000,
+    };
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    });
+
+    it("passing no resumeIntentToken never auto-starts, regardless of a matching persisted row", async () => {
+      await setActiveRideState(RESUMABLE_ROW);
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      expect(
+        await screen.findByRole("button", { name: "Resume ride" }),
+      ).toBeInTheDocument();
+      expect(stub.watchPositionSpy).not.toHaveBeenCalled();
+    });
+
+    it("a deliberately deferred restoration promise blocks auto-start until it resolves, then starts exactly one watch and requests Follow once", async () => {
+      let resolveRead!: (value: StoredRideState | undefined) => void;
+      const deferred = new Promise<StoredRideState | undefined>((resolve) => {
+        resolveRead = resolve;
+      });
+      vi.spyOn(rideStateRepository, "getActiveRideState").mockReturnValueOnce(deferred);
+
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          resumeIntentToken={1}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      // Pending: no watch yet, and no ordinary Start/Resume buttons — a
+      // status line instead, avoiding a flash of the manual idle panel.
+      expect(await screen.findByText(/resuming your ride/i)).toBeInTheDocument();
+      expect(stub.watchPositionSpy).not.toHaveBeenCalled();
+      expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Start riding" })).toBeNull();
+
+      resolveRead(RESUMABLE_ROW);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+      });
+      expect(stub.watchPositionSpy).toHaveBeenCalledOnce();
+    });
+
+    it("a restoration rejection shows a retryable error, starts no watch, preserves the saved row, and completes the same resume intent once retried", async () => {
+      await setActiveRideState(RESUMABLE_ROW);
+      vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
+        new Error("boom"),
+      );
+
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          resumeIntentToken={1}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        /could not be restored/i,
+      );
+      expect(stub.watchPositionSpy).not.toHaveBeenCalled();
+      expect(await getActiveRideState()).toBeDefined();
+
+      await user.click(screen.getByRole("button", { name: "Retry" }));
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+      });
+      expect(stub.watchPositionSpy).toHaveBeenCalledOnce();
+    });
+
+    it("Back to Ride options from the restoration-error state returns to the launcher without starting GPS", async () => {
+      await setActiveRideState(RESUMABLE_ROW);
+      vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
+        new Error("boom"),
+      );
+
+      const user = userEvent.setup();
+      const onReturnToRideLauncher = vi.fn();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          resumeIntentToken={1}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          onReturnToRideLauncher={onReturnToRideLauncher}
+        />,
+      );
+
+      await screen.findByRole("alert");
+      await user.click(screen.getByRole("button", { name: "Back to Ride options" }));
+
+      expect(onReturnToRideLauncher).toHaveBeenCalledOnce();
+      expect(stub.watchPositionSpy).not.toHaveBeenCalled();
+    });
+
+    it("Strict Mode double-invocation does not double-consume the resume intent", async () => {
+      await setActiveRideState(RESUMABLE_ROW);
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          resumeIntentToken={1}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+        { wrapper: StrictMode },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+      });
+      expect(stub.watchPositionSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("a stale/wrong-route stored row does not auto-start — falls through to the ordinary idle panel", async () => {
+      await setActiveRideState({ ...RESUMABLE_ROW, routeId: "some-other-route" });
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          resumeIntentToken={1}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      expect(
+        await screen.findByRole("button", { name: "Start riding" }),
+      ).toBeInTheDocument();
+      expect(stub.watchPositionSpy).not.toHaveBeenCalled();
+    });
+
+    it("restored elevation-view selection and wake-lock preference survive the collapsed cold-recovery flow", async () => {
+      await setActiveRideState({
+        ...RESUMABLE_ROW,
+        elevationViewMode: { kind: "upcoming", windowMetres: 10000 },
+        wakeLockDesired: true,
+      });
+      vi.stubGlobal("navigator", { onLine: true, wakeLock: { request: vi.fn() } });
+
+      const stub = buildStubGeolocationSource();
+      const fakeWakeLock = buildFakeWakeLockSource();
+      render(
+        <RidingScreen
+          route={route}
+          resumeIntentToken={1}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          wakeLockSource={fakeWakeLock.source}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+      });
+      await switchToProfile(userEvent.setup());
+      expect(screen.getByRole("button", { name: "10 km" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(
+        await screen.findByRole("checkbox", { name: /keep screen on/i }),
+      ).toBeChecked();
+      expect(fakeWakeLock.requestSpy).toHaveBeenCalledOnce();
+    });
+
+    it("a restored free-camera state cannot apply after and override the resumed Follow request", async () => {
+      const freeCoordinate = pointAt(3);
+      await setActiveRideState({
+        ...RESUMABLE_ROW,
+        cameraMode: "free",
+        cameraCoordinate: freeCoordinate,
+        cameraZoom: 14,
+        cameraBearingDegrees: 231,
+        cameraPitchDegrees: 18,
+      });
+
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          resumeIntentToken={1}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+      });
+      expect(stub.watchPositionSpy).toHaveBeenCalledOnce();
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+
+      stub.emitFix({
+        coordinate: pointAt(5),
+        accuracyMetres: 5,
+        timestampMs: 2000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      // The final, settled camera command is the followed one — a
+      // previously-restored free pan never wins after Follow was
+      // requested, even though it may briefly have been applied first.
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenLastCalledWith(
+          pointAt(5),
+          NAVIGATION_ZOOM,
+          expectedBearingAt(5),
+          FOLLOW_PITCH_DEGREES,
+          { animate: true, followOffset: true },
+        );
+      });
+    });
+
+    it("a never-started route still shows Start riding and never auto-starts", () => {
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
+      expect(stub.watchPositionSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -3901,7 +4167,7 @@ describe("RidingScreen", () => {
       });
 
       expect(
-        await screen.findByRole("button", { name: "Resume riding" }),
+        await screen.findByRole("button", { name: "Resume ride" }),
       ).toBeInTheDocument();
       expect(map.setCameraSpy).not.toHaveBeenCalled();
       // Restoration resolving into "following" (awaiting a fresh fix)
@@ -3909,7 +4175,7 @@ describe("RidingScreen", () => {
       // is still all that's happened.
       expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
 
-      await user.click(screen.getByRole("button", { name: "Resume riding" }));
+      await user.click(screen.getByRole("button", { name: "Resume ride" }));
 
       const followButton = screen.getByRole("button", { name: "Follow my location" });
       expect(followButton).toHaveAttribute("aria-pressed", "true");
@@ -3942,11 +4208,11 @@ describe("RidingScreen", () => {
       );
 
       // Restoration settles first in this ordering — deliberately not
-      // calling map.triggerLoad() yet. By the time "Resume riding"
+      // calling map.triggerLoad() yet. By the time "Resume ride"
       // appears, the camera is already restored to "following" +
       // awaitingFreshFix, with no actionable target.
       expect(
-        await screen.findByRole("button", { name: "Resume riding" }),
+        await screen.findByRole("button", { name: "Resume ride" }),
       ).toBeInTheDocument();
       expect(map.fitBoundsSpy).not.toHaveBeenCalled();
 
@@ -3962,7 +4228,7 @@ describe("RidingScreen", () => {
       expect(map.setCameraSpy).not.toHaveBeenCalled();
     });
 
-    it("hands off from the route overview to the normal follow camera once a fresh fix arrives after Resume riding", async () => {
+    it("hands off from the route overview to the normal follow camera once a fresh fix arrives after Resume ride", async () => {
       await setActiveRideState({
         id: "active",
         routeId: route.id,
@@ -3987,7 +4253,7 @@ describe("RidingScreen", () => {
       );
       map.triggerLoad();
 
-      await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+      await user.click(await screen.findByRole("button", { name: "Resume ride" }));
       expect(map.setCameraSpy).not.toHaveBeenCalled();
 
       stub.emitFix({
@@ -4086,7 +4352,7 @@ describe("RidingScreen", () => {
       // Restoration settles first — deliberately not calling
       // map.triggerLoad() yet.
       expect(
-        await screen.findByRole("button", { name: "Resume riding" }),
+        await screen.findByRole("button", { name: "Resume ride" }),
       ).toBeInTheDocument();
       expect(map.fitBoundsSpy).not.toHaveBeenCalled();
       expect(map.setCameraSpy).not.toHaveBeenCalled();

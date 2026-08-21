@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRideNavigation } from "./useRideNavigation.ts";
 import { browserGeolocationSource } from "../../platform/geolocation.ts";
@@ -10,11 +10,15 @@ import type {
 import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
 import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry.ts";
 import type { PlannedRoute, RoutePoint } from "../../domain/types.ts";
-import { db } from "../../storage/db.ts";
-import { getActiveRideState } from "../../storage/rideStateRepository.ts";
+import { db, type StoredRideState } from "../../storage/db.ts";
+import {
+  getActiveRideState,
+  setActiveRideState,
+} from "../../storage/rideStateRepository.ts";
 import * as rideStateRepository from "../../storage/rideStateRepository.ts";
 import { DEFAULT_ELEVATION_VIEW_MODE } from "../../navigation/upcomingElevation.ts";
 import { OFF_ROUTE_BASE_METRES } from "../../navigation/offRoute.ts";
+import { getRecentErrors } from "../../platform/errorLog.ts";
 
 const routePoints = buildRoutePointsFromWaypoints(
   [
@@ -706,6 +710,134 @@ describe("useRideNavigation finish()", () => {
     // row stays cleared once finish() actually resolves.
     expect(await getActiveRideState()).toBeUndefined();
     expect(result.current.currentFix).toBeNull();
+  });
+});
+
+describe("useRideNavigation restoration lifecycle (backlog item 72)", () => {
+  const RESUMABLE_ROW: StoredRideState = {
+    id: "active",
+    routeId: route.id,
+    startedAt: "2026-01-01T08:00:00.000Z",
+    lastFix: { coordinate: [0, 51], accuracyMetres: 6, timestampMs: 1000 },
+    lastMatchedPointIndex: 0,
+    matchedDistanceFromStartMetres: 0,
+    offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+  };
+
+  it("transitions loading -> ready with restoredForThisRoute true on a genuine match", async () => {
+    await setActiveRideState(RESUMABLE_ROW);
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+
+    expect(result.current.restorationStatus).toBe("loading");
+
+    await waitFor(() => {
+      expect(result.current.restorationStatus).toBe("ready");
+    });
+    expect(result.current.restoredForThisRoute).toBe(true);
+    expect(result.current.currentFix).not.toBeNull();
+    // Restoration never touches geolocationStatus itself — it stays idle
+    // until an explicit start(), regardless of what was restored.
+    expect(result.current.geolocationStatus).toBe("idle");
+  });
+
+  it("reaches ready with restoredForThisRoute false when no row exists at all, leaving fields at fresh defaults", async () => {
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.restorationStatus).toBe("ready");
+    });
+    expect(result.current.restoredForThisRoute).toBe(false);
+    expect(result.current.currentFix).toBeNull();
+  });
+
+  it("reaches ready with restoredForThisRoute false for a row belonging to a different route, leaving fields at fresh defaults", async () => {
+    await setActiveRideState({ ...RESUMABLE_ROW, routeId: elevatedRoute.id });
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.restorationStatus).toBe("ready");
+    });
+    expect(result.current.restoredForThisRoute).toBe(false);
+    expect(result.current.currentFix).toBeNull();
+  });
+
+  it("a rejected read sets restorationStatus to error and logs, leaving every restorable field at its untouched default", async () => {
+    vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
+      new Error("boom"),
+    );
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.restorationStatus).toBe("error");
+    });
+    expect(result.current.restoredForThisRoute).toBe(false);
+    expect(result.current.currentFix).toBeNull();
+    expect(
+      getRecentErrors().some((entry) => entry.context === "ride-navigation-restore"),
+    ).toBe(true);
+  });
+
+  it("retryRestoration re-invokes the read and can transition error -> ready", async () => {
+    const getActiveRideStateSpy = vi
+      .spyOn(rideStateRepository, "getActiveRideState")
+      .mockRejectedValueOnce(new Error("boom"));
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.restorationStatus).toBe("error");
+    });
+    expect(getActiveRideStateSpy).toHaveBeenCalledOnce();
+
+    act(() => {
+      result.current.retryRestoration();
+    });
+    expect(result.current.restorationStatus).toBe("loading");
+
+    await waitFor(() => {
+      expect(result.current.restorationStatus).toBe("ready");
+    });
+    expect(getActiveRideStateSpy).toHaveBeenCalledTimes(2);
+    // Nothing was ever persisted for this route, so the retry correctly
+    // settles into "nothing to restore", not a stale earlier attempt.
+    expect(result.current.restoredForThisRoute).toBe(false);
+  });
+
+  it("a cancelled-by-unmount restoration applies no state after unmount, without throwing or warning", async () => {
+    let resolveRead!: (value: StoredRideState | undefined) => void;
+    const deferred = new Promise<StoredRideState | undefined>((resolve) => {
+      resolveRead = resolve;
+    });
+    vi.spyOn(rideStateRepository, "getActiveRideState").mockReturnValueOnce(deferred);
+
+    const fake = buildFakeGeolocationSource();
+    const { result, unmount } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+
+    expect(result.current.restorationStatus).toBe("loading");
+    unmount();
+
+    // Resolving after unmount must not throw — the effect's own `cancelled`
+    // guard silently no-ops every setter it would otherwise call.
+    resolveRead(RESUMABLE_ROW);
+    await act(async () => {
+      await Promise.resolve();
+    });
   });
 });
 

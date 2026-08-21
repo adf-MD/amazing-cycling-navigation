@@ -190,7 +190,7 @@ async function useSyntheticSafeAreaInsets(
   }, insetsPx);
 }
 
-test("active route Riding hides the global nav; Pause stops the watch, persists a resumable snapshot with no confirmation, and returns to the launcher — GPS never restarts merely from landing on the launcher or the resumed pre-ride screen, only on an explicit Resume riding tap", async ({
+test("active route Riding hides the global nav; Pause stops the watch, persists a resumable snapshot with no confirmation, and keeps the same route screen mounted showing Resume ride directly — GPS never restarts merely from showing that panel, only on the explicit Resume ride tap (backlog item 72)", async ({
   page,
   context,
 }) => {
@@ -238,13 +238,15 @@ test("active route Riding hides the global nav; Pause stops the watch, persists 
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await pauseButton.click();
 
-  // Global nav restored; immersive header gone; back on the launcher
-  // offering to resume the still-unfinished route.
+  // Global nav restored; immersive header gone — the SAME route screen
+  // stays mounted, showing its own resumable panel directly, with no
+  // launcher round-trip (backlog item 72).
   await expect(immersiveHeaderLocator(page)).toHaveCount(0);
   await expect(globalNavHeaderLocator(page)).toHaveCSS("position", "sticky");
-  await expect(page.getByRole("heading", { name: "Ride" })).toBeVisible();
-  const resumeButton = page.getByRole("button", { name: "Resume route" });
+  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+  const resumeButton = page.getByRole("button", { name: "Resume ride" });
   await expect(resumeButton).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start riding" })).toBeHidden();
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
 
   // Storage retains a full resumable snapshot — never cleared by Pause
@@ -255,18 +257,11 @@ test("active route Riding hides the global nav; Pause stops the watch, persists 
     lastFix: expect.anything(),
   });
 
-  // Landing on the launcher, and opening the resumed pre-ride recovery
-  // screen, must never restart geolocation — only an explicit further tap
-  // on "Resume riding" may.
-  expect(await readWatchPositionCallCount(page)).toBe(1);
-  await resumeButton.click();
-  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
-  const resumeRidingButton = page.getByRole("button", { name: "Resume riding" });
-  await expect(resumeRidingButton).toBeVisible();
-  await expect(page.getByRole("button", { name: "Start riding" })).toBeHidden();
+  // Merely showing the paused panel must never restart geolocation — only
+  // the explicit further "Resume ride" tap may.
   expect(await readWatchPositionCallCount(page)).toBe(1);
 
-  await resumeRidingButton.click();
+  await resumeButton.click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
   await expect(globalNavHeaderLocator(page)).toHaveCount(0);
   await expect(immersiveHeaderLocator(page)).toBeVisible();
@@ -309,7 +304,7 @@ test("Pause on route Riding releases the wake lock while preserving the rider's 
   expect(wakeLockState.lastReleased).toBe(false);
 
   await page.getByRole("button", { name: "Pause" }).click();
-  await expect(page.getByRole("button", { name: "Resume route" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeVisible();
 
   wakeLockState = await readWakeLockState(page);
   expect(wakeLockState.lastReleased).toBe(true);
@@ -318,9 +313,9 @@ test("Pause on route Riding releases the wake lock while preserving the rider's 
   expect(pausedRow).toMatchObject({ wakeLockDesired: true });
 
   // Resuming re-acquires the lock, and the checkbox reflects the
-  // preserved preference without the rider needing to re-check it.
-  await page.getByRole("button", { name: "Resume route" }).click();
-  await page.getByRole("button", { name: "Resume riding" }).click();
+  // preserved preference without the rider needing to re-check it — one
+  // tap, no launcher round-trip (backlog item 72).
+  await page.getByRole("button", { name: "Resume ride" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
   const resumedCheckbox = page.getByRole("checkbox", { name: /keep screen on/i });
@@ -707,7 +702,7 @@ test.describe("390×844 phone viewport", () => {
     await pauseButton.click();
     await expect(immersiveHeaderLocator(page)).toHaveCount(0);
     await expect(globalNavHeaderLocator(page)).toHaveCSS("position", "sticky");
-    await expect(page.getByRole("button", { name: "Resume route" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Resume ride" })).toBeVisible();
 
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
   });

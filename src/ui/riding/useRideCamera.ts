@@ -182,6 +182,15 @@ export interface UseRideCameraResult {
    * ride still awaiting its first fresh fix shows the route overview
    * instead of MapLibre's default view. */
   hasActionableCameraTarget: boolean;
+  /** True once this hook's own effect has dispatched "restore" in reaction
+   * to a genuinely new restoredCameraState (backlog item 72) — stays false
+   * forever if restoredCameraState never becomes non-null, so callers must
+   * additionally treat restoredCameraState === null as trivially satisfied
+   * (nothing to wait for). Lets a caller (e.g. a one-use resume-intent
+   * effect) guarantee it never requests Follow before any persisted
+   * camera state for this route has already been applied — see this
+   * field's own setter for the exact ordering guarantee. */
+  hasAppliedRestoredCamera: boolean;
   showPausedToast: boolean;
   requestFollow: () => void;
   reportUserInteraction: () => void;
@@ -252,6 +261,14 @@ export function useRideCamera({
 }: UseRideCameraOptions): UseRideCameraResult {
   const [state, dispatch] = useReducer(hookReducer, INITIAL_HOOK_STATE);
   const [showPausedToast, setShowPausedToast] = useState(false);
+  // True once this hook's own reaction to a genuinely new restoredCameraState
+  // has been dispatched — flipped in the same effect, right after dispatch,
+  // so both land in one batched commit (backlog item 72). Lets a caller
+  // (RidingScreen's one-use resume-intent effect) know the restore action
+  // has already been enqueued before it issues an explicit Follow request,
+  // so a later-arriving restore can never overwrite that request — see this
+  // state's own use at the requestFollow-consuming call site.
+  const [hasAppliedRestoredCamera, setHasAppliedRestoredCamera] = useState(false);
 
   // Resets to "route-opened" for every genuinely different route after
   // the first — the first is left alone so a pending restore (below) can
@@ -281,6 +298,7 @@ export function useRideCamera({
       bearingDegrees: restoredCameraState.bearingDegrees,
       pitchDegrees: restoredCameraState.pitchDegrees,
     });
+    setHasAppliedRestoredCamera(true);
   }, [restoredCameraState]);
 
   // Dispatches a "fresh-fix" for every new, non-stale fix — never for a
@@ -539,6 +557,7 @@ export function useRideCamera({
     awaitingFreshFix: state.camera.awaitingFreshFix,
     cameraTarget: state.cameraTarget,
     hasActionableCameraTarget: state.hasActionableCameraTarget,
+    hasAppliedRestoredCamera,
     showPausedToast,
     requestFollow,
     reportUserInteraction,

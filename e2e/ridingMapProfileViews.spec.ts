@@ -344,7 +344,7 @@ test.describe("390×844 phone viewport", () => {
         window as unknown as { __resolveRideStateWriteDelay?: () => void }
       ).__resolveRideStateWriteDelay?.();
     });
-    await expect(page.getByRole("button", { name: "Resume route" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Resume ride" })).toBeVisible();
   });
 
   test("End confirmation stays reachable inside the fixed shell with no horizontal overflow", async ({
@@ -617,10 +617,13 @@ test("Pause remains reachable and works correctly from the Profile view", async 
   await switchToProfile(page);
 
   await page.getByRole("button", { name: "Pause" }).click();
-  await expect(page.getByRole("button", { name: "Resume route" })).toBeVisible();
+  // The same route screen stays mounted directly (backlog item 72) — one
+  // further tap resumes GPS with no launcher round-trip.
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Resume route" }).click();
-  await expect(page.getByRole("button", { name: "Resume riding" })).toBeVisible();
+  await page.getByRole("button", { name: "Resume ride" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
 });
 
 test("wake-lock control and its popover remain usable from either view with no body scroll", async ({

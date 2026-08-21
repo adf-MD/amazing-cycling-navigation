@@ -229,12 +229,14 @@ test("Pause restores the global nav header immediately, and the route stays resu
   // once MainNavigation is genuinely absent (backlog item 55) — Pause is
   // now the only way to leave an active ride reversibly.
   await page.getByRole("button", { name: "Pause" }).click();
-  await expect(page.getByRole("button", { name: "Resume route" })).toBeVisible();
+  // The same route screen stays mounted, showing its own resumable panel
+  // directly — no launcher round-trip (backlog item 72).
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeVisible();
   await expect(headerLocator(page)).toHaveCSS("position", "sticky");
 
-  await page.getByRole("button", { name: "Resume route" }).click();
-  await expect(page.getByRole("button", { name: "Resume riding" })).toBeVisible();
-  await expect(headerLocator(page)).toHaveCSS("position", "sticky");
+  await page.getByRole("button", { name: "Resume ride" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+  await expect(headerLocator(page)).toHaveCount(0);
 });
 
 test("every top-level screen other than active Riding renders the header sticky", async ({

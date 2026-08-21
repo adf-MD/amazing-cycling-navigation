@@ -18,7 +18,7 @@ describe("isImmersiveRidingShell", () => {
     },
   );
 
-  it("is not immersive on Riding before Start riding / while awaiting Resume riding (isRidingActive false)", () => {
+  it("is not immersive on Riding before Start riding / while awaiting Resume ride (isRidingActive false)", () => {
     expect(isImmersiveRidingShell("riding", false)).toBe(false);
   });
 

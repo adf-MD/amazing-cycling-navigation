@@ -14,7 +14,7 @@ import { readActiveRideStateRow, readSavedRouteId } from "./support/rideStateDb.
 // back into Riding automatically — recovery only happens once the rider
 // reopens the *same* route (matched by routeId in useRideNavigation.ts),
 // at which point the persisted fix/progress restore and the pre-ride
-// panel offers "Resume riding" instead of "Start riding". The first test
+// panel offers "Resume ride" instead of "Start riding". The first test
 // below asserts this real contract precisely, through an actual
 // page.reload() — no test at any level (hook, component or e2e)
 // previously did this. Backlog item 41 (the Ride launcher) later added a
@@ -62,7 +62,7 @@ function buildMockOrsResponse() {
   };
 }
 
-test("a genuine reload lands back on Routes, not Riding; reopening the same route offers Resume riding with restored progress and makes no further OpenRouteService request", async ({
+test("a genuine reload lands back on Routes, not Riding; reopening the same route offers Resume ride with restored progress and makes no further OpenRouteService request", async ({
   page,
   context,
 }) => {
@@ -134,7 +134,7 @@ test("a genuine reload lands back on Routes, not Riding; reopening the same rout
   // Dexie write (useRideNavigation.ts's persistence effect) to land. A
   // fixed 300ms wait here previously reloaded before that write committed
   // under load, silently reopening the route with no persisted fix and
-  // permanently showing "Start riding" instead of "Resume riding".
+  // permanently showing "Start riding" instead of "Resume ride".
   await expect(page.getByText(/On route|Possibly off route|Off route/)).toBeVisible();
 
   const savedRouteId = await readSavedRouteId(page, routeName);
@@ -170,8 +170,8 @@ test("a genuine reload lands back on Routes, not Riding; reopening the same rout
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
 
   // The persisted fix from before the reload restores immediately, so the
-  // pre-ride panel offers Resume riding, not Start riding.
-  const resumeButton = page.getByRole("button", { name: "Resume riding" });
+  // pre-ride panel offers Resume ride, not Start riding.
+  const resumeButton = page.getByRole("button", { name: "Resume ride" });
   await expect(resumeButton).toBeVisible();
   await resumeButton.click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });

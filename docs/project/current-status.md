@@ -62,6 +62,12 @@ Do not treat the item above as fully verified until it has been tested on a movi
 
 ---
 
+### Outstanding: item 72's one-tap route Pause/resume flow
+
+- **Collapse route Pause and resume to one tap (item 72):** shipped with automated (Vitest/Playwright Chromium and Chromium-emulated Android) evidence only — no physical iPhone or Android verification is claimed yet. Real-device acceptance still needed: a successful in-session Pause followed by one-tap "Resume ride" genuinely restarting GPS/Follow on the same mounted route screen; a real cold relaunch followed by exactly one launcher "Resume ride" tap reaching active immersive Map, with a single permission prompt/GPS watch and correct Follow behaviour; preservation of route progress, camera state, elevation-view selection, wake-lock preference, dismissed-climb identity and completion-armed state through the collapsed flow on a real device; recoverable behaviour when restoration or GPS start genuinely fails (not merely simulated via a deferred/rejected promise); and confirmation that free roam's existing one-tap resume behaviour remains unaffected on-device. The intermittent fresh-Start Follow-at-overview symptom this item's own prompt asked to be checked (item 66) is already recorded as no longer reproducible on the most reproduction-sensitive route — see item 66's own closure entry above; that finding predates this item and is not itself evidence for it.
+
+---
+
 ## Monitored reliability observations
 
 These are explicitly **not** approved future work — see each entry's own text for why.

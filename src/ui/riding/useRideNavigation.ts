@@ -29,6 +29,7 @@ import {
   setActiveRideState,
 } from "../../storage/rideStateRepository.ts";
 import { systemClock, type Clock } from "../../platform/clock.ts";
+import { logError } from "../../platform/errorLog.ts";
 import {
   INITIAL_RIDE_NAVIGATION_CORE_STATE,
   processFix,
@@ -130,6 +131,27 @@ export interface RideNavigationState {
    * restore, so useRideCamera's own default "overview" state is already
    * correct and doesn't need a restore event dispatched. */
   restoredCameraState: StoredCameraState | null;
+  /** Explicit lifecycle for the mount-time restoration read (backlog item
+   * 72) — "loading" until getActiveRideState() settles, then "ready"
+   * regardless of whether anything actually matched (see
+   * restoredForThisRoute for that distinction), or "error" if the read
+   * itself rejected. Restoration itself never touches geolocationStatus —
+   * a restored session starts and stays "idle" until an explicit start(). */
+  restorationStatus: "loading" | "ready" | "error";
+  /** True only once restorationStatus reaches "ready" AND a persisted row
+   * for this exact route.id was found and applied — distinct from
+   * restorationStatus === "ready" alone, which is also true when nothing
+   * matched (no row at all, or a row belonging to a different route). A
+   * caller that needs to know "did anything actually get restored for me"
+   * (e.g. a one-use resume intent deciding whether to auto-start) must
+   * check this, not merely restorationStatus. */
+  restoredForThisRoute: boolean;
+  /** Re-runs the restoration read from scratch. Never touches
+   * geolocationStatus or the watch itself — it only affects whether
+   * restored progress/camera/preference fields get applied before any
+   * start(). Safe to call repeatedly; each call supersedes the previous
+   * attempt via the same cancellation guard the effect already uses. */
+  retryRestoration: () => void;
 }
 
 const DEFAULT_CAMERA_STATE: StoredCameraState = {
@@ -185,6 +207,11 @@ export function useRideNavigation(
     null,
   );
   const [completionArmed, setCompletionArmed] = useState(false);
+  const [restorationStatus, setRestorationStatus] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
+  const [restoredForThisRoute, setRestoredForThisRoute] = useState(false);
+  const [restorationRetryToken, setRestorationRetryToken] = useState(0);
 
   const clearWatchRef = useRef<(() => void) | null>(null);
   // Bumped whenever a genuinely new native watch is created (start()) or
@@ -447,16 +474,16 @@ export function useRideNavigation(
   // Restore any persisted ride state for this exact route as soon as the
   // screen mounts, before the rider has taken any action. The restored
   // fix is shown immediately but marked stale until a fresh one arrives.
+  // restorationRetryToken lets retryRestoration() below re-run this same
+  // read from scratch without needing a distinct effect (backlog item 72).
   useEffect(() => {
     let cancelled = false;
     getActiveRideState()
       .then((stored) => {
-        if (
-          cancelled ||
-          !stored ||
-          !isStoredRouteRideState(stored) ||
-          stored.routeId !== route.id
-        ) {
+        if (cancelled) return;
+        if (!stored || !isStoredRouteRideState(stored) || stored.routeId !== route.id) {
+          setRestoredForThisRoute(false);
+          setRestorationStatus("ready");
           return;
         }
         const restored = fromStoredRideState(stored);
@@ -469,14 +496,28 @@ export function useRideNavigation(
         setWakeLockDesired(restored.wakeLockDesired);
         setDismissedClimbFeatureId(restored.dismissedClimbFeatureId);
         setCompletionArmed(restored.completionArmed);
+        setRestoredForThisRoute(true);
+        setRestorationStatus("ready");
       })
-      .catch(() => {
-        // No usable stored state; continue with a fresh session.
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        logError("ride-navigation-restore", error);
+        setRestorationStatus("error");
       });
     return () => {
       cancelled = true;
     };
-  }, [route.id]);
+  }, [route.id, restorationRetryToken]);
+
+  // Setting "loading" here (an event-handler-style call, never inside the
+  // restoration effect's own synchronous body) is what lets a retry show a
+  // genuine pending state again — the effect above only ever sets "ready"/
+  // "error" from within its async .then()/.catch(), matching this
+  // codebase's existing RidingLauncher hydration idiom.
+  const retryRestoration = useCallback(() => {
+    setRestorationStatus("loading");
+    setRestorationRetryToken((token) => token + 1);
+  }, []);
 
   // Persist after every accepted fix or elevation-view-mode change — each
   // write is a cheap single-row upsert, so no extra throttling is
@@ -625,5 +666,8 @@ export function useRideNavigation(
     finish,
     pause,
     restoredCameraState,
+    restorationStatus,
+    restoredForThisRoute,
+    retryRestoration,
   };
 }

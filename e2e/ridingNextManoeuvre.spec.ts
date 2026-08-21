@@ -371,7 +371,7 @@ test("shows the next trusted manoeuvre in Riding, advances with progress, become
   await page.reload();
   await page.getByRole("button", { name: routeName, exact: true }).click();
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
-  await page.getByRole("button", { name: "Resume riding" }).click();
+  await page.getByRole("button", { name: "Resume ride" }).click();
 
   // The stale/"last known position" qualifier is already covered directly
   // by RidingNextManoeuvrePanel.test.tsx and RidingScreen.test.tsx's own
@@ -506,7 +506,7 @@ test("preserves trusted manoeuvres through export and re-import, entirely offlin
   await page.reload();
   await page.getByRole("button", { name: routeName, exact: true }).click();
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
-  await page.getByRole("button", { name: "Resume riding" }).click();
+  await page.getByRole("button", { name: "Resume ride" }).click();
   await expect(page.getByText("Arrive at your destination")).toBeVisible();
 
   expect(unexpectedOrsRequest).toBe(false);

@@ -172,7 +172,7 @@ describe("RidingScreen Finish/End ride", () => {
     );
 
     expect(
-      await screen.findByRole("button", { name: "Resume riding" }),
+      await screen.findByRole("button", { name: "Resume ride" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "End ride" })).toBeInTheDocument();
   });
@@ -265,7 +265,7 @@ describe("RidingScreen Finish/End ride", () => {
     expect(screen.getByTestId("map-container")).toBeInTheDocument();
   });
 
-  it("the resumable pre-ride End-ride confirmation replaces the trigger in its own panel position, with Resume riding and Edit copy staying visible (backlog item 50)", async () => {
+  it("the resumable pre-ride End-ride confirmation replaces the trigger in its own panel position, with Resume ride and Edit copy staying visible (backlog item 50)", async () => {
     await setActiveRideState({
       id: "active",
       routeId: route.id,
@@ -299,7 +299,7 @@ describe("RidingScreen Finish/End ride", () => {
       within(dialog).getByRole("button", { name: "End ride" }),
     ]);
     // The rest of the pre-ride panel stays visible and unaffected.
-    expect(screen.getByRole("button", { name: "Resume riding" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resume ride" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit copy" })).toBeInTheDocument();
   });
 
@@ -328,7 +328,7 @@ describe("RidingScreen Finish/End ride", () => {
     expect(
       await screen.findByRole("button", { name: "Start riding" }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Resume riding" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
     expect(screen.queryByRole("button", { name: "End ride" })).toBeNull();
     expect(screen.getByRole("heading", { name: route.name })).toBeInTheDocument();
   });
@@ -557,7 +557,7 @@ describe("RidingScreen Finish/End ride", () => {
     });
 
     expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Resume riding" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
     expect(screen.queryByText(/Waiting for a GPS fix/)).toBeNull();
     expect(await getActiveRideState()).toBeUndefined();
   });

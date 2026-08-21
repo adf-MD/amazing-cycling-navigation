@@ -97,7 +97,7 @@ describe("RidingLauncher", () => {
       await screen.findByRole("button", { name: "Choose a route" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start free roam" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Resume route" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Resume free roam" })).toBeNull();
     expect(screen.queryByRole("button", { name: "End ride" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Discard unfinished ride" })).toBeNull();
@@ -118,7 +118,7 @@ describe("RidingLauncher", () => {
     expect(onChooseRoute).toHaveBeenCalledTimes(1);
   });
 
-  it("with a resumable route session, shows the route and Resume route/End ride, with no geolocation call", async () => {
+  it("with a resumable route session, shows the route and Resume ride/End ride, with no geolocation call", async () => {
     await db.routes.put(route);
     await setActiveRideState(buildRideState());
     const geolocationSpy = vi.fn();
@@ -133,7 +133,7 @@ describe("RidingLauncher", () => {
     );
 
     expect(await screen.findByRole("heading", { name: route.name })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Resume route" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resume ride" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "End ride" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Choose a route" })).toBeNull();
     expect(geolocationSpy).not.toHaveBeenCalled();
@@ -141,7 +141,7 @@ describe("RidingLauncher", () => {
     vi.unstubAllGlobals();
   });
 
-  it("Resume route calls onResumeRoute with the resolved route object", async () => {
+  it("Resume ride calls onResumeRoute with the resolved route object", async () => {
     await db.routes.put(route);
     await setActiveRideState(buildRideState());
     const user = userEvent.setup();
@@ -155,7 +155,7 @@ describe("RidingLauncher", () => {
       />,
     );
 
-    await user.click(await screen.findByRole("button", { name: "Resume route" }));
+    await user.click(await screen.findByRole("button", { name: "Resume ride" }));
     expect(onResumeRoute).toHaveBeenCalledTimes(1);
     expect(onResumeRoute).toHaveBeenCalledWith(expect.objectContaining({ id: route.id }));
   });
@@ -194,7 +194,7 @@ describe("RidingLauncher", () => {
     expect(await getActiveRideState()).toBeDefined();
   });
 
-  it("the resumable-route End-ride confirmation replaces the trigger in its own panel slot, with Resume route and route info staying visible (backlog item 50)", async () => {
+  it("the resumable-route End-ride confirmation replaces the trigger in its own panel slot, with Resume ride and route info staying visible (backlog item 50)", async () => {
     await db.routes.put(route);
     await setActiveRideState(buildRideState());
     const user = userEvent.setup();
@@ -223,7 +223,7 @@ describe("RidingLauncher", () => {
     ]);
     // The rest of the panel stays visible and unaffected.
     expect(screen.getByRole("heading", { name: route.name })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Resume route" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resume ride" })).toBeInTheDocument();
   });
 
   it("the resumable-free-roam End-ride confirmation replaces the trigger in its own panel slot, with Resume free roam staying visible (backlog item 50)", async () => {
@@ -305,7 +305,7 @@ describe("RidingLauncher", () => {
     expect(
       await screen.findByRole("button", { name: "Choose a route" }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Resume route" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
   });
 
   it("an End-ride storage failure preserves the row, shows a retryable accessible error, and retry succeeds", async () => {
@@ -365,7 +365,7 @@ describe("RidingLauncher", () => {
         "This unfinished ride refers to a route that's no longer in your library, so it can't be resumed.",
       ),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Resume route" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
     expect(
       screen.getByRole("button", { name: "Discard unfinished ride" }),
     ).toBeInTheDocument();
@@ -451,7 +451,7 @@ describe("RidingLauncher", () => {
         "This unfinished ride can't be recovered by this version of the app.",
       ),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Resume route" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
     expect(
       screen.getByRole("button", { name: "Discard unfinished ride" }),
     ).toBeInTheDocument();

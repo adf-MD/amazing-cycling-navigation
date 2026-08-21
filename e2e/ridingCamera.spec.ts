@@ -347,7 +347,7 @@ test("Riding: a fresh Start whose first fix arrives well before the map style be
 // identically-purposed MOVED fixture.
 const MOVED_ROUTE_START = { latitude: 51.5006, longitude: -0.1 };
 
-test("Riding: zoom while followed persists across a later GPS fix, storage, reload and Resume riding", async ({
+test("Riding: zoom while followed persists across a later GPS fix, storage, reload and Resume ride", async ({
   page,
   context,
 }) => {
@@ -471,13 +471,13 @@ test("Riding: zoom while followed persists across a later GPS fix, storage, relo
 
   // 8. Reload; the real, previously-undocumented contract: a reload does
   // NOT return to Riding by itself — the pre-ride panel offers Resume
-  // riding, and GPS/camera do not restart until it's explicitly pressed
+  // ride, and GPS/camera do not restart until it's explicitly pressed
   // (the zoom controls, gated on genuinely-watching status, are absent
   // until then).
   await page.reload();
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
   await page.getByRole("button", { name: "smoke-route", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Resume riding" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Start riding" })).toBeHidden();
   await expect(zoomInButton).toBeHidden();
 
@@ -485,7 +485,7 @@ test("Riding: zoom while followed persists across a later GPS fix, storage, relo
   // fresh fix — the context's geolocation is still set to
   // MOVED_ROUTE_START from step 6, so watchPosition's own immediate first
   // callback already delivers that as the resumed session's first fix.
-  await page.getByRole("button", { name: "Resume riding" }).click();
+  await page.getByRole("button", { name: "Resume ride" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
   const centreAfterResume = await mapContainer.getAttribute("data-camera-center");
   await expect

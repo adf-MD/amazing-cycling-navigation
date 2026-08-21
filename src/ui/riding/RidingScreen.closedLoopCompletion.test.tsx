@@ -197,7 +197,7 @@ describe("RidingScreen closed-loop route completion", () => {
       />,
     );
 
-    await user.click(await screen.findByRole("button", { name: "Resume riding" }));
+    await user.click(await screen.findByRole("button", { name: "Resume ride" }));
 
     const finishPoint = CLOSED_LOOP_ROUTE_POINTS.at(-1);
     if (!finishPoint) throw new Error("fixture missing expected point");

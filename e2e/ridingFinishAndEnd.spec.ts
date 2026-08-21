@@ -201,7 +201,7 @@ test("ends a ride, returns to the empty Ride launcher, and survives a reload wit
   // (the reload + reopen below proves this directly).
   await expect(page.getByRole("heading", { name: "Ride" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Resume route" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeHidden();
   await expect(page.getByRole("heading", { name: routeName })).toBeHidden();
 
   // Deterministic replacement for a fixed sleep before reload — see
@@ -213,7 +213,7 @@ test("ends a ride, returns to the empty Ride launcher, and survives a reload wit
   await page.getByRole("button", { name: routeName, exact: true }).click();
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
   await expect(page.getByRole("button", { name: "Start riding" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Resume riding" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeHidden();
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
@@ -317,7 +317,7 @@ test("confirms route completion on a closed loop without snapping progress back 
 
   await expect(page.getByRole("heading", { name: "Ride" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Resume route" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeHidden();
 
   // Generic finalisation/reload plumbing (route-shape-independent) is
   // already fully proven by this file's straight-route test above —
@@ -405,7 +405,7 @@ test("conservatively confirms route completion only after consecutive fixes, and
   // (the reload + reopen below proves this directly).
   await expect(page.getByRole("heading", { name: "Ride" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Resume route" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeHidden();
   await expect(page.getByRole("heading", { name: routeName })).toBeHidden();
   await expect(page.getByText("Route complete")).toBeHidden();
   await expect(page.getByRole("button", { name: "End ride" })).toBeHidden();
@@ -418,7 +418,7 @@ test("conservatively confirms route completion only after consecutive fixes, and
   await page.getByRole("button", { name: routeName, exact: true }).click();
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
   await expect(page.getByRole("button", { name: "Start riding" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Resume riding" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeHidden();
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);

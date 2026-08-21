@@ -18,9 +18,11 @@ import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 
 export interface RidingLauncherProps {
   /** Selects the resumed route and opens it into RidingScreen — mirrors
-   * App.tsx's existing onOpenRoute-driven handlers' shape. Never starts
-   * geolocation itself; RidingScreen's own pre-ride panel still gates the
-   * GPS watch behind its own explicit "Resume riding" tap. */
+   * App.tsx's existing onOpenRoute-driven handlers' shape. This component
+   * itself still never starts geolocation — App.tsx pairs this call with a
+   * one-use resume intent (backlog item 72) that RidingScreen consumes only
+   * once its own restoration has genuinely completed, starting GPS and
+   * requesting Follow in the same tap that presses "Resume ride" here. */
   onResumeRoute: (route: PlannedRoute) => void;
   onChooseRoute: () => void;
   /** Fired once a free-roam session is ready to display — covers both
@@ -454,7 +456,7 @@ export function RidingLauncher({
               onResumeRoute(sessionState.route);
             }}
           >
-            Resume route
+            Resume ride
           </button>
           <div className="ride-launcher-clear-row stack">{renderClearAction()}</div>
         </div>

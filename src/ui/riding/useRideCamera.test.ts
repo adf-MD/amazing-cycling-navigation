@@ -91,6 +91,112 @@ describe("useRideCamera", () => {
     expect(result.current.cameraTarget).toBeNull();
   });
 
+  describe("restoration readiness (backlog item 72)", () => {
+    it("hasAppliedRestoredCamera stays false until a genuinely new restoredCameraState is supplied, then flips true in the same update that applies the restore", () => {
+      const restored: StoredCameraState = {
+        mode: "free",
+        coordinate: [0.001, 51],
+        zoom: 15,
+        bearingDegrees: 30,
+        pitchDegrees: 0,
+      };
+      const initialProps: UseRideCameraOptions = {
+        ...BASE_OPTIONS,
+        restoredCameraState: null,
+      };
+      const { result, rerender } = renderHook(
+        (props: UseRideCameraOptions) => useRideCamera(props),
+        { initialProps },
+      );
+
+      expect(result.current.hasAppliedRestoredCamera).toBe(false);
+      expect(result.current.mode).toBe("overview");
+
+      rerender({ ...BASE_OPTIONS, restoredCameraState: restored });
+
+      // Both settle together — the restore has genuinely been applied
+      // (mode reflects it) by the same point hasAppliedRestoredCamera
+      // becomes true, not on some later render.
+      expect(result.current.hasAppliedRestoredCamera).toBe(true);
+      expect(result.current.mode).toBe("free");
+    });
+
+    it("does not re-flip or regress for an unrelated rerender with the same restoredCameraState reference", () => {
+      const restored: StoredCameraState = {
+        mode: "following",
+        coordinate: null,
+        zoom: null,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      };
+      const initialProps: UseRideCameraOptions = {
+        ...BASE_OPTIONS,
+        restoredCameraState: restored,
+      };
+      const { result, rerender } = renderHook(
+        (props: UseRideCameraOptions) => useRideCamera(props),
+        { initialProps },
+      );
+
+      expect(result.current.hasAppliedRestoredCamera).toBe(true);
+
+      // Same object reference, unrelated prop change (matchedDistance) —
+      // must not re-dispatch "restore" or otherwise disturb the flag.
+      rerender({
+        ...BASE_OPTIONS,
+        restoredCameraState: restored,
+        matchedDistanceFromStartMetres: 10,
+      });
+
+      expect(result.current.hasAppliedRestoredCamera).toBe(true);
+      expect(result.current.mode).toBe("following");
+    });
+
+    it.each([
+      [
+        "free",
+        {
+          mode: "free",
+          coordinate: [0.001, 51],
+          zoom: 15,
+          bearingDegrees: 30,
+          pitchDegrees: 0,
+        },
+      ] as const,
+      [
+        "following",
+        {
+          mode: "following",
+          coordinate: null,
+          zoom: 16,
+          bearingDegrees: 0,
+          pitchDegrees: 0,
+        },
+      ] as const,
+    ])(
+      "calling requestFollow after hasAppliedRestoredCamera is true always lands on 'following', regardless of a restored '%s' mode",
+      (_label, restored) => {
+        const initialProps: UseRideCameraOptions = {
+          ...BASE_OPTIONS,
+          restoredCameraState: null,
+        };
+        const { result, rerender } = renderHook(
+          (props: UseRideCameraOptions) => useRideCamera(props),
+          { initialProps },
+        );
+
+        rerender({ ...BASE_OPTIONS, restoredCameraState: restored });
+        expect(result.current.hasAppliedRestoredCamera).toBe(true);
+
+        act(() => {
+          result.current.requestFollow();
+        });
+
+        expect(result.current.mode).toBe("following");
+      },
+    );
+  });
+
   describe("zoom controls (backlog item 53)", () => {
     it("requestZoom(1) and requestZoom(-1) each produce a distinct zoomTarget requestId", () => {
       const { result } = renderHook(() => useRideCamera(BASE_OPTIONS));
