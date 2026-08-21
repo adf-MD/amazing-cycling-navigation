@@ -307,12 +307,11 @@ Archived implementation accounts in `docs/project/history/` describe the system 
 
 ### Queue index
 
-Stable item numbers never change regardless of which file an item's text lives in. **Item 71 is next.**
+Stable item numbers never change regardless of which file an item's text lives in. **Item 72 is next.**
 
 | Item | Title                                                                                         | Status                                           | Full entry                                                            |
 | ---- | --------------------------------------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
-| 71   | Preview the next recognised climb during active Riding and improve climb-card hierarchy       | Next — pending                                   | [`backlog.md#item-71`](docs/project/backlog.md#item-71)               |
-| 72   | One-tap route Pause/resume flow                                                               | Pending                                          | [`backlog.md#item-72`](docs/project/backlog.md#item-72)               |
+| 72   | One-tap route Pause/resume flow                                                               | Next — pending                                   | [`backlog.md#item-72`](docs/project/backlog.md#item-72)               |
 | 73   | Guard every unfinished-session switch against silent replacement                              | Pending                                          | [`backlog.md#item-73`](docs/project/backlog.md#item-73)               |
 | 11   | Weather                                                                                       | Pending                                          | [`backlog.md#item-11`](docs/project/backlog.md#item-11)               |
 | 12   | Offline map storage                                                                           | Pending                                          | [`backlog.md#item-12`](docs/project/backlog.md#item-12)               |
@@ -324,4 +323,4 @@ Stable item numbers never change regardless of which file an item's text lives i
 | 32   | `ridingFinishAndEnd.spec.ts`'s completion-detection test: an unconfirmed CPU-contention flake | Monitored, unconfirmed                           | [`current-status.md#item-32`](docs/project/current-status.md#item-32) |
 | 66   | Investigate intermittent fresh-Start Follow remaining at route overview                       | Accepted for now, monitored                      | [`current-status.md#item-66`](docs/project/current-status.md#item-66) |
 
-Items 6–10, 13–15, 17–27, 29–31, 33–42, 44–58, 62–65 and 67–70 are completed (`— done`) and live in [`docs/project/history/`](docs/project/history/README.md). Item 43 is a follow-up acceptance checklist and lives in [`docs/project/current-status.md`](docs/project/current-status.md).
+Items 6–10, 13–15, 17–27, 29–31, 33–42, 44–58, 62–65 and 67–71 are completed (`— done`) and live in [`docs/project/history/`](docs/project/history/README.md). Item 43 is a follow-up acceptance checklist and lives in [`docs/project/current-status.md`](docs/project/current-status.md).

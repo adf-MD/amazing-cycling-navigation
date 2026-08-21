@@ -37,12 +37,13 @@ describe("RidingClimbProgressPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows distance completed and remaining", () => {
+  it("shows distance to summit and distance completed", () => {
     render(
       <RidingClimbProgressPanel climb={climb} climbNumber={2} metrics={fullMetrics} />,
     );
-    expect(screen.getByText(/1\.0 km completed/)).toBeInTheDocument();
-    expect(screen.getByText(/1\.7 km remaining/)).toBeInTheDocument();
+    expect(screen.getByText("Distance to summit")).toBeInTheDocument();
+    expect(screen.getByText("1.7 km")).toBeInTheDocument();
+    expect(screen.getByText(/Distance completed: 1\.0 km/)).toBeInTheDocument();
   });
 
   it("shows current elevation, summit elevation, elevation remaining and current gradient", () => {
@@ -51,8 +52,24 @@ describe("RidingClimbProgressPanel", () => {
     );
     expect(screen.getByText(/Current elevation: 150 m/)).toBeInTheDocument();
     expect(screen.getByText(/Summit elevation: 189 m/)).toBeInTheDocument();
-    expect(screen.getByText(/Elevation remaining: 39 m/)).toBeInTheDocument();
+    expect(screen.getByText("Elevation remaining")).toBeInTheDocument();
+    expect(screen.getByText("39 m")).toBeInTheDocument();
     expect(screen.getByText(/Current gradient: \+6\.5%/)).toBeInTheDocument();
+  });
+
+  it("gives distance to summit and elevation remaining the primary hierarchy, distinct from the secondary metrics", () => {
+    const { container } = render(
+      <RidingClimbProgressPanel climb={climb} climbNumber={2} metrics={fullMetrics} />,
+    );
+    const primary = container.querySelector(".riding-climb-progress-primary");
+    const secondary = container.querySelector(".riding-climb-progress-secondary");
+    expect(primary).not.toBeNull();
+    expect(secondary).not.toBeNull();
+    expect(primary?.textContent).toContain("Distance to summit");
+    expect(primary?.textContent).toContain("Elevation remaining");
+    expect(primary?.textContent).not.toContain("Distance completed");
+    expect(secondary?.textContent).toContain("Distance completed");
+    expect(secondary?.textContent).not.toContain("Distance to summit");
   });
 
   it("never renders a percentage-complete value", () => {
@@ -72,9 +89,12 @@ describe("RidingClimbProgressPanel", () => {
     };
     render(<RidingClimbProgressPanel climb={climb} climbNumber={2} metrics={metrics} />);
     expect(screen.queryByText(/Current elevation:/)).toBeNull();
-    expect(screen.queryByText(/Elevation remaining:/)).toBeNull();
+    expect(screen.queryByText("Elevation remaining")).toBeNull();
     expect(screen.getByText(/Summit elevation: 189 m/)).toBeInTheDocument();
-    expect(screen.getByText(/1\.0 km completed/)).toBeInTheDocument();
+    expect(screen.getByText(/Distance completed: 1\.0 km/)).toBeInTheDocument();
+    // Distance to summit is never omitted — it is unaffected by these
+    // unrelated elevation fields going unavailable.
+    expect(screen.getByText("Distance to summit")).toBeInTheDocument();
   });
 
   it("omits summit elevation when unavailable", () => {
@@ -105,8 +125,28 @@ describe("RidingClimbProgressPanel", () => {
       elevationRemainingMetres: 0,
     };
     render(<RidingClimbProgressPanel climb={climb} climbNumber={2} metrics={metrics} />);
-    expect(screen.getByText(/2\.7 km completed/)).toBeInTheDocument();
-    expect(screen.getByText(/0\.0 km remaining/)).toBeInTheDocument();
-    expect(screen.getByText(/Elevation remaining: 0 m/)).toBeInTheDocument();
+    expect(screen.getByText(/Distance completed: 2\.7 km/)).toBeInTheDocument();
+    expect(screen.getByText("Distance to summit")).toBeInTheDocument();
+    expect(screen.getByText("0.0 km")).toBeInTheDocument();
+    // Genuine numeric zero for elevation remaining is shown, not omitted
+    // or conflated with "unavailable".
+    expect(screen.getByText("Elevation remaining")).toBeInTheDocument();
+    expect(screen.getByText("0 m")).toBeInTheDocument();
+  });
+
+  it("omits the elevation-remaining primary tile (not just its value) when unavailable, without omitting distance to summit", () => {
+    const metrics: ClimbProgressMetrics = {
+      ...fullMetrics,
+      currentElevationMetres: null,
+      finishElevationMetres: null,
+      elevationRemainingMetres: null,
+    };
+    const { container } = render(
+      <RidingClimbProgressPanel climb={climb} climbNumber={2} metrics={metrics} />,
+    );
+    expect(screen.queryByText("Elevation remaining")).toBeNull();
+    const primary = container.querySelector(".riding-climb-progress-primary");
+    expect(primary).not.toBeNull();
+    expect(primary?.textContent).toContain("Distance to summit");
   });
 });

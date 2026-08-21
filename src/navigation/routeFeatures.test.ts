@@ -8,6 +8,7 @@ import {
   classifyDescentLocalKey,
   detectRouteFeatures,
   findFeatureAtDistance,
+  findNextClimbAfterDistance,
   listClimbsInRouteOrder,
   MIN_CLIMB_SCORE,
   resolveElevationChartTap,
@@ -440,6 +441,74 @@ describe("findFeatureAtDistance", () => {
   it("returns null outside every feature", () => {
     expect(findFeatureAtDistance(features, -1000)).toBeNull();
     expect(findFeatureAtDistance([], 500)).toBeNull();
+  });
+});
+
+describe("findNextClimbAfterDistance", () => {
+  const climb1: ClimbFeature = {
+    id: "climb-500",
+    kind: "climb",
+    startDistanceMetres: 500,
+    endDistanceMetres: 1000,
+    lengthMetres: 500,
+    elevationGainMetres: 30,
+    averageGradientPercent: 6,
+    maxGradientPercent: 8,
+    climbScore: 3000,
+    category: "category-4",
+  };
+  const climb2: ClimbFeature = {
+    ...climb1,
+    id: "climb-2000",
+    startDistanceMetres: 2000,
+    endDistanceMetres: 2500,
+  };
+
+  it("returns the only climb when the distance is before it", () => {
+    expect(findNextClimbAfterDistance([climb1], 0)).toBe(climb1);
+  });
+
+  it("returns null when the distance is exactly at the climb's own start (that climb is active, not upcoming)", () => {
+    expect(findNextClimbAfterDistance([climb1], 500)).toBeNull();
+  });
+
+  it("returns null when the distance is inside the climb", () => {
+    expect(findNextClimbAfterDistance([climb1], 750)).toBeNull();
+  });
+
+  it("returns null when the distance is exactly at the climb's own end", () => {
+    expect(findNextClimbAfterDistance([climb1], 1000)).toBeNull();
+  });
+
+  it("returns null once past the climb's end", () => {
+    expect(findNextClimbAfterDistance([climb1], 1500)).toBeNull();
+  });
+
+  it("returns the first climb before either climb begins", () => {
+    expect(findNextClimbAfterDistance([climb1, climb2], 0)).toBe(climb1);
+  });
+
+  it("returns the second climb once the distance is between the two climbs", () => {
+    expect(findNextClimbAfterDistance([climb1, climb2], 1200)).toBe(climb2);
+  });
+
+  it("returns the second climb while inside the first climb", () => {
+    expect(findNextClimbAfterDistance([climb1, climb2], 750)).toBe(climb2);
+  });
+
+  it("returns null once past the last climb", () => {
+    expect(findNextClimbAfterDistance([climb1, climb2], 3000)).toBeNull();
+  });
+
+  it("returns null for an empty climbs array", () => {
+    expect(findNextClimbAfterDistance([], 0)).toBeNull();
+  });
+
+  it("does not mutate or re-sort the input array", () => {
+    const climbs = [climb2, climb1];
+    const before = [...climbs];
+    findNextClimbAfterDistance(climbs, 0);
+    expect(climbs).toEqual(before);
   });
 });
 

@@ -1682,8 +1682,12 @@ button:focus-visible {
 
 /* Fills in the previously orphan .riding-climb-progress class (see
  * RidingClimbProgressPanel.tsx) — a compact bordered/elevated card,
- * mirroring .panel/.route-card's own treatment. No JSX change needed. */
-.riding-climb-progress {
+ * mirroring .panel/.route-card's own treatment. Shared with
+ * .riding-climb-preview (RidingClimbPreviewPanel.tsx, backlog item 71) —
+ * the upcoming-climb preview is structurally the same card family, just
+ * with less content. */
+.riding-climb-progress,
+.riding-climb-preview {
   padding: var(--space-12) var(--space-16);
   border: 1px solid var(--colour-border);
   border-radius: var(--radius-md);
@@ -1691,13 +1695,64 @@ button:focus-visible {
   box-shadow: var(--shadow-sm);
 }
 
-.riding-climb-progress h3 {
+.riding-climb-progress h3,
+.riding-climb-preview h3 {
   margin: 0 0 var(--space-8);
 }
 
-.riding-climb-progress p {
+.riding-climb-preview p {
   margin: var(--space-4) 0;
   font-size: 0.9rem;
+}
+
+/* Every plain <p> remaining directly in .riding-climb-progress after the
+ * item-71 hierarchy restructure is secondary/quieter content by
+ * construction — the two primary values (distance to summit, elevation
+ * remaining) use dedicated <span> classes below, never <p>, so this rule
+ * never fights them for specificity. */
+.riding-climb-progress p {
+  margin: var(--space-4) 0;
+  font-size: 0.85rem;
+  color: var(--colour-text-muted);
+}
+
+/* The two strongest-hierarchy primary values (backlog item 71). Wraps so
+ * two tiles never force horizontal scroll on a narrow phone or at
+ * enlarged text — each tile shrinks to its own content rather than a
+ * fixed width, so neither a long label nor a long value can force an
+ * overflow the other tile can't also give way to. */
+.riding-climb-progress-primary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-16);
+  margin: var(--space-4) 0 var(--space-8);
+}
+
+.riding-climb-progress-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.riding-climb-progress-metric-label {
+  font-size: 0.8rem;
+  color: var(--colour-text-muted);
+}
+
+.riding-climb-progress-metric-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+/* The quieter secondary area: current gradient, current elevation, summit
+ * elevation, distance completed — each a plain <p>, styled by the shared
+ * .riding-climb-progress p rule above. This wrapper only adds layout (a
+ * wrapping row instead of stacked block paragraphs). */
+.riding-climb-progress-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-16);
 }
 
 /* The chart/climb-panel/disclosure/feature-detail secondary section

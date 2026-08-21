@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-**Item 70 is next.** Read it in full before starting.
+**Item 72 is next.** Read it in full before starting.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Each entry reproduces its original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this).
 
@@ -119,26 +119,6 @@ _Category: Platform compatibility_
       4. **Conflict and recovery coverage:** an inbound share must respect the existing unfinished route/free-roam conflict guard (item 42's fail-closed `checkFreeRoamConflict`-style pattern) and must never silently replace an active session or Planning draft; it must work after a fresh install/relaunch. Add Playwright coverage where meaningful, then require real Android Chrome acceptance — Chromium/Playwright emulation cannot prove real OS share-sheet registration, matching this project's existing, repeatedly-stated distinction between the `android-chrome` Playwright project and genuine physical-device verification (item 25).
     - If step 1 finds only an `Open with` path and no Share/Send path, document that conclusively and record that no pure static-PWA solution is currently available for this exact flow — do not propose a native wrapper, Trusted Web Activity, APK, or other Android-specific packaging as a workaround; that would be a major architecture departure and is explicitly not approved by this backlog item.
     - Requires the "## Explicit non-goals" edit recorded above (item 61's own cross-reference) — that section stays in the root `CLAUDE.md` and already carries this cross-reference.
-
----
-
-<a id="item-71"></a>
-
-## Item 71 — Preview the next recognised climb during active Riding and improve climb-card hierarchy
-
-_Category: Riding elevation enhancement_
-
-71. **Preview the next recognised climb during active Riding and improve climb-card hierarchy**
-    - Applies only to the active route-Riding Profile view (items 55/56), following the same active-Riding information-proximity principles item 40 established. The pre-ride briefing (item 13's later slices, `RidingClimbSelector`) already shows the full route profile and offers individual recognised-climb previews via a dropdown; do not add 2 km/10 km/Climb cards there or duplicate that existing pre-ride functionality.
-    - Confirmed current implementation (source-verified): the `Climb` view button in `RidingScreen.tsx` is currently gated only on `activeClimb !== null` — the rider's frozen/reliable route distance is physically inside a recognised climb's range, via `findFeatureAtDistance(routeFeatures, presentationDistanceFromStartMetres)`, an inclusive-both-ends containment check in `routeFeatures.ts`. There is no "climbs ahead"/upcoming-climb preview capability anywhere today (exhaustive grep confirmed); the button simply does not exist before a climb has actually begun. Item 57's `RidingClimbCue` (Map-view-only "Climb active"/"View climb" cue) is likewise gated on `effectiveElevationView.kind === "climb"`, which itself only ever fires while `activeClimb !== null` — so it too only appears once a climb has genuinely begun, never in advance. This item must not make item 57's cue appear for a merely-upcoming, not-yet-begun climb.
-    - Settled active-Riding behaviour:
-      - Show the `Climb` view button whenever there is an active recognised climb or another recognised climb ahead; hide it when no recognised climb remains.
-      - Before a climb begins, selecting `Climb` manually previews the next recognised climb. Do not automatically switch away from Map or a standard Profile view merely because a future climb exists.
-      - The upcoming preview should identify the climb/category, distance until its start, length, total ascent, average gradient, and its climb profile, reusing existing recognised-climb data (`routeFeatures.ts`, `climbElevationView.ts`) rather than a second detection/measurement path.
-      - When the climb actually begins, retain today's automatic active-Climb behaviour (item 13) unchanged. Item 57's cue remains active-climb-only and must never be shown for a merely upcoming preview.
-      - Leaving an upcoming preview via Full/2 km/10 km must not write the active-climb dismissal state (`nav.dismissedClimbFeatureId`) or suppress the future item-57 cue. During an active climb, the existing dismissal-for-this-climb and re-offer-on-a-later-climb semantics remain unchanged.
-    - Restructure the active progress card (`RidingClimbProgressPanel.tsx`, currently one combined "completed · remaining" paragraph followed by several uniformly-styled, equally-weighted `<p>` elements — current elevation, summit elevation, elevation remaining, current gradient, with no visual hierarchy between them, per its own doc comment "No percentage-complete value anywhere, per product requirements," which must remain true) for glanceability without removing useful information or adding percentage complete. Give the two primary values the strongest hierarchy: distance to summit; positive elevation remaining. Move current gradient, current elevation, summit elevation and distance completed into a quieter secondary row/area. The upcoming preview and active-progress states must be visibly and semantically distinct, never displaying fake live values before the climb actually begins.
-    - Require deterministic zero/one/two-climb tests covering before, during, after and between climbs; preview selection/deselection; automatic entry; active dismissal; later-climb re-offer; suspension/recovery where relevant; no extra GPS/camera commands issued merely by previewing or switching views; and a fixed Profile pane that remains usable at phone width and enlarged text.
 
 ---
 

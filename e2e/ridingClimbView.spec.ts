@@ -105,8 +105,11 @@ test("auto-selects Climb view on entering each recognised climb, respects a manu
   await importAndStartRiding(page);
 
   // Active Riding defaults to the Map view (backlog item 56). Before
-  // entering the first climb, neither the Profile-pane Climb button nor
-  // the Map-pane climb cue (backlog item 57) is offered.
+  // entering the first climb, the Map-pane climb cue (backlog item 57)
+  // stays hidden — it is active-climb-only, never shown for a merely
+  // upcoming climb. The Profile-pane Climb button, by contrast, is now
+  // offered before the first climb too (backlog item 71), as a manual,
+  // read-only preview of it.
   await expect(page.getByRole("button", { name: "Map" })).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -117,6 +120,32 @@ test("auto-selects Climb view on entering each recognised climb, respects a manu
   const mapContainer = page.locator('[data-testid="map-container"]');
   const boxBeforeClimb = await mapContainer.boundingBox();
   expect(boxBeforeClimb).not.toBeNull();
+
+  // backlog item 71: manually previewing the next recognised climb before
+  // it begins, then leaving the preview via a standard view, must not
+  // switch away from Map, must not show the Map cue, and must not
+  // suppress the climb's own later automatic entry.
+  await page.getByRole("button", { name: "Profile" }).click();
+  const profileClimbButton = page.getByRole("button", { name: "Climb" });
+  await expect(profileClimbButton).toBeVisible();
+  await expect(profileClimbButton).toHaveAttribute("aria-pressed", "false");
+  await profileClimbButton.click();
+  await expect(profileClimbButton).toHaveAttribute("aria-pressed", "true");
+
+  const previewPanel = page.getByRole("region", { name: "Climb preview" });
+  await expect(previewPanel).toContainText("Climb 1");
+  await expect(previewPanel).toContainText(/Starts in/);
+
+  const previewChart = page.getByRole("img", { name: "Elevation profile for Climb 1" });
+  await expect(previewChart.locator("line.elevation-chart-marker")).toHaveCount(0);
+  await expect(previewChart.locator("circle.elevation-chart-marker-dot")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "2 km" }).click();
+  await expect(profileClimbButton).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("region", { name: "Climb preview" })).toBeHidden();
+
+  await page.getByRole("button", { name: "Map" }).click();
+  await expect(viewClimbButton).toBeHidden();
 
   // Enters the first recognised climb — the Map climb cue appears without
   // switching away from Map (backlog item 57's own "must never
@@ -156,8 +185,12 @@ test("auto-selects Climb view on entering each recognised climb, respects a manu
   const progressPanel = page.getByRole("region", { name: "Climb progress" });
   await expect(progressPanel).toBeVisible();
   await expect(progressPanel).toContainText("Climb 1");
-  await expect(progressPanel).toContainText(/km completed/);
-  await expect(progressPanel).toContainText(/km remaining/);
+  // Distance to summit and elevation remaining are the primary hierarchy
+  // (backlog item 71); distance completed and the other metrics remain
+  // present in the quieter secondary area.
+  await expect(progressPanel).toContainText("Distance to summit");
+  await expect(progressPanel).toContainText("Elevation remaining");
+  await expect(progressPanel).toContainText(/Distance completed: \d+\.\d km/);
   // No percentage-complete value anywhere in the panel — the panel's only
   // legitimate "%" use is the current-gradient figure, e.g. "+6.0%".
   await expect(progressPanel.getByText(/\d+%\s*(complete|done)/i)).toHaveCount(0);
@@ -318,5 +351,73 @@ test.describe("390×844 phone viewport", () => {
       () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
     );
     expect(hasHorizontalOverflow).toBe(false);
+  });
+
+  test("the Profile climb-preview card and the restructured active-progress card fit at phone width and enlarged text, with no document scroll", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({
+      latitude: FIXTURE_LAT,
+      longitude: lonAtMetresAlongFixture(BEFORE_CLIMB_1_METRES),
+      accuracy: 5,
+    });
+
+    await installLocalMapStyle(page);
+    await page.goto("/");
+    await importAndStartRiding(page);
+
+    await page.getByRole("button", { name: "Profile" }).click();
+    await page.getByRole("button", { name: "Climb" }).click();
+    await expect(page.getByRole("region", { name: "Climb preview" })).toBeVisible();
+
+    // The fixed shell itself must never scroll as a document — only the
+    // bounded .ride-profile-pane--immersive fallback may, and only when
+    // its own content genuinely doesn't fit (see index.css's own comment
+    // on that class, and backlog item 70's precedent test). The preview
+    // stacks a chart plus the full RouteFeatureDetailsPanel fact list, so
+    // it is not asserted to fit with zero internal scroll the way item
+    // 70's own lighter worst case was — only that the *document* itself
+    // stays put and the header/switcher remain reachable.
+    const hasDocumentOverflow = async (): Promise<{
+      horizontal: boolean;
+      vertical: boolean;
+    }> =>
+      page.evaluate(() => ({
+        horizontal:
+          document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        vertical:
+          document.documentElement.scrollHeight > document.documentElement.clientHeight,
+      }));
+
+    expect(await hasDocumentOverflow()).toEqual({ horizontal: false, vertical: false });
+
+    // Now the live, restructured active-progress card — the primary
+    // distance-to-summit/elevation-remaining pair plus the secondary row
+    // — at the same phone width.
+    await context.setGeolocation({
+      latitude: FIXTURE_LAT,
+      longitude: lonAtMetresAlongFixture(CLIMB_1_MID_METRES),
+      accuracy: 5,
+    });
+    await expect(page.getByRole("region", { name: "Climb progress" })).toBeVisible({
+      timeout: 15_000,
+    });
+    expect(await hasDocumentOverflow()).toEqual({ horizontal: false, vertical: false });
+
+    // Simulates a large Dynamic-Type-style zoom via the document's own
+    // root font size (mirrors ridingMapProfileViews.spec.ts's own
+    // enlarged-text pattern) — the header and switcher stay fixed, only
+    // Profile's own content may need its bounded internal scroll.
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "200%";
+    });
+    const header = page.locator("header.riding-immersive-header");
+    const switcher = page.getByRole("group", { name: "Riding view" });
+    await expect(header).toBeVisible();
+    await expect(switcher).toBeVisible();
+    const enlargedOverflow = await hasDocumentOverflow();
+    expect(enlargedOverflow.horizontal).toBe(false);
   });
 });

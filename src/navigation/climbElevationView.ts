@@ -7,17 +7,21 @@ import type { ElevationViewMode } from "./types.ts";
 import { interpolateRoutePointAt } from "./upcomingElevation.ts";
 
 /**
- * The elevation view actually shown: either the rider's own standard
- * preference (Full or a rolling 2/5/10 km window, unchanged from
- * `ElevationViewMode`) or the transient "Climb" presentation for whichever
- * recognised climb the rider is currently riding through. `featureId` is
- * carried for self-documentation only — it always equals the `activeClimb`
- * a caller already has in hand, never an independent source of truth.
- * "Climb" is never itself persisted as a standing preference; see
+ * The elevation view actually shown: the rider's own standard preference
+ * (Full or a rolling 2/5/10 km window, unchanged from `ElevationViewMode`),
+ * the transient "Climb" presentation for whichever recognised climb the
+ * rider is currently riding through, or a read-only "climb-preview" of a
+ * recognised climb that has not yet begun (backlog item 71). `featureId`
+ * is carried for self-documentation only — it always equals the
+ * `activeClimb`/`upcomingClimb` a caller already has in hand, never an
+ * independent source of truth. Neither "climb" nor "climb-preview" is ever
+ * itself persisted as a standing preference; see
  * `selectEffectiveElevationView`.
  */
 export type EffectiveElevationView =
-  ElevationViewMode | { kind: "climb"; featureId: string };
+  | ElevationViewMode
+  | { kind: "climb"; featureId: string }
+  | { kind: "climb-preview"; featureId: string };
 
 /**
  * Pure derivation of the elevation view to display — deliberately holds no
@@ -41,19 +45,40 @@ export type EffectiveElevationView =
  * the rider manually re-selects Climb — both are simple, unconditionally
  * safe writes since a dismissal only ever matters when it matches the
  * currently active climb.
+ *
+ * A fourth, transient state is possible whenever there is genuinely no
+ * active climb (backlog item 71): `upcomingClimb` non-null and manually
+ * selected via `previewSelectedClimbId` (the id the rider tapped `Climb`
+ * for) produces a `"climb-preview"` view. Active always wins over preview
+ * — the `activeClimb !== null` branch returns unconditionally before
+ * `upcomingClimb`/`previewSelectedClimbId` are even examined, so the
+ * moment a previewed climb actually begins, this function naturally
+ * switches to the real `"climb"` presentation on the very next call, with
+ * no special-casing required. Unlike `dismissedClimbFeatureId`,
+ * `previewSelectedClimbId` is caller-owned, transient UI state, not part
+ * of persisted ride state — this function still performs the id
+ * comparison itself (mirroring how it already compares
+ * `dismissedClimbFeatureId` against `activeClimb.id`) rather than
+ * requiring the caller to pre-resolve a boolean, so every boundary case
+ * stays testable in one place.
  */
 export function selectEffectiveElevationView(
   standardMode: ElevationViewMode,
   activeClimb: ClimbFeature | null,
   dismissedClimbFeatureId: string | null,
+  upcomingClimb: ClimbFeature | null,
+  previewSelectedClimbId: string | null,
 ): EffectiveElevationView {
-  if (activeClimb === null) {
-    return standardMode;
+  if (activeClimb !== null) {
+    if (dismissedClimbFeatureId === activeClimb.id) {
+      return standardMode;
+    }
+    return { kind: "climb", featureId: activeClimb.id };
   }
-  if (dismissedClimbFeatureId === activeClimb.id) {
-    return standardMode;
+  if (upcomingClimb !== null && previewSelectedClimbId === upcomingClimb.id) {
+    return { kind: "climb-preview", featureId: upcomingClimb.id };
   }
-  return { kind: "climb", featureId: activeClimb.id };
+  return standardMode;
 }
 
 export interface ClimbElevationWindow {

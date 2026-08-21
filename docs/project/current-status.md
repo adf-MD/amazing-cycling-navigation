@@ -56,6 +56,10 @@ Do not treat the item above as fully verified until it has been tested on a movi
 
 - **Simplify 2 km/10 km elevation distance guides (item 70):** shipped with automated (Vitest/Playwright Chromium and Chromium-emulated Android) evidence only — no physical iPhone or Android verification is claimed yet. Real-device acceptance still needed: legibility of the full-height guide lines and their bottom-gutter labels while mounted and moving outdoors, in bright daylight and with gloves; and that the fixed Riding Profile pane genuinely does not need to scroll on a real device at normal text size with the 10 km view's four guides showing (only Playwright's synthetic viewport has been checked).
 
+### Outstanding: item 71's upcoming-climb preview and restructured climb-progress card
+
+- **Preview the next recognised climb during active Riding and improve climb-card hierarchy (item 71):** shipped with automated (Vitest/Playwright Chromium and Chromium-emulated Android) evidence only — no physical iPhone or Android verification is claimed yet. Real-device acceptance still needed: readability of the upcoming-climb preview card (identity, "Starts in" distance, and its chart) while mounted and moving outdoors; the transition from preview to live progress at a genuine climb start; glanceability of the restructured active-progress card's primary distance-to-summit/elevation-remaining pair versus its quieter secondary row, at a glance while riding; that the fixed Riding Profile pane genuinely does not need to scroll on a real device at normal and enlarged text with either card showing (only Playwright's synthetic viewport and simulated root-font-size zoom have been checked); and confirmation that item 57's Map cue never appears early for a merely upcoming, not-yet-begun climb on a real device.
+
 ---
 
 ## Monitored reliability observations

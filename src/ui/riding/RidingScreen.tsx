@@ -20,6 +20,7 @@ import {
 import {
   detectRouteFeatures,
   findFeatureAtDistance,
+  findNextClimbAfterDistance,
   listClimbsInRouteOrder,
   resolveElevationChartTap,
   type ClimbGradientBand,
@@ -56,6 +57,7 @@ import { GradientSegmentDetailsPanel } from "../shared/GradientSegmentDetailsPan
 import { RouteFeatureDetailsPanel } from "../shared/RouteFeatureDetailsPanel.tsx";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 import { RidingClimbCue } from "./RidingClimbCue.tsx";
+import { RidingClimbPreviewPanel } from "./RidingClimbPreviewPanel.tsx";
 import { RidingClimbProgressPanel } from "./RidingClimbProgressPanel.tsx";
 import { RidingClimbSelector } from "./RidingClimbSelector.tsx";
 import { RidingCompactManoeuvreCue } from "./RidingCompactManoeuvreCue.tsx";
@@ -312,6 +314,21 @@ export function RidingScreen({
   const [selectedGradientSegment, setSelectedGradientSegment] =
     useState<ClassifiedSegment<MicroDetailVisualKey> | null>(null);
 
+  // Manual selection of the Climb button while no climb is active yet —
+  // previews the next recognised climb (backlog item 71). Tagged by route
+  // and climb id, mirroring explicitFeatureSelection's own established
+  // idiom exactly: a pure derivation below only honours this while its
+  // climbId still matches the currently-upcoming climb, so every leave/
+  // enter/route-change/skip transition self-resets with no imperative
+  // clearing code anywhere. Deliberately NOT persisted (like activeView)
+  // — a suspend/reload always restores to "no preview selected",
+  // requiring one more tap; only the active-climb dismissal state is
+  // persisted.
+  const [climbPreviewSelection, setClimbPreviewSelection] = useState<{
+    routeId: string;
+    climbId: string;
+  } | null>(null);
+
   // Which of the two fixed active-Riding views is shown (backlog item 56).
   // Presentation-only, deliberately not persisted: defaults to "map" on
   // mount and is reset to "map" only inside handleStart's own idle-only
@@ -431,6 +448,23 @@ export function RidingScreen({
   // uphill never activates it, since activeFeature is null or a descent
   // there.
   const activeClimb = activeFeature?.kind === "climb" ? activeFeature : null;
+  // The next recognised climb strictly ahead of the rider's frozen/
+  // reliable position (backlog item 71) — never derived while idle (the
+  // pre-ride briefing already has its own preview mechanism,
+  // RidingClimbSelector's dropdown; this must not duplicate it there,
+  // and a paused ride's restored idle position can already sit inside a
+  // climb, which must not leak this active-Riding-only feature into the
+  // pre-ride screen) and null before any fix/restored progress exists,
+  // mirroring activeFeature's own null-when-unknown convention.
+  const upcomingClimb =
+    nav.geolocationStatus === "idle" || nav.presentationDistanceFromStartMetres === null
+      ? null
+      : findNextClimbAfterDistance(climbs, nav.presentationDistanceFromStartMetres);
+  // Only counts while it still names the currently-upcoming climb — see
+  // this state's own doc comment for why every leave/enter/route-change/
+  // skip transition self-resets for free from this comparison alone.
+  const climbPreviewSelectedClimbId =
+    climbPreviewSelection?.routeId === route.id ? climbPreviewSelection.climbId : null;
   // Reuses microDetailSegments in the common case (nothing else explicitly
   // selected, so activeClimb === microDetailFeature) rather than always
   // re-running buildFeatureDetailSegments — still correct either way, since
@@ -445,6 +479,16 @@ export function RidingScreen({
           : buildFeatureDetailSegments(activeClimb, runs),
     [activeClimb, microDetailFeature, microDetailSegments, runs],
   );
+  // Mirrors activeClimbDetailSegments's own reuse pattern above.
+  const upcomingClimbDetailSegments = useMemo(
+    () =>
+      upcomingClimb === null
+        ? []
+        : upcomingClimb === microDetailFeature
+          ? microDetailSegments
+          : buildFeatureDetailSegments(upcomingClimb, runs),
+    [upcomingClimb, microDetailFeature, microDetailSegments, runs],
+  );
   const climbProgressMetrics = activeClimb
     ? computeClimbProgressMetrics(
         activeClimb,
@@ -455,11 +499,15 @@ export function RidingScreen({
     : null;
   // The elevation view actually shown — see climbElevationView.ts's own
   // doc comment for why this pure derivation needs no effect and no
-  // "already auto-shown" tracking state beyond dismissedClimbFeatureId.
+  // "already auto-shown" tracking state beyond dismissedClimbFeatureId
+  // (for the active-climb case) or climbPreviewSelection (for the
+  // upcoming-preview case, backlog item 71).
   const effectiveElevationView = selectEffectiveElevationView(
     nav.elevationViewMode,
     activeClimb,
     nav.dismissedClimbFeatureId,
+    upcomingClimb,
+    climbPreviewSelectedClimbId,
   );
   // Visual emphasis (the extra stroke-width bump) is reserved for an
   // explicit selection, never for a merely-active feature — mirrors the
@@ -948,6 +996,7 @@ export function RidingScreen({
           {ELEVATION_VIEW_MODE_OPTIONS.map((mode) => {
             const isSelected =
               effectiveElevationView.kind !== "climb" &&
+              effectiveElevationView.kind !== "climb-preview" &&
               isSameElevationViewMode(effectiveElevationView, mode);
             return (
               <button
@@ -963,24 +1012,45 @@ export function RidingScreen({
                   if (activeClimb !== null) {
                     nav.setDismissedClimbFeatureId(activeClimb.id);
                   }
+                  // Leaving an upcoming preview is a pure UI-selection
+                  // change — there is no active climb to dismiss, so this
+                  // is an unconditional, separate write from the branch
+                  // above (backlog item 71).
+                  setClimbPreviewSelection(null);
                 }}
               >
                 {elevationViewModeLabel(mode)}
               </button>
             );
           })}
-          {activeClimb !== null ? (
+          {activeClimb !== null || upcomingClimb !== null ? (
             <button
               type="button"
               className={`elevation-window-button${
-                effectiveElevationView.kind === "climb" ? " is-selected" : ""
+                effectiveElevationView.kind === "climb" ||
+                effectiveElevationView.kind === "climb-preview"
+                  ? " is-selected"
+                  : ""
               }`}
-              aria-pressed={effectiveElevationView.kind === "climb"}
+              aria-pressed={
+                effectiveElevationView.kind === "climb" ||
+                effectiveElevationView.kind === "climb-preview"
+              }
               onClick={() => {
-                // Un-dismisses the active climb — safe unconditionally,
-                // since a dismissal only ever matters when it matches the
-                // currently active climb's own id.
-                nav.setDismissedClimbFeatureId(null);
+                if (activeClimb !== null) {
+                  // Un-dismisses the active climb — safe unconditionally,
+                  // since a dismissal only ever matters when it matches
+                  // the currently active climb's own id.
+                  nav.setDismissedClimbFeatureId(null);
+                } else if (upcomingClimb !== null) {
+                  // Selects the upcoming-climb preview (backlog item 71)
+                  // — never touches dismissedClimbFeatureId, since there
+                  // is no active climb.
+                  setClimbPreviewSelection({
+                    routeId: route.id,
+                    climbId: upcomingClimb.id,
+                  });
+                }
               }}
             >
               Climb
@@ -1056,6 +1126,46 @@ export function RidingScreen({
               climb={activeClimb}
               climbNumber={climbs.findIndex((climb) => climb.id === activeClimb.id) + 1}
               metrics={climbProgressMetrics}
+            />
+          );
+        } else if (
+          activeClimb === null &&
+          effectiveElevationView.kind === "climb-preview" &&
+          upcomingClimb !== null &&
+          nav.presentationDistanceFromStartMetres !== null
+        ) {
+          // Read-only preview of the next recognised climb before it
+          // begins (backlog item 71). Reuses the same "pre-ride-selected-
+          // climb" chart mode the idle dropdown preview already uses
+          // (rebased-to-0, no marker) — never computeClimbProgressMetrics,
+          // which would fabricate progress at the climb's own start.
+          const distanceUntilStartMetres =
+            upcomingClimb.startDistanceMetres - nav.presentationDistanceFromStartMetres;
+          const previewViewModel = buildClimbChartViewModel(
+            { kind: "pre-ride-selected-climb" },
+            upcomingClimb,
+            displayPoints,
+            upcomingClimbDetailSegments,
+          );
+          displayedMicroSegments = upcomingClimbDetailSegments;
+          displayedMicroDetailFeature = upcomingClimb;
+          const upcomingClimbNumber =
+            climbs.findIndex((climb) => climb.id === upcomingClimb.id) + 1;
+          chart = (
+            <ElevationChart
+              points={previewViewModel.points}
+              domain={previewViewModel.domain}
+              gradientSegments={previewViewModel.gradientSegments}
+              areaFill={previewViewModel.areaFill}
+              marker={previewViewModel.marker}
+              ariaLabel={`Elevation profile for Climb ${String(upcomingClimbNumber)}`}
+            />
+          );
+          climbProgressPanel = (
+            <RidingClimbPreviewPanel
+              climb={upcomingClimb}
+              climbNumber={upcomingClimbNumber}
+              distanceUntilStartMetres={distanceUntilStartMetres}
             />
           );
         } else if (nav.elevationProfileDisplay.kind === "full") {
@@ -1154,10 +1264,20 @@ export function RidingScreen({
               />
             ) : null}
             <RouteFeatureDetailsPanel
-              feature={microDetailFeature}
+              feature={
+                effectiveElevationView.kind === "climb-preview" && upcomingClimb !== null
+                  ? upcomingClimb
+                  : microDetailFeature
+              }
               climbNumber={preRideClimbNumber}
               detailChart={preRideClimbChart}
-              onClear={selectedFeature ? handleClearRouteFeatureSelection : undefined}
+              onClear={
+                effectiveElevationView.kind === "climb-preview"
+                  ? undefined
+                  : selectedFeature
+                    ? handleClearRouteFeatureSelection
+                    : undefined
+              }
             />
             <GradientSegmentDetailsPanel
               segment={selectedGradientSegment}

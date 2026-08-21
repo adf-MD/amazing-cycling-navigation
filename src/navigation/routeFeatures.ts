@@ -489,6 +489,29 @@ export function findFeatureAtDistance(
   return null;
 }
 
+/** The first climb in `climbs` (already route-ordered, see
+ * listClimbsInRouteOrder — never re-sorted here) whose own start lies
+ * strictly after `distanceMetres`, i.e. genuinely not yet begun. A
+ * distance exactly at a climb's own start is that climb's own active
+ * range (findFeatureAtDistance's inclusive-both-ends convention) —
+ * deliberately never "upcoming" too, so a rider is never shown both an
+ * active-climb card and a preview card for the same climb at its own
+ * boundary. Returns null once no climb starts later, including when
+ * `climbs` is empty. Used only by active-Riding's Climb-preview feature
+ * (backlog item 71) — the pre-ride dropdown (RidingClimbSelector) already
+ * offers every climb regardless of position and does not use this. */
+export function findNextClimbAfterDistance(
+  climbs: readonly ClimbFeature[],
+  distanceMetres: number,
+): ClimbFeature | null {
+  for (const climb of climbs) {
+    if (climb.startDistanceMetres > distanceMetres) {
+      return climb;
+    }
+  }
+  return null;
+}
+
 export type ElevationChartTapResolution<Class extends string> =
   | { kind: "feature"; feature: RouteFeature }
   | { kind: "segment"; segment: ClassifiedSegment<Class> }

@@ -31,15 +31,17 @@ function buildClimb(overrides: Partial<ClimbFeature> = {}): ClimbFeature {
 
 describe("selectEffectiveElevationView", () => {
   it("returns the standard mode when no climb is active", () => {
-    expect(selectEffectiveElevationView(FULL_MODE, null, null)).toEqual(FULL_MODE);
-    expect(selectEffectiveElevationView(UPCOMING_10KM, null, "climb-1000")).toEqual(
-      UPCOMING_10KM,
+    expect(selectEffectiveElevationView(FULL_MODE, null, null, null, null)).toEqual(
+      FULL_MODE,
     );
+    expect(
+      selectEffectiveElevationView(UPCOMING_10KM, null, "climb-1000", null, null),
+    ).toEqual(UPCOMING_10KM);
   });
 
   it("auto-selects Climb view on first entry to a recognised climb", () => {
     const climb = buildClimb();
-    expect(selectEffectiveElevationView(UPCOMING_10KM, climb, null)).toEqual({
+    expect(selectEffectiveElevationView(UPCOMING_10KM, climb, null, null, null)).toEqual({
       kind: "climb",
       featureId: "climb-1000",
     });
@@ -47,32 +49,32 @@ describe("selectEffectiveElevationView", () => {
 
   it("keeps showing Climb view across repeated calls for the same active climb (no reset)", () => {
     const climb = buildClimb();
-    const first = selectEffectiveElevationView(UPCOMING_10KM, climb, null);
-    const second = selectEffectiveElevationView(UPCOMING_10KM, climb, null);
+    const first = selectEffectiveElevationView(UPCOMING_10KM, climb, null, null, null);
+    const second = selectEffectiveElevationView(UPCOMING_10KM, climb, null, null, null);
     expect(first).toEqual(second);
     expect(second).toEqual({ kind: "climb", featureId: "climb-1000" });
   });
 
   it("returns the standard mode once the active climb has been dismissed", () => {
     const climb = buildClimb();
-    expect(selectEffectiveElevationView(UPCOMING_10KM, climb, "climb-1000")).toEqual(
-      UPCOMING_10KM,
-    );
+    expect(
+      selectEffectiveElevationView(UPCOMING_10KM, climb, "climb-1000", null, null),
+    ).toEqual(UPCOMING_10KM);
   });
 
   it("stays on the standard mode for further calls while the same climb remains dismissed", () => {
     const climb = buildClimb();
-    expect(selectEffectiveElevationView(UPCOMING_10KM, climb, "climb-1000")).toEqual(
-      UPCOMING_10KM,
-    );
-    expect(selectEffectiveElevationView(UPCOMING_10KM, climb, "climb-1000")).toEqual(
-      UPCOMING_10KM,
-    );
+    expect(
+      selectEffectiveElevationView(UPCOMING_10KM, climb, "climb-1000", null, null),
+    ).toEqual(UPCOMING_10KM);
+    expect(
+      selectEffectiveElevationView(UPCOMING_10KM, climb, "climb-1000", null, null),
+    ).toEqual(UPCOMING_10KM);
   });
 
   it("returns Climb view again once the dismissal is cleared (manual reselection)", () => {
     const climb = buildClimb();
-    expect(selectEffectiveElevationView(UPCOMING_10KM, climb, null)).toEqual({
+    expect(selectEffectiveElevationView(UPCOMING_10KM, climb, null, null, null)).toEqual({
       kind: "climb",
       featureId: "climb-1000",
     });
@@ -81,7 +83,7 @@ describe("selectEffectiveElevationView", () => {
   it("auto-selects Climb view for a different climb even though the previous one is still recorded as dismissed", () => {
     const secondClimb = buildClimb({ id: "climb-3000", startDistanceMetres: 3000 });
     expect(
-      selectEffectiveElevationView(UPCOMING_10KM, secondClimb, "climb-1000"),
+      selectEffectiveElevationView(UPCOMING_10KM, secondClimb, "climb-1000", null, null),
     ).toEqual({
       kind: "climb",
       featureId: "climb-3000",
@@ -89,12 +91,12 @@ describe("selectEffectiveElevationView", () => {
   });
 
   it("returns the standard mode once the rider leaves the climb, regardless of dismissal state", () => {
-    expect(selectEffectiveElevationView(UPCOMING_10KM, null, null)).toEqual(
+    expect(selectEffectiveElevationView(UPCOMING_10KM, null, null, null, null)).toEqual(
       UPCOMING_10KM,
     );
-    expect(selectEffectiveElevationView(UPCOMING_10KM, null, "climb-1000")).toEqual(
-      UPCOMING_10KM,
-    );
+    expect(
+      selectEffectiveElevationView(UPCOMING_10KM, null, "climb-1000", null, null),
+    ).toEqual(UPCOMING_10KM);
   });
 
   it("auto-reopens on re-entering the same climb after leaving it, when nothing dismissed it in between", () => {
@@ -102,12 +104,79 @@ describe("selectEffectiveElevationView", () => {
     // Simulates leave (null) then re-entry with the dismissal state
     // untouched by the caller in between — a genuine "entry" event each
     // time, not a permanent per-id ban.
-    expect(selectEffectiveElevationView(UPCOMING_10KM, null, null)).toEqual(
+    expect(selectEffectiveElevationView(UPCOMING_10KM, null, null, null, null)).toEqual(
       UPCOMING_10KM,
     );
-    expect(selectEffectiveElevationView(UPCOMING_10KM, climb, null)).toEqual({
+    expect(selectEffectiveElevationView(UPCOMING_10KM, climb, null, null, null)).toEqual({
       kind: "climb",
       featureId: "climb-1000",
+    });
+  });
+
+  describe("upcoming-climb preview (backlog item 71)", () => {
+    it("returns a climb-preview view when the upcoming climb is manually previewed and there is no active climb", () => {
+      const upcoming = buildClimb({ id: "climb-3000", startDistanceMetres: 3000 });
+      expect(
+        selectEffectiveElevationView(UPCOMING_10KM, null, null, upcoming, "climb-3000"),
+      ).toEqual({ kind: "climb-preview", featureId: "climb-3000" });
+    });
+
+    it("returns the standard mode when the preview selection does not match the current upcoming climb", () => {
+      const upcoming = buildClimb({ id: "climb-3000", startDistanceMetres: 3000 });
+      expect(
+        selectEffectiveElevationView(UPCOMING_10KM, null, null, upcoming, "climb-9999"),
+      ).toEqual(UPCOMING_10KM);
+    });
+
+    it("returns the standard mode when a preview is selected but there is no upcoming climb", () => {
+      expect(
+        selectEffectiveElevationView(UPCOMING_10KM, null, null, null, "climb-3000"),
+      ).toEqual(UPCOMING_10KM);
+    });
+
+    it("returns the standard mode when nothing has been manually previewed, even though a climb is upcoming", () => {
+      const upcoming = buildClimb({ id: "climb-3000", startDistanceMetres: 3000 });
+      expect(
+        selectEffectiveElevationView(UPCOMING_10KM, null, null, upcoming, null),
+      ).toEqual(UPCOMING_10KM);
+    });
+
+    it("an active climb always wins over a simultaneously-set preview selection", () => {
+      const active = buildClimb();
+      const upcoming = buildClimb({ id: "climb-3000", startDistanceMetres: 3000 });
+      expect(
+        selectEffectiveElevationView(UPCOMING_10KM, active, null, upcoming, "climb-3000"),
+      ).toEqual({ kind: "climb", featureId: "climb-1000" });
+    });
+
+    it("naturally switches from preview to the real active-climb view once the previewed climb begins", () => {
+      const climb = buildClimb();
+      const preview = selectEffectiveElevationView(
+        UPCOMING_10KM,
+        null,
+        null,
+        climb,
+        "climb-1000",
+      );
+      expect(preview).toEqual({ kind: "climb-preview", featureId: "climb-1000" });
+      const active = selectEffectiveElevationView(
+        UPCOMING_10KM,
+        climb,
+        null,
+        null,
+        "climb-1000",
+      );
+      expect(active).toEqual({ kind: "climb", featureId: "climb-1000" });
+    });
+
+    it("a stale preview selection for a climb that is no longer upcoming resolves to the standard mode", () => {
+      // Simulates progress jumping past the previewed climb (climb-1000)
+      // without ever entering it — the next upcoming climb is now a
+      // different one, so the stale selection simply stops matching.
+      const nextClimb = buildClimb({ id: "climb-5000", startDistanceMetres: 5000 });
+      expect(
+        selectEffectiveElevationView(UPCOMING_10KM, null, null, nextClimb, "climb-1000"),
+      ).toEqual(UPCOMING_10KM);
     });
   });
 });
