@@ -21,8 +21,9 @@ tagged:
   Android phone. Never mark one of these as verified without actually
   doing it.
 - **(Recheck vs iPhone)** — already manually verified on the deployed
-  iPhone PWA (see CLAUDE.md's "Manual acceptance status"), but not yet
-  separately confirmed on Android.
+  iPhone PWA (see CLAUDE.md's "Manual acceptance status", now in
+  `docs/project/current-status.md`), but not yet separately confirmed on
+  Android.
 
 Target: **Android 10 or later, current stable Chrome for Android.** This
 is PWA support, not native Android packaging — there is no APK, Trusted
@@ -68,7 +69,7 @@ Web Activity, or Play Store listing.
   tests; it is not duplicated here.
 - Both cycling profiles produce viable, meaningfully different real-world
   routes — **(Recheck vs iPhone)** (already verified there, per CLAUDE.md's
-  "Manual acceptance status").
+  "Manual acceptance status", now in `docs/project/current-status.md`).
 
 ## 5. Active Riding and geolocation
 
@@ -96,7 +97,8 @@ Web Activity, or Play Store listing.
   not re-proven here.
 - Real screen-dimming/battery-saver interaction on an Android device —
   **(Device)**. Already verified once on the user's iPhone, per CLAUDE.md's
-  "Manual acceptance status" — **(Recheck vs iPhone)**.
+  "Manual acceptance status" (now in `docs/project/current-status.md`) —
+  **(Recheck vs iPhone)**.
 
 ## 7. Persistence, reload, and offline saved-route use
 

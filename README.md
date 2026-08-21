@@ -84,9 +84,11 @@ build under two projects: desktop Chromium, and Chromium's Pixel 7 device emulat
 The Android project proves mobile viewport/UA/touch behaviour under a real Chromium engine — it is
 **not** a real Android phone or WebView, and does not substitute for one. iOS-specific behaviour
 (installation, background suspension, on-bike GPS) and genuine Android-hardware behaviour both
-still need manual, real-device acceptance. `CLAUDE.md`'s "Manual acceptance status" ledger is the
-authoritative record of what has actually been confirmed that way, including bicycle field tests
-that remain outstanding — do not treat automated coverage alone as field verification.
+still need manual, real-device acceptance.
+[`docs/project/current-status.md`](./docs/project/current-status.md)'s "Manual acceptance status"
+ledger (summarised in `CLAUDE.md`) is the authoritative record of what has actually been confirmed
+that way, including bicycle field tests that remain outstanding — do not treat automated coverage
+alone as field verification.
 
 **Known limitations:**
 
@@ -103,7 +105,8 @@ that remain outstanding — do not treat automated coverage alone as field verif
   — a deliberate, cheap-write simplification.
 - A number of thresholds (off-route classification, low-zoom route/marker legibility, climb and
   route-completion detection) are reasoned starting points rather than values tuned against real
-  ride data; see the relevant sections of `CLAUDE.md` for their rationale and status.
+  ride data; see the relevant completed items in
+  [`docs/project/history/`](./docs/project/history/README.md) for their rationale and status.
 
 ## OpenRouteService setup
 
@@ -205,10 +208,11 @@ response shape.
 ## Project documentation
 
 This README is a snapshot of current capabilities. [`CLAUDE.md`](./CLAUDE.md) is the authoritative
-specification and governs all future work on this repository: full product requirements,
-architecture rationale, documented algorithms and thresholds, the complete slice-by-slice
-implementation and decision record, the manual acceptance ledger, and the future backlog all live
-there rather than here.
+specification governing all future work on this repository — durable product requirements,
+architecture rationale, and documented algorithms and thresholds. The complete slice-by-slice
+implementation and decision record, the full manual acceptance ledger, and the future backlog now
+live in [`docs/project/`](./docs/project/README.md), split into bounded files linked from
+`CLAUDE.md` itself; start at [`docs/project/README.md`](./docs/project/README.md) for the map.
 [`docs/android-chrome-acceptance.md`](./docs/android-chrome-acceptance.md) holds the Android-
 specific acceptance checklist and its automated/real-device tagging.
 
