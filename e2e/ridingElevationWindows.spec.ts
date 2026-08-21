@@ -99,13 +99,13 @@ test("offers the reduced Full/2 km/10 km button set, with 2 km selected on a fre
   );
   await expect
     .poll(async () => guideLabelLocator(page).allTextContents(), { timeout: 15_000 })
-    .toEqual(["+1 km"]);
+    .toEqual(["1 km"]);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
 
-test("the 10 km view shows all four +2/+4/+6/+8 km guides at a mid-route position", async ({
+test("the 10 km view shows all four 2/4/6/8 km guides at a mid-route position", async ({
   page,
   context,
 }) => {
@@ -141,13 +141,13 @@ test("the 10 km view shows all four +2/+4/+6/+8 km guides at a mid-route positio
   });
   await expect
     .poll(async () => guideLabelLocator(page).allTextContents(), { timeout: 15_000 })
-    .toEqual(["+1 km"]);
+    .toEqual(["1 km"]);
 
   await page.getByRole("button", { name: "10 km" }).click();
 
   await expect
     .poll(async () => guideLabelLocator(page).allTextContents(), { timeout: 15_000 })
-    .toEqual(["+2 km", "+4 km", "+6 km", "+8 km"]);
+    .toEqual(["2 km", "4 km", "6 km", "8 km"]);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
@@ -190,11 +190,11 @@ test("guides are progressively omitted as the rider approaches the route finish 
   await page.getByRole("button", { name: "10 km" }).click();
   await expect
     .poll(async () => guideLabelLocator(page).allTextContents(), { timeout: 15_000 })
-    .toEqual(["+2 km", "+4 km", "+6 km", "+8 km"]);
+    .toEqual(["2 km", "4 km", "6 km", "8 km"]);
 
   // 22,500 m leaves only 2,500 m of route — the window truncates to
-  // [22500, 25000], so only the +2 km guide (at 24,500) still lands
-  // inside it; +4/+6/+8 km would fall past the route's own end and are
+  // [22500, 25000], so only the 2 km guide (at 24,500) still lands
+  // inside it; 4/6/8 km would fall past the route's own end and are
   // correctly omitted rather than clamped or hidden by CSS.
   await context.setGeolocation({
     latitude: FIXTURE_LAT,
@@ -203,7 +203,7 @@ test("guides are progressively omitted as the rider approaches the route finish 
   });
   await expect
     .poll(async () => guideLabelLocator(page).allTextContents(), { timeout: 15_000 })
-    .toEqual(["+2 km"]);
+    .toEqual(["2 km"]);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
@@ -212,7 +212,7 @@ test("guides are progressively omitted as the rider approaches the route finish 
 test.describe("phone viewport", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("no horizontal overflow with the reduced button row and guide captions", async ({
+  test("no document overflow, horizontal or vertical, with the reduced button row and guide labels", async ({
     page,
     context,
   }) => {
@@ -247,10 +247,22 @@ test.describe("phone viewport", () => {
     await page.getByRole("button", { name: "10 km" }).click();
     await expect
       .poll(async () => guideLabelLocator(page).allTextContents(), { timeout: 15_000 })
-      .toEqual(["+2 km", "+4 km", "+6 km", "+8 km"]);
+      .toEqual(["2 km", "4 km", "6 km", "8 km"]);
 
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(390);
+
+    // The reserved label gutter (backlog item 70) must not push the fixed
+    // Riding shell into needing its own internal scroll at ordinary text
+    // size — this is the worst case already on screen: the 10 km view
+    // with all four guides showing.
+    const profilePaneOverflow = await page.evaluate(() => {
+      const pane = document.querySelector(".ride-profile-pane--immersive");
+      if (!pane) return null;
+      return pane.scrollHeight - pane.clientHeight;
+    });
+    expect(profilePaneOverflow).not.toBeNull();
+    expect(profilePaneOverflow).toBeLessThanOrEqual(0);
 
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
     expect(consoleErrors).toEqual([]);

@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { RoutePoint } from "../../domain/types.ts";
 import { hasAnyElevation } from "../../navigation/elevation.ts";
 import type { ClassifiedSegment } from "../../navigation/gradient.ts";
@@ -107,16 +108,20 @@ export interface ElevationChartProps {
    * resolves to a distance, even one that lands on an ordinary section;
    * it is the caller's job to decide that means no selection change. */
   onTapDistance?: (distanceMetres: number) => void;
-  /** Relative "ahead of the rider" distance guides (backlog item 54) —
-   * e.g. one +1 km guide for a 2 km rolling window, four +2/+4/+6/+8 km
-   * guides for a 10 km one. Route-global, consistent with `domain`/
-   * `marker`. Rendered beneath the profile/marker (paints first, directly
-   * after the tap-target rect) so they never obscure the elevation line,
-   * marker dot, or a selected-feature stroke bump, and are always
-   * `pointerEvents="none"` so they never intercept
-   * `rect.elevation-chart-tap-target`. Omitting this prop (or passing an
-   * empty array) renders no guides and no guide caption — every existing
-   * caller is unaffected. */
+  /** Relative "ahead of the rider" distance guides (backlog item 54,
+   * presentation simplified by item 70) — e.g. one 1 km guide for a 2 km
+   * rolling window, four 2/4/6/8 km guides for a 10 km one. Route-global,
+   * consistent with `domain`/`marker`. Each guide is a full-height line
+   * (mirroring the position marker) with its label in a reserved bottom
+   * gutter, added to the outer SVG height only when guides are present.
+   * Rendered beneath the profile/marker (paints first, directly after the
+   * tap-target rect) so they never obscure the elevation line, marker dot,
+   * or a selected-feature stroke bump, and are always `pointerEvents="none"`
+   * so they never intercept `rect.elevation-chart-tap-target`. Their
+   * meaning is exposed to assistive technology via the chart svg's own
+   * `aria-describedby`, not a visible caption. Omitting this prop (or
+   * passing an empty array) renders no guides, no gutter and no
+   * description — every existing caller is unaffected. */
   distanceGuides?: readonly ElevationChartDistanceGuideInput[];
   /** Renders a filled area under the profile, down to the chart's own
    * padded lower elevation bound, coloured per detailed local-gradient
@@ -171,19 +176,41 @@ const SELECTED_STROKE_WIDTH_BONUS = 1;
  * ("5 4"), so a guide is never confusable with the stale-progress-marker
  * or completed-segment treatments even at a glance outdoors. */
 const DISTANCE_GUIDE_DASHARRAY = "2 4";
-/** A short tick, not a full-height line like the position marker's — a
- * restrained, non-dominant vertical treatment (backlog item 54). */
-const DISTANCE_GUIDE_TICK_HEIGHT = 14;
-const DISTANCE_GUIDE_LABEL_Y = 24;
 const DISTANCE_GUIDE_STROKE_WIDTH = 1;
 /** Pixel distance from either chart edge inside which a guide's label
  * anchor flips from centred to edge-aligned, so a guide at/near the right
  * edge of a route-end-truncated window never renders clipped/overflowing
  * text (backlog item 54's explicit requirement). */
 const DISTANCE_GUIDE_EDGE_MARGIN_PIXELS = 24;
+/** Reserved bottom gutter, added to the outer SVG/viewBox height only when
+ * distance guides are present (backlog item 70) — keeps every other
+ * geometry (profile, marker, tap target, climb baseline) keyed to the
+ * unchanged `height` prop, so labels have somewhere readable to live
+ * without stretching or shrinking the plotted elevation itself. */
+const DISTANCE_GUIDE_GUTTER_HEIGHT = 18;
+/** A guide label's y-position, measured down from the plot bottom
+ * (`height`) into the gutter — leaves separation both from the plotted
+ * profile above and the final viewBox edge below. */
+const DISTANCE_GUIDE_LABEL_OFFSET_Y = 13;
 
 function distanceGuideLabel(aheadMetres: number): string {
-  return `+${String(aheadMetres / 1000)} km`;
+  return `${String(aheadMetres / 1000)} km`;
+}
+
+/** An accessible-only description of the guides shown, since backlog item
+ * 70 removes the equivalent visible prose caption — e.g. "Distance guides
+ * ahead at 1 kilometre" or "Distance guides ahead at 2, 4, 6 and 8
+ * kilometres". Only called when at least one guide is present. */
+function formatDistanceGuideDescription(
+  guides: readonly ElevationChartDistanceGuideInput[],
+): string {
+  const values = guides.map((guide) => String(guide.aheadMetres / 1000));
+  const unit = values.length === 1 ? "kilometre" : "kilometres";
+  const joined =
+    values.length === 1
+      ? (values[0] ?? "")
+      : `${values.slice(0, -1).join(", ")} and ${values.at(-1) ?? ""}`;
+  return `Distance guides ahead at ${joined} ${unit}`;
 }
 
 function distanceGuideTextAnchor(x: number, width: number): "start" | "middle" | "end" {
@@ -217,6 +244,8 @@ export function ElevationChart({
   width = DEFAULT_WIDTH,
   height = DEFAULT_HEIGHT,
 }: ElevationChartProps) {
+  const distanceGuideDescriptionId = useId();
+
   if (points.length === 0) {
     return <p>No route loaded.</p>;
   }
@@ -236,6 +265,12 @@ export function ElevationChart({
   }
 
   const hasGaps = points.some((point) => point.elevationMetres === null);
+
+  const hasDistanceGuides = distanceGuides.length > 0;
+  // The outer SVG/viewBox height grows only to add the label gutter; every
+  // other geometry below (profile, marker, tap target, climb baseline)
+  // stays keyed to the unchanged `height` prop, the plotting height.
+  const outerHeight = height + (hasDistanceGuides ? DISTANCE_GUIDE_GUTTER_HEIGHT : 0);
 
   // Same outer length/order as geometry.segments — index-aligned below.
   const featureRuns = routeFeatures
@@ -348,11 +383,12 @@ export function ElevationChart({
   return (
     <figure aria-label={ariaLabel ?? "Elevation profile"}>
       <svg
-        viewBox={`0 0 ${String(width)} ${String(height)}`}
+        viewBox={`0 0 ${String(width)} ${String(outerHeight)}`}
         width="100%"
-        height={height}
+        height={outerHeight}
         role="img"
         aria-label={ariaLabel ?? "Elevation profile chart"}
+        aria-describedby={hasDistanceGuides ? distanceGuideDescriptionId : undefined}
       >
         {onTapDistance && (
           <rect
@@ -365,7 +401,7 @@ export function ElevationChart({
             className="elevation-chart-tap-target"
           />
         )}
-        {distanceGuides.length > 0 && (
+        {hasDistanceGuides && (
           <g pointerEvents="none">
             {distanceGuides.map((guide) => {
               const x = distanceToX(guide.distanceFromStartMetres, resolvedDomain, width);
@@ -375,7 +411,7 @@ export function ElevationChart({
                     x1={x}
                     x2={x}
                     y1={0}
-                    y2={DISTANCE_GUIDE_TICK_HEIGHT}
+                    y2={height}
                     stroke="currentColor"
                     strokeWidth={DISTANCE_GUIDE_STROKE_WIDTH}
                     strokeOpacity={0.5}
@@ -384,7 +420,7 @@ export function ElevationChart({
                   />
                   <text
                     x={x}
-                    y={DISTANCE_GUIDE_LABEL_Y}
+                    y={height + DISTANCE_GUIDE_LABEL_OFFSET_Y}
                     textAnchor={distanceGuideTextAnchor(x, width)}
                     fontSize={9}
                     fill="currentColor"
@@ -549,11 +585,9 @@ export function ElevationChart({
           {formatDistanceKm(resolvedDomain.endDistanceMetres)}.
         </p>
       )}
-      {distanceGuides.length > 0 && (
-        <p className="elevation-chart-distance-guides-caption">
-          {`Distance guides ahead: ${distanceGuides
-            .map((guide) => distanceGuideLabel(guide.aheadMetres))
-            .join(", ")}.`}
+      {hasDistanceGuides && (
+        <p id={distanceGuideDescriptionId} className="visually-hidden">
+          {formatDistanceGuideDescription(distanceGuides)}
         </p>
       )}
     </figure>

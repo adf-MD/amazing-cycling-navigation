@@ -122,27 +122,6 @@ _Category: Platform compatibility_
 
 ---
 
-<a id="item-70"></a>
-
-## Item 70 — Simplify 2 km/10 km elevation distance guides
-
-_Category: Riding elevation enhancement_
-
-70. **Simplify 2 km/10 km elevation distance guides**
-    - Refines and simplifies item 54's already-shipped distance-guide feature; item 54's own text is left untouched, but this item supersedes several of its presentation details once implemented.
-    - Confirmed current implementation (source-verified). Caption text, to be removed entirely: `` `Distance guides ahead: ${...}.` `` — e.g. "Distance guides ahead: +1 km." (2 km view, one guide) or "Distance guides ahead: +2 km, +4 km, +6 km, +8 km." (10 km view, four guides) — rendered in `ElevationChart.tsx` as a `<p className="elevation-chart-distance-guides-caption">` below the SVG. Label format, to lose its leading "+": `` `+${aheadMetres/1000} km` `` via `distanceGuideLabel`. Guide-line geometry, to become full-height: currently a short, deliberately restrained `DISTANCE_GUIDE_TICK_HEIGHT = 14` px tick from `y=0` (chart top) downward only, with the label at `DISTANCE_GUIDE_LABEL_Y = 24`, inside the SVG plot area near the top — in contrast to the existing position marker, which already spans the full chart height (`y1={0} y2={height}`), the precedent to mirror. `viewBox="0 0 width height"` (default 320×96); `distanceToX`/`elevationToY` (`elevationChartGeometry.ts`) map the full `[0,height]` range directly to elevation, with no existing reserved header/footer gutter inside the SVG — the profile line, guide ticks and marker all currently share the same plot box. The only existing "gutter" text is the HTML `<figcaption>` (elevation min/max) and the guide/marker captions, rendered as ordinary HTML below the `<svg>`, outside its coordinate system.
-    - Settled visual change:
-      - Extend guide lines through the full chart plotting height, mirroring the existing position marker's own full-height precedent.
-      - Place labels at the bottom, in a reserved/readable gutter, rather than inside the plot area near the top. Achieving this requires either growing the SVG's own height/viewBox to add a bottom gutter, or moving the guide labels out of the SVG into HTML — this architectural choice is left to implementation time, not prescribed here.
-      - Use "1 km"/"2 km"/"4 km" etc., never "+1 km"/"+2 km" — drop the leading "+" from every guide label.
-      - Remove the visible prose caption (`elevation-chart-distance-guides-caption`) entirely.
-      - The 2 km view retains its single 1 km guide; the 10 km view retains its four 2/4/6/8 km guides — no change to which offsets are shown, only to how they are drawn and labelled.
-    - Confirmed structurally, from item 54's own already-shipped design: the `distanceGuides` prop is only ever passed by `RidingScreen.tsx`'s plain "upcoming rolling window" (2 km/10 km) branch — Full view, Climb view, the pre-ride whole-route chart, the pre-ride selected-climb preview, and Planning's chart never receive it. "Full/Climb/Planning must not gain guides" is therefore already true by construction and must be preserved/re-proven by this item's own tests, not newly built.
-    - Preserve accessible chart meaning without reintroducing redundant visible explanatory text — the guides' accessible description must not regress merely because the visible caption is removed.
-    - Require coverage of route-end-truncated windows and labels near either edge, so lines/text neither clip nor collide with the profile line or baseline, alongside the existing item 54 chart tests updated for the new geometry/label format.
-
----
-
 <a id="item-71"></a>
 
 ## Item 71 — Preview the next recognised climb during active Riding and improve climb-card hierarchy

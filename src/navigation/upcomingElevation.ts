@@ -169,9 +169,9 @@ export function buildFullProfileMarker(
  * `distanceFromStartMetres` is in the same route-global space as
  * `UpcomingElevationWindow`'s own bounds and `ElevationChart`'s `domain`/
  * `marker` contracts — never rebased. `aheadMetres` is the value actually
- * shown to the rider ("+1 km" etc.) and is carried alongside the resolved
- * distance so a caller/renderer never has to re-derive it by subtracting
- * the window's own start back out. */
+ * shown to the rider ("1 km" etc., backlog item 70) and is carried
+ * alongside the resolved distance so a caller/renderer never has to
+ * re-derive it by subtracting the window's own start back out. */
 export interface ElevationDistanceGuide {
   distanceFromStartMetres: number;
   aheadMetres: number;

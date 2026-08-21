@@ -5697,7 +5697,7 @@ describe("RidingScreen", () => {
       ).map((element) => element.textContent);
     }
 
-    it("shows a single +1 km guide with the default 2 km view", async () => {
+    it("shows a single 1 km guide with the default 2 km view", async () => {
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
       render(
@@ -5713,11 +5713,11 @@ describe("RidingScreen", () => {
 
       await screen.findByRole("group", { name: "Elevation profile view" });
       await waitFor(() => {
-        expect(guideLabels()).toEqual(["+1 km"]);
+        expect(guideLabels()).toEqual(["1 km"]);
       });
     });
 
-    it("shows four guides (+2/+4/+6/+8 km) after switching to the 10 km view", async () => {
+    it("shows four guides (2/4/6/8 km) after switching to the 10 km view", async () => {
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
       render(
@@ -5735,7 +5735,7 @@ describe("RidingScreen", () => {
       await user.click(screen.getByRole("button", { name: "10 km" }));
 
       await waitFor(() => {
-        expect(guideLabels()).toEqual(["+2 km", "+4 km", "+6 km", "+8 km"]);
+        expect(guideLabels()).toEqual(["2 km", "4 km", "6 km", "8 km"]);
       });
     });
 
@@ -5752,7 +5752,7 @@ describe("RidingScreen", () => {
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAtDistance(stub, 2000, 1000);
       await waitFor(() => {
-        expect(guideLabels()).toEqual(["+1 km"]);
+        expect(guideLabels()).toEqual(["1 km"]);
       });
       const firstX = document
         .querySelector("line.elevation-chart-distance-guide")
@@ -5760,7 +5760,7 @@ describe("RidingScreen", () => {
       expect(firstX).toBeTruthy();
 
       // Advances well within the unrouted, un-truncated part of the
-      // route, so the 2 km window's own +1 km guide keeps the same
+      // route, so the 2 km window's own 1 km guide keeps the same
       // relative fraction of the window regardless of the rider's
       // absolute route-global position.
       emitFixAtDistance(stub, 6000, 2000);
@@ -5784,7 +5784,7 @@ describe("RidingScreen", () => {
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       // 500 m remain to the finish — less than the 2 km view's own
-      // +1 km offset, so the window is truncated short of that guide.
+      // 1 km offset, so the window is truncated short of that guide.
       emitFixAtDistance(stub, 19500);
       await switchToProfile(user);
 
@@ -5808,7 +5808,7 @@ describe("RidingScreen", () => {
       emitFixAtDistance(stub, 2000);
       await switchToProfile(user);
       await waitFor(() => {
-        expect(guideLabels()).toEqual(["+1 km"]);
+        expect(guideLabels()).toEqual(["1 km"]);
       });
 
       await user.click(await screen.findByRole("button", { name: "Full" }));
@@ -5833,7 +5833,7 @@ describe("RidingScreen", () => {
       expect(guideLabels()).toEqual([]);
     });
 
-    it("renders a plain, non-live-region caption listing the guide labels", async () => {
+    it("never renders the old visible distance-guides caption, exposing an accessible description instead", async () => {
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
       render(
@@ -5846,13 +5846,21 @@ describe("RidingScreen", () => {
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAtDistance(stub, 2000);
       await waitFor(() => {
-        expect(guideLabels()).toEqual(["+1 km"]);
+        expect(guideLabels()).toEqual(["1 km"]);
       });
 
-      const caption = document.querySelector(".elevation-chart-distance-guides-caption");
-      expect(caption).not.toBeNull();
-      expect(caption?.textContent).toContain("+1 km");
-      expect(caption?.getAttribute("aria-live")).toBeNull();
+      expect(
+        document.querySelector(".elevation-chart-distance-guides-caption"),
+      ).toBeNull();
+
+      const guideSvg = document
+        .querySelector("text.elevation-chart-distance-guide-label")
+        ?.closest("svg");
+      const describedById = guideSvg?.getAttribute("aria-describedby");
+      expect(describedById).toBeTruthy();
+      const description = describedById ? document.getElementById(describedById) : null;
+      expect(description?.textContent).toBe("Distance guides ahead at 1 kilometre");
+      expect(description?.getAttribute("aria-live")).toBeNull();
     });
 
     it("a tap still resolves correctly near a guide's position — guides do not intercept the tap target", async () => {
@@ -5879,12 +5887,12 @@ describe("RidingScreen", () => {
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAtDistance(stub, 2000);
       await waitFor(() => {
-        expect(guideLabels()).toEqual(["+1 km"]);
+        expect(guideLabels()).toEqual(["1 km"]);
       });
 
       const hitTarget = document.querySelector("rect.elevation-chart-tap-target");
       if (!hitTarget) throw new Error("expected a tap-target rect");
-      // Clicks exactly where the +1 km guide is drawn (window [2000,4000],
+      // Clicks exactly where the 1 km guide is drawn (window [2000,4000],
       // guide at 3000 -> x = 160, the chart's horizontal midpoint) — the
       // guide must not swallow this event; the chart's own existing tap
       // machinery (proven elsewhere) is what actually resolves it.

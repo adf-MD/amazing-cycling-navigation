@@ -722,7 +722,7 @@ describe("ElevationChart", () => {
     });
   });
 
-  describe("distance guides (backlog item 54)", () => {
+  describe("distance guides (backlog items 54, 70)", () => {
     it("renders no guide elements when distanceGuides is omitted", () => {
       const points = buildPoints([
         [0, 10],
@@ -743,7 +743,7 @@ describe("ElevationChart", () => {
       expect(container.querySelector("line.elevation-chart-distance-guide")).toBeNull();
     });
 
-    it("renders a guide line at the pixel position implied by its route-global distance", () => {
+    it("renders a full-plot-height guide line at the pixel position implied by its route-global distance", () => {
       const points = buildPoints([
         [0, 10],
         [1000, 40],
@@ -759,9 +759,13 @@ describe("ElevationChart", () => {
       // Default domain [0, 1000] over default width 320: 250 m -> x = 80.
       expect(guideLine?.getAttribute("x1")).toBe("80");
       expect(guideLine?.getAttribute("x2")).toBe("80");
+      // Full default plotting height (96), mirroring the position marker —
+      // not the old 14 px top-anchored tick.
+      expect(guideLine?.getAttribute("y1")).toBe("0");
+      expect(guideLine?.getAttribute("y2")).toBe("96");
     });
 
-    it("labels each guide using the relative +N km format", () => {
+    it("labels each guide using the relative N km format, with no leading plus sign", () => {
       const points = buildPoints([
         [0, 10],
         [10000, 40],
@@ -777,9 +781,68 @@ describe("ElevationChart", () => {
           ]}
         />,
       );
-      expect(screen.getByText("+2 km")).toBeInTheDocument();
-      expect(screen.getByText("+4 km")).toBeInTheDocument();
-      expect(screen.getByText("+8 km")).toBeInTheDocument();
+      expect(screen.getByText("2 km")).toBeInTheDocument();
+      expect(screen.getByText("4 km")).toBeInTheDocument();
+      expect(screen.getByText("8 km")).toBeInTheDocument();
+      expect(screen.queryByText("+2 km")).not.toBeInTheDocument();
+    });
+
+    it("places guide labels in a reserved gutter below the plot, inside the final visual bounds", () => {
+      const points = buildPoints([
+        [0, 10],
+        [1000, 40],
+      ]);
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          distanceGuides={[{ distanceFromStartMetres: 250, aheadMetres: 1000 }]}
+        />,
+      );
+      const svg = container.querySelector("svg");
+      const label = container.querySelector("text.elevation-chart-distance-guide-label");
+      expect(svg).not.toBeNull();
+      expect(label).not.toBeNull();
+      const labelY = Number(label?.getAttribute("y"));
+      // Default plotting height is 96 — the label must sit below it, in
+      // the gutter, not at the old inside-plot y=24.
+      expect(labelY).toBeGreaterThan(96);
+      // The label must land inside the svg's own final viewBox/height —
+      // proving the gutter was actually reserved for it, not clipped.
+      const viewBoxParts = svg?.getAttribute("viewBox")?.split(" ") ?? [];
+      const outerHeight = Number(viewBoxParts[3]);
+      expect(svg?.getAttribute("height")).toBe(String(outerHeight));
+      expect(outerHeight).toBeGreaterThanOrEqual(labelY);
+    });
+
+    it("does not grow the svg/viewBox height when there are no distance guides", () => {
+      const points = buildPoints([
+        [0, 10],
+        [1000, 40],
+      ]);
+      const { container } = render(<ElevationChart points={points} />);
+      const svg = container.querySelector("svg");
+      expect(svg?.getAttribute("height")).toBe("96");
+      expect(svg?.getAttribute("viewBox")).toBe("0 0 320 96");
+    });
+
+    it("keeps the tap target and position marker at the unchanged plotting height even with guides present", () => {
+      const points = buildPoints([
+        [0, 10],
+        [1000, 40],
+      ]);
+      const onTapDistance = vi.fn<(distanceMetres: number) => void>();
+      const { container } = render(
+        <ElevationChart
+          points={points}
+          marker={{ distanceFromStartMetres: 500, elevationMetres: 25, stale: false }}
+          onTapDistance={onTapDistance}
+          distanceGuides={[{ distanceFromStartMetres: 250, aheadMetres: 1000 }]}
+        />,
+      );
+      const hitTarget = container.querySelector("rect.elevation-chart-tap-target");
+      const markerLine = container.querySelector("line.elevation-chart-marker");
+      expect(hitTarget?.getAttribute("height")).toBe("96");
+      expect(markerLine?.getAttribute("y2")).toBe("96");
     });
 
     it("gives guides a dash pattern distinct from both the stale-marker and completed-segment dash patterns", () => {
@@ -888,7 +951,7 @@ describe("ElevationChart", () => {
       expect(labels[2]?.getAttribute("text-anchor")).toBe("end");
     });
 
-    it("renders no guide caption when distanceGuides is empty or omitted", () => {
+    it("never renders the old visible distance-guides caption, with or without guides", () => {
       const points = buildPoints([
         [0, 10],
         [1000, 40],
@@ -899,13 +962,18 @@ describe("ElevationChart", () => {
       ).toBeNull();
       omitted.unmount();
 
-      const empty = render(<ElevationChart points={points} distanceGuides={[]} />);
+      const withGuides = render(
+        <ElevationChart
+          points={points}
+          distanceGuides={[{ distanceFromStartMetres: 250, aheadMetres: 1000 }]}
+        />,
+      );
       expect(
-        empty.container.querySelector(".elevation-chart-distance-guides-caption"),
+        withGuides.container.querySelector(".elevation-chart-distance-guides-caption"),
       ).toBeNull();
     });
 
-    it("renders a plain, non-live-region caption listing every guide's label, without disturbing the chart's own accessible name", () => {
+    it("exposes an equivalent accessible description for multiple guides, without disturbing the chart's own accessible name", () => {
       const points = buildPoints([
         [0, 10],
         [10000, 40],
@@ -922,20 +990,47 @@ describe("ElevationChart", () => {
           ]}
         />,
       );
-      const caption = container.querySelector(".elevation-chart-distance-guides-caption");
-      expect(caption).not.toBeNull();
-      expect(caption?.textContent).toContain("+2 km");
-      expect(caption?.textContent).toContain("+4 km");
-      expect(caption?.textContent).toContain("+6 km");
-      expect(caption?.textContent).toContain("+8 km");
-      expect(caption?.getAttribute("aria-live")).toBeNull();
+      const svg = screen.getByRole("img", { name: "Elevation profile chart" });
+      const describedById = svg.getAttribute("aria-describedby");
+      expect(describedById).toBeTruthy();
+      // useId()-generated ids (e.g. ":r0:") contain characters that are
+      // invalid in an unescaped CSS selector — look the element up by id
+      // directly rather than via container.querySelector("#" + id).
+      const description = describedById ? document.getElementById(describedById) : null;
+      expect(description).not.toBeNull();
+      expect(description?.tagName).toBe("P");
+      expect(description?.className).toContain("visually-hidden");
+      expect(description?.getAttribute("aria-live")).toBeNull();
+      expect(description?.textContent).toBe(
+        "Distance guides ahead at 2, 4, 6 and 8 kilometres",
+      );
 
-      expect(
-        screen.getByRole("img", { name: "Elevation profile chart" }),
-      ).toBeInTheDocument();
       expect(
         container.querySelector('figure[aria-label="Elevation profile"]'),
       ).not.toBeNull();
+    });
+
+    it("describes a single guide in the singular, and omits aria-describedby entirely when there are no guides", () => {
+      const points = buildPoints([
+        [0, 10],
+        [1000, 40],
+      ]);
+      const withGuide = render(
+        <ElevationChart
+          points={points}
+          distanceGuides={[{ distanceFromStartMetres: 250, aheadMetres: 1000 }]}
+        />,
+      );
+      const svgWithGuide = withGuide.container.querySelector("svg");
+      const describedById = svgWithGuide?.getAttribute("aria-describedby");
+      expect(describedById).toBeTruthy();
+      const description = describedById ? document.getElementById(describedById) : null;
+      expect(description?.textContent).toBe("Distance guides ahead at 1 kilometre");
+      withGuide.unmount();
+
+      const withoutGuides = render(<ElevationChart points={points} />);
+      const svgWithoutGuides = withoutGuides.container.querySelector("svg");
+      expect(svgWithoutGuides?.hasAttribute("aria-describedby")).toBe(false);
     });
   });
 

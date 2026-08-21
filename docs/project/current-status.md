@@ -9,7 +9,7 @@ See [README.md](README.md) for the full documentation map.
 
 ---
 
-## Manual acceptance status (17 August 2026)
+## Manual acceptance status (21 August 2026)
 
 This is the authoritative manual-test ledger. It records verification evidence only; the behaviour contracts remain defined by the sections above and are not restated here.
 
@@ -50,6 +50,11 @@ Do not treat the item above as fully verified until it has been tested on a movi
 ### Outstanding: item 69's remaining-ascent compact status card
 
 - **Remaining positive ascent in the active route summary (item 69):** shipped with automated (Vitest/Playwright Chromium and Chromium-emulated Android) evidence only — no physical iPhone or Android verification is claimed yet. Real-device acceptance still needed: legibility of the three-line compact card (route status, remaining distance/ascent, GPS) while mounted and moving outdoors, and that the remaining-ascent figure updates sensibly over a real ride through genuine climbs and descents, not only synthetic GPS sequences. This item also harmonised the existing remaining-distance figure onto the frozen/reliable progress source (previously the raw/live match) — its sensible behaviour during a real off-route excursion and recovery should be re-confirmed alongside the new ascent figure, not assumed unchanged.
+- **Preliminary first look (21 August 2026):** after this item's deployment, the user reported "At first glance it looks like the ascent works." This is a first-glance, non-riding observation only — it does not itself satisfy the moving real-device checks above, including behaviour through genuine climbs and descents or during a real off-route excursion and recovery, both of which remain outstanding.
+
+### Outstanding: item 70's distance-guide gutter presentation
+
+- **Simplify 2 km/10 km elevation distance guides (item 70):** shipped with automated (Vitest/Playwright Chromium and Chromium-emulated Android) evidence only — no physical iPhone or Android verification is claimed yet. Real-device acceptance still needed: legibility of the full-height guide lines and their bottom-gutter labels while mounted and moving outdoors, in bright daylight and with gloves; and that the fixed Riding Profile pane genuinely does not need to scroll on a real device at normal text size with the 10 km view's four guides showing (only Playwright's synthetic viewport has been checked).
 
 ---
 
