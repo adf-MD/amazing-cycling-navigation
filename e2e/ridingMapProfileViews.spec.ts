@@ -403,7 +403,7 @@ test.describe("390×844 phone viewport", () => {
 
     const pauseButton = page.getByRole("button", { name: "Pause" });
     const endButton = page.getByRole("button", { name: "End ride" });
-    const checkbox = page.getByRole("checkbox", { name: /keep screen on/i });
+    const checkbox = page.getByRole("checkbox", { name: /screen on/i });
     await expect(checkbox).toBeVisible();
     const [pauseBoxLarge, endBoxLarge, checkboxLabelBox] = await Promise.all([
       pauseButton.boundingBox(),
@@ -643,7 +643,7 @@ test("wake-lock control and its popover remain usable from either view with no b
   await page.goto("/");
   await importAndStartRiding(page, "map-profile-wakelock-route");
 
-  const checkbox = page.getByRole("checkbox", { name: /keep screen on/i });
+  const checkbox = page.getByRole("checkbox", { name: /screen on/i });
   await expect(checkbox).toBeVisible();
 
   // Backlog item 68: the wake-lock control now lives further down the
@@ -656,7 +656,7 @@ test("wake-lock control and its popover remain usable from either view with no b
     throw new Error("expected the map container to have a bounding box");
   }
 
-  const infoButton = page.getByRole("button", { name: "About Keep screen on" });
+  const infoButton = page.getByRole("button", { name: "About Screen on" });
   await infoButton.click();
   await expect(page.getByRole("note")).toBeVisible();
 
@@ -705,7 +705,7 @@ test("portrait to landscape keeps the header, both views and the switcher usable
   // Backlog item 68: the merged wake-lock/status area's flex-wrap
   // behaviour is untested at a much wider/shorter viewport — prove the
   // checkbox stays reachable and non-overlapping post-rotation.
-  const checkbox = page.getByRole("checkbox", { name: /keep screen on/i });
+  const checkbox = page.getByRole("checkbox", { name: /screen on/i });
   await expect(checkbox).toBeVisible();
   const pauseButton = page.getByRole("button", { name: "Pause" });
   const [checkboxBox, pauseBoxLandscape] = await Promise.all([

@@ -115,7 +115,7 @@ test("shows the route, follows the GPS fix, and keeps camera controls operable, 
   expect(consoleErrors).toEqual([]);
 });
 
-test("Keep screen on: visible and requests a lock when supported", async ({
+test("Screen on: visible and requests a lock when supported", async ({
   page,
   context,
 }) => {
@@ -136,7 +136,7 @@ test("Keep screen on: visible and requests a lock when supported", async ({
   await page.goto("/");
   await startRiding(page);
 
-  const checkbox = page.getByRole("checkbox", { name: /keep screen on/i });
+  const checkbox = page.getByRole("checkbox", { name: /screen on/i });
   await expect(checkbox).toBeVisible();
   await checkbox.check();
   await expect(page.getByText("Screen staying awake.")).toBeAttached();
@@ -154,7 +154,7 @@ test("Keep screen on: visible and requests a lock when supported", async ({
   expect(consoleErrors).toEqual([]);
 });
 
-test("no Keep screen on control appears, and Riding still renders, when navigator.wakeLock is unsupported", async ({
+test("no Screen on control appears, and Riding still renders, when navigator.wakeLock is unsupported", async ({
   page,
   context,
 }) => {
@@ -180,9 +180,7 @@ test("no Keep screen on control appears, and Riding still renders, when navigato
   await page.goto("/");
   await startRiding(page);
 
-  await expect(
-    page.getByRole("checkbox", { name: /keep screen on/i }),
-  ).not.toBeAttached();
+  await expect(page.getByRole("checkbox", { name: /screen on/i })).not.toBeAttached();
   await expect(page.locator('[data-testid="map-container"] canvas')).toBeVisible();
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
@@ -216,7 +214,7 @@ test("a rejecting Wake Lock request surfaces the existing retry state without cr
   await page.goto("/");
   await startRiding(page);
 
-  const checkbox = page.getByRole("checkbox", { name: /keep screen on/i });
+  const checkbox = page.getByRole("checkbox", { name: /screen on/i });
   await expect(checkbox).toBeVisible();
   await checkbox.check();
 

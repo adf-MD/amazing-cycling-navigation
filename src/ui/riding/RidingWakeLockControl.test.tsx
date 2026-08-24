@@ -18,7 +18,7 @@ describe("RidingWakeLockControl", () => {
       />,
     );
 
-    expect(screen.getByRole("checkbox", { name: /keep screen on/i })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /screen on/i })).not.toBeChecked();
     expect(
       screen.queryByText(
         "Keeps the display on while Riding mode is visible. This may increase battery use.",
@@ -37,7 +37,7 @@ describe("RidingWakeLockControl", () => {
       />,
     );
 
-    expect(screen.getByRole("checkbox", { name: /keep screen on/i })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /screen on/i })).toBeChecked();
   });
 
   it("keeps the checkbox deliberately small, with its enclosing label carrying the real touch target", () => {
@@ -51,7 +51,7 @@ describe("RidingWakeLockControl", () => {
       />,
     );
 
-    const checkbox = screen.getByRole("checkbox", { name: /keep screen on/i });
+    const checkbox = screen.getByRole("checkbox", { name: /screen on/i });
     expect(checkbox).toHaveClass("wake-lock-checkbox");
     expect(checkbox.closest("label")).toHaveClass("wake-lock-label");
   });
@@ -69,7 +69,7 @@ describe("RidingWakeLockControl", () => {
       />,
     );
 
-    await user.click(screen.getByRole("checkbox", { name: /keep screen on/i }));
+    await user.click(screen.getByRole("checkbox", { name: /screen on/i }));
 
     expect(onToggleDesired).toHaveBeenCalledWith(true);
   });
@@ -147,12 +147,12 @@ describe("RidingWakeLockControl", () => {
     });
 
     await user.tab();
-    expect(screen.getByRole("checkbox", { name: /keep screen on/i })).toHaveFocus();
+    expect(screen.getByRole("checkbox", { name: /screen on/i })).toHaveFocus();
     await user.keyboard(" ");
     expect(onToggleDesired).toHaveBeenCalledWith(false);
 
     await user.tab();
-    expect(screen.getByRole("button", { name: "About Keep screen on" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "About Screen on" })).toHaveFocus();
 
     await user.tab();
     expect(screen.getByRole("button", { name: /tap to try again/i })).toHaveFocus();
@@ -178,7 +178,7 @@ describe("RidingWakeLockControl", () => {
       const user = userEvent.setup();
       renderControl();
 
-      const infoButton = screen.getByRole("button", { name: "About Keep screen on" });
+      const infoButton = screen.getByRole("button", { name: "About Screen on" });
       expect(infoButton).toHaveAttribute("aria-expanded", "false");
 
       await user.click(infoButton);
@@ -197,7 +197,7 @@ describe("RidingWakeLockControl", () => {
       const user = userEvent.setup();
       renderControl();
 
-      const infoButton = screen.getByRole("button", { name: "About Keep screen on" });
+      const infoButton = screen.getByRole("button", { name: "About Screen on" });
       await user.click(infoButton);
       expect(screen.getByRole("note")).toBeInTheDocument();
 
@@ -211,7 +211,7 @@ describe("RidingWakeLockControl", () => {
       const user = userEvent.setup();
       renderControl();
 
-      const infoButton = screen.getByRole("button", { name: "About Keep screen on" });
+      const infoButton = screen.getByRole("button", { name: "About Screen on" });
       await user.click(infoButton);
       await user.click(screen.getByRole("button", { name: "Close" }));
 
@@ -223,7 +223,7 @@ describe("RidingWakeLockControl", () => {
       const user = userEvent.setup();
       renderControl();
 
-      const infoButton = screen.getByRole("button", { name: "About Keep screen on" });
+      const infoButton = screen.getByRole("button", { name: "About Screen on" });
       await user.click(infoButton);
 
       await user.keyboard("{Escape}");
@@ -239,7 +239,7 @@ describe("RidingWakeLockControl", () => {
       outsideButton.textContent = "outside";
       document.body.appendChild(outsideButton);
 
-      const infoButton = screen.getByRole("button", { name: "About Keep screen on" });
+      const infoButton = screen.getByRole("button", { name: "About Screen on" });
       await user.click(infoButton);
 
       await user.click(screen.getByText(/keeps the display on/i));
@@ -264,7 +264,7 @@ describe("RidingWakeLockControl", () => {
         />,
       );
 
-      await user.click(screen.getByRole("button", { name: "About Keep screen on" }));
+      await user.click(screen.getByRole("button", { name: "About Screen on" }));
       await user.click(screen.getByText(/keeps the display on/i));
 
       expect(onToggleDesired).not.toHaveBeenCalled();
@@ -288,9 +288,9 @@ describe("RidingWakeLockControl", () => {
         await Promise.resolve();
       });
 
-      await user.click(screen.getByRole("button", { name: "About Keep screen on" }));
+      await user.click(screen.getByRole("button", { name: "About Screen on" }));
 
-      await user.click(screen.getByRole("checkbox", { name: /keep screen on/i }));
+      await user.click(screen.getByRole("checkbox", { name: /screen on/i }));
       expect(onToggleDesired).toHaveBeenCalledWith(false);
       expect(screen.getByRole("note")).toBeInTheDocument();
 
@@ -311,7 +311,7 @@ describe("RidingWakeLockControl", () => {
         />,
       );
 
-      await user.click(screen.getByRole("button", { name: "About Keep screen on" }));
+      await user.click(screen.getByRole("button", { name: "About Screen on" }));
       expect(() => {
         unmount();
       }).not.toThrow();

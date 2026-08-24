@@ -95,13 +95,13 @@ export function RidingWakeLockControl({
               onToggleDesired(event.target.checked);
             }}
           />
-          Keep screen on
+          Screen on
         </label>
         <button
           type="button"
           className="wake-lock-info-button"
           ref={infoButtonRef}
-          aria-label="About Keep screen on"
+          aria-label="About Screen on"
           aria-expanded={isInfoOpen}
           aria-controls={infoId}
           onClick={() => {

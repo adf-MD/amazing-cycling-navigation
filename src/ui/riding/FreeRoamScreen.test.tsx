@@ -197,6 +197,44 @@ describe("FreeRoamScreen", () => {
     expect(fake.watches[0]?.disposed).toBe(true);
   });
 
+  it("shows a compact Offline indicator inside the status card while active, not a standalone paragraph", () => {
+    vi.stubGlobal("navigator", { onLine: false });
+    const fake = buildFakeGeolocationSource();
+    render(
+      <FreeRoamScreen
+        geolocationSource={fake.source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+    act(() => {
+      fake.watches[0]?.emitFix(SAMPLE_FIX);
+    });
+
+    const offline = screen.getByText("Offline");
+    expect(offline).toHaveAttribute("role", "status");
+    expect(screen.queryByText(/still work; map imagery may be unavailable/)).toBeNull();
+  });
+
+  it("shows both the offline indicator and a geolocation error together without duplicating either", () => {
+    vi.stubGlobal("navigator", { onLine: false });
+    const fake = buildFakeGeolocationSource();
+    render(
+      <FreeRoamScreen
+        geolocationSource={fake.source}
+        mapFactory={buildStubMapFactory().factory}
+      />,
+    );
+    act(() => {
+      fake.watches[0]?.emitError(ERROR);
+    });
+
+    expect(screen.getByText("Offline")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Location permission was denied. Allow location access in your browser settings to use Free roam.",
+    );
+    expect(screen.getAllByText(/Location permission was denied/)).toHaveLength(1);
+  });
+
   it("North-up and Follow controls are present while watching and toggle aria-pressed", async () => {
     const user = userEvent.setup();
     const fake = buildFakeGeolocationSource();
@@ -379,7 +417,7 @@ describe("FreeRoamScreen", () => {
         />,
       );
 
-      expect(screen.getByText("Keep screen on")).toBeInTheDocument();
+      expect(screen.getByText("Screen on")).toBeInTheDocument();
     });
 
     it("does not render the wake-lock control when navigator.wakeLock is absent", () => {
@@ -391,7 +429,7 @@ describe("FreeRoamScreen", () => {
         />,
       );
 
-      expect(screen.queryByText("Keep screen on")).toBeNull();
+      expect(screen.queryByText("Screen on")).toBeNull();
     });
 
     it("renders the immersive header (and its title) before the compact wake-lock control in DOM order", () => {
@@ -409,7 +447,7 @@ describe("FreeRoamScreen", () => {
         />,
       );
 
-      const checkbox = screen.getByRole("checkbox", { name: /keep screen on/i });
+      const checkbox = screen.getByRole("checkbox", { name: /screen on/i });
       const heading = screen.getByRole("heading", { name: "Free roam" });
 
       expect(

@@ -719,8 +719,40 @@ test.describe("390px phone viewport", () => {
     const retryBox = await retryButton.boundingBox();
     expect(retryBox).not.toBeNull();
     if (retryBox) {
+      // Backlog item 75 shrank the retry button (min-width 160px -> 112px)
+      // so the overlay reads as a compact notice rather than a dominant
+      // panel — still comfortably above the 44px touch-target floor.
       expect(retryBox.width).toBeGreaterThanOrEqual(44);
+      expect(retryBox.width).toBeLessThan(155);
       expect(retryBox.height).toBeGreaterThanOrEqual(44);
     }
   });
+});
+
+test("being offline alone, with no genuine tile/style failure, never shows a map-failure overlay", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ ...ROUTE_START, accuracy: 5 });
+
+  await installLocalMapStyleWithTileSource(page);
+
+  await page.goto("/");
+  await importAndStartRiding(page);
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await waitForMapFullyLoaded(mapContainer);
+
+  await context.setOffline(true);
+  try {
+    await expect(page.getByText("Offline")).toBeVisible();
+    await expect(page.getByTestId("tiles-unavailable-banner")).not.toBeAttached();
+    await expect(page.getByTestId("map-fallback-banner")).not.toBeAttached();
+    await expect(page.getByTestId("map-load-error")).not.toBeAttached();
+    // Already-rendered imagery stays usable while merely offline.
+    await expect(mapContainer.locator("canvas")).toBeVisible();
+  } finally {
+    await context.setOffline(false);
+  }
 });

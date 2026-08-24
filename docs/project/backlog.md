@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-Item 75 is the next selected implementation slice. Items 76–78 follow it in order as subsequent approved slices. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
+Item 76 is the next selected implementation slice. Items 77–78 follow it in order as subsequent approved slices. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Each entry reproduces its original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this).
 
@@ -119,37 +119,6 @@ _Category: Platform compatibility_
       4. **Conflict and recovery coverage:** an inbound share must respect the existing unfinished route/free-roam conflict guard (item 42's fail-closed `checkFreeRoamConflict`-style pattern) and must never silently replace an active session or Planning draft; it must work after a fresh install/relaunch. Add Playwright coverage where meaningful, then require real Android Chrome acceptance — Chromium/Playwright emulation cannot prove real OS share-sheet registration, matching this project's existing, repeatedly-stated distinction between the `android-chrome` Playwright project and genuine physical-device verification (item 25).
     - If step 1 finds only an `Open with` path and no Share/Send path, document that conclusively and record that no pure static-PWA solution is currently available for this exact flow — do not propose a native wrapper, Trusted Web Activity, APK, or other Android-specific packaging as a workaround; that would be a major architecture departure and is explicitly not approved by this backlog item.
     - Requires the "## Explicit non-goals" edit recorded above (item 61's own cross-reference) — that section stays in the root `CLAUDE.md` and already carries this cross-reference.
-
----
-
-<a id="item-75"></a>
-
-## Item 75 — Compact active-Riding status and recovery presentation
-
-_Category: Immersive Riding interface and resilience_
-
-75. **Compact active-Riding status and recovery presentation**
-    - Apply the agreed design to both route Riding and free roam:
-      - Move the wake-lock control inside the existing bordered route/GPS status card, not merely into a separate stacked wrapper near it.
-      - Use the compact visible label `Screen on` with its checkbox and information control. Retain an accessible name that explains the control fully.
-      - Preserve the proven wake-lock acquisition, release, retry, suspension and persistence lifecycle. This is a presentation/composition change, not a wake-lock rewrite.
-      - Preserve comfortable touch targets and the existing information popover without allowing it to resize the map or fixed shell.
-    - For route Riding, target this glance hierarchy:
-      1. top row: route status on the left and `[checkbox] Screen on` plus information on the right;
-      2. remaining distance and remaining ascent;
-      3. compact GPS freshness/accuracy and connectivity/recovery state.
-    - Use an analogous compact composition in free roam without inventing route-specific information.
-    - Consolidate active error/status presentation:
-      - Replace the large standalone offline paragraph with a compact `Offline` indication in the status card.
-      - Only show a map-specific failure overlay when imagery has actually failed. Being offline by itself must not claim that already-cached imagery is unavailable.
-      - Make the actual map-imagery overlay substantially smaller. Use concise non-technical wording such as `Map imagery unavailable` and retain an immediately reachable compact Retry action.
-      - Preserve item 67's automatic single retry on reconnection, manual retry, no-loop guarantee, camera preservation and technical Diagnostics logging.
-      - Replace the large standalone GPS error card with a compact, clearly urgent status row and an inline `Try again` action. Preserve the last known fix as stale and keep the existing recovery semantics.
-      - Avoid duplicated offline/map-failure messages.
-      - The simultaneous offline plus GPS-error case must leave a useful amount of map visible rather than allowing normal-flow cards to consume most of the screen.
-    - Do not cover the Map/Profile switcher, elevation-window controls, map camera controls, climb cue or required attribution.
-    - Preserve screen-reader announcements, focus recovery and visible error distinction. Compact must not mean silent.
-    - Prove phone portrait, landscape, enlarged text and the simultaneous failure combinations in route Riding and free roam. Real-device acceptance remains required.
 
 ---
 

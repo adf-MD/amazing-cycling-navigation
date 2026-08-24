@@ -499,7 +499,7 @@ button:focus-visible {
  * swap with the light/dark colour scheme. */
 .map-status-message {
   margin: 0;
-  padding: 4px 8px;
+  padding: 3px 6px;
   border-radius: 4px;
   background-color: rgb(0 0 0 / 60%);
   color: #ffffff;
@@ -518,7 +518,9 @@ button:focus-visible {
  * retry button — now shared by every retry-capable banner (at most one
  * ever renders, so one shared data-testid and one shared class are both
  * safe). min-height/min-width keep a real >=44x44px effective touch
- * target without turning the notice into a dominant panel. pointer-
+ * target without turning the notice into a dominant panel (backlog item
+ * 75 shrank min-width from 160px to 112px — still comfortably above the
+ * 44px floor, just no longer a wide standalone button). pointer-
  * events:auto re-enables clicking for this button specifically, since its
  * ancestor .map-status-overlay is pointer-events:none (see that rule's
  * own comment) — the one interactive element inside an otherwise
@@ -533,8 +535,9 @@ button:focus-visible {
   align-items: center;
   justify-content: center;
   min-height: 44px;
-  min-width: 160px;
-  margin-top: var(--space-8);
+  min-width: 112px;
+  padding: var(--space-4) var(--space-8);
+  margin-top: var(--space-4);
   pointer-events: auto;
 }
 
@@ -1375,10 +1378,16 @@ button:focus-visible {
   padding: var(--space-8);
 }
 
+/* Anchored from the right, not the left (backlog item 75): the control
+ * now sits at the right-hand end of the card's top row (space-between
+ * against the status label), so a left:0 anchor would extend the popover
+ * rightward from an already-right-of-centre point and overflow the
+ * viewport. Anchoring the same corner the control itself sits flush
+ * against keeps the popover growing back in towards the card instead. */
 .wake-lock-popover {
   position: absolute;
   top: calc(100% + var(--space-4));
-  left: 0;
+  right: 0;
   z-index: 20;
   min-width: 220px;
   max-width: calc(100vw - var(--space-32));
@@ -1406,24 +1415,16 @@ button:focus-visible {
   margin: 0;
 }
 
-/* Backlog item 68: the compact area shared by the wake-lock control and
- * the route/GPS status line beneath it, so wake lock no longer occupies
- * its own top-level screen slot. Its internal gap is tighter than the
- * .screen stack's default --space-16 between top-level children,
- * deliberately, since these rows are meant to read as one compact area. */
-.ride-active-status {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-}
-
-/* The combined live status strip: route status, remaining metrics, GPS
- * accuracy/staleness — three stacked lines in a compact bordered box,
- * never a table. Shared with FreeRoamStatusStrip.tsx, which renders only
- * its own single GPS line inside the same container/detail classes. Each
- * line wraps internally via ordinary inline text reflow, rather than
- * scrolling horizontally, at both normal and enlarged text sizes. */
-.ride-status-strip {
+/* The single compact active-status card (backlog item 75, superseding item
+ * 68's separate wake-lock-control/status-strip siblings): route/GPS
+ * status, remaining metrics, GPS accuracy/staleness, a compact
+ * geolocation-error row and a compact offline indicator, all inside one
+ * bordered box, never a table. Shared with FreeRoamStatusCard.tsx, which
+ * renders only its own single GPS detail line instead of the remaining-
+ * distance/ascent row. Each line wraps internally via ordinary inline text
+ * reflow, rather than scrolling horizontally, at both normal and enlarged
+ * text sizes. */
+.ride-status-card {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -1434,7 +1435,19 @@ button:focus-visible {
   font-size: 0.85rem;
 }
 
-.ride-status-strip-status {
+/* The top row: route/GPS status on the left, the wake-lock control on the
+ * right (backlog item 75). Wraps to its own line, rather than clipping or
+ * reordering, once the row runs out of width — at enlarged text sizes or
+ * on a narrow phone with a long status label. */
+.ride-status-card-top-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.ride-status-card-status {
   font-weight: 700;
 }
 
@@ -1442,17 +1455,37 @@ button:focus-visible {
  * distinguishes these — colour is a secondary reinforcement only, per
  * CLAUDE.md's own "do not rely on green, amber or red alone" wording,
  * which names all three as expected (not forbidden) secondary cues. */
-.ride-status-strip-status--possibly-off-route {
+.ride-status-card-status--possibly-off-route {
   color: var(--colour-warning);
 }
 
-.ride-status-strip-status--off-route {
+.ride-status-card-status--off-route {
   color: var(--colour-danger);
 }
 
-.ride-status-strip-detail,
-.ride-status-strip-remaining,
-.ride-status-strip-gps {
+.ride-status-card-detail,
+.ride-status-card-remaining,
+.ride-status-card-gps {
+  color: var(--colour-text-muted);
+}
+
+/* The compact geolocation-error row (backlog item 75) — a left-border
+ * accent rather than a full standalone panel, matching the danger
+ * treatment used elsewhere (e.g. .route-delete-confirm) without the
+ * padding/border weight of a whole separate card. The "Try again" button
+ * relies on the base `button` rule for its own real ≥44x44px touch
+ * target. */
+.ride-status-card-error-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  border-left: 3px solid var(--colour-danger);
+  padding-left: var(--space-8);
+  color: var(--colour-danger);
+}
+
+.ride-status-card-offline {
   color: var(--colour-text-muted);
 }
 

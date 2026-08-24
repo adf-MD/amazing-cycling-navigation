@@ -64,8 +64,7 @@ import { RidingCompactManoeuvreCue } from "./RidingCompactManoeuvreCue.tsx";
 import { RidingImmersiveHeader } from "./RidingImmersiveHeader.tsx";
 import { RidingNextManoeuvrePanel } from "./RidingNextManoeuvrePanel.tsx";
 import { RidingRouteCompletionPanel } from "./RidingRouteCompletionPanel.tsx";
-import { RidingStatusStrip } from "./RidingStatusStrip.tsx";
-import { RidingWakeLockControl } from "./RidingWakeLockControl.tsx";
+import { RidingStatusCard } from "./RidingStatusCard.tsx";
 import { useRideCamera } from "./useRideCamera.ts";
 import { useRideNavigation } from "./useRideNavigation.ts";
 import { useRouteCompletionCandidate } from "./useRouteCompletionCandidate.ts";
@@ -276,13 +275,14 @@ export function RidingScreen({
   const now = useNow(clock);
   const fixAgeMs = nav.currentFix ? now - nav.currentFix.timestampMs : null;
   const online = useOnlineStatus();
-  // Gates the merged compact active-status area (backlog item 68) —
-  // preserves the wake-lock control's and RidingStatusStrip's own prior
-  // standalone gates exactly, just unioned so the wrapper only mounts
-  // when at least one of them would render.
-  const showActiveStatus =
-    (isWakeLockSupported() && nav.geolocationStatus !== "idle") ||
-    Boolean(nav.currentFix);
+  // Gates the single compact status card (backlog item 75): true whenever
+  // there is anything for it to say — a fix (even a stale/idle-retained
+  // one, e.g. a paused ride awaiting Resume) or an active, non-idle
+  // geolocation watch/error, which covers "waiting for the first fix" and
+  // "error before any fix" too. Wake lock is gated separately below, since
+  // it stays unsupported-or-idle-suppressed independently of whether the
+  // card itself has status content to show.
+  const showStatusCard = nav.geolocationStatus !== "idle" || Boolean(nav.currentFix);
 
   // Computed once per loaded route (route's identity is stable for the
   // component's lifetime; recomputing per GPS fix would be wasted work for
@@ -1417,7 +1417,12 @@ export function RidingScreen({
         </>
       )}
 
-      {!online ? (
+      {/* Only the genuine pre-ride/no-fix-yet state uses this standalone
+       * paragraph (backlog item 75) — once showStatusCard is true (active
+       * riding, or an idle ride paused with a retained fix), the card's
+       * own compact Offline row is the single source of this message, so
+       * both never render together. */}
+      {!online && !showStatusCard ? (
         <p role="status" className="status-row">
           Offline — the route, your position, progress and elevation still work; map
           imagery may be unavailable.
@@ -1508,51 +1513,44 @@ export function RidingScreen({
         </div>
       ) : null}
 
-      {nav.geolocationStatus === "error" && nav.geolocationError ? (
-        <div role="alert" className="ride-alert-panel">
-          <p>{formatGeolocationError(nav.geolocationError)}</p>
-          <button type="button" onClick={handleStart}>
-            Try again
-          </button>
-        </div>
-      ) : null}
-
-      {nav.geolocationStatus === "watching" && !nav.currentFix ? (
-        <p role="status" className="status-row">
-          Waiting for a GPS fix…
-        </p>
-      ) : null}
-
-      {/* The compact shared active-status area (backlog item 68,
-       * correcting a post-item-56 field finding): the wake-lock control
-       * previously rendered in its own top-level slot directly after the
-       * header — this merges it into the same compact area as the
-       * route/GPS status line beneath it, without giving RidingStatusStrip
-       * itself any wake-lock props/logic. Each inner condition is exactly
-       * the gate its own element used standalone before (wake lock stays
-       * available while waiting for the first fix, i.e. before
-       * currentFix exists, matching its own prior behaviour). */}
-      {showActiveStatus ? (
-        <div className="ride-active-status">
-          {isWakeLockSupported() && nav.geolocationStatus !== "idle" ? (
-            <RidingWakeLockControl
-              desired={nav.wakeLockDesired}
-              onToggleDesired={nav.setWakeLockDesired}
-              wakeLockSource={wakeLockSource}
-              clock={clock}
-            />
-          ) : null}
-          {nav.currentFix ? (
-            <RidingStatusStrip
-              offRouteLevel={nav.offRouteLevel}
-              distanceRemainingMetres={nav.distanceRemainingMetres}
-              remainingAscentMetres={nav.remainingAscentMetres}
-              accuracyMetres={nav.currentFix.accuracyMetres}
-              isStale={nav.isStale}
-              fixAgeMs={fixAgeMs}
-            />
-          ) : null}
-        </div>
+      {/* The single compact status card (backlog item 75, superseding item
+       * 68's still-separate wake-lock/status-strip siblings): route/GPS
+       * status and the wake-lock control share one top row, followed by
+       * remaining distance/ascent, GPS freshness, a compact geolocation-
+       * error row with its own inline retry, and a compact offline
+       * indicator — all inside one bordered card, never an empty one. */}
+      {showStatusCard ? (
+        <RidingStatusCard
+          liveStatus={
+            nav.currentFix
+              ? {
+                  offRouteLevel: nav.offRouteLevel,
+                  distanceRemainingMetres: nav.distanceRemainingMetres,
+                  remainingAscentMetres: nav.remainingAscentMetres,
+                  accuracyMetres: nav.currentFix.accuracyMetres,
+                  isStale: nav.isStale,
+                  fixAgeMs,
+                }
+              : null
+          }
+          geolocationErrorMessage={
+            nav.geolocationStatus === "error" && nav.geolocationError
+              ? formatGeolocationError(nav.geolocationError)
+              : null
+          }
+          onRetryGeolocation={handleStart}
+          online={online}
+          wakeLock={
+            isWakeLockSupported() && nav.geolocationStatus !== "idle"
+              ? {
+                  desired: nav.wakeLockDesired,
+                  onToggleDesired: nav.setWakeLockDesired,
+                  wakeLockSource,
+                  clock,
+                }
+              : undefined
+          }
+        />
       ) : null}
 
       {/* Map-exclusive (backlog item 56): the full panel has no idle

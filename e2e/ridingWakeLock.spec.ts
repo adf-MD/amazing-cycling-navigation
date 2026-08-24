@@ -70,7 +70,7 @@ async function setDocumentVisibility(page: Page, state: "visible" | "hidden") {
   }, state);
 }
 
-test("no Keep screen on control appears when navigator.wakeLock is unsupported", async ({
+test("no Screen on control appears when navigator.wakeLock is unsupported", async ({
   page,
   context,
 }) => {
@@ -104,15 +104,13 @@ test("no Keep screen on control appears when navigator.wakeLock is unsupported",
   await page.getByRole("button", { name: "Start riding" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-  await expect(
-    page.getByRole("checkbox", { name: /keep screen on/i }),
-  ).not.toBeAttached();
+  await expect(page.getByRole("checkbox", { name: /screen on/i })).not.toBeAttached();
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
 
-test("enabling Keep screen on requests a lock, releases while hidden, and reacquires when visible again, with no visible success line", async ({
+test("enabling Screen on requests a lock, releases while hidden, and reacquires when visible again, with no visible success line", async ({
   page,
   context,
 }) => {
@@ -141,7 +139,7 @@ test("enabling Keep screen on requests a lock, releases while hidden, and reacqu
   await page.getByRole("button", { name: "Start riding" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-  const checkbox = page.getByRole("checkbox", { name: /keep screen on/i });
+  const checkbox = page.getByRole("checkbox", { name: /screen on/i });
   await expect(checkbox).toBeVisible();
   await expect(checkbox).not.toBeChecked();
 
@@ -154,16 +152,26 @@ test("enabling Keep screen on requests a lock, releases while hidden, and reacqu
   // plus a direct bounding-box check that activating it adds no height.
   const control = page.locator(".ride-wake-lock-control");
   const controlBoxBeforeActive = await control.boundingBox();
+  // The whole card (backlog item 75) must also not resize — proves the
+  // wake-lock control's own zero-height guarantee still holds once it's a
+  // flex child of the shared card's top row, not a top-level sibling.
+  const card = page.locator(".ride-status-card");
+  const cardBoxBeforeActive = await card.boundingBox();
   const status = page.getByText("Screen staying awake.");
   await expect(status).not.toBeAttached();
 
   await checkbox.check();
   await expect(status).toBeAttached();
   const controlBoxAfterActive = await control.boundingBox();
+  const cardBoxAfterActive = await card.boundingBox();
   if (!controlBoxBeforeActive || !controlBoxAfterActive) {
     throw new Error("expected the wake-lock control to have a bounding box");
   }
+  if (!cardBoxBeforeActive || !cardBoxAfterActive) {
+    throw new Error("expected the status card to have a bounding box");
+  }
   expect(controlBoxAfterActive.height).toBe(controlBoxBeforeActive.height);
+  expect(cardBoxAfterActive.height).toBe(cardBoxBeforeActive.height);
 
   await setDocumentVisibility(page, "hidden");
   await expect(status).not.toBeAttached();
@@ -219,7 +227,7 @@ test.describe("compact control on a narrow phone viewport", () => {
     await page.getByRole("button", { name: "Start riding" }).click();
     await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-    const checkbox = page.getByRole("checkbox", { name: /keep screen on/i });
+    const checkbox = page.getByRole("checkbox", { name: /screen on/i });
     const heading = page.getByRole("heading", { name: "smoke-route" });
     await expect(checkbox).toBeVisible();
     await expect(heading).toBeVisible();
@@ -248,7 +256,7 @@ test.describe("compact control on a narrow phone viewport", () => {
 
     await expect(page.getByText(/keeps the display on/i)).toBeHidden();
 
-    const infoButton = page.getByRole("button", { name: "About Keep screen on" });
+    const infoButton = page.getByRole("button", { name: "About Screen on" });
     await infoButton.click();
 
     const popover = page.getByRole("note");

@@ -3327,9 +3327,7 @@ describe("RidingScreen", () => {
       // existing "requires an explicit tap" behaviour above.
       await user.click(await screen.findByRole("button", { name: "Resume ride" }));
 
-      expect(
-        await screen.findByRole("checkbox", { name: /keep screen on/i }),
-      ).toBeChecked();
+      expect(await screen.findByRole("checkbox", { name: /screen on/i })).toBeChecked();
       expect(fakeWakeLock.requestSpy).toHaveBeenCalledOnce();
       vi.unstubAllGlobals();
     });
@@ -3362,7 +3360,7 @@ describe("RidingScreen", () => {
       await user.click(await screen.findByRole("button", { name: "Resume ride" }));
 
       expect(
-        await screen.findByRole("checkbox", { name: /keep screen on/i }),
+        await screen.findByRole("checkbox", { name: /screen on/i }),
       ).not.toBeChecked();
       expect(fakeWakeLock.requestSpy).not.toHaveBeenCalled();
       vi.unstubAllGlobals();
@@ -3559,9 +3557,7 @@ describe("RidingScreen", () => {
         "aria-pressed",
         "true",
       );
-      expect(
-        await screen.findByRole("checkbox", { name: /keep screen on/i }),
-      ).toBeChecked();
+      expect(await screen.findByRole("checkbox", { name: /screen on/i })).toBeChecked();
       expect(fakeWakeLock.requestSpy).toHaveBeenCalledOnce();
     });
 
@@ -3668,6 +3664,57 @@ describe("RidingScreen", () => {
       expect(
         screen.getByRole("group", { name: "Elevation profile view" }),
       ).toBeInTheDocument();
+    });
+
+    it("shows a compact Offline row inside the status card once active, replacing the pre-ride standalone paragraph", async () => {
+      vi.stubGlobal("navigator", { onLine: false, geolocation: undefined });
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(3),
+        accuracyMetres: 6,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await screen.findByText("On route");
+
+      const offline = screen.getByText("Offline");
+      expect(offline).toHaveAttribute("role", "status");
+      expect(screen.queryByText(/still work; map imagery may be unavailable/)).toBeNull();
+    });
+
+    it("shows both the offline row and a geolocation-error row together, without duplicating either", async () => {
+      vi.stubGlobal("navigator", { onLine: false, geolocation: undefined });
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitError({
+        reason: "permission-denied",
+        message: "denied",
+      });
+
+      expect(screen.getByText("Offline")).toBeInTheDocument();
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(/location permission was denied/i);
+      expect(screen.getAllByText(/location permission was denied/i)).toHaveLength(1);
     });
 
     it("keeps off-route status, distance remaining and elevation window visible after a mid-ride tile error", async () => {
@@ -5781,7 +5828,7 @@ describe("RidingScreen", () => {
 
       expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
       expect(
-        screen.queryByRole("checkbox", { name: /keep screen on/i }),
+        screen.queryByRole("checkbox", { name: /screen on/i }),
       ).not.toBeInTheDocument();
     });
 
@@ -5810,7 +5857,7 @@ describe("RidingScreen", () => {
       });
 
       expect(
-        screen.queryByRole("checkbox", { name: /keep screen on/i }),
+        screen.queryByRole("checkbox", { name: /screen on/i }),
       ).not.toBeInTheDocument();
       expect(fakeWakeLock.requestSpy).not.toHaveBeenCalled();
     });
@@ -5828,13 +5875,13 @@ describe("RidingScreen", () => {
       );
 
       expect(
-        screen.queryByRole("checkbox", { name: /keep screen on/i }),
+        screen.queryByRole("checkbox", { name: /screen on/i }),
       ).not.toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: "Start riding" }));
 
       expect(
-        await screen.findByRole("checkbox", { name: /keep screen on/i }),
+        await screen.findByRole("checkbox", { name: /screen on/i }),
       ).not.toBeChecked();
     });
 
@@ -5859,7 +5906,7 @@ describe("RidingScreen", () => {
       await user.click(screen.getByRole("button", { name: "Start riding" }));
 
       const checkbox = await screen.findByRole("checkbox", {
-        name: /keep screen on/i,
+        name: /screen on/i,
       });
       const heading = screen.getByRole("heading", { name: route.name });
 
@@ -5881,9 +5928,9 @@ describe("RidingScreen", () => {
       );
 
       await user.click(screen.getByRole("button", { name: "Start riding" }));
-      await screen.findByRole("checkbox", { name: /keep screen on/i });
+      await screen.findByRole("checkbox", { name: /screen on/i });
 
-      await user.click(screen.getByRole("button", { name: "About Keep screen on" }));
+      await user.click(screen.getByRole("button", { name: "About Screen on" }));
 
       expect(
         screen.getByText(
@@ -5921,7 +5968,7 @@ describe("RidingScreen", () => {
       await user.click(await screen.findByRole("button", { name: "Start riding" }));
 
       expect(
-        await screen.findByRole("checkbox", { name: /keep screen on/i }),
+        await screen.findByRole("checkbox", { name: /screen on/i }),
       ).not.toBeChecked();
       expect(fakeWakeLock.requestSpy).not.toHaveBeenCalled();
     });
