@@ -2407,6 +2407,89 @@ describe("MapView", () => {
         expect(mock.constructedStyles).toHaveLength(2);
       });
 
+      // Reproduces a real CI failure (a GitHub Pages deploy run): the
+      // recreated instance's own "load" event never settled while tiles
+      // kept failing on it — confirmed real MapLibre behaviour under
+      // sustained failure — and onError's old hasLoaded gate silently
+      // swallowed every one of its tile errors: no banner, no episode
+      // tracking. Deliberately never calls triggerLoad()/
+      // triggerStyleLoaded() for the recreated instance, mirroring that
+      // exact condition.
+      it("shows the banner again, and does not auto-retry a second time, when the auto-retried instance's own load never settles while tile errors keep arriving on it", () => {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerLoad();
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        expect(mock.constructedStyles).toHaveLength(2);
+
+        // The recreated instance never reaches "load" — tiles keep
+        // failing on it instead.
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        act(() => {
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+
+        // Same episode continuing on the recreated instance, not a fresh
+        // one — no second automatic retry.
+        expect(mock.constructedStyles).toHaveLength(2);
+      });
+
+      it("a stale unresolved tile-error episode does not survive into a fallback swap: the next real style's own tile error gets a fresh auto-retry allowance", () => {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerLoad();
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        expect(mock.constructedStyles).toHaveLength(2);
+
+        // The recreated instance never loads (tiles still failing), then
+        // hits a fatal style-level error instead — switchToFallback()
+        // fires since hasLoaded is still false on this instance.
+        mock.triggerError({
+          message: "style fetch failed",
+          category: "style-request-or-parse",
+        });
+        expect(mock.constructedStyles).toHaveLength(3);
+        mock.triggerLoad();
+        expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+
+        act(() => {
+          within(screen.getByTestId("map-fallback-banner"))
+            .getByTestId("retry-map-imagery-button")
+            .click();
+        });
+        expect(mock.constructedStyles).toHaveLength(4);
+
+        // A fresh tile error on the retried real style — a genuinely new
+        // episode, not a continuation of the one that predated the
+        // fallback swap.
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+
+        act(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        expect(mock.constructedStyles).toHaveLength(5);
+      });
+
       it("a later, distinct tile-error episode (after a successful recovery) gets its own new automatic-retry allowance", () => {
         const mock = createMockMapFactory();
         render(<MapView points={points} mapFactory={mock.factory} />);

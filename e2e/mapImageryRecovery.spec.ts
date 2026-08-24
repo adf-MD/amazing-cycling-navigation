@@ -120,20 +120,25 @@ async function establishManualPan(page: Page, mapContainer: Locator): Promise<vo
  * initially in-view tile loaded or errored, MapLibre's own "load" event,
  * exposed via data-map-ready (see MapView.tsx's diagnostic-only attribute)
  * — before a test may safely fail a tile and expect the resulting error to
- * be classified as a post-load tile-error episode.
+ * be classified specifically as a POST-load tile-error episode, distinct
+ * from a pre-load one.
  *
  * The weaker preconditions this file previously relied on alone — the
  * "map-loading" testid hidden (only the STYLE DOCUMENT has loaded) and
  * tiles.requestCount() > 0 (only that SOME tile request has happened) —
- * do not guarantee this: MapView.tsx's own onError handler only reaches
- * setTileErrorMessage once its internal hasLoaded is already true, so a
- * tile deliberately failed before that discards the resulting error
- * silently instead. Confirmed directly, via isolated single-worker
+ * do not guarantee this. Confirmed directly, via isolated single-worker
  * instrumented runs against this exact file, as the actual cause of two
  * real CI failures here (Deploy to GitHub Pages run 32401012094) — every
  * onError event throughout both failures showed hasLoaded=false, never
  * once true, from the very first tile request through the last. See
- * CLAUDE.md's own item-67 follow-up entry for the full diagnosis.
+ * docs/project/history/items-56-68.md's item-67 entry for the full
+ * diagnosis and its own follow-up entries for what changed since.
+ *
+ * A tile error before this settles is no longer silently dropped in
+ * production (MapView.tsx's onError now recognises a source-or-tile error
+ * regardless of hasLoaded) — this wait remains necessary anyway, purely as
+ * a harness precondition, so a test deliberately exercising the post-load
+ * path measures exactly that and not an incidental pre-load error.
  */
 async function waitForMapFullyLoaded(mapContainer: Locator): Promise<void> {
   await expect(mapContainer).toHaveAttribute("data-map-ready", "true", {
@@ -599,19 +604,26 @@ test("does not create a retry loop: repeated failures and repeated online events
   // explicit timeout rather than the 5000ms default.
   //
   // Deliberately NOT gated on waitForMapFullyLoaded here (unlike every
-  // other call site in this file): a further, dedicated stress
-  // investigation of this exact checkpoint found that when a map is
-  // recreated while its tiles are STILL failing, MapLibre's own "load"
-  // event (this app's `hasLoaded`, and therefore data-map-ready) can fail
-  // to fire at all — confirmed directly against the unmodified baseline,
-  // reproducible independently of every change in this file. That is a
-  // separate, deeper, pre-existing reliability question about map
-  // recreation under sustained failure, distinct from the two harness
-  // preconditions this file's own item-67 follow-up fixes, and is
-  // recorded (not silently dropped) in CLAUDE.md's own item-67 follow-up
-  // entry for a future, dedicated investigation. Adding the same wait
+  // other call site in this file): a dedicated stress investigation of
+  // this exact checkpoint found that when a map is recreated while its
+  // tiles are STILL failing, MapLibre's own "load" event (this app's
+  // `hasLoaded`, and therefore data-map-ready) can fail to fire at all —
+  // confirmed directly against the unmodified baseline. Adding a wait
   // here would trade an intermittent flake for this checkpoint's own
   // outright, deterministic failure whenever that condition is hit.
+  //
+  // This checkpoint DID fail in a real CI run (a GitHub Pages deploy),
+  // the first time the pre-existing flake this file's own history
+  // documents was ever seen outside artificial stress testing — the
+  // banner never reappeared, because MapView.tsx's onError handler used
+  // to only recognise a tile error once its internal hasLoaded was
+  // already true, silently dropping any error that arrived before that
+  // (which, on a recreated instance whose own "load" never settles, is
+  // every error). That production gap is now fixed: a source-or-tile
+  // error is recognised regardless of hasLoaded, so this assertion no
+  // longer depends on the recreated instance's own "load" ever firing —
+  // see docs/project/history/items-56-68.md's item-67 entry for the full
+  // diagnosis and fix.
   await expect(banner).toBeVisible({ timeout: 15_000 });
   // Manual Retry still works after the automatic allowance is exhausted —
   // clicked while genuinely still failing, matching every other manual-

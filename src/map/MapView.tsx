@@ -670,9 +670,27 @@ export function MapView({
   // At most one automatic retry per tile-error episode (mirrors
   // hasAutoRetriedRef's identical role for the fallback episode) —
   // independent of it, since the two episode kinds are structurally
-  // mutually exclusive (see onError below) and each deserves its own
-  // allowance.
+  // mutually exclusive (a tile error can never fire while usedFallback is
+  // true, since FALLBACK_STYLE has no sources at all — see onError below)
+  // and each deserves its own allowance.
   const hasAutoRetriedTileErrorRef = useRef(false);
+  // Whether a tile-error episode is currently active. A component-level
+  // ref, not a per-attach closure local — it must deliberately SURVIVE a
+  // retryToken-driven recreation, since that recreation can itself be
+  // caused by this exact episode's own auto-retry while the underlying
+  // tile problem is still ongoing on the new instance (confirmed: under
+  // sustained failure, MapLibre's own `load` event can fail to settle at
+  // all on a recreated instance). Reset only by a genuine recovery signal
+  // — onLoad settling cleanly, or onSourceData's non-app-owned-source-
+  // loaded signal, both below — never by the per-attach reset block,
+  // matching hasAutoRetriedRef/hasAutoRetriedTileErrorRef's own
+  // established convention. Does not track a mid-episode tileSource/
+  // mapFactory change (e.g. a Settings-driven provider switch): a stale
+  // true here could suppress one auto-retry allowance for a genuinely new
+  // provider's own first episode. Deliberately left unhandled — manual
+  // Retry always remains available regardless, and there is no evidence
+  // this occurs in practice.
+  const hasActiveTileErrorRef = useRef(false);
   const [loadState, setLoadState] = useState<MapLoadState>("loading");
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   const [tileErrorMessage, setTileErrorMessage] = useState<string | null>(null);
@@ -752,13 +770,6 @@ export function MapView({
     let resizeObserver: ResizeObserver | null = null;
     let routeSourceLoaded = false;
     let routeDataTimeoutId: number | undefined;
-    // Tracks a currently-active *tile-error* episode (backlog item 67) —
-    // distinct from usedFallback/hasLoaded, since a tile error can only
-    // ever occur once hasLoaded is already true. Mirrors the existing
-    // hasLoaded/styleReady/usedFallback/layersAdded convention: a fresh
-    // per-attach-cycle closure local, so it naturally resets on every new
-    // attach without needing its own explicit reset-block line.
-    let hasActiveTileError = false;
 
     setLoadState("loading");
     setLoadTimedOut(false);
@@ -1083,6 +1094,12 @@ export function MapView({
       map.onLoad(() => {
         hasLoaded = true;
         setLoadState("ready");
+        // A clean load settling is itself a genuine recovery signal for a
+        // tile-error episode (MapLibre's load event implies the style's
+        // initial sources, including tiles, loaded) — see
+        // hasActiveTileErrorRef's own doc comment for why this must be
+        // reset here in addition to onSourceData's recovery signal below.
+        hasActiveTileErrorRef.current = false;
         if (hadTroubleRef.current && !usedFallback) {
           recordAttempt("imagery-recovered");
           hadTroubleRef.current = false;
@@ -1100,7 +1117,7 @@ export function MapView({
         // delivery, so treating those as recovery would clear the banner
         // on every route/position update instead of on genuine recovery.
         if (info.isSourceLoaded && !APP_OWNED_SOURCE_IDS.has(info.sourceId)) {
-          hasActiveTileError = false;
+          hasActiveTileErrorRef.current = false;
           setTileErrorMessage(null);
         }
       });
@@ -1215,24 +1232,32 @@ export function MapView({
       });
 
       // Only a fatal style/WebGL failure destroys the style — a
-      // recoverable source/tile/sprite error (only ever reachable once
-      // the style is already structurally ready, verified against
-      // MapLibre's own source) leaves it alone; the "imagery delayed"
-      // banner (driven by styleStructurallyReady) already reflects this.
-      // An error after `ready` (the tiles-unavailable banner) keeps the
-      // already-loaded route and position visible instead.
+      // recoverable source/tile/sprite error leaves it alone; the
+      // "imagery delayed" banner (driven by styleStructurallyReady, and
+      // excluding an active tile error — see its own JSX condition)
+      // already reflects the pre-load case.
+      //
+      // A tile-level ("source-or-tile") error is always treated as a
+      // tile-error episode, whether or not `hasLoaded`/`ready` has
+      // settled yet — NOT gated on hasLoaded. A tile error arriving
+      // before `load` fires is a real, reachable case (every ordinary
+      // first mount passes through a brief pre-load window, and under
+      // sustained failure a recreated instance's own `load` event can
+      // fail to settle at all — see hasActiveTileErrorRef's own doc
+      // comment); gating this purely on hasLoaded silently swallowed
+      // such an error, leaving no banner and no episode tracking at all.
       map.onError((info) => {
         logError("map", info.message);
         recordAttempt(mapErrorCategoryToDiagnostic(info.category));
 
-        if (hasLoaded) {
+        if (hasLoaded || info.category === "source-or-tile") {
           // Backlog item 67: only a genuinely NEW tile-error episode
           // re-arms hasAutoRetriedTileErrorRef — a repeated error while
           // one is already active must not, mirroring
           // switchToFallback()'s identical "does not create a retry loop
           // from repeated errors" guarantee for the fallback episode.
-          if (!hasActiveTileError) {
-            hasActiveTileError = true;
+          if (!hasActiveTileErrorRef.current) {
+            hasActiveTileErrorRef.current = true;
             hasAutoRetriedTileErrorRef.current = false;
           }
           // A tile error is "trouble" too, so a successful recovery (via
@@ -1273,6 +1298,10 @@ export function MapView({
       if (styleReady || usedFallback) return;
       usedFallback = true;
       hasAutoRetriedRef.current = false;
+      // A stale, unresolved tile-error episode must not survive into and
+      // past a fallback swap — FALLBACK_STYLE has no sources at all, so
+      // no further tile error can ever arrive to clear it otherwise.
+      hasActiveTileErrorRef.current = false;
       recordAttempt("fallback-activated");
       setUsingFallbackStyle(true);
       currentMap?.remove();
@@ -1338,13 +1367,12 @@ export function MapView({
   // fallback episode (hasAutoRetriedRef) and the lighter tile-error
   // episode (hasAutoRetriedTileErrorRef, backlog item 67), each reset
   // only when its own kind of trouble is freshly (re-)entered. The two
-  // episode kinds are structurally mutually exclusive (a tile error can
-  // only occur once hasLoaded is true; a fallback-triggering error only
-  // occurs before hasLoaded; FALLBACK_STYLE has no sources at all, so it
-  // can never itself produce a source-or-tile error) — never a polling
-  // loop, regardless of how many of these events fire or in what
-  // combination, since handleResume only ever runs in response to an
-  // actual browser-dispatched event, never self-triggered.
+  // episode kinds are structurally mutually exclusive: FALLBACK_STYLE has
+  // no sources at all, so it can never itself produce a source-or-tile
+  // error, and switchToFallback() clears hasActiveTileErrorRef on entry —
+  // never a polling loop, regardless of how many of these events fire or
+  // in what combination, since handleResume only ever runs in response to
+  // an actual browser-dispatched event, never self-triggered.
   useEffect(() => {
     function handleResume(): void {
       if (usingFallbackStyle && !hasAutoRetriedRef.current) {
@@ -1909,7 +1937,10 @@ export function MapView({
               : "Loading map…"}
           </div>
         ) : null}
-        {styleStructurallyReady && !ready && !usingFallbackStyle ? (
+        {styleStructurallyReady &&
+        !ready &&
+        !usingFallbackStyle &&
+        tileErrorMessage === null ? (
           <div
             role="status"
             data-testid="map-imagery-delayed-banner"
