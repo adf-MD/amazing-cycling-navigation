@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-No successor item has been selected yet — item 73 (the previous "next" item) is now complete; see [`docs/project/history/items-69-73.md`](history/items-69-73.md#item-73). The remaining entries below are approved future work, but none is currently scheduled as the next implementation slice.
+Item 74 is the next selected implementation slice — an evidence-gated investigation into an intermittent free-roam initial Follow zoom observation (see item 74 below). Items 75–78 follow it in order as subsequent approved slices. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Each entry reproduces its original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this).
 
@@ -119,3 +119,159 @@ _Category: Platform compatibility_
       4. **Conflict and recovery coverage:** an inbound share must respect the existing unfinished route/free-roam conflict guard (item 42's fail-closed `checkFreeRoamConflict`-style pattern) and must never silently replace an active session or Planning draft; it must work after a fresh install/relaunch. Add Playwright coverage where meaningful, then require real Android Chrome acceptance — Chromium/Playwright emulation cannot prove real OS share-sheet registration, matching this project's existing, repeatedly-stated distinction between the `android-chrome` Playwright project and genuine physical-device verification (item 25).
     - If step 1 finds only an `Open with` path and no Share/Send path, document that conclusively and record that no pure static-PWA solution is currently available for this exact flow — do not propose a native wrapper, Trusted Web Activity, APK, or other Android-specific packaging as a workaround; that would be a major architecture departure and is explicitly not approved by this backlog item.
     - Requires the "## Explicit non-goals" edit recorded above (item 61's own cross-reference) — that section stays in the root `CLAUDE.md` and already carries this cross-reference.
+
+---
+
+<a id="item-74"></a>
+
+## Item 74 — Investigate intermittent free-roam initial Follow zoom
+
+_Category: Riding camera reliability investigation_
+
+74. **Investigate intermittent free-roam initial Follow zoom**
+    - Field evidence, recorded precisely and without overstating it:
+      - This has occurred once in free roam and is not deterministic.
+      - The rider believes it was probably a fresh free-roam Start, but that detail is recalled rather than proven.
+      - The rider did not intentionally zoom out beforehand.
+      - The screen showed a live GPS fix and Follow visibly selected while the map remained at an approximately whole-world zoom.
+      - Pressing Follow did not reset the zoom. That behaviour is correct in principle because Follow is required to preserve the rider's selected zoom.
+      - Both direct map zooming and the `+` control could restore a normal close navigation view.
+      - The abnormal zoom was then preserved when the session was paused/resumed, suggesting that the application may have accepted and persisted the unintended zoom as the Follow zoom.
+      - Do not describe free roam as always starting at world zoom, or the problem as reproducible on demand.
+    - Kept separate from item 66:
+      - Item 66 concerns a previous, intermittent fresh route-Start symptom that remained at a wide whole-route-like view.
+      - The free-roam occurrence shares the broad invariant that an active Follow camera did not reach a sensible navigation presentation, but there is no proof of a shared root cause.
+      - Item 65's anchored zoom correction must not be credited as causing or fixing this occurrence.
+    - Specify an evidence-gated investigation:
+      - Inspect the complete free-roam camera lifecycle and exact event ordering among:
+        - the fresh-session seed and asynchronous stored-state read;
+        - `FreeRoamScreen`'s initial `requestFollow()`;
+        - MapLibre instance/style readiness;
+        - the raw/default initial camera settle;
+        - the first fresh GPS fix;
+        - creation and application of the first actionable Follow camera command;
+        - `camera-settled` and `follow-zoom-settled` reconciliation;
+        - persistence after the first fix and restoration on Resume.
+      - Determine which camera move produced every settled zoom before changing behaviour. A plausible race is not a confirmed diagnosis.
+      - Construct deterministic component and real-browser orderings where possible. Use controllable events, deferred promises and existing map/geolocation test seams. Do not rely on arbitrary sleeps.
+      - Explicitly test a fresh free-roam Start, a deliberate user-selected Follow zoom, Pause/Resume, and map readiness occurring before and after the first GPS fix.
+      - Preserve the settled product contract:
+        - deliberate zoom choices persist;
+        - pressing Follow preserves the selected zoom;
+        - `+`/`-` while genuinely following keep the GPS anchor and Follow mode;
+        - a genuine gesture still pauses Follow;
+        - route Riding is not changed merely because it shares camera machinery.
+      - Do not mask the symptom with an arbitrary zoom clamp, an unconditional reset to `NAVIGATION_ZOOM`, retries, longer timeouts or a Follow re-press that silently discards the rider's zoom.
+      - If a failing ordering and causal production defect are demonstrated, implement the smallest invariant-based correction and a deterministic regression test within item 74.
+      - If the production defect cannot be reproduced, do not invent a fix. Record the tested orderings and outcome honestly. Add narrowly scoped, local Diagnostics-visible camera lifecycle evidence only if it is demonstrably useful for capturing a future recurrence. It must not become telemetry, retain location history or expose private coordinates unnecessarily.
+      - Keep real-device re-acceptance explicit because automated Chromium cannot prove the original intermittent iPhone PWA timing.
+
+---
+
+<a id="item-75"></a>
+
+## Item 75 — Compact active-Riding status and recovery presentation
+
+_Category: Immersive Riding interface and resilience_
+
+75. **Compact active-Riding status and recovery presentation**
+    - Apply the agreed design to both route Riding and free roam:
+      - Move the wake-lock control inside the existing bordered route/GPS status card, not merely into a separate stacked wrapper near it.
+      - Use the compact visible label `Screen on` with its checkbox and information control. Retain an accessible name that explains the control fully.
+      - Preserve the proven wake-lock acquisition, release, retry, suspension and persistence lifecycle. This is a presentation/composition change, not a wake-lock rewrite.
+      - Preserve comfortable touch targets and the existing information popover without allowing it to resize the map or fixed shell.
+    - For route Riding, target this glance hierarchy:
+      1. top row: route status on the left and `[checkbox] Screen on` plus information on the right;
+      2. remaining distance and remaining ascent;
+      3. compact GPS freshness/accuracy and connectivity/recovery state.
+    - Use an analogous compact composition in free roam without inventing route-specific information.
+    - Consolidate active error/status presentation:
+      - Replace the large standalone offline paragraph with a compact `Offline` indication in the status card.
+      - Only show a map-specific failure overlay when imagery has actually failed. Being offline by itself must not claim that already-cached imagery is unavailable.
+      - Make the actual map-imagery overlay substantially smaller. Use concise non-technical wording such as `Map imagery unavailable` and retain an immediately reachable compact Retry action.
+      - Preserve item 67's automatic single retry on reconnection, manual retry, no-loop guarantee, camera preservation and technical Diagnostics logging.
+      - Replace the large standalone GPS error card with a compact, clearly urgent status row and an inline `Try again` action. Preserve the last known fix as stale and keep the existing recovery semantics.
+      - Avoid duplicated offline/map-failure messages.
+      - The simultaneous offline plus GPS-error case must leave a useful amount of map visible rather than allowing normal-flow cards to consume most of the screen.
+    - Do not cover the Map/Profile switcher, elevation-window controls, map camera controls, climb cue or required attribution.
+    - Preserve screen-reader announcements, focus recovery and visible error distinction. Compact must not mean silent.
+    - Prove phone portrait, landscape, enlarged text and the simultaneous failure combinations in route Riding and free roam. Real-device acceptance remains required.
+
+---
+
+<a id="item-76"></a>
+
+## Item 76 — Riding profile-selector and primary-navigation edge polish
+
+_Category: Small interface correction_
+
+76. **Riding profile-selector and primary-navigation edge polish**
+    - Keep this deliberately narrow:
+      - The selected `Full` profile button's outer focus/selection ring is currently clipped at the left screen/pane edge.
+      - Give the complete elevation-window selector row a small, symmetric horizontal inner inset so no selected outline is clipped at either edge.
+      - Cover the three-button and four-button (`Climb` available) states, plus portrait, landscape and enlarged text.
+      - Do not special-case only `Full`, shift individual buttons with ad hoc margins or change the selector's meaning/order.
+    - Correct the primary sticky navigation's bottom divider so it touches the navigation row in the same deliberate way as the top divider. Remove the visible strip of unused space between buttons and the bottom line.
+    - Do not alter active Riding's non-sticky immersive header, navigation destinations, touch-target sizes, focus order or adaptive-navigation item 28.
+    - Prefer a small CSS/layout correction with focused regression coverage, not a broader navigation redesign.
+
+---
+
+<a id="item-77"></a>
+
+## Item 77 — Climb-only colouring and legend for the pre-ride full profile
+
+_Category: Pre-ride elevation-profile presentation_
+
+77. **Climb-only colouring and legend for the pre-ride full profile**
+    - Scope this to the pre-ride full-route elevation overview:
+      - Keep the ordinary elevation profile line black.
+      - Colour recognised climbs using their overall climb-category colours.
+      - Stop colouring recognised descents blue in this full elevation overview. The profile shape already communicates that the route descends.
+      - Do not change the pre-ride map overview. Its route-feature colouring for recognised climbs and descents remains useful because the map does not itself show elevation.
+      - Do not remove recognised-descent analysis, selection or detailed inspection.
+      - Do not silently change active Riding's `Full`, `2 km`, `10 km` or `Climb` presentations in this slice unless current shared architecture makes an isolated pre-ride change impossible. If so, stop and document the conflict instead of broadening scope without approval.
+    - Replace the full-profile legend with an overview-specific disclosure:
+      - Use a concise title such as `Climb categories`.
+      - List only climb categories that actually occur on the current route, once per category, in a stable severity/order.
+      - Do not include an `Ordinary route` row, since the profile's ordinary line is black rather than the map's green route colour.
+      - Do not include recognised-descent rows.
+      - Hide the disclosure entirely when the route has no recognised climbs.
+      - Remove the overview prose beginning `Overall climb colours depend on...` and do not include the selected-feature local-gradient explanation in the overview disclosure.
+      - Keep the legend collapsed by default and accessible.
+    - Cover no-climb, climb-only, mixed climb/descent, repeated-category and multiple-category fixtures. Explicitly prove that the map-layer presentation remains unchanged.
+
+---
+
+<a id="item-78"></a>
+
+## Item 78 — Selected-feature local legends and climb-score explanation
+
+_Category: Pre-ride recognised-feature detail and Settings help_
+
+78. **Selected-feature local legends and climb-score explanation**
+    - Split selected-feature explanation from the overview legend:
+      - A selected recognised climb receives its own collapsed disclosure titled along the lines of `Gradient colours on this climb`.
+      - Place it immediately below the selected climb's detailed chart, before the statistics, so the explanation is visually associated with the colours it describes.
+      - Keep the detailed local-gradient colouring within the selected climb.
+      - Preserve selected recognised-descents and their detailed blue presentation. Give a selected descent its own corresponding local-colour disclosure rather than reintroducing descent rows into the overview legend.
+      - Keep the disclosures collapsed by default and accessible by keyboard and screen reader.
+      - Remove the long prose beginning `Detailed colours show local gradient...` from the shared overview area.
+      - Remove `Values are derived from available route elevation data.` from selected feature details.
+      - Do not change climb/descent detection, smoothing, boundaries, scores, category assignment or chart data.
+    - Add an in-app Settings explanation:
+      - Add an expandable/focusable section such as `How climbs are classified`.
+      - Explain the current implementation accurately, deriving wording and thresholds from current source rather than treating this prompt as a substitute for inspection:
+        - climb score is climb length in metres multiplied by average gradient percentage;
+        - recognition requires at least 500 m length, at least 3% average gradient and a minimum score of 1,500;
+        - uncategorised: below 8,000;
+        - Category 4: 8,000 to 15,999;
+        - Category 3: 16,000 to 31,999;
+        - Category 2: 32,000 to 63,999;
+        - Category 1: 64,000 to 79,999;
+        - HC: 80,000 or more.
+      - Present thresholds clearly using existing project-owned names/formatters where practical, avoiding a second drifting source of classification logic.
+      - Add `How is this calculated?` beside or immediately after a selected climb's score. It should navigate to Settings, focus and open the explanation in one action.
+      - Preserve the active route/route selection so returning from Settings does not lose the user's context.
+      - A selected descent has no climb score and therefore no climb-score link.
+      - Test navigation/focus, repeated activation, browser back/application return behaviour where relevant, and enlarged phone text.

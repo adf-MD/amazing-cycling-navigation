@@ -307,7 +307,7 @@ Archived implementation accounts in `docs/project/history/` describe the system 
 
 ### Queue index
 
-Stable item numbers never change regardless of which file an item's text lives in. No successor item has been selected yet — item 73 (the previous "next" item) is now complete.
+Stable item numbers never change regardless of which file an item's text lives in. Item 74 is the next selected item — an investigation into an intermittent free-roam initial Follow zoom observation. Items 75–78 follow it in order as subsequent approved slices.
 
 | Item | Title                                                                                         | Status                                           | Full entry                                                            |
 | ---- | --------------------------------------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
@@ -318,6 +318,11 @@ Stable item numbers never change regardless of which file an item's text lives i
 | 59   | Elevation and recognised-climb discrepancy investigation                                      | Pending investigation                            | [`backlog.md#item-59`](docs/project/backlog.md#item-59)               |
 | 60   | Battery consumption investigation and possible battery-saving mode                            | Pending investigation                            | [`backlog.md#item-60`](docs/project/backlog.md#item-60)               |
 | 61   | Android GPX share-sheet import feasibility                                                    | Pending feasibility study                        | [`backlog.md#item-61`](docs/project/backlog.md#item-61)               |
+| 74   | Investigate intermittent free-roam initial Follow zoom                                        | Next — selected investigation slice              | [`backlog.md#item-74`](docs/project/backlog.md#item-74)               |
+| 75   | Compact active-Riding status and recovery presentation                                        | Approved — queued after item 74                  | [`backlog.md#item-75`](docs/project/backlog.md#item-75)               |
+| 76   | Riding profile-selector and primary-navigation edge polish                                    | Approved — queued after item 75                  | [`backlog.md#item-76`](docs/project/backlog.md#item-76)               |
+| 77   | Climb-only colouring and legend for the pre-ride full profile                                 | Approved — queued after item 76                  | [`backlog.md#item-77`](docs/project/backlog.md#item-77)               |
+| 78   | Selected-feature local legends and climb-score explanation                                    | Approved — queued after item 77                  | [`backlog.md#item-78`](docs/project/backlog.md#item-78)               |
 | 32   | `ridingFinishAndEnd.spec.ts`'s completion-detection test: an unconfirmed CPU-contention flake | Monitored, unconfirmed                           | [`current-status.md#item-32`](docs/project/current-status.md#item-32) |
 | 66   | Investigate intermittent fresh-Start Follow remaining at route overview                       | Accepted for now, monitored                      | [`current-status.md#item-66`](docs/project/current-status.md#item-66) |
 
