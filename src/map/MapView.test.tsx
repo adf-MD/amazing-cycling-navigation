@@ -648,6 +648,9 @@ describe("MapView", () => {
       zoom: 12,
       bearingDegrees: 90,
       pitchDegrees: 35,
+      // No cameraTarget was ever supplied in this test, so no real command
+      // has been applied — see backlog item 74's hasAppliedCameraCommand.
+      hasAppliedCameraCommand: false,
     });
   });
 
@@ -698,6 +701,130 @@ describe("MapView", () => {
     expect(container).toHaveAttribute("data-camera-zoom", "15.25");
     expect(container).toHaveAttribute("data-camera-bearing", "-42");
     expect(container).toHaveAttribute("data-camera-pitch", "23");
+  });
+
+  // Backlog item 74: proves the ordering gap a spurious pre-style-ready
+  // settle can exploit before any fix — a real, pending cameraTarget
+  // command has not yet been applied (setCameraSpy never called, since
+  // styleStructurallyReady is still false), yet onCameraSettled is still
+  // invoked unconditionally for an unrelated settle. This is deliberately
+  // run against the current handler to demonstrate the gap MapView-level
+  // consumers (useFreeRoamCamera.ts/useRideCamera.ts's follow-zoom-settled
+  // reconciliation) have no way to detect today.
+  it("forwards a settle even though a real pending cameraTarget has never actually been applied, reporting hasAppliedCameraCommand:false, then true once it genuinely applies", () => {
+    const onCameraSettled = vi.fn();
+    const mock = createMockMapFactory();
+    const cameraTarget = {
+      coordinate: [0, 51] as Coordinate,
+      zoom: 16,
+      bearingDegrees: 0,
+      pitchDegrees: 35,
+      animate: true,
+      followOffset: true,
+    };
+    render(
+      <MapView
+        points={[]}
+        mapFactory={mock.factory}
+        cameraTarget={cameraTarget}
+        onCameraSettled={onCameraSettled}
+      />,
+    );
+
+    // Deliberately do not call triggerStyleLoaded()/triggerLoad() —
+    // styleStructurallyReady stays false, so the cameraTarget effect must
+    // not have applied anything yet.
+    mock.triggerCameraSettled({
+      coordinate: [0, 0],
+      zoom: 0,
+      bearingDegrees: 0,
+      pitchDegrees: 0,
+    });
+
+    expect(mock.setCameraSpy).not.toHaveBeenCalled();
+    expect(onCameraSettled).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hasAppliedCameraCommand: false }),
+    );
+
+    // Style becomes ready — the real, pending command now genuinely applies.
+    mock.triggerStyleLoaded();
+    expect(mock.setCameraSpy).toHaveBeenCalledOnce();
+
+    mock.triggerCameraSettled({
+      coordinate: [0, 51],
+      zoom: 16,
+      bearingDegrees: 0,
+      pitchDegrees: 35,
+    });
+    expect(onCameraSettled).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hasAppliedCameraCommand: true }),
+    );
+  });
+
+  // Backlog item 74: appliedCameraCommandGenerationRef must not survive a
+  // fallback swap as stale "true" — mirrors the existing "a fallback swap
+  // landing before the first real camera command still applies that
+  // command once it arrives" test's own swap mechanics (further down in
+  // this file), but focused on the settle-provenance latch rather than the
+  // command-application ordering that test already covers.
+  it("resets hasAppliedCameraCommand to false on a fresh instance after a fallback swap, even though the prior instance had already applied a command", () => {
+    const onCameraSettled = vi.fn();
+    const mock = createMockMapFactory();
+    render(
+      <MapView
+        points={[]}
+        mapFactory={mock.factory}
+        cameraTarget={{
+          coordinate: [0, 51],
+          zoom: 16,
+          bearingDegrees: 0,
+          pitchDegrees: 35,
+          animate: true,
+          followOffset: true,
+        }}
+        onCameraSettled={onCameraSettled}
+      />,
+    );
+    mock.triggerLoad();
+    expect(mock.setCameraSpy).toHaveBeenCalledOnce();
+
+    mock.triggerCameraSettled({
+      coordinate: [0, 51],
+      zoom: 16,
+      bearingDegrees: 0,
+      pitchDegrees: 35,
+    });
+    expect(onCameraSettled).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hasAppliedCameraCommand: true }),
+    );
+
+    // A post-load tile error, then a manual "Retry map imagery" — bumps
+    // retryToken, tearing down and recreating the map against the original
+    // style (a new attach generation), regardless of hasLoaded already
+    // being true. Listeners now target that new instance (see
+    // createMockMapFactory's own "whichever instance was constructed most
+    // recently" comment).
+    mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+    expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+
+    act(() => {
+      screen.getByTestId("retry-map-imagery-button").click();
+    });
+    expect(mock.constructedStyles).toHaveLength(2);
+
+    // Deliberately do not call triggerLoad()/triggerStyleLoaded() for the
+    // new instance — its own cameraTarget effect has not re-applied
+    // anything yet, so a settle here must not inherit the previous
+    // instance's "already applied" status.
+    mock.triggerCameraSettled({
+      coordinate: [0, 0],
+      zoom: 0,
+      bearingDegrees: 0,
+      pitchDegrees: 0,
+    });
+    expect(onCameraSettled).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hasAppliedCameraCommand: false }),
+    );
   });
 
   it("applies an animated following cameraTarget via setCamera once ready, carrying centre/zoom/bearing/pitch/offset together", () => {

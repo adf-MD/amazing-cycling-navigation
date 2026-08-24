@@ -838,6 +838,7 @@ describe("rideCameraReducer", () => {
       const result = rideCameraReducer(state, {
         type: "follow-zoom-settled",
         zoom: 16.847,
+        hasAppliedCameraCommand: true,
       });
       expect(result.state.followZoomLevel).toBe(16.847);
       expect(result.command).toBeNull();
@@ -855,9 +856,25 @@ describe("rideCameraReducer", () => {
       const result = rideCameraReducer(state, {
         type: "follow-zoom-settled",
         zoom: 6, // e.g. an unrelated overview-fit settle
+        hasAppliedCameraCommand: true,
       });
       expect(result.state).toBe(state);
       expect(result.state.followZoomLevel).toBe(18.5);
+    });
+
+    it("while following with an already-issued command, but hasAppliedCameraCommand is false, is a reference-stable no-op", () => {
+      // Backlog item 74: awaitingFreshFix alone cannot detect this window —
+      // it is already false (a real command was issued) — only
+      // hasAppliedCameraCommand can tell that MapView has not actually
+      // applied that command to the map yet.
+      const state = followingState({ followZoomLevel: 17 });
+      const result = rideCameraReducer(state, {
+        type: "follow-zoom-settled",
+        zoom: 0, // e.g. MapLibre's own raw pre-style-ready default settle
+        hasAppliedCameraCommand: false,
+      });
+      expect(result.state).toBe(state);
+      expect(result.state.followZoomLevel).toBe(17);
     });
 
     it("while free, is a no-op", () => {
@@ -871,6 +888,7 @@ describe("rideCameraReducer", () => {
       const result = rideCameraReducer(free, {
         type: "follow-zoom-settled",
         zoom: 12,
+        hasAppliedCameraCommand: true,
       });
       expect(result.state).toBe(free);
     });
@@ -879,6 +897,7 @@ describe("rideCameraReducer", () => {
       const result = rideCameraReducer(INITIAL_RIDE_CAMERA_STATE, {
         type: "follow-zoom-settled",
         zoom: 8,
+        hasAppliedCameraCommand: true,
       });
       expect(result.state).toBe(INITIAL_RIDE_CAMERA_STATE);
     });
@@ -888,8 +907,87 @@ describe("rideCameraReducer", () => {
       const result = rideCameraReducer(state, {
         type: "follow-zoom-settled",
         zoom: 17,
+        hasAppliedCameraCommand: true,
       });
       expect(result.state).toBe(state);
+    });
+  });
+
+  describe("backlog item 74: a settle that lands before the issued command has actually applied", () => {
+    // Reproduces the exact field-evidence-matching sequence for a fresh
+    // free-roam/Riding Start: FreeRoamScreen's synchronous mount-time
+    // requestFollow() fires with no fix yet, the first GPS fix then issues
+    // a real follow command that the reducer considers "issued"
+    // (awaitingFreshFix flips false) even though MapView cannot actually
+    // call setCamera for it until the map style is ready. If MapLibre's own
+    // confirmed pre-style-ready moveend (see MapView.tsx's onCameraSettled
+    // doc comment, backlog item 67) settles at its raw [0,0]/zoom-0 default
+    // in that window, MapView now honestly reports hasAppliedCameraCommand:
+    // false for that settle (backlog item 74), which this guard must use to
+    // reject it — without this guard (proven by temporarily hard-coding
+    // hasAppliedCameraCommand: true below, matching this suite's pre-fix
+    // behaviour) the settle would silently corrupt followZoomLevel, and the
+    // very next fresh fix would reuse the corrupted value for a real, live
+    // command.
+    it("does not corrupt followZoomLevel from a settle MapView reports as not yet applied, and the next command keeps the original zoom", () => {
+      const requested = rideCameraReducer(INITIAL_RIDE_CAMERA_STATE, {
+        type: "follow-requested",
+        freshCoordinate: null,
+        bearingContext: NEUTRAL_BEARING_CONTEXT,
+      });
+      expect(requested.state.awaitingFreshFix).toBe(true);
+      expect(requested.state.followZoomLevel).toBe(NAVIGATION_ZOOM);
+      expect(requested.command).toBeNull();
+
+      const firstFix = rideCameraReducer(requested.state, {
+        type: "fresh-fix",
+        coordinate: START,
+        bearingContext: NEUTRAL_BEARING_CONTEXT,
+      });
+      expect(firstFix.state.awaitingFreshFix).toBe(false);
+      expect(firstFix.command?.zoom).toBe(NAVIGATION_ZOOM);
+
+      // MapLibre's own raw pre-style-ready default settle, forwarded
+      // unconditionally, arriving before the command above has actually
+      // reached the map (style not yet ready) — MapView honestly reports
+      // hasAppliedCameraCommand: false for it.
+      const spuriousSettle = rideCameraReducer(firstFix.state, {
+        type: "follow-zoom-settled",
+        zoom: 0,
+        hasAppliedCameraCommand: false,
+      });
+      expect(spuriousSettle.state.followZoomLevel).toBe(NAVIGATION_ZOOM);
+      expect(spuriousSettle.state).toBe(firstFix.state);
+
+      const secondFix = rideCameraReducer(spuriousSettle.state, {
+        type: "fresh-fix",
+        coordinate: SIGNIFICANT_MOVE,
+        bearingContext: NEUTRAL_BEARING_CONTEXT,
+      });
+      expect(secondFix.command?.zoom).toBe(NAVIGATION_ZOOM);
+    });
+
+    it("still reconciles followZoomLevel once MapView reports the command as genuinely applied", () => {
+      const requested = rideCameraReducer(INITIAL_RIDE_CAMERA_STATE, {
+        type: "follow-requested",
+        freshCoordinate: null,
+        bearingContext: NEUTRAL_BEARING_CONTEXT,
+      });
+      const firstFix = rideCameraReducer(requested.state, {
+        type: "fresh-fix",
+        coordinate: START,
+        bearingContext: NEUTRAL_BEARING_CONTEXT,
+      });
+
+      // The real settle of the command actually applied, once style became
+      // ready — MapLibre's own min/max clamping can shift the settled zoom
+      // slightly from the commanded 16.
+      const genuineSettle = rideCameraReducer(firstFix.state, {
+        type: "follow-zoom-settled",
+        zoom: 15.8,
+        hasAppliedCameraCommand: true,
+      });
+      expect(genuineSettle.state.followZoomLevel).toBe(15.8);
     });
   });
 

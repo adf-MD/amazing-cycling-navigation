@@ -454,6 +454,7 @@ export function FreeRoamScreen({
                 settled.zoom,
                 settled.bearingDegrees,
                 settled.pitchDegrees,
+                settled.hasAppliedCameraCommand,
               );
             }}
           />

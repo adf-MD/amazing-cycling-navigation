@@ -31,6 +31,10 @@ interface CameraSettledEvent {
   zoom: number;
   bearingDegrees: number;
   pitchDegrees: number;
+  /** See rideCamera.ts's identically-named RideCameraEvent field (backlog
+   * item 74) — forwarded verbatim from MapView's onCameraSettled payload
+   * into the follow-zoom-settled dispatch below. */
+  hasAppliedCameraCommand: boolean;
 }
 
 type HookEvent = RideCameraEvent | CameraSettledEvent;
@@ -74,6 +78,7 @@ function hookReducer(state: HookState, event: HookEvent): HookState {
     const zoomReconciled = rideCameraReducer(state.camera, {
       type: "follow-zoom-settled",
       zoom: event.zoom,
+      hasAppliedCameraCommand: event.hasAppliedCameraCommand,
     }).state;
     if (state.camera.mode !== "free") {
       return zoomReconciled === state.camera
@@ -170,6 +175,7 @@ export interface UseFreeRoamCameraResult {
     zoom: number,
     bearingDegrees: number,
     pitchDegrees: number,
+    hasAppliedCameraCommand: boolean,
   ) => void;
   persistableCameraState: StoredCameraState;
   /** The reducer's own internal dead-band/retain-state
@@ -343,6 +349,7 @@ export function useFreeRoamCamera({
       zoom: number,
       bearingDegrees: number,
       pitchDegrees: number,
+      hasAppliedCameraCommand: boolean,
     ) => {
       dispatch({
         type: "camera-settled",
@@ -350,6 +357,7 @@ export function useFreeRoamCamera({
         zoom,
         bearingDegrees,
         pitchDegrees,
+        hasAppliedCameraCommand,
       });
     },
     [],

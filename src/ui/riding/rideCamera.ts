@@ -157,8 +157,23 @@ export type RideCameraEvent =
    * zoom, including its own min/max clamping. Deliberately a no-op unless
    * genuinely following with an already-issued command (mode ===
    * "following" && !awaitingFreshFix) — see the reducer's own case for
-   * why the awaitingFreshFix guard is essential, not optional. */
-  | { type: "follow-zoom-settled"; zoom: number };
+   * why the awaitingFreshFix guard is essential, not optional.
+   *
+   * Backlog item 74: hasAppliedCameraCommand (from MapView's own
+   * onCameraSettled payload) is a second, independent guard alongside
+   * awaitingFreshFix, not a replacement for it. awaitingFreshFix answers
+   * "have we dispatched a fresh-fix event yet" (reducer-internal);
+   * hasAppliedCameraCommand answers "has MapView's own cameraTarget effect
+   * actually called setCamera yet" (MapView-internal, gated on style
+   * readiness the reducer has no visibility into). A settle can arrive
+   * with awaitingFreshFix already false (the fresh-fix event has been
+   * dispatched and produced a real command) while the command has not yet
+   * reached the map at all — confirmed reproducible: MapLibre fires its
+   * own internal pre-style-ready moveend at its raw default transform
+   * (see MapView.tsx's onCameraSettled registration), and without this
+   * guard that unrelated settle is indistinguishable from a genuine
+   * settle of the command just issued. */
+  | { type: "follow-zoom-settled"; zoom: number; hasAppliedCameraCommand: boolean };
 
 export interface RideCameraTransition {
   state: RideCameraState;
@@ -541,6 +556,7 @@ export function rideCameraReducer(
       if (
         state.mode !== "following" ||
         state.awaitingFreshFix ||
+        !event.hasAppliedCameraCommand ||
         state.followZoomLevel === event.zoom
       ) {
         // Reference-stable no-op: either there's no genuinely active
@@ -548,7 +564,11 @@ export function rideCameraReducer(
         // MapView's own unrelated overview-fit, or a restore still
         // awaiting its first fresh fix, must never overwrite a just-
         // restored/chosen zoom — see this event's own doc comment), or
-        // the settled zoom already matches, so nothing has changed.
+        // MapView has not actually applied any command yet (backlog item
+        // 74 — awaitingFreshFix alone cannot detect this: it can already
+        // be false, with a real command issued, while that command has
+        // not yet reached the map), or the settled zoom already matches,
+        // so nothing has changed.
         return { state, command: NO_COMMAND, pausedToast: false };
       }
       return {

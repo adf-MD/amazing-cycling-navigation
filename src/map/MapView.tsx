@@ -460,12 +460,27 @@ export interface MapViewProps {
   onUserCameraInteraction?: () => void;
   /** Fired whenever the camera finishes moving, for any reason — the
    * caller filters by its own current mode (only "free" cares, to persist
-   * a manually-panned position); this fires for programmatic moves too. */
+   * a manually-panned position); this fires for programmatic moves too.
+   * Deliberately never gated on styleReady (see the onCameraSettled
+   * registration inside attachMap() for why) — hasAppliedCameraCommand
+   * (backlog item 74) is the narrower, additive signal a caller needing
+   * command provenance (rideCamera.ts's follow-zoom-settled reconciliation)
+   * should consult instead of trying to infer it from timing. */
   onCameraSettled?: (camera: {
     coordinate: Coordinate;
     zoom: number;
     bearingDegrees: number;
     pitchDegrees: number;
+    /** True once this map instance (current attach generation) has
+     * actually applied at least one real cameraTarget command via
+     * setCamera. False for MapLibre's own internal pre-style-ready
+     * settle at its raw default transform, and for any other settle
+     * arriving before the first real command has landed — backlog item
+     * 74: a settle in that window cannot be trusted to reflect any
+     * command the app itself issued. Reset (via attachGenerationRef) on
+     * every map recreation, so a fresh instance starts this latch false
+     * again rather than inheriting the previous instance's history. */
+    hasAppliedCameraCommand: boolean;
   }) => void;
   /** Planning's waypoint markers, unrouted-preview line, and tap-to-place
    * — omitted (the default) for every existing caller, leaving the
@@ -631,6 +646,21 @@ export function MapView({
   // number self-invalidates against the strictly-increasing counter above,
   // needing no explicit "clear" step.
   const cameraRestorePendingGenerationRef = useRef<number | null>(null);
+  // Backlog item 74: the generation for which the cameraTarget effect has
+  // actually called setCamera at least once — set (never cleared
+  // explicitly, mirroring cameraRestorePendingGenerationRef's own
+  // self-invalidating convention) immediately after that call, inside the
+  // effect itself, which is gated on styleStructurallyReady. So this is
+  // provably still null/stale for the entire window a fresh instance sits
+  // at its raw default transform, before any real command has landed —
+  // exactly the window a spurious pre-style-ready settle (see
+  // onCameraSettled's own registration below) must not be mistaken for a
+  // genuine settle of an app-issued command. Compared against
+  // attachGenerationRef.current (not merely truthiness) so a map
+  // recreation correctly starts this latch false again on the new
+  // instance, the same self-invalidation pattern as
+  // cameraRestorePendingGenerationRef.
+  const appliedCameraCommandGenerationRef = useRef<number | null>(null);
   // Each lets its own effect skip its own fit exactly once per flagged
   // generation (respecting a just-applied camera restore), then resume
   // completely normal behaviour for any later, unrelated dependency change
@@ -1129,7 +1159,14 @@ export function MapView({
         // always internally consistent with them (one React batch).
         const position = currentPositionRef.current;
         setFollowAnchorPixel(position ? (map.project?.(position) ?? null) : null);
-        onCameraSettledRef.current?.(camera);
+        // Backlog item 74: additive, narrower than the "not gated on
+        // styleReady" decision above — see appliedCameraCommandGenerationRef's
+        // own doc comment.
+        onCameraSettledRef.current?.({
+          ...camera,
+          hasAppliedCameraCommand:
+            appliedCameraCommandGenerationRef.current === generation,
+        });
       });
 
       map.onMapTap((coordinate) => {
@@ -1582,6 +1619,13 @@ export function MapView({
       cameraTarget.pitchDegrees,
       { animate: cameraTarget.animate, followOffset: cameraTarget.followOffset },
     );
+    // Backlog item 74: marks this generation as having a real, actually-
+    // applied command, so a later settle can be trusted by
+    // appliedCameraCommandGenerationRef's own consumer (onCameraSettled's
+    // hasAppliedCameraCommand). Set after setCamera unconditionally — this
+    // effect only reaches here once styleStructurallyReady is true, so the
+    // latch is provably still stale for the whole pre-style-ready window.
+    appliedCameraCommandGenerationRef.current = attachGenerationRef.current;
   }, [cameraTarget, styleStructurallyReady]);
 
   // Executes an explicit "frame this area" request (Planning's

@@ -1640,6 +1640,7 @@ export function RidingScreen({
                 settled.zoom,
                 settled.bearingDegrees,
                 settled.pitchDegrees,
+                settled.hasAppliedCameraCommand,
               );
             }}
           />

@@ -130,7 +130,7 @@ describe("useFreeRoamCamera", () => {
     });
 
     act(() => {
-      result.current.reportCameraSettled([0, 51], 14, 0, 0);
+      result.current.reportCameraSettled([0, 51], 14, 0, 0, true);
     });
     expect(result.current.isNorthUpTopDown).toBe(true);
   });
@@ -525,12 +525,42 @@ describe("useFreeRoamCamera", () => {
         result.current.requestZoom(1);
       });
       act(() => {
-        result.current.reportCameraSettled(FRESH_FIX.coordinate, 16.9, 90, 35);
+        result.current.reportCameraSettled(FRESH_FIX.coordinate, 16.9, 90, 35, true);
       });
 
       expect(result.current.persistableCameraState).toMatchObject({
         mode: "following",
         zoom: 16.9,
+      });
+    });
+
+    it("backlog item 74: reportCameraSettled with hasAppliedCameraCommand false does not corrupt persistableCameraState.zoom", () => {
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: FRESH_FIX,
+          isStale: false,
+          restoredCameraState: null,
+          restoredLastReliableBearingDegrees: null,
+        }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      expect(result.current.persistableCameraState).toMatchObject({
+        mode: "following",
+        zoom: NAVIGATION_ZOOM,
+      });
+
+      // A settle MapView has not yet actually applied a command for — e.g.
+      // MapLibre's own raw pre-style-ready default settle.
+      act(() => {
+        result.current.reportCameraSettled([0, 0], 0, 0, 0, false);
+      });
+
+      expect(result.current.persistableCameraState).toMatchObject({
+        mode: "following",
+        zoom: NAVIGATION_ZOOM,
       });
     });
 

@@ -381,12 +381,37 @@ describe("useRideCamera", () => {
       // Simulate MapLibre settling at a slightly different real zoom (e.g.
       // due to its own min/max clamping) than the optimistic accumulator.
       act(() => {
-        result.current.reportCameraSettled(FRESH_FIX.coordinate, 16.9, 90, 35);
+        result.current.reportCameraSettled(FRESH_FIX.coordinate, 16.9, 90, 35, true);
       });
 
       expect(result.current.persistableCameraState).toMatchObject({
         mode: "following",
         zoom: 16.9,
+      });
+    });
+
+    it("backlog item 74: reportCameraSettled with hasAppliedCameraCommand false does not corrupt persistableCameraState.zoom", () => {
+      const { result } = renderHook(() =>
+        useRideCamera({ ...BASE_OPTIONS, currentFix: FRESH_FIX, isStale: false }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      expect(result.current.persistableCameraState).toMatchObject({
+        mode: "following",
+        zoom: NAVIGATION_ZOOM,
+      });
+
+      // A settle MapView has not yet actually applied a command for — e.g.
+      // MapLibre's own raw pre-style-ready default settle.
+      act(() => {
+        result.current.reportCameraSettled([0, 0], 0, 0, 0, false);
+      });
+
+      expect(result.current.persistableCameraState).toMatchObject({
+        mode: "following",
+        zoom: NAVIGATION_ZOOM,
       });
     });
 

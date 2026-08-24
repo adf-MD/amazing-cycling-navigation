@@ -221,6 +221,67 @@ test("Start free roam shows a live position on the map, with zero OpenRouteServi
   expect(consoleErrors).toEqual([]);
 });
 
+// Backlog item 74: free roam's own version of ridingCamera.spec.ts's "a
+// fresh Start whose first fix arrives well before the map style becomes
+// ready still converges to the followed zoom" — free roam had no such test
+// at all before this item, despite being the screen the field symptom was
+// actually observed on (a live GPS fix and Follow selected while the map
+// sat at an approximately whole-world zoom). Deliberately delays style
+// fulfilment well past the point the mocked geolocation fix has almost
+// certainly already been delivered, so the map style becomes ready only
+// after useFreeRoamCamera's own follow command has already been issued —
+// exactly the ordering the fix (MapView's hasAppliedCameraCommand,
+// rideCamera.ts's follow-zoom-settled guard) targets. This cannot force
+// MapLibre's own internal pre-style-ready settle to land in that exact
+// window deterministically in a real browser — its value is proving the
+// fix does not regress ordinary convergence for free roam specifically.
+test("Start free roam whose first fix arrives well before the map style becomes ready still converges to the followed zoom", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation(START);
+
+  // Mirrors ridingCamera.spec.ts's own identical 2s delay and rationale.
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page, {
+    styleDelayMs: 2_000,
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Ride", exact: true }).click();
+
+  // Deliberately does not wait for map-loading to hide first — that wait
+  // itself depends on style readiness, which this test is deliberately
+  // delaying. "Start free roam" itself has no such gating.
+  await page.getByRole("button", { name: "Start free roam" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Free roam" })).toBeVisible();
+
+  const followButton = page.getByRole("button", { name: "Follow my location" });
+  await expect(followButton).toHaveAttribute("aria-pressed", "true");
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+
+  // Once the deliberately delayed style eventually loads, the camera must
+  // reach the followed zoom (NAVIGATION_ZOOM, rideCamera.ts) — never remain
+  // stuck at, or visibly settle at, an approximately whole-world scale.
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-zoom"), { timeout: 15_000 })
+    .toBe("16");
+  await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).toBe("35");
+  await expect(followButton).toHaveAttribute("aria-pressed", "true");
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
 // Backlog item 58: free roam adopts the same fixed, non-scrolling,
 // flex-filling immersive shell RidingScreen's own Map view has (backlog
 // item 56) — mirrors ridingMapProfileViews.spec.ts's "defaults to Map,
