@@ -17,6 +17,15 @@ declare global {
      * below is skipped entirely rather than merely resolved, adding no
      * extra microtask tick to this hot persistence path. */
     __acnE2eRideStateWriteDelay?: () => Promise<void>;
+    /** Test-only seam (backlog item 73): when set and it returns an Error,
+     * clearActiveRideState() throws that error instead of performing the
+     * real delete — lets a Playwright e2e test deterministically exercise
+     * a genuine storage-clear failure and its retry, without faking the
+     * whole IndexedDB layer. Mirrors __acnE2eRideStateWriteDelay's exact
+     * contract: never set outside an e2e test's own page.addInitScript,
+     * always undefined for a real session, so the guarded call below adds
+     * no overhead to this hot finalisation path in production. */
+    __acnE2eRideStateClearFailure?: () => Error | undefined;
   }
 }
 
@@ -33,5 +42,9 @@ export async function setActiveRideState(state: StoredRideState): Promise<void> 
 }
 
 export async function clearActiveRideState(): Promise<void> {
+  const testFailure = window.__acnE2eRideStateClearFailure?.();
+  if (testFailure) {
+    throw testFailure;
+  }
   await db.rideState.delete(ACTIVE_RIDE_STATE_ID);
 }

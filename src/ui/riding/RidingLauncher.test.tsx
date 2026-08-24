@@ -68,7 +68,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={vi.fn()}
         onChooseRoute={vi.fn()}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -89,7 +90,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={vi.fn()}
         onChooseRoute={vi.fn()}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -110,7 +112,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={vi.fn()}
         onChooseRoute={onChooseRoute}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -128,7 +131,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={vi.fn()}
         onChooseRoute={vi.fn()}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -151,7 +155,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={onResumeRoute}
         onChooseRoute={vi.fn()}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -168,7 +173,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={vi.fn()}
         onChooseRoute={vi.fn()}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -202,7 +208,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={vi.fn()}
         onChooseRoute={vi.fn()}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -238,7 +245,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={vi.fn()}
         onChooseRoute={vi.fn()}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -261,7 +269,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={vi.fn()}
         onChooseRoute={vi.fn()}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -291,7 +300,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={vi.fn()}
         onChooseRoute={vi.fn()}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -316,7 +326,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={vi.fn()}
         onChooseRoute={vi.fn()}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -356,7 +367,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={vi.fn()}
         onChooseRoute={vi.fn()}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -378,7 +390,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={vi.fn()}
         onChooseRoute={vi.fn()}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -442,7 +455,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={vi.fn()}
         onChooseRoute={vi.fn()}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -466,7 +480,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={vi.fn()}
         onChooseRoute={vi.fn()}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -492,7 +507,8 @@ describe("RidingLauncher", () => {
       <RidingLauncher
         onResumeRoute={vi.fn()}
         onChooseRoute={vi.fn()}
-        onOpenFreeRoam={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
       />,
     );
 
@@ -500,58 +516,58 @@ describe("RidingLauncher", () => {
     expect(getRouteSpy).not.toHaveBeenCalled();
   });
 
-  describe("Start free roam", () => {
-    it("persists a fresh free-roam row before calling onOpenFreeRoam", async () => {
+  describe("Start/Resume free roam — presentational only (backlog item 73)", () => {
+    // The write-before-callback ordering, the persistence-failure/retry
+    // guarantee, and the storage-authoritative conflict guard have all
+    // moved to App.tsx (see App.test.tsx's "Ride switch guard" tests) —
+    // this component no longer touches storage for free roam at all. What
+    // remains here is purely prop-driven presentation.
+
+    it("Start free roam calls onStartFreeRoam", async () => {
       const user = userEvent.setup();
-      const onOpenFreeRoam = vi.fn();
-      const setActiveRideStateSpy = vi.spyOn(rideStateRepository, "setActiveRideState");
+      const onStartFreeRoam = vi.fn();
       render(
         <RidingLauncher
           onResumeRoute={vi.fn()}
           onChooseRoute={vi.fn()}
-          onOpenFreeRoam={onOpenFreeRoam}
+          onStartFreeRoam={onStartFreeRoam}
+          onResumeFreeRoam={vi.fn()}
         />,
       );
 
       await user.click(await screen.findByRole("button", { name: "Start free roam" }));
-
-      expect(setActiveRideStateSpy).toHaveBeenCalledOnce();
-      expect(setActiveRideStateSpy.mock.calls[0]?.[0]).toMatchObject({
-        kind: "free-roam",
-        lastFix: null,
-      });
-      expect(onOpenFreeRoam).toHaveBeenCalledTimes(1);
-      // Persist genuinely happened before the callback fired.
-      const writeOrder = setActiveRideStateSpy.mock.invocationCallOrder[0];
-      const callbackOrder = onOpenFreeRoam.mock.invocationCallOrder[0];
-      expect(writeOrder).toBeLessThan(callbackOrder ?? Infinity);
+      expect(onStartFreeRoam).toHaveBeenCalledTimes(1);
     });
 
-    it("a persistence failure keeps the rider on the launcher, starts no GPS watch (never calls onOpenFreeRoam), and shows a retryable error", async () => {
-      const user = userEvent.setup();
-      const onOpenFreeRoam = vi.fn();
-      const writeSpy = vi
-        .spyOn(rideStateRepository, "setActiveRideState")
-        .mockRejectedValueOnce(new Error("boom"));
+    it("isFreeRoamPending disables and relabels Start free roam", async () => {
       render(
         <RidingLauncher
           onResumeRoute={vi.fn()}
           onChooseRoute={vi.fn()}
-          onOpenFreeRoam={onOpenFreeRoam}
+          onStartFreeRoam={vi.fn()}
+          onResumeFreeRoam={vi.fn()}
+          isFreeRoamPending
         />,
       );
 
-      await user.click(await screen.findByRole("button", { name: "Start free roam" }));
+      const button = await screen.findByRole("button", { name: "Starting…" });
+      expect(button).toBeDisabled();
+    });
+
+    it("freeRoamError renders as an accessible alert near Start free roam", async () => {
+      render(
+        <RidingLauncher
+          onResumeRoute={vi.fn()}
+          onChooseRoute={vi.fn()}
+          onStartFreeRoam={vi.fn()}
+          onResumeFreeRoam={vi.fn()}
+          freeRoamError="Free roam could not be started on this device. Try again."
+        />,
+      );
 
       expect(await screen.findByRole("alert")).toHaveTextContent(
         "Free roam could not be started on this device. Try again.",
       );
-      expect(onOpenFreeRoam).not.toHaveBeenCalled();
-      expect(screen.getByRole("button", { name: "Choose a route" })).toBeInTheDocument();
-
-      writeSpy.mockRestore();
-      await user.click(screen.getByRole("button", { name: "Start free roam" }));
-      expect(onOpenFreeRoam).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -564,14 +580,15 @@ describe("RidingLauncher", () => {
         lastFix: { coordinate: [-1.45, 53.8], accuracyMetres: 6, timestampMs: 1000 },
       });
       const getRouteSpy = vi.spyOn(routesRepository, "getRoute");
-      const onOpenFreeRoam = vi.fn();
+      const onResumeFreeRoam = vi.fn();
       const user = userEvent.setup();
 
       render(
         <RidingLauncher
           onResumeRoute={vi.fn()}
           onChooseRoute={vi.fn()}
-          onOpenFreeRoam={onOpenFreeRoam}
+          onStartFreeRoam={vi.fn()}
+          onResumeFreeRoam={onResumeFreeRoam}
         />,
       );
 
@@ -583,7 +600,28 @@ describe("RidingLauncher", () => {
       expect(getRouteSpy).not.toHaveBeenCalled();
 
       await user.click(screen.getByRole("button", { name: "Resume free roam" }));
-      expect(onOpenFreeRoam).toHaveBeenCalledTimes(1);
+      expect(onResumeFreeRoam).toHaveBeenCalledTimes(1);
+    });
+
+    it("isFreeRoamPending disables and relabels Resume free roam", async () => {
+      await setActiveRideState({
+        id: "active",
+        kind: "free-roam",
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: null,
+      });
+      render(
+        <RidingLauncher
+          onResumeRoute={vi.fn()}
+          onChooseRoute={vi.fn()}
+          onStartFreeRoam={vi.fn()}
+          onResumeFreeRoam={vi.fn()}
+          isFreeRoamPending
+        />,
+      );
+
+      const button = await screen.findByRole("button", { name: "Resuming…" });
+      expect(button).toBeDisabled();
     });
 
     it("the End-ride confirmation for a free-roam session does not mention a saved route", async () => {
@@ -598,7 +636,8 @@ describe("RidingLauncher", () => {
         <RidingLauncher
           onResumeRoute={vi.fn()}
           onChooseRoute={vi.fn()}
-          onOpenFreeRoam={vi.fn()}
+          onStartFreeRoam={vi.fn()}
+          onResumeFreeRoam={vi.fn()}
         />,
       );
 
@@ -620,7 +659,8 @@ describe("RidingLauncher", () => {
         <RidingLauncher
           onResumeRoute={vi.fn()}
           onChooseRoute={vi.fn()}
-          onOpenFreeRoam={vi.fn()}
+          onStartFreeRoam={vi.fn()}
+          onResumeFreeRoam={vi.fn()}
         />,
       );
 
@@ -638,52 +678,42 @@ describe("RidingLauncher", () => {
     });
   });
 
-  describe("blockedRouteOpenReason", () => {
-    it("renders the free-roam-unfinished explanation when set", async () => {
-      render(
+  describe("sessionRefreshToken (backlog item 73)", () => {
+    it("a bumped sessionRefreshToken re-triggers hydration, reflecting a session cleared out from under it", async () => {
+      await db.routes.put(route);
+      await setActiveRideState(buildRideState());
+      const { rerender } = render(
         <RidingLauncher
           onResumeRoute={vi.fn()}
           onChooseRoute={vi.fn()}
-          onOpenFreeRoam={vi.fn()}
-          blockedRouteOpenReason="free-roam-unfinished"
+          onStartFreeRoam={vi.fn()}
+          onResumeFreeRoam={vi.fn()}
+          sessionRefreshToken={0}
         />,
       );
 
       expect(
-        await screen.findByText(
-          "You have an unfinished free roam session. End it before opening a saved route.",
-        ),
+        await screen.findByRole("button", { name: "Resume ride" }),
       ).toBeInTheDocument();
-    });
 
-    it("renders the check-failed explanation when set", async () => {
-      render(
+      // Simulate App.tsx having cleared the row itself (e.g. as part of a
+      // confirmed different-session switch) without this component's own
+      // knowledge — only the bumped token should cause it to notice.
+      await db.rideState.clear();
+      rerender(
         <RidingLauncher
           onResumeRoute={vi.fn()}
           onChooseRoute={vi.fn()}
-          onOpenFreeRoam={vi.fn()}
-          blockedRouteOpenReason="check-failed"
+          onStartFreeRoam={vi.fn()}
+          onResumeFreeRoam={vi.fn()}
+          sessionRefreshToken={1}
         />,
       );
 
       expect(
-        await screen.findByText(
-          "Whether a free roam session is still active could not be checked, so the route was not opened. Try again.",
-        ),
+        await screen.findByRole("button", { name: "Choose a route" }),
       ).toBeInTheDocument();
-    });
-
-    it("renders no message when null/absent", async () => {
-      render(
-        <RidingLauncher
-          onResumeRoute={vi.fn()}
-          onChooseRoute={vi.fn()}
-          onOpenFreeRoam={vi.fn()}
-        />,
-      );
-
-      await screen.findByRole("button", { name: "Choose a route" });
-      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
     });
   });
 });

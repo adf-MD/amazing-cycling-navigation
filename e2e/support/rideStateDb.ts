@@ -90,6 +90,46 @@ export async function readActiveRideStateRow(
 }
 
 /**
+ * Writes a row directly into the singleton `rideState` "active" row,
+ * bypassing the UI entirely. Used to construct backlog item 73's "storage
+ * changed after the launcher's own hydration already ran" scenarios
+ * deterministically, within a single browser context/tab — there is no
+ * other honest way to expose a stale-launcher-view attempt through the
+ * real UI, since the app itself never writes a conflicting row behind its
+ * own back. Mirrors readActiveRideStateRow's own IndexedDB-transaction
+ * structure exactly.
+ */
+export async function writeActiveRideStateRow(
+  page: Page,
+  row: Record<string, unknown>,
+): Promise<void> {
+  await page.evaluate(
+    ({ dbName, row }: { dbName: string; row: Record<string, unknown> }) =>
+      new Promise<void>((resolve, reject) => {
+        const openRequest = indexedDB.open(dbName);
+        openRequest.onerror = () => {
+          reject(toIndexedDbError(openRequest.error));
+        };
+        openRequest.onsuccess = () => {
+          const database = openRequest.result;
+          const transaction = database.transaction("rideState", "readwrite");
+          const store = transaction.objectStore("rideState");
+          const putRequest = store.put(row);
+          putRequest.onsuccess = () => {
+            database.close();
+            resolve();
+          };
+          putRequest.onerror = () => {
+            database.close();
+            reject(toIndexedDbError(putRequest.error));
+          };
+        };
+      }),
+    { dbName: INDEXED_DB_NAME, row },
+  );
+}
+
+/**
  * Reads the singleton `planningDrafts` "draft" row directly from
  * IndexedDB, bypassing the UI entirely. Returns null when no draft row
  * exists (including once handleSave's own clearDraft() has resolved) —

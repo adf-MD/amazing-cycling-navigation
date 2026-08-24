@@ -506,7 +506,7 @@ test("End ride from the unresumed launcher works directly, without ever resuming
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
 });
 
-test("a saved route cannot silently replace an unfinished free-roam session, and opens normally once free roam is ended", async ({
+test("a saved route cannot silently replace an unfinished free-roam session — Routes shows a confirmation in place, and confirming clears it before the route opens (backlog item 73)", async ({
   page,
   context,
 }) => {
@@ -549,25 +549,24 @@ test("a saved route cannot silently replace an unfinished free-roam session, and
   await expect(routeButton).toBeVisible();
   await routeButton.click();
 
+  // Backlog item 73: stays on Routes with an inline confirmation, rather
+  // than redirecting to Ride to show a blocked-open explanation. The
+  // original free-roam row stays exactly intact until confirmed.
+  const freeRoamRowBefore = await readActiveRideStateRow(page);
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog.getByText(/unfinished free roam session/i)).toBeVisible();
+  expect(await readActiveRideStateRow(page)).toEqual(freeRoamRowBefore);
+  // exact:true — the dialog's own title ("Switch to
+  // "free-roam-conflict-route"?") would otherwise substring-match this
+  // same query while it's open.
   await expect(
-    page.getByText(
-      "You have an unfinished free roam session. End it before opening a saved route.",
-    ),
-  ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Resume free roam" })).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "free-roam-conflict-route" }),
+    page.getByRole("heading", { name: "free-roam-conflict-route", exact: true }),
   ).toBeHidden();
 
-  await page.getByRole("button", { name: "End ride" }).click();
-  const dialog = page.getByRole("alertdialog");
-  await dialog.getByRole("button", { name: "End ride" }).click();
+  await dialog.getByRole("button", { name: "End and switch" }).click();
   await waitForClearedRideState(page);
-
-  await page.getByRole("button", { name: "Routes" }).click();
-  await routeButton.click();
   await expect(
-    page.getByRole("heading", { name: "free-roam-conflict-route" }),
+    page.getByRole("heading", { name: "free-roam-conflict-route", exact: true }),
   ).toBeVisible();
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);

@@ -1,16 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PlannedRoute } from "../../domain/types.ts";
-import { systemClock, type Clock } from "../../platform/clock.ts";
 import { logError } from "../../platform/errorLog.ts";
 import {
   isStoredFreeRoamRideState,
   isStoredRouteRideState,
-  toStoredFreeRoamState,
 } from "../../storage/mapping.ts";
 import {
   clearActiveRideState,
   getActiveRideState,
-  setActiveRideState,
 } from "../../storage/rideStateRepository.ts";
 import { getRoute } from "../../storage/routesRepository.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
@@ -22,26 +19,36 @@ export interface RidingLauncherProps {
    * itself still never starts geolocation — App.tsx pairs this call with a
    * one-use resume intent (backlog item 72) that RidingScreen consumes only
    * once its own restoration has genuinely completed, starting GPS and
-   * requesting Follow in the same tap that presses "Resume ride" here. */
+   * requesting Follow in the same tap that presses "Resume ride" here.
+   * App.tsx also re-validates this against current storage at click time
+   * (backlog item 73) before honouring the resume intent at all. */
   onResumeRoute: (route: PlannedRoute) => void;
   onChooseRoute: () => void;
-  /** Fired once a free-roam session is ready to display — covers both
-   * "Start free roam" (after this component has already persisted a fresh
-   * session row) and "Resume free roam" (the row already existed) alike;
-   * this component itself decides which one actually happened and never
-   * exposes that distinction upward. Unlike onResumeRoute, this genuinely
-   * starts geolocation (via FreeRoamScreen's own mount effect) — the
-   * explicit tap that triggers this callback IS the deliberate user action
-   * item 42's own spec requires. */
-  onOpenFreeRoam: () => void;
-  /** Set by App.tsx when a route-open attempt (from Routes or a Planning
-   * save) was blocked because an unfinished free-roam session exists, or
-   * because that check itself failed to read storage — never set for an
-   * ordinary visit to this screen. Rendered as an accessible explanation
-   * near the top, regardless of which session-state branch is active
-   * below it. */
-  blockedRouteOpenReason?: "free-roam-unfinished" | "check-failed" | null;
-  clock?: Clock;
+  /** Fired by the "Start free roam" button. Unlike the old shared
+   * onOpenFreeRoam callback, this component no longer persists anything
+   * itself — App.tsx's own unfinished-session switch guard (backlog item
+   * 73) owns writing the fresh session row, since that write must not
+   * happen until the guard has confirmed there's nothing to silently
+   * overwrite. isFreeRoamPending/freeRoamError reflect that work's
+   * progress back down to this button. */
+  onStartFreeRoam: () => void;
+  /** Fired by the "Resume free roam" button — the persisted row already
+   * exists, so unlike onStartFreeRoam this never writes anything; App.tsx
+   * still re-validates against current storage first (backlog item 73)
+   * before genuinely resuming it. */
+  onResumeFreeRoam: () => void;
+  /** True while App.tsx's guard/write for either free-roam action is in
+   * flight — disables both free-roam buttons and shows a pending label. */
+  isFreeRoamPending?: boolean;
+  /** Set by App.tsx when a free-roam start/resume attempt failed (a guard
+   * check or the fresh-session write) — rendered as an accessible error
+   * beneath whichever free-roam button is currently showing. */
+  freeRoamError?: string | null;
+  /** Bumped by App.tsx once, immediately after any confirmed different-
+   * session switch (backlog item 73) has successfully cleared storage —
+   * re-triggers this component's own hydration so it never continues
+   * showing a session that was just deliberately ended out from under it. */
+  sessionRefreshToken?: number;
 }
 
 type RidingLauncherHydrationStatus = "loading" | "ready" | "failed";
@@ -102,14 +109,6 @@ function describeUnresumableReason(reason: "route-missing" | "unsupported-kind")
     : "This unfinished ride can't be recovered by this version of the app.";
 }
 
-function describeBlockedRouteOpenReason(
-  reason: "free-roam-unfinished" | "check-failed",
-): string {
-  return reason === "free-roam-unfinished"
-    ? "You have an unfinished free roam session. End it before opening a saved route."
-    : "Whether a free roam session is still active could not be checked, so the route was not opened. Try again.";
-}
-
 /**
  * The idle Ride screen's launcher — reachable whenever no ride content is
  * currently selected in App.tsx (a fresh app load, an ordinary "Ride" tab
@@ -120,15 +119,17 @@ function describeBlockedRouteOpenReason(
  * before a reload is still discoverable. All recovery stays local/offline:
  * only getActiveRideState/getRoute are read here, never a routing-provider
  * request, and starting free roam never requests geolocation either — only
- * the resulting onOpenFreeRoam callback, and FreeRoamScreen's own mount
- * effect, do that.
+ * App.tsx's own guard/write and FreeRoamScreen's subsequent mount effect
+ * do that, once onStartFreeRoam/onResumeFreeRoam fires.
  */
 export function RidingLauncher({
   onResumeRoute,
   onChooseRoute,
-  onOpenFreeRoam,
-  blockedRouteOpenReason = null,
-  clock = systemClock,
+  onStartFreeRoam,
+  onResumeFreeRoam,
+  isFreeRoamPending = false,
+  freeRoamError = null,
+  sessionRefreshToken,
 }: RidingLauncherProps) {
   const [hydrationStatus, setHydrationStatus] =
     useState<RidingLauncherHydrationStatus>("loading");
@@ -187,7 +188,7 @@ export function RidingLauncher({
         hydrationGenerationRef.current += 1;
       }
     };
-  }, [hydrationRetryToken]);
+  }, [hydrationRetryToken, sessionRefreshToken]);
 
   const clearTriggerRef = useRef<HTMLButtonElement>(null);
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
@@ -341,56 +342,9 @@ export function RidingLauncher({
     );
   }
 
-  // "Start free roam" — persists a fresh, minimal free-roam session row
-  // BEFORE calling onOpenFreeRoam, so a storage failure keeps the rider on
-  // this screen with no GPS watch ever started (backlog item 42's own
-  // explicit requirement). A synchronous re-entrancy guard mirrors
-  // isClearActionPendingRef above.
-  const startFreeRoamTriggerRef = useRef<HTMLButtonElement>(null);
-  const [isStartingFreeRoam, setIsStartingFreeRoam] = useState(false);
-  const [startFreeRoamError, setStartFreeRoamError] = useState<string | null>(null);
-  const isStartFreeRoamPendingRef = useRef(false);
-
-  const handleStartFreeRoam = async () => {
-    if (isStartFreeRoamPendingRef.current) return;
-    isStartFreeRoamPendingRef.current = true;
-    setIsStartingFreeRoam(true);
-    setStartFreeRoamError(null);
-    try {
-      await setActiveRideState(
-        toStoredFreeRoamState(
-          new Date(clock.now()).toISOString(),
-          null,
-          {
-            mode: "overview",
-            coordinate: null,
-            zoom: null,
-            bearingDegrees: 0,
-            pitchDegrees: 0,
-          },
-          null,
-          false,
-        ),
-      );
-      onOpenFreeRoam();
-    } catch (error) {
-      logError("riding-launcher-start-free-roam", error);
-      setStartFreeRoamError("Free roam could not be started on this device. Try again.");
-    } finally {
-      isStartFreeRoamPendingRef.current = false;
-      setIsStartingFreeRoam(false);
-    }
-  };
-
   return (
     <section className="screen" aria-label="Ride">
       <h1 className="screen-title">Ride</h1>
-
-      {blockedRouteOpenReason ? (
-        <p className="field-error" role="alert">
-          {describeBlockedRouteOpenReason(blockedRouteOpenReason)}
-        </p>
-      ) : null}
 
       {hydrationStatus === "loading" ? (
         <p className="status-row" role="status">
@@ -425,17 +379,14 @@ export function RidingLauncher({
           <button
             type="button"
             className="btn-secondary"
-            ref={startFreeRoamTriggerRef}
-            onClick={() => {
-              void handleStartFreeRoam();
-            }}
-            disabled={isStartingFreeRoam}
+            onClick={onStartFreeRoam}
+            disabled={isFreeRoamPending}
           >
-            {isStartingFreeRoam ? "Starting…" : "Start free roam"}
+            {isFreeRoamPending ? "Starting…" : "Start free roam"}
           </button>
-          {startFreeRoamError ? (
+          {freeRoamError ? (
             <p className="field-error" role="alert">
-              {startFreeRoamError}
+              {freeRoamError}
             </p>
           ) : null}
         </>
@@ -466,9 +417,19 @@ export function RidingLauncher({
         <div className="panel stack">
           <h2>Free roam</h2>
           <p>You have an unfinished free roam session.</p>
-          <button type="button" className="btn-primary" onClick={onOpenFreeRoam}>
-            Resume free roam
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={onResumeFreeRoam}
+            disabled={isFreeRoamPending}
+          >
+            {isFreeRoamPending ? "Resuming…" : "Resume free roam"}
           </button>
+          {freeRoamError ? (
+            <p className="field-error" role="alert">
+              {freeRoamError}
+            </p>
+          ) : null}
           <div className="ride-launcher-clear-row stack">{renderClearAction()}</div>
         </div>
       ) : null}

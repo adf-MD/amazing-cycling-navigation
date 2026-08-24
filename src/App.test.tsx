@@ -594,6 +594,7 @@ describe("App — Ride launcher session recovery", () => {
   it("a resumable session (never selectedRoute) drives the launcher, and Resume ride opens it directly into active tracking (backlog item 72)", async () => {
     const user = userEvent.setup();
     const watchPositionSpy = stubGeolocationWatch();
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
     render(<App mapFactory={buildNoopMapFactory()} />);
 
     await importFixture(user, "Route A.gpx");
@@ -622,12 +623,15 @@ describe("App — Ride launcher session recovery", () => {
     expect(watchPositionSpy).not.toHaveBeenCalled();
 
     // One tap — no intermediate "Resume riding" idle screen — reaches
-    // active tracking directly.
+    // active tracking directly. Same-session recovery (backlog item 73)
+    // must never show the destructive-switch dialog or clear storage.
     await user.click(screen.getByRole("button", { name: "Resume ride" }));
 
     expect(await screen.findByRole("button", { name: "Pause" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
     expect(watchPositionSpy).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(clearSpy).not.toHaveBeenCalled();
   });
 
   it("a successful End ride from the resumed state clears selectedRoute, resets scroll, and returns to the empty launcher", async () => {
@@ -948,47 +952,56 @@ describe("App — Free roam", () => {
     expect(screen.queryByRole("button", { name: "Choose a route" })).toBeNull();
   });
 
-  it("a saved route cannot silently replace an unfinished free-roam session — Routes is blocked with an explanation, and can open normally once free roam is ended", async () => {
+  it("a saved route cannot silently replace an unfinished free-roam session — Routes shows a confirmation in place, Cancel preserves the row, and confirming clears it before the route opens (backlog item 73)", async () => {
     const user = userEvent.setup();
     render(<App mapFactory={buildNoopMapFactory()} />);
 
     await importFixture(user, "Route A.gpx");
-    await setActiveRideState({
-      id: "active",
-      kind: "free-roam",
+    const freeRoamRow = {
+      id: "active" as const,
+      kind: "free-roam" as const,
       startedAt: "2026-01-01T08:00:00.000Z",
       lastFix: null,
-    });
+    };
+    await setActiveRideState(freeRoamRow);
 
-    await user.click(screen.getByRole("button", { name: "Route A" }));
+    const routeButton = await screen.findByRole("button", { name: "Route A" });
+    await user.click(routeButton);
 
-    // Blocked: redirected to Ride, never opened into RidingScreen.
+    // Blocked: stays on Routes — never redirected merely to show an error
+    // or ask for confirmation.
     expect(screen.queryByRole("heading", { name: "Route A" })).toBeNull();
-    expect(
-      await screen.findByText(
-        "You have an unfinished free roam session. End it before opening a saved route.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      await screen.findByRole("button", { name: "Resume free roam" }),
-    ).toBeInTheDocument();
-    // The row must genuinely still be there — nothing was cleared.
-    expect(await getActiveRideState()).toBeDefined();
-
-    // End the conflicting session, then the same route opens normally.
-    await user.click(screen.getByRole("button", { name: "End ride" }));
+    expect(screen.getByRole("heading", { name: "Routes" })).toBeInTheDocument();
     const dialog = await screen.findByRole("alertdialog");
-    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
-    await waitFor(async () => {
-      expect(await getActiveRideState()).toBeUndefined();
-    });
+    expect(within(dialog).getByText(/unfinished free roam session/i)).toBeInTheDocument();
+    // Nothing was cleared or replaced before confirmation — the row is
+    // still exactly what it was.
+    expect(await getActiveRideState()).toEqual(freeRoamRow);
 
-    await user.click(screen.getByRole("button", { name: "Routes" }));
-    await user.click(await screen.findByRole("button", { name: "Route A" }));
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    // Cancel preserves the row exactly and restores focus to the trigger.
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(await getActiveRideState()).toEqual(freeRoamRow);
+    expect(screen.getByRole("heading", { name: "Routes" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Route A" })).toHaveFocus();
+
+    // Confirming clears the free-roam session before the route opens.
+    await user.click(screen.getByRole("button", { name: "Route A" }));
+    const confirmDialog = await screen.findByRole("alertdialog");
+    await user.click(
+      within(confirmDialog).getByRole("button", { name: "End and switch" }),
+    );
+
     expect(await screen.findByRole("heading", { name: "Route A" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
+    // The free-roam row was genuinely cleared, and the new route session
+    // hasn't started GPS (no persistence write happens until then) — so
+    // nothing is stored yet at all.
+    expect(await getActiveRideState()).toBeUndefined();
   });
 
-  it("a failed conflict check also blocks opening a route (fails closed), never silently proceeding", async () => {
+  it("a failed conflict check fails closed (never silently proceeding), stays on Routes rather than redirecting, and a retry then opens the route (backlog item 73)", async () => {
     const user = userEvent.setup();
     render(<App mapFactory={buildNoopMapFactory()} />);
 
@@ -999,14 +1012,27 @@ describe("App — Free roam", () => {
 
     await user.click(screen.getByRole("button", { name: "Route A" }));
 
+    // Stays on Routes — never redirected merely to show an error.
     expect(screen.queryByRole("heading", { name: "Route A" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Routes" })).toBeInTheDocument();
+    const dialog = await screen.findByRole("alertdialog");
+    // Distinct, honest copy for a read failure — never worded as a
+    // confirmed conflict ("Switch to...?", "must be ended").
     expect(
-      await screen.findByText(
-        "Whether a free roam session is still active could not be checked, so the route was not opened. Try again.",
+      within(dialog).getByText("Couldn't check for an unfinished ride"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        "Whether you have an unfinished ride could not be checked, so nothing has opened yet.",
       ),
     ).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Retry" })).toBeInTheDocument();
 
     readSpy.mockRestore();
+    await user.click(within(dialog).getByRole("button", { name: "Retry" }));
+
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(await screen.findByRole("heading", { name: "Route A" })).toBeInTheDocument();
   });
 
   it("Start free roam is unavailable while a route session is unfinished — the launcher shows only Resume ride/End ride", async () => {
@@ -1032,5 +1058,339 @@ describe("App — Free roam", () => {
       await screen.findByRole("button", { name: "Resume ride" }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Start free roam" })).toBeNull();
+  });
+});
+
+// Covers the remainder of backlog item 73's required transition matrix not
+// already exercised above: same-route/free-roam recovery and the
+// free-roam-blocks-route/check-failed directions are covered by the
+// "App — Ride launcher session recovery" and "App — Free roam" describe
+// blocks above (some of those existing tests were themselves rewritten for
+// the new dialog-based lifecycle). handleOpenRoute and handleRouteSaved
+// both route through the identical requestRouteTransition(route, {
+// stampResumeIntent: false }) call (see App.tsx) — a Planning-save conflict
+// is therefore covered by the route-to-route/free-roam-to-route scenarios
+// below at the code level, and separately by a real-browser scenario in
+// e2e/rideSessionSwitchGuard.spec.ts; PlanningScreen cannot be mounted in
+// this jsdom suite without a mock map factory that App.tsx does not
+// currently thread through to it (confirmed empirically — a real,
+// unmocked MapView throws in jsdom on unmount), so this file does not
+// attempt to force that specific entry point through the full Planning UI.
+describe("App — Ride switch guard (item 73)", () => {
+  beforeEach(async () => {
+    await db.routes.clear();
+    await db.rideState.clear();
+    await db.routeLibraryPreferences.clear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  function stubGeolocationWatch() {
+    const watchPositionSpy = vi.fn();
+    vi.stubGlobal("navigator", {
+      onLine: navigator.onLine,
+      geolocation: {
+        watchPosition: watchPositionSpy,
+        getCurrentPosition: vi.fn(),
+        clearWatch: vi.fn(),
+      },
+    });
+    return watchPositionSpy;
+  }
+
+  async function seedRouteRow(routeId: string) {
+    await setActiveRideState({
+      id: "active",
+      routeId,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: { coordinate: [0, 51], accuracyMetres: 6, timestampMs: 1000 },
+      lastMatchedPointIndex: 0,
+      matchedDistanceFromStartMetres: 0,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+    });
+    return getActiveRideState();
+  }
+
+  it("no stored session — opening a route proceeds immediately, with no dialog and no clear", async () => {
+    const user = userEvent.setup();
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    await user.click(screen.getByRole("button", { name: "Route A" }));
+
+    expect(await screen.findByRole("heading", { name: "Route A" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(clearSpy).not.toHaveBeenCalled();
+  });
+
+  it("route A unfinished + route B opened: confirmation before any replacement, Cancel leaves A's exact row and screen untouched, confirming clears once then opens B idle with no watch until Start riding", async () => {
+    const user = userEvent.setup();
+    const watchPositionSpy = stubGeolocationWatch();
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    await importFixture(user, "Route B.gpx");
+    const routes = await db.routes.toArray();
+    const routeA = routes.find((route) => route.name === "Route A");
+    if (!routeA) throw new Error("expected Route A");
+    const routeARow = await seedRouteRow(routeA.id);
+
+    const routeBButton = screen.getByRole("button", { name: "Route B" });
+    await user.click(routeBButton);
+
+    expect(screen.queryByRole("heading", { name: "Route B" })).toBeNull();
+    const dialog = await screen.findByRole("alertdialog");
+    expect(
+      within(dialog).getByText(/unfinished ride on another route/i),
+    ).toBeInTheDocument();
+    expect(await getActiveRideState()).toEqual(routeARow);
+    expect(watchPositionSpy).not.toHaveBeenCalled();
+
+    // Cancel preserves everything exactly and restores focus.
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(await getActiveRideState()).toEqual(routeARow);
+    expect(screen.getByRole("heading", { name: "Routes" })).toBeInTheDocument();
+    expect(routeBButton).toHaveFocus();
+    expect(clearSpy).not.toHaveBeenCalled();
+
+    // Confirming clears exactly once, then opens B idle with no watch.
+    await user.click(routeBButton);
+    const confirmDialog = await screen.findByRole("alertdialog");
+    await user.click(
+      within(confirmDialog).getByRole("button", { name: "End and switch" }),
+    );
+
+    await waitFor(async () => {
+      expect(await getActiveRideState()).toBeUndefined();
+    });
+    expect(await screen.findByRole("heading", { name: "Route B" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
+    expect(watchPositionSpy).not.toHaveBeenCalled();
+    expect(clearSpy).toHaveBeenCalledOnce();
+  });
+
+  it("a stale launcher render exposing Start free roam is still guarded when a route session became active after hydration — clear happens before the fresh free-roam row is written and before the watch starts", async () => {
+    const user = userEvent.setup();
+    const watchPositionSpy = stubGeolocationWatch();
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+    const writeSpy = vi.spyOn(rideStateRepository, "setActiveRideState");
+    const readSpy = vi.spyOn(rideStateRepository, "getActiveRideState");
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    const [importedRoute] = await db.routes.toArray();
+    if (!importedRoute) throw new Error("expected an imported route");
+
+    // Reach the launcher's genuinely empty "none" state first (hydration
+    // resolves before any session exists).
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+    const startFreeRoamButton = await screen.findByRole("button", {
+      name: "Start free roam",
+    });
+
+    // Simulate storage changing after the launcher's own hydration already
+    // resolved to "none" — the launcher's in-memory sessionState is now
+    // stale, but nothing has re-rendered it.
+    const readCallsBeforeClick = readSpy.mock.calls.length;
+    const routeRow = await seedRouteRow(importedRoute.id);
+
+    await user.click(startFreeRoamButton);
+
+    // The guard re-reads storage at click time rather than trusting the
+    // stale render — it must not silently overwrite the route row.
+    expect(readSpy.mock.calls.length).toBeGreaterThan(readCallsBeforeClick);
+    const dialog = await screen.findByRole("alertdialog");
+    expect(
+      within(dialog).getByText(/unfinished ride on another route/i),
+    ).toBeInTheDocument();
+    expect(await getActiveRideState()).toEqual(routeRow);
+
+    await user.click(within(dialog).getByRole("button", { name: "End and switch" }));
+
+    await waitFor(() => {
+      expect(watchPositionSpy).toHaveBeenCalledOnce();
+    });
+    expect(clearSpy).toHaveBeenCalledOnce();
+    // Clear happened before the fresh free-roam write, which happened
+    // before the watch started.
+    const clearOrder = clearSpy.mock.invocationCallOrder[0] ?? Infinity;
+    const writeOrder = writeSpy.mock.invocationCallOrder.find(
+      (order) => order > clearOrder,
+    );
+    const watchOrder = watchPositionSpy.mock.invocationCallOrder[0] ?? -Infinity;
+    if (writeOrder === undefined) throw new Error("expected a write order");
+    expect(writeOrder).toBeLessThan(watchOrder);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Free roam" }),
+    ).toBeInTheDocument();
+  });
+
+  it("a rejected clear preserves the exact original row and target; a retry succeeds without a duplicate transition", async () => {
+    const user = userEvent.setup();
+    stubGeolocationWatch();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    await importFixture(user, "Route B.gpx");
+    const routes = await db.routes.toArray();
+    const routeA = routes.find((route) => route.name === "Route A");
+    if (!routeA) throw new Error("expected Route A");
+    const routeARow = await seedRouteRow(routeA.id);
+
+    const clearSpy = vi
+      .spyOn(rideStateRepository, "clearActiveRideState")
+      .mockRejectedValueOnce(new Error("boom"));
+
+    await user.click(screen.getByRole("button", { name: "Route B" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "End and switch" }));
+
+    expect(
+      await screen.findByText(/could not be ended on this device/i),
+    ).toBeInTheDocument();
+    expect(await getActiveRideState()).toEqual(routeARow);
+    expect(screen.queryByRole("heading", { name: "Route B" })).toBeNull();
+
+    // clearActiveRideState's mockRejectedValueOnce is now exhausted — the
+    // retry click falls through to the real implementation without needing
+    // to restore/re-spy, so call-count tracking on the same spy stays
+    // valid throughout.
+    await user.click(screen.getByRole("button", { name: "End and switch" }));
+
+    await waitFor(async () => {
+      expect(await getActiveRideState()).toBeUndefined();
+    });
+    expect(await screen.findByRole("heading", { name: "Route B" })).toBeInTheDocument();
+    // Exactly two clear attempts total (the rejected one, then the retry) —
+    // never a duplicate successful clear/transition.
+    expect(clearSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("a failed new free-roam write after a successful old-session clear starts no watch and reports an honest retryable state, without fabricating the old session's return", async () => {
+    const user = userEvent.setup();
+    const watchPositionSpy = stubGeolocationWatch();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    const [importedRoute] = await db.routes.toArray();
+    if (!importedRoute) throw new Error("expected an imported route");
+
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+    const startFreeRoamButton = await screen.findByRole("button", {
+      name: "Start free roam",
+    });
+    // Storage changes after hydration (as in the stale-launcher test
+    // above) so the guard has a route conflict to resolve.
+    await seedRouteRow(importedRoute.id);
+
+    const writeSpy = vi
+      .spyOn(rideStateRepository, "setActiveRideState")
+      .mockRejectedValueOnce(new Error("boom"));
+
+    await user.click(startFreeRoamButton);
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "End and switch" }));
+
+    expect(
+      await screen.findByText(/free roam could not be started on this device/i),
+    ).toBeInTheDocument();
+    expect(watchPositionSpy).not.toHaveBeenCalled();
+    // The old route session was genuinely ended — not fabricated back —
+    // and the write failure left nothing else in its place.
+    expect(await getActiveRideState()).toBeUndefined();
+
+    writeSpy.mockRestore();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    await waitFor(() => {
+      expect(watchPositionSpy).toHaveBeenCalledOnce();
+    });
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Free roam" }),
+    ).toBeInTheDocument();
+  });
+
+  it("rapid double clicks on two different routes never clear twice or open the older, superseded target", async () => {
+    const user = userEvent.setup();
+    stubGeolocationWatch();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    await importFixture(user, "Route B.gpx");
+    await importFixture(user, "Route C.gpx");
+    const routes = await db.routes.toArray();
+    const routeA = routes.find((route) => route.name === "Route A");
+    if (!routeA) throw new Error("expected Route A");
+    const routeARow = await seedRouteRow(routeA.id);
+
+    let resolveFirstRead:
+      ((value: Awaited<ReturnType<typeof getActiveRideState>>) => void) | undefined;
+    // Overrides only the FIRST call (Route B's own check) to hang; Route
+    // C's later check falls through to the real implementation and reads
+    // current storage directly.
+    vi.spyOn(rideStateRepository, "getActiveRideState").mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirstRead = resolve;
+        }),
+    );
+
+    // Click Route B first (its check is held open), then Route C before B's
+    // check has resolved at all.
+    await user.click(screen.getByRole("button", { name: "Route B" }));
+    await user.click(screen.getByRole("button", { name: "Route C" }));
+
+    // Now let B's stale check resolve, deliberately last, with what a real
+    // read would have returned at the time it was issued.
+    resolveFirstRead?.(routeARow);
+
+    // Only C's own (newer) outcome may ever be applied.
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText(/Switch to "Route C"/)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Route B" })).toBeNull();
+  });
+
+  it("an unsupported/corrupt stored session fails closed as a conflict requiring discard, and Cancel preserves the row exactly", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    await importFixture(user, "Route B.gpx");
+    const routes = await db.routes.toArray();
+    const routeA = routes.find((route) => route.name === "Route A");
+    if (!routeA) throw new Error("expected Route A");
+    await setActiveRideState({
+      id: "active",
+      routeId: routeA.id,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: null,
+      lastMatchedPointIndex: 0,
+      matchedDistanceFromStartMetres: 0,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+      kind: "totally-unknown-future-kind",
+    });
+    const unsupportedRow = await getActiveRideState();
+
+    await user.click(screen.getByRole("button", { name: "Route B" }));
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(
+      within(dialog).getByText(/can't be recovered by this version of the app/i),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: "Discard and continue" }),
+    ).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(await getActiveRideState()).toEqual(unsupportedRow);
+    expect(screen.queryByRole("heading", { name: "Route B" })).toBeNull();
   });
 });

@@ -68,6 +68,12 @@ Do not treat the item above as fully verified until it has been tested on a movi
 
 ---
 
+### Outstanding: item 73's unfinished-session switch guard
+
+- **Guard every unfinished-session switch against silent replacement (item 73):** shipped with automated (Vitest/Playwright Chromium and Chromium-emulated Android) evidence only — no physical iPhone or Android verification is claimed yet. Real-device acceptance still needed: same-route and same-free-roam recovery genuinely showing no destructive confirmation and starting exactly one GPS/Follow lifecycle on a real phone; a hand-performed route→different-route, route→free-roam and free-roam→route switch, confirming the previous session's progress is genuinely gone once confirmed and that the replacement opens as an ordinary fresh/idle session rather than auto-starting GPS merely because a switch was confirmed; Cancel and a genuine on-device storage-read/clear failure preserving the original session with a working retry; a Planning save's own conflict handling on-device; unchanged missing-route Discard, free-roam resume and item 72 Pause/cold-recovery flows; and the new switch-confirmation dialog's readability, focus behaviour and touch targets at real phone viewports and enlarged text.
+
+---
+
 ## Monitored reliability observations
 
 These are explicitly **not** approved future work — see each entry's own text for why.
