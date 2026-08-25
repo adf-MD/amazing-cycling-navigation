@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-No slice is currently the next selected implementation item. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
+Item 81 is the next selected implementation item, followed by items 82, 83 and 84 in that order. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Each entry reproduces its original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this).
 
@@ -119,3 +119,79 @@ _Category: Platform compatibility_
       4. **Conflict and recovery coverage:** an inbound share must respect the existing unfinished route/free-roam conflict guard (item 42's fail-closed `checkFreeRoamConflict`-style pattern) and must never silently replace an active session or Planning draft; it must work after a fresh install/relaunch. Add Playwright coverage where meaningful, then require real Android Chrome acceptance — Chromium/Playwright emulation cannot prove real OS share-sheet registration, matching this project's existing, repeatedly-stated distinction between the `android-chrome` Playwright project and genuine physical-device verification (item 25).
     - If step 1 finds only an `Open with` path and no Share/Send path, document that conclusively and record that no pure static-PWA solution is currently available for this exact flow — do not propose a native wrapper, Trusted Web Activity, APK, or other Android-specific packaging as a workaround; that would be a major architecture departure and is explicitly not approved by this backlog item.
     - Requires the "## Explicit non-goals" edit recorded above (item 61's own cross-reference) — that section stays in the root `CLAUDE.md` and already carries this cross-reference.
+
+---
+
+<a id="item-81"></a>
+
+## Item 81 — Preserve Riding zoom through stale-GPS and imagery-retry recovery
+
+_Category: Riding camera reliability investigation_
+
+81. **Preserve Riding zoom through stale-GPS and imagery-retry recovery**
+    - Field evidence: during an active route ride (the PWA remained active throughout — never paused, backgrounded or suspended), the camera intermittently ended at approximately whole-world zoom after a combination believed to involve stale GPS and pressing `Retry map imagery`. Follow was already active; pressing Follow again did not restore a normal zoom, which is correct, since Follow preserves the rider's selected zoom rather than resetting it. Pressing North-up also did not change zoom, which is likewise correct, since North-up only changes bearing/pitch. Manual pinch/`+` zoom restored a normal useful view. The observation is intermittent and its precise ordering is not yet deterministic.
+    - Distinct from item 66 (an unreproduced, accepted-for-now-monitored route-Riding fresh-Start overview-zoom symptom with no confirmed cause) and item 74 (a confirmed and shipped fix for a free-roam fresh-Start zoom-corruption bug, via the `hasAppliedCameraCommand` settle-provenance latch added to the shared `rideCameraReducer`). This item's evidence is mid-ride, tied specifically to a stale-GPS-plus-imagery-retry combination, not a fresh Start — investigate it as its own scenario. Do not assume, and do not rule out without evidence, that it shares a cause with either item 66 or item 74; neither item's status is reopened or reinterpreted by filing this one.
+    - Reproduce the complete active-session transition: a useful user-selected Follow zoom, GPS becoming stale, a genuine imagery failure, manual imagery retry/map recreation (item 67's retry/recreate mechanism), then connectivity and a fresh fix returning.
+    - Trace camera state and provenance across the retry generation, including the existing snapshot/restore path (`liveCameraSnapshotRef`/`cameraSnapshotToRestore`, item 67), style readiness, applied-command generation/latch (`appliedCameraCommandGenerationRef`/`hasAppliedCameraCommand`, item 74), camera-settle reporting, and the persisted Follow zoom held in `rideCameraReducer`.
+    - Prove the cause with a failing deterministic test against the unmodified implementation before choosing a production fix.
+    - Required outcome: retry/recovery must never replace a valid Riding zoom with MapLibre's raw/default world zoom. The selected zoom, active Follow state and below-centre look-ahead GPS framing must survive recovery.
+    - Do not make Follow or North-up reset zoom, clamp every low zoom to a default navigation zoom, add sleeps/retries, or weaken deliberate user zoom persistence.
+    - Start with the route-Riding path, where the new evidence was observed. Change or extend free roam only if source inspection proves the same shared defect (`rideCameraReducer` is shared between `useRideCamera.ts` and `useFreeRoamCamera.ts`, per item 74's precedent) and the shared fix is the smallest safe correction.
+    - Keep separate from item 83 (offline/imagery-recovery presentation), even though both were noticed during the same recovery episode — item 83 is presentation-only and is explicitly not authorised to touch camera recovery.
+
+---
+
+<a id="item-82"></a>
+
+## Item 82 — Unify the active status control and make the climb cue fully readable
+
+_Category: Immersive Riding interface_
+
+82. **Unify the active status control and make the climb cue fully readable**
+    - One bounded active-Riding presentation slice covering route Riding and free roam. Must not change session, GPS, wake-lock or climb state machines.
+    - Replace the current checkbox-plus-information-button wake-lock presentation (item 68's `.wake-lock-row`/`.wake-lock-info-button`, carried into item 75's status card) with one compact, large-target `Screen on` action integrated into the right-hand portion of the existing status card (item 75's `.ride-status-card-top-row`), adding no separate vertical row.
+    - The action must be comfortably tappable while riding, use the existing restrained green treatment when active and a neutral/grey treatment when inactive, retain a non-colour state indication, and keep correct pressed/checked semantics and accessible naming.
+    - Use the same control in route Riding (`RidingStatusCard`) and free roam (`FreeRoamStatusCard`).
+    - Move the explanatory wake-lock information, including the honest battery-consumption warning, to Settings. Remove the active-card information popover only when implementing this slice; do not change wake-lock acquisition, release, persistence, retry, or unsupported-browser behaviour (`RidingWakeLockControl`'s existing lifecycle logic).
+    - Replace free roam's `Tracking` heading with `Location` (and suitable existing-state variants) — free roam does not record a track, progress or location history.
+    - Reuse route Riding's compact GPS terminology and freshness/age formatting rules in free roam rather than maintaining a second wording convention. Share formatting logic where that is the smallest safe implementation, but do not merge `RidingStatusCard` and `FreeRoamStatusCard` merely for cosmetic reuse — they remain semantically distinct components.
+    - In the active-climb Map cue (`RidingClimbCue`, items 57/71), keep the large one-tap `View climb` action, but ensure `Climb active` and the remaining-distance text are fully readable without ellipses at ordinary phone portrait sizes. Adjust the cue's internal allocation, padding and text sizing as needed without changing cue timing, dismissal, or Profile-transition behaviour (items 71/80).
+    - Preserve large touch targets, enlarged-text fallback, portrait/short-landscape support and the fixed, non-scrolling immersive layout (item 68's immersive shell).
+
+---
+
+<a id="item-83"></a>
+
+## Item 83 — Make offline and map-imagery recovery unobstructive
+
+_Category: Map imagery and tile reliability_
+
+83. **Make offline and map-imagery recovery unobstructive**
+    - A presentation/composition slice around the already-shipped item 67 recovery state machine (`.map-status-overlay`, retry/episode tracking, camera preservation across recreation) and item 75's compact status card. Not authorised to rewrite networking or camera recovery — see item 81 for the separate camera-reliability investigation.
+    - Field evidence: the map-imagery-unavailable overlay and `Retry map imagery` button (item 67, shrunk presentation-only by item 75) can still cover the upcoming route, including while an active-climb cue is present. The separate `Offline` text row in the status card (item 75's `.ride-status-card-offline`) consumes unnecessary vertical space.
+    - Required outcome: route, position, progress, elevation, controls and attribution remain useful without tiles and must stay visible and reachable.
+    - Represent connectivity compactly within the existing status-card top row (item 75's `.ride-status-card-top-row`) using a recognisable online/offline status symbol with an accessible textual name. Do not rely on colour alone and do not add another full-width status row.
+    - Move the imagery-failure explanation and retry action out of the central route-viewing area. Choose the smallest existing component boundary that keeps a concise explanation and a glove-usable retry target reachable without overlaying the route, GPS marker, climb cue, map controls, or Map/Profile switcher. Prefer integrating a compact recovery action with existing status chrome over adding another large card.
+    - Preserve the distinction between browser connectivity and actual tile/style failure: being offline alone must not claim already-rendered imagery is unavailable, while a genuine imagery failure must remain explicit and retryable.
+    - Preserve item 67's retry semantics, fallback map, automatic recovery and error classification in full.
+    - On successful imagery recovery, the recovery affordance must clear automatically without requiring the rider to pan or zoom merely to provoke a new tile request.
+
+---
+
+<a id="item-84"></a>
+
+## Item 84 — Restore visibly rendered, zoom-adaptive route-distance badges
+
+_Category: Map presentation reliability_
+
+84. **Restore visibly rendered, zoom-adaptive route-distance badges**
+    - A focused visibility/reliability correction to an already-implemented feature (commit `7ca6b85`, still present and wired into Planning and route Riding), not a request to invent moving distance markers.
+    - Real-device route maps have shown the small white route-direction arrows but no visibly readable numbered distance badges. Existing automated coverage (`distanceBadgeLayer.test.ts`, `distanceBadgeMarkerElement.test.ts`, `MapView.test.tsx`'s distance-badge-overlay suite, `e2e/distanceBadges.spec.ts`) proves marker specifications/DOM elements, text, counts, layout boxes, rotation behaviour and retry deduplication, but nothing in that coverage checks real paint/occlusion above the MapLibre canvas. Treat `.distance-badge-marker`'s current `z-index: -1` (`src/index.css`) as a concrete hypothesis to investigate — not a diagnosed root cause — until proved by real-browser evidence in this slice.
+    - No route-distance badges in free roam; there is no route (already true of current source — `FreeRoamScreen` passes an empty `points` array).
+    - Badges are fixed landmarks at absolute distances measured along the route from its start. They must never slide along the route as a moving `1 km ahead` marker.
+    - Density adapts to zoom while badge coordinates stay fixed: approximately every 1 km close in, every 5 km at ordinary Riding zoom, every 10 km at a wider overview, and every 20 km at a very wide overview. Preserve deterministic thresholds, collision/merged-distance handling, and a bounded visible count so the map remains restrained.
+    - During active Riding, passed badges remain hidden (already implemented via `filterActiveRidingCandidates`/`distanceBadgeProgressMetres`). Planning may show the applicable whole-route set.
+    - Use explicit compact labels such as `5 km` and `20 km`, including an unambiguous compact form for merged loop/out-and-back coincidences.
+    - Zooming changes only the displayed subset, never badge locations or route progress.
+    - Fix the proven paint/stacking/visibility cause. Do not alter the separate white route-direction arrows.
+    - Add real-browser regression evidence that proves a badge is actually visible and unobscured above the map, not merely present in the DOM or assigned a non-null bounding box. Cover normal imagery and the local fallback background, zoom-band transitions, Riding's passed-badge filtering, map rotation, retry without duplication, and explicit absence in free roam.

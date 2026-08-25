@@ -307,7 +307,7 @@ Archived implementation accounts in `docs/project/history/` describe the system 
 
 ### Queue index
 
-Stable item numbers never change regardless of which file an item's text lives in. No slice is currently selected as the next implementation item.
+Stable item numbers never change regardless of which file an item's text lives in. Item 81 is selected as the next implementation item, followed by items 82, 83 and 84 in order.
 
 | Item | Title                                                                                         | Status                                           | Full entry                                                            |
 | ---- | --------------------------------------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
@@ -318,6 +318,10 @@ Stable item numbers never change regardless of which file an item's text lives i
 | 59   | Elevation and recognised-climb discrepancy investigation                                      | Pending investigation                            | [`backlog.md#item-59`](docs/project/backlog.md#item-59)               |
 | 60   | Battery consumption investigation and possible battery-saving mode                            | Pending investigation                            | [`backlog.md#item-60`](docs/project/backlog.md#item-60)               |
 | 61   | Android GPX share-sheet import feasibility                                                    | Pending feasibility study                        | [`backlog.md#item-61`](docs/project/backlog.md#item-61)               |
+| 81   | Preserve Riding zoom through stale-GPS and imagery-retry recovery                             | Selected as the next implementation item         | [`backlog.md#item-81`](docs/project/backlog.md#item-81)               |
+| 82   | Unify the active status control and make the climb cue fully readable                         | Pending, approved — queued behind item 81        | [`backlog.md#item-82`](docs/project/backlog.md#item-82)               |
+| 83   | Make offline and map-imagery recovery unobstructive                                           | Pending, approved — queued behind item 82        | [`backlog.md#item-83`](docs/project/backlog.md#item-83)               |
+| 84   | Restore visibly rendered, zoom-adaptive route-distance badges                                 | Pending, approved — queued behind item 83        | [`backlog.md#item-84`](docs/project/backlog.md#item-84)               |
 | 32   | `ridingFinishAndEnd.spec.ts`'s completion-detection test: an unconfirmed CPU-contention flake | Monitored, unconfirmed                           | [`current-status.md#item-32`](docs/project/current-status.md#item-32) |
 | 66   | Investigate intermittent fresh-Start Follow remaining at route overview                       | Accepted for now, monitored                      | [`current-status.md#item-66`](docs/project/current-status.md#item-66) |
 
