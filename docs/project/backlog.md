@@ -122,24 +122,6 @@ _Category: Platform compatibility_
 
 ---
 
-<a id="item-76"></a>
-
-## Item 76 — Riding profile-selector and primary-navigation edge polish
-
-_Category: Small interface correction_
-
-76. **Riding profile-selector and primary-navigation edge polish**
-    - Keep this deliberately narrow:
-      - The selected `Full` profile button's outer focus/selection ring is currently clipped at the left screen/pane edge.
-      - Give the complete elevation-window selector row a small, symmetric horizontal inner inset so no selected outline is clipped at either edge.
-      - Cover the three-button and four-button (`Climb` available) states, plus portrait, landscape and enlarged text.
-      - Do not special-case only `Full`, shift individual buttons with ad hoc margins or change the selector's meaning/order.
-    - Correct the primary sticky navigation's bottom divider so it touches the navigation row in the same deliberate way as the top divider. Remove the visible strip of unused space between buttons and the bottom line.
-    - Do not alter active Riding's non-sticky immersive header, navigation destinations, touch-target sizes, focus order or adaptive-navigation item 28.
-    - Prefer a small CSS/layout correction with focused regression coverage, not a broader navigation redesign.
-
----
-
 <a id="item-77"></a>
 
 ## Item 77 — Climb-only colouring and legend for the pre-ride full profile

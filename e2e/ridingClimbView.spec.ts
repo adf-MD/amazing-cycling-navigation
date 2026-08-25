@@ -59,6 +59,38 @@ function intersects(a: Box, b: Box): boolean {
   );
 }
 
+// The global button:focus-visible outline (2px width + 2px offset = 4px)
+// protrudes further than .is-selected's own 2px box-shadow ring, and
+// Playwright's boundingBox() excludes both entirely — so the known
+// worst-case ring spread must be added explicitly rather than merely
+// checking the button's own border box sits inside the group, which would
+// still pass while the ring itself is clipped (backlog item 76). Mirrors
+// ridingElevationWindows.spec.ts's own identically-purposed helper,
+// duplicated locally per this repo's no-shared-e2e-helpers convention.
+const RING_SPREAD_PX = 4;
+
+async function expectSelectedButtonRingClearsGroupEdge(
+  page: Page,
+  edge: "left" | "right",
+): Promise<void> {
+  const group = page.getByRole("group", { name: "Elevation profile view" });
+  const selectedButton = group.locator(".elevation-window-button.is-selected");
+  const groupBox = await group.boundingBox();
+  const selectedBox = await selectedButton.boundingBox();
+  if (!groupBox || !selectedBox) {
+    throw new Error(
+      "expected both the elevation-window group and its selected button to have a bounding box",
+    );
+  }
+  if (edge === "left") {
+    expect(selectedBox.x - RING_SPREAD_PX).toBeGreaterThanOrEqual(groupBox.x);
+  } else {
+    expect(selectedBox.x + selectedBox.width + RING_SPREAD_PX).toBeLessThanOrEqual(
+      groupBox.x + groupBox.width,
+    );
+  }
+}
+
 /** Shared import → Start riding flow, reused by both the main flow test and
  * the phone-viewport geometry test below — mirrors
  * ridingMapProfileViews.spec.ts's own importAndStartRiding, duplicated
@@ -353,7 +385,7 @@ test.describe("390×844 phone viewport", () => {
     expect(hasHorizontalOverflow).toBe(false);
   });
 
-  test("the Profile climb-preview card and the restructured active-progress card fit at phone width and enlarged text, with no document scroll", async ({
+  test("the Profile climb-preview card and the restructured active-progress card fit at phone width and enlarged text, with no document scroll, and the selected Climb button's ring clears the group's right edge in the four-button state (backlog item 76)", async ({
     page,
     context,
   }) => {
@@ -371,6 +403,11 @@ test.describe("390×844 phone viewport", () => {
     await page.getByRole("button", { name: "Profile" }).click();
     await page.getByRole("button", { name: "Climb" }).click();
     await expect(page.getByRole("region", { name: "Climb preview" })).toBeVisible();
+
+    // Climb is the last (rightmost) button once available — the
+    // conditional four-button state (Full/2 km/10 km/Climb) must keep the
+    // same symmetric right-edge clearance the three-button state gets.
+    await expectSelectedButtonRingClearsGroupEdge(page, "right");
 
     // The fixed shell itself must never scroll as a document — only the
     // bounded .ride-profile-pane--immersive fallback may, and only when
@@ -419,5 +456,9 @@ test.describe("390×844 phone viewport", () => {
     await expect(switcher).toBeVisible();
     const enlargedOverflow = await hasDocumentOverflow();
     expect(enlargedOverflow.horizontal).toBe(false);
+
+    // The four-button ring clearance must hold at 200% text too, not only
+    // at ordinary text size.
+    await expectSelectedButtonRingClearsGroupEdge(page, "right");
   });
 });

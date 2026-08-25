@@ -59,6 +59,36 @@ function guideLabelLocator(page: Page) {
   return page.locator("text.elevation-chart-distance-guide-label");
 }
 
+// The global button:focus-visible outline (2px width + 2px offset = 4px)
+// protrudes further than .is-selected's own 2px box-shadow ring, and
+// Playwright's boundingBox() excludes both entirely — so the known
+// worst-case ring spread must be added explicitly rather than merely
+// checking the button's own border box sits inside the group, which would
+// still pass while the ring itself is clipped (backlog item 76).
+const RING_SPREAD_PX = 4;
+
+async function expectSelectedButtonRingClearsGroupEdge(
+  page: Page,
+  edge: "left" | "right",
+) {
+  const group = page.getByRole("group", { name: "Elevation profile view" });
+  const selectedButton = group.locator(".elevation-window-button.is-selected");
+  const groupBox = await group.boundingBox();
+  const selectedBox = await selectedButton.boundingBox();
+  if (!groupBox || !selectedBox) {
+    throw new Error(
+      "expected both the elevation-window group and its selected button to have a bounding box",
+    );
+  }
+  if (edge === "left") {
+    expect(selectedBox.x - RING_SPREAD_PX).toBeGreaterThanOrEqual(groupBox.x);
+  } else {
+    expect(selectedBox.x + selectedBox.width + RING_SPREAD_PX).toBeLessThanOrEqual(
+      groupBox.x + groupBox.width,
+    );
+  }
+}
+
 test("offers the reduced Full/2 km/10 km button set, with 2 km selected on a fresh ride", async ({
   page,
   context,
@@ -212,7 +242,7 @@ test("guides are progressively omitted as the rider approaches the route finish 
 test.describe("phone viewport", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("no document overflow, horizontal or vertical, with the reduced button row and guide labels", async ({
+  test("no document overflow, horizontal or vertical, with the reduced button row and guide labels, and the selected button's ring clears both group edges (backlog item 76)", async ({
     page,
     context,
   }) => {
@@ -239,6 +269,16 @@ test.describe("phone viewport", () => {
     await openRouteAndStartRiding(page);
     await switchToProfile(page);
 
+    // Full is the leftmost button (2 km is selected by default per item
+    // 54) — select it explicitly to prove the left-edge clearance the
+    // field bug was actually observed on.
+    await page.getByRole("button", { name: "Full" }).click();
+    await expect(page.getByRole("button", { name: "Full" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expectSelectedButtonRingClearsGroupEdge(page, "left");
+
     await context.setGeolocation({
       latitude: FIXTURE_LAT,
       longitude: lonAtMetresAlongFixture(10_000),
@@ -248,6 +288,10 @@ test.describe("phone viewport", () => {
     await expect
       .poll(async () => guideLabelLocator(page).allTextContents(), { timeout: 15_000 })
       .toEqual(["2 km", "4 km", "6 km", "8 km"]);
+
+    // 10 km is the rightmost of the three standard buttons — proves the
+    // symmetric right-edge contract the backlog also requires.
+    await expectSelectedButtonRingClearsGroupEdge(page, "right");
 
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(390);

@@ -158,6 +158,39 @@ function intersects(a: Box, b: Box): boolean {
   );
 }
 
+// The global button:focus-visible outline (2px width + 2px offset = 4px)
+// protrudes further than .is-selected's own 2px box-shadow ring, and
+// Playwright's boundingBox() excludes both entirely — so the known
+// worst-case ring spread must be added explicitly rather than merely
+// checking the button's own border box sits inside the group, which would
+// still pass while the ring itself is clipped (backlog item 76). Mirrors
+// ridingElevationWindows.spec.ts's/ridingClimbView.spec.ts's own
+// identically-purposed helper, duplicated locally per this repo's
+// no-shared-e2e-helpers convention.
+const RING_SPREAD_PX = 4;
+
+async function expectSelectedButtonRingClearsGroupEdge(
+  page: Page,
+  edge: "left" | "right",
+): Promise<void> {
+  const group = page.getByRole("group", { name: "Elevation profile view" });
+  const selectedButton = group.locator(".elevation-window-button.is-selected");
+  const groupBox = await group.boundingBox();
+  const selectedBox = await selectedButton.boundingBox();
+  if (!groupBox || !selectedBox) {
+    throw new Error(
+      "expected both the elevation-window group and its selected button to have a bounding box",
+    );
+  }
+  if (edge === "left") {
+    expect(selectedBox.x - RING_SPREAD_PX).toBeGreaterThanOrEqual(groupBox.x);
+  } else {
+    expect(selectedBox.x + selectedBox.width + RING_SPREAD_PX).toBeLessThanOrEqual(
+      groupBox.x + groupBox.width,
+    );
+  }
+}
+
 test.describe("390×844 phone viewport", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
@@ -681,7 +714,7 @@ test("wake-lock control and its popover remain usable from either view with no b
   expect(scrollHeight).toBeLessThanOrEqual(viewportHeight);
 });
 
-test("portrait to landscape keeps the header, both views and the switcher usable", async ({
+test("portrait to landscape keeps the header, both views and the switcher usable, and the selected button's ring clears the group's left edge in short landscape (backlog item 76)", async ({
   page,
   context,
 }) => {
@@ -719,6 +752,15 @@ test("portrait to landscape keeps the header, both views and the switcher usable
 
   await switchToProfile(page);
   await expect(page.getByRole("group", { name: "Elevation profile view" })).toBeVisible();
+  // Full is the leftmost button (2 km is selected by default per item
+  // 54) — select it explicitly to prove the left-edge ring clearance
+  // holds at a short landscape viewport too, not only portrait.
+  await page.getByRole("button", { name: "Full" }).click();
+  await expect(page.getByRole("button", { name: "Full" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expectSelectedButtonRingClearsGroupEdge(page, "left");
   await switchToMap(page);
   await expect(page.getByRole("button", { name: "Zoom in" })).toBeVisible();
 

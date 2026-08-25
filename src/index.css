@@ -212,21 +212,23 @@ header {
  * visual position unchanged (the same total offset as before, just
  * sourced entirely from this element's own box instead of split between
  * the ancestor and header), while the background now paints across the
- * whole strip. padding-bottom is new: a small opaque buffer between
- * .main-nav and the border-bottom, sticky-only per its own requirement —
- * the base `header` rule (used by active Riding's static header) is
- * untouched, so that header keeps its original zero bottom padding. On a
- * non-notched device/browser, --safe-area-inset-top resolves to 0px, so
- * the padding-top below reduces to plain --space-8, matching the base
- * header rule exactly — a complete no-op there. border-bottom reuses the
- * same --colour-border token .main-nav's own border-top already uses, to
- * separate the pinned bar from scrolling content beneath it without a new
- * colour or shadow. */
+ * whole strip. There is deliberately no bottom padding: .main-nav's own
+ * bottom edge sits directly against this element's border-bottom, so the
+ * divider touches the navigation row exactly as .main-nav's own
+ * border-top divider does at the top, with no strip of unused space
+ * between the buttons and the bottom line (item 76 removed the earlier
+ * --space-8 lower buffer). The base `header` rule (used by active
+ * Riding's static header) is likewise untouched and carries no bottom
+ * padding of its own. On a non-notched device/browser,
+ * --safe-area-inset-top resolves to 0px, so the padding-top below reduces
+ * to plain --space-8, matching the base header rule exactly — a complete
+ * no-op there. border-bottom reuses the same --colour-border token
+ * .main-nav's own border-top already uses, to separate the pinned bar
+ * from scrolling content beneath it without a new colour or shadow. */
 .app-header--sticky {
   position: sticky;
   top: 0;
   padding-top: calc(var(--safe-area-inset-top) + var(--space-8));
-  padding-bottom: var(--space-8);
   z-index: 10;
   background: var(--colour-bg);
   border-bottom: 1px solid var(--colour-border);
@@ -544,9 +546,20 @@ button:focus-visible {
 /* A deliberate gap below the map, replacing the accidental spacing the
  * previously flow-positioned attribution used to leave behind. Wraps so
  * four buttons (Full/2 km/10 km/Climb) never force horizontal
- * scroll on a narrow phone. */
+ * scroll on a narrow phone. padding-inline is a real content-box inset,
+ * not cosmetic: inside the active-Riding immersive Profile pane
+ * (.ride-profile-pane--immersive), which has no padding of its own and
+ * whose overflow-y: auto forces overflow-x to also clip (per the CSS
+ * overflow spec, both axes compute non-visible together), a selected
+ * button's outer ring previously painted flush against that clipping
+ * edge and was cut off. --space-8 clears the worst-case outer protrusion
+ * — the global button:focus-visible outline (2px width + 2px offset =
+ * 4px), wider than .is-selected's own 2px box-shadow ring — with margin
+ * to spare; inside the idle .panel context (already 16px padded) it is a
+ * harmless extra inset (item 76). */
 .elevation-window-group {
   margin-top: 10px;
+  padding-inline: var(--space-8);
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-8);

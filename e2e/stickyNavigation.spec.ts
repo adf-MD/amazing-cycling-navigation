@@ -317,7 +317,7 @@ test.describe("synthetic safe-area inset (iOS status-bar strip coverage)", () =>
     return page.locator(".main-nav");
   }
 
-  test("the sticky header's opaque box starts at the true viewport top, .main-nav sits below the inset plus the top dead zone, and a --space-8 buffer separates .main-nav from the border", async ({
+  test("the sticky header's opaque box starts at the true viewport top, .main-nav sits below the inset plus the top dead zone, and .main-nav's bottom edge sits directly against the header's border-bottom with no buffer strip", async ({
     page,
   }) => {
     await useSyntheticSafeAreaInsetTop(page);
@@ -353,11 +353,16 @@ test.describe("synthetic safe-area inset (iOS status-bar strip coverage)", () =>
     expect(backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
     expect(backgroundColor).not.toBe("transparent");
 
-    // A --space-8-scale opaque buffer separates the bottom of .main-nav
-    // from the header's own bottom edge (where border-bottom paints).
+    // .main-nav's own bottom edge now sits directly against the header's
+    // border-bottom, exactly as its border-top divider does at the top —
+    // no strip of unused space between the buttons and the bottom line
+    // (item 76 removed the earlier --space-8 lower buffer). boundingBox()
+    // returns the border box, so the only remaining separation is the
+    // border-bottom's own 1px width — never demand an impossible
+    // negative/zero gap, since that border genuinely occupies space.
     const gap = headerBox.y + headerBox.height - (navBox.y + navBox.height);
-    expect(gap).toBeGreaterThan(SPACE_8_PX - 4);
-    expect(gap).toBeLessThan(SPACE_8_PX + 4);
+    expect(gap).toBeGreaterThanOrEqual(0);
+    expect(gap).toBeLessThan(2);
 
     // The opaque box stays pinned at the true viewport top after a
     // genuine document scroll — reuses this file's own existing <2px
