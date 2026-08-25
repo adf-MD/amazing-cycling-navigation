@@ -59,15 +59,19 @@ function guideLabelLocator(page: Page) {
   return page.locator("text.elevation-chart-distance-guide-label");
 }
 
-// The global button:focus-visible outline (2px width + 2px offset = 4px)
-// protrudes further than .is-selected's own 2px box-shadow ring, and
-// Playwright's boundingBox() excludes both entirely — so the known
-// worst-case ring spread must be added explicitly rather than merely
-// checking the button's own border box sits inside the group, which would
-// still pass while the ring itself is clipped (backlog item 76).
-const RING_SPREAD_PX = 4;
+// backlog item 80: the fixed 4-slot active grid zeroes elevation-window-
+// group's own inline padding and switches the selected ring (and the
+// focus-visible outline) to an inset treatment so neither can protrude past
+// the button's own border box — together these let the group's own edge
+// and the selected button's own edge coincide exactly, satisfying "flush
+// with the shared Profile content edge" without reintroducing item 76's
+// clipping bug (previously guarded by an 8px group inset plus an outward
+// ring, checked via RING_SPREAD_PX). Playwright's boundingBox() excludes
+// box-shadow/outline entirely, so the inset-vs-outward distinction is
+// confirmed separately via computed style.
+const FLUSH_TOLERANCE_PX = 0.5;
 
-async function expectSelectedButtonRingClearsGroupEdge(
+async function expectSelectedButtonFlushWithGroupEdge(
   page: Page,
   edge: "left" | "right",
 ) {
@@ -80,13 +84,13 @@ async function expectSelectedButtonRingClearsGroupEdge(
       "expected both the elevation-window group and its selected button to have a bounding box",
     );
   }
-  if (edge === "left") {
-    expect(selectedBox.x - RING_SPREAD_PX).toBeGreaterThanOrEqual(groupBox.x);
-  } else {
-    expect(selectedBox.x + selectedBox.width + RING_SPREAD_PX).toBeLessThanOrEqual(
-      groupBox.x + groupBox.width,
-    );
-  }
+  const delta =
+    edge === "left"
+      ? Math.abs(selectedBox.x - groupBox.x)
+      : Math.abs(selectedBox.x + selectedBox.width - (groupBox.x + groupBox.width));
+  expect(delta).toBeLessThanOrEqual(FLUSH_TOLERANCE_PX);
+  const boxShadow = await selectedButton.evaluate((el) => getComputedStyle(el).boxShadow);
+  expect(boxShadow).toContain("inset");
 }
 
 test("offers the reduced Full/2 km/10 km button set, with 2 km selected on a fresh ride", async ({
@@ -242,7 +246,7 @@ test("guides are progressively omitted as the rider approaches the route finish 
 test.describe("phone viewport", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("no document overflow, horizontal or vertical, with the reduced button row and guide labels, and the selected button's ring clears both group edges (backlog item 76)", async ({
+  test("no document overflow, horizontal or vertical, with the reduced button row and guide labels, the selected button's ring sits flush with the group's left edge, and the empty fourth slot stays reserved on the right (backlog items 76, 80)", async ({
     page,
     context,
   }) => {
@@ -277,7 +281,21 @@ test.describe("phone viewport", () => {
       "aria-pressed",
       "true",
     );
-    await expectSelectedButtonRingClearsGroupEdge(page, "left");
+    await expectSelectedButtonFlushWithGroupEdge(page, "left");
+
+    // backlog item 80: the empty fourth grid track (no climb on this flat
+    // fixture) must not widen or redistribute the three real buttons — all
+    // three stay equal width, sized as if the grid still had four columns.
+    const threeButtonWidths = await page
+      .getByRole("group", { name: "Elevation profile view" })
+      .locator(".elevation-window-button")
+      .evaluateAll((buttons) =>
+        buttons.map((button) => button.getBoundingClientRect().width),
+      );
+    expect(threeButtonWidths).toHaveLength(3);
+    for (const width of threeButtonWidths) {
+      expect(Math.abs(width - threeButtonWidths[0])).toBeLessThanOrEqual(1);
+    }
 
     await context.setGeolocation({
       latitude: FIXTURE_LAT,
@@ -289,9 +307,24 @@ test.describe("phone viewport", () => {
       .poll(async () => guideLabelLocator(page).allTextContents(), { timeout: 15_000 })
       .toEqual(["2 km", "4 km", "6 km", "8 km"]);
 
-    // 10 km is the rightmost of the three standard buttons — proves the
-    // symmetric right-edge contract the backlog also requires.
-    await expectSelectedButtonRingClearsGroupEdge(page, "right");
+    // backlog item 80: with no recognised climb on this flat fixture, the
+    // fourth grid track stays reserved and empty rather than letting the
+    // three real buttons expand into it — so "10 km" (the rightmost real
+    // button, in column 3 of 4) ends a full column-width short of the
+    // group's true right edge, not flush with it. The flush-right contract
+    // only applies to Climb itself, once it occupies that fourth column
+    // (see ridingClimbView.spec.ts's own four-button-state test).
+    const group = page.getByRole("group", { name: "Elevation profile view" });
+    const [groupBox, tenKmBox] = await Promise.all([
+      group.boundingBox(),
+      page.getByRole("button", { name: "10 km" }).boundingBox(),
+    ]);
+    if (!groupBox || !tenKmBox) {
+      throw new Error(
+        "expected both the group and the 10 km button to have a bounding box",
+      );
+    }
+    expect(tenKmBox.x + tenKmBox.width).toBeLessThan(groupBox.x + groupBox.width - 10);
 
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(390);

@@ -59,17 +59,22 @@ function intersects(a: Box, b: Box): boolean {
   );
 }
 
-// The global button:focus-visible outline (2px width + 2px offset = 4px)
-// protrudes further than .is-selected's own 2px box-shadow ring, and
-// Playwright's boundingBox() excludes both entirely — so the known
-// worst-case ring spread must be added explicitly rather than merely
-// checking the button's own border box sits inside the group, which would
-// still pass while the ring itself is clipped (backlog item 76). Mirrors
-// ridingElevationWindows.spec.ts's own identically-purposed helper,
-// duplicated locally per this repo's no-shared-e2e-helpers convention.
-const RING_SPREAD_PX = 4;
+// backlog item 80: the fixed 4-slot active grid zeroes elevation-window-
+// group's own inline padding and switches the selected ring (and the
+// focus-visible outline) to an inset treatment so neither can protrude
+// past the button's own border box — together these let the group's own
+// edge and the selected button's own edge coincide exactly, satisfying
+// "flush with the shared Profile content edge" without reintroducing item
+// 76's clipping bug (previously guarded by an 8px group inset plus an
+// outward ring, checked via RING_SPREAD_PX). Playwright's boundingBox()
+// excludes box-shadow/outline entirely, so the inset-vs-outward distinction
+// is confirmed separately via computed style. Mirrors
+// ridingElevationWindows.spec.ts's and ridingMapProfileViews.spec.ts's own
+// identically-purposed helper, duplicated locally per this repo's
+// no-shared-e2e-helpers convention.
+const FLUSH_TOLERANCE_PX = 0.5;
 
-async function expectSelectedButtonRingClearsGroupEdge(
+async function expectSelectedButtonFlushWithGroupEdge(
   page: Page,
   edge: "left" | "right",
 ): Promise<void> {
@@ -82,13 +87,13 @@ async function expectSelectedButtonRingClearsGroupEdge(
       "expected both the elevation-window group and its selected button to have a bounding box",
     );
   }
-  if (edge === "left") {
-    expect(selectedBox.x - RING_SPREAD_PX).toBeGreaterThanOrEqual(groupBox.x);
-  } else {
-    expect(selectedBox.x + selectedBox.width + RING_SPREAD_PX).toBeLessThanOrEqual(
-      groupBox.x + groupBox.width,
-    );
-  }
+  const delta =
+    edge === "left"
+      ? Math.abs(selectedBox.x - groupBox.x)
+      : Math.abs(selectedBox.x + selectedBox.width - (groupBox.x + groupBox.width));
+  expect(delta).toBeLessThanOrEqual(FLUSH_TOLERANCE_PX);
+  const boxShadow = await selectedButton.evaluate((el) => getComputedStyle(el).boxShadow);
+  expect(boxShadow).toContain("inset");
 }
 
 /** Shared import → Start riding flow, reused by both the main flow test and
@@ -385,7 +390,7 @@ test.describe("390×844 phone viewport", () => {
     expect(hasHorizontalOverflow).toBe(false);
   });
 
-  test("the Profile climb-preview card and the restructured active-progress card fit at phone width and enlarged text, with no document scroll, and the selected Climb button's ring clears the group's right edge in the four-button state (backlog item 76)", async ({
+  test("the Profile climb-preview card and the restructured active-progress card fit at phone width and enlarged text, with no document scroll, and the selected Climb button's ring sits flush with the group's right edge in the four-button state (backlog items 76, 80)", async ({
     page,
     context,
   }) => {
@@ -406,8 +411,22 @@ test.describe("390×844 phone viewport", () => {
 
     // Climb is the last (rightmost) button once available — the
     // conditional four-button state (Full/2 km/10 km/Climb) must keep the
-    // same symmetric right-edge clearance the three-button state gets.
-    await expectSelectedButtonRingClearsGroupEdge(page, "right");
+    // same symmetric right-edge alignment the three-button state gets.
+    await expectSelectedButtonFlushWithGroupEdge(page, "right");
+
+    // backlog item 80: the fixed 4-column grid sizes every rendered button
+    // identically, whether 3 or 4 are present — proven here empirically in
+    // a real browser, not just structurally.
+    const buttonWidths = await page
+      .getByRole("group", { name: "Elevation profile view" })
+      .locator(".elevation-window-button")
+      .evaluateAll((buttons) =>
+        buttons.map((button) => button.getBoundingClientRect().width),
+      );
+    expect(buttonWidths).toHaveLength(4);
+    for (const width of buttonWidths) {
+      expect(Math.abs(width - buttonWidths[0])).toBeLessThanOrEqual(1);
+    }
 
     // The fixed shell itself must never scroll as a document — only the
     // bounded .ride-profile-pane--immersive fallback may, and only when
@@ -457,8 +476,22 @@ test.describe("390×844 phone viewport", () => {
     const enlargedOverflow = await hasDocumentOverflow();
     expect(enlargedOverflow.horizontal).toBe(false);
 
-    // The four-button ring clearance must hold at 200% text too, not only
-    // at ordinary text size.
-    await expectSelectedButtonRingClearsGroupEdge(page, "right");
+    // The four-button flush edge alignment must hold at 200% text too, not
+    // only at ordinary text size.
+    await expectSelectedButtonFlushWithGroupEdge(page, "right");
+
+    // backlog item 80: keyboard focus on the rightmost (Climb) button stays
+    // fully inset too, so it can never be clipped by the immersive pane's
+    // overflow-y: auto. Uses real Tab navigation (not a scripted .focus()
+    // call) since Chromium's :focus-visible heuristic does not reliably
+    // engage for scripted focus.
+    await page.getByRole("button", { name: "10 km" }).focus();
+    await page.keyboard.press("Tab");
+    const climbButton = page.getByRole("button", { name: "Climb" });
+    await expect(climbButton).toBeFocused();
+    const outlineOffset = await climbButton.evaluate(
+      (el) => getComputedStyle(el).outlineOffset,
+    );
+    expect(outlineOffset).toBe("-2px");
   });
 });

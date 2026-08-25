@@ -49,6 +49,7 @@ import { getDraft, saveDraft } from "../../storage/planningDraftRepository.ts";
 import { getPlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
 import { ClimbCategoriesDisclosure } from "../shared/ClimbCategoriesDisclosure.tsx";
+import { ClimbLocalGradientDisclosure } from "../shared/ClimbLocalGradientDisclosure.tsx";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
 import {
   ElevationChart,
@@ -1365,6 +1366,15 @@ export function RidingScreen({
           );
         }
 
+        // The active-current-climb and climb-preview branches above always
+        // leave displayedMicroDetailFeature pointing at a ClimbFeature (see
+        // their own assignments to it), so this is a pure, safe re-derivation
+        // of effectiveElevationView.kind, not a new independent source of
+        // truth (backlog item 80).
+        const isClimbPresentation =
+          effectiveElevationView.kind === "climb" ||
+          effectiveElevationView.kind === "climb-preview";
+
         return (
           <>
             {climbProgressPanel}
@@ -1372,6 +1382,16 @@ export function RidingScreen({
             {isPreRideFullRouteOverview ? (
               <ClimbCategoriesDisclosure
                 presentCategories={new Set(climbs.map((climb) => climb.category))}
+              />
+            ) : isClimbPresentation ? (
+              <ClimbLocalGradientDisclosure
+                presentClimbBands={
+                  new Set(
+                    displayedMicroSegments.map(
+                      (segment) => segment.visualKey as ClimbGradientBand,
+                    ),
+                  )
+                }
               />
             ) : (
               <GradientColoursDisclosure
@@ -1417,7 +1437,17 @@ export function RidingScreen({
               climbNumber={preRideClimbNumber}
               detailChart={preRideClimbChart ?? preRideDescentChart}
               presentClimbLocalBands={
-                nav.geolocationStatus === "idle" && microDetailFeature?.kind === "climb"
+                // !isClimbPresentation avoids duplicating the new top-level
+                // compact disclosure above (backlog item 80): a restored,
+                // paused-but-not-yet-resumed ride can have
+                // geolocationStatus still "idle" while its frozen
+                // presentation distance already falls inside a climb,
+                // auto-activating Climb view (backlog item 71) — without
+                // this guard, that one edge case would show the same
+                // disclosure twice.
+                !isClimbPresentation &&
+                nav.geolocationStatus === "idle" &&
+                microDetailFeature?.kind === "climb"
                   ? new Set(
                       microDetailSegments.map(
                         (segment) => segment.visualKey as ClimbGradientBand,

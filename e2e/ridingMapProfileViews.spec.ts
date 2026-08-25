@@ -158,18 +158,22 @@ function intersects(a: Box, b: Box): boolean {
   );
 }
 
-// The global button:focus-visible outline (2px width + 2px offset = 4px)
-// protrudes further than .is-selected's own 2px box-shadow ring, and
-// Playwright's boundingBox() excludes both entirely — so the known
-// worst-case ring spread must be added explicitly rather than merely
-// checking the button's own border box sits inside the group, which would
-// still pass while the ring itself is clipped (backlog item 76). Mirrors
+// backlog item 80: the fixed 4-slot active grid zeroes elevation-window-
+// group's own inline padding and switches the selected ring (and the
+// focus-visible outline) to an inset treatment so neither can protrude past
+// the button's own border box — together these let the group's own edge
+// and the selected button's own edge coincide exactly, satisfying "flush
+// with the shared Profile content edge" without reintroducing item 76's
+// clipping bug (previously guarded by an 8px group inset plus an outward
+// ring, checked via RING_SPREAD_PX). Playwright's boundingBox() excludes
+// box-shadow/outline entirely, so the inset-vs-outward distinction is
+// confirmed separately via computed style. Mirrors
 // ridingElevationWindows.spec.ts's/ridingClimbView.spec.ts's own
 // identically-purposed helper, duplicated locally per this repo's
 // no-shared-e2e-helpers convention.
-const RING_SPREAD_PX = 4;
+const FLUSH_TOLERANCE_PX = 0.5;
 
-async function expectSelectedButtonRingClearsGroupEdge(
+async function expectSelectedButtonFlushWithGroupEdge(
   page: Page,
   edge: "left" | "right",
 ): Promise<void> {
@@ -182,13 +186,13 @@ async function expectSelectedButtonRingClearsGroupEdge(
       "expected both the elevation-window group and its selected button to have a bounding box",
     );
   }
-  if (edge === "left") {
-    expect(selectedBox.x - RING_SPREAD_PX).toBeGreaterThanOrEqual(groupBox.x);
-  } else {
-    expect(selectedBox.x + selectedBox.width + RING_SPREAD_PX).toBeLessThanOrEqual(
-      groupBox.x + groupBox.width,
-    );
-  }
+  const delta =
+    edge === "left"
+      ? Math.abs(selectedBox.x - groupBox.x)
+      : Math.abs(selectedBox.x + selectedBox.width - (groupBox.x + groupBox.width));
+  expect(delta).toBeLessThanOrEqual(FLUSH_TOLERANCE_PX);
+  const boxShadow = await selectedButton.evaluate((el) => getComputedStyle(el).boxShadow);
+  expect(boxShadow).toContain("inset");
 }
 
 test.describe("390×844 phone viewport", () => {
@@ -714,7 +718,7 @@ test("wake-lock control and its popover remain usable from either view with no b
   expect(scrollHeight).toBeLessThanOrEqual(viewportHeight);
 });
 
-test("portrait to landscape keeps the header, both views and the switcher usable, and the selected button's ring clears the group's left edge in short landscape (backlog item 76)", async ({
+test("portrait to landscape keeps the header, both views and the switcher usable, and the selected button's ring sits flush with the group's left edge in short landscape (backlog items 76, 80)", async ({
   page,
   context,
 }) => {
@@ -753,14 +757,27 @@ test("portrait to landscape keeps the header, both views and the switcher usable
   await switchToProfile(page);
   await expect(page.getByRole("group", { name: "Elevation profile view" })).toBeVisible();
   // Full is the leftmost button (2 km is selected by default per item
-  // 54) — select it explicitly to prove the left-edge ring clearance
+  // 54) — select it explicitly to prove the left-edge flush alignment
   // holds at a short landscape viewport too, not only portrait.
   await page.getByRole("button", { name: "Full" }).click();
   await expect(page.getByRole("button", { name: "Full" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-  await expectSelectedButtonRingClearsGroupEdge(page, "left");
+  await expectSelectedButtonFlushWithGroupEdge(page, "left");
+
+  // backlog item 80: the fixed 4-column grid still sizes every rendered
+  // button identically at a short, wide landscape viewport.
+  const landscapeButtonWidths = await page
+    .getByRole("group", { name: "Elevation profile view" })
+    .locator(".elevation-window-button")
+    .evaluateAll((buttons) =>
+      buttons.map((button) => button.getBoundingClientRect().width),
+    );
+  for (const width of landscapeButtonWidths) {
+    expect(Math.abs(width - landscapeButtonWidths[0])).toBeLessThanOrEqual(1);
+  }
+
   await switchToMap(page);
   await expect(page.getByRole("button", { name: "Zoom in" })).toBeVisible();
 

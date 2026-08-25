@@ -1972,6 +1972,57 @@ button:focus-visible {
   overflow-y: auto;
 }
 
+/* Active Riding only (backlog item 80): a fixed, non-wrapping 4-column
+ * grid replaces the idle flex/wrap layout above, so Full/2 km/10 km (and,
+ * conditionally, Climb) always occupy stable, equal-width columns
+ * regardless of viewport width, enlarged text, or whether Climb is
+ * currently rendered. repeat(4, minmax(0, 1fr)) always creates 4 equal
+ * tracks whether 3 or 4 buttons exist — no explicit grid-column
+ * assignment is needed, since the standard buttons plus the conditional
+ * trailing Climb button already render in stable DOM order and CSS
+ * Grid's default row-major auto-placement fills column 1, 2, 3, (4) in
+ * that order, leaving an empty track — not a DOM node, so no hidden,
+ * disabled or inert placeholder button — when Climb is absent.
+ * padding-inline is zeroed here (idle keeps the base rule's 8px inset
+ * unchanged above) so a selected button's own border-box edge sits flush
+ * with this pane's other full-width cards (e.g. .ride-compact-manoeuvre-
+ * cue), which have no outer margin of their own either. The two rules
+ * below keep the selected ring and focus outline fully non-protruding
+ * despite that zero inset, so item 76's clipping fix cannot regress. */
+.ride-profile-pane--immersive .elevation-window-group {
+  padding-inline: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* Active Riding only (backlog item 80): the same neutral selected ring as
+ * .elevation-window-button.is-selected's own base (outward) treatment
+ * above, but INSET — mirrors this file's own established inset-ring
+ * convention for an active-only selected state
+ * (.ride-immersive-switcher-button.is-selected, .main-nav-button[aria-current]).
+ * Outward, this ring would protrude past the button's own border box and,
+ * with the group's padding now zeroed above, straight into
+ * .ride-profile-pane--immersive's own clipping edge (overflow-y: auto
+ * also clips overflow-x, per the CSS overflow spec) — reintroducing
+ * exactly the bug backlog item 76 fixed. Inset, it can never protrude
+ * past the box it is drawn inside, so it can never be clipped, regardless
+ * of padding. */
+.ride-profile-pane--immersive .elevation-window-button.is-selected {
+  box-shadow: inset 0 0 0 2px var(--colour-border);
+}
+
+/* Active Riding only (backlog item 80): the global button:focus-visible
+ * rule (2px outline + 2px outline-offset = 4px outward protrusion) would
+ * clip against .ride-profile-pane--immersive's own overflow-y: auto for
+ * the two edge buttons (Full, and Climb when present) now that the
+ * group's padding-inline is zero. -2px is the offset that pulls the
+ * entire 2px-wide outline band flush against the inside of the border
+ * edge — fully non-protruding — without changing outline width, style or
+ * colour. */
+.ride-profile-pane--immersive .elevation-window-button:focus-visible {
+  outline-offset: -2px;
+}
+
 /* The Map/Profile switcher — route Riding's own active branch only; free
  * roam (backlog item 58) has no profile to switch to, so it never renders
  * this element at all, and its own map widens its bottom offset directly

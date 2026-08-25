@@ -1018,11 +1018,16 @@ describe("RidingScreen", () => {
       await switchToProfile(user);
 
       // Default view is the 2 km window. Once the fix lands, the rider is
-      // "on" the whole-route climb, so it becomes active and its detailed
-      // local-gradient colouring appears alongside the unchanged macro
+      // "on" the whole-route climb, so it becomes active (backlog item 71)
+      // and the compact per-climb disclosure (backlog item 80) shows its
+      // detailed local-gradient colouring alongside the unchanged macro
       // category — both derived from the identical full-route feature
       // boundaries regardless of which window is currently displayed.
-      expect(await screen.findByText(/Hard climb/)).toBeInTheDocument();
+      const climbSummary = await screen.findByText(
+        "Local gradient colours on this climb",
+      );
+      await user.click(climbSummary);
+      expect(screen.getByText("6% to just below 9%")).toBeInTheDocument();
       expect(
         screen.getByRole("heading", { name: "Category 2 climb" }),
       ).toBeInTheDocument();
@@ -1508,7 +1513,7 @@ describe("RidingScreen", () => {
       expect(screen.queryByText("Gradient colours")).toBeNull();
     });
 
-    it("keeps the full palette (not Climb categories) for a paused ride restored with a windowed mode — not the full-route overview", async () => {
+    it("shows the compact per-climb disclosure (not Climb categories or the route-wide legend) for a paused ride restored inside a climb — not the full-route overview", async () => {
       await setActiveRideState({
         id: "active",
         routeId: climbThenDescentRoute.id,
@@ -1531,8 +1536,16 @@ describe("RidingScreen", () => {
       expect(
         await screen.findByRole("button", { name: "Resume ride" }),
       ).toBeInTheDocument();
-      expect(screen.getByText("Gradient colours")).toBeInTheDocument();
+      // The restored position (1000 m) falls inside this route's own climb
+      // (0-2000 m), so Climb view auto-activates (backlog item 71) even
+      // while paused, and its compact disclosure shows instead of either
+      // the pre-ride full-route overview's or the ordinary windowed view's
+      // own disclosure (backlog item 80).
+      expect(
+        screen.getByText("Local gradient colours on this climb"),
+      ).toBeInTheDocument();
       expect(screen.queryByText("Climb categories")).toBeNull();
+      expect(screen.queryByText("Gradient colours")).toBeNull();
     });
 
     it("hides the Climb categories disclosure entirely for a descent-only route, while still leaving the descent black pre-ride", () => {
@@ -2641,9 +2654,15 @@ describe("RidingScreen", () => {
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAt(stub, AFTER_CLIMB_2_METRES);
+      await switchToProfile(user);
 
       await screen.findByText("On route");
       expect(screen.queryByRole("button", { name: "Climb" })).toBeNull();
+      // backlog item 80: no hidden/disabled fourth placeholder button is
+      // left behind in the fixed-slot group — exactly the three standard
+      // buttons remain as real DOM nodes.
+      const group = screen.getByRole("group", { name: "Elevation profile view" });
+      expect(within(group).getAllByRole("button")).toHaveLength(3);
     });
 
     it("auto-selects Climb view on entering the first recognised climb, showing climb-relative metrics with no percentage", async () => {
@@ -2670,6 +2689,39 @@ describe("RidingScreen", () => {
       expect(within(panel).getByText("Distance to summit")).toBeInTheDocument();
       expect(within(panel).getByText("Elevation remaining")).toBeInTheDocument();
       expect(within(panel).queryByText(/%\s*(complete|done)/i)).toBeNull();
+    });
+
+    it("shows the compact 'Local gradient colours on this climb' disclosure, not the route-wide legend, during an active climb (backlog item 80)", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, CLIMB_1_MID_METRES);
+      await switchToProfile(user);
+      await screen.findByRole("button", { name: "Climb" });
+
+      expect(screen.queryByText("Gradient colours")).toBeNull();
+      expect(screen.queryByText("Climb categories")).toBeNull();
+      const summaries = screen.getAllByText("Local gradient colours on this climb");
+      expect(summaries).toHaveLength(1);
+      const [summary] = summaries;
+      if (!summary) throw new Error("expected a disclosure summary");
+      const disclosure = summary.closest("details");
+      expect(disclosure).not.toBeNull();
+      expect(disclosure?.hasAttribute("open")).toBe(false);
+
+      await user.click(summary);
+      expect(
+        within(disclosure as HTMLElement).getByRole("list", {
+          name: "Detailed climb gradient legend",
+        }).children.length,
+      ).toBeGreaterThan(0);
     });
 
     it("keeps Climb view showing without flicker across repeated fixes inside the same climb", async () => {
@@ -2796,6 +2848,9 @@ describe("RidingScreen", () => {
       expect(
         screen.getByRole("heading", { name: "Climb 2 · Category 3" }),
       ).toBeInTheDocument();
+      // backlog item 80: the compact disclosure follows the newly-active
+      // climb without ever appearing twice.
+      expect(screen.getAllByText("Local gradient colours on this climb")).toHaveLength(1);
     });
 
     it("never activates Climb view for a recognised descent", async () => {
@@ -3405,6 +3460,17 @@ describe("RidingScreen", () => {
         expect(within(detailsPanel).getByText(/Length:/)).toBeInTheDocument();
         expect(within(detailsPanel).getByText(/Elevation gain:/)).toBeInTheDocument();
         expect(within(detailsPanel).getByText(/Average gradient:/)).toBeInTheDocument();
+
+        // backlog item 80: the same compact disclosure used for an active
+        // climb also appears for its read-only preview, once, at the top
+        // level below the preview chart — never the route-wide legend, and
+        // never duplicated inside the reused (idle-gated) details panel.
+        expect(screen.queryByText("Gradient colours")).toBeNull();
+        const summaries = screen.getAllByText("Local gradient colours on this climb");
+        expect(summaries).toHaveLength(1);
+        expect(
+          within(detailsPanel).queryByText("Local gradient colours on this climb"),
+        ).toBeNull();
 
         expect(screen.queryByRole("button", { name: "View climb" })).toBeNull();
       });
@@ -7252,6 +7318,9 @@ describe("RidingScreen", () => {
       expect(
         within(detailsPanel).queryByText("Local gradient colours on this climb"),
       ).toBeNull();
+      // backlog item 80: the top-level compact disclosure (outside this
+      // panel) still appears exactly once for this same preview.
+      expect(screen.getAllByText("Local gradient colours on this climb")).toHaveLength(1);
     });
   });
 });

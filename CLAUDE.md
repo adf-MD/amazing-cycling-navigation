@@ -321,4 +321,4 @@ Stable item numbers never change regardless of which file an item's text lives i
 | 32   | `ridingFinishAndEnd.spec.ts`'s completion-detection test: an unconfirmed CPU-contention flake | Monitored, unconfirmed                           | [`current-status.md#item-32`](docs/project/current-status.md#item-32) |
 | 66   | Investigate intermittent fresh-Start Follow remaining at route overview                       | Accepted for now, monitored                      | [`current-status.md#item-66`](docs/project/current-status.md#item-66) |
 
-Items 6–10, 13–15, 17–27, 29–31, 33–42, 44–58, 62–65 and 67–79 are completed (`— done`) and live in [`docs/project/history/`](docs/project/history/README.md). Item 43 is a follow-up acceptance checklist and lives in [`docs/project/current-status.md`](docs/project/current-status.md).
+Items 6–10, 13–15, 17–27, 29–31, 33–42, 44–58, 62–65 and 67–80 are completed (`— done`) and live in [`docs/project/history/`](docs/project/history/README.md). Item 43 is a follow-up acceptance checklist and lives in [`docs/project/current-status.md`](docs/project/current-status.md).
