@@ -1012,14 +1012,35 @@ button:focus-visible {
   gap: 8px;
 }
 
-/* Matches the global `button` touch-target rule — a native `<select>` has
- * no equivalent default sizing rule of its own. width is explicit rather
- * than relying on the parent .stack's default align-items: stretch,
+/* Grows the native <select> beyond the base 44px touch-target minimum to a
+ * firmer 52px grip target (backlog item 78) — mounted, gloved, one-handed
+ * use benefits from headroom above the bare minimum. width is explicit
+ * rather than relying on the parent .stack's default align-items: stretch,
  * since a native <select>'s own UA sizing algorithm isn't reliably
- * overridden by flex stretch alone across engines. */
+ * overridden by flex stretch alone across engines. Composes .field-input's
+ * own border/padding/background/font declarations directly (duplicated
+ * rather than shared via a class list, since .field-input's name reads
+ * oddly applied to a <select>) — still the browser's own native dropdown
+ * chrome throughout: no appearance: none, no custom listbox, no
+ * JS-driven sizing anywhere in this rule or in RidingClimbSelector.tsx. */
 .recognised-climb-select {
-  min-height: var(--touch-target-min);
+  min-height: 52px;
   width: 100%;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  background: var(--colour-bg);
+  color: var(--colour-text);
+}
+
+/* A native <select> gets no focus-visible styling from the global `button`
+ * rule (that rule is button-scoped only) — this is the first dedicated
+ * :focus-visible treatment for a <select> in this codebase, mirroring the
+ * global button rule's own outline exactly. */
+.recognised-climb-select:focus-visible {
+  outline: 2px solid var(--colour-accent);
+  outline-offset: 2px;
 }
 
 /* A neutral, bordered/elevated surface for a Settings section, mirroring

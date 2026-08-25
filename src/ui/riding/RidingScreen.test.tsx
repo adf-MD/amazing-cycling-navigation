@@ -884,7 +884,7 @@ describe("RidingScreen", () => {
       expect(screen.queryByRole("heading", { name: /Climb 1/ })).toBeNull();
     });
 
-    it("shows the numbered details heading once a climb is explicitly selected from the dropdown, without the pre-ride overview's removed local-gradient legend (item 77)", async () => {
+    it("shows the numbered details heading once a climb is explicitly selected from the dropdown, with its local-gradient legend in the new selected-feature disclosure, not the route-level one (item 77/78)", async () => {
       const user = userEvent.setup();
       render(
         <RidingScreen
@@ -901,16 +901,19 @@ describe("RidingScreen", () => {
       expect(
         screen.getByRole("heading", { name: "Climb 1 · Category 2" }),
       ).toBeInTheDocument();
-      // Backlog item 77: the pre-ride full overview's disclosure is now the
-      // climb-only "Climb categories" legend, which never includes a
-      // selected-feature detailed local-gradient explanation — "Hard
-      // climb" (this constant-8%-grade climb's own local-gradient band
-      // label) no longer appears here. The chart's own visual local-
-      // gradient colouring for the selected climb is unaffected — only
-      // this standalone legend text is removed (item 78 will reintroduce
-      // an equivalent explanation elsewhere).
-      expect(screen.queryByText(/Hard climb/)).toBeNull();
+      // Backlog item 77: the pre-ride full overview's route-level
+      // disclosure is the climb-only "Climb categories" legend, which
+      // never includes selected-feature detailed local-gradient text.
+      // Backlog item 78 reintroduces that local-gradient explanation in a
+      // separate, selected-feature-scoped "Gradient colours on this
+      // climb" disclosure instead — "Hard climb" (this constant-8%-grade
+      // climb's own local-gradient band label) appears there, not inside
+      // "Climb categories".
       expect(screen.getByText("Climb categories")).toBeInTheDocument();
+      expect(screen.getByText("Gradient colours on this climb")).toBeInTheDocument();
+      expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
+      const climbCategoriesList = screen.getByRole("list", { name: "Climb categories" });
+      expect(climbCategoriesList.textContent).not.toContain("Hard climb");
     });
 
     it("hides the pre-ride climb selector once riding starts, and does not let the stale pre-ride selection override the active climb", async () => {
@@ -2199,19 +2202,21 @@ describe("RidingScreen", () => {
         "climb-0",
       );
       const chart = screen.getByRole("img", { name: "Elevation profile for Climb 1" });
-      // Backlog item 77 removed the pre-ride overview's standalone
-      // "Detailed local gradient" legend text ("Hard climb", "Gentle, flat
-      // or brief descent"), so this now proves the same underlying
-      // classification via the chart's own rendered stroke colours instead
-      // — the chart's visual local-gradient colouring for a selected climb
-      // is unaffected by item 77, only the separate legend text is gone.
+      // Backlog item 77 removed both bands' text from the pre-ride
+      // overview's route-level disclosure; this proves the underlying
+      // classification via the chart's own rendered stroke colours, which
+      // is unaffected by item 77. Backlog item 78 then reintroduced both
+      // bands' text in the new selected-feature "Gradient colours on this
+      // climb" disclosure — present here, not in "Climb categories".
       const strokes = Array.from(chart.querySelectorAll("path")).map((path) =>
         path.getAttribute("stroke"),
       );
       expect(strokes).toContain(MICRO_DETAIL_COLOURS["hard-climb"]);
       expect(strokes).toContain(MICRO_DETAIL_COLOURS["gentle-or-descending"]);
-      expect(screen.queryByText(/Hard climb/)).toBeNull();
-      expect(screen.queryByText(/Gentle, flat or brief descent/)).toBeNull();
+      expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
+      expect(screen.getByText(/Gentle, flat or brief descent/)).toBeInTheDocument();
+      const climbCategoriesList = screen.getByRole("list", { name: "Climb categories" });
+      expect(climbCategoriesList.textContent).not.toContain("Hard climb");
     });
 
     it("shows no additional chart alongside the existing empty state when the route has no recognised climbs", () => {
@@ -6820,6 +6825,306 @@ describe("RidingScreen", () => {
       fireEvent.click(hitTarget, { clientX: 160, clientY: 48 });
 
       vi.restoreAllMocks();
+    });
+  });
+
+  describe("selected-feature local legends and climb-score explanation (item 78)", () => {
+    // Mirrors "climb-only pre-ride full profile colouring (item 77)"'s own
+    // local climbThenDescentRoute fixture exactly, so a descent can be
+    // selected pre-ride via a chart tap the same proven way.
+    const climbThenDescentRoute: PlannedRoute = {
+      ...route,
+      id: "item-78-climb-then-descent-route",
+      points: Array.from({ length: 41 }, (_, index) => {
+        const distanceFromStartMetres = index * 100;
+        const elevationMetres =
+          distanceFromStartMetres <= 2000
+            ? (distanceFromStartMetres * 8) / 100
+            : 160 - ((distanceFromStartMetres - 2000) * 8) / 100;
+        return {
+          coordinate: [0.0001 * index, 51] as const,
+          elevationMetres,
+          distanceFromStartMetres,
+        };
+      }),
+      distanceMetres: 4000,
+    };
+
+    function tapDescent(): void {
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 320,
+        height: 96,
+        right: 320,
+        bottom: 96,
+        x: 0,
+        y: 0,
+        toJSON: () => "",
+      });
+      const hitTarget = screen
+        .getByRole("img", { name: "Elevation profile chart" })
+        .parentElement?.querySelector("rect.elevation-chart-tap-target");
+      if (!hitTarget) throw new Error("expected a tap-target rect");
+      // ~87.5% across a 0-4000 m domain -> ~3500 m, solidly inside the
+      // 2000-4000 m descent.
+      fireEvent.click(hitTarget, { clientX: 280, clientY: 48 });
+    }
+
+    it("shows a collapsed 'Gradient colours on this climb' disclosure directly after the chart and before the fact list once a climb is explicitly selected", async () => {
+      const user = userEvent.setup();
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+        "climb-0",
+      );
+
+      const detailsPanel = screen.getByRole("region", { name: "Route feature details" });
+      const summary = within(detailsPanel).getByText("Gradient colours on this climb");
+      const disclosure = summary.closest("details");
+      expect(disclosure).not.toBeNull();
+      expect(disclosure?.hasAttribute("open")).toBe(false);
+      expect(
+        within(detailsPanel).queryByText("Gradient colours on this descent"),
+      ).toBeNull();
+
+      const children = Array.from(detailsPanel.children);
+      const chartIndex = children.findIndex((child) => child.tagName === "H3") + 1;
+      const disclosureIndex = children.findIndex((child) => child.tagName === "DETAILS");
+      const firstFactIndex = children.findIndex(
+        (child) => child.tagName === "P" && child.textContent.includes("Route position"),
+      );
+      expect(disclosureIndex).toBeGreaterThanOrEqual(chartIndex);
+      expect(firstFactIndex).toBe(disclosureIndex + 1);
+
+      await user.click(summary);
+      expect(within(detailsPanel).getByText(/Hard climb/)).toBeInTheDocument();
+    });
+
+    it("shows a collapsed 'Gradient colours on this descent' disclosure directly after the heading once a descent is explicitly selected", () => {
+      render(
+        <RidingScreen
+          route={climbThenDescentRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      tapDescent();
+
+      const detailsPanel = screen.getByRole("region", { name: "Route feature details" });
+      expect(
+        within(detailsPanel).getByRole("heading", { name: "Recognised descent" }),
+      ).toBeInTheDocument();
+      const summary = within(detailsPanel).getByText("Gradient colours on this descent");
+      const disclosure = summary.closest("details");
+      expect(disclosure).not.toBeNull();
+      expect(disclosure?.hasAttribute("open")).toBe(false);
+      expect(
+        within(detailsPanel).queryByText("Gradient colours on this climb"),
+      ).toBeNull();
+
+      const children = Array.from(detailsPanel.children);
+      const headingIndex = children.findIndex((child) => child.tagName === "H3");
+      const disclosureIndex = children.findIndex((child) => child.tagName === "DETAILS");
+      expect(disclosureIndex).toBe(headingIndex + 1);
+
+      vi.restoreAllMocks();
+    });
+
+    it("no longer shows 'Values are derived from available route elevation data.' for a selected climb or a selected descent", async () => {
+      const user = userEvent.setup();
+      const { unmount } = render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+        "climb-0",
+      );
+      expect(
+        screen.queryByText(/Values are derived from available route elevation data\./),
+      ).toBeNull();
+      unmount();
+
+      render(
+        <RidingScreen
+          route={climbThenDescentRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      tapDescent();
+      expect(
+        screen.queryByText(/Values are derived from available route elevation data\./),
+      ).toBeNull();
+      vi.restoreAllMocks();
+    });
+
+    it("shows 'How is this calculated?' for a selected climb only when onShowClimbScoreHelp is supplied, and calls it with the climb's feature id", async () => {
+      const user = userEvent.setup();
+      const onShowClimbScoreHelp = vi.fn();
+      const { rerender } = render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+        "climb-0",
+      );
+      expect(
+        screen.queryByRole("button", { name: "How is this calculated?" }),
+      ).toBeNull();
+
+      rerender(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+          onShowClimbScoreHelp={onShowClimbScoreHelp}
+        />,
+      );
+      const button = await screen.findByRole("button", {
+        name: "How is this calculated?",
+      });
+      await user.click(button);
+      expect(onShowClimbScoreHelp).toHaveBeenCalledWith("climb-0");
+    });
+
+    it("never shows 'How is this calculated?' for a selected descent, even when onShowClimbScoreHelp is supplied", () => {
+      const onShowClimbScoreHelp = vi.fn();
+      render(
+        <RidingScreen
+          route={climbThenDescentRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+          onShowClimbScoreHelp={onShowClimbScoreHelp}
+        />,
+      );
+      tapDescent();
+      expect(
+        screen.queryByRole("button", { name: "How is this calculated?" }),
+      ).toBeNull();
+      vi.restoreAllMocks();
+    });
+
+    it("seeds the pre-ride selection from preservedFeatureId on mount and consumes the hand-off exactly once", async () => {
+      const geolocationSource = buildStubGeolocationSource().source;
+      const mapFactory = buildStubMapFactory().factory;
+      const onFeatureSelectionHandoffConsumed = vi.fn();
+      const { rerender } = render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={geolocationSource}
+          mapFactory={mapFactory}
+          preservedFeatureId="climb-0"
+          onFeatureSelectionHandoffConsumed={onFeatureSelectionHandoffConsumed}
+        />,
+      );
+      expect(screen.getByRole("combobox", { name: "Recognised climbs" })).toHaveValue(
+        "climb-0",
+      );
+      expect(
+        screen.getByRole("heading", { name: "Climb 1 · Category 2" }),
+      ).toBeInTheDocument();
+      await waitFor(() => {
+        expect(onFeatureSelectionHandoffConsumed).toHaveBeenCalledTimes(1);
+      });
+
+      // An unrelated rerender with the exact same props must not
+      // re-consume the hand-off a second time.
+      rerender(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={geolocationSource}
+          mapFactory={mapFactory}
+          preservedFeatureId="climb-0"
+          onFeatureSelectionHandoffConsumed={onFeatureSelectionHandoffConsumed}
+        />,
+      );
+      expect(onFeatureSelectionHandoffConsumed).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves the dropdown on 'All route' and never calls onFeatureSelectionHandoffConsumed when preservedFeatureId is omitted", () => {
+      const onFeatureSelectionHandoffConsumed = vi.fn();
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+          onFeatureSelectionHandoffConsumed={onFeatureSelectionHandoffConsumed}
+        />,
+      );
+      expect(screen.getByRole("combobox", { name: "Recognised climbs" })).toHaveValue(
+        "all",
+      );
+      expect(onFeatureSelectionHandoffConsumed).not.toHaveBeenCalled();
+    });
+
+    it("never shows the local-gradient disclosure or the score-help action on the active-ride upcoming-climb preview card, even though it reuses RouteFeatureDetailsPanel", async () => {
+      const user = userEvent.setup();
+      const onShowClimbScoreHelp = vi.fn();
+      // A flat 500 m lead-in followed by a single climb (500-2500 m, +8%,
+      // climbScore 16000 -> category-3), so a fix can land genuinely
+      // "before" the climb and trigger the Climb-preview card exactly the
+      // way the "upcoming-climb preview (backlog item 71)" tests do.
+      const leadInThenClimbRoute: PlannedRoute = {
+        ...route,
+        id: "item-78-lead-in-then-climb-route",
+        points: Array.from({ length: 26 }, (_, index) => {
+          const distanceFromStartMetres = index * 100;
+          const elevationMetres =
+            distanceFromStartMetres <= 500
+              ? 0
+              : ((distanceFromStartMetres - 500) * 8) / 100;
+          return {
+            coordinate: [0.0001 * index, 51] as const,
+            elevationMetres,
+            distanceFromStartMetres,
+          };
+        }),
+        distanceMetres: 2500,
+      };
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={leadInThenClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          onShowClimbScoreHelp={onShowClimbScoreHelp}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: [0.0002, 51],
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await switchToProfile(user);
+      await user.click(await screen.findByRole("button", { name: "Climb" }));
+
+      const detailsPanel = screen.getByRole("region", { name: "Route feature details" });
+      expect(within(detailsPanel).getByText(/Climb score:/)).toBeInTheDocument();
+      expect(
+        within(detailsPanel).queryByText("Gradient colours on this climb"),
+      ).toBeNull();
+      expect(
+        within(detailsPanel).queryByRole("button", { name: "How is this calculated?" }),
+      ).toBeNull();
+      expect(onShowClimbScoreHelp).not.toHaveBeenCalled();
     });
   });
 });

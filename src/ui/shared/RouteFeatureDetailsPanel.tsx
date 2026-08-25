@@ -1,10 +1,16 @@
 import type { ReactNode } from "react";
-import type { RouteFeature } from "../../navigation/routeFeatures.ts";
+import type {
+  ClimbGradientBand,
+  DescentLocalKey,
+  RouteFeature,
+} from "../../navigation/routeFeatures.ts";
 import {
   CLIMB_CATEGORY_NAMES,
   ROUTE_FEATURE_COLOURS,
   ROUTE_FEATURE_LABELS,
 } from "../../navigation/routeFeaturePalette.ts";
+import { ClimbLocalGradientDisclosure } from "./ClimbLocalGradientDisclosure.tsx";
+import { DescentLocalGradientDisclosure } from "./DescentLocalGradientDisclosure.tsx";
 import { GradientColourSwatch } from "./GradientColourSwatch.tsx";
 import {
   formatDistanceKm,
@@ -12,6 +18,9 @@ import {
   formatGradientPercent,
   formatMetres,
 } from "./routeSummary.ts";
+
+const EMPTY_CLIMB_LOCAL_BANDS: ReadonlySet<ClimbGradientBand> = new Set();
+const EMPTY_DESCENT_LOCAL_KEYS: ReadonlySet<DescentLocalKey> = new Set();
 
 export interface RouteFeatureDetailsPanelProps {
   /** The selected-or-active feature to show detail for, or null to render
@@ -31,6 +40,23 @@ export interface RouteFeatureDetailsPanelProps {
    * chart separately, above this panel, via RidingClimbProgressPanel),
    * leaving every other caller's layout unchanged. */
   detailChart?: ReactNode;
+  /** Which local-gradient climb bands are actually painted for the shown
+   * climb, driving a collapsed "Gradient colours on this climb" disclosure
+   * rendered directly below detailChart (backlog item 78). Omitted/empty
+   * renders nothing extra — Riding's pre-ride selected-climb view is
+   * currently the only supplier; every other caller is unaffected. */
+  presentClimbLocalBands?: ReadonlySet<ClimbGradientBand>;
+  /** The descent counterpart of presentClimbLocalBands, driving a
+   * collapsed "Gradient colours on this descent" disclosure in the same
+   * position (backlog item 78). */
+  presentDescentLocalKeys?: ReadonlySet<DescentLocalKey>;
+  /** Shown as a "How is this calculated?" action beside the climb score
+   * when supplied and the feature is a climb — omitted everywhere else
+   * (descents have no climb score, and other callers such as Planning and
+   * Riding's active-climb view don't yet offer this navigation). Kept
+   * presentational: this component only invokes the callback, it never
+   * imports application navigation itself (backlog item 78). */
+  onClimbScoreHelp?: () => void;
   /** Omit to render no clear control (e.g. Riding might prefer the
    * feature to simply update as the rider progresses, with no explicit
    * "clear" action while merely active-not-selected). */
@@ -42,14 +68,19 @@ export interface RouteFeatureDetailsPanelProps {
  * recognised climb/descent, reused by both Riding and Planning rather
  * than each maintaining its own — the exact field set the spec requires:
  * category/"Recognised descent" heading, route position, length,
- * elevation gain/loss, average gradient, maximum/steepest local gradient,
- * climb score (climbs only), and a short explanation that these values
- * derive from available route elevation data.
+ * elevation gain/loss, average gradient, maximum/steepest local gradient
+ * and climb score (climbs only). presentClimbLocalBands/
+ * presentDescentLocalKeys/onClimbScoreHelp are additive, Riding-pre-ride-
+ * only extensions (backlog item 78) — every other caller omits them and
+ * renders exactly as before.
  */
 export function RouteFeatureDetailsPanel({
   feature,
   climbNumber,
   detailChart,
+  presentClimbLocalBands = EMPTY_CLIMB_LOCAL_BANDS,
+  presentDescentLocalKeys = EMPTY_DESCENT_LOCAL_KEYS,
+  onClimbScoreHelp,
   onClear,
 }: RouteFeatureDetailsPanelProps) {
   if (feature === null) {
@@ -70,6 +101,13 @@ export function RouteFeatureDetailsPanel({
         <GradientColourSwatch colour={ROUTE_FEATURE_COLOURS[visualKey]} /> {heading}
       </h3>
       {detailChart}
+      {feature.kind === "climb" ? (
+        <ClimbLocalGradientDisclosure presentClimbBands={presentClimbLocalBands} />
+      ) : (
+        <DescentLocalGradientDisclosure
+          presentDescentLocalKeys={presentDescentLocalKeys}
+        />
+      )}
       <p>
         Route position: {formatDistanceKmValue(feature.startDistanceMetres)}–
         {formatDistanceKmValue(feature.endDistanceMetres)} km
@@ -86,7 +124,11 @@ export function RouteFeatureDetailsPanel({
         {formatGradientPercent(feature.maxGradientPercent)}
       </p>
       {feature.kind === "climb" && <p>Climb score: {Math.round(feature.climbScore)}</p>}
-      <p>Values are derived from available route elevation data.</p>
+      {feature.kind === "climb" && onClimbScoreHelp && (
+        <button type="button" className="btn-secondary" onClick={onClimbScoreHelp}>
+          How is this calculated?
+        </button>
+      )}
       {feature.kind === "descent" && (
         <p>
           Blue intensity reflects gradient steepness only, not surface, bends, traffic or

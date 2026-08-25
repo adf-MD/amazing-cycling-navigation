@@ -24,6 +24,7 @@ import {
   listClimbsInRouteOrder,
   resolveElevationChartTap,
   type ClimbGradientBand,
+  type DescentLocalKey,
   type RouteFeature,
 } from "../../navigation/routeFeatures.ts";
 import { buildFeatureDetailSegments } from "../../navigation/routeFeatureDetail.ts";
@@ -83,6 +84,29 @@ export interface RidingScreenProps {
    * authoritative handleStart() transition the "Resume ride"/"Start riding"
    * button itself uses. */
   resumeIntentToken?: number;
+  /** A pre-ride climb selection to restore on mount, handed back by App.tsx
+   * after a "How is this calculated?" round trip to Settings (backlog item
+   * 78) — always a real climb id, never set for an ordinary route open.
+   * Seeds explicitFeatureSelection's initial state only; consumed at most
+   * once via onFeatureSelectionHandoffConsumed, mirroring
+   * resumeIntentToken's own "seed once on mount" shape but with its own
+   * independent App.tsx state (see App.tsx's RidingContent.preservedFeatureId
+   * doc comment for why these two hand-offs are deliberately not merged). */
+  preservedFeatureId?: string;
+  /** Called at most once per mount, immediately after preservedFeatureId
+   * (if any) has been used to seed explicitFeatureSelection — tells
+   * App.tsx to clear its own preservedFeatureId so an unrelated later
+   * remount (e.g. a trip to Diagnostics and back) never silently reapplies
+   * a stale selection over a deliberate Clear selection (backlog item 78).
+   * Never called when preservedFeatureId is undefined. */
+  onFeatureSelectionHandoffConsumed?: () => void;
+  /** Called with a selected climb's feature id when the rider presses
+   * "How is this calculated?" in RouteFeatureDetailsPanel (backlog item
+   * 78) — App.tsx responds by preserving this id, minting a Settings
+   * focus token, and switching screens; this component has no navigation
+   * concept of its own. Only ever invoked for a genuinely selected climb
+   * while idle (see the RouteFeatureDetailsPanel call site below). */
+  onShowClimbScoreHelp?: (featureId: string) => void;
   geolocationSource?: GeolocationSource;
   mapFactory?: MapFactory;
   clock?: Clock;
@@ -197,6 +221,9 @@ function elevationViewModeKey(mode: ElevationViewMode): string {
 export function RidingScreen({
   route,
   resumeIntentToken,
+  preservedFeatureId,
+  onFeatureSelectionHandoffConsumed,
+  onShowClimbScoreHelp,
   geolocationSource,
   mapFactory,
   clock = systemClock,
@@ -324,7 +351,31 @@ export function RidingScreen({
   const [explicitFeatureSelection, setExplicitFeatureSelection] = useState<{
     routeId: string;
     featureId: string | null;
-  } | null>(null);
+  } | null>(() =>
+    preservedFeatureId !== undefined
+      ? { routeId: route.id, featureId: preservedFeatureId }
+      : null,
+  );
+
+  // Consumes preservedFeatureId at most once per mount, immediately after
+  // the lazy useState initializer above has already used it to seed
+  // explicitFeatureSelection (backlog item 78) — mirrors
+  // consumedResumeIntentTokenRef's synchronous ref-guard-before-any-side-
+  // effect shape further down this file, so this stays safe under
+  // StrictMode's double-invoked effects. Deliberately does not depend on
+  // preservedFeatureId changing mid-mount (it never does: App.tsx only
+  // ever sets it before this screen mounts, as part of the same
+  // ridingContent object this screen was opened with), so a plain
+  // once-per-mount guard is sufficient — no risk of missing a later
+  // change the way a value-comparison guard would need to handle.
+  const consumedFeatureSelectionHandoffRef = useRef(false);
+  useEffect(() => {
+    if (preservedFeatureId === undefined) return;
+    if (consumedFeatureSelectionHandoffRef.current) return;
+    consumedFeatureSelectionHandoffRef.current = true;
+    onFeatureSelectionHandoffConsumed?.();
+  }, [preservedFeatureId, onFeatureSelectionHandoffConsumed]);
+
   const [selectedGradientSegment, setSelectedGradientSegment] =
     useState<ClassifiedSegment<MicroDetailVisualKey> | null>(null);
 
@@ -1383,6 +1434,33 @@ export function RidingScreen({
               }
               climbNumber={preRideClimbNumber}
               detailChart={preRideClimbChart}
+              presentClimbLocalBands={
+                nav.geolocationStatus === "idle" && microDetailFeature?.kind === "climb"
+                  ? new Set(
+                      microDetailSegments.map(
+                        (segment) => segment.visualKey as ClimbGradientBand,
+                      ),
+                    )
+                  : undefined
+              }
+              presentDescentLocalKeys={
+                nav.geolocationStatus === "idle" && microDetailFeature?.kind === "descent"
+                  ? new Set(
+                      microDetailSegments.map(
+                        (segment) => segment.visualKey as DescentLocalKey,
+                      ),
+                    )
+                  : undefined
+              }
+              onClimbScoreHelp={
+                nav.geolocationStatus === "idle" &&
+                microDetailFeature?.kind === "climb" &&
+                onShowClimbScoreHelp
+                  ? () => {
+                      onShowClimbScoreHelp(microDetailFeature.id);
+                    }
+                  : undefined
+              }
               onClear={
                 effectiveElevationView.kind === "climb-preview"
                   ? undefined

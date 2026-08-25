@@ -24,12 +24,15 @@ export const MIN_CLIMB_SCORE = 1500;
 export const MAX_DESCENT_AVERAGE_GRADIENT_PERCENT = -3;
 /** Garmin-style climb score boundaries: score < 8000 is "uncategorised",
  * score >= 80000 is "HC". Every upper bound is exclusive, matching this
- * module's own classifyClimbGradientBand/classifyDescentBand convention. */
-const CLIMB_CATEGORY_4_SCORE = 8000;
-const CLIMB_CATEGORY_3_SCORE = 16000;
-const CLIMB_CATEGORY_2_SCORE = 32000;
-const CLIMB_CATEGORY_1_SCORE = 64000;
-const CLIMB_CATEGORY_HC_SCORE = 80000;
+ * module's own classifyClimbGradientBand/classifyDescentBand convention.
+ * Exported as the single authoritative source for both classifyClimbScore
+ * below and Settings' climb-classification explanation (backlog item 78) —
+ * do not duplicate these numbers elsewhere. */
+export const CLIMB_CATEGORY_4_SCORE = 8000;
+export const CLIMB_CATEGORY_3_SCORE = 16000;
+export const CLIMB_CATEGORY_2_SCORE = 32000;
+export const CLIMB_CATEGORY_1_SCORE = 64000;
+export const CLIMB_CATEGORY_HC_SCORE = 80000;
 /** Descent severity boundaries, by average gradient percent (more
  * negative = more severe). App-specific — Garmin publishes no descent
  * severity scheme. */

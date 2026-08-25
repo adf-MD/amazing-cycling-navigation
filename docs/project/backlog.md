@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-Item 78 is the next selected implementation slice. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
+No slice is currently the next selected implementation item. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Each entry reproduces its original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this).
 
@@ -119,38 +119,3 @@ _Category: Platform compatibility_
       4. **Conflict and recovery coverage:** an inbound share must respect the existing unfinished route/free-roam conflict guard (item 42's fail-closed `checkFreeRoamConflict`-style pattern) and must never silently replace an active session or Planning draft; it must work after a fresh install/relaunch. Add Playwright coverage where meaningful, then require real Android Chrome acceptance — Chromium/Playwright emulation cannot prove real OS share-sheet registration, matching this project's existing, repeatedly-stated distinction between the `android-chrome` Playwright project and genuine physical-device verification (item 25).
     - If step 1 finds only an `Open with` path and no Share/Send path, document that conclusively and record that no pure static-PWA solution is currently available for this exact flow — do not propose a native wrapper, Trusted Web Activity, APK, or other Android-specific packaging as a workaround; that would be a major architecture departure and is explicitly not approved by this backlog item.
     - Requires the "## Explicit non-goals" edit recorded above (item 61's own cross-reference) — that section stays in the root `CLAUDE.md` and already carries this cross-reference.
-
----
-
-<a id="item-78"></a>
-
-## Item 78 — Selected-feature local legends and climb-score explanation
-
-_Category: Pre-ride recognised-feature detail and Settings help_
-
-78. **Selected-feature local legends and climb-score explanation**
-    - Split selected-feature explanation from the overview legend:
-      - A selected recognised climb receives its own collapsed disclosure titled along the lines of `Gradient colours on this climb`.
-      - Place it immediately below the selected climb's detailed chart, before the statistics, so the explanation is visually associated with the colours it describes.
-      - Keep the detailed local-gradient colouring within the selected climb.
-      - Preserve selected recognised-descents and their detailed blue presentation. Give a selected descent its own corresponding local-colour disclosure rather than reintroducing descent rows into the overview legend.
-      - Keep the disclosures collapsed by default and accessible by keyboard and screen reader.
-      - Remove the long prose beginning `Detailed colours show local gradient...` from the shared overview area.
-      - Remove `Values are derived from available route elevation data.` from selected feature details.
-      - Do not change climb/descent detection, smoothing, boundaries, scores, category assignment or chart data.
-    - Add an in-app Settings explanation:
-      - Add an expandable/focusable section such as `How climbs are classified`.
-      - Explain the current implementation accurately, deriving wording and thresholds from current source rather than treating this prompt as a substitute for inspection:
-        - climb score is climb length in metres multiplied by average gradient percentage;
-        - recognition requires at least 500 m length, at least 3% average gradient and a minimum score of 1,500;
-        - uncategorised: below 8,000;
-        - Category 4: 8,000 to 15,999;
-        - Category 3: 16,000 to 31,999;
-        - Category 2: 32,000 to 63,999;
-        - Category 1: 64,000 to 79,999;
-        - HC: 80,000 or more.
-      - Present thresholds clearly using existing project-owned names/formatters where practical, avoiding a second drifting source of classification logic.
-      - Add `How is this calculated?` beside or immediately after a selected climb's score. It should navigate to Settings, focus and open the explanation in one action.
-      - Preserve the active route/route selection so returning from Settings does not lose the user's context.
-      - A selected descent has no climb score and therefore no climb-score link.
-      - Test navigation/focus, repeated activation, browser back/application return behaviour where relevant, and enlarged phone text.

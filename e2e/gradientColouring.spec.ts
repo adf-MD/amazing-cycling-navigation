@@ -1073,4 +1073,161 @@ ${trkpts}
       expect(scrollWidthWithSelection).toBeLessThanOrEqual(390);
     });
   });
+
+  test.describe("selected-feature local legends and climb-score explanation (item 78)", () => {
+    test("selecting the climb reveals a collapsed 'Gradient colours on this climb' disclosure that expands to a real, non-transparent rendered swatch", async ({
+      page,
+    }) => {
+      const consoleErrors: string[] = [];
+      page.on("console", (message) => {
+        if (message.type() === "error" && !message.text().includes("net::ERR_FAILED")) {
+          consoleErrors.push(message.text());
+        }
+      });
+      page.on("pageerror", (error) => {
+        consoleErrors.push(error.message);
+      });
+
+      await forceMapStyleFailure(page);
+
+      await page.goto("/");
+      await importClimbThenDescentRoute(page);
+
+      await page
+        .getByRole("combobox", { name: "Recognised climbs" })
+        .selectOption({ index: 1 });
+
+      const disclosureSummary = page.getByText("Gradient colours on this climb");
+      await expect(disclosureSummary).toBeVisible();
+      const disclosure = page.locator("details", { has: disclosureSummary });
+      await expect(disclosure).not.toHaveAttribute("open", "");
+
+      await disclosureSummary.click();
+      const swatch = disclosure.locator(".gradient-colour-swatch").first();
+      await expect(swatch).toBeVisible();
+      const box = await swatch.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box?.width).toBeGreaterThan(0);
+      expect(box?.height).toBeGreaterThan(0);
+      const backgroundColor = await swatch.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      );
+      expect(backgroundColor).not.toBe("");
+      expect(backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+      expect(backgroundColor).not.toBe("transparent");
+
+      expect(consoleErrors).toEqual([]);
+    });
+
+    test("tapping the descent reveals a collapsed 'Gradient colours on this descent' disclosure that expands to a real, non-transparent rendered swatch", async ({
+      page,
+    }) => {
+      const consoleErrors: string[] = [];
+      page.on("console", (message) => {
+        if (message.type() === "error" && !message.text().includes("net::ERR_FAILED")) {
+          consoleErrors.push(message.text());
+        }
+      });
+      page.on("pageerror", (error) => {
+        consoleErrors.push(error.message);
+      });
+
+      await forceMapStyleFailure(page);
+
+      await page.goto("/");
+      await importClimbThenDescentRoute(page);
+
+      // The descent tail is the last third of the 0-3000 m domain — a tap
+      // at 90% of the chart's width lands solidly inside it.
+      const chartTapTarget = page.locator("rect.elevation-chart-tap-target");
+      const chartBox = await chartTapTarget.boundingBox();
+      if (!chartBox)
+        throw new Error("expected the elevation chart's tap target to be visible");
+      await chartTapTarget.click({
+        position: { x: chartBox.width * 0.9, y: chartBox.height / 2 },
+      });
+      await expect(
+        page.getByRole("heading", { name: "Recognised descent" }),
+      ).toBeVisible();
+
+      const disclosureSummary = page.getByText("Gradient colours on this descent");
+      await expect(disclosureSummary).toBeVisible();
+      const disclosure = page.locator("details", { has: disclosureSummary });
+      await expect(disclosure).not.toHaveAttribute("open", "");
+
+      await disclosureSummary.click();
+      const swatch = disclosure.locator(".gradient-colour-swatch").first();
+      await expect(swatch).toBeVisible();
+      const box = await swatch.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box?.width).toBeGreaterThan(0);
+      expect(box?.height).toBeGreaterThan(0);
+
+      expect(consoleErrors).toEqual([]);
+    });
+
+    test("the recognised-climb select renders at least 52px tall", async ({ page }) => {
+      await forceMapStyleFailure(page);
+
+      await page.goto("/");
+      await importClimbThenDescentRoute(page);
+
+      const select = page.getByRole("combobox", { name: "Recognised climbs" });
+      const box = await select.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box?.height).toBeGreaterThanOrEqual(52);
+    });
+
+    test.describe("390x844 phone viewport", () => {
+      test.use({ viewport: { width: 390, height: 844 } });
+
+      test("both expanded local-gradient disclosures introduce no horizontal overflow, and reading order is unchanged", async ({
+        page,
+      }) => {
+        await forceMapStyleFailure(page);
+
+        await page.goto("/");
+        await importClimbThenDescentRoute(page);
+
+        const headingTexts = await page.locator("h1, h2").allTextContents();
+        expect(headingTexts).toEqual([
+          "climb-then-descent-route",
+          "Route profile",
+          "Recognised climbs",
+        ]);
+
+        await page
+          .getByRole("combobox", { name: "Recognised climbs" })
+          .selectOption({ index: 1 });
+        await page.getByText("Gradient colours on this climb").click();
+        await expect(page.locator(".gradient-legend-entry").first()).toBeVisible();
+
+        const scrollWidth = await page.evaluate(
+          () => document.documentElement.scrollWidth,
+        );
+        expect(scrollWidth).toBeLessThanOrEqual(390);
+
+        await page
+          .getByRole("combobox", { name: "Recognised climbs" })
+          .selectOption({ index: 0 });
+        const chartTapTarget = page.locator("rect.elevation-chart-tap-target");
+        const chartBox = await chartTapTarget.boundingBox();
+        if (!chartBox)
+          throw new Error("expected the elevation chart's tap target to be visible");
+        await chartTapTarget.click({
+          position: { x: chartBox.width * 0.9, y: chartBox.height / 2 },
+        });
+        await page.getByText("Gradient colours on this descent").click();
+        await expect(page.locator(".gradient-legend-entry").first()).toBeVisible();
+
+        const scrollWidthWithDescent = await page.evaluate(
+          () => document.documentElement.scrollWidth,
+        );
+        expect(scrollWidthWithDescent).toBeLessThanOrEqual(390);
+
+        const headingTextsAfter = await page.locator("h1, h2").allTextContents();
+        expect(headingTextsAfter).toEqual(headingTexts);
+      });
+    });
+  });
 });

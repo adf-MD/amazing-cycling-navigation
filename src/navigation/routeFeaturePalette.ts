@@ -320,6 +320,28 @@ export const DESCENT_LOCAL_LABELS: Readonly<Record<DescentLocalKey, string>> = {
   neutral: "Shallower than the descent threshold",
 };
 
+/** Grade ranges for a selected/active descent's local legend (backlog item
+ * 78) — mirrors CLIMB_GRADIENT_BAND_RANGE_LABELS' shape. Boundaries match
+ * descentBandFromGradient/classifyDescentLocalKey in routeFeatures.ts
+ * (-6%/-9% band edges, -3% neutral threshold), expressed as positive
+ * percentages for display. */
+export const DESCENT_LOCAL_RANGE_LABELS: Readonly<Record<DescentLocalKey, string>> = {
+  neutral: "Below 3%",
+  moderate: "3% to just below 6%",
+  steep: "6% to just below 9%",
+  "very-steep": "9% or more",
+};
+
+/** Colour names for a selected/active descent's local legend (backlog item
+ * 78) — mirrors CLIMB_GRADIENT_BAND_COLOUR_NAMES' shape, reusing
+ * DESCENT_BAND_COLOUR_NAMES' own wording for the three descent bands
+ * (identical local colours, see MICRO_DETAIL_COLOURS below) plus "green"
+ * for the plain ordinary-route neutral colour. */
+export const DESCENT_LOCAL_COLOUR_NAMES: Readonly<Record<DescentLocalKey, string>> = {
+  ...DESCENT_BAND_COLOUR_NAMES,
+  neutral: "green",
+};
+
 /** The colours actually painted for a selected/active climb or descent's
  * local detail — climb bands share their macro tier's colour; descent
  * bands are identical to their macro DESCENT_BAND_COLOURS entry (the same

@@ -38,3 +38,13 @@ export function formatManoeuvreDistance(metres: number): string {
   const roundingMetres = clamped >= 200 ? 50 : clamped >= 50 ? 10 : 5;
   return `${String(Math.round(clamped / roundingMetres) * roundingMetres)} m`;
 }
+
+/** Thousands-separated whole number — used only for Settings' climb-score
+ * thresholds (1,500 to 80,000), which read awkwardly with no separator.
+ * Manual digit-grouping rather than toLocaleString, matching this module's
+ * house style of small, explicit, environment-independent formatters. */
+export function formatWholeNumber(value: number): string {
+  return Math.round(value)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}

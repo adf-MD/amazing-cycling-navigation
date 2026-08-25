@@ -480,4 +480,107 @@ describe("SettingsScreen", () => {
       putSpy.mockRestore();
     });
   });
+
+  describe("Elevation and climbs / climb-score explanation (backlog item 78)", () => {
+    it("keeps 'How climbs are classified' in its own collapsed disclosure, inside a dedicated Elevation and climbs panel", () => {
+      render(<SettingsScreen />);
+
+      expect(
+        screen.getByRole("heading", { level: 2, name: "Elevation and climbs" }),
+      ).toBeInTheDocument();
+
+      const details = screen.getByText("How climbs are classified").closest("details");
+      expect(details).not.toBeNull();
+      expect(details).not.toHaveAttribute("open");
+
+      const elevationClimbsSection = screen
+        .getByRole("heading", { name: "Elevation and climbs" })
+        .closest("section");
+      expect(elevationClimbsSection).toContainElement(details);
+
+      // A distinct panel/disclosure from Route planning's and
+      // OpenRouteService's own disclosures.
+      const recalcDetails = screen
+        .getByText(/calculated in sections between waypoints/i)
+        .closest("details");
+      expect(recalcDetails).not.toBe(details);
+    });
+
+    it("explains every recognition and category threshold using the authoritative exported constants, not a second hand-typed copy", () => {
+      render(<SettingsScreen />);
+
+      expect(screen.getByText(/500 m/)).toBeInTheDocument();
+      expect(screen.getByText(/at least 3%/)).toBeInTheDocument();
+      expect(screen.getByText(/minimum score of 1,500/)).toBeInTheDocument();
+
+      expect(screen.getByText(/Uncategorised: below 8,000/)).toBeInTheDocument();
+      expect(screen.getByText(/Category 4: 8,000 to 15,999/)).toBeInTheDocument();
+      expect(screen.getByText(/Category 3: 16,000 to 31,999/)).toBeInTheDocument();
+      expect(screen.getByText(/Category 2: 32,000 to 63,999/)).toBeInTheDocument();
+      expect(screen.getByText(/Category 1: 64,000 to 79,999/)).toBeInTheDocument();
+      expect(screen.getByText(/HC: 80,000 or more/)).toBeInTheDocument();
+    });
+
+    it("leaves the disclosure collapsed and moves no focus on an ordinary Settings visit", () => {
+      render(<SettingsScreen />);
+
+      const details = screen.getByText("How climbs are classified").closest("details");
+      expect(details).not.toHaveAttribute("open");
+      expect(document.activeElement).not.toBe(
+        screen.getByText("How climbs are classified"),
+      );
+    });
+
+    it("opens and focuses the disclosure synchronously when climbScoreHelpFocusToken is supplied, and consumes it once", () => {
+      const onClimbScoreHelpFocusConsumed = vi.fn();
+      render(
+        <SettingsScreen
+          climbScoreHelpFocusToken={1}
+          onClimbScoreHelpFocusConsumed={onClimbScoreHelpFocusConsumed}
+        />,
+      );
+
+      const details = screen.getByText("How climbs are classified").closest("details");
+      expect(details).toHaveAttribute("open");
+      expect(document.activeElement).toBe(
+        screen.getByText("How climbs are classified").closest("summary"),
+      );
+      expect(onClimbScoreHelpFocusConsumed).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not re-fire on a rerender with the same token, but does for a genuinely new token", () => {
+      const onClimbScoreHelpFocusConsumed = vi.fn();
+      const { rerender } = render(
+        <SettingsScreen
+          climbScoreHelpFocusToken={1}
+          onClimbScoreHelpFocusConsumed={onClimbScoreHelpFocusConsumed}
+        />,
+      );
+      const details = screen.getByText("How climbs are classified").closest("details");
+      expect(onClimbScoreHelpFocusConsumed).toHaveBeenCalledTimes(1);
+
+      // Collapse it again, then rerender with the unchanged token — a
+      // repeat trip through App.tsx that never cleared the prop must not
+      // reopen/refocus it a second time.
+      if (details) details.open = false;
+      rerender(
+        <SettingsScreen
+          climbScoreHelpFocusToken={1}
+          onClimbScoreHelpFocusConsumed={onClimbScoreHelpFocusConsumed}
+        />,
+      );
+      expect(details).not.toHaveAttribute("open");
+      expect(onClimbScoreHelpFocusConsumed).toHaveBeenCalledTimes(1);
+
+      // A genuinely new token fires again — repeated activation works.
+      rerender(
+        <SettingsScreen
+          climbScoreHelpFocusToken={2}
+          onClimbScoreHelpFocusConsumed={onClimbScoreHelpFocusConsumed}
+        />,
+      );
+      expect(details).toHaveAttribute("open");
+      expect(onClimbScoreHelpFocusConsumed).toHaveBeenCalledTimes(2);
+    });
+  });
 });

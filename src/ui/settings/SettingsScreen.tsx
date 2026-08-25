@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type SubmitEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type SubmitEvent } from "react";
 import type { RoutingProfile } from "../../domain/types.ts";
 import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
 import { useOnlineStatus } from "../../platform/onlineStatus.ts";
@@ -19,15 +19,43 @@ import {
   ROUTING_PROFILES,
   describeRoutingProfile,
 } from "../../routing/routingProfiles.ts";
+import {
+  CLIMB_CATEGORY_1_SCORE,
+  CLIMB_CATEGORY_2_SCORE,
+  CLIMB_CATEGORY_3_SCORE,
+  CLIMB_CATEGORY_4_SCORE,
+  CLIMB_CATEGORY_HC_SCORE,
+  MIN_CLIMB_AVERAGE_GRADIENT_PERCENT,
+  MIN_CLIMB_SCORE,
+  MIN_FEATURE_LENGTH_METRES,
+} from "../../navigation/routeFeatures.ts";
+import { CLIMB_CATEGORY_NAMES } from "../../navigation/routeFeaturePalette.ts";
+import { formatMetres, formatWholeNumber } from "../shared/routeSummary.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
 import { describeProviderKeyStatus } from "./providerKeyStatus.ts";
 
 export interface SettingsScreenProps {
   clock?: Clock;
+  /** A fresh value opens and focuses the "How climbs are classified"
+   * disclosure below (backlog item 78) — set by App.tsx's
+   * handleShowClimbScoreHelp, one token per "How is this calculated?"
+   * press. Undefined (the ordinary case, including every plain Settings
+   * visit through the primary navigation) leaves the disclosure collapsed
+   * with no focus movement. */
+  climbScoreHelpFocusToken?: number;
+  /** Called once, immediately after climbScoreHelpFocusToken has been
+   * acted on for this render — tells App.tsx to clear its own copy so a
+   * later, unrelated Settings visit never reopens/refocuses the
+   * disclosure using a stale token. */
+  onClimbScoreHelpFocusConsumed?: () => void;
 }
 
-export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
+export function SettingsScreen({
+  clock = systemClock,
+  climbScoreHelpFocusToken,
+  onClimbScoreHelpFocusConsumed,
+}: SettingsScreenProps) {
   const keyQuery = useCallback(() => getProviderKey(), []);
   const key = useLiveQuery(keyQuery);
   const verificationQuery = useCallback(() => getProviderKeyVerification(), []);
@@ -58,6 +86,27 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
   // disabled attribute has actually committed to the DOM.
   const isSavingPreferencesRef = useRef(false);
   const [preferencesError, setPreferencesError] = useState<string | null>(null);
+
+  // Opens and focuses "How climbs are classified" for a genuinely new
+  // climbScoreHelpFocusToken (backlog item 78) — a plain ref-guard
+  // comparison, mirroring RidingScreen.tsx's consumedResumeIntentTokenRef
+  // idiom, so this stays safe under StrictMode's double-invoked effects.
+  // Synchronous (details.open + summary.focus()), no setTimeout/polling —
+  // native <details> content is immediately available to screen readers
+  // the instant `open` is set.
+  const climbClassificationDetailsRef = useRef<HTMLDetailsElement>(null);
+  const consumedClimbScoreHelpFocusTokenRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (climbScoreHelpFocusToken === undefined) return;
+    if (consumedClimbScoreHelpFocusTokenRef.current === climbScoreHelpFocusToken) return;
+    consumedClimbScoreHelpFocusTokenRef.current = climbScoreHelpFocusToken;
+    const details = climbClassificationDetailsRef.current;
+    if (details) {
+      details.open = true;
+      details.querySelector("summary")?.focus();
+    }
+    onClimbScoreHelpFocusConsumed?.();
+  }, [climbScoreHelpFocusToken, onClimbScoreHelpFocusConsumed]);
 
   const handleSave = (event: SubmitEvent) => {
     event.preventDefault();
@@ -354,6 +403,51 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
             Safari&apos;s or your browser&apos;s site data for this app removes it, and
             you will need to enter it again.
           </p>
+        </details>
+      </section>
+
+      <section className="panel stack" aria-labelledby="elevation-climbs-heading">
+        <h2 id="elevation-climbs-heading">Elevation and climbs</h2>
+
+        <details className="settings-disclosure" ref={climbClassificationDetailsRef}>
+          <summary>How climbs are classified</summary>
+          <p>
+            Climb score is climb length in metres multiplied by average gradient
+            percentage.
+          </p>
+          <p>
+            A climb is recognised once it is at least{" "}
+            {formatMetres(MIN_FEATURE_LENGTH_METRES)} long, averages at least{" "}
+            {MIN_CLIMB_AVERAGE_GRADIENT_PERCENT}% and reaches a minimum score of{" "}
+            {formatWholeNumber(MIN_CLIMB_SCORE)}.
+          </p>
+          <ul>
+            <li>Uncategorised: below {formatWholeNumber(CLIMB_CATEGORY_4_SCORE)}</li>
+            <li>
+              {CLIMB_CATEGORY_NAMES["category-4"]}:{" "}
+              {formatWholeNumber(CLIMB_CATEGORY_4_SCORE)} to{" "}
+              {formatWholeNumber(CLIMB_CATEGORY_3_SCORE - 1)}
+            </li>
+            <li>
+              {CLIMB_CATEGORY_NAMES["category-3"]}:{" "}
+              {formatWholeNumber(CLIMB_CATEGORY_3_SCORE)} to{" "}
+              {formatWholeNumber(CLIMB_CATEGORY_2_SCORE - 1)}
+            </li>
+            <li>
+              {CLIMB_CATEGORY_NAMES["category-2"]}:{" "}
+              {formatWholeNumber(CLIMB_CATEGORY_2_SCORE)} to{" "}
+              {formatWholeNumber(CLIMB_CATEGORY_1_SCORE - 1)}
+            </li>
+            <li>
+              {CLIMB_CATEGORY_NAMES["category-1"]}:{" "}
+              {formatWholeNumber(CLIMB_CATEGORY_1_SCORE)} to{" "}
+              {formatWholeNumber(CLIMB_CATEGORY_HC_SCORE - 1)}
+            </li>
+            <li>
+              {CLIMB_CATEGORY_NAMES.hc}: {formatWholeNumber(CLIMB_CATEGORY_HC_SCORE)} or
+              more
+            </li>
+          </ul>
         </details>
       </section>
 
