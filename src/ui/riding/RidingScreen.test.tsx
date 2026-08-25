@@ -23,7 +23,10 @@ import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry
 import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
 import { buildFakeWakeLockSource } from "../../test/fixtures/wakeLockSource.ts";
 import { OFF_ROUTE_BASE_METRES } from "../../navigation/offRoute.ts";
-import { MICRO_DETAIL_COLOURS } from "../../navigation/routeFeaturePalette.ts";
+import {
+  MICRO_DETAIL_COLOURS,
+  ROUTE_FEATURE_COLOURS,
+} from "../../navigation/routeFeaturePalette.ts";
 import { routeTangentBearingDegrees } from "../../navigation/bearing.ts";
 import { FOLLOW_PITCH_DEGREES, NAVIGATION_ZOOM } from "./rideCamera.ts";
 
@@ -189,6 +192,7 @@ function buildStubMapFactory(): {
   getZoomSpy: ReturnType<typeof vi.fn>;
   fitBoundsSpy: ReturnType<typeof vi.fn>;
   changeZoomBySpy: ReturnType<typeof vi.fn>;
+  setGeoJsonSourceDataSpy: ReturnType<typeof vi.fn>;
 } {
   let loadListener: (() => void) | undefined;
   let styleLoadedListener: (() => void) | undefined;
@@ -206,6 +210,7 @@ function buildStubMapFactory(): {
   const getZoomSpy = vi.fn(() => 14);
   const fitBoundsSpy = vi.fn();
   const changeZoomBySpy = vi.fn();
+  const setGeoJsonSourceDataSpy = vi.fn();
   const factory: MapFactory = () => {
     const map: MapLibreLike = {
       onLoad: (listener) => {
@@ -221,7 +226,7 @@ function buildStubMapFactory(): {
       },
       onSourceData: () => undefined,
       addGeoJsonSource: () => undefined,
-      setGeoJsonSourceData: () => undefined,
+      setGeoJsonSourceData: setGeoJsonSourceDataSpy,
       hasSource: () => false,
       addLineLayer: () => undefined,
       addCircleLayer: () => undefined,
@@ -269,6 +274,7 @@ function buildStubMapFactory(): {
     getZoomSpy,
     fitBoundsSpy,
     changeZoomBySpy,
+    setGeoJsonSourceDataSpy,
   };
 }
 
@@ -878,7 +884,7 @@ describe("RidingScreen", () => {
       expect(screen.queryByRole("heading", { name: /Climb 1/ })).toBeNull();
     });
 
-    it("shows the numbered details heading and detailed local-gradient overlay once a climb is explicitly selected from the dropdown", async () => {
+    it("shows the numbered details heading once a climb is explicitly selected from the dropdown, without the pre-ride overview's removed local-gradient legend (item 77)", async () => {
       const user = userEvent.setup();
       render(
         <RidingScreen
@@ -895,9 +901,16 @@ describe("RidingScreen", () => {
       expect(
         screen.getByRole("heading", { name: "Climb 1 · Category 2" }),
       ).toBeInTheDocument();
-      // With a climb selected, its detailed local-gradient overlay shows
-      // too — "Hard climb" is this constant-8%-grade climb's own class.
-      expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
+      // Backlog item 77: the pre-ride full overview's disclosure is now the
+      // climb-only "Climb categories" legend, which never includes a
+      // selected-feature detailed local-gradient explanation — "Hard
+      // climb" (this constant-8%-grade climb's own local-gradient band
+      // label) no longer appears here. The chart's own visual local-
+      // gradient colouring for the selected climb is unaffected — only
+      // this standalone legend text is removed (item 78 will reintroduce
+      // an equivalent explanation elsewhere).
+      expect(screen.queryByText(/Hard climb/)).toBeNull();
+      expect(screen.getByText("Climb categories")).toBeInTheDocument();
     });
 
     it("hides the pre-ride climb selector once riding starts, and does not let the stale pre-ride selection override the active climb", async () => {
@@ -1313,6 +1326,288 @@ describe("RidingScreen", () => {
         screen.getByText("Elevation data is not available for this route."),
       ).toBeInTheDocument();
       expect(screen.queryByText("Gradient colours")).toBeNull();
+    });
+  });
+
+  describe("climb-only pre-ride full profile colouring (item 77)", () => {
+    // A recognised climb (0-2000 m, +8%, climbScore 16000 -> category-3)
+    // immediately followed by a recognised descent (2000-4000 m, -8%,
+    // steep band) — densely spaced every 100 m like climbRoute above, so
+    // classification is unambiguous and identical across every view.
+    const climbThenDescentRoute: PlannedRoute = {
+      ...route,
+      id: "climb-then-descent-route",
+      points: Array.from({ length: 41 }, (_, index) => {
+        const distanceFromStartMetres = index * 100;
+        const elevationMetres =
+          distanceFromStartMetres <= 2000
+            ? (distanceFromStartMetres * 8) / 100
+            : 160 - ((distanceFromStartMetres - 2000) * 8) / 100;
+        return {
+          coordinate: [0.0001 * index, 51] as const,
+          elevationMetres,
+          distanceFromStartMetres,
+        };
+      }),
+      distanceMetres: 4000,
+    };
+
+    // A route with a recognised descent and no recognised climb at all —
+    // reuses the same shape as the "never activates Climb view for a
+    // recognised descent" fixture elsewhere in this file.
+    const descentOnlyRoute: PlannedRoute = {
+      ...route,
+      id: "descent-only-route",
+      points: Array.from({ length: 41 }, (_, index) => {
+        const distanceFromStartMetres = index * 100;
+        return {
+          coordinate: [0.0001 * index, 51] as const,
+          elevationMetres: 400 - (distanceFromStartMetres * 8) / 100,
+          distanceFromStartMetres,
+        };
+      }),
+      distanceMetres: 4000,
+    };
+
+    function chartStrokes(chart: HTMLElement): (string | null)[] {
+      return Array.from(chart.querySelectorAll("path")).map((path) =>
+        path.getAttribute("stroke"),
+      );
+    }
+
+    // ElevationChart.tsx's macro routeFeatures layer always renders at
+    // BASE_STROKE_WIDTH (2), distinct from the DETAIL_STROKE_WIDTH (3)
+    // local-gradient overlay for whatever feature happens to be
+    // active/selected at the current position — the two layers can
+    // legitimately share the same descent colour (macro and local descent
+    // classification are literally the same scheme), so isolating the
+    // macro layer by its own stroke-width is what actually proves the
+    // routeFeatures prop itself was narrowed, independent of any
+    // orthogonal active-feature detail highlighting.
+    function macroStrokes(chart: HTMLElement): (string | null)[] {
+      return Array.from(chart.querySelectorAll('path[stroke-width="2"]')).map((path) =>
+        path.getAttribute("stroke"),
+      );
+    }
+
+    it("colours the recognised climb but leaves the descent as the ordinary black line, with only a Climb categories disclosure, on a fresh idle pre-ride route", () => {
+      render(
+        <RidingScreen
+          route={climbThenDescentRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      const chart = screen.getByRole("img", { name: "Elevation profile chart" });
+      expect(macroStrokes(chart)).toContain(ROUTE_FEATURE_COLOURS["category-3"]);
+      expect(macroStrokes(chart)).not.toContain(ROUTE_FEATURE_COLOURS.steep);
+      expect(chartStrokes(chart)).toContain("currentColor");
+
+      expect(screen.getByText("Climb categories")).toBeInTheDocument();
+      expect(screen.queryByText("Gradient colours")).toBeNull();
+    });
+
+    it("keeps the full climb/descent palette once riding has genuinely started, even before the first fix matches onto the route", async () => {
+      const user = userEvent.setup();
+      render(
+        <RidingScreen
+          route={climbThenDescentRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      await switchToProfile(user);
+
+      const chart = screen.getByRole("img", { name: "Elevation profile chart" });
+      const strokes = chartStrokes(chart);
+      expect(strokes).toContain(ROUTE_FEATURE_COLOURS["category-3"]);
+      expect(strokes).toContain(ROUTE_FEATURE_COLOURS.steep);
+
+      expect(screen.getByText("Gradient colours")).toBeInTheDocument();
+      expect(screen.queryByText("Climb categories")).toBeNull();
+    });
+
+    it("keeps the full climb/descent palette for active Riding's Full view once a real fix has landed", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={climbThenDescentRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: [0.001, 51],
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await switchToProfile(user);
+      await user.click(await screen.findByRole("button", { name: "Full" }));
+
+      const chart = screen.getByRole("img", { name: "Elevation profile chart" });
+      const strokes = chartStrokes(chart);
+      expect(strokes).toContain(ROUTE_FEATURE_COLOURS["category-3"]);
+      expect(strokes).toContain(ROUTE_FEATURE_COLOURS.steep);
+
+      expect(screen.getByText("Gradient colours")).toBeInTheDocument();
+      expect(screen.queryByText("Climb categories")).toBeNull();
+    });
+
+    it("still shows climb-only colouring and the Climb categories disclosure for a paused ride restored with Full mode, before Resume is pressed", async () => {
+      // Restored mid-descent (3000 m, past the 0-2000 m climb) so
+      // activeClimb/upcomingClimb are both null and the chart genuinely
+      // reaches the "Full" branch rather than the unrelated active-climb
+      // branch, which never shows macro routeFeatures colouring at all.
+      // The rider's position is still inside the descent itself, so its
+      // own local-detail overlay legitimately highlights using the same
+      // hex value as the macro descent colour (macro and local descent
+      // classification share one scheme) — macroStrokes below isolates
+      // the macro (BASE_STROKE_WIDTH) layer specifically to prove that
+      // layer, not the orthogonal detail overlay, was narrowed.
+      await setActiveRideState({
+        id: "active",
+        routeId: climbThenDescentRoute.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: [0.003, 51], accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 30,
+        matchedDistanceFromStartMetres: 3000,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationViewMode: { kind: "full" },
+      });
+
+      render(
+        <RidingScreen
+          route={climbThenDescentRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      // Still idle — Resume ride has not been pressed.
+      expect(
+        await screen.findByRole("button", { name: "Resume ride" }),
+      ).toBeInTheDocument();
+
+      const chart = screen.getByRole("img", { name: "Elevation profile chart" });
+      expect(macroStrokes(chart)).toContain(ROUTE_FEATURE_COLOURS["category-3"]);
+      expect(macroStrokes(chart)).not.toContain(ROUTE_FEATURE_COLOURS.steep);
+
+      expect(screen.getByText("Climb categories")).toBeInTheDocument();
+      expect(screen.queryByText("Gradient colours")).toBeNull();
+    });
+
+    it("keeps the full palette (not Climb categories) for a paused ride restored with a windowed mode — not the full-route overview", async () => {
+      await setActiveRideState({
+        id: "active",
+        routeId: climbThenDescentRoute.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: [0.001, 51], accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 10,
+        matchedDistanceFromStartMetres: 1000,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationViewMode: { kind: "upcoming", windowMetres: 2000 },
+      });
+
+      render(
+        <RidingScreen
+          route={climbThenDescentRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      expect(
+        await screen.findByRole("button", { name: "Resume ride" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Gradient colours")).toBeInTheDocument();
+      expect(screen.queryByText("Climb categories")).toBeNull();
+    });
+
+    it("hides the Climb categories disclosure entirely for a descent-only route, while still leaving the descent black pre-ride", () => {
+      render(
+        <RidingScreen
+          route={descentOnlyRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      const chart = screen.getByRole("img", { name: "Elevation profile chart" });
+      const strokes = chartStrokes(chart);
+      expect(strokes).not.toContain(ROUTE_FEATURE_COLOURS.steep);
+      expect(strokes.every((stroke) => stroke === "currentColor")).toBe(true);
+
+      expect(screen.queryByText("Climb categories")).toBeNull();
+      expect(screen.queryByText("Gradient colours")).toBeNull();
+    });
+
+    it("still resolves a tap on the (now-black) descent section of the pre-ride full profile to its own Recognised descent details", () => {
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 320,
+        height: 96,
+        right: 320,
+        bottom: 96,
+        x: 0,
+        y: 0,
+        toJSON: () => "",
+      });
+      render(
+        <RidingScreen
+          route={climbThenDescentRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      const hitTarget = screen
+        .getByRole("img", { name: "Elevation profile chart" })
+        .parentElement?.querySelector("rect.elevation-chart-tap-target");
+      expect(hitTarget).not.toBeNull();
+      if (!hitTarget) throw new Error("expected a tap-target rect");
+      // ~87.5% across a 0-4000 m domain -> ~3500 m, solidly inside the
+      // 2000-4000 m descent, well clear of the climb/descent boundary.
+      fireEvent.click(hitTarget, { clientX: 280, clientY: 48 });
+
+      expect(
+        screen.getByRole("heading", { name: "Recognised descent" }),
+      ).toBeInTheDocument();
+    });
+
+    it("still supplies the map overlay with both the climb and the descent, unaffected by the chart's climb-only colouring", async () => {
+      const mapFactory = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={climbThenDescentRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={mapFactory.factory}
+        />,
+      );
+      mapFactory.triggerLoad();
+
+      await waitFor(() => {
+        expect(
+          mapFactory.setGeoJsonSourceDataSpy.mock.calls.some(
+            (call) => call[0] === "acn-route-feature",
+          ),
+        ).toBe(true);
+      });
+
+      const routeFeatureCalls = mapFactory.setGeoJsonSourceDataSpy.mock.calls.filter(
+        (call) => call[0] === "acn-route-feature",
+      );
+      expect(routeFeatureCalls.length).toBeGreaterThan(0);
+      const lastCall = routeFeatureCalls.at(-1);
+      const collection = lastCall?.[1] as GeoJSON.FeatureCollection;
+      const visualKeys = collection.features.map(
+        (feature) => feature.properties?.visualKey as string,
+      );
+      expect(visualKeys).toContain("category-3");
+      expect(visualKeys).toContain("steep");
     });
   });
 
@@ -1903,11 +2198,20 @@ describe("RidingScreen", () => {
         screen.getByRole("combobox", { name: "Recognised climbs" }),
         "climb-0",
       );
-      expect(
-        screen.getByRole("img", { name: "Elevation profile for Climb 1" }),
-      ).toBeInTheDocument();
-      expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
-      expect(screen.getByText(/Gentle, flat or brief descent/)).toBeInTheDocument();
+      const chart = screen.getByRole("img", { name: "Elevation profile for Climb 1" });
+      // Backlog item 77 removed the pre-ride overview's standalone
+      // "Detailed local gradient" legend text ("Hard climb", "Gentle, flat
+      // or brief descent"), so this now proves the same underlying
+      // classification via the chart's own rendered stroke colours instead
+      // — the chart's visual local-gradient colouring for a selected climb
+      // is unaffected by item 77, only the separate legend text is gone.
+      const strokes = Array.from(chart.querySelectorAll("path")).map((path) =>
+        path.getAttribute("stroke"),
+      );
+      expect(strokes).toContain(MICRO_DETAIL_COLOURS["hard-climb"]);
+      expect(strokes).toContain(MICRO_DETAIL_COLOURS["gentle-or-descending"]);
+      expect(screen.queryByText(/Hard climb/)).toBeNull();
+      expect(screen.queryByText(/Gentle, flat or brief descent/)).toBeNull();
     });
 
     it("shows no additional chart alongside the existing empty state when the route has no recognised climbs", () => {

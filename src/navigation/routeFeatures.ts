@@ -150,6 +150,18 @@ export function classifyClimbScore(score: number): ClimbCategory {
   return "hc";
 }
 
+/** Ordered least-to-most severe, mirroring CLIMB_GRADIENT_BAND_SEVERITY_ORDER's
+ * own convention — for legend/UI enumeration only (never used for
+ * classification itself, unlike classifyClimbScore above). */
+export const CLIMB_CATEGORY_SEVERITY_ORDER: readonly ClimbCategory[] = [
+  "uncategorised",
+  "category-4",
+  "category-3",
+  "category-2",
+  "category-1",
+  "hc",
+];
+
 /** Shared grade→band mapping used at BOTH the macro (whole-feature average
  * gradient) and local (selected/active, smoothed local gradient) level —
  * see classifyDescentBand/classifyDescentLocalKey below, the only two

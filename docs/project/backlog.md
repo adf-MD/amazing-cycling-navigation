@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-Item 76 is the next selected implementation slice. Items 77–78 follow it in order as subsequent approved slices. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
+Item 78 is the next selected implementation slice. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Each entry reproduces its original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this).
 
@@ -119,32 +119,6 @@ _Category: Platform compatibility_
       4. **Conflict and recovery coverage:** an inbound share must respect the existing unfinished route/free-roam conflict guard (item 42's fail-closed `checkFreeRoamConflict`-style pattern) and must never silently replace an active session or Planning draft; it must work after a fresh install/relaunch. Add Playwright coverage where meaningful, then require real Android Chrome acceptance — Chromium/Playwright emulation cannot prove real OS share-sheet registration, matching this project's existing, repeatedly-stated distinction between the `android-chrome` Playwright project and genuine physical-device verification (item 25).
     - If step 1 finds only an `Open with` path and no Share/Send path, document that conclusively and record that no pure static-PWA solution is currently available for this exact flow — do not propose a native wrapper, Trusted Web Activity, APK, or other Android-specific packaging as a workaround; that would be a major architecture departure and is explicitly not approved by this backlog item.
     - Requires the "## Explicit non-goals" edit recorded above (item 61's own cross-reference) — that section stays in the root `CLAUDE.md` and already carries this cross-reference.
-
----
-
-<a id="item-77"></a>
-
-## Item 77 — Climb-only colouring and legend for the pre-ride full profile
-
-_Category: Pre-ride elevation-profile presentation_
-
-77. **Climb-only colouring and legend for the pre-ride full profile**
-    - Scope this to the pre-ride full-route elevation overview:
-      - Keep the ordinary elevation profile line black.
-      - Colour recognised climbs using their overall climb-category colours.
-      - Stop colouring recognised descents blue in this full elevation overview. The profile shape already communicates that the route descends.
-      - Do not change the pre-ride map overview. Its route-feature colouring for recognised climbs and descents remains useful because the map does not itself show elevation.
-      - Do not remove recognised-descent analysis, selection or detailed inspection.
-      - Do not silently change active Riding's `Full`, `2 km`, `10 km` or `Climb` presentations in this slice unless current shared architecture makes an isolated pre-ride change impossible. If so, stop and document the conflict instead of broadening scope without approval.
-    - Replace the full-profile legend with an overview-specific disclosure:
-      - Use a concise title such as `Climb categories`.
-      - List only climb categories that actually occur on the current route, once per category, in a stable severity/order.
-      - Do not include an `Ordinary route` row, since the profile's ordinary line is black rather than the map's green route colour.
-      - Do not include recognised-descent rows.
-      - Hide the disclosure entirely when the route has no recognised climbs.
-      - Remove the overview prose beginning `Overall climb colours depend on...` and do not include the selected-feature local-gradient explanation in the overview disclosure.
-      - Keep the legend collapsed by default and accessible.
-    - Cover no-climb, climb-only, mixed climb/descent, repeated-category and multiple-category fixtures. Explicitly prove that the map-layer presentation remains unchanged.
 
 ---
 

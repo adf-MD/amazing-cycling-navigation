@@ -442,6 +442,30 @@ describe("ElevationChart", () => {
       expect(strokes).toContain("currentColor");
     });
 
+    it("leaves a descent's range as ordinary currentColor when routeFeatures omits it (backlog item 77) — proves a caller can pass a climb-only subset to suppress descent colouring with no chart-side flag", () => {
+      const points = buildPoints([
+        [0, 0],
+        [300, 20],
+        [600, 20],
+        [1000, 0],
+      ]);
+      // The domain still has a descent-shaped region (600-1000), but the
+      // caller passes only the climb — this is exactly the mechanism the
+      // Riding pre-ride full overview relies on to keep descents black.
+      const climbOnlyFeatures: RouteFeature[] = [climbFeature(0, 300, "category-2")];
+      const { container } = render(
+        <ElevationChart points={points} routeFeatures={climbOnlyFeatures} />,
+      );
+      const strokes = Array.from(container.querySelectorAll("path")).map((path) =>
+        path.getAttribute("stroke"),
+      );
+      expect(strokes).toContain(ROUTE_FEATURE_COLOURS["category-2"]);
+      expect(strokes).not.toContain(ROUTE_FEATURE_COLOURS["very-steep"]);
+      expect(strokes).not.toContain(ROUTE_FEATURE_COLOURS.steep);
+      expect(strokes).not.toContain(ROUTE_FEATURE_COLOURS.moderate);
+      expect(strokes).toContain("currentColor");
+    });
+
     it("does not colour anything macro when routeFeatures is an empty array (no recognised features)", () => {
       const points = buildPoints([
         [0, 10],

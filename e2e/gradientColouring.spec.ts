@@ -874,3 +874,203 @@ test.describe("Riding: pre-ride climb chart layout", () => {
     expect(consoleErrors).toEqual([]);
   });
 });
+
+test.describe("Riding: pre-ride full profile (item 77)", () => {
+  // Extends the same flat-then-climb shape as buildGradientRouteCoordinates
+  // (flat 0-1000 m @10 m, climb 1000-2000 m @20% -> 210 m, category-3) with
+  // a further sustained -15% descent tail (2000-3000 m, down to 60 m) —
+  // recognised as its own separate feature (a large net elevation swing at
+  // the reversal, well past REVERSAL_BRIDGE_ELEVATION_METRES/
+  // REVERSAL_BRIDGE_DISTANCE_METRES) at the "very-steep" band, the same
+  // fixture shape and colour already used by "Planning: descent colouring"
+  // above. Built as an in-memory GPX buffer (mirrors
+  // ridingMapProfileViews.spec.ts's own established convention) rather than
+  // a new committed fixture file, since no existing GPX fixture combines a
+  // climb and a descent.
+  const DESCENT_TAIL_START_METRES = 2000;
+  const DESCENT_TAIL_END_METRES = 3000;
+  const DESCENT_TAIL_GRADE_PERCENT = -15;
+  const DESCENT_TAIL_START_ELEVATION_METRES = 210;
+
+  function buildClimbThenDescentRouteGpx(name: string): string {
+    const climbPoints = buildGradientRouteCoordinates();
+    const descentStepMetres = STEP_METRES;
+    const descentPointCount =
+      (DESCENT_TAIL_END_METRES - DESCENT_TAIL_START_METRES) / descentStepMetres;
+    const descentPoints = Array.from({ length: descentPointCount }, (_, index) => {
+      const distanceMetres = DESCENT_TAIL_START_METRES + (index + 1) * descentStepMetres;
+      const descended = (index + 1) * descentStepMetres;
+      const elevation =
+        DESCENT_TAIL_START_ELEVATION_METRES +
+        (descended * DESCENT_TAIL_GRADE_PERCENT) / 100;
+      return [lonAtMetresAlongFixture(distanceMetres), FIXTURE_LAT, elevation];
+    });
+    const trkpts = [...climbPoints, ...descentPoints]
+      .map(
+        ([lon, lat, ele]) =>
+          `      <trkpt lat="${String(lat)}" lon="${String(lon)}"><ele>${String(ele)}</ele></trkpt>`,
+      )
+      .join("\n");
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="acn-e2e-fixtures" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>${name}</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+  }
+
+  const VERY_STEEP_DESCENT_COLOUR: readonly [number, number, number] = [0x1a, 0x1a, 0x4e];
+
+  async function importClimbThenDescentRoute(page: Page): Promise<void> {
+    await page.getByLabel("Import GPX file").setInputFiles({
+      name: "climb-then-descent-route.gpx",
+      mimeType: "application/gpx+xml",
+      buffer: Buffer.from(buildClimbThenDescentRouteGpx("climb-then-descent-route")),
+    });
+    const routeButton = page.getByRole("button", {
+      name: "climb-then-descent-route",
+      exact: true,
+    });
+    await expect(routeButton).toBeVisible();
+    await routeButton.click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+  }
+
+  test("the pre-ride map still shows the recognised descent in blue, even though the profile chart no longer colours it", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error" && !message.text().includes("net::ERR_FAILED")) {
+        consoleErrors.push(message.text());
+      }
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    await forceMapStyleFailure(page);
+
+    await page.goto("/");
+    await importClimbThenDescentRoute(page);
+    await expect(page.getByTestId("map-fallback-banner")).toBeVisible();
+
+    // Not clicking "Start riding" — this is the pre-ride full overview.
+    await expect(page.getByRole("button", { name: "Start riding" })).toBeVisible();
+
+    // The chart's disclosure is now the climb-only legend...
+    await expect(page.getByText("Climb categories")).toBeVisible();
+    await expect(page.getByText("Gradient colours")).toBeHidden();
+
+    // ...but the map overlay — a separate rendering pipeline entirely
+    // (real MapLibre paint, not this component's SVG) — still shows both
+    // the climb and the descent in their normal colours, unaffected.
+    const mapSample = await captureColourSample(page, {
+      macro: MACRO_CATEGORY_3_COLOUR,
+      descent: VERY_STEEP_DESCENT_COLOUR,
+    });
+    expect(mapSample.macro.pixelCount).toBeGreaterThan(0);
+    expect(mapSample.descent.pixelCount).toBeGreaterThan(0);
+
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test("the Climb categories disclosure expands to a real, non-transparent rendered swatch", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error" && !message.text().includes("net::ERR_FAILED")) {
+        consoleErrors.push(message.text());
+      }
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    await forceMapStyleFailure(page);
+
+    await page.goto("/");
+    await importClimbThenDescentRoute(page);
+
+    const disclosureSummary = page.getByText("Climb categories");
+    await expect(disclosureSummary).toBeVisible();
+    await disclosureSummary.click();
+
+    // Mirrors "Planning: legend visibility" above — the check that would
+    // have caught the original swatch-invisibility bug (a correct
+    // backgroundColor with no width/height, painting onto a 0x0 box).
+    const swatch = page.locator(".gradient-colour-swatch").first();
+    await expect(swatch).toBeVisible();
+    const box = await swatch.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box?.width).toBeGreaterThan(0);
+    expect(box?.height).toBeGreaterThan(0);
+    const backgroundColor = await swatch.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    );
+    expect(backgroundColor).not.toBe("");
+    expect(backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(backgroundColor).not.toBe("transparent");
+
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test.describe("390x844 phone viewport", () => {
+    test.use({ viewport: { width: 390, height: 844 } });
+
+    test("the expanded Climb categories disclosure introduces no horizontal overflow, and the pre-ride reading order is unchanged", async ({
+      page,
+    }) => {
+      await forceMapStyleFailure(page);
+
+      await page.goto("/");
+      await importClimbThenDescentRoute(page);
+
+      // Reading order: Route profile (chart + disclosure), then Recognised
+      // climbs, then the selected-feature details once a climb is chosen —
+      // unchanged by item 77, which only alters the disclosure's own
+      // content within the same "Route profile" section.
+      const headingTexts = await page.locator("h1, h2").allTextContents();
+      expect(headingTexts).toEqual([
+        "climb-then-descent-route",
+        "Route profile",
+        "Recognised climbs",
+      ]);
+
+      const disclosureSummary = page.getByText("Climb categories");
+      await expect(disclosureSummary).toBeVisible();
+      await disclosureSummary.click();
+      await expect(page.locator(".route-feature-legend-entry").first()).toBeVisible();
+
+      const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      expect(scrollWidth).toBeLessThanOrEqual(390);
+
+      await page
+        .getByRole("combobox", { name: "Recognised climbs" })
+        .selectOption({ index: 1 });
+      await expect(
+        page.getByRole("heading", { name: "Climb 1 · Category 3" }),
+      ).toBeVisible();
+
+      const selectorFollowedByDetails = await page.evaluate(() => {
+        const selectorSection = document.querySelector(
+          'section[aria-label="Recognised climbs"]',
+        );
+        const detailsSection = document.querySelector(
+          'section[aria-label="Route feature details"]',
+        );
+        return selectorSection?.nextElementSibling === detailsSection;
+      });
+      expect(selectorFollowedByDetails).toBe(true);
+
+      const scrollWidthWithSelection = await page.evaluate(
+        () => document.documentElement.scrollWidth,
+      );
+      expect(scrollWidthWithSelection).toBeLessThanOrEqual(390);
+    });
+  });
+});

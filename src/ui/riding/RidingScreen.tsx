@@ -47,6 +47,7 @@ import {
 import { getDraft, saveDraft } from "../../storage/planningDraftRepository.ts";
 import { getPlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
+import { ClimbCategoriesDisclosure } from "../shared/ClimbCategoriesDisclosure.tsx";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
 import {
   ElevationChart,
@@ -380,6 +381,23 @@ export function RidingScreen({
 
   // Recognised climbs, in route order, for the pre-ride selector below.
   const climbs = useMemo(() => listClimbsInRouteOrder(routeFeatures), [routeFeatures]);
+
+  // True only for the genuine pre-ride full-route overview (backlog item
+  // 77) — never merely "matchedDistanceFromStartMetres is null", since a
+  // paused ride restored from storage (still geolocationStatus === "idle",
+  // Resume not yet pressed) can already have restored matched progress and
+  // a restored elevationViewMode. If that restored mode is "full", the
+  // chart still shows the whole route with no active tracking under way,
+  // so it must count as the pre-ride overview too; if the restored mode is
+  // a window (2 km/10 km), it is not "the full-route overview" and must be
+  // left exactly as it renders today. Once geolocationStatus leaves
+  // "idle", tracking has genuinely started (Start/Resume was pressed) even
+  // if the very first fix hasn't matched onto the route yet, so that
+  // remains the ordinary active-Riding presentation.
+  const isPreRideFullRouteOverview =
+    nav.geolocationStatus === "idle" &&
+    (nav.matchedDistanceFromStartMetres === null ||
+      nav.elevationProfileDisplay.kind === "full");
 
   // No feature is selected by default — the pre-ride dropdown starts on
   // "All route" (and a fresh route never carries over a previous route's
@@ -1147,11 +1165,14 @@ export function RidingScreen({
        * route with no marker. Once there's matched progress, Full mode
        * shows the whole route with a progress marker and Upcoming mode
        * shows a rebased rolling window. Macro route-feature colouring
-       * (routeFeatures) always covers the whole route regardless of view;
-       * only the detailed micro overlay (gradientSegments, already
-       * narrowed to the selected-or-active feature) is further clipped to
-       * the current window, so the legend never lists a detail class that
-       * isn't currently on screen. */}
+       * (routeFeatures) always covers the whole route regardless of view,
+       * EXCEPT the genuine pre-ride full-route overview (backlog item 77,
+       * isPreRideFullRouteOverview), which passes only climbs — descents
+       * fall back to the ordinary currentColor line there; only the
+       * detailed micro overlay (gradientSegments, already narrowed to the
+       * selected-or-active feature) is further clipped to the current
+       * window, so the legend never lists a detail class that isn't
+       * currently on screen. */}
       {(() => {
         let displayedMicroSegments = microDetailSegments;
         // Defaults to microDetailFeature (the same feature
@@ -1168,7 +1189,7 @@ export function RidingScreen({
           chart = (
             <ElevationChart
               points={displayPoints}
-              routeFeatures={routeFeatures}
+              routeFeatures={isPreRideFullRouteOverview ? climbs : routeFeatures}
               gradientSegments={microDetailSegments}
               selectedRangeMetres={chartSelectedRangeMetres}
               onTapDistance={handleChartTapDistance}
@@ -1257,7 +1278,7 @@ export function RidingScreen({
           chart = (
             <ElevationChart
               points={displayPoints}
-              routeFeatures={routeFeatures}
+              routeFeatures={isPreRideFullRouteOverview ? climbs : routeFeatures}
               gradientSegments={microDetailSegments}
               selectedRangeMetres={chartSelectedRangeMetres}
               onTapDistance={handleChartTapDistance}
@@ -1315,24 +1336,30 @@ export function RidingScreen({
           <>
             {climbProgressPanel}
             {chart}
-            <GradientColoursDisclosure
-              presentClimbBands={
-                displayedMicroDetailFeature?.kind === "climb"
-                  ? new Set(
-                      displayedMicroSegments.map(
-                        (segment) => segment.visualKey as ClimbGradientBand,
-                      ),
-                    )
-                  : new Set()
-              }
-              presentVisualKeys={
-                new Set(
-                  routeFeatures.map((feature) =>
-                    feature.kind === "climb" ? feature.category : feature.band,
-                  ),
-                )
-              }
-            />
+            {isPreRideFullRouteOverview ? (
+              <ClimbCategoriesDisclosure
+                presentCategories={new Set(climbs.map((climb) => climb.category))}
+              />
+            ) : (
+              <GradientColoursDisclosure
+                presentClimbBands={
+                  displayedMicroDetailFeature?.kind === "climb"
+                    ? new Set(
+                        displayedMicroSegments.map(
+                          (segment) => segment.visualKey as ClimbGradientBand,
+                        ),
+                      )
+                    : new Set()
+                }
+                presentVisualKeys={
+                  new Set(
+                    routeFeatures.map((feature) =>
+                      feature.kind === "climb" ? feature.category : feature.band,
+                    ),
+                  )
+                }
+              />
+            )}
             {nav.geolocationStatus === "idle" ? (
               <RidingClimbSelector
                 climbs={climbs}
@@ -1587,7 +1614,14 @@ export function RidingScreen({
        * differ — so <MapView>'s own JSX call site never moves or gets wrapped
        * differently and never remounts, and GradientColoursDisclosure's
        * uncontrolled <details> state survives every idle<->active and
-       * Map<->Profile transition. While idle this wrapper is a plain flex
+       * Map<->Profile transition it is actually rendered across. The one
+       * exception (backlog item 77): isPreRideFullRouteOverview swaps the
+       * disclosure element type itself (ClimbCategoriesDisclosure <->
+       * GradientColoursDisclosure), so React remounts and any open/closed
+       * state is lost exactly at that boundary — intentional, since the two
+       * disclosures show unrelated content, but worth noting here since it
+       * is the one place this file's "never remounts" claim has a carve-out.
+       * While idle this wrapper is a plain flex
        * column (visually identical to before this slice); while active it
        * becomes a position:relative flex:1 box with both children absolutely
        * stacked inset:0, toggled only via inline visibility/pointerEvents (not
