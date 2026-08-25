@@ -9,11 +9,15 @@ export interface DescentLocalGradientDisclosureProps {
 }
 
 /**
- * The selected-descent-scoped counterpart of ClimbLocalGradientDisclosure
- * (backlog item 78) — a small, collapsed-by-default disclosure rendered
- * next to the one descent it actually describes. Renders nothing (not
- * even the outer `<details>`) when presentDescentLocalKeys is empty,
- * matching this codebase's established "nothing to show yet" convention.
+ * The selected-descent-scoped compact local-gradient key (backlog item 79,
+ * replacing item 78's fuller per-feature explanation) — the DescentLocalKey
+ * counterpart of ClimbLocalGradientDisclosure, showing only a swatch and
+ * the exact grade range per present key. The complete educational
+ * explanation (band names, colour names, and the blue-intensity safety
+ * limitation) lives only in Settings' "Local gradient colours" disclosure
+ * now. Renders nothing (not even the outer `<details>`) when
+ * presentDescentLocalKeys is empty, matching this codebase's established
+ * "nothing to show yet" convention.
  */
 export function DescentLocalGradientDisclosure({
   presentDescentLocalKeys,
@@ -24,15 +28,11 @@ export function DescentLocalGradientDisclosure({
 
   return (
     <details className="local-gradient-disclosure">
-      <summary>Gradient colours on this descent</summary>
-      <p>
-        Detailed colours show local gradient over approximately 100 m within this descent,
-        using the same three blues as a recognised descent generally, applied to short
-        local sections rather than the descent&apos;s whole length. Any locally shallow
-        stretch shows the plain route colour instead. Blue intensity reflects gradient
-        steepness only, not surface, bends, traffic or other conditions.
-      </p>
-      <DescentLocalLegend presentDescentLocalKeys={presentDescentLocalKeys} />
+      <summary>Local gradient colours on this descent</summary>
+      <DescentLocalLegend
+        presentDescentLocalKeys={presentDescentLocalKeys}
+        variant="compact"
+      />
     </details>
   );
 }

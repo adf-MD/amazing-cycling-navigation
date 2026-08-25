@@ -25,12 +25,12 @@ describe("ClimbLocalGradientDisclosure", () => {
     expect(details?.hasAttribute("open")).toBe(false);
   });
 
-  it("has a visible 'Gradient colours on this climb' summary control", () => {
+  it("has a visible 'Local gradient colours on this climb' summary control", () => {
     render(<ClimbLocalGradientDisclosure presentClimbBands={bands("hard-climb")} />);
-    expect(screen.getByText("Gradient colours on this climb")).toBeInTheDocument();
+    expect(screen.getByText("Local gradient colours on this climb")).toBeInTheDocument();
   });
 
-  it("expands via a genuine user interaction on the summary, revealing the band legend", async () => {
+  it("expands via a genuine user interaction on the summary, revealing the compact band legend", async () => {
     const user = userEvent.setup();
     const { container } = render(
       <ClimbLocalGradientDisclosure presentClimbBands={bands("moderate-climb")} />,
@@ -38,21 +38,30 @@ describe("ClimbLocalGradientDisclosure", () => {
     const details = container.querySelector("details");
     expect(details?.hasAttribute("open")).toBe(false);
 
-    await user.click(screen.getByText("Gradient colours on this climb"));
+    await user.click(screen.getByText("Local gradient colours on this climb"));
 
     expect(details?.hasAttribute("open")).toBe(true);
     expect(
       screen.getByRole("list", { name: "Detailed climb gradient legend" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Moderate climb/)).toBeInTheDocument();
+    expect(screen.getByText("3% to just below 6%")).toBeInTheDocument();
   });
 
-  it("lists only the bands actually present", async () => {
+  it("lists only the bands actually present, as swatch plus range only — no band name or colour name (backlog item 79)", async () => {
     const user = userEvent.setup();
     render(<ClimbLocalGradientDisclosure presentClimbBands={bands("hard-climb")} />);
-    await user.click(screen.getByText("Gradient colours on this climb"));
-    expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
+    await user.click(screen.getByText("Local gradient colours on this climb"));
+    expect(screen.getByText("6% to just below 9%")).toBeInTheDocument();
     expect(screen.queryByText(/Extremely steep climb/)).toBeNull();
+    expect(screen.queryByText(/Hard climb/)).toBeNull();
+    expect(screen.queryByText(/orange/)).toBeNull();
+  });
+
+  it("no longer shows the explanatory paragraph — the full explanation now lives only in Settings (backlog item 79)", async () => {
+    const user = userEvent.setup();
+    render(<ClimbLocalGradientDisclosure presentClimbBands={bands("hard-climb")} />);
+    await user.click(screen.getByText("Local gradient colours on this climb"));
+    expect(screen.queryByText(/Detailed colours show local gradient/)).toBeNull();
   });
 
   it("has no live-region role", () => {

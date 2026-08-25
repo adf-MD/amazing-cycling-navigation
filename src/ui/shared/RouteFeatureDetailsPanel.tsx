@@ -35,28 +35,23 @@ export interface RouteFeatureDetailsPanelProps {
   climbNumber?: number;
   /** An optional detailed chart for the shown feature, rendered directly
    * below the heading and above the fact list. Currently only supplied by
-   * Riding's pre-ride climb preview (see RidingScreen.tsx); omitted by
-   * Planning and by Riding's own active-climb view (which shows its own
-   * chart separately, above this panel, via RidingClimbProgressPanel),
-   * leaving every other caller's layout unchanged. */
+   * Riding's pre-ride selected-climb and selected-descent previews (see
+   * RidingScreen.tsx, backlog items 78/79); omitted by Planning and by
+   * Riding's own active-climb view (which shows its own chart separately,
+   * above this panel, via RidingClimbProgressPanel), leaving every other
+   * caller's layout unchanged. */
   detailChart?: ReactNode;
   /** Which local-gradient climb bands are actually painted for the shown
-   * climb, driving a collapsed "Gradient colours on this climb" disclosure
-   * rendered directly below detailChart (backlog item 78). Omitted/empty
-   * renders nothing extra — Riding's pre-ride selected-climb view is
-   * currently the only supplier; every other caller is unaffected. */
+   * climb, driving a collapsed "Local gradient colours on this climb"
+   * disclosure rendered directly below detailChart (backlog item 78,
+   * compacted by item 79). Omitted/empty renders nothing extra —
+   * Riding's pre-ride selected-climb view is currently the only supplier;
+   * every other caller is unaffected. */
   presentClimbLocalBands?: ReadonlySet<ClimbGradientBand>;
   /** The descent counterpart of presentClimbLocalBands, driving a
-   * collapsed "Gradient colours on this descent" disclosure in the same
-   * position (backlog item 78). */
+   * collapsed "Local gradient colours on this descent" disclosure in the
+   * same position (backlog item 78, compacted by item 79). */
   presentDescentLocalKeys?: ReadonlySet<DescentLocalKey>;
-  /** Shown as a "How is this calculated?" action beside the climb score
-   * when supplied and the feature is a climb — omitted everywhere else
-   * (descents have no climb score, and other callers such as Planning and
-   * Riding's active-climb view don't yet offer this navigation). Kept
-   * presentational: this component only invokes the callback, it never
-   * imports application navigation itself (backlog item 78). */
-  onClimbScoreHelp?: () => void;
   /** Omit to render no clear control (e.g. Riding might prefer the
    * feature to simply update as the rider progresses, with no explicit
    * "clear" action while merely active-not-selected). */
@@ -70,9 +65,9 @@ export interface RouteFeatureDetailsPanelProps {
  * category/"Recognised descent" heading, route position, length,
  * elevation gain/loss, average gradient, maximum/steepest local gradient
  * and climb score (climbs only). presentClimbLocalBands/
- * presentDescentLocalKeys/onClimbScoreHelp are additive, Riding-pre-ride-
- * only extensions (backlog item 78) — every other caller omits them and
- * renders exactly as before.
+ * presentDescentLocalKeys are additive, Riding-pre-ride-only extensions
+ * (backlog item 78, compacted by item 79) — every other caller omits them
+ * and renders exactly as before.
  */
 export function RouteFeatureDetailsPanel({
   feature,
@@ -80,7 +75,6 @@ export function RouteFeatureDetailsPanel({
   detailChart,
   presentClimbLocalBands = EMPTY_CLIMB_LOCAL_BANDS,
   presentDescentLocalKeys = EMPTY_DESCENT_LOCAL_KEYS,
-  onClimbScoreHelp,
   onClear,
 }: RouteFeatureDetailsPanelProps) {
   if (feature === null) {
@@ -124,17 +118,6 @@ export function RouteFeatureDetailsPanel({
         {formatGradientPercent(feature.maxGradientPercent)}
       </p>
       {feature.kind === "climb" && <p>Climb score: {Math.round(feature.climbScore)}</p>}
-      {feature.kind === "climb" && onClimbScoreHelp && (
-        <button type="button" className="btn-secondary" onClick={onClimbScoreHelp}>
-          How is this calculated?
-        </button>
-      )}
-      {feature.kind === "descent" && (
-        <p>
-          Blue intensity reflects gradient steepness only, not surface, bends, traffic or
-          other conditions.
-        </p>
-      )}
       {onClear && (
         <button type="button" onClick={onClear}>
           Clear selection

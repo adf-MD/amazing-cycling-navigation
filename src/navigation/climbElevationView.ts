@@ -1,7 +1,7 @@
 import type { RoutePoint } from "../domain/types.ts";
 import type { ClassifiedSegment } from "./gradient.ts";
 import { findClassifiedSegmentAtDistance } from "./gradient.ts";
-import type { ClimbFeature } from "./routeFeatures.ts";
+import type { ClimbFeature, RouteFeature } from "./routeFeatures.ts";
 import type { MicroDetailVisualKey } from "./routeFeaturePalette.ts";
 import type { ElevationViewMode } from "./types.ts";
 import { interpolateRoutePointAt } from "./upcomingElevation.ts";
@@ -81,7 +81,7 @@ export function selectEffectiveElevationView(
   return standardMode;
 }
 
-export interface ClimbElevationWindow {
+export interface FeatureElevationWindow {
   points: RoutePoint[];
   startDistanceMetres: number;
   endDistanceMetres: number;
@@ -89,21 +89,24 @@ export interface ClimbElevationWindow {
 
 /**
  * The slice of route points spanning exactly [startDistanceMetres,
- * endDistanceMetres] — a recognised climb's own bounds — with both
- * boundaries interpolated via `interpolateRoutePointAt` so the window's
- * first/last point sit at the exact climb start/finish even when those
- * fall mid-segment. Mirrors `selectUpcomingElevationWindow`'s own
- * interior-points + interpolated-seam construction, but parameterised by
- * an explicit end distance rather than a forward window: a climb's bounds
- * are always within the route's own bounds (detectRouteFeatures only ever
- * derives a feature from within one analysed run), so there is no
- * clamp-to-route-end case to handle here.
+ * endDistanceMetres] — a recognised climb or descent's own bounds — with
+ * both boundaries interpolated via `interpolateRoutePointAt` so the
+ * window's first/last point sit at the exact feature start/finish even
+ * when those fall mid-segment. Mirrors `selectUpcomingElevationWindow`'s
+ * own interior-points + interpolated-seam construction, but parameterised
+ * by an explicit end distance rather than a forward window: a recognised
+ * feature's bounds are always within the route's own bounds
+ * (detectRouteFeatures only ever derives a feature from within one
+ * analysed run), so there is no clamp-to-route-end case to handle here.
+ * Takes only raw points and distances — no feature-kind dependency at all,
+ * so it is shared unchanged by both climb and descent chart building
+ * (backlog item 79).
  */
-export function selectClimbElevationWindow(
+export function selectFeatureElevationWindow(
   points: readonly RoutePoint[],
   startDistanceMetres: number,
   endDistanceMetres: number,
-): ClimbElevationWindow {
+): FeatureElevationWindow {
   const startPoint = interpolateRoutePointAt(points, startDistanceMetres);
   if (startPoint === null) {
     return { points: [], startDistanceMetres, endDistanceMetres };
@@ -136,17 +139,19 @@ export function selectClimbElevationWindow(
 }
 
 /**
- * Which climb-chart presentation to build — the two contexts that reuse the
- * same underlying rendering path (see `buildClimbChartViewModel`), made
- * explicit rather than a loose collection of booleans:
+ * Which climb/descent-chart presentation to build — the two contexts that
+ * reuse the same underlying rendering path (see `buildClimbChartViewModel`),
+ * made explicit rather than a loose collection of booleans:
  *
  * - `"active-current-climb"`: the live Climb elevation view shown during an
- *   active ride, with the rider's own progress as a marker.
- * - `"pre-ride-selected-climb"`: a read-only preview of whichever climb is
- *   selected in the pre-ride dropdown — the whole climb, no marker.
+ *   active ride, with the rider's own progress as a marker. Climb-only —
+ *   this app does not track live descent progress (backlog item 79).
+ * - `"pre-ride-selected-feature"`: a read-only preview of whichever
+ *   recognised climb or descent is selected pre-ride (dropdown, map tap or
+ *   chart tap) — the whole feature, no marker.
  */
 export type ClimbChartMode =
-  | { kind: "pre-ride-selected-climb" }
+  | { kind: "pre-ride-selected-feature" }
   | {
       kind: "active-current-climb";
       marker: {
@@ -169,33 +174,63 @@ export interface ClimbChartViewModel {
 }
 
 /**
- * Builds everything `ElevationChart` needs to render either climb-chart
- * presentation from the same recognised-climb data, so both contexts share
- * one rendering path rather than each constructing their own points/domain.
- * Deliberately returns plain object shapes (not `ElevationChartDomain`/
- * `ElevationChartMarkerInput` from the `ui` layer) so this navigation-layer
- * module never imports from `src/ui/` — the shapes match structurally, so a
- * caller can still spread the result straight into `ElevationChart`'s props.
+ * Builds everything `ElevationChart` needs to render either chart
+ * presentation from the same recognised-feature data, so every context
+ * shares one rendering path rather than each constructing their own
+ * points/domain. Deliberately returns plain object shapes (not
+ * `ElevationChartDomain`/`ElevationChartMarkerInput` from the `ui` layer)
+ * so this navigation-layer module never imports from `src/ui/` — the
+ * shapes match structurally, so a caller can still spread the result
+ * straight into `ElevationChart`'s props.
  *
  * For `"active-current-climb"`, `points`/`domain`/`gradientSegments` are the
  * climb's own window in route-global metres, unchanged from how the active
- * Climb view has always built them. For `"pre-ride-selected-climb"`, every
- * point and segment is rebased so the climb's own start is distance 0 —
+ * Climb view has always built them. For `"pre-ride-selected-feature"`, every
+ * point and segment is rebased so the feature's own start is distance 0 —
  * `ElevationChart` renders no distance tick labels today, so this rebase is
  * pixel-equivalent to leaving the domain route-global; its value is making
- * this pure model's own output genuinely "local distance from climb start",
- * which is what a unit test (and any future on-chart label) can rely on.
+ * this pure model's own output genuinely "local distance from feature
+ * start", which is what a unit test (and any future on-chart label) can
+ * rely on.
+ *
+ * Only `startDistanceMetres`/`endDistanceMetres` (both on every
+ * `RouteFeature`, climb or descent) are ever read off the second parameter
+ * — this function's body has always been feature-kind-agnostic. The
+ * overloads below exist purely to keep that true at the type level too:
+ * `"active-current-climb"` (this app's only live-progress mode) is
+ * statically restricted to a `ClimbFeature`, so a descent can never reach
+ * it — a compile-time guarantee, not a runtime branch — while
+ * `"pre-ride-selected-feature"` accepts either (backlog item 79).
  */
 export function buildClimbChartViewModel(
+  mode: {
+    kind: "active-current-climb";
+    marker: {
+      distanceFromStartMetres: number;
+      elevationMetres: number | null;
+      stale: boolean;
+    };
+  },
+  feature: ClimbFeature,
+  displayPoints: readonly RoutePoint[],
+  detailSegments: readonly ClassifiedSegment<MicroDetailVisualKey>[],
+): ClimbChartViewModel;
+export function buildClimbChartViewModel(
+  mode: { kind: "pre-ride-selected-feature" },
+  feature: RouteFeature,
+  displayPoints: readonly RoutePoint[],
+  detailSegments: readonly ClassifiedSegment<MicroDetailVisualKey>[],
+): ClimbChartViewModel;
+export function buildClimbChartViewModel(
   mode: ClimbChartMode,
-  climb: ClimbFeature,
+  feature: RouteFeature,
   displayPoints: readonly RoutePoint[],
   detailSegments: readonly ClassifiedSegment<MicroDetailVisualKey>[],
 ): ClimbChartViewModel {
-  const window = selectClimbElevationWindow(
+  const window = selectFeatureElevationWindow(
     displayPoints,
-    climb.startDistanceMetres,
-    climb.endDistanceMetres,
+    feature.startDistanceMetres,
+    feature.endDistanceMetres,
   );
 
   if (mode.kind === "active-current-climb") {

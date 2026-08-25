@@ -9,14 +9,17 @@ export interface ClimbLocalGradientDisclosureProps {
 }
 
 /**
- * The selected-climb-scoped counterpart of GradientColoursDisclosure's old
- * combined "Detailed local gradient" section (backlog item 78) — a small,
+ * The selected-climb-scoped compact local-gradient key (backlog item 79,
+ * replacing item 78's fuller per-feature explanation) — a small,
  * collapsed-by-default disclosure rendered next to the one climb it
- * actually describes, rather than in a shared overview legend. Renders
- * nothing (not even the outer `<details>`) when presentClimbBands is
- * empty, matching this codebase's established "nothing to show yet"
- * convention (GradientColoursDisclosure, ClimbCategoriesDisclosure,
- * ClimbGradientBandLegend).
+ * actually describes, showing only a swatch and the exact grade range per
+ * present band (the range text is itself the non-colour semantic
+ * information a glance needs). The complete educational explanation, with
+ * band names and colour names, lives only in Settings' "Local gradient
+ * colours" disclosure now. Renders nothing (not even the outer
+ * `<details>`) when presentClimbBands is empty, matching this codebase's
+ * established "nothing to show yet" convention (GradientColoursDisclosure,
+ * ClimbCategoriesDisclosure, ClimbGradientBandLegend).
  */
 export function ClimbLocalGradientDisclosure({
   presentClimbBands,
@@ -27,12 +30,8 @@ export function ClimbLocalGradientDisclosure({
 
   return (
     <details className="local-gradient-disclosure">
-      <summary>Gradient colours on this climb</summary>
-      <p>
-        Detailed colours show local gradient over approximately 100 m within this climb.
-        Brief flat or descending sections are green.
-      </p>
-      <ClimbGradientBandLegend presentClimbBands={presentClimbBands} />
+      <summary>Local gradient colours on this climb</summary>
+      <ClimbGradientBandLegend presentClimbBands={presentClimbBands} variant="compact" />
     </details>
   );
 }

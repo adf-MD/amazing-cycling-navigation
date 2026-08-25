@@ -68,15 +68,13 @@ describe("RouteFeatureDetailsPanel", () => {
     expect(screen.getByText(/Average gradient: -7\.3%/)).toBeInTheDocument();
     expect(screen.getByText(/Steepest local gradient: -11\.5%/)).toBeInTheDocument();
     expect(screen.queryByText(/Climb score/)).toBeNull();
-    expect(
-      screen.getByText(
-        /Blue intensity reflects gradient steepness only, not surface, bends, traffic or other conditions\./,
-      ),
-    ).toBeInTheDocument();
   });
 
-  it("does not show the descent safety disclaimer for a climb", () => {
-    render(<RouteFeatureDetailsPanel feature={climb} />);
+  it("never shows the descent safety disclaimer here for either feature kind — it lives only in Settings now (item 79)", () => {
+    const { rerender } = render(<RouteFeatureDetailsPanel feature={climb} />);
+    expect(screen.queryByText(/Blue intensity reflects/)).toBeNull();
+
+    rerender(<RouteFeatureDetailsPanel feature={descent} />);
     expect(screen.queryByText(/Blue intensity reflects/)).toBeNull();
   });
 
@@ -140,7 +138,7 @@ describe("RouteFeatureDetailsPanel", () => {
     expect(swatch).toHaveStyle({ backgroundColor: ROUTE_FEATURE_COLOURS["category-3"] });
   });
 
-  describe("selected-feature local legends and climb-score explanation (item 78)", () => {
+  describe("selected-feature compact local legends and selected-descent chart (item 78, compacted by item 79)", () => {
     it("shows the climb local-gradient disclosure directly after detailChart and before the fact list when supplied", () => {
       const { container } = render(
         <RouteFeatureDetailsPanel
@@ -149,7 +147,9 @@ describe("RouteFeatureDetailsPanel", () => {
           presentClimbLocalBands={new Set(["hard-climb"])}
         />,
       );
-      expect(screen.getByText("Gradient colours on this climb")).toBeInTheDocument();
+      expect(
+        screen.getByText("Local gradient colours on this climb"),
+      ).toBeInTheDocument();
       const section = container.querySelector("section.route-feature-details");
       const children = Array.from(section?.children ?? []);
       const chartIndex = children.findIndex(
@@ -165,7 +165,7 @@ describe("RouteFeatureDetailsPanel", () => {
 
     it("renders no climb local-gradient disclosure when presentClimbLocalBands is omitted/empty", () => {
       render(<RouteFeatureDetailsPanel feature={climb} />);
-      expect(screen.queryByText("Gradient colours on this climb")).toBeNull();
+      expect(screen.queryByText("Local gradient colours on this climb")).toBeNull();
     });
 
     it("shows the descent local-gradient disclosure for a selected descent, directly after the heading (no detailChart)", () => {
@@ -175,7 +175,9 @@ describe("RouteFeatureDetailsPanel", () => {
           presentDescentLocalKeys={new Set(["steep"])}
         />,
       );
-      expect(screen.getByText("Gradient colours on this descent")).toBeInTheDocument();
+      expect(
+        screen.getByText("Local gradient colours on this descent"),
+      ).toBeInTheDocument();
       const section = container.querySelector("section.route-feature-details");
       const children = Array.from(section?.children ?? []);
       const headingIndex = children.findIndex((child) => child.tagName === "H3");
@@ -190,7 +192,7 @@ describe("RouteFeatureDetailsPanel", () => {
           presentClimbLocalBands={new Set(["hard-climb"])}
         />,
       );
-      expect(screen.queryByText("Gradient colours on this descent")).toBeNull();
+      expect(screen.queryByText("Local gradient colours on this descent")).toBeNull();
 
       rerender(
         <RouteFeatureDetailsPanel
@@ -198,36 +200,26 @@ describe("RouteFeatureDetailsPanel", () => {
           presentDescentLocalKeys={new Set(["steep"])}
         />,
       );
-      expect(screen.queryByText("Gradient colours on this climb")).toBeNull();
+      expect(screen.queryByText("Local gradient colours on this climb")).toBeNull();
     });
 
-    it("renders a 'How is this calculated?' action for a climb only when onClimbScoreHelp is supplied, and calls it on click", async () => {
-      const user = userEvent.setup();
-      const onClimbScoreHelp = vi.fn();
-      const { rerender } = render(<RouteFeatureDetailsPanel feature={climb} />);
-      expect(
-        screen.queryByRole("button", { name: "How is this calculated?" }),
-      ).toBeNull();
-
-      rerender(
-        <RouteFeatureDetailsPanel feature={climb} onClimbScoreHelp={onClimbScoreHelp} />,
-      );
-      const button = screen.getByRole("button", { name: "How is this calculated?" });
-      await user.click(button);
-      expect(onClimbScoreHelp).toHaveBeenCalledTimes(1);
-    });
-
-    it("never shows 'How is this calculated?' for a descent, even when onClimbScoreHelp is supplied", () => {
-      const onClimbScoreHelp = vi.fn();
-      render(
+    it("renders detailChart directly between the heading and the disclosure for a descent too (backlog item 79)", () => {
+      const { container } = render(
         <RouteFeatureDetailsPanel
           feature={descent}
-          onClimbScoreHelp={onClimbScoreHelp}
+          detailChart={<div data-testid="detail-chart">chart</div>}
+          presentDescentLocalKeys={new Set(["steep"])}
         />,
       );
-      expect(
-        screen.queryByRole("button", { name: "How is this calculated?" }),
-      ).toBeNull();
+      const section = container.querySelector("section.route-feature-details");
+      const children = Array.from(section?.children ?? []);
+      const headingIndex = children.findIndex((child) => child.tagName === "H3");
+      const chartIndex = children.findIndex(
+        (child) => child.getAttribute("data-testid") === "detail-chart",
+      );
+      const disclosureIndex = children.findIndex((child) => child.tagName === "DETAILS");
+      expect(chartIndex).toBe(headingIndex + 1);
+      expect(disclosureIndex).toBe(chartIndex + 1);
     });
   });
 });

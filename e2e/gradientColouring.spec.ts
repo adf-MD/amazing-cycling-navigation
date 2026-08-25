@@ -401,7 +401,7 @@ test.describe("Planning: descent colouring", () => {
 
   const VERY_STEEP_DESCENT_COLOUR: readonly [number, number, number] = [0x1a, 0x1a, 0x4e];
 
-  test("colours a recognised descent blue by default, and shows the same blue plus its safety disclaimer once selected", async ({
+  test("colours a recognised descent blue by default, and retains the same blue once selected (backlog item 79: no inline safety disclaimer here any more)", async ({
     page,
   }) => {
     const consoleErrors: string[] = [];
@@ -471,11 +471,10 @@ test.describe("Planning: descent colouring", () => {
     await expect(
       summaryRegion.getByRole("heading", { name: "Recognised descent" }),
     ).toBeVisible();
-    await expect(
-      summaryRegion.getByText(
-        /Blue intensity reflects gradient steepness only, not surface, bends, traffic or other conditions\./,
-      ),
-    ).toBeVisible();
+    // The blue-intensity safety sentence moved to Settings' own "Local
+    // gradient colours" disclosure (backlog item 79) — no longer shown
+    // inline on the selected-descent details card here or in Riding.
+    await expect(summaryRegion.getByText(/Blue intensity reflects/)).not.toBeVisible();
 
     const selectedSample = await captureColourSample(page, {
       descent: VERY_STEEP_DESCENT_COLOUR,
@@ -1074,8 +1073,8 @@ ${trkpts}
     });
   });
 
-  test.describe("selected-feature local legends and climb-score explanation (item 78)", () => {
-    test("selecting the climb reveals a collapsed 'Gradient colours on this climb' disclosure that expands to a real, non-transparent rendered swatch", async ({
+  test.describe("selected-feature compact local legends and selected-descent chart (item 78, refined by item 79)", () => {
+    test("selecting the climb reveals a collapsed 'Local gradient colours on this climb' disclosure that expands to a real, non-transparent rendered swatch showing only the grade range", async ({
       page,
     }) => {
       const consoleErrors: string[] = [];
@@ -1097,7 +1096,7 @@ ${trkpts}
         .getByRole("combobox", { name: "Recognised climbs" })
         .selectOption({ index: 1 });
 
-      const disclosureSummary = page.getByText("Gradient colours on this climb");
+      const disclosureSummary = page.getByText("Local gradient colours on this climb");
       await expect(disclosureSummary).toBeVisible();
       const disclosure = page.locator("details", { has: disclosureSummary });
       await expect(disclosure).not.toHaveAttribute("open", "");
@@ -1116,10 +1115,19 @@ ${trkpts}
       expect(backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
       expect(backgroundColor).not.toBe("transparent");
 
+      // Compact key (backlog item 79): a real grade-range row, no band
+      // name or colour name.
+      const entryText = await disclosure
+        .locator(".gradient-legend-entry")
+        .first()
+        .innerText();
+      expect(entryText).toMatch(/%/);
+      expect(entryText).not.toMatch(/climb/i);
+
       expect(consoleErrors).toEqual([]);
     });
 
-    test("tapping the descent reveals a collapsed 'Gradient colours on this descent' disclosure that expands to a real, non-transparent rendered swatch", async ({
+    test("tapping the descent reveals a collapsed 'Local gradient colours on this descent' disclosure that expands to a real, non-transparent rendered swatch showing only the grade range", async ({
       page,
     }) => {
       const consoleErrors: string[] = [];
@@ -1150,7 +1158,7 @@ ${trkpts}
         page.getByRole("heading", { name: "Recognised descent" }),
       ).toBeVisible();
 
-      const disclosureSummary = page.getByText("Gradient colours on this descent");
+      const disclosureSummary = page.getByText("Local gradient colours on this descent");
       await expect(disclosureSummary).toBeVisible();
       const disclosure = page.locator("details", { has: disclosureSummary });
       await expect(disclosure).not.toHaveAttribute("open", "");
@@ -1162,6 +1170,58 @@ ${trkpts}
       expect(box).not.toBeNull();
       expect(box?.width).toBeGreaterThan(0);
       expect(box?.height).toBeGreaterThan(0);
+
+      // Compact key (backlog item 79): a real grade-range row, no key
+      // name or colour name.
+      const entryText = await disclosure
+        .locator(".gradient-legend-entry")
+        .first()
+        .innerText();
+      expect(entryText).toMatch(/%/);
+      expect(entryText).not.toMatch(/descent/i);
+
+      expect(consoleErrors).toEqual([]);
+    });
+
+    test("selecting the same recognised descent shows a detailed descent-only elevation chart with the correct accessible name, no marker and no overflow", async ({
+      page,
+    }) => {
+      const consoleErrors: string[] = [];
+      page.on("console", (message) => {
+        if (message.type() === "error" && !message.text().includes("net::ERR_FAILED")) {
+          consoleErrors.push(message.text());
+        }
+      });
+      page.on("pageerror", (error) => {
+        consoleErrors.push(error.message);
+      });
+
+      await forceMapStyleFailure(page);
+
+      await page.goto("/");
+      await importClimbThenDescentRoute(page);
+
+      const chartTapTarget = page.locator("rect.elevation-chart-tap-target");
+      const chartBox = await chartTapTarget.boundingBox();
+      if (!chartBox)
+        throw new Error("expected the elevation chart's tap target to be visible");
+      await chartTapTarget.click({
+        position: { x: chartBox.width * 0.9, y: chartBox.height / 2 },
+      });
+
+      const detailChart = page.getByRole("img", {
+        name: "Elevation profile for selected recognised descent",
+      });
+      await expect(detailChart).toBeVisible();
+      await expect(detailChart.locator("line.elevation-chart-marker")).toHaveCount(0);
+      await expect(detailChart.locator("circle.elevation-chart-marker-dot")).toHaveCount(
+        0,
+      );
+      await expect(detailChart.locator("path.elevation-chart-completed")).toHaveCount(0);
+
+      const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
+      expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
 
       expect(consoleErrors).toEqual([]);
     });
@@ -1176,6 +1236,35 @@ ${trkpts}
       const box = await select.boundingBox();
       expect(box).not.toBeNull();
       expect(box?.height).toBeGreaterThanOrEqual(52);
+    });
+
+    test("Settings' 'Local gradient colours' disclosure shows the complete palette, independent of any open route, with no horizontal overflow at the narrow mobile viewport", async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await forceMapStyleFailure(page);
+
+      await page.goto("/");
+      await page.getByRole("button", { name: "Settings" }).click();
+
+      const summary = page.getByText("Local gradient colours", { exact: true });
+      await expect(summary).toBeVisible();
+      const disclosure = page.locator("details", { has: summary });
+      await expect(disclosure).not.toHaveAttribute("open", "");
+
+      await summary.click();
+      // /^Hard climb/ excludes "Very hard climb", which also contains
+      // "hard climb" as a case-insensitive substring.
+      await expect(disclosure.getByText(/^Hard climb/)).toBeVisible();
+      await expect(disclosure.getByText("Very steep descent")).toBeVisible();
+      await expect(
+        disclosure.getByText(
+          "Blue intensity reflects gradient steepness only, not surface, bends, traffic or other conditions.",
+        ),
+      ).toBeVisible();
+
+      const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      expect(scrollWidth).toBeLessThanOrEqual(390);
     });
 
     test.describe("390x844 phone viewport", () => {
@@ -1199,7 +1288,7 @@ ${trkpts}
         await page
           .getByRole("combobox", { name: "Recognised climbs" })
           .selectOption({ index: 1 });
-        await page.getByText("Gradient colours on this climb").click();
+        await page.getByText("Local gradient colours on this climb").click();
         await expect(page.locator(".gradient-legend-entry").first()).toBeVisible();
 
         const scrollWidth = await page.evaluate(
@@ -1217,7 +1306,12 @@ ${trkpts}
         await chartTapTarget.click({
           position: { x: chartBox.width * 0.9, y: chartBox.height / 2 },
         });
-        await page.getByText("Gradient colours on this descent").click();
+        await expect(
+          page.getByRole("img", {
+            name: "Elevation profile for selected recognised descent",
+          }),
+        ).toBeVisible();
+        await page.getByText("Local gradient colours on this descent").click();
         await expect(page.locator(".gradient-legend-entry").first()).toBeVisible();
 
         const scrollWidthWithDescent = await page.evaluate(

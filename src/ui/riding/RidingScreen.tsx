@@ -84,29 +84,6 @@ export interface RidingScreenProps {
    * authoritative handleStart() transition the "Resume ride"/"Start riding"
    * button itself uses. */
   resumeIntentToken?: number;
-  /** A pre-ride climb selection to restore on mount, handed back by App.tsx
-   * after a "How is this calculated?" round trip to Settings (backlog item
-   * 78) — always a real climb id, never set for an ordinary route open.
-   * Seeds explicitFeatureSelection's initial state only; consumed at most
-   * once via onFeatureSelectionHandoffConsumed, mirroring
-   * resumeIntentToken's own "seed once on mount" shape but with its own
-   * independent App.tsx state (see App.tsx's RidingContent.preservedFeatureId
-   * doc comment for why these two hand-offs are deliberately not merged). */
-  preservedFeatureId?: string;
-  /** Called at most once per mount, immediately after preservedFeatureId
-   * (if any) has been used to seed explicitFeatureSelection — tells
-   * App.tsx to clear its own preservedFeatureId so an unrelated later
-   * remount (e.g. a trip to Diagnostics and back) never silently reapplies
-   * a stale selection over a deliberate Clear selection (backlog item 78).
-   * Never called when preservedFeatureId is undefined. */
-  onFeatureSelectionHandoffConsumed?: () => void;
-  /** Called with a selected climb's feature id when the rider presses
-   * "How is this calculated?" in RouteFeatureDetailsPanel (backlog item
-   * 78) — App.tsx responds by preserving this id, minting a Settings
-   * focus token, and switching screens; this component has no navigation
-   * concept of its own. Only ever invoked for a genuinely selected climb
-   * while idle (see the RouteFeatureDetailsPanel call site below). */
-  onShowClimbScoreHelp?: (featureId: string) => void;
   geolocationSource?: GeolocationSource;
   mapFactory?: MapFactory;
   clock?: Clock;
@@ -221,9 +198,6 @@ function elevationViewModeKey(mode: ElevationViewMode): string {
 export function RidingScreen({
   route,
   resumeIntentToken,
-  preservedFeatureId,
-  onFeatureSelectionHandoffConsumed,
-  onShowClimbScoreHelp,
   geolocationSource,
   mapFactory,
   clock = systemClock,
@@ -351,30 +325,7 @@ export function RidingScreen({
   const [explicitFeatureSelection, setExplicitFeatureSelection] = useState<{
     routeId: string;
     featureId: string | null;
-  } | null>(() =>
-    preservedFeatureId !== undefined
-      ? { routeId: route.id, featureId: preservedFeatureId }
-      : null,
-  );
-
-  // Consumes preservedFeatureId at most once per mount, immediately after
-  // the lazy useState initializer above has already used it to seed
-  // explicitFeatureSelection (backlog item 78) — mirrors
-  // consumedResumeIntentTokenRef's synchronous ref-guard-before-any-side-
-  // effect shape further down this file, so this stays safe under
-  // StrictMode's double-invoked effects. Deliberately does not depend on
-  // preservedFeatureId changing mid-mount (it never does: App.tsx only
-  // ever sets it before this screen mounts, as part of the same
-  // ridingContent object this screen was opened with), so a plain
-  // once-per-mount guard is sufficient — no risk of missing a later
-  // change the way a value-comparison guard would need to handle.
-  const consumedFeatureSelectionHandoffRef = useRef(false);
-  useEffect(() => {
-    if (preservedFeatureId === undefined) return;
-    if (consumedFeatureSelectionHandoffRef.current) return;
-    consumedFeatureSelectionHandoffRef.current = true;
-    onFeatureSelectionHandoffConsumed?.();
-  }, [preservedFeatureId, onFeatureSelectionHandoffConsumed]);
+  } | null>(null);
 
   const [selectedGradientSegment, setSelectedGradientSegment] =
     useState<ClassifiedSegment<MicroDetailVisualKey> | null>(null);
@@ -506,7 +457,7 @@ export function RidingScreen({
     preRideClimbNumber !== undefined
       ? (() => {
           const viewModel = buildClimbChartViewModel(
-            { kind: "pre-ride-selected-climb" },
+            { kind: "pre-ride-selected-feature" },
             microDetailFeature,
             displayPoints,
             microDetailSegments,
@@ -519,6 +470,37 @@ export function RidingScreen({
               areaFill={viewModel.areaFill}
               marker={viewModel.marker}
               ariaLabel={`Elevation profile for Climb ${String(preRideClimbNumber)}`}
+            />
+          );
+        })()
+      : undefined;
+  // The descent counterpart of preRideClimbChart (backlog item 79) — a
+  // read-only preview of whatever recognised descent is selected pre-ride
+  // (dropdown has no descent entries, but the map and full-profile chart
+  // both select descents through the same explicitFeatureSelection path),
+  // rebased to local distance from zero exactly like the climb chart.
+  // Descents are never numbered anywhere in this app, so there is no
+  // equivalent to preRideClimbNumber here. Mutually exclusive with
+  // preRideClimbChart by construction (each is gated on a different
+  // feature.kind), so the two are combined with `??` at the
+  // RouteFeatureDetailsPanel call site below.
+  const preRideDescentChart =
+    nav.geolocationStatus === "idle" && microDetailFeature?.kind === "descent"
+      ? (() => {
+          const viewModel = buildClimbChartViewModel(
+            { kind: "pre-ride-selected-feature" },
+            microDetailFeature,
+            displayPoints,
+            microDetailSegments,
+          );
+          return (
+            <ElevationChart
+              points={viewModel.points}
+              domain={viewModel.domain}
+              gradientSegments={viewModel.gradientSegments}
+              areaFill={viewModel.areaFill}
+              marker={viewModel.marker}
+              ariaLabel="Elevation profile for selected recognised descent"
             />
           );
         })()
@@ -1293,13 +1275,13 @@ export function RidingScreen({
         ) {
           // Read-only preview of the next recognised climb before it
           // begins (backlog item 71). Reuses the same "pre-ride-selected-
-          // climb" chart mode the idle dropdown preview already uses
+          // feature" chart mode the idle dropdown preview already uses
           // (rebased-to-0, no marker) — never computeClimbProgressMetrics,
           // which would fabricate progress at the climb's own start.
           const distanceUntilStartMetres =
             upcomingClimb.startDistanceMetres - nav.presentationDistanceFromStartMetres;
           const previewViewModel = buildClimbChartViewModel(
-            { kind: "pre-ride-selected-climb" },
+            { kind: "pre-ride-selected-feature" },
             upcomingClimb,
             displayPoints,
             upcomingClimbDetailSegments,
@@ -1433,7 +1415,7 @@ export function RidingScreen({
                   : microDetailFeature
               }
               climbNumber={preRideClimbNumber}
-              detailChart={preRideClimbChart}
+              detailChart={preRideClimbChart ?? preRideDescentChart}
               presentClimbLocalBands={
                 nav.geolocationStatus === "idle" && microDetailFeature?.kind === "climb"
                   ? new Set(
@@ -1450,15 +1432,6 @@ export function RidingScreen({
                         (segment) => segment.visualKey as DescentLocalKey,
                       ),
                     )
-                  : undefined
-              }
-              onClimbScoreHelp={
-                nav.geolocationStatus === "idle" &&
-                microDetailFeature?.kind === "climb" &&
-                onShowClimbScoreHelp
-                  ? () => {
-                      onShowClimbScoreHelp(microDetailFeature.id);
-                    }
                   : undefined
               }
               onClear={

@@ -481,7 +481,7 @@ describe("SettingsScreen", () => {
     });
   });
 
-  describe("Elevation and climbs / climb-score explanation (backlog item 78)", () => {
+  describe("Elevation and climbs (backlog item 78, extended by item 79)", () => {
     it("keeps 'How climbs are classified' in its own collapsed disclosure, inside a dedicated Elevation and climbs panel", () => {
       render(<SettingsScreen />);
 
@@ -530,57 +530,74 @@ describe("SettingsScreen", () => {
         screen.getByText("How climbs are classified"),
       );
     });
+  });
 
-    it("opens and focuses the disclosure synchronously when climbScoreHelpFocusToken is supplied, and consumes it once", () => {
-      const onClimbScoreHelpFocusConsumed = vi.fn();
-      render(
-        <SettingsScreen
-          climbScoreHelpFocusToken={1}
-          onClimbScoreHelpFocusConsumed={onClimbScoreHelpFocusConsumed}
-        />,
-      );
+  describe("Local gradient colours (backlog item 79)", () => {
+    it("is present as a sibling disclosure after 'How climbs are classified', inside the same panel, collapsed by default", () => {
+      render(<SettingsScreen />);
 
-      const details = screen.getByText("How climbs are classified").closest("details");
-      expect(details).toHaveAttribute("open");
-      expect(document.activeElement).toBe(
-        screen.getByText("How climbs are classified").closest("summary"),
+      const classificationDetails = screen
+        .getByText("How climbs are classified")
+        .closest("details");
+      const paletteDetails = screen
+        .getByText("Local gradient colours")
+        .closest("details");
+      expect(paletteDetails).not.toBeNull();
+      expect(paletteDetails).not.toHaveAttribute("open");
+
+      const elevationClimbsSection = screen
+        .getByRole("heading", { name: "Elevation and climbs" })
+        .closest("section");
+      expect(elevationClimbsSection).toContainElement(paletteDetails);
+      expect(classificationDetails?.compareDocumentPosition(paletteDetails as Node)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
       );
-      expect(onClimbScoreHelpFocusConsumed).toHaveBeenCalledTimes(1);
     });
 
-    it("does not re-fire on a rerender with the same token, but does for a genuinely new token", () => {
-      const onClimbScoreHelpFocusConsumed = vi.fn();
-      const { rerender } = render(
-        <SettingsScreen
-          climbScoreHelpFocusToken={1}
-          onClimbScoreHelpFocusConsumed={onClimbScoreHelpFocusConsumed}
-        />,
-      );
-      const details = screen.getByText("How climbs are classified").closest("details");
-      expect(onClimbScoreHelpFocusConsumed).toHaveBeenCalledTimes(1);
+    it("shows the complete climb-local legend, independent of any open route", () => {
+      render(<SettingsScreen />);
+      const details = screen.getByText("Local gradient colours").closest("details");
+      expect(details).not.toBeNull();
+      if (details) details.open = true;
 
-      // Collapse it again, then rerender with the unchanged token — a
-      // repeat trip through App.tsx that never cleared the prop must not
-      // reopen/refocus it a second time.
-      if (details) details.open = false;
-      rerender(
-        <SettingsScreen
-          climbScoreHelpFocusToken={1}
-          onClimbScoreHelpFocusConsumed={onClimbScoreHelpFocusConsumed}
-        />,
-      );
-      expect(details).not.toHaveAttribute("open");
-      expect(onClimbScoreHelpFocusConsumed).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(/Gentle, flat or brief descent/)).toBeInTheDocument();
+      expect(screen.getByText(/Moderate climb/)).toBeInTheDocument();
+      expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
+      expect(screen.getByText(/Very hard climb/)).toBeInTheDocument();
+      expect(screen.getByText(/Extremely steep climb/)).toBeInTheDocument();
+      expect(screen.getByText(/9% to just below 12%/)).toBeInTheDocument();
+      expect(screen.getByText(/12% or more/)).toBeInTheDocument();
+    });
 
-      // A genuinely new token fires again — repeated activation works.
-      rerender(
-        <SettingsScreen
-          climbScoreHelpFocusToken={2}
-          onClimbScoreHelpFocusConsumed={onClimbScoreHelpFocusConsumed}
-        />,
-      );
-      expect(details).toHaveAttribute("open");
-      expect(onClimbScoreHelpFocusConsumed).toHaveBeenCalledTimes(2);
+    it("shows the complete descent-local legend, including neutral", () => {
+      render(<SettingsScreen />);
+      const details = screen.getByText("Local gradient colours").closest("details");
+      if (details) details.open = true;
+
+      expect(
+        screen.getByText(/Shallower than the descent threshold/),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/Moderate descent/)).toBeInTheDocument();
+      expect(screen.getByText(/Steep descent/)).toBeInTheDocument();
+      expect(screen.getByText(/Very steep descent/)).toBeInTheDocument();
+      expect(screen.getByText(/light blue/)).toBeInTheDocument();
+      expect(screen.getByText(/dark blue/)).toBeInTheDocument();
+    });
+
+    it("explains the ~100 m local smoothing, the green-for-brief-flat-sections rule and the descent safety limitation", () => {
+      render(<SettingsScreen />);
+      const details = screen.getByText("Local gradient colours").closest("details");
+      if (details) details.open = true;
+
+      expect(screen.getByText(/approximately 100 m/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/brief flat or descending section within a recognised climb/),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          /Blue intensity reflects gradient steepness only, not surface, bends, traffic or other conditions\./,
+        ),
+      ).toBeInTheDocument();
     });
   });
 });

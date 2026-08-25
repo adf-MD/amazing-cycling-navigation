@@ -52,27 +52,13 @@ export interface AppProps {
  * RidingScreen consumes it at most once, only after its own restoration has
  * genuinely completed, to start GPS and request Follow without a second
  * in-screen tap.
- *
- * preservedFeatureId (backlog item 78) is a separate, independently-cleared
- * hand-off for RidingScreen's own local pre-ride climb/descent selection,
- * which is otherwise lost whenever this screen unmounts (e.g. a trip to
- * Settings). Unlike resumeIntentToken — which relies on RidingScreen's own
- * later domain-state evolution to avoid reapplying itself, rather than ever
- * being explicitly cleared — preservedFeatureId has no equivalent natural
- * decay (there is nothing about "which climb was selected" that changes on
- * its own), so it is set by handleShowClimbScoreHelp and explicitly cleared
- * by handleFeatureSelectionHandoffConsumed the moment RidingScreen has used
- * it, so an unrelated later remount (e.g. a trip to Diagnostics and back)
- * never silently reapplies a stale selection over a deliberate Clear
- * selection. Always a climb id — the "How is this calculated?" action only
- * ever exists for a selected climb. */
+ */
 type RidingContent =
   | { kind: "none" }
   | {
       kind: "route";
       route: PlannedRoute;
       resumeIntentToken?: number;
-      preservedFeatureId?: string;
     }
   | { kind: "free-roam" };
 
@@ -187,15 +173,6 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // mirrors useRideCamera.ts's own nextCameraRequestIdRef idiom (backlog
   // item 72).
   const nextResumeIntentTokenRef = useRef(0);
-  // A second, independent monotonic counter for the Settings climb-score
-  // explanation's open-and-focus hand-off (backlog item 78) — kept
-  // separate from nextResumeIntentTokenRef since the two tokens are
-  // consumed by different screens at different times (see
-  // handleShowClimbScoreHelp below and RidingContent's own doc comment).
-  const nextClimbScoreHelpTokenRef = useRef(0);
-  const [climbScoreHelpFocusToken, setClimbScoreHelpFocusToken] = useState<
-    number | undefined
-  >(undefined);
   const notifyNewRideContent = useResetScrollForNewRideContent(screen);
   // Whether the app shell is in immersive-Riding mode (backlog item 55):
   // MainNavigation and its wrapping <header> render at all only when this
@@ -691,44 +668,6 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     setScreen("planning");
   };
 
-  // "How is this calculated?" (backlog item 78) — preserves the selected
-  // climb on ridingContent (consumed later, whenever RidingScreen next
-  // mounts, via handleFeatureSelectionHandoffConsumed), mints a fresh
-  // focus token for SettingsScreen to open-and-focus its climb-
-  // classification disclosure (consumed almost immediately, via
-  // handleClimbScoreHelpFocusConsumed), then switches screens. A no-op
-  // guard on ridingContent.kind !== "route" is defensive only — this is
-  // only ever invoked from RidingScreen's own pre-ride selected-climb
-  // details, which cannot render while ridingContent is anything else.
-  const handleShowClimbScoreHelp = (featureId: string) => {
-    setRidingContent((current) =>
-      current.kind === "route" ? { ...current, preservedFeatureId: featureId } : current,
-    );
-    nextClimbScoreHelpTokenRef.current += 1;
-    setClimbScoreHelpFocusToken(nextClimbScoreHelpTokenRef.current);
-    setScreen("settings");
-  };
-
-  // Called by RidingScreen at most once per mount, immediately after using
-  // preservedFeatureId (if any) to seed its own selection — see
-  // RidingContent's own doc comment for why this must be explicitly
-  // cleared rather than left to decay naturally.
-  const handleFeatureSelectionHandoffConsumed = () => {
-    setRidingContent((current) =>
-      current.kind === "route" && current.preservedFeatureId !== undefined
-        ? { ...current, preservedFeatureId: undefined }
-        : current,
-    );
-  };
-
-  // Called by SettingsScreen once its own mount/update effect has opened
-  // and focused the climb-classification disclosure for the current
-  // token, so a later, unrelated Settings visit never reopens/refocuses it
-  // using a stale value.
-  const handleClimbScoreHelpFocusConsumed = () => {
-    setClimbScoreHelpFocusToken(undefined);
-  };
-
   // Wraps MainNavigation's plain screen setter with one free-roam-specific
   // rule: leaving the Ride screen while it was showing an active free-roam
   // session resets the in-memory ridingContent pointer back to "none"
@@ -818,9 +757,6 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
             <RidingScreen
               route={ridingContent.route}
               resumeIntentToken={ridingContent.resumeIntentToken}
-              preservedFeatureId={ridingContent.preservedFeatureId}
-              onFeatureSelectionHandoffConsumed={handleFeatureSelectionHandoffConsumed}
-              onShowClimbScoreHelp={handleShowClimbScoreHelp}
               mapFactory={mapFactory}
               onRidingActiveChange={setIsRidingActive}
               onNavigateToPlanning={handleNavigateToPlanning}
@@ -855,12 +791,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
           />
         )}
         {screen === "diagnostics" && <DiagnosticsScreen />}
-        {screen === "settings" && (
-          <SettingsScreen
-            climbScoreHelpFocusToken={climbScoreHelpFocusToken}
-            onClimbScoreHelpFocusConsumed={handleClimbScoreHelpFocusConsumed}
-          />
-        )}
+        {screen === "settings" && <SettingsScreen />}
       </main>
     </div>
   );

@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildClimbChartViewModel,
   computeClimbProgressMetrics,
-  selectClimbElevationWindow,
   selectEffectiveElevationView,
+  selectFeatureElevationWindow,
 } from "./climbElevationView.ts";
 import type { ClassifiedSegment } from "./gradient.ts";
-import type { ClimbFeature } from "./routeFeatures.ts";
+import type { ClimbFeature, DescentFeature } from "./routeFeatures.ts";
 import type { MicroDetailVisualKey } from "./routeFeaturePalette.ts";
 import type { RoutePoint } from "../domain/types.ts";
 
@@ -25,6 +25,21 @@ function buildClimb(overrides: Partial<ClimbFeature> = {}): ClimbFeature {
     maxGradientPercent: 8,
     climbScore: 6000,
     category: "uncategorised",
+    ...overrides,
+  };
+}
+
+function buildDescent(overrides: Partial<DescentFeature> = {}): DescentFeature {
+  return {
+    id: "descent-1000",
+    kind: "descent",
+    startDistanceMetres: 1000,
+    endDistanceMetres: 2000,
+    lengthMetres: 1000,
+    averageGradientPercent: -6,
+    elevationLossMetres: 60,
+    maxGradientPercent: -8,
+    band: "steep",
     ...overrides,
   };
 }
@@ -181,7 +196,7 @@ describe("selectEffectiveElevationView", () => {
   });
 });
 
-describe("selectClimbElevationWindow", () => {
+describe("selectFeatureElevationWindow", () => {
   const points: RoutePoint[] = [
     { coordinate: [0, 51], elevationMetres: 0, distanceFromStartMetres: 0 },
     { coordinate: [0.01, 51], elevationMetres: 20, distanceFromStartMetres: 1000 },
@@ -190,12 +205,12 @@ describe("selectClimbElevationWindow", () => {
   ];
 
   it("returns an empty window for an empty route", () => {
-    const result = selectClimbElevationWindow([], 500, 1500);
+    const result = selectFeatureElevationWindow([], 500, 1500);
     expect(result.points).toEqual([]);
   });
 
   it("selects exactly the interior points plus interpolated boundary seams", () => {
-    const result = selectClimbElevationWindow(points, 500, 2500);
+    const result = selectFeatureElevationWindow(points, 500, 2500);
     expect(result.startDistanceMetres).toBe(500);
     expect(result.endDistanceMetres).toBe(2500);
     expect(result.points.map((p) => p.distanceFromStartMetres)).toEqual([
@@ -206,12 +221,12 @@ describe("selectClimbElevationWindow", () => {
   });
 
   it("does not duplicate a point when a boundary lands exactly on an existing point", () => {
-    const result = selectClimbElevationWindow(points, 1000, 2000);
+    const result = selectFeatureElevationWindow(points, 1000, 2000);
     expect(result.points.map((p) => p.distanceFromStartMetres)).toEqual([1000, 2000]);
   });
 
   it("returns a single point for a zero-length window", () => {
-    const result = selectClimbElevationWindow(points, 1500, 1500);
+    const result = selectFeatureElevationWindow(points, 1500, 1500);
     expect(result.points).toHaveLength(1);
     expect(result.startDistanceMetres).toBe(1500);
     expect(result.endDistanceMetres).toBe(1500);
@@ -223,7 +238,7 @@ describe("selectClimbElevationWindow", () => {
       { coordinate: [0.01, 51], elevationMetres: null, distanceFromStartMetres: 1000 },
       { coordinate: [0.02, 51], elevationMetres: 30, distanceFromStartMetres: 2000 },
     ];
-    const result = selectClimbElevationWindow(pointsWithGap, 500, 1500);
+    const result = selectFeatureElevationWindow(pointsWithGap, 500, 1500);
     expect(result.points[0]?.elevationMetres).toBeNull();
     expect(result.points.at(-1)?.elevationMetres).toBeNull();
   });
@@ -371,10 +386,10 @@ describe("buildClimbChartViewModel", () => {
     },
   ];
 
-  describe("pre-ride-selected-climb", () => {
+  describe("pre-ride-selected-feature", () => {
     it("rebases points so the climb's own start is distance 0", () => {
       const model = buildClimbChartViewModel(
-        { kind: "pre-ride-selected-climb" },
+        { kind: "pre-ride-selected-feature" },
         climb,
         points,
         segments,
@@ -385,7 +400,7 @@ describe("buildClimbChartViewModel", () => {
 
     it("rebases gradient segment boundaries by the same offset", () => {
       const model = buildClimbChartViewModel(
-        { kind: "pre-ride-selected-climb" },
+        { kind: "pre-ride-selected-feature" },
         climb,
         points,
         segments,
@@ -408,7 +423,7 @@ describe("buildClimbChartViewModel", () => {
 
     it("has no marker and enables area fill", () => {
       const model = buildClimbChartViewModel(
-        { kind: "pre-ride-selected-climb" },
+        { kind: "pre-ride-selected-feature" },
         climb,
         points,
         segments,
@@ -419,7 +434,7 @@ describe("buildClimbChartViewModel", () => {
 
     it("does not throw for a climb whose bounds fall outside the given points, returning empty output", () => {
       const model = buildClimbChartViewModel(
-        { kind: "pre-ride-selected-climb" },
+        { kind: "pre-ride-selected-feature" },
         climb,
         [],
         [],
@@ -427,6 +442,84 @@ describe("buildClimbChartViewModel", () => {
       expect(model.points).toEqual([]);
       expect(model.gradientSegments).toEqual([]);
     });
+  });
+
+  describe("pre-ride-selected-feature: descent (backlog item 79)", () => {
+    const descent = buildDescent({ startDistanceMetres: 1000, endDistanceMetres: 2000 });
+    const descentSegments: ClassifiedSegment<MicroDetailVisualKey>[] = [
+      {
+        startDistanceMetres: 1000,
+        endDistanceMetres: 1500,
+        averageGradientPercent: -4,
+        visualKey: "moderate",
+      },
+      {
+        startDistanceMetres: 1500,
+        endDistanceMetres: 2000,
+        averageGradientPercent: -8,
+        visualKey: "steep",
+      },
+    ];
+
+    it("rebases points so the descent's own start is distance 0, exactly like a climb", () => {
+      const model = buildClimbChartViewModel(
+        { kind: "pre-ride-selected-feature" },
+        descent,
+        points,
+        descentSegments,
+      );
+      expect(model.points.map((p) => p.distanceFromStartMetres)).toEqual([0, 1000]);
+      expect(model.domain).toEqual({ startDistanceMetres: 0, endDistanceMetres: 1000 });
+    });
+
+    it("rebases gradient segment boundaries by the same offset", () => {
+      const model = buildClimbChartViewModel(
+        { kind: "pre-ride-selected-feature" },
+        descent,
+        points,
+        descentSegments,
+      );
+      expect(model.gradientSegments).toEqual([
+        {
+          startDistanceMetres: 0,
+          endDistanceMetres: 500,
+          averageGradientPercent: -4,
+          visualKey: "moderate",
+        },
+        {
+          startDistanceMetres: 500,
+          endDistanceMetres: 1000,
+          averageGradientPercent: -8,
+          visualKey: "steep",
+        },
+      ]);
+    });
+
+    it("has no marker and enables area fill, exactly like a climb", () => {
+      const model = buildClimbChartViewModel(
+        { kind: "pre-ride-selected-feature" },
+        descent,
+        points,
+        descentSegments,
+      );
+      expect(model.marker).toBeNull();
+      expect(model.areaFill).toBe(true);
+    });
+  });
+
+  it("rejects an active-current-climb mode for a descent at compile time (backlog item 79)", () => {
+    const descent = buildDescent();
+    const marker = { distanceFromStartMetres: 1500, elevationMetres: 40, stale: false };
+    // @ts-expect-error active-current-climb is statically restricted to a
+    // ClimbFeature — this app never tracks live descent progress, so a
+    // DescentFeature must be rejected here at the type level, not merely by
+    // a runtime branch.
+    buildClimbChartViewModel(
+      { kind: "active-current-climb", marker },
+      descent,
+      points,
+      [],
+    );
   });
 
   describe("active-current-climb", () => {

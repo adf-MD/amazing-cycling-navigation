@@ -25,12 +25,14 @@ describe("DescentLocalGradientDisclosure", () => {
     expect(details?.hasAttribute("open")).toBe(false);
   });
 
-  it("has a visible 'Gradient colours on this descent' summary control", () => {
+  it("has a visible 'Local gradient colours on this descent' summary control", () => {
     render(<DescentLocalGradientDisclosure presentDescentLocalKeys={keys("steep")} />);
-    expect(screen.getByText("Gradient colours on this descent")).toBeInTheDocument();
+    expect(
+      screen.getByText("Local gradient colours on this descent"),
+    ).toBeInTheDocument();
   });
 
-  it("expands via a genuine user interaction on the summary, revealing the local legend", async () => {
+  it("expands via a genuine user interaction on the summary, revealing the compact local legend", async () => {
     const user = userEvent.setup();
     const { container } = render(
       <DescentLocalGradientDisclosure presentDescentLocalKeys={keys("moderate")} />,
@@ -38,38 +40,43 @@ describe("DescentLocalGradientDisclosure", () => {
     const details = container.querySelector("details");
     expect(details?.hasAttribute("open")).toBe(false);
 
-    await user.click(screen.getByText("Gradient colours on this descent"));
+    await user.click(screen.getByText("Local gradient colours on this descent"));
 
     expect(details?.hasAttribute("open")).toBe(true);
     expect(
       screen.getByRole("list", { name: "Detailed descent gradient legend" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Moderate descent/)).toBeInTheDocument();
+    expect(screen.getByText("3% to just below 6%")).toBeInTheDocument();
   });
 
-  it("lists 'neutral' only when it is genuinely present", async () => {
+  it("lists 'neutral' only when it is genuinely present, as swatch plus range only (backlog item 79)", async () => {
     const user = userEvent.setup();
     const { rerender } = render(
       <DescentLocalGradientDisclosure presentDescentLocalKeys={keys("steep")} />,
     );
-    await user.click(screen.getByText("Gradient colours on this descent"));
-    expect(screen.queryByText(/Shallower than the descent threshold/)).toBeNull();
+    await user.click(screen.getByText("Local gradient colours on this descent"));
+    expect(screen.queryByText("Below 3%")).toBeNull();
+    expect(screen.getByText("6% to just below 9%")).toBeInTheDocument();
+    expect(screen.queryByText(/Steep descent/)).toBeNull();
+    expect(screen.queryByText(/blue/)).toBeNull();
 
     rerender(
       <DescentLocalGradientDisclosure
         presentDescentLocalKeys={keys("steep", "neutral")}
       />,
     );
-    expect(screen.getByText(/Shallower than the descent threshold/)).toBeInTheDocument();
+    expect(screen.getByText("Below 3%")).toBeInTheDocument();
+    expect(screen.queryByText(/Shallower than the descent threshold/)).toBeNull();
   });
 
-  it("preserves the blue-intensity safety limitation", async () => {
+  it("no longer shows the explanatory or safety-limitation paragraph — both now live only in Settings (backlog item 79)", async () => {
     const user = userEvent.setup();
     render(<DescentLocalGradientDisclosure presentDescentLocalKeys={keys("steep")} />);
-    await user.click(screen.getByText("Gradient colours on this descent"));
+    await user.click(screen.getByText("Local gradient colours on this descent"));
+    expect(screen.queryByText(/Detailed colours show local gradient/)).toBeNull();
     expect(
-      screen.getByText(/not surface, bends, traffic or other conditions/),
-    ).toBeInTheDocument();
+      screen.queryByText(/not surface, bends, traffic or other conditions/),
+    ).toBeNull();
   });
 
   it("has no live-region role", () => {

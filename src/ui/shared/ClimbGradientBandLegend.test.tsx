@@ -75,4 +75,39 @@ describe("ClimbGradientBandLegend", () => {
     });
     expect(swatch).toHaveStyle({ width: "32px", height: "8px" });
   });
+
+  describe("compact variant (backlog item 79)", () => {
+    it("shows only the swatch and grade range, omitting the band name and colour name", () => {
+      render(
+        <ClimbGradientBandLegend
+          presentClimbBands={bands("moderate-climb")}
+          variant="compact"
+        />,
+      );
+      expect(screen.getByText("3% to just below 6%")).toBeInTheDocument();
+      expect(screen.queryByText(/Moderate climb/)).toBeNull();
+      expect(screen.queryByText(/yellow/)).toBeNull();
+    });
+
+    it("still renders a real coloured swatch per present band, in severity order", () => {
+      render(
+        <ClimbGradientBandLegend
+          presentClimbBands={bands("extremely-steep-climb", "gentle-or-descending")}
+          variant="compact"
+        />,
+      );
+      const list = screen.getByRole("list", { name: "Detailed climb gradient legend" });
+      const items = list.querySelectorAll("li");
+      expect(items).toHaveLength(2);
+      expect(items[0]?.textContent).toBe("Below 3%");
+      expect(items[1]?.textContent).toBe("12% or more");
+    });
+
+    it("omitting variant still renders the full row, unchanged from before item 79", () => {
+      render(<ClimbGradientBandLegend presentClimbBands={bands("moderate-climb")} />);
+      expect(screen.getByText(/Moderate climb/)).toBeInTheDocument();
+      expect(screen.getByText(/3% to just below 6%/)).toBeInTheDocument();
+      expect(screen.getByText(/yellow/)).toBeInTheDocument();
+    });
+  });
 });

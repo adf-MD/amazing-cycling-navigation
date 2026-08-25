@@ -70,4 +70,36 @@ describe("DescentLocalLegend", () => {
     });
     expect(swatch).toHaveStyle({ width: "32px", height: "8px" });
   });
+
+  describe("compact variant (backlog item 79)", () => {
+    it("shows only the swatch and grade range, omitting the key name and colour name", () => {
+      render(
+        <DescentLocalLegend
+          presentDescentLocalKeys={keys("moderate")}
+          variant="compact"
+        />,
+      );
+      expect(screen.getByText("3% to just below 6%")).toBeInTheDocument();
+      expect(screen.queryByText(/Moderate descent/)).toBeNull();
+      expect(screen.queryByText(/light blue/)).toBeNull();
+    });
+
+    it("shows the neutral row's range only, when present", () => {
+      render(
+        <DescentLocalLegend
+          presentDescentLocalKeys={keys("neutral")}
+          variant="compact"
+        />,
+      );
+      expect(screen.getByText("Below 3%")).toBeInTheDocument();
+      expect(screen.queryByText(/Shallower than/)).toBeNull();
+    });
+
+    it("omitting variant still renders the full row, unchanged from before item 79", () => {
+      render(<DescentLocalLegend presentDescentLocalKeys={keys("moderate")} />);
+      expect(screen.getByText(/Moderate descent/)).toBeInTheDocument();
+      expect(screen.getByText(/3% to just below 6%/)).toBeInTheDocument();
+      expect(screen.getByText(/light blue/)).toBeInTheDocument();
+    });
+  });
 });

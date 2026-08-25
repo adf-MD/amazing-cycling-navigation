@@ -904,14 +904,18 @@ describe("RidingScreen", () => {
       // Backlog item 77: the pre-ride full overview's route-level
       // disclosure is the climb-only "Climb categories" legend, which
       // never includes selected-feature detailed local-gradient text.
-      // Backlog item 78 reintroduces that local-gradient explanation in a
-      // separate, selected-feature-scoped "Gradient colours on this
-      // climb" disclosure instead — "Hard climb" (this constant-8%-grade
-      // climb's own local-gradient band label) appears there, not inside
-      // "Climb categories".
+      // Backlog item 78 reintroduced that local-gradient explanation in a
+      // separate, selected-feature-scoped disclosure instead, compacted by
+      // item 79 to a swatch plus exact grade range only — "6% to just
+      // below 9%" (this constant-8%-grade climb's own local-gradient band
+      // range) appears there, not inside "Climb categories", and the
+      // full band-name text no longer appears at all in this card.
       expect(screen.getByText("Climb categories")).toBeInTheDocument();
-      expect(screen.getByText("Gradient colours on this climb")).toBeInTheDocument();
-      expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
+      expect(
+        screen.getByText("Local gradient colours on this climb"),
+      ).toBeInTheDocument();
+      expect(screen.getByText("6% to just below 9%")).toBeInTheDocument();
+      expect(screen.queryByText(/Hard climb/)).toBeNull();
       const climbCategoriesList = screen.getByRole("list", { name: "Climb categories" });
       expect(climbCategoriesList.textContent).not.toContain("Hard climb");
     });
@@ -2206,15 +2210,16 @@ describe("RidingScreen", () => {
       // overview's route-level disclosure; this proves the underlying
       // classification via the chart's own rendered stroke colours, which
       // is unaffected by item 77. Backlog item 78 then reintroduced both
-      // bands' text in the new selected-feature "Gradient colours on this
-      // climb" disclosure — present here, not in "Climb categories".
+      // bands' ranges in the new selected-feature local-gradient
+      // disclosure (compacted by item 79 to swatch plus range only) —
+      // present here, not in "Climb categories".
       const strokes = Array.from(chart.querySelectorAll("path")).map((path) =>
         path.getAttribute("stroke"),
       );
       expect(strokes).toContain(MICRO_DETAIL_COLOURS["hard-climb"]);
       expect(strokes).toContain(MICRO_DETAIL_COLOURS["gentle-or-descending"]);
-      expect(screen.getByText(/Hard climb/)).toBeInTheDocument();
-      expect(screen.getByText(/Gentle, flat or brief descent/)).toBeInTheDocument();
+      expect(screen.getByText("6% to just below 9%")).toBeInTheDocument();
+      expect(screen.getByText("Below 3%")).toBeInTheDocument();
       const climbCategoriesList = screen.getByRole("list", { name: "Climb categories" });
       expect(climbCategoriesList.textContent).not.toContain("Hard climb");
     });
@@ -2307,6 +2312,219 @@ describe("RidingScreen", () => {
       expect(
         screen.getByRole("img", { name: "Elevation profile for Climb 1" }),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe("pre-ride selected-descent chart (backlog item 79)", () => {
+    // A single recognised climb (0-2000 m, +8%) followed by a single
+    // recognised descent (2000-4000 m, -8%, "steep" local band throughout)
+    // — the same fixture shape already proven to work for descent
+    // selection in the item-78/79 describe block above.
+    const descentChartRoute: PlannedRoute = {
+      ...route,
+      id: "pre-ride-descent-chart-route",
+      points: Array.from({ length: 41 }, (_, index) => {
+        const distanceFromStartMetres = index * 100;
+        const elevationMetres =
+          distanceFromStartMetres <= 2000
+            ? (distanceFromStartMetres * 8) / 100
+            : 160 - ((distanceFromStartMetres - 2000) * 8) / 100;
+        return {
+          coordinate: [0.0001 * index, 51] as const,
+          elevationMetres,
+          distanceFromStartMetres,
+        };
+      }),
+      distanceMetres: 4000,
+    };
+
+    function tapDescentViaChart(): void {
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 320,
+        height: 96,
+        right: 320,
+        bottom: 96,
+        x: 0,
+        y: 0,
+        toJSON: () => "",
+      });
+      const hitTarget = screen
+        .getByRole("img", { name: "Elevation profile chart" })
+        .parentElement?.querySelector("rect.elevation-chart-tap-target");
+      if (!hitTarget) throw new Error("expected a tap-target rect");
+      // ~87.5% across a 0-4000 m domain -> ~3500 m, solidly inside the
+      // 2000-4000 m descent.
+      fireEvent.click(hitTarget, { clientX: 280, clientY: 48 });
+    }
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("renders a detailed elevation chart directly between the selected descent's heading and its facts (via disclosure)", () => {
+      const { container } = render(
+        <RidingScreen
+          route={descentChartRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      tapDescentViaChart();
+
+      const detailsPanel = screen.getByRole("region", { name: "Route feature details" });
+      const heading = within(detailsPanel).getByRole("heading", {
+        name: "Recognised descent",
+      });
+      const chart = within(detailsPanel).getByRole("img", {
+        name: "Elevation profile for selected recognised descent",
+      });
+      const facts = within(detailsPanel).getByText(/Route position:/);
+
+      // DOCUMENT_POSITION_FOLLOWING (4).
+      expect(heading.compareDocumentPosition(chart) & 4).toBe(4);
+      expect(chart.compareDocumentPosition(facts) & 4).toBe(4);
+      expect(
+        container.querySelector("section.route-feature-details")?.contains(chart),
+      ).toBe(true);
+    });
+
+    it("covers the selected descent's exact start-to-end interval, rebased to local distance from zero", () => {
+      render(
+        <RidingScreen
+          route={descentChartRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      tapDescentViaChart();
+      const chart = screen.getByRole("img", {
+        name: "Elevation profile for selected recognised descent",
+      });
+      const paths = Array.from(chart.querySelectorAll("path.elevation-chart-area-fill"));
+      // A smoothing artifact right at the transition from the climb into
+      // the descent classifies the first few metres slightly differently
+      // from the steep body that follows, so the fill is split across more
+      // than one path — the union of all of them must still span the
+      // descent's own exact bounds, matching the selected-climb chart's own
+      // convention (which shows the same kind of boundary-sliver split).
+      expect(paths[0]?.getAttribute("d")).toMatch(/^M 0\.00 /);
+      expect(paths.at(-1)?.getAttribute("d")).toContain("L 320.00 ");
+    });
+
+    it("shows no rider-position marker, completed/remaining split, or progress text", () => {
+      render(
+        <RidingScreen
+          route={descentChartRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      tapDescentViaChart();
+      const chart = screen.getByRole("img", {
+        name: "Elevation profile for selected recognised descent",
+      });
+      expect(chart.querySelector("line.elevation-chart-marker")).toBeNull();
+      expect(chart.querySelector("circle.elevation-chart-marker-dot")).toBeNull();
+      expect(chart.querySelector("path.elevation-chart-completed")).toBeNull();
+      expect(screen.queryByText(/Current route position:/)).toBeNull();
+      expect(screen.queryByText(/Last known position:/)).toBeNull();
+    });
+
+    it("colours the pre-ride descent chart with the authoritative MICRO_DETAIL_COLOURS for the classified local band", () => {
+      render(
+        <RidingScreen
+          route={descentChartRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      tapDescentViaChart();
+      const chart = screen.getByRole("img", {
+        name: "Elevation profile for selected recognised descent",
+      });
+      // The main body of the descent (see the interval test above for why
+      // a brief boundary sliver precedes it) is classified "steep", the
+      // authoritative colour for its constant -8% gradient.
+      const fills = Array.from(
+        chart.querySelectorAll("path.elevation-chart-area-fill"),
+      ).map((path) => path.getAttribute("fill"));
+      expect(fills).toContain(MICRO_DETAIL_COLOURS.steep);
+    });
+
+    it("does not call geolocation or require an active ride to render the pre-ride selected-descent chart", () => {
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={descentChartRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      tapDescentViaChart();
+      expect(
+        screen.getByRole("img", {
+          name: "Elevation profile for selected recognised descent",
+        }),
+      ).toBeInTheDocument();
+      expect(stub.watchPositionSpy).not.toHaveBeenCalled();
+    });
+
+    it("selecting the same descent via the map and via the full-profile chart converges on the same details, and the climb selector shows 'All route'", () => {
+      render(
+        <RidingScreen
+          route={descentChartRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      tapDescentViaChart();
+
+      expect(screen.getByRole("combobox", { name: "Recognised climbs" })).toHaveValue(
+        "all",
+      );
+      expect(
+        screen.getByRole("img", {
+          name: "Elevation profile for selected recognised descent",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("choosing a climb from the selector replaces a selected descent, and Clear selection returns to the full-route state", async () => {
+      const user = userEvent.setup();
+      render(
+        <RidingScreen
+          route={descentChartRoute}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      tapDescentViaChart();
+      expect(
+        screen.getByRole("img", {
+          name: "Elevation profile for selected recognised descent",
+        }),
+      ).toBeInTheDocument();
+
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: "Recognised climbs" }),
+        "climb-0",
+      );
+      expect(
+        screen.queryByRole("img", {
+          name: "Elevation profile for selected recognised descent",
+        }),
+      ).toBeNull();
+      expect(
+        screen.getByRole("heading", { name: "Climb 1 · Category 3" }),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Clear selection" }));
+      expect(screen.getByRole("combobox", { name: "Recognised climbs" })).toHaveValue(
+        "all",
+      );
+      expect(screen.queryByRole("region", { name: "Route feature details" })).toBeNull();
     });
   });
 
@@ -6828,7 +7046,7 @@ describe("RidingScreen", () => {
     });
   });
 
-  describe("selected-feature local legends and climb-score explanation (item 78)", () => {
+  describe("selected-feature compact local legends and selected-descent chart (item 78, refined by item 79)", () => {
     // Mirrors "climb-only pre-ride full profile colouring (item 77)"'s own
     // local climbThenDescentRoute fixture exactly, so a descent can be
     // selected pre-ride via a chart tap the same proven way.
@@ -6871,7 +7089,7 @@ describe("RidingScreen", () => {
       fireEvent.click(hitTarget, { clientX: 280, clientY: 48 });
     }
 
-    it("shows a collapsed 'Gradient colours on this climb' disclosure directly after the chart and before the fact list once a climb is explicitly selected", async () => {
+    it("shows a collapsed 'Local gradient colours on this climb' disclosure directly after the chart and before the fact list once a climb is explicitly selected", async () => {
       const user = userEvent.setup();
       render(
         <RidingScreen
@@ -6886,12 +7104,14 @@ describe("RidingScreen", () => {
       );
 
       const detailsPanel = screen.getByRole("region", { name: "Route feature details" });
-      const summary = within(detailsPanel).getByText("Gradient colours on this climb");
+      const summary = within(detailsPanel).getByText(
+        "Local gradient colours on this climb",
+      );
       const disclosure = summary.closest("details");
       expect(disclosure).not.toBeNull();
       expect(disclosure?.hasAttribute("open")).toBe(false);
       expect(
-        within(detailsPanel).queryByText("Gradient colours on this descent"),
+        within(detailsPanel).queryByText("Local gradient colours on this descent"),
       ).toBeNull();
 
       const children = Array.from(detailsPanel.children);
@@ -6904,10 +7124,14 @@ describe("RidingScreen", () => {
       expect(firstFactIndex).toBe(disclosureIndex + 1);
 
       await user.click(summary);
-      expect(within(detailsPanel).getByText(/Hard climb/)).toBeInTheDocument();
+      // Compact key (backlog item 79): swatch + exact range only, no band
+      // name or colour name — CLIMB_GRADE_PERCENT (8%) is the hard-climb
+      // band (6% to just below 9%).
+      expect(within(detailsPanel).getByText("6% to just below 9%")).toBeInTheDocument();
+      expect(within(detailsPanel).queryByText(/Hard climb/)).toBeNull();
     });
 
-    it("shows a collapsed 'Gradient colours on this descent' disclosure directly after the heading once a descent is explicitly selected", () => {
+    it("shows a collapsed 'Local gradient colours on this descent' disclosure directly after the heading once a descent is explicitly selected", () => {
       render(
         <RidingScreen
           route={climbThenDescentRoute}
@@ -6921,18 +7145,30 @@ describe("RidingScreen", () => {
       expect(
         within(detailsPanel).getByRole("heading", { name: "Recognised descent" }),
       ).toBeInTheDocument();
-      const summary = within(detailsPanel).getByText("Gradient colours on this descent");
+      const summary = within(detailsPanel).getByText(
+        "Local gradient colours on this descent",
+      );
       const disclosure = summary.closest("details");
       expect(disclosure).not.toBeNull();
       expect(disclosure?.hasAttribute("open")).toBe(false);
       expect(
-        within(detailsPanel).queryByText("Gradient colours on this climb"),
+        within(detailsPanel).queryByText("Local gradient colours on this climb"),
       ).toBeNull();
 
       const children = Array.from(detailsPanel.children);
       const headingIndex = children.findIndex((child) => child.tagName === "H3");
       const disclosureIndex = children.findIndex((child) => child.tagName === "DETAILS");
-      expect(disclosureIndex).toBe(headingIndex + 1);
+      // The new selected-descent chart (backlog item 79) now sits between
+      // the heading and the disclosure, so the disclosure no longer
+      // immediately follows the heading — it follows the chart instead.
+      const chartIndex = children.findIndex((child) => child.tagName === "FIGURE");
+      expect(chartIndex).toBe(headingIndex + 1);
+      expect(disclosureIndex).toBe(chartIndex + 1);
+      expect(
+        within(detailsPanel).getByRole("img", {
+          name: "Elevation profile for selected recognised descent",
+        }),
+      ).toBeInTheDocument();
 
       vi.restoreAllMocks();
     });
@@ -6969,112 +7205,8 @@ describe("RidingScreen", () => {
       vi.restoreAllMocks();
     });
 
-    it("shows 'How is this calculated?' for a selected climb only when onShowClimbScoreHelp is supplied, and calls it with the climb's feature id", async () => {
+    it("never shows the local-gradient disclosure on the active-ride upcoming-climb preview card, even though it reuses RouteFeatureDetailsPanel", async () => {
       const user = userEvent.setup();
-      const onShowClimbScoreHelp = vi.fn();
-      const { rerender } = render(
-        <RidingScreen
-          route={climbRoute}
-          geolocationSource={buildStubGeolocationSource().source}
-          mapFactory={buildStubMapFactory().factory}
-        />,
-      );
-      await user.selectOptions(
-        screen.getByRole("combobox", { name: "Recognised climbs" }),
-        "climb-0",
-      );
-      expect(
-        screen.queryByRole("button", { name: "How is this calculated?" }),
-      ).toBeNull();
-
-      rerender(
-        <RidingScreen
-          route={climbRoute}
-          geolocationSource={buildStubGeolocationSource().source}
-          mapFactory={buildStubMapFactory().factory}
-          onShowClimbScoreHelp={onShowClimbScoreHelp}
-        />,
-      );
-      const button = await screen.findByRole("button", {
-        name: "How is this calculated?",
-      });
-      await user.click(button);
-      expect(onShowClimbScoreHelp).toHaveBeenCalledWith("climb-0");
-    });
-
-    it("never shows 'How is this calculated?' for a selected descent, even when onShowClimbScoreHelp is supplied", () => {
-      const onShowClimbScoreHelp = vi.fn();
-      render(
-        <RidingScreen
-          route={climbThenDescentRoute}
-          geolocationSource={buildStubGeolocationSource().source}
-          mapFactory={buildStubMapFactory().factory}
-          onShowClimbScoreHelp={onShowClimbScoreHelp}
-        />,
-      );
-      tapDescent();
-      expect(
-        screen.queryByRole("button", { name: "How is this calculated?" }),
-      ).toBeNull();
-      vi.restoreAllMocks();
-    });
-
-    it("seeds the pre-ride selection from preservedFeatureId on mount and consumes the hand-off exactly once", async () => {
-      const geolocationSource = buildStubGeolocationSource().source;
-      const mapFactory = buildStubMapFactory().factory;
-      const onFeatureSelectionHandoffConsumed = vi.fn();
-      const { rerender } = render(
-        <RidingScreen
-          route={climbRoute}
-          geolocationSource={geolocationSource}
-          mapFactory={mapFactory}
-          preservedFeatureId="climb-0"
-          onFeatureSelectionHandoffConsumed={onFeatureSelectionHandoffConsumed}
-        />,
-      );
-      expect(screen.getByRole("combobox", { name: "Recognised climbs" })).toHaveValue(
-        "climb-0",
-      );
-      expect(
-        screen.getByRole("heading", { name: "Climb 1 · Category 2" }),
-      ).toBeInTheDocument();
-      await waitFor(() => {
-        expect(onFeatureSelectionHandoffConsumed).toHaveBeenCalledTimes(1);
-      });
-
-      // An unrelated rerender with the exact same props must not
-      // re-consume the hand-off a second time.
-      rerender(
-        <RidingScreen
-          route={climbRoute}
-          geolocationSource={geolocationSource}
-          mapFactory={mapFactory}
-          preservedFeatureId="climb-0"
-          onFeatureSelectionHandoffConsumed={onFeatureSelectionHandoffConsumed}
-        />,
-      );
-      expect(onFeatureSelectionHandoffConsumed).toHaveBeenCalledTimes(1);
-    });
-
-    it("leaves the dropdown on 'All route' and never calls onFeatureSelectionHandoffConsumed when preservedFeatureId is omitted", () => {
-      const onFeatureSelectionHandoffConsumed = vi.fn();
-      render(
-        <RidingScreen
-          route={climbRoute}
-          geolocationSource={buildStubGeolocationSource().source}
-          mapFactory={buildStubMapFactory().factory}
-          onFeatureSelectionHandoffConsumed={onFeatureSelectionHandoffConsumed}
-        />,
-      );
-      expect(screen.getByRole("combobox", { name: "Recognised climbs" })).toHaveValue(
-        "all",
-      );
-      expect(onFeatureSelectionHandoffConsumed).not.toHaveBeenCalled();
-    });
-
-    it("never shows the local-gradient disclosure or the score-help action on the active-ride upcoming-climb preview card, even though it reuses RouteFeatureDetailsPanel", async () => {
-      const user = userEvent.setup();
-      const onShowClimbScoreHelp = vi.fn();
       // A flat 500 m lead-in followed by a single climb (500-2500 m, +8%,
       // climbScore 16000 -> category-3), so a fix can land genuinely
       // "before" the climb and trigger the Climb-preview card exactly the
@@ -7102,7 +7234,6 @@ describe("RidingScreen", () => {
           route={leadInThenClimbRoute}
           geolocationSource={stub.source}
           mapFactory={buildStubMapFactory().factory}
-          onShowClimbScoreHelp={onShowClimbScoreHelp}
         />,
       );
       await user.click(screen.getByRole("button", { name: "Start riding" }));
@@ -7119,12 +7250,8 @@ describe("RidingScreen", () => {
       const detailsPanel = screen.getByRole("region", { name: "Route feature details" });
       expect(within(detailsPanel).getByText(/Climb score:/)).toBeInTheDocument();
       expect(
-        within(detailsPanel).queryByText("Gradient colours on this climb"),
+        within(detailsPanel).queryByText("Local gradient colours on this climb"),
       ).toBeNull();
-      expect(
-        within(detailsPanel).queryByRole("button", { name: "How is this calculated?" }),
-      ).toBeNull();
-      expect(onShowClimbScoreHelp).not.toHaveBeenCalled();
     });
   });
 });

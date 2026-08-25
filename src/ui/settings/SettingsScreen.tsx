@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type SubmitEvent } from "react";
+import { useCallback, useRef, useState, type SubmitEvent } from "react";
 import type { RoutingProfile } from "../../domain/types.ts";
 import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
 import { useOnlineStatus } from "../../platform/onlineStatus.ts";
@@ -25,37 +25,39 @@ import {
   CLIMB_CATEGORY_3_SCORE,
   CLIMB_CATEGORY_4_SCORE,
   CLIMB_CATEGORY_HC_SCORE,
+  CLIMB_GRADIENT_BAND_SEVERITY_ORDER,
+  DESCENT_LOCAL_KEY_SEVERITY_ORDER,
   MIN_CLIMB_AVERAGE_GRADIENT_PERCENT,
   MIN_CLIMB_SCORE,
   MIN_FEATURE_LENGTH_METRES,
+  type ClimbGradientBand,
+  type DescentLocalKey,
 } from "../../navigation/routeFeatures.ts";
 import { CLIMB_CATEGORY_NAMES } from "../../navigation/routeFeaturePalette.ts";
+import { ClimbGradientBandLegend } from "../shared/ClimbGradientBandLegend.tsx";
+import { DescentLocalLegend } from "../shared/DescentLocalLegend.tsx";
 import { formatMetres, formatWholeNumber } from "../shared/routeSummary.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
 import { describeProviderKeyStatus } from "./providerKeyStatus.ts";
 
+// The complete climb/descent local-gradient palettes, for Settings' own
+// always-full "Local gradient colours" disclosure (backlog item 79) —
+// independent of whatever route/feature is currently open, unlike the
+// pre-ride selected-feature disclosures' present-only sets. Module-level
+// so these aren't reconstructed on every render.
+const ALL_CLIMB_GRADIENT_BANDS: ReadonlySet<ClimbGradientBand> = new Set(
+  CLIMB_GRADIENT_BAND_SEVERITY_ORDER,
+);
+const ALL_DESCENT_LOCAL_KEYS: ReadonlySet<DescentLocalKey> = new Set(
+  DESCENT_LOCAL_KEY_SEVERITY_ORDER,
+);
+
 export interface SettingsScreenProps {
   clock?: Clock;
-  /** A fresh value opens and focuses the "How climbs are classified"
-   * disclosure below (backlog item 78) — set by App.tsx's
-   * handleShowClimbScoreHelp, one token per "How is this calculated?"
-   * press. Undefined (the ordinary case, including every plain Settings
-   * visit through the primary navigation) leaves the disclosure collapsed
-   * with no focus movement. */
-  climbScoreHelpFocusToken?: number;
-  /** Called once, immediately after climbScoreHelpFocusToken has been
-   * acted on for this render — tells App.tsx to clear its own copy so a
-   * later, unrelated Settings visit never reopens/refocuses the
-   * disclosure using a stale token. */
-  onClimbScoreHelpFocusConsumed?: () => void;
 }
 
-export function SettingsScreen({
-  clock = systemClock,
-  climbScoreHelpFocusToken,
-  onClimbScoreHelpFocusConsumed,
-}: SettingsScreenProps) {
+export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
   const keyQuery = useCallback(() => getProviderKey(), []);
   const key = useLiveQuery(keyQuery);
   const verificationQuery = useCallback(() => getProviderKeyVerification(), []);
@@ -86,27 +88,6 @@ export function SettingsScreen({
   // disabled attribute has actually committed to the DOM.
   const isSavingPreferencesRef = useRef(false);
   const [preferencesError, setPreferencesError] = useState<string | null>(null);
-
-  // Opens and focuses "How climbs are classified" for a genuinely new
-  // climbScoreHelpFocusToken (backlog item 78) — a plain ref-guard
-  // comparison, mirroring RidingScreen.tsx's consumedResumeIntentTokenRef
-  // idiom, so this stays safe under StrictMode's double-invoked effects.
-  // Synchronous (details.open + summary.focus()), no setTimeout/polling —
-  // native <details> content is immediately available to screen readers
-  // the instant `open` is set.
-  const climbClassificationDetailsRef = useRef<HTMLDetailsElement>(null);
-  const consumedClimbScoreHelpFocusTokenRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (climbScoreHelpFocusToken === undefined) return;
-    if (consumedClimbScoreHelpFocusTokenRef.current === climbScoreHelpFocusToken) return;
-    consumedClimbScoreHelpFocusTokenRef.current = climbScoreHelpFocusToken;
-    const details = climbClassificationDetailsRef.current;
-    if (details) {
-      details.open = true;
-      details.querySelector("summary")?.focus();
-    }
-    onClimbScoreHelpFocusConsumed?.();
-  }, [climbScoreHelpFocusToken, onClimbScoreHelpFocusConsumed]);
 
   const handleSave = (event: SubmitEvent) => {
     event.preventDefault();
@@ -409,7 +390,7 @@ export function SettingsScreen({
       <section className="panel stack" aria-labelledby="elevation-climbs-heading">
         <h2 id="elevation-climbs-heading">Elevation and climbs</h2>
 
-        <details className="settings-disclosure" ref={climbClassificationDetailsRef}>
+        <details className="settings-disclosure">
           <summary>How climbs are classified</summary>
           <p>
             Climb score is climb length in metres multiplied by average gradient
@@ -448,6 +429,29 @@ export function SettingsScreen({
               more
             </li>
           </ul>
+        </details>
+
+        <details className="settings-disclosure">
+          <summary>Local gradient colours</summary>
+          <p>
+            Detailed colours along a route show local gradient, smoothed over
+            approximately 100 m — not a climb&apos;s overall category or a single
+            point&apos;s exact grade.
+          </p>
+          <ClimbGradientBandLegend presentClimbBands={ALL_CLIMB_GRADIENT_BANDS} />
+          <p>
+            A brief flat or descending section within a recognised climb uses the green,
+            below-3% band.
+          </p>
+          <DescentLocalLegend presentDescentLocalKeys={ALL_DESCENT_LOCAL_KEYS} />
+          <p>
+            A recognised descent reuses the same three blues locally; any locally shallow
+            stretch shows the plain route colour instead.
+          </p>
+          <p>
+            Blue intensity reflects gradient steepness only, not surface, bends, traffic
+            or other conditions.
+          </p>
         </details>
       </section>
 
