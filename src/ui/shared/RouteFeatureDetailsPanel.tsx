@@ -9,6 +9,7 @@ import {
   ROUTE_FEATURE_COLOURS,
   ROUTE_FEATURE_LABELS,
 } from "../../navigation/routeFeaturePalette.ts";
+import { ClearSelectionButton } from "./ClearSelectionButton.tsx";
 import { ClimbLocalGradientDisclosure } from "./ClimbLocalGradientDisclosure.tsx";
 import { DescentLocalGradientDisclosure } from "./DescentLocalGradientDisclosure.tsx";
 import { GradientColourSwatch } from "./GradientColourSwatch.tsx";
@@ -118,11 +119,7 @@ export function RouteFeatureDetailsPanel({
         {formatGradientPercent(feature.maxGradientPercent)}
       </p>
       {feature.kind === "climb" && <p>Climb score: {Math.round(feature.climbScore)}</p>}
-      {onClear && (
-        <button type="button" onClick={onClear}>
-          Clear selection
-        </button>
-      )}
+      {onClear && <ClearSelectionButton onClick={onClear} />}
     </section>
   );
 }

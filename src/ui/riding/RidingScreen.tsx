@@ -25,9 +25,11 @@ import {
   resolveElevationChartTap,
   type ClimbGradientBand,
   type DescentLocalKey,
-  type RouteFeature,
 } from "../../navigation/routeFeatures.ts";
-import { buildFeatureDetailSegments } from "../../navigation/routeFeatureDetail.ts";
+import {
+  buildFeatureDetailSegments,
+  computeFeatureRelativePosition,
+} from "../../navigation/routeFeatureDetail.ts";
 import type { MicroDetailVisualKey } from "../../navigation/routeFeaturePalette.ts";
 import type { ClassifiedSegment } from "../../navigation/gradient.ts";
 import {
@@ -55,7 +57,6 @@ import {
   ElevationChart,
   type ElevationChartSelectedRange,
 } from "../shared/ElevationChart.tsx";
-import { GradientColoursDisclosure } from "../shared/GradientColoursDisclosure.tsx";
 import { GradientSegmentDetailsPanel } from "../shared/GradientSegmentDetailsPanel.tsx";
 import { RouteFeatureDetailsPanel } from "../shared/RouteFeatureDetailsPanel.tsx";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
@@ -67,6 +68,7 @@ import { RidingCompactManoeuvreCue } from "./RidingCompactManoeuvreCue.tsx";
 import { RidingImmersiveHeader } from "./RidingImmersiveHeader.tsx";
 import { RidingNextManoeuvrePanel } from "./RidingNextManoeuvrePanel.tsx";
 import { RidingRouteCompletionPanel } from "./RidingRouteCompletionPanel.tsx";
+import { RidingSelectedFeatureSummaryPanel } from "./RidingSelectedFeatureSummaryPanel.tsx";
 import { RidingStatusCard } from "./RidingStatusCard.tsx";
 import { useRideCamera } from "./useRideCamera.ts";
 import { useRideNavigation } from "./useRideNavigation.ts";
@@ -425,6 +427,17 @@ export function RidingScreen({
   // An explicit selection wins over merely being "active" — a rider can
   // inspect a different climb than the one they're currently on.
   const microDetailFeature = selectedFeature ?? activeFeature;
+  // Ahead/within/passed wording for the active-standard compact summary
+  // (backlog item 85) — always derived from the same frozen/reliable
+  // presentation distance as activeFeature above, never raw/live
+  // progress, and only for a genuinely explicit selection (never a
+  // merely-active feature, which the compact summary never shows).
+  const selectedFeatureRelativePosition = selectedFeature
+    ? computeFeatureRelativePosition(
+        selectedFeature,
+        nav.presentationDistanceFromStartMetres,
+      )
+    : null;
   // Numbers the shared details panel's heading exactly like the pre-ride
   // dropdown ("Climb 2 · Category 3"), whichever way the climb was
   // selected (dropdown, map tap or chart tap) — undefined once riding is
@@ -574,11 +587,25 @@ export function RidingScreen({
     upcomingClimb,
     climbPreviewSelectedClimbId,
   );
+  // Active Full/2 km/10 km specifically (backlog item 85) — excludes both
+  // pre-ride (idle) and the active-Climb/climb-preview presentations,
+  // which keep their own existing, unchanged local-gradient behaviour.
+  // Drives: suppressing the chart's local-gradient overlay, degrading
+  // chart taps to macro-selection-only, and swapping the shared feature
+  // panel for the compact RidingSelectedFeatureSummaryPanel.
+  const isActiveStandardFeatureView =
+    nav.geolocationStatus !== "idle" &&
+    effectiveElevationView.kind !== "climb" &&
+    effectiveElevationView.kind !== "climb-preview";
   // Visual emphasis (the extra stroke-width bump) is reserved for an
   // explicit selection, never for a merely-active feature — mirrors the
   // map's own selected-feature-halo policy (no halo for "active" alone).
+  // A segment selected earlier while in Climb view is deliberately
+  // ignored once the rider dismisses to a standard view (backlog item
+  // 85) — it becomes inert rather than leaking its narrow range into the
+  // macro emphasis ring there.
   const chartSelectedRangeMetres: ElevationChartSelectedRange | null =
-    selectedGradientSegment
+    !isActiveStandardFeatureView && selectedGradientSegment
       ? {
           startDistanceMetres: selectedGradientSegment.startDistanceMetres,
           endDistanceMetres: selectedGradientSegment.endDistanceMetres,
@@ -616,11 +643,16 @@ export function RidingScreen({
   // every render (a cheap clip, not memoized), so this closure would gain
   // no stable identity from memoizing anyway.
   function handleChartTapDistance(distanceMetres: number): void {
+    // In an active standard view (backlog item 85), a null feature makes
+    // resolveElevationChartTap's own inner "segment" guard unreachable,
+    // so a tap always resolves to a macro feature-select-or-noop — never
+    // the finer-grained local-gradient segment drill-down those views
+    // must never show.
     const result = resolveElevationChartTap(
       distanceMetres,
       routeFeatures,
-      microDetailFeature,
-      microDetailSegments,
+      isActiveStandardFeatureView ? null : microDetailFeature,
+      isActiveStandardFeatureView ? [] : microDetailSegments,
     );
     if (result?.kind === "feature") {
       selectRouteFeature(result.feature.id);
@@ -1208,14 +1240,13 @@ export function RidingScreen({
        * window, so the legend never lists a detail class that isn't
        * currently on screen. */}
       {(() => {
+        // Defaults to microDetailSegments (the same feature/segments used
+        // in every other branch); only the active-climb and climb-preview
+        // branches below ever reassign this to a different feature's
+        // segments, so ClimbLocalGradientDisclosure's climb-band gate
+        // stays correct even when a rider has an unrelated explicit
+        // selection elsewhere while also actively climbing.
         let displayedMicroSegments = microDetailSegments;
-        // Defaults to microDetailFeature (the same feature
-        // displayedMicroSegments already reflects in every other branch);
-        // only the new Climb branch below ever reassigns this to a
-        // different feature (activeClimb), so GradientColoursDisclosure's
-        // climb-band gate stays correct even when a rider has an unrelated
-        // explicit selection elsewhere while also actively climbing.
-        let displayedMicroDetailFeature: RouteFeature | null = microDetailFeature;
         let chart: ReactNode;
         let climbProgressPanel: ReactNode = null;
 
@@ -1224,7 +1255,9 @@ export function RidingScreen({
             <ElevationChart
               points={displayPoints}
               routeFeatures={isPreRideFullRouteOverview ? climbs : routeFeatures}
-              gradientSegments={microDetailSegments}
+              gradientSegments={
+                isActiveStandardFeatureView ? undefined : microDetailSegments
+              }
               selectedRangeMetres={chartSelectedRangeMetres}
               onTapDistance={handleChartTapDistance}
             />
@@ -1249,7 +1282,6 @@ export function RidingScreen({
             activeClimbDetailSegments,
           );
           displayedMicroSegments = activeClimbDetailSegments;
-          displayedMicroDetailFeature = activeClimb;
           chart = (
             <ElevationChart
               points={climbViewModel.points}
@@ -1288,7 +1320,6 @@ export function RidingScreen({
             upcomingClimbDetailSegments,
           );
           displayedMicroSegments = upcomingClimbDetailSegments;
-          displayedMicroDetailFeature = upcomingClimb;
           const upcomingClimbNumber =
             climbs.findIndex((climb) => climb.id === upcomingClimb.id) + 1;
           chart = (
@@ -1313,7 +1344,9 @@ export function RidingScreen({
             <ElevationChart
               points={displayPoints}
               routeFeatures={isPreRideFullRouteOverview ? climbs : routeFeatures}
-              gradientSegments={microDetailSegments}
+              gradientSegments={
+                isActiveStandardFeatureView ? undefined : microDetailSegments
+              }
               selectedRangeMetres={chartSelectedRangeMetres}
               onTapDistance={handleChartTapDistance}
               marker={
@@ -1358,7 +1391,9 @@ export function RidingScreen({
                 endDistanceMetres: window.endDistanceMetres,
               }}
               routeFeatures={routeFeatures}
-              gradientSegments={windowMicroSegments}
+              gradientSegments={
+                isActiveStandardFeatureView ? undefined : windowMicroSegments
+              }
               selectedRangeMetres={chartSelectedRangeMetres}
               onTapDistance={handleChartTapDistance}
               distanceGuides={distanceGuides}
@@ -1366,11 +1401,11 @@ export function RidingScreen({
           );
         }
 
-        // The active-current-climb and climb-preview branches above always
-        // leave displayedMicroDetailFeature pointing at a ClimbFeature (see
-        // their own assignments to it), so this is a pure, safe re-derivation
-        // of effectiveElevationView.kind, not a new independent source of
-        // truth (backlog item 80).
+        // effectiveElevationView.kind here is the same value
+        // isActiveStandardFeatureView (computed above, outside this IIFE)
+        // is already derived from — re-derived locally purely for
+        // readability at each of this block's several use sites, not a
+        // second independent source of truth (backlog item 80/85).
         const isClimbPresentation =
           effectiveElevationView.kind === "climb" ||
           effectiveElevationView.kind === "climb-preview";
@@ -1393,26 +1428,7 @@ export function RidingScreen({
                   )
                 }
               />
-            ) : (
-              <GradientColoursDisclosure
-                presentClimbBands={
-                  displayedMicroDetailFeature?.kind === "climb"
-                    ? new Set(
-                        displayedMicroSegments.map(
-                          (segment) => segment.visualKey as ClimbGradientBand,
-                        ),
-                      )
-                    : new Set()
-                }
-                presentVisualKeys={
-                  new Set(
-                    routeFeatures.map((feature) =>
-                      feature.kind === "climb" ? feature.category : feature.band,
-                    ),
-                  )
-                }
-              />
-            )}
+            ) : null}
             {nav.geolocationStatus === "idle" ? (
               <RidingClimbSelector
                 climbs={climbs}
@@ -1428,56 +1444,68 @@ export function RidingScreen({
                 }}
               />
             ) : null}
-            <RouteFeatureDetailsPanel
-              feature={
-                effectiveElevationView.kind === "climb-preview" && upcomingClimb !== null
-                  ? upcomingClimb
-                  : microDetailFeature
-              }
-              climbNumber={preRideClimbNumber}
-              detailChart={preRideClimbChart ?? preRideDescentChart}
-              presentClimbLocalBands={
-                // !isClimbPresentation avoids duplicating the new top-level
-                // compact disclosure above (backlog item 80): a restored,
-                // paused-but-not-yet-resumed ride can have
-                // geolocationStatus still "idle" while its frozen
-                // presentation distance already falls inside a climb,
-                // auto-activating Climb view (backlog item 71) — without
-                // this guard, that one edge case would show the same
-                // disclosure twice.
-                !isClimbPresentation &&
-                nav.geolocationStatus === "idle" &&
-                microDetailFeature?.kind === "climb"
-                  ? new Set(
-                      microDetailSegments.map(
-                        (segment) => segment.visualKey as ClimbGradientBand,
-                      ),
-                    )
-                  : undefined
-              }
-              presentDescentLocalKeys={
-                nav.geolocationStatus === "idle" && microDetailFeature?.kind === "descent"
-                  ? new Set(
-                      microDetailSegments.map(
-                        (segment) => segment.visualKey as DescentLocalKey,
-                      ),
-                    )
-                  : undefined
-              }
-              onClear={
-                effectiveElevationView.kind === "climb-preview"
-                  ? undefined
-                  : selectedFeature
-                    ? handleClearRouteFeatureSelection
+            {isActiveStandardFeatureView ? (
+              <RidingSelectedFeatureSummaryPanel
+                feature={selectedFeature}
+                relativePosition={selectedFeatureRelativePosition}
+                onClear={selectedFeature ? handleClearRouteFeatureSelection : undefined}
+              />
+            ) : (
+              <RouteFeatureDetailsPanel
+                feature={
+                  effectiveElevationView.kind === "climb-preview" &&
+                  upcomingClimb !== null
+                    ? upcomingClimb
+                    : microDetailFeature
+                }
+                climbNumber={preRideClimbNumber}
+                detailChart={preRideClimbChart ?? preRideDescentChart}
+                presentClimbLocalBands={
+                  // !isClimbPresentation avoids duplicating the new top-level
+                  // compact disclosure above (backlog item 80): a restored,
+                  // paused-but-not-yet-resumed ride can have
+                  // geolocationStatus still "idle" while its frozen
+                  // presentation distance already falls inside a climb,
+                  // auto-activating Climb view (backlog item 71) — without
+                  // this guard, that one edge case would show the same
+                  // disclosure twice.
+                  !isClimbPresentation &&
+                  nav.geolocationStatus === "idle" &&
+                  microDetailFeature?.kind === "climb"
+                    ? new Set(
+                        microDetailSegments.map(
+                          (segment) => segment.visualKey as ClimbGradientBand,
+                        ),
+                      )
                     : undefined
-              }
-            />
-            <GradientSegmentDetailsPanel
-              segment={selectedGradientSegment}
-              startElevationMetres={selectedSegmentStartElevationMetres}
-              endElevationMetres={selectedSegmentEndElevationMetres}
-              onClear={handleClearGradientSegmentSelection}
-            />
+                }
+                presentDescentLocalKeys={
+                  nav.geolocationStatus === "idle" &&
+                  microDetailFeature?.kind === "descent"
+                    ? new Set(
+                        microDetailSegments.map(
+                          (segment) => segment.visualKey as DescentLocalKey,
+                        ),
+                      )
+                    : undefined
+                }
+                onClear={
+                  effectiveElevationView.kind === "climb-preview"
+                    ? undefined
+                    : selectedFeature
+                      ? handleClearRouteFeatureSelection
+                      : undefined
+                }
+              />
+            )}
+            {!isActiveStandardFeatureView && (
+              <GradientSegmentDetailsPanel
+                segment={selectedGradientSegment}
+                startElevationMetres={selectedSegmentStartElevationMetres}
+                endElevationMetres={selectedSegmentEndElevationMetres}
+                onClear={handleClearGradientSegmentSelection}
+              />
+            )}
           </>
         );
       })()}

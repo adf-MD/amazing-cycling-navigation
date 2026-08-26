@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatAscent,
+  formatDescentLoss,
   formatDistanceKm,
   formatManoeuvreDistance,
 } from "./routeSummary.ts";
@@ -22,6 +23,16 @@ describe("formatAscent", () => {
 
   it("says ascent is not available when null", () => {
     expect(formatAscent(null)).toBe("ascent not available");
+  });
+});
+
+describe("formatDescentLoss", () => {
+  it("rounds loss to the nearest metre", () => {
+    expect(formatDescentLoss(223.6)).toBe("224 m loss");
+  });
+
+  it("formats zero loss", () => {
+    expect(formatDescentLoss(0)).toBe("0 m loss");
   });
 });
 

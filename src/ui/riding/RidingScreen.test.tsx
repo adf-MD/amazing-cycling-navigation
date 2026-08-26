@@ -996,7 +996,7 @@ describe("RidingScreen", () => {
       expect(screen.queryByRole("heading", { name: "Climb 1 · Category 2" })).toBeNull();
     });
 
-    it("shows the same gradient class and macro feature category in both the default windowed view and Full view", async () => {
+    it("shows the same macro feature category colouring in both the default windowed view and Full view, with no disclosure or summary from merely being on the climb (backlog item 85)", async () => {
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
       render(
@@ -1018,25 +1018,26 @@ describe("RidingScreen", () => {
       await switchToProfile(user);
 
       // Default view is the 2 km window. Once the fix lands, the rider is
-      // "on" the whole-route climb, so it becomes active (backlog item 71)
-      // and the compact per-climb disclosure (backlog item 80) shows its
-      // detailed local-gradient colouring alongside the unchanged macro
-      // category — both derived from the identical full-route feature
-      // boundaries regardless of which window is currently displayed.
-      const climbSummary = await screen.findByText(
-        "Local gradient colours on this climb",
-      );
-      await user.click(climbSummary);
-      expect(screen.getByText("6% to just below 9%")).toBeInTheDocument();
-      expect(
-        screen.getByRole("heading", { name: "Category 2 climb" }),
-      ).toBeInTheDocument();
+      // "on" the whole-route climb, so Climb view auto-activates (backlog
+      // item 71) and shows the compact per-climb disclosure (item 80).
+      await screen.findByText("Local gradient colours on this climb");
 
+      // Dismissing to the standard Full view, while still physically on
+      // the climb, must show only its macro category colour — no
+      // disclosure, no local-gradient recolouring, and no auto-opened
+      // summary (backlog item 85): merely occupying a recognised feature
+      // is not an explicit selection, in either view.
       await user.click(await screen.findByRole("button", { name: "Full" }));
-      expect(await screen.findByText(/Hard climb/)).toBeInTheDocument();
+      const chart = await screen.findByRole("img", { name: "Elevation profile chart" });
+      const strokes = Array.from(chart.querySelectorAll("path")).map((path) =>
+        path.getAttribute("stroke"),
+      );
+      expect(strokes).toContain(ROUTE_FEATURE_COLOURS["category-2"]);
+      expect(screen.queryByText("Local gradient colours on this climb")).toBeNull();
+      expect(screen.queryByText(/Hard climb/)).toBeNull();
       expect(
-        screen.getByRole("heading", { name: "Category 2 climb" }),
-      ).toBeInTheDocument();
+        screen.queryByRole("region", { name: "Selected feature summary" }),
+      ).toBeNull();
     });
 
     it("keeps showing the pre-off-route active feature's detail once strongly off-route, using the frozen presentation distance rather than raw live progress", async () => {
@@ -1100,7 +1101,7 @@ describe("RidingScreen", () => {
       ).toBeInTheDocument();
     });
 
-    it("tapping the elevation chart while on the active climb drills into the tapped local-gradient segment, with a working clear control", async () => {
+    it("tapping the elevation chart in the active standard Full view selects the tapped macro feature and opens the compact summary, with a working clear control (backlog item 85)", async () => {
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
       vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
@@ -1132,13 +1133,13 @@ describe("RidingScreen", () => {
       await switchToProfile(user);
       await user.click(await screen.findByRole("button", { name: "Full" }));
 
-      // The rider is already on the climb, so it's "active" and its
-      // feature-level details panel already shows — but no segment is
-      // selected yet, so there's no segment-details panel.
-      await screen.findByRole("region", { name: "Route feature details" });
+      // The rider is already on the climb, but merely being on it is not
+      // an explicit selection (backlog item 85) — no summary of any kind
+      // shows yet.
       expect(
-        screen.queryByRole("region", { name: "Gradient segment details" }),
+        screen.queryByRole("region", { name: "Selected feature summary" }),
       ).toBeNull();
+      expect(screen.queryByRole("region", { name: "Route feature details" })).toBeNull();
 
       const hitTarget = await screen.findByRole("img", {
         name: "Elevation profile chart",
@@ -1148,37 +1149,34 @@ describe("RidingScreen", () => {
       );
       expect(tapTarget).not.toBeNull();
       if (!tapTarget) throw new Error("expected a tap-target rect");
-      // The whole route is one climb, so any tap inside it (rather than
-      // outside every feature) resolves to the finer-grained local-
-      // gradient segment there, not a redundant re-selection of the
-      // already-active feature — see resolveElevationChartTap's own
-      // priority rule.
+      // An explicit tap inside the climb now resolves to the macro
+      // feature only — the standard Full view must never drill into the
+      // finer-grained local-gradient segment (backlog item 85).
       fireEvent.click(tapTarget, { clientX: 160, clientY: 48 });
 
-      const segmentPanel = await screen.findByRole("region", {
-        name: "Gradient segment details",
+      const summaryPanel = await screen.findByRole("region", {
+        name: "Selected feature summary",
       });
       expect(
-        within(segmentPanel).getByRole("heading", { name: /Hard climb/ }),
+        within(summaryPanel).getByRole("heading", { name: /Category 2 climb/ }),
       ).toBeInTheDocument();
-      // The feature-level panel is untouched by the segment drill-down.
       expect(
-        screen.getByRole("heading", { name: "Category 2 climb" }),
-      ).toBeInTheDocument();
+        screen.queryByRole("region", { name: "Gradient segment details" }),
+      ).toBeNull();
 
-      const clearButton = within(segmentPanel).getByRole("button", {
+      const clearButton = within(summaryPanel).getByRole("button", {
         name: "Clear selection",
       });
       await user.click(clearButton);
 
       expect(
-        screen.queryByRole("region", { name: "Gradient segment details" }),
+        screen.queryByRole("region", { name: "Selected feature summary" }),
       ).toBeNull();
-      // Clearing the segment selection never touches the feature-level
-      // selection/activity — the feature panel stays exactly as it was.
-      expect(
-        screen.getByRole("heading", { name: "Category 2 climb" }),
-      ).toBeInTheDocument();
+      // Clearing the selection preserves the chosen Full window.
+      expect(screen.getByRole("button", { name: "Full" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
 
       vi.restoreAllMocks();
     });
@@ -1294,9 +1292,11 @@ describe("RidingScreen", () => {
       await switchToProfile(user);
       await user.click(await screen.findByRole("button", { name: "Full" }));
 
-      // Explicitly drill into the active climb's own local-gradient
-      // segment via a chart tap — a genuine mid-ride selection, distinct
-      // from merely being "active".
+      // Explicitly select the active climb's macro feature via a chart
+      // tap — a genuine mid-ride selection, distinct from merely being
+      // "active". The standard Full view resolves this to the compact
+      // summary, never the local-gradient segment drill-down (backlog
+      // item 85).
       const hitTarget = await screen.findByRole("img", {
         name: "Elevation profile chart",
       });
@@ -1305,7 +1305,7 @@ describe("RidingScreen", () => {
       );
       if (!tapTarget) throw new Error("expected a tap-target rect");
       fireEvent.click(tapTarget, { clientX: 160, clientY: 48 });
-      await screen.findByRole("region", { name: "Gradient segment details" });
+      await screen.findByRole("region", { name: "Selected feature summary" });
 
       // A GPS error occurs mid-ride (geolocationStatus becomes "error",
       // not "idle") and the rider taps the same Try again/Start handler.
@@ -1314,13 +1314,13 @@ describe("RidingScreen", () => {
       await user.click(screen.getByRole("button", { name: "Try again" }));
 
       // The idle-only guard means this retry must NOT have cleared the
-      // mid-ride segment selection, unlike a genuine fresh pre-ride start —
-      // and, incidentally, proves activeView stayed "profile" (backlog item
+      // mid-ride selection, unlike a genuine fresh pre-ride start — and,
+      // incidentally, proves activeView stayed "profile" (backlog item
       // 56) across the retry too, since this region is only reachable while
       // Profile is genuinely selected and no further switchToProfile call
       // was needed to find it here.
       expect(
-        screen.getByRole("region", { name: "Gradient segment details" }),
+        screen.getByRole("region", { name: "Selected feature summary" }),
       ).toBeInTheDocument();
 
       vi.restoreAllMocks();
@@ -1338,6 +1338,352 @@ describe("RidingScreen", () => {
         screen.getByText("Elevation data is not available for this route."),
       ).toBeInTheDocument();
       expect(screen.queryByText("Gradient colours")).toBeNull();
+    });
+  });
+
+  describe("active standard-view feature selection (item 85)", () => {
+    // A local copy of the two-climb fixture already proven reliable by
+    // "current-climb elevation view" below — per this file's own
+    // established convention, each describe block defines its own copy
+    // rather than sharing one. climb-460 (460-1180 m, uncategorised) and
+    // climb-1440 (1440-2500 m, category-3), separated by a dip too brief
+    // to be its own recognised descent.
+    const LON_PER_METRE = 1 / (111_320 * Math.cos((51 * Math.PI) / 180));
+    function lonAt(distanceMetres: number): number {
+      return distanceMetres * LON_PER_METRE;
+    }
+    const twoClimbRoute: PlannedRoute = {
+      ...route,
+      id: "two-climb-route-item-85",
+      points: densifyElevationRoute(
+        [
+          { coordinate: [lonAt(0), 51], elevationMetres: 10, distanceFromStartMetres: 0 },
+          {
+            coordinate: [lonAt(500), 51],
+            elevationMetres: 10,
+            distanceFromStartMetres: 500,
+          },
+          {
+            coordinate: [lonAt(1200), 51],
+            elevationMetres: 52,
+            distanceFromStartMetres: 1200,
+          },
+          {
+            coordinate: [lonAt(1450), 51],
+            elevationMetres: 22,
+            distanceFromStartMetres: 1450,
+          },
+          {
+            coordinate: [lonAt(2450), 51],
+            elevationMetres: 222,
+            distanceFromStartMetres: 2450,
+          },
+          {
+            coordinate: [lonAt(2950), 51],
+            elevationMetres: 222,
+            distanceFromStartMetres: 2950,
+          },
+        ],
+        50,
+      ),
+      distanceMetres: 2950,
+    };
+    const BEFORE_CLIMB_1_METRES = 200; // before climb-460 begins
+    const CLIMB_1_MID_METRES = 800; // inside [460, 1180]
+    const BETWEEN_CLIMBS_METRES = 1300; // inside the dip, outside both climbs
+
+    function coordinateAt(distanceMetres: number): Coordinate {
+      const point = twoClimbRoute.points.find(
+        (p) => Math.abs(p.distanceFromStartMetres - distanceMetres) < 1,
+      );
+      if (!point) {
+        throw new Error(`two-climb fixture has no point near ${String(distanceMetres)}m`);
+      }
+      return point.coordinate;
+    }
+
+    function emitFixAt(
+      stub: ReturnType<typeof buildStubGeolocationSource>,
+      distanceMetres: number,
+      timestampMs = 1000,
+    ): void {
+      stub.emitFix({
+        coordinate: coordinateAt(distanceMetres),
+        accuracyMetres: 5,
+        timestampMs,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+    }
+
+    function mockChartWidth(): void {
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 320,
+        height: 96,
+        right: 320,
+        bottom: 96,
+        x: 0,
+        y: 0,
+        toJSON: () => "",
+      });
+    }
+
+    async function tapChartAtClientX(clientX: number): Promise<void> {
+      const hitTarget = (
+        await screen.findByRole("img", { name: "Elevation profile chart" })
+      ).parentElement?.querySelector("rect.elevation-chart-tap-target");
+      expect(hitTarget).not.toBeNull();
+      if (!hitTarget) throw new Error("expected a tap-target rect");
+      fireEvent.click(hitTarget, { clientX, clientY: 48 });
+    }
+
+    it("shows no Gradient colours disclosure in active 2 km or 10 km views", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={climbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: [0.002, 51],
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await switchToProfile(user);
+
+      await user.click(await screen.findByRole("button", { name: "2 km" }));
+      expect(screen.queryByText("Gradient colours")).toBeNull();
+
+      await user.click(await screen.findByRole("button", { name: "10 km" }));
+      expect(screen.queryByText("Gradient colours")).toBeNull();
+    });
+
+    it("shows macro colouring both before and after an explicit selection, with only the permitted fact set (backlog item 85)", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      mockChartWidth();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, BEFORE_CLIMB_1_METRES);
+      await switchToProfile(user);
+      await user.click(await screen.findByRole("button", { name: "Full" }));
+
+      const chartBefore = await screen.findByRole("img", {
+        name: "Elevation profile chart",
+      });
+      const strokesBefore = Array.from(chartBefore.querySelectorAll("path")).map((path) =>
+        path.getAttribute("stroke"),
+      );
+      expect(strokesBefore).toContain(ROUTE_FEATURE_COLOURS["category-3"]);
+
+      // A dead-centre-ish tap resolves inside climb-1440 (category-3).
+      await tapChartAtClientX(240);
+      const summary = await screen.findByRole("region", {
+        name: "Selected feature summary",
+      });
+      expect(
+        within(summary).getByRole("heading", { name: "Category 3 climb" }),
+      ).toBeInTheDocument();
+
+      const chartAfter = screen.getByRole("img", { name: "Elevation profile chart" });
+      const strokesAfter = Array.from(chartAfter.querySelectorAll("path")).map((path) =>
+        path.getAttribute("stroke"),
+      );
+      expect(strokesAfter).toContain(ROUTE_FEATURE_COLOURS["category-3"]);
+
+      // Only the permitted fact set — no pre-ride/Climb-only analytical
+      // detail anywhere in this summary.
+      expect(within(summary).queryByText(/Local gradient colours/)).toBeNull();
+      expect(within(summary).queryByText(/Maximum local gradient/)).toBeNull();
+      expect(within(summary).queryByText(/Climb score/)).toBeNull();
+      expect(
+        screen.queryByRole("region", { name: "Gradient segment details" }),
+      ).toBeNull();
+      expect(
+        screen.getAllByRole("img", { name: "Elevation profile chart" }),
+      ).toHaveLength(1);
+
+      vi.restoreAllMocks();
+    });
+
+    it("shows no summary from a tap on ordinary unrecognised route geometry (backlog item 85)", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      mockChartWidth();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, BETWEEN_CLIMBS_METRES);
+      await switchToProfile(user);
+      await user.click(await screen.findByRole("button", { name: "Full" }));
+
+      // 1300/2950 * 320 ≈ 141 — the dip between the two climbs.
+      await tapChartAtClientX(141);
+
+      expect(
+        screen.queryByRole("region", { name: "Selected feature summary" }),
+      ).toBeNull();
+      expect(screen.queryByRole("region", { name: "Route feature details" })).toBeNull();
+
+      vi.restoreAllMocks();
+    });
+
+    it("shows an explicit selection's relative position ahead of the rider, frozen through strongly off-route recovery (backlog item 85)", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      mockChartWidth();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, BEFORE_CLIMB_1_METRES);
+      await switchToProfile(user);
+      await user.click(await screen.findByRole("button", { name: "Full" }));
+
+      // 800/2950 * 320 ≈ 87 — inside climb-460 [460, 1180].
+      await tapChartAtClientX(87);
+      const summary = await screen.findByRole("region", {
+        name: "Selected feature summary",
+      });
+      expect(
+        within(summary).getByRole("heading", { name: "Uncategorised climb" }),
+      ).toBeInTheDocument();
+      // 460 - 200 = 260 m ahead.
+      expect(within(summary).getByText(/Starts in 0\.3 km/)).toBeInTheDocument();
+
+      // Three repeated far-off-route fixes, mirroring this file's own
+      // established off-route-freeze technique elsewhere.
+      const farCoordinate: Coordinate = [
+        lonAt(BEFORE_CLIMB_1_METRES),
+        51 + (OFF_ROUTE_BASE_METRES + 50) / 111_000,
+      ];
+      for (let i = 0; i < 3; i += 1) {
+        stub.emitFix({
+          coordinate: farCoordinate,
+          accuracyMetres: 5,
+          timestampMs: 2000 + i * 1000,
+          speedMetresPerSecond: null,
+          headingDegrees: null,
+        });
+      }
+      expect(await screen.findByRole("alert")).toHaveTextContent("Off route");
+
+      // The relative-position wording stays frozen at the last reliable
+      // presentation distance, never the raw/live off-route position.
+      expect(
+        within(
+          screen.getByRole("region", { name: "Selected feature summary" }),
+        ).getByRole("heading", { name: "Uncategorised climb" }),
+      ).toBeInTheDocument();
+      expect(
+        within(
+          screen.getByRole("region", { name: "Selected feature summary" }),
+        ).getByText(/Starts in 0\.3 km/),
+      ).toBeInTheDocument();
+
+      vi.restoreAllMocks();
+    });
+
+    it("shows an honest passed state once an explicitly selected feature falls behind the rider (backlog item 85)", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      mockChartWidth();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, CLIMB_1_MID_METRES);
+      await switchToProfile(user);
+      await user.click(await screen.findByRole("button", { name: "Full" }));
+
+      await tapChartAtClientX(87);
+      const summary = await screen.findByRole("region", {
+        name: "Selected feature summary",
+      });
+      // 800 is inside [460, 1180] — within, not yet passed.
+      expect(within(summary).getByText(/remaining/)).toBeInTheDocument();
+
+      // Move on-route past climb-460's own end (1180), still short of
+      // climb-1440 (1440) — an ordinary, non-off-route position update.
+      emitFixAt(stub, BETWEEN_CLIMBS_METRES, 2000);
+
+      // 1300 - 1180 = 120 m passed.
+      expect(
+        await within(
+          screen.getByRole("region", { name: "Selected feature summary" }),
+        ).findByText(/Passed 0\.1 km ago/),
+      ).toBeInTheDocument();
+      expect(
+        within(
+          screen.getByRole("region", { name: "Selected feature summary" }),
+        ).getByRole("heading", { name: "Uncategorised climb" }),
+      ).toBeInTheDocument();
+
+      vi.restoreAllMocks();
+    });
+
+    it("clearing the selection preserves the chosen window and issues no new camera command (backlog item 85)", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      mockChartWidth();
+      const mapFactory = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={twoClimbRoute}
+          geolocationSource={stub.source}
+          mapFactory={mapFactory.factory}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      emitFixAt(stub, BEFORE_CLIMB_1_METRES);
+      await switchToProfile(user);
+      await user.click(await screen.findByRole("button", { name: "Full" }));
+      await tapChartAtClientX(240);
+      await screen.findByRole("region", { name: "Selected feature summary" });
+
+      const setCameraCallsBeforeClear = mapFactory.setCameraSpy.mock.calls.length;
+      const fitBoundsCallsBeforeClear = mapFactory.fitBoundsSpy.mock.calls.length;
+
+      await user.click(screen.getByRole("button", { name: "Clear selection" }));
+
+      expect(
+        screen.queryByRole("region", { name: "Selected feature summary" }),
+      ).toBeNull();
+      expect(screen.getByRole("button", { name: "Full" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(mapFactory.setCameraSpy.mock.calls.length).toBe(setCameraCallsBeforeClear);
+      expect(mapFactory.fitBoundsSpy.mock.calls.length).toBe(fitBoundsCallsBeforeClear);
+
+      vi.restoreAllMocks();
     });
   });
 
@@ -1436,7 +1782,10 @@ describe("RidingScreen", () => {
       expect(strokes).toContain(ROUTE_FEATURE_COLOURS["category-3"]);
       expect(strokes).toContain(ROUTE_FEATURE_COLOURS.steep);
 
-      expect(screen.getByText("Gradient colours")).toBeInTheDocument();
+      // Active Riding's standard views never show the combined
+      // "Gradient colours" disclosure any more (backlog item 85) — macro
+      // colouring alone is retained above.
+      expect(screen.queryByText("Gradient colours")).toBeNull();
       expect(screen.queryByText("Climb categories")).toBeNull();
     });
 
@@ -1466,7 +1815,10 @@ describe("RidingScreen", () => {
       expect(strokes).toContain(ROUTE_FEATURE_COLOURS["category-3"]);
       expect(strokes).toContain(ROUTE_FEATURE_COLOURS.steep);
 
-      expect(screen.getByText("Gradient colours")).toBeInTheDocument();
+      // Active Riding's standard views never show the combined
+      // "Gradient colours" disclosure any more (backlog item 85) — macro
+      // colouring alone is retained above.
+      expect(screen.queryByText("Gradient colours")).toBeNull();
       expect(screen.queryByText("Climb categories")).toBeNull();
     });
 
@@ -2853,7 +3205,7 @@ describe("RidingScreen", () => {
       expect(screen.getAllByText("Local gradient colours on this climb")).toHaveLength(1);
     });
 
-    it("never activates Climb view for a recognised descent", async () => {
+    it("never activates Climb view for a recognised descent, and shows no summary until explicitly selected (backlog item 85)", async () => {
       const user = userEvent.setup();
       const descentRoute: PlannedRoute = {
         ...route,
@@ -2869,6 +3221,17 @@ describe("RidingScreen", () => {
         distanceMetres: 4000,
       };
       const stub = buildStubGeolocationSource();
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 320,
+        height: 96,
+        right: 320,
+        bottom: 96,
+        x: 0,
+        y: 0,
+        toJSON: () => "",
+      });
       render(
         <RidingScreen
           route={descentRoute}
@@ -2887,10 +3250,29 @@ describe("RidingScreen", () => {
       await switchToProfile(user);
 
       await screen.findByText("On route");
-      expect(
-        screen.getByRole("heading", { name: "Recognised descent" }),
-      ).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Climb" })).toBeNull();
+      // Merely being on the descent is not an explicit selection — no
+      // summary auto-opens (backlog item 85).
+      expect(screen.queryByRole("heading", { name: "Recognised descent" })).toBeNull();
+
+      const hitTarget = await screen.findByRole("img", {
+        name: "Elevation profile chart",
+      });
+      const tapTarget = hitTarget.parentElement?.querySelector(
+        "rect.elevation-chart-tap-target",
+      );
+      expect(tapTarget).not.toBeNull();
+      if (!tapTarget) throw new Error("expected a tap-target rect");
+      fireEvent.click(tapTarget, { clientX: 160, clientY: 48 });
+
+      const summaryPanel = await screen.findByRole("region", {
+        name: "Selected feature summary",
+      });
+      expect(
+        within(summaryPanel).getByRole("heading", { name: "Recognised descent" }),
+      ).toBeInTheDocument();
+
+      vi.restoreAllMocks();
     });
 
     it("never activates Climb view for an ordinary uphill below recognised-climb thresholds", async () => {
@@ -3569,11 +3951,15 @@ describe("RidingScreen", () => {
         if (!hitTarget) throw new Error("expected a tap-target rect");
         fireEvent.click(hitTarget, { clientX: 160, clientY: 48 });
 
-        const detailsPanelBefore = await screen.findByRole("region", {
-          name: "Route feature details",
+        // The standard Full view shows the new compact summary for an
+        // explicit selection, not RouteFeatureDetailsPanel (backlog item
+        // 85) — the Climb-preview half below is unaffected, since that
+        // presentation is unchanged by item 85.
+        const summaryPanelBefore = await screen.findByRole("region", {
+          name: "Selected feature summary",
         });
         expect(
-          within(detailsPanelBefore).getByRole("heading", { name: "Category 3 climb" }),
+          within(summaryPanelBefore).getByRole("heading", { name: "Category 3 climb" }),
         ).toBeInTheDocument();
 
         await user.click(await screen.findByRole("button", { name: "Climb" }));

@@ -80,3 +80,53 @@ export function buildFeatureDetailSegments(
     feature.endDistanceMetres,
   );
 }
+
+/** Where the rider's frozen/reliable presentation distance sits relative to
+ * a selected feature's own boundaries — ahead of it, inside it, or already
+ * past it (backlog item 85's active-standard compact summary). */
+export type FeatureRelativePosition =
+  | { kind: "ahead"; distanceUntilStartMetres: number }
+  | { kind: "within"; distanceRemainingMetres: number }
+  | { kind: "passed"; distanceSincePassedMetres: number };
+
+/**
+ * Pure ahead/within/passed classification for an explicitly selected
+ * feature, given only the rider's existing frozen/reliable presentation
+ * distance — never raw/live progress, so the result stays stable through
+ * stale-fix or off-route freezing exactly like every other Riding
+ * presentation value. "Within" is inclusive of both bounds, mirroring
+ * findFeatureAtDistance's own convention (a distance exactly at a
+ * feature's start is that feature's own active range, never "ahead").
+ * Returns null only when there is no presentation distance yet (e.g. an
+ * explicit selection made before the first GPS fix lands), mirroring
+ * computeClimbProgressMetrics's own `| null` convention — callers should
+ * omit the relative-position line entirely in that case rather than
+ * fabricate one.
+ */
+export function computeFeatureRelativePosition(
+  feature: RouteFeature,
+  presentationDistanceFromStartMetres: number | null,
+): FeatureRelativePosition | null {
+  if (presentationDistanceFromStartMetres === null) {
+    return null;
+  }
+  if (presentationDistanceFromStartMetres < feature.startDistanceMetres) {
+    return {
+      kind: "ahead",
+      distanceUntilStartMetres:
+        feature.startDistanceMetres - presentationDistanceFromStartMetres,
+    };
+  }
+  if (presentationDistanceFromStartMetres <= feature.endDistanceMetres) {
+    return {
+      kind: "within",
+      distanceRemainingMetres:
+        feature.endDistanceMetres - presentationDistanceFromStartMetres,
+    };
+  }
+  return {
+    kind: "passed",
+    distanceSincePassedMetres:
+      presentationDistanceFromStartMetres - feature.endDistanceMetres,
+  };
+}

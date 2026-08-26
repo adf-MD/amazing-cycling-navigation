@@ -25,6 +25,13 @@ export function formatAscent(ascentMetres: number | null): string {
     : `${String(Math.round(ascentMetres))} m ascent`;
 }
 
+/** The descent counterpart of formatAscent, for a recognised descent's own
+ * elevationLossMetres (always a plain number, never null, unlike a whole
+ * route's optional ascentMetres). */
+export function formatDescentLoss(lossMetres: number): string {
+  return `${String(Math.round(lossMetres))} m loss`;
+}
+
 /** A tiered rounding policy for a distance-to-manoeuvre display, deliberately
  * coarser the closer the rounding granularity gets to typical consumer GPS
  * accuracy — never implying more precision than the fix actually supports.

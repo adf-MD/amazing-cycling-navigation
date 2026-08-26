@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-Item 81 is the next selected implementation item, followed by items 85, 82, 83 and 84 in that order. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
+Item 82 is the next selected implementation item, followed by items 83 and 84 in that order. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Each entry reproduces its original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this).
 
@@ -176,66 +176,3 @@ _Category: Map presentation reliability_
     - Zooming changes only the displayed subset, never badge locations or route progress.
     - Fix the proven paint/stacking/visibility cause. Do not alter the separate white route-direction arrows.
     - Add real-browser regression evidence that proves a badge is actually visible and unobscured above the map, not merely present in the DOM or assigned a non-null bounding box. Cover normal imagery and the local fallback background, zoom-band transitions, Riding's passed-badge filtering, map rotation, retry without duplication, and explicit absence in free roam.
-
----
-
-<a id="item-85"></a>
-
-## Item 85 — Simplify active Full/2 km/10 km feature inspection
-
-_Category: Active-Riding elevation/profile presentation_
-
-85. **Simplify active Full/2 km/10 km feature inspection**
-    - Field observation: item 80 correctly moved the live active-Climb view and the manually opened upcoming-climb preview to the compact `Local gradient colours on this climb` disclosure. It did not change active Full, 2 km or 10 km, which still fall through to the older, combined `GradientColoursDisclosure` explaining both macro recognised-climb/descent colours and detailed local-gradient colours. Selecting, or merely occupying, a recognised feature there can also drive local-gradient micro-segment colouring and the shared feature/segment detail panels — duplicating analytical detail that is useful before a ride or in Settings but too verbose for the fixed, glanceable active-Riding Profile pane. The rider wants Full/2 km/10 km to answer "what terrain lies ahead?" without a long legend or analytical drill-down; the dedicated Climb presentation remains the place for local-gradient detail while riding.
-    - Separate visual defect, recorded without a diagnosed cause: the shared `Clear selection` button's lower 1 px border appears trimmed or incompletely painted on a real device. Current source gives it only the generic global `button {}` rule in `src/index.css` (no dedicated class); the supplied real-device screenshot does not prove whether this is subpixel rasterisation, stacking, overflow clipping or another paint issue.
-    - Settled information hierarchy to preserve across contexts:
-      - Pre-ride full-route overview and pre-ride selected feature: Profile colouring stays the existing climb-category/full selected-feature presentation; explanatory/detail content stays the existing pre-ride disclosures, selected climb/descent detail charts and analytical facts.
-      - Active Full/2 km/10 km: Profile colouring limited to macro recognised-climb category and recognised-descent colours only, with no colour legend; an explicit recognised-feature tap shows only a compact Riding summary.
-      - Active Climb/current-climb preview: unchanged — local gradient colours, the existing compact `Local gradient colours on this climb` disclosure and current progress/preview information.
-      - Settings: unchanged — remains the complete, always-available category, local-gradient and climb-score reference, independent of any open route.
-    - Active Full/2 km/10 km behaviour:
-      - Remove the combined `Gradient colours` disclosure entirely from active Full, 2 km and 10 km. Do not replace it with another route-wide legend there.
-      - Keep the chart's macro feature colouring unchanged: recognised climbs retain category colours, recognised descents retain their existing blue bands.
-      - Tapping a recognised climb or descent in these views selects and visually emphasises that feature's macro range without replacing it with local-gradient micro bands.
-      - Do not show local-gradient recolouring, a local-gradient disclosure, a `GradientSegmentDetailsPanel`, a second detailed feature chart, maximum/steepest local gradient or climb score in these active views.
-      - A recognised feature merely being the rider's current feature must not automatically open a summary card in Full/2 km/10 km — the summary is an explicit inspection result from a rider tap. The dedicated Climb state continues to handle an actually active climb automatically under its existing (item 80) rules.
-      - Tapping ordinary, unrecognised route geometry must not fabricate a feature summary.
-      - Clearing the explicit selection removes the summary and selection emphasis and returns the chart to its ordinary macro presentation, without changing the selected Full/2 km/10 km window.
-    - Compact selected-feature summary contains only:
-      - a heading: the recognised climb category, or `Recognised descent`;
-      - relative position as the primary spatial fact, using only the existing frozen/reliable presentation distance: `Starts in …` when ahead, `… remaining` when inside it, and an honest passed state if an explicitly selected feature becomes passed before it is cleared;
-      - compact absolute route position as a quieter secondary fact;
-      - length;
-      - elevation gain for a climb or elevation loss for a descent;
-      - average gradient.
-
-      Prefer a compact one- or two-row presentation such as `Starts in 2.4 km · 5.1 km · 373 m ascent · 7.3% average`, wrapping at enlarged text rather than truncating. No new navigation/projection logic: relative wording must use the existing frozen/reliable presentation distance and existing feature boundaries.
-
-    - Retain an explicit, fully named, glove-usable `Clear selection` action — integration into the summary card is fine, but it must not rely solely on re-tapping a chart feature or an unexplained icon. Preserve an effective touch target of at least 44 × 44 px, keyboard focus visibility and correct accessible naming.
-    - `Clear selection` border correction:
-      - investigate the incomplete lower-border paint in a real browser before choosing a CSS fix;
-      - correct it in every context that renders the shared action, including the pre-ride selected-climb/descent panel (`RouteFeatureDetailsPanel`) and the new compact active summary;
-      - ensure every border edge and the full focus indication remain visibly intact at ordinary and enlarged text, light/dark system appearance if supported, iPhone portrait and short landscape, and Chromium-emulated Android;
-      - do not add arbitrary bottom margin, thicken all global button borders, or change the global `button {}` rule in `src/index.css` unless evidence proves the defect is genuinely global;
-      - preserve the enclosing card's border, radius, padding and scroll behaviour unless the diagnosed cause requires the smallest targeted adjustment.
-    - Strict preservation boundaries — do not change:
-      - pre-ride selected-climb or selected-descent behaviour, including their detailed charts, local-gradient disclosures and full analytical facts;
-      - Planning's feature selection or legends;
-      - Settings' `Elevation and climbs` reference content;
-      - active Climb/current-climb-preview colouring, compact disclosure, progress metrics, automatic entry, dismissal or return-to-Profile behaviour;
-      - climb/descent recognition, category scoring, local-gradient classification, route-feature boundaries, elevation calculations, GPS matching, window selection or the fixed four-slot Profile selector from item 80.
-      - Do not merge the pre-ride and active summary components if a small explicit presentation variant or wrapper preserves clearer semantics and lower regression risk.
-      - Keep the fixed active Profile pane non-scrolling at ordinary phone portrait sizes; its existing bounded internal-scroll fallback may remain for enlarged text or genuinely short landscape viewports.
-    - Required future implementation evidence — focused deterministic tests proving at least:
-      - active Full, 2 km and 10 km show no combined `Gradient colours` disclosure;
-      - their charts retain macro climb/descent colouring before and after selection;
-      - selecting a recognised climb or descent keeps macro colouring, adds selection emphasis and shows the compact permitted fact set only;
-      - no local-gradient band overlay/disclosure, segment detail, extra feature chart, maximum local gradient or climb score appears in those active views;
-      - merely entering a recognised feature does not auto-open the Full/2 km/10 km summary;
-      - relative `Starts in`/inside-remaining/passed wording uses the frozen/reliable presentation distance and behaves correctly through stale/off-route freezing;
-      - clearing selection preserves the selected elevation window and removes only selection state;
-      - active Climb and climb-preview retain item 80's local-gradient presentation unchanged;
-      - pre-ride climb/descent selection and detailed presentation remain unchanged;
-      - the `Clear selection` border and focus indicator are perceptibly complete in a real browser, not merely assigned a computed `border-width` — use paint/occlusion evidence or an equivalently strong visual regression rather than a DOM-presence assertion;
-      - phone portrait, short landscape, enlarged text and the existing Chromium-emulated Android project remain free of horizontal document scrolling, clipped actions and inaccessible controls.
-    - Do not prescribe sleeps, retries, arbitrary timeout increases or broad screenshot churn. The future implementation slice must run its normal complete verification gate and bump the application version only if it makes a genuine production change, following repository precedent.

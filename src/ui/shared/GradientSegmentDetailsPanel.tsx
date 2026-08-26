@@ -3,6 +3,7 @@ import {
   MICRO_DETAIL_LABELS,
   type MicroDetailVisualKey,
 } from "../../navigation/routeFeaturePalette.ts";
+import { ClearSelectionButton } from "./ClearSelectionButton.tsx";
 import { formatDistanceKmValue, formatGradientPercent } from "./routeSummary.ts";
 
 export interface GradientSegmentDetailsPanelProps {
@@ -55,11 +56,7 @@ export function GradientSegmentDetailsPanel({
           {Math.round(endElevationMetres)} m
         </p>
       ) : null}
-      {onClear && (
-        <button type="button" onClick={onClear}>
-          Clear selection
-        </button>
-      )}
+      {onClear && <ClearSelectionButton onClick={onClear} />}
     </section>
   );
 }

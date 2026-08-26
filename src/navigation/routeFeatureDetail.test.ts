@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { analyzeRouteElevationProfile } from "./gradient.ts";
-import { buildFeatureDetailSegments } from "./routeFeatureDetail.ts";
+import {
+  buildFeatureDetailSegments,
+  computeFeatureRelativePosition,
+} from "./routeFeatureDetail.ts";
 import {
   detectRouteFeatures,
   type ClimbFeature,
@@ -151,5 +154,59 @@ describe("buildFeatureDetailSegments: defensive cases", () => {
       category: "category-4",
     };
     expect(buildFeatureDetailSegments(climb, [])).toEqual([]);
+  });
+});
+
+describe("computeFeatureRelativePosition", () => {
+  const climb: ClimbFeature = {
+    id: "climb-0",
+    kind: "climb",
+    startDistanceMetres: 1000,
+    endDistanceMetres: 2000,
+    lengthMetres: 1000,
+    elevationGainMetres: 60,
+    averageGradientPercent: 6,
+    maxGradientPercent: 8,
+    climbScore: 6000,
+    category: "category-4",
+  };
+
+  it("returns null when there is no presentation distance yet", () => {
+    expect(computeFeatureRelativePosition(climb, null)).toBeNull();
+  });
+
+  it("classifies a position well before the feature's start as ahead", () => {
+    expect(computeFeatureRelativePosition(climb, 200)).toEqual({
+      kind: "ahead",
+      distanceUntilStartMetres: 800,
+    });
+  });
+
+  it("classifies a position exactly at the feature's start as within (inclusive)", () => {
+    expect(computeFeatureRelativePosition(climb, 1000)).toEqual({
+      kind: "within",
+      distanceRemainingMetres: 1000,
+    });
+  });
+
+  it("classifies a position mid-feature as within", () => {
+    expect(computeFeatureRelativePosition(climb, 1600)).toEqual({
+      kind: "within",
+      distanceRemainingMetres: 400,
+    });
+  });
+
+  it("classifies a position exactly at the feature's end as within (inclusive)", () => {
+    expect(computeFeatureRelativePosition(climb, 2000)).toEqual({
+      kind: "within",
+      distanceRemainingMetres: 0,
+    });
+  });
+
+  it("classifies a position just past the feature's end as passed", () => {
+    expect(computeFeatureRelativePosition(climb, 2150)).toEqual({
+      kind: "passed",
+      distanceSincePassedMetres: 150,
+    });
   });
 });

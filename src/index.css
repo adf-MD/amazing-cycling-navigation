@@ -2023,6 +2023,31 @@ button:focus-visible {
   outline-offset: -2px;
 }
 
+/* Backlog item 85's shared Clear-selection action, wherever it renders
+ * inside the active immersive Profile pane (the new active-standard
+ * compact summary, RouteFeatureDetailsPanel while Climb/preview is
+ * showing, GradientSegmentDetailsPanel) — the exact same clipping
+ * mechanism as .elevation-window-button:focus-visible directly above: the
+ * global button:focus-visible rule's 4px outward protrusion would clip
+ * against .ride-profile-pane--immersive's own overflow-y: auto for a
+ * button sitting at the pane's own bottom edge. -2px pulls the outline
+ * fully inside the border box, mirroring item 76's own proven fix for
+ * this same ancestor rather than a new, unproven mechanism. This class is
+ * also used unscoped (idle/pre-ride, Planning) via the ordinary global
+ * button:focus-visible rule, which stays untouched — this override only
+ * ever applies inside the immersive pane. A separately reported, not yet
+ * reproduced defect (this button's own bottom 1px border occasionally
+ * appearing trimmed on a real device) could not be reproduced in this
+ * project's available Chromium-based tooling — normal text, iPhone-DPR
+ * (3x) emulation, and 200% enlarged text with genuine pane overflow all
+ * paint every border edge fully intact (see
+ * e2e/ridingSelectedFeatureSummary.spec.ts's border/focus-paint checks).
+ * No further CSS change is made for it without real-device evidence; see
+ * docs/project/current-status.md for the tracked outstanding item. */
+.ride-profile-pane--immersive .clear-selection-button:focus-visible {
+  outline-offset: -2px;
+}
+
 /* The Map/Profile switcher — route Riding's own active branch only; free
  * roam (backlog item 58) has no profile to switch to, so it never renders
  * this element at all, and its own map widens its bottom offset directly
