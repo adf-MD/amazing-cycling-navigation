@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { StyleSpecification } from "maplibre-gl";
 import type { Coordinate, RoutePoint, RouteWarning } from "../domain/types.ts";
@@ -460,6 +460,34 @@ export interface RouteFeatureOverlay {
   onSelectRouteFeature: (id: string) => void;
 }
 
+/** The three MapView-owned imagery states that are both terminal (never
+ * silently self-heals from waiting alone, unlike the transient "imagery
+ * delayed" banner) and retryable (each currently pairs with a "Retry map
+ * imagery" action): loadState==="load-error" (fatal — even the local
+ * fallback failed), tileErrorMessage!==null (a post-load tile failure),
+ * and usingFallbackStyle&&ready (showing the plain local fallback).
+ * Reported via onImageryStatusChange only while that prop is supplied —
+ * null means none of the three is active right now. The two transient,
+ * non-retryable states (initial loading and "imagery delayed") are
+ * deliberately never represented here; they always stay in MapView's own
+ * in-map overlay regardless of onImageryStatusChange. Carries no message
+ * text, error object, URL or provider detail — the receiving UI owns its
+ * own copy per kind (see mapImageryRecoveryPresentation.ts), so a raw
+ * MapLibre error can never leak into a rider-facing component. */
+export interface MapImageryRecoveryStatus {
+  kind: "load-error" | "tile-error" | "fallback";
+}
+
+/** An explicit "retry map imagery" command — mirrors OrientNorthCameraTarget
+ * exactly (requestId-only, deduped by requestId not value): a discrete
+ * explicit rider action with no automatic/value-carrying variant, so there
+ * is no reason for CameraTarget's hybrid value-or-requestId dedup. Invokes
+ * the exact same handleRetryImagery() the in-map button already calls —
+ * identical diagnostic recording, identical retryToken bump. */
+export interface ImageryRetryCommand {
+  requestId: string;
+}
+
 export interface MapViewProps {
   points: readonly RoutePoint[];
   /** Distance already ridden; the route line before this point is shown
@@ -560,6 +588,24 @@ export interface MapViewProps {
    * (the default) leaves both the macro and selected-feature sources
    * empty. See RouteFeatureOverlay's own doc comment. */
   routeFeatureOverlay?: RouteFeatureOverlay;
+  /** Backlog item 83: when supplied, MapView suppresses its own in-overlay
+   * terminal/retryable states (map-load-error / tiles-unavailable-banner /
+   * map-fallback-banner) and reports them here instead, so an active
+   * Riding/free-roam status card can render the same explanation and Retry
+   * action in its own chrome rather than over the route. The transient,
+   * non-retryable states (initial "Loading map…" and "imagery delayed")
+   * are unaffected and always keep rendering in-map, external or not.
+   * Omitted (the default) preserves every existing caller's behaviour
+   * unchanged, including Planning and Riding's own pre-ride/no-status-card
+   * render — a deliberate per-render opt-in, not a per-screen constant. */
+  onImageryStatusChange?: (status: MapImageryRecoveryStatus | null) => void;
+  /** Backlog item 83: see ImageryRetryCommand. Deliberately NOT gated on
+   * styleStructurallyReady inside MapView (unlike every other *Target prop
+   * above) — the two states this exists to retry (a terminal load-error,
+   * and a tile-error/fallback that can arrive before a retried style ever
+   * becomes ready again) are both active precisely when
+   * styleStructurallyReady is false. */
+  imageryRetryCommand?: ImageryRetryCommand | null;
 }
 
 /**
@@ -593,6 +639,8 @@ export function MapView({
   warningOverlay,
   gradientOverlay,
   routeFeatureOverlay,
+  onImageryStatusChange,
+  imageryRetryCommand = null,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreLike | null>(null);
@@ -607,6 +655,10 @@ export function MapView({
   useEffect(() => {
     onCameraSettledRef.current = onCameraSettled;
   }, [onCameraSettled]);
+  const onImageryStatusChangeRef = useRef(onImageryStatusChange);
+  useEffect(() => {
+    onImageryStatusChangeRef.current = onImageryStatusChange;
+  }, [onImageryStatusChange]);
   // Diagnostic-only (see followAnchorPixel below, backlog item 65) — the
   // onCameraSettled handler reads this rather than closing over
   // currentPosition directly, since it's registered once inside the
@@ -806,6 +858,19 @@ export function MapView({
   // retry), never fired for an ordinary trouble-free load.
   const hadTroubleRef = useRef(false);
   const ready = loadState === "ready";
+  // Backlog item 83: one source of truth for "which terminal, retryable
+  // imagery state is active right now", reused by both the JSX suppression
+  // below and the external reporting effect further down, so the two can
+  // never disagree about mutual exclusivity.
+  const currentImageryStatusKind: MapImageryRecoveryStatus["kind"] | "none" =
+    loadState === "load-error"
+      ? "load-error"
+      : tileErrorMessage !== null
+        ? "tile-error"
+        : usingFallbackStyle && ready
+          ? "fallback"
+          : "none";
+  const hasExternalImageryPresentation = onImageryStatusChange !== undefined;
 
   useEffect(() => {
     const containerElement = containerRef.current;
@@ -1410,7 +1475,13 @@ export function MapView({
   // non-app-owned source, and the fallback-episode teardown machinery
   // must exist regardless — a second mechanism would be strictly more
   // total complexity for a narrow responsiveness win.
-  function handleRetryImagery(): void {
+  // A stable reference (useCallback, keyed only on tileSource.id — the one
+  // thing its body actually reads besides the always-stable setRetryToken)
+  // so the imageryRetryCommand effect below can safely include it in its
+  // own dependency array, matching react-hooks/exhaustive-deps, without
+  // re-running on every unrelated render the way a plain function
+  // redeclared each render would force.
+  const handleRetryImagery = useCallback((): void => {
     recordMapAttempt({
       timestampIso: new Date().toISOString(),
       tileProviderId: tileSource.id,
@@ -1419,7 +1490,7 @@ export function MapView({
       justResumed: false,
     });
     setRetryToken((token) => token + 1);
-  }
+  }, [tileSource.id]);
 
   // At most one automatic retry per episode — independently for the
   // fallback episode (hasAutoRetriedRef) and the lighter tile-error
@@ -1464,6 +1535,49 @@ export function MapView({
       window.removeEventListener("pageshow", handlePageShow);
     };
   }, [usingFallbackStyle, tileErrorMessage, tileSource.id]);
+
+  // Backlog item 83: reports currentImageryStatusKind to an external host
+  // (an active Riding/free-roam status card) whenever it genuinely changes
+  // — never inferred from navigator.onLine, elapsed time, a gesture or a
+  // click, only from the same internal state that already drives the
+  // in-map banners. The dependency array holds only primitives derived
+  // from existing state, never the raw callback reference, so an unrelated
+  // parent rerender (e.g. a GPS-tick-driven currentPosition change) cannot
+  // retrigger this; lastReportedImageryStatusKindRef then makes even a
+  // genuine re-run of the effect idempotent. Resetting the ref to "none"
+  // whenever hasExternalImageryPresentation goes false guarantees that if
+  // it later flips back true while the same trouble is still active, the
+  // effect sees a real change and re-reports the current truth immediately
+  // rather than staying silent because "nothing changed" from MapView's
+  // own bookkeeping.
+  const lastReportedImageryStatusKindRef = useRef<
+    MapImageryRecoveryStatus["kind"] | "none"
+  >("none");
+  useEffect(() => {
+    if (!hasExternalImageryPresentation) {
+      lastReportedImageryStatusKindRef.current = "none";
+      return;
+    }
+    if (lastReportedImageryStatusKindRef.current === currentImageryStatusKind) return;
+    lastReportedImageryStatusKindRef.current = currentImageryStatusKind;
+    onImageryStatusChangeRef.current?.(
+      currentImageryStatusKind === "none" ? null : { kind: currentImageryStatusKind },
+    );
+  }, [currentImageryStatusKind, hasExternalImageryPresentation]);
+
+  // Backlog item 83: an external host's "Retry map imagery" press, deduped
+  // by requestId exactly like OrientNorthCameraTarget — calls the exact
+  // same handleRetryImagery() the in-map button already calls, never a
+  // second/parallel retry mechanism.
+  const lastAppliedImageryRetryRequestIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!imageryRetryCommand) return;
+    if (lastAppliedImageryRetryRequestIdRef.current === imageryRetryCommand.requestId) {
+      return;
+    }
+    lastAppliedImageryRetryRequestIdRef.current = imageryRetryCommand.requestId;
+    handleRetryImagery();
+  }, [imageryRetryCommand, handleRetryImagery]);
 
   useEffect(() => {
     if (!styleStructurallyReady) return;
@@ -2008,7 +2122,20 @@ export function MapView({
             still shown.
           </div>
         ) : null}
-        {loadState === "load-error" ? (
+        {/* Backlog item 83: each of these three terminal, retryable states
+            gains a "&& !hasExternalImageryPresentation" suppression clause
+            whenever an external host (an active Riding/free-roam status
+            card) has taken over presenting it via onImageryStatusChange —
+            everything else about each condition is untouched, deliberately
+            NOT derived from the single-valued currentImageryStatusKind
+            above (which exists only for the external reporting effect):
+            a synthetic post-load tile error can, in principle, still be
+            reported while usingFallbackStyle is also true (see the
+            "does not create a retry loop from repeated errors on the
+            fallback map itself" test above), and these three conditions
+            must keep rendering independently exactly as before to avoid
+            silently hiding a banner that used to show. */}
+        {loadState === "load-error" && !hasExternalImageryPresentation ? (
           <div
             role="alert"
             data-testid="map-load-error"
@@ -2025,7 +2152,7 @@ export function MapView({
             </button>
           </div>
         ) : null}
-        {tileErrorMessage !== null ? (
+        {tileErrorMessage !== null && !hasExternalImageryPresentation ? (
           <div
             role="status"
             data-testid="tiles-unavailable-banner"
@@ -2042,7 +2169,7 @@ export function MapView({
             </button>
           </div>
         ) : null}
-        {usingFallbackStyle && ready ? (
+        {usingFallbackStyle && ready && !hasExternalImageryPresentation ? (
           <div
             role="status"
             data-testid="map-fallback-banner"

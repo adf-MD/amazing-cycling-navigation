@@ -784,6 +784,13 @@ test("the local fallback map style still shows the position marker and camera co
   await expect(page.getByRole("heading", { level: 1, name: "Free roam" })).toBeVisible();
 
   await expect(page.getByText("Retry map imagery")).toBeVisible({ timeout: 20_000 });
+  // Backlog item 83: relocated into the active status card, not left
+  // covering the map's own route-viewing area.
+  const fallbackBanner = page.getByTestId("map-fallback-banner");
+  await expect(fallbackBanner).toBeVisible();
+  expect(
+    await fallbackBanner.evaluate((el) => el.closest(".ride-status-card") !== null),
+  ).toBe(true);
   await expect(page.locator('[data-testid="map-container"] canvas')).toBeVisible();
   await expect(page.getByRole("button", { name: "Follow my location" })).toBeVisible();
   await expect(

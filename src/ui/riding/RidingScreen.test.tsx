@@ -181,6 +181,10 @@ function buildStubMapFactory(): {
    * doesn't care about the distinction. */
   triggerStyleLoaded: () => void;
   triggerTileError: () => void;
+  /** Backlog item 83: simulates the external basemap's own source
+   * reporting loaded — the genuine recovery signal that clears
+   * tileErrorMessage in production (see MapView.tsx's onSourceData). */
+  triggerSourceData: (info: { sourceId: string; isSourceLoaded: boolean }) => void;
   triggerUserCameraInteraction: () => void;
   triggerCameraSettled: (camera: {
     coordinate: Coordinate;
@@ -197,6 +201,8 @@ function buildStubMapFactory(): {
   let loadListener: (() => void) | undefined;
   let styleLoadedListener: (() => void) | undefined;
   let errorListener: (() => void) | undefined;
+  let sourceDataListener:
+    ((info: { sourceId: string; isSourceLoaded: boolean }) => void) | undefined;
   let userCameraInteractionListener: (() => void) | undefined;
   let cameraSettledListener:
     | ((camera: {
@@ -224,7 +230,9 @@ function buildStubMapFactory(): {
           listener({ message: "tile fetch failed", category: "style-request-or-parse" });
         };
       },
-      onSourceData: () => undefined,
+      onSourceData: (listener) => {
+        sourceDataListener = listener;
+      },
       addGeoJsonSource: () => undefined,
       setGeoJsonSourceData: setGeoJsonSourceDataSpy,
       hasSource: () => false,
@@ -268,6 +276,7 @@ function buildStubMapFactory(): {
     },
     triggerStyleLoaded: () => styleLoadedListener?.(),
     triggerTileError: () => errorListener?.(),
+    triggerSourceData: (info) => sourceDataListener?.(info),
     triggerUserCameraInteraction: () => userCameraInteractionListener?.(),
     triggerCameraSettled: (camera) => cameraSettledListener?.(camera),
     setCameraSpy,
@@ -4728,7 +4737,12 @@ describe("RidingScreen", () => {
       map.triggerLoad();
       map.triggerTileError();
 
-      expect(await screen.findByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+      const banner = await screen.findByTestId("tiles-unavailable-banner");
+      expect(banner).toBeInTheDocument();
+      // Backlog item 83: relocated into the active status card, not left
+      // covering the map's own route-viewing area.
+      expect(banner.closest(".ride-status-card")).not.toBeNull();
+      expect(banner.closest(".map-status-overlay")).toBeNull();
       // The rest of the ride UI is untouched by the map's own tile failure.
       expect(screen.getByText("On route")).toBeInTheDocument();
       expect(screen.getByText(/km ·/)).toBeInTheDocument();
@@ -4737,6 +4751,104 @@ describe("RidingScreen", () => {
       expect(
         screen.getByRole("group", { name: "Elevation profile view" }),
       ).toBeInTheDocument();
+    });
+
+    it("wires the status card's Retry action through to a genuine map retry, clearing the row once the fresh attempt succeeds", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(3),
+        accuracyMetres: 6,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await screen.findByText("On route");
+
+      map.triggerLoad();
+      map.triggerTileError();
+      const banner = await screen.findByTestId("tiles-unavailable-banner");
+      const retryButton = within(banner).getByRole("button", {
+        name: "Retry map imagery",
+      });
+
+      await user.click(retryButton);
+
+      // The retry recreates the map — the fresh attach's own transient
+      // loading state appears in-map (never suppressed) while the old
+      // terminal row clears, exactly like the map-owned banner already
+      // does on a manual retry.
+      expect(await screen.findByTestId("map-loading")).toBeInTheDocument();
+      expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+
+      // The fresh attempt succeeds cleanly, with no further pan/zoom or
+      // other action needed to keep the row clear.
+      map.triggerLoad();
+      expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+    });
+
+    it("clears the relocated imagery-recovery row automatically on genuine imagery recovery, via the same signal that clears the map-owned banner", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(3),
+        accuracyMetres: 6,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await screen.findByText("On route");
+
+      map.triggerLoad();
+      map.triggerTileError();
+      expect(await screen.findByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+
+      // No press, no pan/zoom — only the external basemap's own source
+      // reporting loaded again, exactly like MapView's own in-map banner
+      // already reacts to.
+      map.triggerSourceData({ sourceId: "openmaptiles", isSourceLoaded: true });
+      await waitFor(() => {
+        expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+      });
+    });
+
+    it("keeps the tiles-unavailable banner inside the map's own overlay before Start riding, when there is no status card to host it", async () => {
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+
+      map.triggerLoad();
+      map.triggerTileError();
+
+      const banner = await screen.findByTestId("tiles-unavailable-banner");
+      expect(banner.closest(".map-status-overlay")).not.toBeNull();
+      expect(banner.closest(".ride-status-card")).toBeNull();
     });
   });
 

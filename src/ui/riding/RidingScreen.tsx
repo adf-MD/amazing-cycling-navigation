@@ -6,11 +6,17 @@ import {
 import { createWaypointId } from "../../domain/id.ts";
 import { hasTrustedManoeuvres } from "../../domain/manoeuvreTrust.ts";
 import type { PlannedRoute, Waypoint } from "../../domain/types.ts";
-import { MapView, type RouteFeatureOverlay } from "../../map/MapView.tsx";
+import {
+  MapView,
+  type ImageryRetryCommand,
+  type MapImageryRecoveryStatus,
+  type RouteFeatureOverlay,
+} from "../../map/MapView.tsx";
 import type { MapFactory } from "../../map/mapAdapter.ts";
 import type { GeolocationError, GeolocationSource } from "../../platform/geolocation.ts";
 import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
 import { logError } from "../../platform/errorLog.ts";
+import { generateId } from "../../platform/idGenerator.ts";
 import { useOnlineStatus } from "../../platform/onlineStatus.ts";
 import { isWakeLockSupported, type WakeLockSource } from "../../platform/wakeLock.ts";
 import {
@@ -288,6 +294,33 @@ export function RidingScreen({
   // it stays unsupported-or-idle-suppressed independently of whether the
   // card itself has status content to show.
   const showStatusCard = nav.geolocationStatus !== "idle" || Boolean(nav.currentFix);
+
+  // Backlog item 83: the status card's own presentation of MapView's
+  // terminal, retryable imagery states — gated on showStatusCard exactly
+  // like the card itself, so MapView falls back to its own in-map
+  // presentation (e.g. pre-ride) whenever the card isn't showing. Cleared
+  // whenever showStatusCard goes false, using React's own documented
+  // "adjusting state when a prop changes" pattern (a conditional setState
+  // call during render, comparing against a mirrored previous value) —
+  // not an effect, which this repo's react-hooks/set-state-in-effect lint
+  // rule flags for any non-ref-derived condition. Without this, a rider
+  // who ends a ride mid-tile-failure and starts a new one later could see
+  // a stale row, since MapView has no reason to re-report unchanged
+  // internal state to a callback that only just started listening again
+  // after the underlying trouble had already cleared during the gap.
+  const [imageryStatus, setImageryStatus] = useState<MapImageryRecoveryStatus | null>(
+    null,
+  );
+  const [imageryRetryCommand, setImageryRetryCommand] =
+    useState<ImageryRetryCommand | null>(null);
+  const [wasStatusCardShown, setWasStatusCardShown] = useState(showStatusCard);
+  if (showStatusCard !== wasStatusCardShown) {
+    setWasStatusCardShown(showStatusCard);
+    if (!showStatusCard) {
+      setImageryStatus(null);
+      setImageryRetryCommand(null);
+    }
+  }
 
   // Computed once per loaded route (route's identity is stable for the
   // component's lifetime; recomputing per GPS fix would be wasted work for
@@ -1652,11 +1685,13 @@ export function RidingScreen({
       {/* The single compact status card (backlog item 75, superseding item
        * 68's still-separate wake-lock/status-strip siblings): a two-column
        * main region (item 82 follow-up, 2026-08-26) — a left text column
-       * (route/GPS status, remaining distance/ascent, GPS freshness) beside
-       * the wake-lock control on the right — followed by a full-width
-       * compact geolocation-error row with its own inline retry, and a
-       * full-width compact offline indicator — all inside one bordered
-       * card, never an empty one. */}
+       * (route/GPS status, remaining distance/ascent, GPS freshness and a
+       * compact connectivity indicator, backlog item 83) beside the
+       * wake-lock control on the right — followed by a full-width compact
+       * geolocation-error row with its own inline retry, and (item 83) a
+       * full-width compact map-imagery recovery row relocated out of
+       * MapView's own in-map overlay — all inside one bordered card, never
+       * an empty one. */}
       {showStatusCard ? (
         <RidingStatusCard
           liveStatus={
@@ -1678,6 +1713,10 @@ export function RidingScreen({
           }
           onRetryGeolocation={handleStart}
           online={online}
+          imageryRecoveryStatus={imageryStatus}
+          onRetryImagery={() => {
+            setImageryRetryCommand({ requestId: generateId() });
+          }}
           wakeLock={
             isWakeLockSupported() && nav.geolocationStatus !== "idle"
               ? {
@@ -1786,6 +1825,8 @@ export function RidingScreen({
                 settled.hasAppliedCameraCommand,
               );
             }}
+            onImageryStatusChange={showStatusCard ? setImageryStatus : undefined}
+            imageryRetryCommand={showStatusCard ? imageryRetryCommand : undefined}
           />
           {nav.geolocationStatus === "watching" ? (
             <div className="ride-map-zoom-controls">

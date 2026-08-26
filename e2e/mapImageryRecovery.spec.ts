@@ -268,6 +268,15 @@ test("route Riding: a compact, non-technical tiles-unavailable banner never bloc
   const bannerText = await banner.innerText();
   expect(bannerText).not.toMatch(/AJAXError|net::|http|https:\/\//i);
 
+  // Backlog item 83: relocated into the active status card, not left
+  // covering the map's own route-viewing area.
+  expect(await banner.evaluate((el) => el.closest(".ride-status-card") !== null)).toBe(
+    true,
+  );
+  expect(await banner.evaluate((el) => el.closest(".map-status-overlay") !== null)).toBe(
+    false,
+  );
+
   // The switcher and Profile's own elevation controls stay fully usable
   // while the banner is visible — a real click-through proof, not just a
   // bounding-box check.
@@ -550,6 +559,14 @@ test("free roam: tile-error retry preserves the camera and issues no additional 
   await triggerFreshTileFailure(tiles, () => zoomIn.click());
   const banner = page.getByTestId("tiles-unavailable-banner");
   await expect(banner).toBeVisible({ timeout: 15_000 });
+  // Backlog item 83: relocated into the active status card, not left
+  // covering the map's own route-viewing area.
+  expect(await banner.evaluate((el) => el.closest(".ride-status-card") !== null)).toBe(
+    true,
+  );
+  expect(await banner.evaluate((el) => el.closest(".map-status-overlay") !== null)).toBe(
+    false,
+  );
   const pannedCamera = await readCameraAttributesAtomically(mapContainer);
 
   // Clicks Retry while genuinely still failing — see the Riding
@@ -605,6 +622,12 @@ test("Planning: a manually panned camera survives a tile-error retry, and the st
   await triggerFreshTileFailure(tiles, () => zoomIn.click());
   const banner = page.getByTestId("tiles-unavailable-banner");
   await expect(banner).toBeVisible({ timeout: 15_000 });
+  // Backlog item 83: Planning has no active status card and never passes
+  // onImageryStatusChange, so it must keep the default map-contained
+  // presentation — the item 83 relocation must not remove or duplicate it.
+  expect(await banner.evaluate((el) => el.closest(".map-status-overlay") !== null)).toBe(
+    true,
+  );
 
   // The overlay never intercepts clicks on any of Planning's own map
   // controls while it's visible. Zoom out is only checked for enabled
@@ -734,7 +757,14 @@ test("does not create a retry loop: repeated failures and repeated online events
   expect(tiles.styleRequestCount()).toBe(3);
 });
 
-test("the map-status overlay never visually overlaps the active-climb cue when both are shown simultaneously", async ({
+// Backlog item 83's own direct regression test: field evidence showed the
+// map-owned overlay and Retry button could still cover the upcoming route,
+// including while an active-climb cue was present. Now that the terminal,
+// retryable banner is relocated into the active status card, this proves
+// the stronger claim that it never overlaps the map container at all — not
+// merely that it avoids the climb cue's own box, which the relocation
+// makes true by construction but is still worth asserting explicitly.
+test("the relocated map-imagery recovery row never overlaps the map container or the active-climb cue", async ({
   page,
   context,
 }) => {
@@ -769,11 +799,23 @@ test("the map-status overlay never visually overlaps the active-climb cue when b
   await triggerFreshTileFailure(tiles, () => zoomIn.click());
   const banner = page.getByTestId("tiles-unavailable-banner");
   await expect(banner).toBeVisible({ timeout: 15_000 });
+  expect(await banner.evaluate((el) => el.closest(".ride-status-card") !== null)).toBe(
+    true,
+  );
+  expect(await banner.evaluate((el) => el.closest(".map-status-overlay") !== null)).toBe(
+    false,
+  );
+
+  const bannerBox = await banner.boundingBox();
+  const mapBox = await mapContainer.boundingBox();
+  expect(bannerBox).not.toBeNull();
+  expect(mapBox).not.toBeNull();
+  if (bannerBox && mapBox) {
+    expect(intersects(mapBox, bannerBox)).toBe(false);
+  }
 
   const climbCueBox = await climbCue.locator("..").boundingBox();
-  const bannerBox = await banner.boundingBox();
   expect(climbCueBox).not.toBeNull();
-  expect(bannerBox).not.toBeNull();
   if (climbCueBox && bannerBox) {
     expect(intersects(climbCueBox, bannerBox)).toBe(false);
   }
@@ -806,12 +848,20 @@ test.describe("390px phone viewport", () => {
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(390 + 1);
 
+    // Backlog item 83: the terminal, retryable banner now lives inside the
+    // status card, not the map's own overlay — it must never overlap the
+    // map container, and must instead be contained within the card.
     const mapBox = await mapContainer.boundingBox();
     const bannerBox = await banner.boundingBox();
+    const cardBox = await page.locator(".ride-status-card").boundingBox();
     expect(mapBox).not.toBeNull();
     expect(bannerBox).not.toBeNull();
+    expect(cardBox).not.toBeNull();
     if (mapBox && bannerBox) {
-      expect(isFullyWithin(bannerBox, mapBox)).toBe(true);
+      expect(intersects(mapBox, bannerBox)).toBe(false);
+    }
+    if (cardBox && bannerBox) {
+      expect(isFullyWithin(bannerBox, cardBox)).toBe(true);
     }
 
     const retryButton = banner.getByTestId("retry-map-imagery-button");
@@ -845,7 +895,12 @@ test("being offline alone, with no genuine tile/style failure, never shows a map
 
   await context.setOffline(true);
   try {
-    await expect(page.getByText("Offline")).toBeVisible();
+    // Backlog item 83: the compact connectivity indicator states the
+    // browser-level fact plainly — never an imagery-failure claim, since
+    // no genuine tile/style failure has occurred.
+    const connectivityIndicator = page.locator(".ride-status-card-connectivity");
+    await expect(connectivityIndicator).toBeVisible();
+    await expect(connectivityIndicator).toHaveText("Offline");
     await expect(page.getByTestId("tiles-unavailable-banner")).not.toBeAttached();
     await expect(page.getByTestId("map-fallback-banner")).not.toBeAttached();
     await expect(page.getByTestId("map-load-error")).not.toBeAttached();

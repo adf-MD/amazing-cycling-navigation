@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-Item 83 is the next selected implementation item, followed by item 84. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
+Item 84 is the next selected implementation item. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Each entry reproduces its original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this).
 
@@ -119,24 +119,6 @@ _Category: Platform compatibility_
       4. **Conflict and recovery coverage:** an inbound share must respect the existing unfinished route/free-roam conflict guard (item 42's fail-closed `checkFreeRoamConflict`-style pattern) and must never silently replace an active session or Planning draft; it must work after a fresh install/relaunch. Add Playwright coverage where meaningful, then require real Android Chrome acceptance — Chromium/Playwright emulation cannot prove real OS share-sheet registration, matching this project's existing, repeatedly-stated distinction between the `android-chrome` Playwright project and genuine physical-device verification (item 25).
     - If step 1 finds only an `Open with` path and no Share/Send path, document that conclusively and record that no pure static-PWA solution is currently available for this exact flow — do not propose a native wrapper, Trusted Web Activity, APK, or other Android-specific packaging as a workaround; that would be a major architecture departure and is explicitly not approved by this backlog item.
     - Requires the "## Explicit non-goals" edit recorded above (item 61's own cross-reference) — that section stays in the root `CLAUDE.md` and already carries this cross-reference.
-
----
-
-<a id="item-83"></a>
-
-## Item 83 — Make offline and map-imagery recovery unobstructive
-
-_Category: Map imagery and tile reliability_
-
-83. **Make offline and map-imagery recovery unobstructive**
-    - A presentation/composition slice around the already-shipped item 67 recovery state machine (`.map-status-overlay`, retry/episode tracking, camera preservation across recreation) and item 75's compact status card. Not authorised to rewrite networking or camera recovery — see item 81 for the separate camera-reliability investigation.
-    - Field evidence: the map-imagery-unavailable overlay and `Retry map imagery` button (item 67, shrunk presentation-only by item 75) can still cover the upcoming route, including while an active-climb cue is present. The separate `Offline` text row in the status card (item 75's `.ride-status-card-offline`) consumes unnecessary vertical space.
-    - Required outcome: route, position, progress, elevation, controls and attribution remain useful without tiles and must stay visible and reachable.
-    - Represent connectivity compactly within the existing status-card main region (item 75's `.ride-status-card-top-row`, renamed `.ride-status-card-main` by the item 82 follow-up on 2026-08-26, which also introduced its `.ride-status-card-text` left column) using a recognisable online/offline status symbol with an accessible textual name. Do not rely on colour alone and do not add another full-width status row.
-    - Move the imagery-failure explanation and retry action out of the central route-viewing area. Choose the smallest existing component boundary that keeps a concise explanation and a glove-usable retry target reachable without overlaying the route, GPS marker, climb cue, map controls, or Map/Profile switcher. Prefer integrating a compact recovery action with existing status chrome over adding another large card.
-    - Preserve the distinction between browser connectivity and actual tile/style failure: being offline alone must not claim already-rendered imagery is unavailable, while a genuine imagery failure must remain explicit and retryable.
-    - Preserve item 67's retry semantics, fallback map, automatic recovery and error classification in full.
-    - On successful imagery recovery, the recovery affordance must clear automatically without requiring the rider to pan or zoom merely to provoke a new tile request.
 
 ---
 

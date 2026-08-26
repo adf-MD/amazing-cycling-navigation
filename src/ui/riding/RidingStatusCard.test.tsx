@@ -27,6 +27,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     const status = screen.getByText("On route");
@@ -41,6 +43,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     const status = screen.getByText("Possibly off route");
@@ -55,6 +59,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     expect(screen.getByRole("alert")).toHaveTextContent("Off route");
@@ -70,6 +76,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     expect(screen.getByText("61.5 km · 993 m ascent")).toBeInTheDocument();
@@ -85,6 +93,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     expect(screen.queryByText(/km ·/)).toBeNull();
@@ -100,6 +110,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     expect(screen.getByText("61.5 km · ascent unavailable")).toBeInTheDocument();
@@ -118,6 +130,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     expect(screen.getByText("0.5 km · 0 m ascent")).toBeInTheDocument();
@@ -133,6 +147,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     expect(screen.getByText("GPS ±7 m · Live")).toBeInTheDocument();
@@ -147,6 +163,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     expect(screen.getByText("GPS ±7 m · Live")).toBeInTheDocument();
@@ -160,6 +178,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     expect(screen.getByText("GPS ±7 m · Stale (45s ago)")).toBeInTheDocument();
@@ -172,6 +192,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     expect(screen.getByText(/2 min ago/)).toBeInTheDocument();
@@ -184,6 +206,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     expect(screen.getByText("GPS ±7 m · Stale")).toBeInTheDocument();
@@ -197,6 +221,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
         wakeLock={{
           desired: false,
           onToggleDesired: vi.fn(),
@@ -216,6 +242,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     expect(screen.queryByLabelText("Screen on")).toBeNull();
@@ -228,6 +256,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     const textColumn = screen.getByText("On route").closest(".ride-status-card-text");
@@ -240,22 +270,40 @@ describe("RidingStatusCard", () => {
     );
   });
 
-  it("keeps the error row and offline row outside the main region, as direct children of the card", () => {
+  it("keeps the error row outside the main region, as a direct child of the card", () => {
     const { container } = render(
       <RidingStatusCard
         liveStatus={buildLiveStatus({ offRouteLevel: "on-route" })}
         geolocationErrorMessage="Your location is currently unavailable."
         onRetryGeolocation={noop}
         online={false}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     expect(container.querySelector(".ride-status-card-main")).not.toBeNull();
     const errorRow = screen.getByRole("alert");
     expect(errorRow.closest(".ride-status-card-main")).toBeNull();
     expect(errorRow.parentElement).toHaveClass("ride-status-card");
+  });
+
+  // Backlog item 83: unlike the old full-width .ride-status-card-offline
+  // row, the compact connectivity indicator lives inside the main region's
+  // text column, beside the status label — never a new full-width row.
+  it("places the connectivity indicator inside the main region's text column, not as a new full-width row", () => {
+    render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus({ offRouteLevel: "on-route" })}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={false}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
+      />,
+    );
     const offline = screen.getByText("Offline");
-    expect(offline.closest(".ride-status-card-main")).toBeNull();
-    expect(offline.parentElement).toHaveClass("ride-status-card");
+    expect(offline.closest(".ride-status-card-text")).not.toBeNull();
+    expect(offline.closest(".ride-status-card-main")).not.toBeNull();
   });
 
   it("shows a waiting-for-fix label with no remaining/GPS rows when there is no fix and no error", () => {
@@ -265,6 +313,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     const status = screen.getByText("Waiting for a GPS fix…");
@@ -281,6 +331,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage="Location permission was denied."
         onRetryGeolocation={onRetry}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     expect(screen.getByText("GPS error")).toBeInTheDocument();
@@ -298,6 +350,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage="Getting your location timed out."
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     expect(screen.getByText("On route")).toBeInTheDocument();
@@ -307,32 +361,156 @@ describe("RidingStatusCard", () => {
     expect(errorRows).toHaveLength(1);
   });
 
-  it("shows a compact Offline row alongside otherwise-healthy GPS status", () => {
+  it("shows a compact connectivity indicator with an accessible Online/Offline name, alongside otherwise-healthy GPS status", () => {
     render(
       <RidingStatusCard
         liveStatus={buildLiveStatus()}
         geolocationErrorMessage={null}
         onRetryGeolocation={noop}
         online={false}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     const offline = screen.getByText("Offline");
     expect(offline).toHaveAttribute("role", "status");
+    expect(offline.querySelector("svg")).not.toBeNull();
   });
 
-  it("shows both the offline row and the geolocation-error row together without duplicating either", () => {
+  it("shows the Online connectivity indicator, not Offline, when online is true", () => {
+    render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
+      />,
+    );
+    expect(screen.getByText("Online")).toBeInTheDocument();
+    expect(screen.queryByText("Offline")).toBeNull();
+  });
+
+  it("shows both the connectivity indicator and the geolocation-error row together without duplicating either", () => {
     render(
       <RidingStatusCard
         liveStatus={buildLiveStatus({ isStale: true, fixAgeMs: 30_000 })}
         geolocationErrorMessage="Your location is currently unavailable."
         onRetryGeolocation={noop}
         online={false}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     expect(screen.getByText("Offline")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Your location is currently unavailable.",
     );
+  });
+
+  it("renders no imagery-recovery row when imageryRecoveryStatus is null", () => {
+    render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
+      />,
+    );
+    expect(screen.queryByText("Retry map imagery")).toBeNull();
+  });
+
+  it("shows the tile-error imagery row with role=status and the expected non-technical message", () => {
+    render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "tile-error" }}
+        onRetryImagery={noop}
+      />,
+    );
+    const row = screen.getByTestId("tiles-unavailable-banner");
+    expect(row).toHaveAttribute("role", "status");
+    expect(row).toHaveTextContent(
+      "Map imagery unavailable. The route and your position are still shown.",
+    );
+    expect(row).not.toHaveClass("ride-status-card-imagery-row--alert");
+  });
+
+  it("shows the fallback imagery row with role=status and the expected message", () => {
+    render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "fallback" }}
+        onRetryImagery={noop}
+      />,
+    );
+    const row = screen.getByTestId("map-fallback-banner");
+    expect(row).toHaveAttribute("role", "status");
+    expect(row).toHaveTextContent(
+      "Map imagery unavailable — showing your route on a plain background.",
+    );
+  });
+
+  it("shows the terminal load-error imagery row with role=alert and the danger styling class", () => {
+    render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "load-error" }}
+        onRetryImagery={noop}
+      />,
+    );
+    const row = screen.getByTestId("map-load-error");
+    expect(row).toHaveAttribute("role", "alert");
+    expect(row).toHaveClass("ride-status-card-imagery-row--alert");
+    expect(row).toHaveTextContent(
+      "Map failed to load. Check your connection and try again.",
+    );
+  });
+
+  it("calls onRetryImagery exactly once when the imagery row's Retry button is pressed", () => {
+    const onRetryImagery = vi.fn();
+    render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "tile-error" }}
+        onRetryImagery={onRetryImagery}
+      />,
+    );
+    screen.getByRole("button", { name: "Retry map imagery" }).click();
+    expect(onRetryImagery).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the connectivity indicator, the geolocation-error row and the imagery-recovery row together without duplicating any of them", () => {
+    render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus({ isStale: true, fixAgeMs: 30_000 })}
+        geolocationErrorMessage="Your location is currently unavailable."
+        onRetryGeolocation={noop}
+        online={false}
+        imageryRecoveryStatus={{ kind: "tile-error" }}
+        onRetryImagery={noop}
+      />,
+    );
+    expect(screen.getByText("Offline")).toBeInTheDocument();
+    expect(screen.getAllByText("Your location is currently unavailable.")).toHaveLength(
+      1,
+    );
+    expect(screen.getAllByTestId("tiles-unavailable-banner")).toHaveLength(1);
   });
 
   it("shows two coexisting role=alert elements when off-route and a geolocation error both apply", () => {
@@ -342,6 +520,8 @@ describe("RidingStatusCard", () => {
         geolocationErrorMessage="Your location is currently unavailable."
         onRetryGeolocation={noop}
         online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
       />,
     );
     const alerts = screen.getAllByRole("alert");

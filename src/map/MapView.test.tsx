@@ -3218,6 +3218,292 @@ describe("MapView", () => {
     });
   });
 
+  // Backlog item 83: a narrow typed seam letting an active-Riding/free-roam
+  // status card present the same terminal imagery states in its own chrome
+  // instead of MapView's in-map overlay, without touching item 67's retry/
+  // episode/camera-preservation machinery itself.
+  describe("backlog item 83: external imagery-recovery presentation seam", () => {
+    it("suppresses the in-map tiles-unavailable banner when onImageryStatusChange is supplied, while the transient loading/delayed states remain", () => {
+      const mock = createMockMapFactory();
+      const onImageryStatusChange = vi.fn();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          onImageryStatusChange={onImageryStatusChange}
+        />,
+      );
+
+      expect(screen.getByTestId("map-loading")).toBeInTheDocument();
+
+      mock.triggerStyleLoaded();
+      expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+
+      mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+      expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+    });
+
+    it("suppresses the in-map fallback banner when onImageryStatusChange is supplied", () => {
+      const mock = createMockMapFactory();
+      const onImageryStatusChange = vi.fn();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          onImageryStatusChange={onImageryStatusChange}
+        />,
+      );
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+      expect(screen.queryByTestId("map-fallback-banner")).toBeNull();
+    });
+
+    // Mirrors the existing "shows a terminal load-error state..." test
+    // exactly (no triggerLoad() call at all between the two errors) — once
+    // the fallback style has genuinely loaded, any further error (even a
+    // fatal-category one) is ordinary post-load tile trouble, not "the
+    // fallback itself failed to ever load"; the terminal state only
+    // exists while hasLoaded has never become true.
+    it("suppresses the in-map terminal load-error banner when onImageryStatusChange is supplied", () => {
+      const mock = createMockMapFactory();
+      const onImageryStatusChange = vi.fn();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          onImageryStatusChange={onImageryStatusChange}
+        />,
+      );
+
+      mock.triggerError({
+        message: "primary style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerError({
+        message: "fallback also failed",
+        category: "style-request-or-parse",
+      });
+      expect(screen.queryByTestId("map-load-error")).toBeNull();
+    });
+
+    it("reports the tile-error kind to onImageryStatusChange, then null once imagery genuinely recovers", () => {
+      const mock = createMockMapFactory();
+      const onImageryStatusChange = vi.fn();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          onImageryStatusChange={onImageryStatusChange}
+        />,
+      );
+      onImageryStatusChange.mockClear();
+
+      mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+      expect(onImageryStatusChange).toHaveBeenLastCalledWith({ kind: "tile-error" });
+
+      // "openmaptiles" represents the base style's own external source —
+      // the same genuine recovery signal that already clears the in-map
+      // banner (see the sibling test above it mirrors).
+      mock.triggerSourceData({ sourceId: "openmaptiles", isSourceLoaded: true });
+      expect(onImageryStatusChange).toHaveBeenLastCalledWith(null);
+    });
+
+    it("reports the fallback kind to onImageryStatusChange once the local fallback style genuinely loads", () => {
+      const mock = createMockMapFactory();
+      const onImageryStatusChange = vi.fn();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          onImageryStatusChange={onImageryStatusChange}
+        />,
+      );
+      onImageryStatusChange.mockClear();
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+      expect(onImageryStatusChange).toHaveBeenLastCalledWith({ kind: "fallback" });
+    });
+
+    // Mirrors the existing "shows a terminal load-error state..." test: no
+    // triggerLoad() call at all, so hasLoaded never becomes true and the
+    // second error correctly reaches the terminal branch.
+    it("reports the load-error kind once even the local fallback fails to ever load", () => {
+      const mock = createMockMapFactory();
+      const onImageryStatusChange = vi.fn();
+      render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          onImageryStatusChange={onImageryStatusChange}
+        />,
+      );
+      onImageryStatusChange.mockClear();
+
+      mock.triggerError({
+        message: "primary style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerError({
+        message: "fallback also failed",
+        category: "style-request-or-parse",
+      });
+      expect(onImageryStatusChange).toHaveBeenLastCalledWith({ kind: "load-error" });
+    });
+
+    it("never reports a duplicate status transition on an unrelated rerender", () => {
+      const mock = createMockMapFactory();
+      const onImageryStatusChange = vi.fn();
+      const { rerender } = render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          currentPosition={[0, 51]}
+          onImageryStatusChange={onImageryStatusChange}
+        />,
+      );
+      mock.triggerLoad();
+      mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+      const callCountAfterFailure = onImageryStatusChange.mock.calls.length;
+
+      rerender(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          currentPosition={[0.001, 51]}
+          onImageryStatusChange={onImageryStatusChange}
+        />,
+      );
+      rerender(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          currentPosition={[0.002, 51]}
+          onImageryStatusChange={onImageryStatusChange}
+        />,
+      );
+
+      expect(onImageryStatusChange).toHaveBeenCalledTimes(callCountAfterFailure);
+    });
+
+    it("invokes the existing manual-retry mechanism exactly once per fresh imageryRetryCommand requestId, deduped by requestId not object identity", () => {
+      const mock = createMockMapFactory();
+      const { rerender } = render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          onImageryStatusChange={vi.fn()}
+          imageryRetryCommand={null}
+        />,
+      );
+      mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+      expect(mock.constructedStyles).toHaveLength(1);
+
+      rerender(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          onImageryStatusChange={vi.fn()}
+          imageryRetryCommand={{ requestId: "retry-1" }}
+        />,
+      );
+      expect(mock.constructedStyles).toHaveLength(2);
+
+      // A brand new object with the SAME requestId — proves the dedup is
+      // keyed on requestId, not on the prop's object reference.
+      rerender(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          onImageryStatusChange={vi.fn()}
+          imageryRetryCommand={{ requestId: "retry-1" }}
+        />,
+      );
+      expect(mock.constructedStyles).toHaveLength(2);
+
+      rerender(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          onImageryStatusChange={vi.fn()}
+          imageryRetryCommand={{ requestId: "retry-2" }}
+        />,
+      );
+      expect(mock.constructedStyles).toHaveLength(3);
+    });
+
+    it("applies imageryRetryCommand even before styleStructurallyReady, recovering from the terminal load-error state", () => {
+      const mock = createMockMapFactory();
+      const { rerender } = render(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          onImageryStatusChange={vi.fn()}
+        />,
+      );
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerError({
+        message: "fallback also failed",
+        category: "style-request-or-parse",
+      });
+      expect(mock.constructedStyles).toHaveLength(2);
+
+      rerender(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          onImageryStatusChange={vi.fn()}
+          imageryRetryCommand={{ requestId: "retry-1" }}
+        />,
+      );
+
+      expect(mock.constructedStyles).toHaveLength(3);
+      expect(mock.constructedStyles[2]).toBe(mock.constructedStyles[0]);
+    });
+
+    it("leaves every existing in-map banner byte-identical when onImageryStatusChange is omitted", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={mock.factory} />);
+
+      mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+      const banner = screen.getByTestId("tiles-unavailable-banner");
+      expect(banner).toHaveTextContent(
+        "Map imagery unavailable. The route and your position are still shown.",
+      );
+      expect(within(banner).getByTestId("retry-map-imagery-button")).toBeInTheDocument();
+    });
+
+    it("reports the currently active status immediately once onImageryStatusChange starts being supplied mid-episode", () => {
+      const mock = createMockMapFactory();
+      const { rerender } = render(<MapView points={points} mapFactory={mock.factory} />);
+
+      mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+      expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+
+      const onImageryStatusChange = vi.fn();
+      rerender(
+        <MapView
+          points={points}
+          mapFactory={mock.factory}
+          onImageryStatusChange={onImageryStatusChange}
+        />,
+      );
+
+      expect(onImageryStatusChange).toHaveBeenCalledWith({ kind: "tile-error" });
+      expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+    });
+  });
+
   describe("direction arrow overlay", () => {
     it("registers the arrow icon and a symbol layer above the route lines, warning/selected and gradient layers, and below every position/marker layer", () => {
       const mock = createMockMapFactory();

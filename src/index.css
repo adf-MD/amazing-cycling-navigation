@@ -1494,8 +1494,31 @@ button:focus-visible {
   min-width: 0;
 }
 
+/* The status label and the compact connectivity indicator (backlog item
+ * 83) share one line inside .ride-status-card-text, rather than the
+ * indicator becoming a new direct child of .ride-status-card-main — that
+ * would need its own align-self override to avoid the main region's
+ * load-bearing align-items: stretch, and would visibly separate from the
+ * text column via justify-content: space-between when wakeLock is
+ * absent. flex-wrap is the same narrow-width safety net as
+ * .ride-status-card-main's own. */
+.ride-status-card-status-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
 .ride-status-card-status {
   font-weight: 700;
+}
+
+.ride-status-card-connectivity {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--colour-text-muted);
+  font-weight: 400;
 }
 
 /* Never colour alone: wording ("Possibly off route"/"Off route") already
@@ -1532,8 +1555,26 @@ button:focus-visible {
   color: var(--colour-danger);
 }
 
-.ride-status-card-offline {
-  color: var(--colour-text-muted);
+/* The relocated map-imagery recovery row (backlog item 83): a left-border
+ * accent, mirroring .ride-status-card-error-row's own established danger
+ * treatment, but neutral by default (border-colour) since only the
+ * terminal load-error kind escalates to danger/role=alert — the two
+ * recoverable kinds (tile-error/fallback) stay role=status and untinted.
+ * Reuses .map-status-retry-button verbatim for its Retry action: the base
+ * button rule already sets its own theme-aware background/colour, so the
+ * class is visually safe reused outside the map's dark overlay context. */
+.ride-status-card-imagery-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  border-left: 3px solid var(--colour-border);
+  padding-left: var(--space-8);
+}
+
+.ride-status-card-imagery-row--alert {
+  border-left-color: var(--colour-danger);
+  color: var(--colour-danger);
 }
 
 /* The geolocation-error inline alert panel (message + Try again). */

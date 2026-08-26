@@ -1,10 +1,13 @@
 import type { OffRouteLevel } from "../../navigation/types.ts";
+import type { MapImageryRecoveryStatus } from "../../map/MapView.tsx";
 import {
   formatDistanceKm,
   formatDistanceKmValue,
   formatMetres,
 } from "../shared/routeSummary.ts";
 import { formatGpsStatusLine } from "./rideStatusText.ts";
+import { ConnectivityIcon } from "./ConnectivityIcon.tsx";
+import { describeMapImageryRecovery } from "./mapImageryRecoveryPresentation.ts";
 import {
   RidingWakeLockControl,
   type RidingWakeLockControlProps,
@@ -30,6 +33,10 @@ export interface RidingStatusCardProps {
   geolocationErrorMessage: string | null;
   onRetryGeolocation: () => void;
   online: boolean;
+  /** Null = no terminal, retryable map-imagery trouble right now (backlog
+   * item 83) — see MapView's onImageryStatusChange. */
+  imageryRecoveryStatus: MapImageryRecoveryStatus | null;
+  onRetryImagery: () => void;
   /** Undefined = wake lock unsupported/ineligible right now — the card
    * renders no wake-lock slot at all. */
   wakeLock?: RidingWakeLockControlProps;
@@ -73,27 +80,32 @@ function buildRemainingAriaLabel(
 /**
  * The compact active-Riding status card (backlog item 75): one bordered
  * box holding a two-column main region — a left text column (the
- * route/GPS status line, remaining distance/ascent and GPS
- * accuracy/staleness) beside the wake-lock control on the right (item 82
- * follow-up, 2026-08-26) — followed by a full-width compact
- * geolocation-error row with an inline retry, and a full-width compact
- * offline indicator. Receives only already-derived presentation values;
- * it never computes off-route/stale/geolocation state itself, and the
- * wake-lock lifecycle stays entirely inside RidingWakeLockControl — this
- * component only decides whether to render that control at all.
+ * route/GPS status line, remaining distance/ascent, GPS
+ * accuracy/staleness and a compact connectivity indicator, backlog item
+ * 83) beside the wake-lock control on the right (item 82 follow-up,
+ * 2026-08-26) — followed by a full-width compact geolocation-error row
+ * with an inline retry, and (item 83) a full-width compact map-imagery
+ * recovery row with its own inline retry, relocated out of MapView's own
+ * in-map overlay. Receives only already-derived presentation values; it
+ * never computes off-route/stale/geolocation/imagery state itself, and
+ * the wake-lock lifecycle stays entirely inside RidingWakeLockControl —
+ * this component only decides whether to render that control at all.
  *
  * The status label is unconditional, so the card can never render empty:
  * it shows the off-route status once a fix exists, "GPS error" once an
  * error exists with no fix yet, or "Waiting for a GPS fix…" otherwise.
- * "Off route" and the error row each carry their own role="alert" and may
- * legitimately coexist — both facts are independently true and neither is
- * suppressed in favour of the other.
+ * "Off route", the geolocation-error row and the imagery-recovery row
+ * (when it is the terminal load-error kind) each carry their own
+ * role="alert" and may legitimately coexist — each fact is independently
+ * true and none is suppressed in favour of another.
  */
 export function RidingStatusCard({
   liveStatus,
   geolocationErrorMessage,
   onRetryGeolocation,
   online,
+  imageryRecoveryStatus,
+  onRetryImagery,
   wakeLock,
 }: RidingStatusCardProps) {
   const topLabel = liveStatus
@@ -102,19 +114,28 @@ export function RidingStatusCard({
       ? "GPS error"
       : "Waiting for a GPS fix…";
   const topRole = liveStatus?.offRouteLevel === "off-route" ? "alert" : "status";
+  const imageryRecoveryPresentation = imageryRecoveryStatus
+    ? describeMapImageryRecovery(imageryRecoveryStatus.kind)
+    : null;
 
   return (
     <div className="ride-status-card">
       <div className="ride-status-card-main">
         <div className="ride-status-card-text">
-          <span
-            role={topRole}
-            className={`ride-status-card-status${
-              liveStatus ? ` ride-status-card-status--${liveStatus.offRouteLevel}` : ""
-            }`}
-          >
-            {topLabel}
-          </span>
+          <div className="ride-status-card-status-row">
+            <span
+              role={topRole}
+              className={`ride-status-card-status${
+                liveStatus ? ` ride-status-card-status--${liveStatus.offRouteLevel}` : ""
+              }`}
+            >
+              {topLabel}
+            </span>
+            <span role="status" className="ride-status-card-connectivity">
+              <ConnectivityIcon online={online} />
+              {online ? "Online" : "Offline"}
+            </span>
+          </div>
           {liveStatus && liveStatus.distanceRemainingMetres !== null ? (
             <span
               className="ride-status-card-remaining"
@@ -143,10 +164,26 @@ export function RidingStatusCard({
           </button>
         </div>
       ) : null}
-      {!online ? (
-        <span role="status" className="ride-status-card-offline">
-          Offline
-        </span>
+      {imageryRecoveryPresentation ? (
+        <div
+          role={imageryRecoveryPresentation.role}
+          data-testid={imageryRecoveryPresentation.testId}
+          className={`ride-status-card-imagery-row${
+            imageryRecoveryPresentation.role === "alert"
+              ? " ride-status-card-imagery-row--alert"
+              : ""
+          }`}
+        >
+          <span>{imageryRecoveryPresentation.message}</span>
+          <button
+            type="button"
+            onClick={onRetryImagery}
+            data-testid="retry-map-imagery-button"
+            className="map-status-retry-button"
+          >
+            Retry map imagery
+          </button>
+        </div>
       ) : null}
     </div>
   );

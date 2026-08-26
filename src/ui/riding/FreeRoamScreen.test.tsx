@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import userEvent from "@testing-library/user-event";
 import { FreeRoamScreen } from "./FreeRoamScreen.tsx";
@@ -27,6 +27,14 @@ const ERROR: GeolocationError = {
 function buildStubMapFactory(): {
   factory: MapFactory;
   triggerLoad: () => void;
+  /** Backlog item 83: mirrors RidingScreen.test.tsx's identical helper —
+   * fires a post-load-shaped tile error against whichever map instance
+   * was constructed most recently. */
+  triggerTileError: () => void;
+  /** Backlog item 83: simulates the external basemap's own source
+   * reporting loaded — the genuine recovery signal that clears
+   * tileErrorMessage in production (see MapView.tsx's onSourceData). */
+  triggerSourceData: (info: { sourceId: string; isSourceLoaded: boolean }) => void;
   triggerUserCameraInteraction: () => void;
   triggerCameraSettled: (camera: {
     coordinate: Coordinate;
@@ -39,6 +47,9 @@ function buildStubMapFactory(): {
 } {
   let loadListener: (() => void) | undefined;
   let styleLoadedListener: (() => void) | undefined;
+  let errorListener: (() => void) | undefined;
+  let sourceDataListener:
+    ((info: { sourceId: string; isSourceLoaded: boolean }) => void) | undefined;
   let userCameraInteractionListener: (() => void) | undefined;
   let cameraSettledListener:
     | ((camera: {
@@ -58,8 +69,14 @@ function buildStubMapFactory(): {
       onStyleLoaded: (listener) => {
         styleLoadedListener = listener;
       },
-      onError: () => undefined,
-      onSourceData: () => undefined,
+      onError: (listener) => {
+        errorListener = () => {
+          listener({ message: "tile fetch failed", category: "style-request-or-parse" });
+        };
+      },
+      onSourceData: (listener) => {
+        sourceDataListener = listener;
+      },
       addGeoJsonSource: () => undefined,
       setGeoJsonSourceData: () => undefined,
       hasSource: () => false,
@@ -97,6 +114,8 @@ function buildStubMapFactory(): {
       styleLoadedListener?.();
       loadListener?.();
     },
+    triggerTileError: () => errorListener?.(),
+    triggerSourceData: (info) => sourceDataListener?.(info),
     triggerUserCameraInteraction: () => userCameraInteractionListener?.(),
     triggerCameraSettled: (camera) => cameraSettledListener?.(camera),
     setCameraSpy,
@@ -233,6 +252,89 @@ describe("FreeRoamScreen", () => {
       "Location permission was denied. Allow location access in your browser settings to use Free roam.",
     );
     expect(screen.getAllByText(/Location permission was denied/)).toHaveLength(1);
+  });
+
+  // Backlog item 83: mirrors RidingScreen.test.tsx's own describe("offline
+  // and tile-failure resilience", ...) coverage, previously missing here.
+  describe("map-imagery recovery relocation (backlog item 83)", () => {
+    it("relocates a mid-session tile error into the active status card, out of the map's own overlay", () => {
+      const fake = buildFakeGeolocationSource();
+      const map = buildStubMapFactory();
+      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      act(() => {
+        fake.watches[0]?.emitFix(SAMPLE_FIX);
+      });
+
+      act(() => {
+        map.triggerLoad();
+      });
+      act(() => {
+        map.triggerTileError();
+      });
+
+      const banner = screen.getByTestId("tiles-unavailable-banner");
+      expect(banner.closest(".ride-status-card")).not.toBeNull();
+      expect(banner.closest(".map-status-overlay")).toBeNull();
+      // The rest of the free-roam UI is untouched by the map's own tile
+      // failure.
+      expect(screen.getByText(/GPS ±8 m · Live/)).toBeInTheDocument();
+      expect(screen.getByTestId("map-container")).toBeInTheDocument();
+    });
+
+    it("wires the status card's Retry action through to a genuine map retry, clearing the row once the fresh attempt succeeds", async () => {
+      const user = userEvent.setup();
+      const fake = buildFakeGeolocationSource();
+      const map = buildStubMapFactory();
+      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      act(() => {
+        fake.watches[0]?.emitFix(SAMPLE_FIX);
+      });
+
+      act(() => {
+        map.triggerLoad();
+      });
+      act(() => {
+        map.triggerTileError();
+      });
+      const banner = screen.getByTestId("tiles-unavailable-banner");
+      const retryButton = within(banner).getByRole("button", {
+        name: "Retry map imagery",
+      });
+
+      await user.click(retryButton);
+
+      expect(await screen.findByTestId("map-loading")).toBeInTheDocument();
+      expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+
+      act(() => {
+        map.triggerLoad();
+      });
+      expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+    });
+
+    it("clears the relocated imagery-recovery row automatically on genuine imagery recovery, via the same signal that clears the map-owned banner", async () => {
+      const fake = buildFakeGeolocationSource();
+      const map = buildStubMapFactory();
+      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      act(() => {
+        fake.watches[0]?.emitFix(SAMPLE_FIX);
+      });
+
+      act(() => {
+        map.triggerLoad();
+      });
+      act(() => {
+        map.triggerTileError();
+      });
+      expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+
+      act(() => {
+        map.triggerSourceData({ sourceId: "openmaptiles", isSourceLoaded: true });
+      });
+      await waitFor(() => {
+        expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+      });
+    });
   });
 
   it("North-up and Follow controls are present while watching and toggle aria-pressed", async () => {

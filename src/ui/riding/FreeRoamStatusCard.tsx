@@ -1,4 +1,7 @@
+import type { MapImageryRecoveryStatus } from "../../map/MapView.tsx";
 import { formatGpsStatusLine } from "./rideStatusText.ts";
+import { ConnectivityIcon } from "./ConnectivityIcon.tsx";
+import { describeMapImageryRecovery } from "./mapImageryRecoveryPresentation.ts";
 import {
   RidingWakeLockControl,
   type RidingWakeLockControlProps,
@@ -19,6 +22,10 @@ export interface FreeRoamStatusCardProps {
   geolocationErrorMessage: string | null;
   onRetryGeolocation: () => void;
   online: boolean;
+  /** Null = no terminal, retryable map-imagery trouble right now (backlog
+   * item 83) — see MapView's onImageryStatusChange. */
+  imageryRecoveryStatus: MapImageryRecoveryStatus | null;
+  onRetryImagery: () => void;
   /** Undefined = wake lock unsupported/ineligible right now — the card
    * renders no wake-lock slot at all. */
   wakeLock?: RidingWakeLockControlProps;
@@ -45,26 +52,38 @@ function freeRoamTrackingLabel(
  * reuse of that component, since its off-route/remaining-distance/ascent
  * props are fundamentally route-shaped and meaningless without a route.
  * Same two-column main region (item 82 follow-up, 2026-08-26), wake-lock
- * slot and full-width error/offline rows, but the text column's status
- * label is a plain tracking-state word instead of an off-route status,
- * and there is no remaining-distance/ascent row.
+ * slot, compact connectivity indicator and full-width error/imagery-
+ * recovery rows (item 83), but the text column's status label is a plain
+ * tracking-state word instead of an off-route status, and there is no
+ * remaining-distance/ascent row.
  */
 export function FreeRoamStatusCard({
   liveStatus,
   geolocationErrorMessage,
   onRetryGeolocation,
   online,
+  imageryRecoveryStatus,
+  onRetryImagery,
   wakeLock,
 }: FreeRoamStatusCardProps) {
   const topLabel = freeRoamTrackingLabel(liveStatus, geolocationErrorMessage !== null);
+  const imageryRecoveryPresentation = imageryRecoveryStatus
+    ? describeMapImageryRecovery(imageryRecoveryStatus.kind)
+    : null;
 
   return (
     <div className="ride-status-card">
       <div className="ride-status-card-main">
         <div className="ride-status-card-text">
-          <span role="status" className="ride-status-card-status">
-            {topLabel}
-          </span>
+          <div className="ride-status-card-status-row">
+            <span role="status" className="ride-status-card-status">
+              {topLabel}
+            </span>
+            <span role="status" className="ride-status-card-connectivity">
+              <ConnectivityIcon online={online} />
+              {online ? "Online" : "Offline"}
+            </span>
+          </div>
           {liveStatus ? (
             <span className="ride-status-card-detail">
               {formatGpsStatusLine(liveStatus)}
@@ -81,10 +100,26 @@ export function FreeRoamStatusCard({
           </button>
         </div>
       ) : null}
-      {!online ? (
-        <span role="status" className="ride-status-card-offline">
-          Offline
-        </span>
+      {imageryRecoveryPresentation ? (
+        <div
+          role={imageryRecoveryPresentation.role}
+          data-testid={imageryRecoveryPresentation.testId}
+          className={`ride-status-card-imagery-row${
+            imageryRecoveryPresentation.role === "alert"
+              ? " ride-status-card-imagery-row--alert"
+              : ""
+          }`}
+        >
+          <span>{imageryRecoveryPresentation.message}</span>
+          <button
+            type="button"
+            onClick={onRetryImagery}
+            data-testid="retry-map-imagery-button"
+            className="map-status-retry-button"
+          >
+            Retry map imagery
+          </button>
+        </div>
       ) : null}
     </div>
   );

@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { MapView } from "../../map/MapView.tsx";
+import {
+  MapView,
+  type ImageryRetryCommand,
+  type MapImageryRecoveryStatus,
+} from "../../map/MapView.tsx";
 import type { MapFactory } from "../../map/mapAdapter.ts";
 import type { GeolocationError, GeolocationSource } from "../../platform/geolocation.ts";
 import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
 import { logError } from "../../platform/errorLog.ts";
+import { generateId } from "../../platform/idGenerator.ts";
 import { useOnlineStatus } from "../../platform/onlineStatus.ts";
 import { isWakeLockSupported, type WakeLockSource } from "../../platform/wakeLock.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
@@ -162,6 +167,23 @@ export function FreeRoamScreen({
   // Gates the single compact status card (backlog item 75) — true whenever
   // there is anything for it to say. Wake lock is gated separately below.
   const showStatusCard = nav.geolocationStatus !== "idle" || Boolean(nav.currentFix);
+
+  // Backlog item 83: see RidingScreen.tsx's identical wiring/doc comment
+  // (React's own "adjusting state when a prop changes" pattern, not an
+  // effect, to satisfy react-hooks/set-state-in-effect).
+  const [imageryStatus, setImageryStatus] = useState<MapImageryRecoveryStatus | null>(
+    null,
+  );
+  const [imageryRetryCommand, setImageryRetryCommand] =
+    useState<ImageryRetryCommand | null>(null);
+  const [wasStatusCardShown, setWasStatusCardShown] = useState(showStatusCard);
+  if (showStatusCard !== wasStatusCardShown) {
+    setWasStatusCardShown(showStatusCard);
+    if (!showStatusCard) {
+      setImageryStatus(null);
+      setImageryRetryCommand(null);
+    }
+  }
 
   const { start: navStart } = nav;
   const { requestFollow: cameraRequestFollow } = camera;
@@ -399,6 +421,10 @@ export function FreeRoamScreen({
           }
           onRetryGeolocation={handleStart}
           online={online}
+          imageryRecoveryStatus={imageryStatus}
+          onRetryImagery={() => {
+            setImageryRetryCommand({ requestId: generateId() });
+          }}
           wakeLock={
             isWakeLockSupported() && nav.geolocationStatus !== "idle"
               ? {
@@ -436,6 +462,8 @@ export function FreeRoamScreen({
                 settled.hasAppliedCameraCommand,
               );
             }}
+            onImageryStatusChange={showStatusCard ? setImageryStatus : undefined}
+            imageryRetryCommand={showStatusCard ? imageryRetryCommand : undefined}
           />
           {nav.geolocationStatus === "watching" ? (
             <div className="ride-map-zoom-controls">
