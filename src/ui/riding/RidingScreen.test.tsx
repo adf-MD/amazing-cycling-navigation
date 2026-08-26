@@ -5520,6 +5520,155 @@ describe("RidingScreen", () => {
         "true",
       );
     });
+
+    // Backlog item 81: field evidence showed the camera intermittently
+    // ending at approximately whole-world zoom after a stale-GPS-plus-
+    // imagery-retry combination mid-ride. Reproduces the exact reachable
+    // ordering (see MapView.test.tsx's own item-81 test for the isolated
+    // provenance defect this exercises end to end): a real, non-default
+    // selected zoom settles, GPS goes genuinely stale (retained fix, no
+    // Follow re-press, no manual gesture — see this item's own "manual
+    // gesture" hypothesis, traced and ruled out as unreachable here), a
+    // genuine mid-ride imagery failure occurs, manual Retry recreates the
+    // map, the real command correctly reapplies on the new generation,
+    // and then an unrelated settle (MapLibre's own confirmed raw-default-
+    // transform settle, delivered late rather than before the real
+    // command applied) arrives. The next real fix — stationary, then
+    // moved — must use the rider's real selected zoom, never the
+    // unrelated settle's zoom.
+    it("preserves the selected non-default Follow zoom through a genuine stale-GPS-plus-imagery-retry recovery, for both a stationary and a moved fresh fix (backlog item 81)", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+      });
+      map.setCameraSpy.mockClear();
+
+      // Establish a deliberately non-default selected zoom — never
+      // NAVIGATION_ZOOM, and never the corrupting settle's own 0, so this
+      // test cannot pass by coincidence.
+      await user.click(screen.getByRole("button", { name: "Zoom in" }));
+      await user.click(screen.getByRole("button", { name: "Zoom in" }));
+      expect(map.setCameraSpy).toHaveBeenLastCalledWith(
+        pointAt(0),
+        NAVIGATION_ZOOM + 2,
+        expectedBearingAt(0),
+        FOLLOW_PITCH_DEGREES,
+        { animate: true, followOffset: true },
+      );
+
+      // GPS becomes genuinely stale — the retained fix stays visible, no
+      // Follow re-press, no manual map gesture.
+      stub.emitError({ reason: "timeout", message: "timed out" });
+      await screen.findByRole("alert");
+      expect(screen.getByText(/Stale/)).toBeInTheDocument();
+
+      // A genuine mid-ride tile/style failure (hasLoaded is already true
+      // at this point, so this is treated as a tile-error episode, not a
+      // fallback swap — see MapView.tsx's own onError gate), then manual
+      // "Retry map imagery".
+      map.triggerTileError();
+      await screen.findByTestId("tiles-unavailable-banner");
+      await user.click(screen.getByTestId("retry-map-imagery-button"));
+
+      // Cleared so the wait below genuinely proves a NEW post-retry call
+      // happened, rather than trivially observing the pre-retry zoom-in
+      // press's own already-matching last call.
+      map.setCameraSpy.mockClear();
+
+      // The new generation's own style becomes ready — the real command
+      // (the rider's selected zoom) correctly reapplies. This is the
+      // already-correct part of the retry path (see the preceding test).
+      map.triggerStyleLoaded();
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenLastCalledWith(
+          pointAt(0),
+          NAVIGATION_ZOOM + 2,
+          expectedBearingAt(0),
+          FOLLOW_PITCH_DEGREES,
+          { animate: true, followOffset: true },
+        );
+      });
+
+      // MapLibre's own confirmed pre-style-ready settle at its raw
+      // default transform, delivered late for this generation — after
+      // the real command's own setCamera call, not before it.
+      map.triggerCameraSettled({
+        coordinate: [0, 0],
+        zoom: 0,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      // Connectivity and a fresh GPS fix return, on the same still-
+      // registered watch (a real fix arriving recovers geolocationStatus
+      // to "watching" directly — see useRideNavigation.ts's handleFix —
+      // without requiring a separate "Try again" press). First, a
+      // genuinely stationary fix (same coordinate, well under
+      // FOLLOW_MIN_MOVEMENT_METRES).
+      stub.emitFix({
+        coordinate: pointAt(0),
+        accuracyMetres: 5,
+        timestampMs: 5000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+
+      // The rider's real selected zoom, never a raw/default world zoom.
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenLastCalledWith(
+          pointAt(0),
+          NAVIGATION_ZOOM + 2,
+          expectedBearingAt(0),
+          FOLLOW_PITCH_DEGREES,
+          { animate: true, followOffset: true },
+        );
+      });
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+
+      // A subsequently moved fresh fix must also use the preserved zoom.
+      stub.emitFix({
+        coordinate: pointAt(1),
+        accuracyMetres: 5,
+        timestampMs: 6000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenLastCalledWith(
+          pointAt(1),
+          NAVIGATION_ZOOM + 2,
+          // Bearing isn't what this test proves (a moved fix's matched
+          // distance from GPS projection isn't bit-identical to the raw
+          // waypoint distance expectedBearingAt assumes, a pre-existing
+          // negligible float artifact unrelated to the zoom defect) — the
+          // required outcome here is the preserved zoom, asserted below.
+          expect.any(Number),
+          FOLLOW_PITCH_DEGREES,
+          { animate: true, followOffset: true },
+        );
+      });
+    });
   });
 
   describe("Zoom controls (backlog item 53)", () => {

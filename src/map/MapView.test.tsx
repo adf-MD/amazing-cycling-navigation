@@ -827,6 +827,93 @@ describe("MapView", () => {
     );
   });
 
+  // Backlog item 81: appliedCameraCommandGenerationRef alone only proves
+  // "some command has been applied to this generation" — not that THIS
+  // settle resulted from that command. Unlike the fallback-swap test
+  // above (which deliberately never lets the new instance's cameraTarget
+  // effect apply anything, so the latch correctly stays false), this
+  // test DOES let a real, non-default-zoom command genuinely apply on the
+  // new generation — flipping the latch true — and then delivers an
+  // unrelated settle (MapLibre's own confirmed raw-default-transform
+  // settle, per the two tests above) afterwards rather than before.
+  // Pre-fix, the coarse generation-only latch cannot tell these apart.
+  it("does not report hasAppliedCameraCommand:true for an unrelated settle that arrives after a real command has already applied on the same generation (backlog item 81)", () => {
+    const onCameraSettled = vi.fn();
+    const mock = createMockMapFactory();
+    const cameraTarget = {
+      coordinate: [0, 51] as Coordinate,
+      // Deliberately non-default — never NAVIGATION_ZOOM (16) or the
+      // corrupting settle's own 0 — so this test cannot pass by
+      // coincidence the way a NAVIGATION_ZOOM-only fixture could.
+      zoom: 18,
+      bearingDegrees: 0,
+      pitchDegrees: 35,
+      animate: true,
+      followOffset: true,
+    };
+    render(
+      <MapView
+        points={[]}
+        mapFactory={mock.factory}
+        cameraTarget={cameraTarget}
+        onCameraSettled={onCameraSettled}
+      />,
+    );
+    mock.triggerLoad();
+    expect(mock.setCameraSpy).toHaveBeenCalledOnce();
+
+    // The real command genuinely settles first, correctly reported true.
+    mock.triggerCameraSettled({
+      coordinate: [0, 51],
+      zoom: 18,
+      bearingDegrees: 0,
+      pitchDegrees: 35,
+    });
+    expect(onCameraSettled).toHaveBeenLastCalledWith(
+      expect.objectContaining({ zoom: 18, hasAppliedCameraCommand: true }),
+    );
+
+    // A tile/style failure, then manual "Retry map imagery" — a new
+    // attach generation against the same still-current cameraTarget,
+    // mirroring "retry preserves and re-applies a live cameraTarget"
+    // further down in this file.
+    mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+    act(() => {
+      screen.getByTestId("retry-map-imagery-button").click();
+    });
+    expect(mock.constructedStyles).toHaveLength(2);
+
+    // The new generation's own cameraTarget effect genuinely re-applies
+    // the SAME real command once style becomes ready — flipping
+    // appliedCameraCommandGenerationRef true for this generation, before
+    // that command's own ease has necessarily settled on screen.
+    mock.triggerStyleLoaded();
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(2);
+    expect(mock.setCameraSpy).toHaveBeenLastCalledWith([0, 51], 18, 0, 35, {
+      animate: true,
+      followOffset: true,
+    });
+
+    // MapLibre's own confirmed pre-style-ready settle at its raw default
+    // transform (see the two tests above), delivered late for this
+    // generation — after the real command's own setCamera call, not
+    // before it. Nothing in the production code bounds its delivery to
+    // arrive first.
+    mock.triggerCameraSettled({
+      coordinate: [0, 0],
+      zoom: 0,
+      bearingDegrees: 0,
+      pitchDegrees: 0,
+    });
+
+    // This settle did not come from the applied command (wrong
+    // coordinate entirely) and must not be trusted merely because SOME
+    // command has been applied to this generation.
+    expect(onCameraSettled).toHaveBeenLastCalledWith(
+      expect.objectContaining({ zoom: 0, hasAppliedCameraCommand: false }),
+    );
+  });
+
   it("applies an animated following cameraTarget via setCamera once ready, carrying centre/zoom/bearing/pitch/offset together", () => {
     const mock = createMockMapFactory();
     render(

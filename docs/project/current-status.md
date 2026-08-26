@@ -112,6 +112,12 @@ Do not treat the item above as fully verified until it has been tested on a movi
 
 ---
 
+### Outstanding: item 81's preserved Riding zoom through stale-GPS and imagery-retry recovery
+
+- **Preserve Riding zoom through stale-GPS and imagery-retry recovery (item 81):** shipped with automated (Vitest/Playwright Chromium and Chromium-emulated Android) evidence only — no physical iPhone or Android verification is claimed yet, and a green automated gate is not itself manual acceptance. Real-device acceptance still needed: a genuine mid-ride combination of stale GPS (a real signal-loss/permission interruption, not the emulated `context.clearPermissions()` this item's own e2e coverage uses) and a real map-imagery failure/`Retry map imagery` press, at a deliberately non-default rider-selected Follow zoom, confirming the selected zoom, active Follow state and below-centre look-ahead anchor all survive recovery, and that a subsequent Pause/Resume does not resurrect a corrupted zoom — on the installed iPhone PWA and real Android Chrome. See [`docs/project/history/items-81-NN.md#item-81`](history/items-81-NN.md#item-81) for the full implementation record.
+
+---
+
 ## Monitored reliability observations
 
 These are explicitly **not** approved future work — see each entry's own text for why.

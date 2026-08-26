@@ -122,25 +122,6 @@ _Category: Platform compatibility_
 
 ---
 
-<a id="item-81"></a>
-
-## Item 81 — Preserve Riding zoom through stale-GPS and imagery-retry recovery
-
-_Category: Riding camera reliability investigation_
-
-81. **Preserve Riding zoom through stale-GPS and imagery-retry recovery**
-    - Field evidence: during an active route ride (the PWA remained active throughout — never paused, backgrounded or suspended), the camera intermittently ended at approximately whole-world zoom after a combination believed to involve stale GPS and pressing `Retry map imagery`. Follow was already active; pressing Follow again did not restore a normal zoom, which is correct, since Follow preserves the rider's selected zoom rather than resetting it. Pressing North-up also did not change zoom, which is likewise correct, since North-up only changes bearing/pitch. Manual pinch/`+` zoom restored a normal useful view. The observation is intermittent and its precise ordering is not yet deterministic.
-    - Distinct from item 66 (an unreproduced, accepted-for-now-monitored route-Riding fresh-Start overview-zoom symptom with no confirmed cause) and item 74 (a confirmed and shipped fix for a free-roam fresh-Start zoom-corruption bug, via the `hasAppliedCameraCommand` settle-provenance latch added to the shared `rideCameraReducer`). This item's evidence is mid-ride, tied specifically to a stale-GPS-plus-imagery-retry combination, not a fresh Start — investigate it as its own scenario. Do not assume, and do not rule out without evidence, that it shares a cause with either item 66 or item 74; neither item's status is reopened or reinterpreted by filing this one.
-    - Reproduce the complete active-session transition: a useful user-selected Follow zoom, GPS becoming stale, a genuine imagery failure, manual imagery retry/map recreation (item 67's retry/recreate mechanism), then connectivity and a fresh fix returning.
-    - Trace camera state and provenance across the retry generation, including the existing snapshot/restore path (`liveCameraSnapshotRef`/`cameraSnapshotToRestore`, item 67), style readiness, applied-command generation/latch (`appliedCameraCommandGenerationRef`/`hasAppliedCameraCommand`, item 74), camera-settle reporting, and the persisted Follow zoom held in `rideCameraReducer`.
-    - Prove the cause with a failing deterministic test against the unmodified implementation before choosing a production fix.
-    - Required outcome: retry/recovery must never replace a valid Riding zoom with MapLibre's raw/default world zoom. The selected zoom, active Follow state and below-centre look-ahead GPS framing must survive recovery.
-    - Do not make Follow or North-up reset zoom, clamp every low zoom to a default navigation zoom, add sleeps/retries, or weaken deliberate user zoom persistence.
-    - Start with the route-Riding path, where the new evidence was observed. Change or extend free roam only if source inspection proves the same shared defect (`rideCameraReducer` is shared between `useRideCamera.ts` and `useFreeRoamCamera.ts`, per item 74's precedent) and the shared fix is the smallest safe correction.
-    - Keep separate from item 83 (offline/imagery-recovery presentation), even though both were noticed during the same recovery episode — item 83 is presentation-only and is explicitly not authorised to touch camera recovery.
-
----
-
 <a id="item-82"></a>
 
 ## Item 82 — Unify the active status control and make the climb cue fully readable

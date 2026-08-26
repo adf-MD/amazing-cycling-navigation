@@ -236,6 +236,58 @@ const STYLE_READY_TIMEOUT_MS = 15_000;
  * render despite the map itself reaching "ready". */
 const ROUTE_DATA_TIMEOUT_MS = 5_000;
 
+/** Backlog item 81: onCameraSettled's hasAppliedCameraCommand tolerance
+ * for settleMatchesLastAppliedCommand below — not exact equality, since a
+ * genuinely caused settle's reported coordinate can carry negligible
+ * floating-point read-back noise from MapLibre's own projection math for
+ * the same nominal target (mirrors e2e/ridingCamera.spec.ts's own
+ * CAMERA_VALUE_TOLERANCE, used there for the equivalent test-side
+ * comparison). Far tighter than any real, distinguishable coordinate
+ * difference (a fraction of a millimetre at any latitude relevant to
+ * this app), so it cannot mask a genuinely different, untrustworthy
+ * settle. */
+const CAMERA_PROVENANCE_TOLERANCE_DEGREES = 1e-6;
+
+/** Backlog item 81: appliedCameraCommandGenerationRef alone only proves
+ * "some cameraTarget command has been applied to this generation" — not
+ * that THIS specific settle resulted from that command. Once the latch
+ * flips true for a generation, every later settle on that instance was
+ * previously reported as trustworthy, including one that genuinely has
+ * nothing to do with the tracked command (e.g. MapLibre's own confirmed
+ * pre-style-ready settle at its raw default transform, arriving late —
+ * nothing bounds its delivery to land before the real command applies,
+ * only its dispatch is tied to instance creation). Correlating the
+ * settle's own coordinate against lastAppliedCameraTargetRef — the exact
+ * target the most recently applied command actually specified — closes
+ * that gap: a raw/default MapLibre transform is never the rider's real
+ * route/GPS coordinate. Deliberately coordinate-only, not zoom/bearing/
+ * pitch: MapLibre's own min/max zoom clamping can legitimately shift a
+ * genuinely-caused settle's zoom away from the exact commanded value
+ * (see rideCamera.test.ts's own clamped-zoom reconciliation coverage),
+ * so comparing zoom here would risk exactly the false negative this
+ * project's own "do not globally clamp deliberate zoom" requirement
+ * forbids. A command with a null coordinate (north-up-only, via
+ * rideCamera.ts's "north-up-requested") always drops rideCameraReducer's
+ * own mode to "free" — follow-zoom-settled's own mode guard already
+ * excludes that settle regardless of this function's result, so falling
+ * back to true (generation-only) when no coordinate was ever commanded
+ * is safe: there is no real command here to have a mismatched settle
+ * against. */
+function settleMatchesLastAppliedCommand(
+  settleCoordinate: Coordinate,
+  lastApplied: { lon: number | null; lat: number | null } | null,
+): boolean {
+  const lon = lastApplied?.lon ?? null;
+  const lat = lastApplied?.lat ?? null;
+  if (lon === null || lat === null) {
+    return true;
+  }
+  return (
+    Math.abs(settleCoordinate[0] - lon) < CAMERA_PROVENANCE_TOLERANCE_DEGREES &&
+    Math.abs(settleCoordinate[1] - lat) < CAMERA_PROVENANCE_TOLERANCE_DEGREES
+  );
+}
+
 /** Fully local style with no external references (no sprite, glyphs, or
  * tile sources), so it's guaranteed to load even with no network access at
  * all. Used when the configured tile source doesn't load in time. */
@@ -1178,11 +1230,17 @@ export function MapView({
         setFollowAnchorPixel(position ? (map.project?.(position) ?? null) : null);
         // Backlog item 74: additive, narrower than the "not gated on
         // styleReady" decision above — see appliedCameraCommandGenerationRef's
-        // own doc comment.
+        // own doc comment. Backlog item 81: the generation check alone is
+        // not sufficient — see settleMatchesLastAppliedCommand's own doc
+        // comment for why a coordinate correlation is also required.
         onCameraSettledRef.current?.({
           ...camera,
           hasAppliedCameraCommand:
-            appliedCameraCommandGenerationRef.current === generation,
+            appliedCameraCommandGenerationRef.current === generation &&
+            settleMatchesLastAppliedCommand(
+              camera.coordinate,
+              lastAppliedCameraTargetRef.current,
+            ),
         });
       });
 

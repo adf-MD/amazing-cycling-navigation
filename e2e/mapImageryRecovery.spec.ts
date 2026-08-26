@@ -333,6 +333,105 @@ test("route Riding: genuine reconnection recovery — an online event with no ca
   expect(numbersClose(after.pitch, baseline.pitch)).toBe(true);
 });
 
+// Backlog item 81: field evidence showed the camera intermittently ending
+// at approximately whole-world zoom after a stale-GPS-plus-imagery-retry
+// combination mid-ride. Combines this file's own manual-retry mechanism
+// with ridingCamera.spec.ts's Zoom-in-to-a-non-default-zoom technique and
+// ridingStatusCardRecovery.spec.ts's genuine context.clearPermissions()
+// stale-fix mechanism (see that file's own header comment for why this
+// reliably fires a real PERMISSION_DENIED on an already-active watch in
+// current Chromium). This is real-MapLibre regression/non-regression
+// coverage for the fix, not the prove-first evidence — the exact
+// out-of-order-settle race the fix closes is proven deterministically at
+// the component/integration level (MapView.test.tsx, RidingScreen.test.tsx),
+// where the settle ordering is under full test control; a real browser
+// gives no reliable way to force that same internal ordering without
+// manufacturing an artificial, unrepresentative race.
+test("route Riding: Follow's selected zoom survives a genuine stale-GPS-plus-imagery-retry recovery, for both a stationary and a moved fresh fix", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ ...ROUTE_START, accuracy: 5 });
+
+  const tiles = await installLocalMapStyleWithTileSource(page);
+
+  await page.goto("/");
+  await importAndStartRiding(page);
+  await expect.poll(() => tiles.requestCount()).toBeGreaterThan(0);
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).toBe("35");
+  await waitForMapFullyLoaded(mapContainer);
+
+  // Establish a genuinely non-default selected zoom.
+  const zoomIn = page.getByRole("button", { name: "Zoom in" });
+  const zoomBeforeAnyPress = await mapContainer.getAttribute("data-camera-zoom");
+  await zoomIn.click();
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-zoom"))
+    .not.toBe(zoomBeforeAnyPress);
+
+  // A genuine mid-ride tile failure, triggered by a further Zoom-in press
+  // (this file's own established technique). triggerFreshTileFailure only
+  // proves a new tile request failed — an independent async signal from
+  // the camera's own ease — so the zoom captured immediately afterwards
+  // is not reliably the FINAL settled value; explicitly poll for a
+  // genuine change from the first press's own zoom before capturing the
+  // rider's real final selected zoom, the exact value the recovery below
+  // must preserve.
+  const zoomAfterFirstPress = await mapContainer.getAttribute("data-camera-zoom");
+  await triggerFreshTileFailure(tiles, () => zoomIn.click());
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-zoom"))
+    .not.toBe(zoomAfterFirstPress);
+  const selectedZoom = await mapContainer.getAttribute("data-camera-zoom");
+  const banner = page.getByTestId("tiles-unavailable-banner");
+  await expect(banner).toBeVisible({ timeout: 15_000 });
+
+  // GPS becomes genuinely stale — a real PERMISSION_DENIED on the
+  // already-active watch, the retained fix stays visible.
+  await context.clearPermissions();
+  const alert = page.getByRole("alert");
+  await expect(alert).toBeVisible({ timeout: 10_000 });
+
+  // Manual "Retry map imagery" while still genuinely failing — never
+  // flips succeedTiles first, for the same still-in-flight-recovery race
+  // reason as this file's own free-panned-camera test above.
+  await banner.getByTestId("retry-map-imagery-button").click();
+  tiles.succeedTiles();
+  await expect(banner).not.toBeAttached({ timeout: 15_000 });
+
+  // Connectivity and a fresh GPS fix return: re-grant permission at the
+  // SAME coordinate (a genuinely stationary fix) and press "Try again" —
+  // this file's own established real-permission-recovery mechanism.
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ ...ROUTE_START, accuracy: 5 });
+  await alert.getByRole("button", { name: "Try again" }).click();
+  await expect(alert).toHaveCount(0, { timeout: 10_000 });
+
+  // The rider's real selected zoom, never a raw/default world zoom.
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-zoom"), { timeout: 10_000 })
+    .toBe(selectedZoom);
+  await expect(page.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  // A subsequently moved fresh fix must also use the preserved zoom.
+  const centreBeforeMove = await mapContainer.getAttribute("data-camera-center");
+  await context.setGeolocation({
+    latitude: ROUTE_START.latitude,
+    longitude: ROUTE_START.longitude + 0.001,
+    accuracy: 5,
+  });
+  await expect
+    .poll(() => mapContainer.getAttribute("data-camera-center"))
+    .not.toBe(centreBeforeMove);
+  expect(await mapContainer.getAttribute("data-camera-zoom")).toBe(selectedZoom);
+});
+
 test("route Riding: a manually free-panned camera survives a tile-error retry unchanged, rather than snapping back to Follow or a whole-route overview", async ({
   page,
   context,
