@@ -2035,17 +2035,37 @@ button:focus-visible {
  * this same ancestor rather than a new, unproven mechanism. This class is
  * also used unscoped (idle/pre-ride, Planning) via the ordinary global
  * button:focus-visible rule, which stays untouched — this override only
- * ever applies inside the immersive pane. A separately reported, not yet
- * reproduced defect (this button's own bottom 1px border occasionally
- * appearing trimmed on a real device) could not be reproduced in this
- * project's available Chromium-based tooling — normal text, iPhone-DPR
- * (3x) emulation, and 200% enlarged text with genuine pane overflow all
- * paint every border edge fully intact (see
- * e2e/ridingSelectedFeatureSummary.spec.ts's border/focus-paint checks).
- * No further CSS change is made for it without real-device evidence; see
- * docs/project/current-status.md for the tracked outstanding item. */
+ * ever applies inside the immersive pane. A separately reported bottom
+ * 1px border defect could not be reproduced in this project's available
+ * Chromium-based tooling (see e2e/ridingSelectedFeatureSummary.spec.ts's
+ * border/focus-paint checks), but a real iPhone screenshot measured it
+ * directly: this button's flat bottom border painted as only 2 solid
+ * device-pixel rows against its own top border's 3, at DPR 3, while four
+ * other buttons sampled from the same screenshot (Pause, End ride, 2 km,
+ * Map) all painted symmetrically. See the rule below for the fix this
+ * evidence motivated; docs/project/history/items-81-NN.md#item-85 has the
+ * full measured comparison and current-status.md tracks real-device
+ * acceptance as still open. */
 .ride-profile-pane--immersive .clear-selection-button:focus-visible {
   outline-offset: -2px;
+}
+
+/* Backlog item 85 follow-up: an inset box-shadow ring in place of the
+ * plain border for this specific shared button, everywhere it renders
+ * (unscoped — active immersive and idle/pre-ride alike), since the real
+ * device evidence above showed *this* button's border rasterising
+ * asymmetrically while other plain-bordered buttons on the same screen do
+ * not. Mirrors .elevation-window-button.is-selected's own inset-ring
+ * idiom two rules above (1px here, matching the border's own existing
+ * weight, not a new value). This is a targeted, zero-layout-risk attempt,
+ * not a proven correction: border-color alone never changes border-width,
+ * so the button's rendered size is unchanged, but whether an inset
+ * box-shadow avoids the measured asymmetry — rather than reproducing it,
+ * since its edge position is derived from the same box geometry — is
+ * itself unconfirmed pending a new real-device screenshot. */
+.clear-selection-button {
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--colour-border);
 }
 
 /* The Map/Profile switcher — route Riding's own active branch only; free
