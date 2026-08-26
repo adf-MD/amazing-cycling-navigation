@@ -120,6 +120,20 @@ test.describe("route Riding", () => {
       await expect(card).toContainText("Offline");
       await expect(page.getByRole("alert")).toBeVisible({ timeout: 10_000 });
 
+      // Item 82 follow-up: the error and offline rows sit full-width below
+      // the card's two-column main region, not squeezed into its narrow
+      // left or right column.
+      const cardBox = await card.boundingBox();
+      const errorRowBox = await page.getByRole("alert").boundingBox();
+      const offlineBox = await page.getByText("Offline").boundingBox();
+      if (!cardBox || !errorRowBox || !offlineBox) {
+        throw new Error("expected the card, error row and offline row to have a box");
+      }
+      expect(errorRowBox.x - cardBox.x).toBeLessThanOrEqual(20);
+      expect(errorRowBox.width).toBeGreaterThanOrEqual(cardBox.width * 0.7);
+      expect(offlineBox.x - cardBox.x).toBeLessThanOrEqual(20);
+      expect(offlineBox.width).toBeGreaterThanOrEqual(cardBox.width * 0.7);
+
       const mapContainer = page.locator('[data-testid="map-container"]');
       const mapBox = await mapContainer.boundingBox();
       const viewport = page.viewportSize();
@@ -321,6 +335,20 @@ test.describe("free roam", () => {
       const card = page.locator(".ride-status-card");
       await expect(card).toContainText("Offline");
       await expect(page.getByRole("alert")).toBeVisible({ timeout: 10_000 });
+
+      // Item 82 follow-up: the error and offline rows sit full-width below
+      // the card's two-column main region, not squeezed into its narrow
+      // left or right column.
+      const cardBox = await card.boundingBox();
+      const errorRowBox = await page.getByRole("alert").boundingBox();
+      const offlineBox = await page.getByText("Offline").boundingBox();
+      if (!cardBox || !errorRowBox || !offlineBox) {
+        throw new Error("expected the card, error row and offline row to have a box");
+      }
+      expect(errorRowBox.x - cardBox.x).toBeLessThanOrEqual(20);
+      expect(errorRowBox.width).toBeGreaterThanOrEqual(cardBox.width * 0.7);
+      expect(offlineBox.x - cardBox.x).toBeLessThanOrEqual(20);
+      expect(offlineBox.width).toBeGreaterThanOrEqual(cardBox.width * 0.7);
 
       const mapContainer = page.locator('[data-testid="map-container"]');
       const mapBox = await mapContainer.boundingBox();

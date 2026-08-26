@@ -44,9 +44,10 @@ function freeRoamTrackingLabel(
  * Free roam's counterpart to RidingStatusCard.tsx — deliberately not a
  * reuse of that component, since its off-route/remaining-distance/ascent
  * props are fundamentally route-shaped and meaningless without a route.
- * Same card shape, wake-lock slot and compact error/offline rows, but the
- * top-row label is a plain tracking-state word instead of an off-route
- * status, and there is no remaining-distance/ascent row.
+ * Same two-column main region (item 82 follow-up, 2026-08-26), wake-lock
+ * slot and full-width error/offline rows, but the text column's status
+ * label is a plain tracking-state word instead of an off-route status,
+ * and there is no remaining-distance/ascent row.
  */
 export function FreeRoamStatusCard({
   liveStatus,
@@ -59,15 +60,19 @@ export function FreeRoamStatusCard({
 
   return (
     <div className="ride-status-card">
-      <div className="ride-status-card-top-row">
-        <span role="status" className="ride-status-card-status">
-          {topLabel}
-        </span>
+      <div className="ride-status-card-main">
+        <div className="ride-status-card-text">
+          <span role="status" className="ride-status-card-status">
+            {topLabel}
+          </span>
+          {liveStatus ? (
+            <span className="ride-status-card-detail">
+              {formatGpsStatusLine(liveStatus)}
+            </span>
+          ) : null}
+        </div>
         {wakeLock ? <RidingWakeLockControl {...wakeLock} /> : null}
       </div>
-      {liveStatus ? (
-        <span className="ride-status-card-detail">{formatGpsStatusLine(liveStatus)}</span>
-      ) : null}
       {geolocationErrorMessage ? (
         <div role="alert" className="ride-status-card-error-row">
           <span>{geolocationErrorMessage}</span>

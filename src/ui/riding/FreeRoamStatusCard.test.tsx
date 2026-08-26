@@ -45,7 +45,7 @@ describe("FreeRoamStatusCard", () => {
     expect(screen.getByText("Location — signal lost")).toBeInTheDocument();
   });
 
-  it("shows the GPS accuracy/freshness detail line, matching route Riding's convention, and never repeats the top-row label text", () => {
+  it("shows the GPS accuracy/freshness detail line, matching route Riding's convention, and never repeats the status label text", () => {
     render(
       <FreeRoamStatusCard
         liveStatus={buildLiveStatus({
@@ -147,7 +147,7 @@ describe("FreeRoamStatusCard", () => {
     );
   });
 
-  it("renders the wake-lock control inside the top row when a wakeLock prop is supplied", () => {
+  it("renders the wake-lock control inside the main region, beside the text column, not inside it", () => {
     const fake = buildFakeWakeLockSource();
     render(
       <FreeRoamStatusCard
@@ -162,7 +162,9 @@ describe("FreeRoamStatusCard", () => {
         }}
       />,
     );
-    expect(screen.getByRole("button", { name: "Screen on" })).toBeInTheDocument();
+    const button = screen.getByRole("button", { name: "Screen on" });
+    expect(button.closest(".ride-status-card-main")).not.toBeNull();
+    expect(button.closest(".ride-status-card-text")).toBeNull();
   });
 
   it("renders no wake-lock slot at all when the wakeLock prop is undefined", () => {
@@ -175,5 +177,39 @@ describe("FreeRoamStatusCard", () => {
       />,
     );
     expect(screen.queryByRole("button", { name: "Screen on" })).toBeNull();
+  });
+
+  it("groups the status label and the GPS detail line inside the same text column", () => {
+    render(
+      <FreeRoamStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+      />,
+    );
+    const textColumn = screen.getByText("Location").closest(".ride-status-card-text");
+    expect(textColumn).not.toBeNull();
+    expect(screen.getByText("GPS ±8 m · Live").closest(".ride-status-card-text")).toBe(
+      textColumn,
+    );
+  });
+
+  it("keeps the error row and offline row outside the main region, as direct children of the card", () => {
+    const { container } = render(
+      <FreeRoamStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage="Your location is currently unavailable."
+        onRetryGeolocation={noop}
+        online={false}
+      />,
+    );
+    expect(container.querySelector(".ride-status-card-main")).not.toBeNull();
+    const errorRow = screen.getByRole("alert");
+    expect(errorRow.closest(".ride-status-card-main")).toBeNull();
+    expect(errorRow.parentElement).toHaveClass("ride-status-card");
+    const offline = screen.getByText("Offline");
+    expect(offline.closest(".ride-status-card-main")).toBeNull();
+    expect(offline.parentElement).toHaveClass("ride-status-card");
   });
 });

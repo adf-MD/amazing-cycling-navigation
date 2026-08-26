@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 
@@ -308,5 +308,185 @@ test.describe("compact control on a narrow phone viewport", () => {
 
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
     expect(consoleErrors).toEqual([]);
+  });
+
+  test("the status label, remaining distance and GPS line form one left column, fully beside the Screen on button, which spans their combined height (item 82 follow-up)", async ({
+    page,
+    context,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    await installStubWakeLock(page);
+
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+    await page.goto("/");
+    await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
+
+    const routeButton = page.getByRole("button", { name: "smoke-route", exact: true });
+    await expect(routeButton).toBeVisible();
+    await routeButton.click();
+
+    await page.getByRole("button", { name: "Start riding" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    const toggle = page.getByRole("button", { name: "Screen on" });
+    await expect(toggle).toBeVisible();
+    // Wait for the fix to land so the remaining-distance/ascent and GPS
+    // lines have appeared, not just the initial "Waiting for a GPS fix…"
+    // label.
+    await expect(page.getByText(/GPS ±/)).toBeVisible();
+
+    const statusBox = await page.getByText("On route", { exact: true }).boundingBox();
+    const remainingBox = await page.getByText(/km ·/).boundingBox();
+    const gpsBox = await page.getByText(/^GPS ±/).boundingBox();
+    // The actual toggle button's own box — not the outer
+    // .ride-wake-lock-control wrapper, which can be taller/wider than the
+    // visible button and would mask a wrapped-below-the-stack layout.
+    const toggleBox = await toggle.boundingBox();
+    if (!statusBox || !remainingBox || !gpsBox || !toggleBox) {
+      throw new Error(
+        "expected the status card's text rows and toggle to have a bounding box",
+      );
+    }
+
+    // No dead-space gap: the previously-shipped layout put the remaining/
+    // GPS lines below the taller button, leaving a large gap here; the
+    // corrected layout keeps the card's own small inter-line gap.
+    expect(remainingBox.y - (statusBox.y + statusBox.height)).toBeLessThan(12);
+    expect(gpsBox.y - (remainingBox.y + remainingBox.height)).toBeLessThan(12);
+
+    // The three text rows form one left-aligned column, in stack order.
+    expect(Math.abs(remainingBox.x - statusBox.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(gpsBox.x - statusBox.x)).toBeLessThanOrEqual(1);
+    expect(statusBox.y).toBeLessThan(remainingBox.y);
+    expect(remainingBox.y).toBeLessThan(gpsBox.y);
+
+    // Every text row sits entirely to the left of the button. A layout
+    // where the button had wrapped onto its own line below the stack
+    // could still satisfy the gap/alignment checks above while failing
+    // this one, since the button's left edge would then sit at or left of
+    // the text rows instead of to their right.
+    expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(toggleBox.x);
+    expect(remainingBox.x + remainingBox.width).toBeLessThanOrEqual(toggleBox.x);
+    expect(gpsBox.x + gpsBox.width).toBeLessThanOrEqual(toggleBox.x);
+
+    // The button's top aligns with the status row's top...
+    expect(Math.abs(toggleBox.y - statusBox.y)).toBeLessThanOrEqual(4);
+    // ...and its bottom reaches at least the GPS line's bottom — checked
+    // against the GPS line's bottom, not merely its top, since a button
+    // that had wrapped onto its own line below the whole stack could
+    // still have a bottom past the GPS line's top without genuinely
+    // spanning the stack's full height.
+    expect(toggleBox.y + toggleBox.height).toBeGreaterThanOrEqual(
+      gpsBox.y + gpsBox.height - 4,
+    );
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
+});
+
+test.describe("enlarged text and short landscape (item 82 follow-up)", () => {
+  async function startRidingWithFix(page: Page, context: BrowserContext) {
+    await installStubWakeLock(page);
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+    await page.goto("/");
+    await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
+    const routeButton = page.getByRole("button", { name: "smoke-route", exact: true });
+    await expect(routeButton).toBeVisible();
+    await routeButton.click();
+    await page.getByRole("button", { name: "Start riding" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    await expect(page.getByText(/GPS ±/)).toBeVisible();
+    return unexpectedOpenFreeMapRequests;
+  }
+
+  test.describe("200% text at ordinary phone width", () => {
+    test.use({ viewport: { width: 390, height: 844 } });
+
+    test("no horizontal overflow, the text rows stay grouped, and the toggle stays reachable", async ({
+      page,
+      context,
+    }) => {
+      const unexpectedOpenFreeMapRequests = await startRidingWithFix(page, context);
+
+      await page.evaluate(() => {
+        document.documentElement.style.fontSize = "200%";
+      });
+
+      const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      const viewportWidth = page.viewportSize()?.width;
+      if (viewportWidth === undefined) throw new Error("expected a viewport width");
+      expect(scrollWidth).toBeLessThanOrEqual(viewportWidth + 1);
+
+      const statusBox = await page.getByText("On route", { exact: true }).boundingBox();
+      const remainingBox = await page.getByText(/km ·/).boundingBox();
+      const gpsBox = await page.getByText(/^GPS ±/).boundingBox();
+      const toggle = page.getByRole("button", { name: "Screen on" });
+      const toggleBox = await toggle.boundingBox();
+      if (!statusBox || !remainingBox || !gpsBox || !toggleBox) {
+        throw new Error("expected the status rows and toggle to have a bounding box");
+      }
+
+      // The text rows stay grouped as one ordered left column, whether or
+      // not the control has wrapped onto its own line at this size.
+      expect(Math.abs(remainingBox.x - statusBox.x)).toBeLessThanOrEqual(2);
+      expect(Math.abs(gpsBox.x - statusBox.x)).toBeLessThanOrEqual(2);
+      expect(statusBox.y).toBeLessThan(remainingBox.y);
+      expect(remainingBox.y).toBeLessThan(gpsBox.y);
+
+      await expect(toggle).toBeVisible();
+      expect(toggleBox.width).toBeGreaterThanOrEqual(44);
+      expect(toggleBox.height).toBeGreaterThanOrEqual(44);
+
+      expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    });
+  });
+
+  test.describe("844x390 short landscape", () => {
+    test.use({ viewport: { width: 844, height: 390 } });
+
+    test("no horizontal overflow, the text rows stay grouped, and the toggle stays reachable", async ({
+      page,
+      context,
+    }) => {
+      const unexpectedOpenFreeMapRequests = await startRidingWithFix(page, context);
+
+      const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      expect(scrollWidth).toBeLessThanOrEqual(844 + 1);
+
+      const statusBox = await page.getByText("On route", { exact: true }).boundingBox();
+      const remainingBox = await page.getByText(/km ·/).boundingBox();
+      const gpsBox = await page.getByText(/^GPS ±/).boundingBox();
+      const toggle = page.getByRole("button", { name: "Screen on" });
+      const toggleBox = await toggle.boundingBox();
+      if (!statusBox || !remainingBox || !gpsBox || !toggleBox) {
+        throw new Error("expected the status rows and toggle to have a bounding box");
+      }
+
+      expect(Math.abs(remainingBox.x - statusBox.x)).toBeLessThanOrEqual(2);
+      expect(Math.abs(gpsBox.x - statusBox.x)).toBeLessThanOrEqual(2);
+      expect(statusBox.y).toBeLessThan(remainingBox.y);
+      expect(remainingBox.y).toBeLessThan(gpsBox.y);
+
+      await expect(toggle).toBeVisible();
+      expect(toggleBox.width).toBeGreaterThanOrEqual(44);
+      expect(toggleBox.height).toBeGreaterThanOrEqual(44);
+
+      expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    });
   });
 });

@@ -72,15 +72,17 @@ function buildRemainingAriaLabel(
 
 /**
  * The compact active-Riding status card (backlog item 75): one bordered
- * box holding, top to bottom, the route/GPS status line beside the
- * wake-lock control, remaining distance/ascent, GPS accuracy/staleness,
- * a compact geolocation-error row with an inline retry, and a compact
+ * box holding a two-column main region — a left text column (the
+ * route/GPS status line, remaining distance/ascent and GPS
+ * accuracy/staleness) beside the wake-lock control on the right (item 82
+ * follow-up, 2026-08-26) — followed by a full-width compact
+ * geolocation-error row with an inline retry, and a full-width compact
  * offline indicator. Receives only already-derived presentation values;
  * it never computes off-route/stale/geolocation state itself, and the
  * wake-lock lifecycle stays entirely inside RidingWakeLockControl — this
  * component only decides whether to render that control at all.
  *
- * The top-row label is unconditional, so the card can never render empty:
+ * The status label is unconditional, so the card can never render empty:
  * it shows the off-route status once a fix exists, "GPS error" once an
  * error exists with no fix yet, or "Waiting for a GPS fix…" otherwise.
  * "Off route" and the error row each carry their own role="alert" and may
@@ -103,32 +105,36 @@ export function RidingStatusCard({
 
   return (
     <div className="ride-status-card">
-      <div className="ride-status-card-top-row">
-        <span
-          role={topRole}
-          className={`ride-status-card-status${
-            liveStatus ? ` ride-status-card-status--${liveStatus.offRouteLevel}` : ""
-          }`}
-        >
-          {topLabel}
-        </span>
+      <div className="ride-status-card-main">
+        <div className="ride-status-card-text">
+          <span
+            role={topRole}
+            className={`ride-status-card-status${
+              liveStatus ? ` ride-status-card-status--${liveStatus.offRouteLevel}` : ""
+            }`}
+          >
+            {topLabel}
+          </span>
+          {liveStatus && liveStatus.distanceRemainingMetres !== null ? (
+            <span
+              className="ride-status-card-remaining"
+              aria-label={buildRemainingAriaLabel(
+                liveStatus.distanceRemainingMetres,
+                liveStatus.remainingAscentMetres,
+              )}
+            >
+              {formatDistanceKm(liveStatus.distanceRemainingMetres)} ·{" "}
+              {formatRemainingAscentText(liveStatus.remainingAscentMetres)}
+            </span>
+          ) : null}
+          {liveStatus ? (
+            <span className="ride-status-card-gps">
+              {formatGpsStatusLine(liveStatus)}
+            </span>
+          ) : null}
+        </div>
         {wakeLock ? <RidingWakeLockControl {...wakeLock} /> : null}
       </div>
-      {liveStatus && liveStatus.distanceRemainingMetres !== null ? (
-        <span
-          className="ride-status-card-remaining"
-          aria-label={buildRemainingAriaLabel(
-            liveStatus.distanceRemainingMetres,
-            liveStatus.remainingAscentMetres,
-          )}
-        >
-          {formatDistanceKm(liveStatus.distanceRemainingMetres)} ·{" "}
-          {formatRemainingAscentText(liveStatus.remainingAscentMetres)}
-        </span>
-      ) : null}
-      {liveStatus ? (
-        <span className="ride-status-card-gps">{formatGpsStatusLine(liveStatus)}</span>
-      ) : null}
       {geolocationErrorMessage ? (
         <div role="alert" className="ride-status-card-error-row">
           <span>{geolocationErrorMessage}</span>

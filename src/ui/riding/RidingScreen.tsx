@@ -1650,11 +1650,13 @@ export function RidingScreen({
       ) : null}
 
       {/* The single compact status card (backlog item 75, superseding item
-       * 68's still-separate wake-lock/status-strip siblings): route/GPS
-       * status and the wake-lock control share one top row, followed by
-       * remaining distance/ascent, GPS freshness, a compact geolocation-
-       * error row with its own inline retry, and a compact offline
-       * indicator — all inside one bordered card, never an empty one. */}
+       * 68's still-separate wake-lock/status-strip siblings): a two-column
+       * main region (item 82 follow-up, 2026-08-26) — a left text column
+       * (route/GPS status, remaining distance/ascent, GPS freshness) beside
+       * the wake-lock control on the right — followed by a full-width
+       * compact geolocation-error row with its own inline retry, and a
+       * full-width compact offline indicator — all inside one bordered
+       * card, never an empty one. */}
       {showStatusCard ? (
         <RidingStatusCard
           liveStatus={

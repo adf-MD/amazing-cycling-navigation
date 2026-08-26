@@ -189,7 +189,7 @@ describe("RidingStatusCard", () => {
     expect(screen.getByText("GPS ±7 m · Stale")).toBeInTheDocument();
   });
 
-  it("renders the wake-lock control inside the top row when a wakeLock prop is supplied", () => {
+  it("renders the wake-lock control inside the main region, beside the text column, not inside it", () => {
     const fake = buildFakeWakeLockSource();
     render(
       <RidingStatusCard
@@ -204,7 +204,9 @@ describe("RidingStatusCard", () => {
         }}
       />,
     );
-    expect(screen.getByRole("button", { name: "Screen on" })).toBeInTheDocument();
+    const button = screen.getByRole("button", { name: "Screen on" });
+    expect(button.closest(".ride-status-card-main")).not.toBeNull();
+    expect(button.closest(".ride-status-card-text")).toBeNull();
   });
 
   it("renders no wake-lock slot at all when the wakeLock prop is undefined", () => {
@@ -217,6 +219,43 @@ describe("RidingStatusCard", () => {
       />,
     );
     expect(screen.queryByLabelText("Screen on")).toBeNull();
+  });
+
+  it("groups the status label, remaining metrics and GPS line inside the same text column", () => {
+    render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+      />,
+    );
+    const textColumn = screen.getByText("On route").closest(".ride-status-card-text");
+    expect(textColumn).not.toBeNull();
+    expect(
+      screen.getByText("1.2 km · 993 m ascent").closest(".ride-status-card-text"),
+    ).toBe(textColumn);
+    expect(screen.getByText("GPS ±7 m · Live").closest(".ride-status-card-text")).toBe(
+      textColumn,
+    );
+  });
+
+  it("keeps the error row and offline row outside the main region, as direct children of the card", () => {
+    const { container } = render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus({ offRouteLevel: "on-route" })}
+        geolocationErrorMessage="Your location is currently unavailable."
+        onRetryGeolocation={noop}
+        online={false}
+      />,
+    );
+    expect(container.querySelector(".ride-status-card-main")).not.toBeNull();
+    const errorRow = screen.getByRole("alert");
+    expect(errorRow.closest(".ride-status-card-main")).toBeNull();
+    expect(errorRow.parentElement).toHaveClass("ride-status-card");
+    const offline = screen.getByText("Offline");
+    expect(offline.closest(".ride-status-card-main")).toBeNull();
+    expect(offline.parentElement).toHaveClass("ride-status-card");
   });
 
   it("shows a waiting-for-fix label with no remaining/GPS rows when there is no fix and no error", () => {

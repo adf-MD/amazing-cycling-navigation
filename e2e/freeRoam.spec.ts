@@ -870,6 +870,69 @@ test.describe("390px phone viewport", () => {
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
   });
 
+  // Item 82 follow-up: proves the status card's two-column layout for free
+  // roam too, not only route Riding — this file previously had no
+  // wake-lock/status-card layout coverage at all.
+  test("the Location label and GPS line form one left column, fully beside the Screen on button, which spans their combined height", async ({
+    page,
+    context,
+  }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "wakeLock", {
+        value: {
+          request: () =>
+            Promise.resolve({
+              release: () => Promise.resolve(),
+              addEventListener: () => {
+                /* no-op: this stub never emits an unsolicited release */
+              },
+              removeEventListener: () => {
+                /* no-op */
+              },
+            }),
+        },
+        configurable: true,
+      });
+    });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+    await startFreeRoam(page, context);
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    const toggle = page.getByRole("button", { name: "Screen on" });
+    await expect(toggle).toBeVisible();
+    await expect(page.getByText(/GPS ±/)).toBeVisible();
+
+    const statusBox = await page.getByText("Location", { exact: true }).boundingBox();
+    const gpsBox = await page.getByText(/^GPS ±/).boundingBox();
+    const toggleBox = await toggle.boundingBox();
+    if (!statusBox || !gpsBox || !toggleBox) {
+      throw new Error(
+        "expected the status card's text rows and toggle to have a bounding box",
+      );
+    }
+
+    // No dead-space gap, and the two rows share one left column.
+    expect(gpsBox.y - (statusBox.y + statusBox.height)).toBeLessThan(12);
+    expect(Math.abs(gpsBox.x - statusBox.x)).toBeLessThanOrEqual(1);
+    expect(statusBox.y).toBeLessThan(gpsBox.y);
+
+    // Both text rows sit entirely to the left of the button.
+    expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(toggleBox.x);
+    expect(gpsBox.x + gpsBox.width).toBeLessThanOrEqual(toggleBox.x);
+
+    // The button's top aligns with the status row's top, and its bottom
+    // reaches at least the GPS line's bottom (checked against the GPS
+    // line's bottom, not merely its top — see ridingWakeLock.spec.ts's
+    // equivalent route-Riding test for why that distinction matters).
+    expect(Math.abs(toggleBox.y - statusBox.y)).toBeLessThanOrEqual(4);
+    expect(toggleBox.y + toggleBox.height).toBeGreaterThanOrEqual(
+      gpsBox.y + gpsBox.height - 4,
+    );
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  });
+
   // Backlog item 58's own genuinely new CSS mechanism: unlike route
   // Riding's active branch, free roam's fixed shell has no Map/Profile
   // switcher below .ride-content-area--immersive to fold the bottom
