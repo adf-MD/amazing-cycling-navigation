@@ -260,7 +260,7 @@ test("free roam unfinished + opening a route shows the same confirmation lifecyc
 
   await startFreeRoam(page, context);
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
-  await expect.poll(() => page.getByText(/GPS accuracy:/).isVisible()).toBe(true);
+  await expect.poll(() => page.getByText(/GPS ±/).isVisible()).toBe(true);
   await expect
     .poll(() => readActiveRideStateRow(page), { timeout: 10_000 })
     .toMatchObject({ kind: "free-roam", lastFix: expect.anything() });
@@ -346,7 +346,7 @@ test("resuming the exact same unfinished free-roam session starts exactly one wa
 
   await startFreeRoam(page, context);
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
-  await expect.poll(() => page.getByText(/GPS accuracy:/).isVisible()).toBe(true);
+  await expect.poll(() => page.getByText(/GPS ±/).isVisible()).toBe(true);
   await expect
     .poll(() => readActiveRideStateRow(page), { timeout: 10_000 })
     .toMatchObject({ kind: "free-roam", lastFix: expect.anything() });

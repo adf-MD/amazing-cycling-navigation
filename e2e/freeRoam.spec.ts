@@ -214,7 +214,7 @@ test("Start free roam shows a live position on the map, with zero OpenRouteServi
   await expect(page.getByRole("heading", { level: 1, name: "Free roam" })).toBeVisible();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: "End ride" })).toBeVisible();
-  await expect(page.getByText(/GPS accuracy:/)).toBeVisible();
+  await expect(page.getByText(/GPS ±/)).toBeVisible();
 
   expect(orsRequested).toBe(false);
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
@@ -433,7 +433,7 @@ test("a committed free-roam row survives a real reload; the launcher offers Resu
   // A fix must actually have been accepted and persisted before reloading —
   // mirrors ridingLauncher.spec.ts's own established rationale (UI state
   // going green is not proof the async IndexedDB write has landed).
-  await expect.poll(() => page.getByText(/GPS accuracy:/).isVisible()).toBe(true);
+  await expect.poll(() => page.getByText(/GPS ±/).isVisible()).toBe(true);
   await expect
     .poll(() => readActiveRideStateRow(page), { timeout: 10_000 })
     .toMatchObject({ kind: "free-roam", lastFix: expect.anything() });
@@ -465,7 +465,7 @@ test("a committed free-roam row survives a real reload; the launcher offers Resu
   // covers this precisely (useFreeRoamNavigation.test.ts's "restore"
   // suite). What matters end-to-end is that restoration definitely
   // happened and a subsequent position update definitely reaches "Live".
-  await expect(page.getByText(/GPS accuracy:/)).toBeVisible();
+  await expect(page.getByText(/GPS ±/)).toBeVisible();
 
   await context.setGeolocation(MOVED);
   await expect(page.getByText(/Live/)).toBeVisible();
@@ -789,7 +789,7 @@ test("the local fallback map style still shows the position marker and camera co
   await expect(
     page.getByRole("button", { name: "North-up, top-down view" }),
   ).toBeVisible();
-  await expect(page.getByText(/GPS accuracy:/)).toBeVisible();
+  await expect(page.getByText(/GPS ±/)).toBeVisible();
 });
 
 test.describe("390px phone viewport", () => {

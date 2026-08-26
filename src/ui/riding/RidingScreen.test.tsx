@@ -4306,7 +4306,10 @@ describe("RidingScreen", () => {
       // existing "requires an explicit tap" behaviour above.
       await user.click(await screen.findByRole("button", { name: "Resume ride" }));
 
-      expect(await screen.findByRole("checkbox", { name: /screen on/i })).toBeChecked();
+      expect(await screen.findByRole("button", { name: "Screen on" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
       expect(fakeWakeLock.requestSpy).toHaveBeenCalledOnce();
       vi.unstubAllGlobals();
     });
@@ -4338,9 +4341,10 @@ describe("RidingScreen", () => {
 
       await user.click(await screen.findByRole("button", { name: "Resume ride" }));
 
-      expect(
-        await screen.findByRole("checkbox", { name: /screen on/i }),
-      ).not.toBeChecked();
+      expect(await screen.findByRole("button", { name: "Screen on" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
       expect(fakeWakeLock.requestSpy).not.toHaveBeenCalled();
       vi.unstubAllGlobals();
     });
@@ -4536,7 +4540,10 @@ describe("RidingScreen", () => {
         "aria-pressed",
         "true",
       );
-      expect(await screen.findByRole("checkbox", { name: /screen on/i })).toBeChecked();
+      expect(await screen.findByRole("button", { name: "Screen on" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
       expect(fakeWakeLock.requestSpy).toHaveBeenCalledOnce();
     });
 
@@ -6955,9 +6962,7 @@ describe("RidingScreen", () => {
       );
 
       expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
-      expect(
-        screen.queryByRole("checkbox", { name: /screen on/i }),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Screen on" })).not.toBeInTheDocument();
     });
 
     it("does not render the wake-lock control, and issues no request, when navigator.wakeLock is absent", async () => {
@@ -6984,9 +6989,7 @@ describe("RidingScreen", () => {
         headingDegrees: null,
       });
 
-      expect(
-        screen.queryByRole("checkbox", { name: /screen on/i }),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Screen on" })).not.toBeInTheDocument();
       expect(fakeWakeLock.requestSpy).not.toHaveBeenCalled();
     });
 
@@ -7002,15 +7005,14 @@ describe("RidingScreen", () => {
         />,
       );
 
-      expect(
-        screen.queryByRole("checkbox", { name: /screen on/i }),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Screen on" })).not.toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: "Start riding" }));
 
-      expect(
-        await screen.findByRole("checkbox", { name: /screen on/i }),
-      ).not.toBeChecked();
+      expect(await screen.findByRole("button", { name: "Screen on" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
     });
 
     it("renders the immersive header (and its route title) before the compact wake-lock control in DOM order", async () => {
@@ -7033,38 +7035,12 @@ describe("RidingScreen", () => {
 
       await user.click(screen.getByRole("button", { name: "Start riding" }));
 
-      const checkbox = await screen.findByRole("checkbox", {
-        name: /screen on/i,
-      });
+      const toggle = await screen.findByRole("button", { name: "Screen on" });
       const heading = screen.getByRole("heading", { name: route.name });
 
       expect(
-        heading.compareDocumentPosition(checkbox) & Node.DOCUMENT_POSITION_FOLLOWING,
+        heading.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
-    });
-
-    it("opens the information popover from the compact row", async () => {
-      vi.stubGlobal("navigator", { onLine: true, wakeLock: { request: vi.fn() } });
-      const user = userEvent.setup();
-      const stub = buildStubGeolocationSource();
-      render(
-        <RidingScreen
-          route={route}
-          geolocationSource={stub.source}
-          mapFactory={buildStubMapFactory().factory}
-        />,
-      );
-
-      await user.click(screen.getByRole("button", { name: "Start riding" }));
-      await screen.findByRole("checkbox", { name: /screen on/i });
-
-      await user.click(screen.getByRole("button", { name: "About Screen on" }));
-
-      expect(
-        screen.getByText(
-          "Keeps the display on while Riding mode is visible. This may increase battery use.",
-        ),
-      ).toBeInTheDocument();
     });
 
     it("opening a different route than the one with a saved preference starts with the option off", async () => {
@@ -7095,9 +7071,10 @@ describe("RidingScreen", () => {
 
       await user.click(await screen.findByRole("button", { name: "Start riding" }));
 
-      expect(
-        await screen.findByRole("checkbox", { name: /screen on/i }),
-      ).not.toBeChecked();
+      expect(await screen.findByRole("button", { name: "Screen on" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
       expect(fakeWakeLock.requestSpy).not.toHaveBeenCalled();
     });
   });

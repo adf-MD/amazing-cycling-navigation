@@ -455,6 +455,23 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
         </details>
       </section>
 
+      <section className="panel stack" aria-labelledby="riding-heading">
+        <h2 id="riding-heading">Riding</h2>
+
+        <details className="settings-disclosure">
+          <summary>Screen on</summary>
+          <p>
+            Keeps the display on while an active Riding or free-roam screen is visible.
+            This may increase battery use.
+          </p>
+          <p>
+            This only applies while that screen is open and visible — it is not background
+            location tracking, and does not guarantee the display can stay on if your
+            browser does not support this feature.
+          </p>
+        </details>
+      </section>
+
       <ConfirmDialog
         open={pendingDelete}
         title="Delete OpenRouteService key"

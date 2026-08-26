@@ -171,7 +171,7 @@ describe("FreeRoamScreen", () => {
     });
 
     expect(screen.queryByText("Waiting for a GPS fix…")).toBeNull();
-    expect(screen.getByText(/GPS accuracy: ±8 m — Live/)).toBeInTheDocument();
+    expect(screen.getByText(/GPS ±8 m · Live/)).toBeInTheDocument();
   });
 
   it("a geolocation error shows the alert and Try again reactivates the watch", async () => {
@@ -447,11 +447,11 @@ describe("FreeRoamScreen", () => {
         />,
       );
 
-      const checkbox = screen.getByRole("checkbox", { name: /screen on/i });
+      const toggle = screen.getByRole("button", { name: "Screen on" });
       const heading = screen.getByRole("heading", { name: "Free roam" });
 
       expect(
-        heading.compareDocumentPosition(checkbox) & Node.DOCUMENT_POSITION_FOLLOWING,
+        heading.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     });
   });

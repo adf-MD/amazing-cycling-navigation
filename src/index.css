@@ -1363,78 +1363,55 @@ button:focus-visible {
   align-items: center;
 }
 
-/* Quieter than default so the wake-lock control's optional info/failure
- * text never competes with the route title beneath it. The success status
- * text is hidden altogether rather than merely quiet — see
- * .visually-hidden and .wake-lock-row below (backlog item 68). */
+/* Quieter than default so the wake-lock control's optional failure text
+ * never competes with the route title beneath it. The success status text
+ * is hidden altogether rather than merely quiet — see .visually-hidden
+ * below (backlog item 68; the control itself unified to a single toggle
+ * button by item 82). */
 .ride-wake-lock-control {
   font-size: 0.85rem;
   color: var(--colour-text-muted);
 }
 
-.wake-lock-row {
-  position: relative;
+/* One integrated Screen on action (backlog item 82), replacing the former
+ * checkbox + separate information popover. Structural rules only —
+ * display:flex is required for flex-direction:column to have any effect,
+ * since the base `button` rule sets no display. Styled entirely off the
+ * aria-pressed attribute itself (below), not a separately-toggled class,
+ * so the semantic state can never desync from the presentation. Inherits
+ * the base button rule's real ≥44x44px touch target. */
+.wake-lock-toggle {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-8);
+  gap: 2px;
 }
 
-/* The real ≥44x44px touch target (backlog item 68) — deliberately larger
- * than the checkbox it wraps, since a native checkbox this small would
- * otherwise fail the touch-target minimum on its own. Clicking/tapping
- * anywhere in the label, not just the checkbox glyph, toggles the
- * preference (native <label>/<input> association). */
-.wake-lock-label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  min-height: var(--touch-target-min);
-  cursor: pointer;
+.wake-lock-toggle-label {
+  font-weight: 700;
 }
 
-/* Deliberately small (backlog item 68) — .wake-lock-label above is the
- * real touch target, not this glyph. */
-.wake-lock-checkbox {
-  width: var(--space-16);
-  height: var(--space-16);
-  flex-shrink: 0;
-  accent-color: var(--colour-accent);
-}
-
-/* Visually quiet: relies on the base `button` rule for its real ≥44x44px
- * touch target, but drops the default border/background so the
- * disclosure reads as secondary to the checkbox label beside it. */
-.wake-lock-info-button {
-  border: none;
-  background: transparent;
+.wake-lock-toggle-state {
+  font-size: 0.75rem;
   color: var(--colour-text-muted);
-  padding: var(--space-8);
 }
 
-/* Anchored from the right, not the left (backlog item 75): the control
- * now sits at the right-hand end of the card's top row (space-between
- * against the status label), so a left:0 anchor would extend the popover
- * rightward from an already-right-of-centre point and overflow the
- * viewport. Anchoring the same corner the control itself sits flush
- * against keeps the popover growing back in towards the card instead. */
-.wake-lock-popover {
-  position: absolute;
-  top: calc(100% + var(--space-4));
-  right: 0;
-  z-index: 20;
-  min-width: 220px;
-  max-width: calc(100vw - var(--space-32));
-  padding: var(--space-12);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--colour-border);
-  background: var(--colour-bg-elevated);
-  color: var(--colour-text);
-  box-shadow: var(--shadow-sm);
+/* Existing restrained green/soft treatment, reusing the same idiom as
+ * .main-nav-button[aria-current="page"] and
+ * .ride-immersive-switcher-button.is-selected — a genuine binary on/off
+ * feature toggle, not the deliberately colourless multi-option
+ * .is-selected idiom used by .elevation-window-button etc. No separate
+ * "off" rule: the unstyled base `button` rule (grey border, colour-bg) is
+ * already the neutral/off state. */
+.wake-lock-toggle[aria-pressed="true"] {
+  background: var(--colour-accent-soft);
+  border-color: var(--colour-accent);
+  box-shadow: inset 0 0 0 2px var(--colour-accent);
+  color: var(--colour-accent);
 }
 
-.wake-lock-popover p {
-  margin: 0 0 var(--space-8);
+.wake-lock-toggle[aria-pressed="true"] .wake-lock-toggle-state {
+  color: var(--colour-accent);
 }
 
 .wake-lock-failure-row {
@@ -1718,9 +1695,10 @@ button:focus-visible {
   right: 64px;
   z-index: 5;
   display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  padding: var(--space-8) var(--space-12);
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-12);
   border-radius: var(--radius-md);
   background: var(--colour-bg);
   box-shadow: var(--shadow-sm);
@@ -1731,12 +1709,18 @@ button:focus-visible {
   min-width: 0;
 }
 
+/* backlog item 82: wrap rather than truncate — the previous
+ * overflow:hidden/white-space:nowrap/text-overflow:ellipsis combination
+ * clipped both "Climb active" and the remaining-distance line at
+ * ordinary phone widths, since .ride-climb-cue-action below was eating
+ * most of the row's horizontal budget. No clipping ancestor sits between
+ * these paragraphs and .ride-climb-cue's own padded box, and
+ * .ride-climb-cue-text keeps min-width:0, so wrapped text stays fully
+ * visible and contained. */
 .ride-climb-cue-title,
 .ride-climb-cue-detail {
   margin: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: break-word;
 }
 
 .ride-climb-cue-title {
@@ -1745,6 +1729,20 @@ button:focus-visible {
 
 .ride-climb-cue-detail {
   font-size: 0.85rem;
+}
+
+/* backlog item 82: a tighter horizontal-padding variant of .btn-primary
+ * for the climb cue's own View climb action, reclaiming width for the
+ * text column above. flex-shrink:0 and white-space:nowrap keep the
+ * button's own short label from itself wrapping unpredictably; .ride-
+ * climb-cue's own flex-wrap lets the button drop to its own line below
+ * the text instead, if the row is ever too narrow to hold both — proven
+ * by e2e/ridingClimbView.spec.ts at phone width, short landscape and
+ * 200% text, not merely assumed safe. */
+.ride-climb-cue-action {
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: var(--space-8) var(--space-12);
 }
 
 /* Fills in the previously orphan .riding-climb-progress class (see

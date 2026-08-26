@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-Item 82 is the next selected implementation item, followed by items 83 and 84 in that order. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
+Item 83 is the next selected implementation item, followed by item 84. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Each entry reproduces its original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this).
 
@@ -119,25 +119,6 @@ _Category: Platform compatibility_
       4. **Conflict and recovery coverage:** an inbound share must respect the existing unfinished route/free-roam conflict guard (item 42's fail-closed `checkFreeRoamConflict`-style pattern) and must never silently replace an active session or Planning draft; it must work after a fresh install/relaunch. Add Playwright coverage where meaningful, then require real Android Chrome acceptance — Chromium/Playwright emulation cannot prove real OS share-sheet registration, matching this project's existing, repeatedly-stated distinction between the `android-chrome` Playwright project and genuine physical-device verification (item 25).
     - If step 1 finds only an `Open with` path and no Share/Send path, document that conclusively and record that no pure static-PWA solution is currently available for this exact flow — do not propose a native wrapper, Trusted Web Activity, APK, or other Android-specific packaging as a workaround; that would be a major architecture departure and is explicitly not approved by this backlog item.
     - Requires the "## Explicit non-goals" edit recorded above (item 61's own cross-reference) — that section stays in the root `CLAUDE.md` and already carries this cross-reference.
-
----
-
-<a id="item-82"></a>
-
-## Item 82 — Unify the active status control and make the climb cue fully readable
-
-_Category: Immersive Riding interface_
-
-82. **Unify the active status control and make the climb cue fully readable**
-    - One bounded active-Riding presentation slice covering route Riding and free roam. Must not change session, GPS, wake-lock or climb state machines.
-    - Replace the current checkbox-plus-information-button wake-lock presentation (item 68's `.wake-lock-row`/`.wake-lock-info-button`, carried into item 75's status card) with one compact, large-target `Screen on` action integrated into the right-hand portion of the existing status card (item 75's `.ride-status-card-top-row`), adding no separate vertical row.
-    - The action must be comfortably tappable while riding, use the existing restrained green treatment when active and a neutral/grey treatment when inactive, retain a non-colour state indication, and keep correct pressed/checked semantics and accessible naming.
-    - Use the same control in route Riding (`RidingStatusCard`) and free roam (`FreeRoamStatusCard`).
-    - Move the explanatory wake-lock information, including the honest battery-consumption warning, to Settings. Remove the active-card information popover only when implementing this slice; do not change wake-lock acquisition, release, persistence, retry, or unsupported-browser behaviour (`RidingWakeLockControl`'s existing lifecycle logic).
-    - Replace free roam's `Tracking` heading with `Location` (and suitable existing-state variants) — free roam does not record a track, progress or location history.
-    - Reuse route Riding's compact GPS terminology and freshness/age formatting rules in free roam rather than maintaining a second wording convention. Share formatting logic where that is the smallest safe implementation, but do not merge `RidingStatusCard` and `FreeRoamStatusCard` merely for cosmetic reuse — they remain semantically distinct components.
-    - In the active-climb Map cue (`RidingClimbCue`, items 57/71), keep the large one-tap `View climb` action, but ensure `Climb active` and the remaining-distance text are fully readable without ellipses at ordinary phone portrait sizes. Adjust the cue's internal allocation, padding and text sizing as needed without changing cue timing, dismissal, or Profile-transition behaviour (items 71/80).
-    - Preserve large touch targets, enlarged-text fallback, portrait/short-landscape support and the fixed, non-scrolling immersive layout (item 68's immersive shell).
 
 ---
 

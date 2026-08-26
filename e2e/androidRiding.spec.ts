@@ -136,9 +136,9 @@ test("Screen on: visible and requests a lock when supported", async ({
   await page.goto("/");
   await startRiding(page);
 
-  const checkbox = page.getByRole("checkbox", { name: /screen on/i });
-  await expect(checkbox).toBeVisible();
-  await checkbox.check();
+  const toggle = page.getByRole("button", { name: "Screen on" });
+  await expect(toggle).toBeVisible();
+  await toggle.click();
   await expect(page.getByText("Screen staying awake.")).toBeAttached();
   await expect
     .poll(() =>
@@ -180,7 +180,7 @@ test("no Screen on control appears, and Riding still renders, when navigator.wak
   await page.goto("/");
   await startRiding(page);
 
-  await expect(page.getByRole("checkbox", { name: /screen on/i })).not.toBeAttached();
+  await expect(page.getByRole("button", { name: "Screen on" })).not.toBeAttached();
   await expect(page.locator('[data-testid="map-container"] canvas')).toBeVisible();
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
@@ -214,9 +214,9 @@ test("a rejecting Wake Lock request surfaces the existing retry state without cr
   await page.goto("/");
   await startRiding(page);
 
-  const checkbox = page.getByRole("checkbox", { name: /screen on/i });
-  await expect(checkbox).toBeVisible();
-  await checkbox.check();
+  const toggle = page.getByRole("button", { name: "Screen on" });
+  await expect(toggle).toBeVisible();
+  await toggle.click();
 
   const retryAlert = page.getByRole("alert");
   await expect(retryAlert).toBeVisible();

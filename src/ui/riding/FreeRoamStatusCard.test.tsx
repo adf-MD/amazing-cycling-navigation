@@ -19,7 +19,7 @@ const noop = () => {
 };
 
 describe("FreeRoamStatusCard", () => {
-  it("shows a Tracking label with role=status for a live fix", () => {
+  it("shows a Location label with role=status for a live fix", () => {
     render(
       <FreeRoamStatusCard
         liveStatus={buildLiveStatus()}
@@ -28,12 +28,12 @@ describe("FreeRoamStatusCard", () => {
         online={true}
       />,
     );
-    const status = screen.getByText("Tracking");
+    const status = screen.getByText("Location");
     expect(status).toHaveAttribute("role", "status");
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("shows a distinct tracking label for a stale fix", () => {
+  it("shows a distinct location label for a stale fix", () => {
     render(
       <FreeRoamStatusCard
         liveStatus={buildLiveStatus({ isStale: true })}
@@ -42,10 +42,10 @@ describe("FreeRoamStatusCard", () => {
         online={true}
       />,
     );
-    expect(screen.getByText("Tracking — signal lost")).toBeInTheDocument();
+    expect(screen.getByText("Location — signal lost")).toBeInTheDocument();
   });
 
-  it("shows the GPS accuracy/freshness detail line and never repeats the top-row label text", () => {
+  it("shows the GPS accuracy/freshness detail line, matching route Riding's convention, and never repeats the top-row label text", () => {
     render(
       <FreeRoamStatusCard
         liveStatus={buildLiveStatus({
@@ -58,9 +58,22 @@ describe("FreeRoamStatusCard", () => {
         online={true}
       />,
     );
-    const label = screen.getByText("Tracking");
-    const detail = screen.getByText(/GPS accuracy: ±8 m/);
+    const label = screen.getByText("Location");
+    const detail = screen.getByText("GPS ±8 m · Live");
     expect(label.textContent).not.toEqual(detail.textContent);
+  });
+
+  it("shows no age parenthetical for a fresh fix even when fixAgeMs is non-null", () => {
+    render(
+      <FreeRoamStatusCard
+        liveStatus={buildLiveStatus({ isStale: false, fixAgeMs: 3000 })}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+      />,
+    );
+    expect(screen.getByText("GPS ±8 m · Live")).toBeInTheDocument();
+    expect(screen.queryByText(/ago/)).toBeNull();
   });
 
   it("shows a waiting-for-fix label with no GPS detail row when there is no fix and no error", () => {
@@ -73,7 +86,7 @@ describe("FreeRoamStatusCard", () => {
       />,
     );
     expect(screen.getByText("Waiting for a GPS fix…")).toBeInTheDocument();
-    expect(screen.queryByText(/GPS accuracy:/)).toBeNull();
+    expect(screen.queryByText(/GPS ±/)).toBeNull();
   });
 
   it("shows a GPS error label and a working inline retry when there is no fix yet", () => {
@@ -102,7 +115,7 @@ describe("FreeRoamStatusCard", () => {
         online={true}
       />,
     );
-    expect(screen.getByText(/GPS accuracy:.*Stale/)).toBeInTheDocument();
+    expect(screen.getByText(/GPS ±8 m · Stale/)).toBeInTheDocument();
     expect(screen.getAllByText("Getting your location timed out.")).toHaveLength(1);
   });
 
@@ -149,7 +162,7 @@ describe("FreeRoamStatusCard", () => {
         }}
       />,
     );
-    expect(screen.getByLabelText("Screen on")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Screen on" })).toBeInTheDocument();
   });
 
   it("renders no wake-lock slot at all when the wakeLock prop is undefined", () => {
@@ -161,6 +174,6 @@ describe("FreeRoamStatusCard", () => {
         online={true}
       />,
     );
-    expect(screen.queryByLabelText("Screen on")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Screen on" })).toBeNull();
   });
 });

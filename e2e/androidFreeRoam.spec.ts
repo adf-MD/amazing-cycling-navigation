@@ -38,7 +38,7 @@ test("starts free roam, shows a live position, and persists a recoverable sessio
   await expect(page.getByRole("heading", { level: 1, name: "Free roam" })).toBeVisible();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
   await expect(page.locator('[data-testid="map-container"] canvas')).toBeVisible();
-  await expect(page.getByText(/GPS accuracy:/)).toBeVisible();
+  await expect(page.getByText(/GPS ±/)).toBeVisible();
 
   // The global nav header is genuinely absent the instant free roam is
   // genuinely watching (backlog item 55, superseding the old "static"

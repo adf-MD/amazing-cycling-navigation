@@ -295,9 +295,9 @@ test("Pause on route Riding releases the wake lock while preserving the rider's 
   await page.getByRole("button", { name: "Start riding" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-  const checkbox = page.getByRole("checkbox", { name: /screen on/i });
-  await expect(checkbox).toBeVisible();
-  await checkbox.check();
+  const toggle = page.getByRole("button", { name: "Screen on" });
+  await expect(toggle).toBeVisible();
+  await toggle.click();
   await expect(page.getByText("Screen staying awake.")).toBeAttached();
   let wakeLockState = await readWakeLockState(page);
   expect(wakeLockState.requestCount).toBe(1);
@@ -312,14 +312,14 @@ test("Pause on route Riding releases the wake lock while preserving the rider's 
   const pausedRow = await readActiveRideStateRow(page);
   expect(pausedRow).toMatchObject({ wakeLockDesired: true });
 
-  // Resuming re-acquires the lock, and the checkbox reflects the
-  // preserved preference without the rider needing to re-check it — one
-  // tap, no launcher round-trip (backlog item 72).
+  // Resuming re-acquires the lock, and the toggle reflects the preserved
+  // preference without the rider needing to re-press it — one tap, no
+  // launcher round-trip (backlog item 72).
   await page.getByRole("button", { name: "Resume ride" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-  const resumedCheckbox = page.getByRole("checkbox", { name: /screen on/i });
-  await expect(resumedCheckbox).toBeChecked();
+  const resumedToggle = page.getByRole("button", { name: "Screen on" });
+  await expect(resumedToggle).toHaveAttribute("aria-pressed", "true");
   await expect.poll(async () => (await readWakeLockState(page)).requestCount).toBe(2);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
@@ -491,9 +491,9 @@ test("Pause on active free roam releases the wake lock, persists a resumable sna
   await expect(immersiveHeaderLocator(page)).toBeVisible();
   expect(await readWatchPositionCallCount(page)).toBe(1);
 
-  const checkbox = page.getByRole("checkbox", { name: /screen on/i });
-  await expect(checkbox).toBeVisible();
-  await checkbox.check();
+  const toggle = page.getByRole("button", { name: "Screen on" });
+  await expect(toggle).toBeVisible();
+  await toggle.click();
   await expect(page.getByText("Screen staying awake.")).toBeAttached();
 
   await expect(page.getByRole("alertdialog")).toHaveCount(0);

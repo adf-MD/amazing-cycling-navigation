@@ -4,6 +4,7 @@ import {
   formatDistanceKmValue,
   formatMetres,
 } from "../shared/routeSummary.ts";
+import { formatGpsStatusLine } from "./rideStatusText.ts";
 import {
   RidingWakeLockControl,
   type RidingWakeLockControlProps,
@@ -39,12 +40,6 @@ const OFF_ROUTE_LABEL: Record<OffRouteLevel, string> = {
   "possibly-off-route": "Possibly off route",
   "off-route": "Off route",
 };
-
-function formatFixAge(ageMs: number): string {
-  const seconds = Math.max(0, Math.round(ageMs / 1000));
-  if (seconds < 60) return `${String(seconds)}s ago`;
-  return `${String(Math.round(seconds / 60))} min ago`;
-}
 
 // Deliberately not formatAscent() from routeSummary.ts: that helper's
 // "ascent not available" wording is tuned for the separate whole-route-
@@ -105,10 +100,6 @@ export function RidingStatusCard({
       ? "GPS error"
       : "Waiting for a GPS fix…";
   const topRole = liveStatus?.offRouteLevel === "off-route" ? "alert" : "status";
-  const ageSuffix =
-    liveStatus?.isStale && liveStatus.fixAgeMs !== null
-      ? ` (${formatFixAge(liveStatus.fixAgeMs)})`
-      : "";
 
   return (
     <div className="ride-status-card">
@@ -136,10 +127,7 @@ export function RidingStatusCard({
         </span>
       ) : null}
       {liveStatus ? (
-        <span className="ride-status-card-gps">
-          GPS ±{Math.round(liveStatus.accuracyMetres)} m ·{" "}
-          {liveStatus.isStale ? `Stale${ageSuffix}` : "Live"}
-        </span>
+        <span className="ride-status-card-gps">{formatGpsStatusLine(liveStatus)}</span>
       ) : null}
       {geolocationErrorMessage ? (
         <div role="alert" className="ride-status-card-error-row">

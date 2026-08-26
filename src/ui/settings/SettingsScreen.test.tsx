@@ -600,4 +600,49 @@ describe("SettingsScreen", () => {
       ).toBeInTheDocument();
     });
   });
+
+  describe("Riding — Screen on explanation (backlog item 82)", () => {
+    it("has its own dedicated panel, with the explanation in a collapsed disclosure", () => {
+      render(<SettingsScreen />);
+
+      expect(
+        screen.getByRole("heading", { level: 2, name: "Riding" }),
+      ).toBeInTheDocument();
+
+      const details = screen.getByText("Screen on").closest("details");
+      expect(details).not.toBeNull();
+      expect(details).not.toHaveAttribute("open");
+
+      const ridingSection = screen
+        .getByRole("heading", { name: "Riding" })
+        .closest("section");
+      expect(ridingSection).toContainElement(details);
+    });
+
+    it("explains what Screen on does and includes an explicit battery warning", () => {
+      render(<SettingsScreen />);
+      const details = screen.getByText("Screen on").closest("details");
+      if (details) details.open = true;
+
+      expect(
+        screen.getByText(/keeps the display on while an active riding or free-roam/i),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/may increase battery use/i)).toBeInTheDocument();
+    });
+
+    it("makes clear this only applies to a visible active screen, not background tracking", () => {
+      render(<SettingsScreen />);
+      const details = screen.getByText("Screen on").closest("details");
+      if (details) details.open = true;
+
+      expect(screen.getByText(/not background location tracking/i)).toBeInTheDocument();
+    });
+
+    it("does not duplicate the live wake-lock toggle in Settings", () => {
+      render(<SettingsScreen />);
+
+      expect(screen.queryByRole("button", { name: "Screen on" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("checkbox", { name: /screen on/i })).toBeNull();
+    });
+  });
 });

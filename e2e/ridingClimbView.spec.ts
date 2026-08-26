@@ -59,6 +59,56 @@ function intersects(a: Box, b: Box): boolean {
   );
 }
 
+/**
+ * backlog item 82: proves the climb cue's title/detail text is genuinely
+ * readable, not merely present in the DOM. scrollWidth<=clientWidth alone
+ * only proves horizontal containment, not that wrapped text is fully
+ * visible vertically — so this also checks (a) computed style no longer
+ * clips via overflow:hidden/text-overflow:ellipsis (proves the intended
+ * CSS actually shipped, mirroring item 85's own pairing of computed-style
+ * with geometry evidence) and (b) both text elements' own bounding boxes
+ * are fully contained within the cue's own box, proving no vertical
+ * overflow/clipping either.
+ */
+async function expectClimbCueTextFullyReadable(page: Page): Promise<void> {
+  const cue = page.locator(".ride-climb-cue");
+  const title = page.locator(".ride-climb-cue-title");
+  const detail = page.locator(".ride-climb-cue-detail");
+
+  const [cueBox, titleBox, detailBox, titleStyle, detailStyle] = await Promise.all([
+    cue.boundingBox(),
+    title.boundingBox(),
+    detail.boundingBox(),
+    title.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { overflow: style.overflow, textOverflow: style.textOverflow };
+    }),
+    detail.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { overflow: style.overflow, textOverflow: style.textOverflow };
+    }),
+  ]);
+
+  if (!cueBox || !titleBox || !detailBox) {
+    throw new Error(
+      "expected the climb cue and its text elements to have bounding boxes",
+    );
+  }
+
+  expect(titleStyle.overflow).not.toBe("hidden");
+  expect(titleStyle.textOverflow).not.toBe("ellipsis");
+  expect(detailStyle.overflow).not.toBe("hidden");
+  expect(detailStyle.textOverflow).not.toBe("ellipsis");
+
+  expect(isFullyWithin(titleBox, cueBox)).toBe(true);
+  expect(isFullyWithin(detailBox, cueBox)).toBe(true);
+
+  const hasHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(hasHorizontalOverflow).toBe(false);
+}
+
 // backlog item 80: the fixed 4-slot active grid zeroes elevation-window-
 // group's own inline padding and switches the selected ring (and the
 // focus-visible outline) to an inset treatment so neither can protrude
@@ -383,11 +433,72 @@ test.describe("390×844 phone viewport", () => {
     expect(intersects(cueBox, attributionBox)).toBe(false);
     expect(intersects(cueBox, switcherBox)).toBe(false);
 
-    // No document-level horizontal overflow.
-    const hasHorizontalOverflow = await page.evaluate(
-      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
-    );
-    expect(hasHorizontalOverflow).toBe(false);
+    // backlog item 82: Climb active and the remaining-distance line are
+    // fully readable, not merely present — see mapImageryRecovery.spec.ts's
+    // own dedicated test for the cue's non-overlap with a genuinely
+    // triggered .map-status-overlay banner, which this file does not
+    // duplicate.
+    await expectClimbCueTextFullyReadable(page);
+  });
+
+  test("the Map climb cue remains fully readable and contained at short landscape (backlog item 82)", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({
+      latitude: FIXTURE_LAT,
+      longitude: lonAtMetresAlongFixture(CLIMB_1_MID_METRES),
+      accuracy: 5,
+    });
+
+    await installLocalMapStyle(page);
+    await page.goto("/");
+    await importAndStartRiding(page);
+
+    const cueButton = page.getByRole("button", { name: "View climb" });
+    await expect(cueButton).toBeVisible({ timeout: 15_000 });
+
+    await page.setViewportSize({ width: 844, height: 390 });
+
+    await expectClimbCueTextFullyReadable(page);
+    const cueButtonBox = await cueButton.boundingBox();
+    if (!cueButtonBox) throw new Error("expected View climb to have a bounding box");
+    expect(cueButtonBox.width).toBeGreaterThanOrEqual(44);
+    expect(cueButtonBox.height).toBeGreaterThanOrEqual(44);
+  });
+
+  test("the Map climb cue remains fully readable and contained at 200% enlarged text (backlog item 82)", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({
+      latitude: FIXTURE_LAT,
+      longitude: lonAtMetresAlongFixture(CLIMB_1_MID_METRES),
+      accuracy: 5,
+    });
+
+    await installLocalMapStyle(page);
+    await page.goto("/");
+    await importAndStartRiding(page);
+
+    const cueButton = page.getByRole("button", { name: "View climb" });
+    await expect(cueButton).toBeVisible({ timeout: 15_000 });
+
+    // Simulates a large Dynamic-Type-style zoom via the document's own
+    // root font size, mirroring ridingMapProfileViews.spec.ts's own
+    // established convention, since OS-level text scaling cannot be
+    // emulated in this environment.
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "200%";
+    });
+
+    await expectClimbCueTextFullyReadable(page);
+    const cueButtonBox = await cueButton.boundingBox();
+    if (!cueButtonBox) throw new Error("expected View climb to have a bounding box");
+    expect(cueButtonBox.width).toBeGreaterThanOrEqual(44);
+    expect(cueButtonBox.height).toBeGreaterThanOrEqual(44);
   });
 
   test("the Profile climb-preview card and the restructured active-progress card fit at phone width and enlarged text, with no document scroll, and the selected Climb button's ring sits flush with the group's right edge in the four-button state (backlog items 76, 80)", async ({

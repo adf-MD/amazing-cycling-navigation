@@ -204,7 +204,7 @@ describe("RidingStatusCard", () => {
         }}
       />,
     );
-    expect(screen.getByLabelText("Screen on")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Screen on" })).toBeInTheDocument();
   });
 
   it("renders no wake-lock slot at all when the wakeLock prop is undefined", () => {

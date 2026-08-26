@@ -456,22 +456,20 @@ describe("RidingScreen Pause (backlog item 55)", () => {
       fake.watches[0]?.emitFix(midpointFix(1000));
     });
 
-    const checkbox = await screen.findByRole("checkbox", {
-      name: /screen on/i,
-    });
-    await user.click(checkbox);
+    const toggle = await screen.findByRole("button", { name: "Screen on" });
+    await user.click(toggle);
     act(() => {
       fakeWakeLock.instances[0]?.resolveRequest();
     });
     await waitFor(() => {
-      expect(checkbox).toBeChecked();
+      expect(toggle).toHaveAttribute("aria-pressed", "true");
     });
     expect(fakeWakeLock.requestSpy).toHaveBeenCalledOnce();
 
     await user.click(screen.getByRole("button", { name: "Pause" }));
 
     await waitFor(() => {
-      expect(screen.queryByRole("checkbox", { name: /screen on/i })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Screen on" })).toBeNull();
     });
     expect(fakeWakeLock.instances[0]?.released).toBe(true);
 

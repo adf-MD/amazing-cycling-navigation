@@ -268,7 +268,7 @@ test.describe("free roam", () => {
     await startFreeRoam(page);
 
     const card = page.locator(".ride-status-card");
-    await expect(card).toContainText("GPS accuracy");
+    await expect(card).toContainText("GPS ±");
 
     await context.clearPermissions();
     const alert = page.getByRole("alert");
@@ -300,7 +300,7 @@ test.describe("free roam", () => {
     await expect(page.getByRole("alert")).toBeVisible({ timeout: 10_000 });
     await expect(card).toContainText("GPS error");
     await expect(card).toContainText("Try again");
-    await expect(card).not.toContainText(/GPS accuracy/);
+    await expect(card).not.toContainText(/GPS ±/);
   });
 
   test("simultaneous offline and a geolocation error leave a useful map region visible with essential controls reachable", async ({
@@ -313,7 +313,7 @@ test.describe("free roam", () => {
 
     await page.goto("/");
     await startFreeRoam(page);
-    await expect(page.locator(".ride-status-card")).toContainText("GPS accuracy");
+    await expect(page.locator(".ride-status-card")).toContainText("GPS ±");
 
     await context.setOffline(true);
     await context.clearPermissions();

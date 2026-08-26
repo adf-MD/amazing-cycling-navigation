@@ -27,6 +27,10 @@ export interface RidingClimbCueProps {
  * GPS fix. `metrics` reuses RidingScreen's already-computed
  * ClimbProgressMetrics (the same object RidingClimbProgressPanel consumes
  * in the Profile pane) — no second climb-progress calculation.
+ *
+ * The title/detail text wraps rather than truncates at ordinary phone
+ * sizes (backlog item 82) — see `.ride-climb-cue-action`/`.ride-climb-cue`
+ * in `src/index.css` for the accompanying width/height budget.
  */
 export function RidingClimbCue({ metrics, onViewClimb }: RidingClimbCueProps) {
   return (
@@ -39,7 +43,11 @@ export function RidingClimbCue({ metrics, onViewClimb }: RidingClimbCueProps) {
           {formatDistanceKm(metrics.distanceRemainingMetres)} remaining
         </p>
       </div>
-      <button type="button" className="btn-primary" onClick={onViewClimb}>
+      <button
+        type="button"
+        className="btn-primary ride-climb-cue-action"
+        onClick={onViewClimb}
+      >
         View climb
       </button>
     </div>

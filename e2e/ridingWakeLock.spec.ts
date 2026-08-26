@@ -104,7 +104,7 @@ test("no Screen on control appears when navigator.wakeLock is unsupported", asyn
   await page.getByRole("button", { name: "Start riding" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-  await expect(page.getByRole("checkbox", { name: /screen on/i })).not.toBeAttached();
+  await expect(page.getByRole("button", { name: "Screen on" })).not.toBeAttached();
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
@@ -139,9 +139,10 @@ test("enabling Screen on requests a lock, releases while hidden, and reacquires 
   await page.getByRole("button", { name: "Start riding" }).click();
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-  const checkbox = page.getByRole("checkbox", { name: /screen on/i });
-  await expect(checkbox).toBeVisible();
-  await expect(checkbox).not.toBeChecked();
+  const toggle = page.getByRole("button", { name: "Screen on" });
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(toggle.getByText("Off")).toBeVisible();
 
   // The success status text is visually hidden (backlog item 68 — a
   // permanent visible "Screen staying awake." line was judged too much
@@ -160,7 +161,9 @@ test("enabling Screen on requests a lock, releases while hidden, and reacquires 
   const status = page.getByText("Screen staying awake.");
   await expect(status).not.toBeAttached();
 
-  await checkbox.check();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(toggle.getByText("On", { exact: true })).toBeVisible();
   await expect(status).toBeAttached();
   const controlBoxAfterActive = await control.boundingBox();
   const cardBoxAfterActive = await card.boundingBox();
@@ -198,7 +201,7 @@ test.describe("compact control on a narrow phone viewport", () => {
   // the project's primary target device.
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("the compact row sits below the immersive header (and its route title), and its info popover overlays without displacing layout", async ({
+  test("the toggle sits below the immersive header (and its route title), is a real >=44x44 target with visible unclipped focus, and never displaces layout", async ({
     page,
     context,
   }) => {
@@ -227,88 +230,81 @@ test.describe("compact control on a narrow phone viewport", () => {
     await page.getByRole("button", { name: "Start riding" }).click();
     await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
-    const checkbox = page.getByRole("checkbox", { name: /screen on/i });
+    const toggle = page.getByRole("button", { name: "Screen on" });
     const heading = page.getByRole("heading", { name: "smoke-route" });
-    await expect(checkbox).toBeVisible();
+    await expect(toggle).toBeVisible();
     await expect(heading).toBeVisible();
 
-    const checkboxBox = await checkbox.boundingBox();
+    const toggleBoxBefore = await toggle.boundingBox();
     const headingBoxBefore = await heading.boundingBox();
-    if (!checkboxBox || !headingBoxBefore) {
-      throw new Error("expected the checkbox and route title to have a bounding box");
+    if (!toggleBoxBefore || !headingBoxBefore) {
+      throw new Error("expected the toggle and route title to have a bounding box");
     }
     // Item 56 first corrected a real, screenshot-evidenced field finding
     // from item 55 (the wake-lock control previously rendered before the
     // header). Item 68 relocated it again, into the shared compact
-    // active-status area alongside the route/GPS status line — still
-    // below the header, just further down than item 56's original
-    // "directly after the header" placement.
-    expect(checkboxBox.y).toBeGreaterThan(headingBoxBefore.y);
+    // active-status area alongside the route/GPS status line; item 82
+    // then unified the checkbox+information-button pair into this one
+    // toggle — still below the header throughout.
+    expect(toggleBoxBefore.y).toBeGreaterThan(headingBoxBefore.y);
 
-    // The checkbox itself is deliberately small (backlog item 68); its
-    // enclosing label is the real >=44x44px touch target instead.
-    const label = page.locator(".wake-lock-label");
-    const labelBox = await label.boundingBox();
-    if (!labelBox) {
-      throw new Error("expected the wake-lock label to have a bounding box");
+    // A genuine >=44x44 CSS-pixel touch target — the whole button, not
+    // merely an internal glyph.
+    expect(toggleBoxBefore.width).toBeGreaterThanOrEqual(44);
+    expect(toggleBoxBefore.height).toBeGreaterThanOrEqual(44);
+
+    // The non-colour on/off cue is present and correct before any press.
+    await expect(toggle.getByText("Off")).toBeVisible();
+
+    // Keyboard-focusable with a visible, unclipped focus outline — proven
+    // via a real Tab traversal (mirroring ridingClimbView.spec.ts's own
+    // documented gotcha: a scripted .focus() does not reliably engage
+    // Chromium's :focus-visible heuristic). A bounded loop, rather than a
+    // single Tab press, since the exact number of intervening focusable
+    // elements (e.g. End ride, in the header) is an implementation detail
+    // this test should not have to hard-code.
+    await page.getByRole("button", { name: "Pause" }).focus();
+    let reachedToggleByTab = false;
+    for (let tabPress = 0; tabPress < 10; tabPress += 1) {
+      await page.keyboard.press("Tab");
+      if (await toggle.evaluate((element) => element === document.activeElement)) {
+        reachedToggleByTab = true;
+        break;
+      }
     }
-    expect(labelBox.height).toBeGreaterThanOrEqual(44);
-
-    await expect(page.getByText(/keeps the display on/i)).toBeHidden();
-
-    const infoButton = page.getByRole("button", { name: "About Screen on" });
-    await infoButton.click();
-
-    const popover = page.getByRole("note");
-    await expect(popover).toBeVisible();
-    await expect(
-      page.getByText(
-        "Keeps the display on while Riding mode is visible. This may increase battery use.",
-      ),
-    ).toBeVisible();
-
-    // Opening the popover overlays content rather than pushing the route
-    // title further down the page.
-    const headingBoxAfter = await heading.boundingBox();
-    if (!headingBoxAfter) {
-      throw new Error("expected the route title to have a bounding box");
-    }
-    expect(headingBoxAfter.y).toBe(headingBoxBefore.y);
-
-    const popoverBox = await popover.boundingBox();
+    expect(reachedToggleByTab).toBe(true);
+    await expect(toggle).toBeFocused();
+    const outlineWidth = await toggle.evaluate(
+      (element) => getComputedStyle(element).outlineWidth,
+    );
+    expect(outlineWidth).not.toBe("0px");
+    const focusBox = await toggle.boundingBox();
     const viewport = page.viewportSize();
-    if (!popoverBox || !viewport) {
-      throw new Error("expected the popover and viewport to have a size");
+    if (!focusBox || !viewport) {
+      throw new Error("expected the toggle and viewport to have a size");
     }
-    expect(popoverBox.x).toBeGreaterThanOrEqual(0);
-    expect(popoverBox.x + popoverBox.width).toBeLessThanOrEqual(viewport.width);
-    expect(popoverBox.y).toBeGreaterThanOrEqual(0);
-    expect(popoverBox.y + popoverBox.height).toBeLessThanOrEqual(viewport.height);
+    // The focused control (including its outline) stays fully onscreen —
+    // no clipping ancestor cuts it off.
+    expect(focusBox.x).toBeGreaterThanOrEqual(0);
+    expect(focusBox.x + focusBox.width).toBeLessThanOrEqual(viewport.width);
 
-    // Close via the button, reopen and close via Escape, reopen and close
-    // via an outside click.
-    await infoButton.click();
-    await expect(popover).toBeHidden();
-
-    await infoButton.click();
-    await page.keyboard.press("Escape");
-    await expect(popover).toBeHidden();
-
-    await infoButton.click();
-    // The popover overlays the route title by design, so click a target
-    // unambiguously outside RidingWakeLockControl's own subtree instead.
-    // During active Riding (backlog item 56) the global app-level header
-    // is genuinely absent from the DOM — <header> now matches only the
-    // immersive Pause/title/End header, itself part of the Riding section
-    // rather than outside it — but its own left padding (before the Pause
-    // button) is still a safe, non-interactive click target.
-    await page.locator("header").click({ position: { x: 4, y: 4 } });
-    await expect(popover).toBeHidden();
-
-    await checkbox.check();
+    // Pressing it via the keyboard toggles state and paints via
+    // aria-pressed alone (backlog item 82) — never displacing the route
+    // title, unlike the former popover overlay this replaces.
+    await page.keyboard.press("Enter");
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect(toggle.getByText("On", { exact: true })).toBeVisible();
     // Visually hidden, not visible — see the dedicated lifecycle test
     // above for the full "no visible line added" proof.
     await expect(page.getByText("Screen staying awake.")).toBeAttached();
+
+    const headingBoxAfter = await heading.boundingBox();
+    const toggleBoxAfter = await toggle.boundingBox();
+    if (!headingBoxAfter || !toggleBoxAfter) {
+      throw new Error("expected the route title and toggle to have a bounding box");
+    }
+    expect(headingBoxAfter.y).toBe(headingBoxBefore.y);
+    expect(toggleBoxAfter.height).toBe(toggleBoxBefore.height);
 
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
     expect(consoleErrors).toEqual([]);

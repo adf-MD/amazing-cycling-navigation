@@ -1,3 +1,4 @@
+import { formatGpsStatusLine } from "./rideStatusText.ts";
 import {
   RidingWakeLockControl,
   type RidingWakeLockControlProps,
@@ -23,24 +24,20 @@ export interface FreeRoamStatusCardProps {
   wakeLock?: RidingWakeLockControlProps;
 }
 
-function formatFixAge(ageMs: number): string {
-  const seconds = Math.max(0, Math.round(ageMs / 1000));
-  if (seconds < 60) return `${String(seconds)}s ago`;
-  return `${String(Math.round(seconds / 60))} min ago`;
-}
-
 // A glanceable state word, deliberately distinct from the precise
 // accuracy/freshness line beneath it (never restating the same fact
 // twice). Free roam has no off-route concept, so this never escalates to
 // role="alert" itself — a genuine GPS error is already carried by the
-// dedicated error row.
+// dedicated error row. "Location" rather than "Tracking" (backlog item
+// 82): free roam records no track, progress or location history, so the
+// previous wording overstated what the feature does.
 function freeRoamTrackingLabel(
   liveStatus: FreeRoamLiveStatus | null,
   hasError: boolean,
 ): string {
   if (hasError) return "GPS error";
   if (!liveStatus) return "Waiting for a GPS fix…";
-  return liveStatus.isStale ? "Tracking — signal lost" : "Tracking";
+  return liveStatus.isStale ? "Location — signal lost" : "Location";
 }
 
 /**
@@ -69,13 +66,7 @@ export function FreeRoamStatusCard({
         {wakeLock ? <RidingWakeLockControl {...wakeLock} /> : null}
       </div>
       {liveStatus ? (
-        <span className="ride-status-card-detail">
-          GPS accuracy: ±{Math.round(liveStatus.accuracyMetres)} m —{" "}
-          {liveStatus.isStale ? "Stale" : "Live"}
-          {liveStatus.fixAgeMs !== null
-            ? ` (${formatFixAge(liveStatus.fixAgeMs)})`
-            : null}
-        </span>
+        <span className="ride-status-card-detail">{formatGpsStatusLine(liveStatus)}</span>
       ) : null}
       {geolocationErrorMessage ? (
         <div role="alert" className="ride-status-card-error-row">

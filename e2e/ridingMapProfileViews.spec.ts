@@ -440,15 +440,15 @@ test.describe("390×844 phone viewport", () => {
 
     const pauseButton = page.getByRole("button", { name: "Pause" });
     const endButton = page.getByRole("button", { name: "End ride" });
-    const checkbox = page.getByRole("checkbox", { name: /screen on/i });
-    await expect(checkbox).toBeVisible();
-    const [pauseBoxLarge, endBoxLarge, checkboxLabelBox] = await Promise.all([
+    const toggle = page.getByRole("button", { name: "Screen on" });
+    await expect(toggle).toBeVisible();
+    const [pauseBoxLarge, endBoxLarge, toggleBox] = await Promise.all([
       pauseButton.boundingBox(),
       endButton.boundingBox(),
-      page.locator(".wake-lock-label").boundingBox(),
+      toggle.boundingBox(),
     ]);
-    if (!pauseBoxLarge || !endBoxLarge || !checkboxLabelBox) {
-      throw new Error("expected Pause, End ride and the wake-lock label to have boxes");
+    if (!pauseBoxLarge || !endBoxLarge || !toggleBox) {
+      throw new Error("expected Pause, End ride and the Screen on toggle to have boxes");
     }
     // Backlog item 68: action controls stay fixed and usable at enlarged
     // text — only the title (and Profile's own internal content) may
@@ -458,7 +458,8 @@ test.describe("390×844 phone viewport", () => {
     expect(pauseBoxLarge.height).toBeGreaterThanOrEqual(44);
     expect(endBoxLarge.width).toBeGreaterThanOrEqual(44);
     expect(endBoxLarge.height).toBeGreaterThanOrEqual(44);
-    expect(checkboxLabelBox.height).toBeGreaterThanOrEqual(44);
+    expect(toggleBox.width).toBeGreaterThanOrEqual(44);
+    expect(toggleBox.height).toBeGreaterThanOrEqual(44);
 
     await switchToProfile(page);
     const header = page.locator("header.riding-immersive-header");
@@ -663,13 +664,30 @@ test("Pause remains reachable and works correctly from the Profile view", async 
   await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
 });
 
-test("wake-lock control and its popover remain usable from either view with no body scroll", async ({
+test("the Screen on toggle remains usable from either view, never resizes the map, with no body scroll", async ({
   page,
   context,
 }) => {
   await page.addInitScript(() => {
+    // A genuine acquisition, not just a resolved release() — this test
+    // clicks the toggle and expects it to reach status "active" rather
+    // than "unavailable", so the stub needs addEventListener/
+    // removeEventListener too (browserWakeLockSource.request() calls
+    // sentinel.addEventListener("release", ...) unconditionally; without
+    // it the acquisition itself throws and genuinely fails).
     Object.defineProperty(navigator, "wakeLock", {
-      value: { request: () => Promise.resolve({ release: () => Promise.resolve() }) },
+      value: {
+        request: () =>
+          Promise.resolve({
+            release: () => Promise.resolve(),
+            addEventListener: () => {
+              /* no-op: this stub never emits an unsolicited release */
+            },
+            removeEventListener: () => {
+              /* no-op */
+            },
+          }),
+      },
       configurable: true,
     });
   });
@@ -680,37 +698,32 @@ test("wake-lock control and its popover remain usable from either view with no b
   await page.goto("/");
   await importAndStartRiding(page, "map-profile-wakelock-route");
 
-  const checkbox = page.getByRole("checkbox", { name: /screen on/i });
-  await expect(checkbox).toBeVisible();
+  const toggle = page.getByRole("button", { name: "Screen on" });
+  await expect(toggle).toBeVisible();
+  // Let the real geolocation fix arrive and the status card reach its
+  // steady, fix-having state before capturing any "before" box — the
+  // card's own height genuinely grows once a fix lands (the remaining-
+  // distance/ascent and GPS lines appear), which would otherwise be
+  // mistaken for a resize caused by the toggle itself.
+  await expect(page.getByText(/GPS ±/)).toBeVisible();
 
-  // Backlog item 68: the wake-lock control now lives further down the
-  // page, adjacent to the status strip rather than directly under the
-  // header — its transient popover must still be a pure overlay that
-  // never resizes the map beneath it.
+  // Backlog item 82: the wake-lock control is now one integrated toggle
+  // inside the status card's own top row — pressing it must never resize
+  // the map beneath it.
   const mapContainer = page.locator('[data-testid="map-container"]');
-  const mapBoxBeforePopover = await mapContainer.boundingBox();
-  if (!mapBoxBeforePopover) {
+  const mapBoxBeforeToggle = await mapContainer.boundingBox();
+  if (!mapBoxBeforeToggle) {
     throw new Error("expected the map container to have a bounding box");
   }
 
-  const infoButton = page.getByRole("button", { name: "About Screen on" });
-  await infoButton.click();
-  await expect(page.getByRole("note")).toBeVisible();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
 
-  const mapBoxDuringPopover = await mapContainer.boundingBox();
-  if (!mapBoxDuringPopover) {
-    throw new Error("expected the map container to have a bounding box");
-  }
-  expect(mapBoxDuringPopover).toEqual(mapBoxBeforePopover);
-
-  await infoButton.click();
-  await expect(page.getByRole("note")).toBeHidden();
-
-  const mapBoxAfterPopover = await mapContainer.boundingBox();
-  expect(mapBoxAfterPopover).toEqual(mapBoxBeforePopover);
+  const mapBoxAfterToggle = await mapContainer.boundingBox();
+  expect(mapBoxAfterToggle).toEqual(mapBoxBeforeToggle);
 
   await switchToProfile(page);
-  await expect(checkbox).toBeVisible();
+  await expect(toggle).toBeVisible();
 
   const scrollHeight = await page.evaluate(() => document.documentElement.scrollHeight);
   const viewportHeight = page.viewportSize()?.height;
@@ -739,20 +752,21 @@ test("portrait to landscape keeps the header, both views and the switcher usable
   await page.setViewportSize({ width: 844, height: 390 });
 
   await expect(page.locator("header.riding-immersive-header")).toBeVisible();
-  // Backlog item 68: the merged wake-lock/status area's flex-wrap
-  // behaviour is untested at a much wider/shorter viewport — prove the
-  // checkbox stays reachable and non-overlapping post-rotation.
-  const checkbox = page.getByRole("checkbox", { name: /screen on/i });
-  await expect(checkbox).toBeVisible();
+  // Backlog item 68 (control since unified into one toggle by item 82):
+  // the merged wake-lock/status area's flex-wrap behaviour is untested
+  // at a much wider/shorter viewport — prove the toggle stays reachable
+  // and non-overlapping post-rotation.
+  const toggle = page.getByRole("button", { name: "Screen on" });
+  await expect(toggle).toBeVisible();
   const pauseButton = page.getByRole("button", { name: "Pause" });
-  const [checkboxBox, pauseBoxLandscape] = await Promise.all([
-    checkbox.boundingBox(),
+  const [toggleBox, pauseBoxLandscape] = await Promise.all([
+    toggle.boundingBox(),
     pauseButton.boundingBox(),
   ]);
-  if (!checkboxBox || !pauseBoxLandscape) {
-    throw new Error("expected the checkbox and Pause to have bounding boxes");
+  if (!toggleBox || !pauseBoxLandscape) {
+    throw new Error("expected the toggle and Pause to have bounding boxes");
   }
-  expect(intersects(checkboxBox, pauseBoxLandscape)).toBe(false);
+  expect(intersects(toggleBox, pauseBoxLandscape)).toBe(false);
 
   await switchToProfile(page);
   await expect(page.getByRole("group", { name: "Elevation profile view" })).toBeVisible();
