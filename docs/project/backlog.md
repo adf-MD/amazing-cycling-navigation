@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-Item 84 is the next selected implementation item. Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
+Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Each entry reproduces its original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this).
 
@@ -119,23 +119,3 @@ _Category: Platform compatibility_
       4. **Conflict and recovery coverage:** an inbound share must respect the existing unfinished route/free-roam conflict guard (item 42's fail-closed `checkFreeRoamConflict`-style pattern) and must never silently replace an active session or Planning draft; it must work after a fresh install/relaunch. Add Playwright coverage where meaningful, then require real Android Chrome acceptance — Chromium/Playwright emulation cannot prove real OS share-sheet registration, matching this project's existing, repeatedly-stated distinction between the `android-chrome` Playwright project and genuine physical-device verification (item 25).
     - If step 1 finds only an `Open with` path and no Share/Send path, document that conclusively and record that no pure static-PWA solution is currently available for this exact flow — do not propose a native wrapper, Trusted Web Activity, APK, or other Android-specific packaging as a workaround; that would be a major architecture departure and is explicitly not approved by this backlog item.
     - Requires the "## Explicit non-goals" edit recorded above (item 61's own cross-reference) — that section stays in the root `CLAUDE.md` and already carries this cross-reference.
-
----
-
-<a id="item-84"></a>
-
-## Item 84 — Restore visibly rendered, zoom-adaptive route-distance badges
-
-_Category: Map presentation reliability_
-
-84. **Restore visibly rendered, zoom-adaptive route-distance badges**
-    - A focused visibility/reliability correction to an already-implemented feature (commit `7ca6b85`, still present and wired into Planning and route Riding), not a request to invent moving distance markers.
-    - Real-device route maps have shown the small white route-direction arrows but no visibly readable numbered distance badges. Existing automated coverage (`distanceBadgeLayer.test.ts`, `distanceBadgeMarkerElement.test.ts`, `MapView.test.tsx`'s distance-badge-overlay suite, `e2e/distanceBadges.spec.ts`) proves marker specifications/DOM elements, text, counts, layout boxes, rotation behaviour and retry deduplication, but nothing in that coverage checks real paint/occlusion above the MapLibre canvas. Treat `.distance-badge-marker`'s current `z-index: -1` (`src/index.css`) as a concrete hypothesis to investigate — not a diagnosed root cause — until proved by real-browser evidence in this slice.
-    - No route-distance badges in free roam; there is no route (already true of current source — `FreeRoamScreen` passes an empty `points` array).
-    - Badges are fixed landmarks at absolute distances measured along the route from its start. They must never slide along the route as a moving `1 km ahead` marker.
-    - Density adapts to zoom while badge coordinates stay fixed: approximately every 1 km close in, every 5 km at ordinary Riding zoom, every 10 km at a wider overview, and every 20 km at a very wide overview. Preserve deterministic thresholds, collision/merged-distance handling, and a bounded visible count so the map remains restrained.
-    - During active Riding, passed badges remain hidden (already implemented via `filterActiveRidingCandidates`/`distanceBadgeProgressMetres`). Planning may show the applicable whole-route set.
-    - Use explicit compact labels such as `5 km` and `20 km`, including an unambiguous compact form for merged loop/out-and-back coincidences.
-    - Zooming changes only the displayed subset, never badge locations or route progress.
-    - Fix the proven paint/stacking/visibility cause. Do not alter the separate white route-direction arrows.
-    - Add real-browser regression evidence that proves a badge is actually visible and unobscured above the map, not merely present in the DOM or assigned a non-null bounding box. Cover normal imagery and the local fallback background, zoom-band transitions, Riding's passed-badge filtering, map rotation, retry without duplication, and explicit absence in free roam.

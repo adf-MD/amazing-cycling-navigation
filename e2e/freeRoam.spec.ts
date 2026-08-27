@@ -216,6 +216,15 @@ test("Start free roam shows a live position on the map, with zero OpenRouteServi
   await expect(page.getByRole("button", { name: "End ride" })).toBeVisible();
   await expect(page.getByText(/GPS ±/)).toBeVisible();
 
+  // Backlog item 84: free roam has no planned route, so it must show no
+  // route-distance badges at all — neither the DOM marker nor its
+  // accessible name, confirming this is a genuine absence rather than a
+  // badge that merely failed to render text/paint correctly.
+  expect(await page.locator(".distance-badge-marker").count()).toBe(0);
+  await expect(
+    page.getByRole("img", { name: /kilometres from route start/ }),
+  ).toHaveCount(0);
+
   expect(orsRequested).toBe(false);
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);

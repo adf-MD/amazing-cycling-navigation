@@ -870,7 +870,17 @@ button:focus-visible {
  * waypoint selection stays a WaypointList-only action (see
  * PlanningScreen.tsx's documented map-tap policy), so markers never need
  * to intercept a tap. Shape/border, not colour alone, distinguishes
- * start/finish/start-finish from an ordinary numbered waypoint. */
+ * start/finish/start-finish from an ordinary numbered waypoint.
+ *
+ * z-index (backlog item 84): paired with .distance-badge-marker's own
+ * explicit positive z-index below it — both markers share MapLibre's
+ * canvas stacking context, and a positioned element only reaches the
+ * painting algorithm's ascending-z-index step if it has a z-index other
+ * than auto. Without this rule, a badge's own positive z-index would
+ * make it paint above a coincident waypoint marker unconditionally,
+ * regardless of DOM order — this value keeps a waypoint/start/finish
+ * marker on top whenever their boxes overlap. Do not change either value
+ * in isolation. */
 .planning-waypoint-marker {
   display: flex;
   align-items: center;
@@ -888,6 +898,7 @@ button:focus-visible {
   white-space: nowrap;
   pointer-events: none;
   box-shadow: 0 1px 3px rgb(0 0 0 / 45%);
+  z-index: 2;
 }
 
 .planning-waypoint-marker--start {
@@ -974,19 +985,6 @@ button:focus-visible {
     0 1px 3px rgb(0 0 0 / 45%);
 }
 
-/* Route-distance kilometre badges — plain DOM elements (see
- * src/map/distanceBadgeMarkerElement.ts), never a MapLibre symbol/text
- * layer, so the numeric label has no glyph/sprite dependency and still
- * renders under the local fallback style. A small rounded rectangle, not
- * a circle, so its shape alone (not just its content) reads as distinct
- * from the circular waypoint/start/finish markers above. pointer-events:
- * none throughout — a badge is a passive orientation aid, never a tap
- * target, so it never intercepts a Planning map-tap or a warning tap
- * beneath it. z-index: -1 keeps it visually subordinate to Planning's
- * own waypoint markers (both are position:absolute DOM markers with no
- * z-index of their own from maplibregl.Marker) without affecting
- * stacking against the WebGL canvas itself, which lives in a separate
- * stacking context below every DOM marker regardless. */
 /* Layout only, for the gradient/route-feature legends' rows — the swatch
  * itself carries no rule here at all: its colour, size and border are set
  * inline by GradientColourSwatch.tsx, deliberately not via CSS, since
@@ -1250,6 +1248,35 @@ button:focus-visible {
   transform: rotate(180deg);
 }
 
+/* Route-distance kilometre badges — plain DOM elements (see
+ * src/map/distanceBadgeMarkerElement.ts), never a MapLibre symbol/text
+ * layer, so the numeric label has no glyph/sprite dependency and still
+ * renders under the local fallback style. A small rounded rectangle, not
+ * a circle, so its shape alone (not just its content) reads as distinct
+ * from the circular waypoint/start/finish markers above. pointer-events:
+ * none throughout — a badge is a passive orientation aid, never a tap
+ * target, so it never intercepts a Planning map-tap or a warning tap
+ * beneath it.
+ *
+ * z-index (backlog item 84 fix): this marker and the WebGL canvas are
+ * both position:absolute siblings inside MapLibre's own
+ * .maplibregl-canvas-container, so they share one stacking context — a
+ * previous version of this comment claimed the canvas "lives in a
+ * separate stacking context below every DOM marker regardless", which
+ * real-browser composite-pixel evidence proved false (the badge was
+ * never actually visible; see docs/project/history/items-81-NN.md#item-84).
+ * The canvas and a marker with no z-index of its own (z-index: auto) both
+ * paint at the CSS 2.1 Appendix E painting algorithm's step 6, ordered by
+ * DOM position — this is why .planning-waypoint-marker, which sets no
+ * z-index at all, already painted above the canvas correctly. This rule
+ * previously set z-index: -1, which — because the element is already
+ * position:absolute — made it establish its own stacking context at a
+ * negative level, painted at step 2, strictly before (behind) the
+ * canvas's step 6. A small explicit positive z-index instead moves this
+ * marker to step 7 (ascending z-index order), above the canvas. See the
+ * paired z-index on .planning-waypoint-marker below: without it, this
+ * value alone would make a badge paint above a coincident waypoint
+ * marker too, since z-index:auto markers never reach step 7 at all. */
 .distance-badge-marker {
   display: flex;
   align-items: center;
@@ -1267,7 +1294,7 @@ button:focus-visible {
   white-space: nowrap;
   pointer-events: none;
   box-shadow: 0 1px 2px rgb(0 0 0 / 35%);
-  z-index: -1;
+  z-index: 1;
 }
 
 /* --- Riding: active-riding glance hierarchy (visual slice 3) --- */
