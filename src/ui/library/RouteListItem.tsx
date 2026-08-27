@@ -1,8 +1,28 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent, SubmitEvent } from "react";
 import type { PlannedRoute } from "../../domain/types.ts";
+import { prefersReducedMotion } from "../../platform/environmentContext.ts";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 import { PinIcon } from "./PinIcon.tsx";
+
+/** The inline, route-card-scoped presentation of backlog item 73's
+ * unfinished-session switch guard (item 73 follow-up) — a ready-made view
+ * model plus every handler this card needs, bundled together so a
+ * non-null value is always fully actionable. App.tsx computes every field;
+ * this component only renders it. `confirmVariant` is "danger" only for
+ * the destructive End-and-switch/Discard-and-continue family of statuses —
+ * Cancel and Return are always secondary-styled, never destructive. */
+export interface RouteSwitchPrompt {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmVariant: "secondary" | "danger";
+  offerReturn: boolean;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  onReturn: () => void;
+}
 
 export interface RouteListItemProps {
   route: PlannedRoute;
@@ -31,6 +51,10 @@ export interface RouteListItemProps {
    * real browser, not merely suspected, via this component's own e2e
    * pinning coverage. */
   pinButtonRef: (element: HTMLButtonElement | null) => void;
+  /** The inline switch-guard prompt for THIS card, or null when no switch
+   * is pending here (backlog item 73 follow-up). See RouteSwitchPrompt's
+   * own doc comment. */
+  switchPrompt: RouteSwitchPrompt | null;
 }
 
 export function RouteListItem({
@@ -50,6 +74,7 @@ export function RouteListItem({
   onPinToggle,
   nameButtonRef,
   pinButtonRef,
+  switchPrompt,
 }: RouteListItemProps) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [draftName, setDraftName] = useState(route.name);
@@ -60,6 +85,15 @@ export function RouteListItem({
   const headingId = useId();
   const descriptionId = useId();
   const nameFieldId = useId();
+  const switchPanelRef = useRef<HTMLDivElement>(null);
+  const switchHeadingId = useId();
+  const switchDescriptionId = useId();
+  // Tracks the last message this card scrolled for, so a later status
+  // change within the SAME pending switch (e.g. conflict -> clear-failed
+  // surfacing a longer error) re-checks nearest-scroll too, not only the
+  // initial open — a failure can grow the panel's height enough to push
+  // its own buttons back below the fold.
+  const lastSwitchMessageRef = useRef<string | null>(null);
 
   // Autofocuses (and selects the existing name in) the input on entering
   // rename mode, and returns focus to the Rename button on leaving it —
@@ -79,9 +113,31 @@ export function RouteListItem({
     wasRenamingRef.current = isRenaming;
   }, [isRenaming]);
 
+  // Re-checks nearest-scroll whenever this card's switch prompt first
+  // appears, or its message text changes (a later status transition within
+  // the same pending switch, e.g. a failure surfacing new error text) —
+  // mirrors RouteSummaryPanel.tsx's own scrollIntoView({block:"nearest"})
+  // + prefersReducedMotion() precedent.
+  useEffect(() => {
+    if (!switchPrompt) {
+      lastSwitchMessageRef.current = null;
+      return;
+    }
+    if (switchPrompt.message !== lastSwitchMessageRef.current) {
+      lastSwitchMessageRef.current = switchPrompt.message;
+      switchPanelRef.current?.scrollIntoView({
+        block: "nearest",
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+      });
+    }
+  }, [switchPrompt]);
+
   const openRename = () => {
     if (isDeletePending) {
       onDeleteCancel(route.id);
+    }
+    if (switchPrompt) {
+      switchPrompt.onCancel();
     }
     setDraftName(route.name);
     setIsRenaming(true);
@@ -113,12 +169,15 @@ export function RouteListItem({
     deleteButtonRef.current?.focus();
   };
 
-  // Mirrors openRename's own "cancel a pending delete confirmation first"
-  // precedent above, so an open alertdialog never gets silently moved into
-  // a different group instead of being resolved.
+  // Mirrors openRename's own "cancel a pending delete confirmation (and
+  // switch prompt) first" precedent above, so an open alertdialog never
+  // gets silently moved into a different group instead of being resolved.
   const handlePinClick = () => {
     if (isDeletePending) {
       onDeleteCancel(route.id);
+    }
+    if (switchPrompt) {
+      switchPrompt.onCancel();
     }
     onPinToggle(route);
   };
@@ -255,6 +314,56 @@ export function RouteListItem({
                   }}
                 >
                   {isDeleting ? "Deleting…" : "Delete route"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {switchPrompt ? (
+            <div
+              ref={switchPanelRef}
+              className="route-delete-confirm"
+              role="alertdialog"
+              aria-labelledby={switchHeadingId}
+              aria-describedby={switchDescriptionId}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  switchPrompt.onCancel();
+                }
+              }}
+            >
+              <h2 id={switchHeadingId}>{switchPrompt.title}</h2>
+              <p id={switchDescriptionId}>{switchPrompt.message}</p>
+              <div className="route-delete-confirm-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  autoFocus
+                  disabled={switchPrompt.busy}
+                  onClick={switchPrompt.onCancel}
+                >
+                  Cancel
+                </button>
+                {switchPrompt.offerReturn ? (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={switchPrompt.busy}
+                    onClick={switchPrompt.onReturn}
+                  >
+                    Return to paused ride
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className={
+                    switchPrompt.confirmVariant === "danger"
+                      ? "btn-danger"
+                      : "btn-secondary"
+                  }
+                  disabled={switchPrompt.busy}
+                  onClick={switchPrompt.onConfirm}
+                >
+                  {switchPrompt.confirmLabel}
                 </button>
               </div>
             </div>

@@ -4,19 +4,19 @@ import type { MapFactory } from "./map/mapAdapter.ts";
 import { systemClock, type Clock } from "./platform/clock.ts";
 import { logError } from "./platform/errorLog.ts";
 import { usePwaUpdate } from "./pwa/registerSW.ts";
-import { toStoredFreeRoamState } from "./storage/mapping.ts";
+import { isStoredRouteRideState, toStoredFreeRoamState } from "./storage/mapping.ts";
 import {
   clearActiveRideState,
   getActiveRideState,
   setActiveRideState,
 } from "./storage/rideStateRepository.ts";
+import { getRoute } from "./storage/routesRepository.ts";
 import {
   classifyRideTransition,
   type RideSessionTarget,
-  type RideTransitionOutcome,
 } from "./ui/riding/rideSessionTransition.ts";
 import { DiagnosticsScreen } from "./ui/diagnostics/DiagnosticsScreen.tsx";
-import { RouteLibrary } from "./ui/library/RouteLibrary.tsx";
+import { RouteLibrary, type PendingRouteSwitch } from "./ui/library/RouteLibrary.tsx";
 import { PlanningScreen } from "./ui/planning/PlanningScreen.tsx";
 import { FreeRoamScreen } from "./ui/riding/FreeRoamScreen.tsx";
 import { RidingLauncher } from "./ui/riding/RidingLauncher.tsx";
@@ -65,23 +65,50 @@ type RidingContent =
 const NONE_RIDING_CONTENT: RidingContent = { kind: "none" };
 
 /** App.tsx's own central state for backlog item 73's unfinished-session
- * switch guard — at most one of these exists at a time, rendered through
- * exactly one ConfirmDialog regardless of which status it's in. `target` is
- * what the rider originally asked to open; `existing` is what the guard
- * found persisted (null only for "check-failed", where the read itself
- * never resolved). Every status after "conflict"/"check-failed" is reached
- * only via an explicit Confirm/Retry press — never automatically. */
+ * switch guard — at most one of these exists at a time. `target` is what
+ * the rider originally asked to open; `existing` is what the guard found
+ * persisted (null only for "check-failed", where the read itself never
+ * resolved). Every status after "conflict"/"check-failed" is reached only
+ * via an explicit Confirm/Retry/Return press — never automatically.
+ *
+ * `origin` (item 73 follow-up) is captured once, at creation, from the
+ * caller — never re-derived from the currently rendered `screen` — and is
+ * never reassigned by any later status transition. "route-card" means this
+ * came from a Routes-list card tap (the only origin with a card to expand
+ * into); "global" covers Planning-save and every Riding-launcher entry
+ * point, which keep the page-level ConfirmDialog unchanged. Deriving this
+ * from `screen` instead would be wrong: the sticky nav stays clickable
+ * while an inline card prompt is showing (it isn't a true modal), so a
+ * rider could navigate away from Routes mid-prompt — a screen-derived
+ * check would then leave the pending switch with no presentation at all
+ * (not inline, since the card unmounted with the rest of RouteLibrary; not
+ * global, since the screen-check would say "route-card"). `screen` is
+ * still consulted, separately, at render time to decide whether inline
+ * presentation is currently renderable — see canShowInline below.
+ *
+ * `existingRouteId`/`existingRoute` (item 73 follow-up) resolve the
+ * currently-paused ROUTE session so the inline card can name it and offer
+ * "Return to paused ride". `existingRouteId` is cheap (already in memory
+ * from the storage read `checkRideTransition` performs regardless) and is
+ * always populated on a route conflict; the extra `getRoute()` fetch that
+ * resolves `existingRoute` only ever runs when `origin === "route-card"`
+ * — the global dialog's generic copy never needs the resolved route. */
 interface PendingRideSwitch {
   requestId: number;
   target: RideSessionTarget;
+  origin: "route-card" | "global";
   existing: "route" | "free-roam" | "unsupported" | null;
+  existingRouteId: string | null;
+  existingRoute: PlannedRoute | null;
   status:
     | "check-failed"
     | "conflict"
     | "clearing"
     | "clear-failed"
     | "starting-free-roam"
-    | "start-free-roam-failed";
+    | "start-free-roam-failed"
+    | "returning"
+    | "return-failed";
   errorMessage: string | null;
 }
 
@@ -95,6 +122,16 @@ function existingSessionLabel(existing: "route" | "free-roam" | "unsupported"): 
   return "an unfinished ride that can't be recovered by this version of the app";
 }
 
+/** Whether a status belongs to the destructive End-and-switch/Discard-and-
+ * continue family (item 73 follow-up) — used only to style the inline
+ * card's own confirm button; the page-level ConfirmDialog is unaffected.
+ * "check-failed"/"returning"/"return-failed" are all non-destructive
+ * recheck/retry actions and must never render as the destructive
+ * .btn-danger style. */
+function isDestructiveSwitchConfirmStatus(status: PendingRideSwitch["status"]): boolean {
+  return status === "conflict" || status === "clearing" || status === "clear-failed";
+}
+
 /** Supplies title/message/confirmLabel for every PendingRideSwitch status,
  * through one shared shell, deliberately using distinct language for
  * "check-failed" (a storage read failed — never described as a conflict)
@@ -103,7 +140,10 @@ function existingSessionLabel(existing: "route" | "free-roam" | "unsupported"): 
  * requirement that a read failure must never be presented as proof of a
  * conflict, nor a conflict as a generic technical failure. Mirrors
  * RidingLauncher.tsx's own LAUNCHER_CLEAR_ACTION_COPY/
- * describeUnresumableReason pattern. */
+ * describeUnresumableReason pattern. This generic wording is what the
+ * page-level ConfirmDialog always uses, and what the inline card falls
+ * back to for every case describeInlineRouteSwitchMessage doesn't cover —
+ * it must stay unchanged, since Planning-save's own e2e coverage pins it. */
 function describePendingRideSwitch(pending: PendingRideSwitch): {
   title: string;
   message: string;
@@ -150,6 +190,23 @@ function describePendingRideSwitch(pending: PendingRideSwitch): {
           "Free roam could not be started on this device. Try again.",
         confirmLabel: "Try again",
       };
+    case "returning":
+      return { title, message: "Opening your paused ride…", confirmLabel };
+    case "return-failed":
+      // Deliberately never "End and switch": returnToPausedRide only
+      // reaches this status once its own revalidation has shown the
+      // stored session snapshot may be stale (changed or gone since the
+      // prompt opened) — leaving a destructive confirm action clickable
+      // against that same stale snapshot could clear a session that isn't
+      // the one the rider believes they're looking at. "Check again"
+      // reuses retryPendingSwitchCheck to re-establish fresh state first.
+      return {
+        title,
+        message:
+          pending.errorMessage ??
+          "This paused ride could not be reopened. Check again to see its current status.",
+        confirmLabel: "Check again",
+      };
     default: {
       const routeNote =
         existing === "route" ? "the saved route will remain in your library, but " : "";
@@ -160,6 +217,26 @@ function describePendingRideSwitch(pending: PendingRideSwitch): {
       };
     }
   }
+}
+
+/** Inline-only override (item 73 follow-up) for a genuine route-to-route
+ * conflict: names the paused route directly, per this fix's accepted
+ * copy. Returns null for every other status/existing/origin combination
+ * (including a route conflict whose existingRoute couldn't be resolved),
+ * so the caller falls back to describePendingRideSwitch's generic
+ * wording — used only when building the inline card view model, never by
+ * the page-level ConfirmDialog. */
+function describeInlineRouteSwitchMessage(pending: PendingRideSwitch): string | null {
+  if (
+    pending.origin !== "route-card" ||
+    pending.target.kind !== "route" ||
+    pending.status !== "conflict" ||
+    pending.existing !== "route" ||
+    !pending.existingRoute
+  ) {
+    return null;
+  }
+  return `"${pending.existingRoute.name}" is paused. Return to it, or end it and switch to ${targetLabel(pending.target)}. Ending it will clear ride progress; the saved route will remain in Routes.`;
 }
 
 function App({ mapFactory, clock = systemClock }: AppProps) {
@@ -215,6 +292,23 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     null,
   );
 
+  // checkRideTransition's own return type — classifyRideTransition's pure
+  // outcome (see rideSessionTransition.ts) plus the storage-read-failure
+  // case that only this async wrapper can observe, plus (item 73 follow-up)
+  // a conflict's existingRouteId, read from the same already-fetched
+  // `stored` row before it would otherwise be discarded — no extra I/O.
+  // Resolving that id to a full route (for the inline card's name/Return
+  // action) is deliberately NOT done here; see resolveExistingRouteForConflict.
+  type RideTransitionCheckResult =
+    | { kind: "proceed" }
+    | { kind: "resume" }
+    | {
+        kind: "conflict";
+        existing: "route" | "free-roam" | "unsupported";
+        existingRouteId: string | null;
+      }
+    | { kind: "read-failed" };
+
   // Reads the persisted singleton active-session row AT THE MOMENT of the
   // explicit user action (never relying on stale in-memory ridingContent or
   // launcher hydration alone) and classifies it against the requested
@@ -224,13 +318,40 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // callers/copy can tell "couldn't check" apart from "found a conflict".
   async function checkRideTransition(
     target: RideSessionTarget,
-  ): Promise<RideTransitionOutcome | { kind: "read-failed" }> {
+  ): Promise<RideTransitionCheckResult> {
     try {
       const stored = await getActiveRideState();
-      return classifyRideTransition(stored, target);
+      const outcome = classifyRideTransition(stored, target);
+      if (outcome.kind !== "conflict") return outcome;
+      return {
+        ...outcome,
+        existingRouteId:
+          outcome.existing === "route" &&
+          stored !== undefined &&
+          isStoredRouteRideState(stored)
+            ? stored.routeId
+            : null,
+      };
     } catch (error) {
       logError("app-check-ride-transition", error);
       return { kind: "read-failed" };
+    }
+  }
+
+  // Resolves the paused route named by a conflict's existingRouteId, for
+  // the inline card's own copy/Return action (item 73 follow-up). Never
+  // throws to its caller — a lookup failure or "not found" both simply
+  // mean no name/Return can be offered, handled the same as any other
+  // unresolved existingRoute.
+  async function resolveExistingRouteForConflict(
+    existingRouteId: string | null,
+  ): Promise<PlannedRoute | null> {
+    if (!existingRouteId) return null;
+    try {
+      return (await getRoute(existingRouteId)) ?? null;
+    } catch (error) {
+      logError("app-resolve-existing-route-for-switch", error);
+      return null;
     }
   }
 
@@ -300,9 +421,12 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // explicit Start riding tap) nor after a confirmed different-session
   // switch (confirming a switch is not permission to auto-start GPS for
   // the replacement).
+  //
+  // origin (item 73 follow-up) is supplied by the caller, never inferred
+  // here — see PendingRideSwitch's own doc comment for why.
   async function requestRouteTransition(
     route: PlannedRoute,
-    options: { stampResumeIntent: boolean },
+    options: { stampResumeIntent: boolean; origin: "route-card" | "global" },
   ): Promise<void> {
     const requestId = ++transitionRequestIdRef.current;
     const triggerElement = document.activeElement as HTMLElement | null;
@@ -319,12 +443,22 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
       return;
     }
 
+    const existingRouteId = outcome.kind === "conflict" ? outcome.existingRouteId : null;
+    const existingRoute =
+      options.origin === "route-card"
+        ? await resolveExistingRouteForConflict(existingRouteId)
+        : null;
+    if (transitionRequestIdRef.current !== requestId) return;
+
     pendingSwitchTriggerRef.current = triggerElement;
     setFreeRoamTransitionError(null);
     setPendingRideSwitch({
       requestId,
       target,
+      origin: options.origin,
       existing: outcome.kind === "read-failed" ? null : outcome.existing,
+      existingRouteId,
+      existingRoute,
       status: outcome.kind === "read-failed" ? "check-failed" : "conflict",
       errorMessage: null,
     });
@@ -378,22 +512,31 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     setPendingRideSwitch({
       requestId,
       target,
+      // Free roam never originates from a route card — always the
+      // launcher — so this is always "global", and existingRoute is never
+      // resolved (the page-level dialog's generic copy doesn't need it).
+      origin: "global",
       existing: outcome.kind === "read-failed" ? null : outcome.existing,
+      existingRouteId: outcome.kind === "conflict" ? outcome.existingRouteId : null,
+      existingRoute: null,
       status: outcome.kind === "read-failed" ? "check-failed" : "conflict",
       errorMessage: null,
     });
   }
 
   const handleOpenRoute = (route: PlannedRoute) => {
-    void requestRouteTransition(route, { stampResumeIntent: false });
+    void requestRouteTransition(route, {
+      stampResumeIntent: false,
+      origin: "route-card",
+    });
   };
 
   const handleRouteSaved = (route: PlannedRoute) => {
-    void requestRouteTransition(route, { stampResumeIntent: false });
+    void requestRouteTransition(route, { stampResumeIntent: false, origin: "global" });
   };
 
   const handleResumeRoute = (route: PlannedRoute) => {
-    void requestRouteTransition(route, { stampResumeIntent: true });
+    void requestRouteTransition(route, { stampResumeIntent: true, origin: "global" });
   };
 
   const handleStartFreeRoam = () => {
@@ -510,9 +653,19 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         return;
       }
 
+      const existingRouteId =
+        outcome.kind === "conflict" ? outcome.existingRouteId : null;
+      const existingRoute =
+        pending.origin === "route-card"
+          ? await resolveExistingRouteForConflict(existingRouteId)
+          : null;
+      if (transitionRequestIdRef.current !== pending.requestId) return;
+
       setPendingRideSwitch({
         ...pending,
         existing: outcome.kind === "read-failed" ? null : outcome.existing,
+        existingRouteId,
+        existingRoute,
         status: outcome.kind === "read-failed" ? "check-failed" : "conflict",
         errorMessage: null,
       });
@@ -553,15 +706,111 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     }
   }
 
+  // "Return to paused ride" (item 73 follow-up) — reopens the existing
+  // paused route WITHOUT clearing storage, WITHOUT stamping a
+  // resumeIntentToken, and without starting GPS: opening a route target
+  // through openRideTarget with no resumeIntentToken already produces the
+  // correct "paused, Resume ride required" presentation, since
+  // RidingScreen independently re-detects the matching stored row itself
+  // — the exact mechanism an ordinary undialogued "resume" outcome already
+  // relies on elsewhere in this guard.
+  //
+  // Revalidates fresh at click time rather than trusting the snapshot the
+  // prompt opened with, so a stale prompt can never reopen or silently
+  // resume a session that has since changed or vanished (e.g. ended from
+  // another tab). Any mismatch/failure lands on "return-failed", which
+  // nulls existingRoute so a dangling Return button doesn't just fail
+  // again — "Check again" (routed through retryPendingSwitchCheck) is the
+  // only way back to a fresh, actionable state.
+  async function returnToPausedRide(pending: PendingRideSwitch): Promise<void> {
+    if (isPendingSwitchActionPendingRef.current) return;
+    if (pending.existing !== "route" || !pending.existingRouteId) return;
+    isPendingSwitchActionPendingRef.current = true;
+    try {
+      setPendingRideSwitch({ ...pending, status: "returning", errorMessage: null });
+
+      let stored;
+      try {
+        stored = await getActiveRideState();
+      } catch (error) {
+        if (transitionRequestIdRef.current !== pending.requestId) return;
+        logError("app-return-to-paused-ride", error);
+        setPendingRideSwitch({
+          ...pending,
+          existingRoute: null,
+          status: "return-failed",
+          errorMessage: "This paused ride's status could not be checked. Try again.",
+        });
+        return;
+      }
+      if (transitionRequestIdRef.current !== pending.requestId) return;
+
+      const stillMatches =
+        stored !== undefined &&
+        isStoredRouteRideState(stored) &&
+        stored.routeId === pending.existingRouteId;
+      if (!stillMatches) {
+        setPendingRideSwitch({
+          ...pending,
+          existingRoute: null,
+          status: "return-failed",
+          errorMessage:
+            "This paused ride has changed since this screen opened. Check again to see its current status.",
+        });
+        return;
+      }
+
+      let route;
+      try {
+        route = await getRoute(pending.existingRouteId);
+      } catch (error) {
+        if (transitionRequestIdRef.current !== pending.requestId) return;
+        logError("app-return-to-paused-ride", error);
+        setPendingRideSwitch({
+          ...pending,
+          existingRoute: null,
+          status: "return-failed",
+          errorMessage: "This paused ride's route could not be checked. Try again.",
+        });
+        return;
+      }
+      if (transitionRequestIdRef.current !== pending.requestId) return;
+      if (!route) {
+        setPendingRideSwitch({
+          ...pending,
+          existingRoute: null,
+          status: "return-failed",
+          errorMessage:
+            "This route is no longer in your library, so this paused ride can't be reopened.",
+        });
+        return;
+      }
+
+      setPendingRideSwitch(null);
+      openRideTarget({ kind: "route", route });
+    } finally {
+      isPendingSwitchActionPendingRef.current = false;
+    }
+  }
+
   const handlePendingSwitchConfirm = () => {
     if (!pendingRideSwitch || isPendingSwitchActionPendingRef.current) return;
-    if (pendingRideSwitch.status === "check-failed") {
+    if (
+      pendingRideSwitch.status === "check-failed" ||
+      pendingRideSwitch.status === "return-failed"
+    ) {
       void retryPendingSwitchCheck(pendingRideSwitch);
     } else if (pendingRideSwitch.status === "start-free-roam-failed") {
       void retryFreeRoamWriteForPendingSwitch(pendingRideSwitch);
     } else {
       void confirmPendingSwitch(pendingRideSwitch);
     }
+  };
+
+  const handlePendingSwitchReturn = () => {
+    if (!pendingRideSwitch || isPendingSwitchActionPendingRef.current) return;
+    if (pendingRideSwitch.status !== "conflict") return;
+    void returnToPausedRide(pendingRideSwitch);
   };
 
   const handlePendingSwitchCancel = () => {
@@ -574,6 +823,23 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     if (trigger?.isConnected) {
       trigger.focus();
     }
+  };
+
+  // Item 73 follow-up: RouteLibrary reports back when the pending switch's
+  // target route stops being visible in the current (search-filtered)
+  // list — deleted, or no longer matching the search text — so this can
+  // cancel safely rather than leaving an invisible actionable prompt or
+  // having RouteLibrary fabricate a card that doesn't match the query. No
+  // focus assumption is made here — the trigger element's card may be gone
+  // too. Only cancels if the pending switch still targets that exact
+  // route, so a stale report can't clobber a newer, different pending
+  // switch.
+  const handleSwitchTargetMissing = (routeId: string) => {
+    setPendingRideSwitch((current) =>
+      current?.target.kind === "route" && current.target.route.id === routeId
+        ? null
+        : current,
+    );
   };
 
   // Shared two-line body behind every non-finalising reset back to the
@@ -700,7 +966,42 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     : null;
   const isPendingSwitchBusy =
     pendingRideSwitch?.status === "clearing" ||
-    pendingRideSwitch?.status === "starting-free-roam";
+    pendingRideSwitch?.status === "starting-free-roam" ||
+    pendingRideSwitch?.status === "returning";
+
+  // Item 73 follow-up: inline presentation requires BOTH the immutable
+  // origin captured at request time AND the currently rendered screen —
+  // see PendingRideSwitch's own doc comment for why the latter can't be
+  // dropped (a rider navigating away from Routes mid-prompt must fall
+  // back to the page-level dialog, not vanish silently).
+  const canShowInline =
+    pendingRideSwitch !== null &&
+    pendingRideSwitch.origin === "route-card" &&
+    pendingRideSwitch.target.kind === "route" &&
+    screen === "library";
+
+  const routeSwitchPrompt: PendingRouteSwitch | null =
+    canShowInline && pendingRideSwitch.target.kind === "route" && pendingSwitchCopy
+      ? {
+          routeId: pendingRideSwitch.target.route.id,
+          title: pendingSwitchCopy.title,
+          message:
+            describeInlineRouteSwitchMessage(pendingRideSwitch) ??
+            pendingSwitchCopy.message,
+          confirmLabel: pendingSwitchCopy.confirmLabel,
+          confirmVariant: isDestructiveSwitchConfirmStatus(pendingRideSwitch.status)
+            ? "danger"
+            : "secondary",
+          offerReturn:
+            pendingRideSwitch.existing === "route" &&
+            pendingRideSwitch.existingRoute !== null,
+          busy: isPendingSwitchBusy,
+          onCancel: handlePendingSwitchCancel,
+          onConfirm: handlePendingSwitchConfirm,
+          onReturn: handlePendingSwitchReturn,
+          onTargetMissing: handleSwitchTargetMissing,
+        }
+      : null;
 
   return (
     <div className="app-shell">
@@ -710,7 +1011,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         </header>
       )}
 
-      {pendingRideSwitch && pendingSwitchCopy ? (
+      {pendingRideSwitch && pendingSwitchCopy && !canShowInline ? (
         <ConfirmDialog
           open
           title={pendingSwitchCopy.title}
@@ -750,6 +1051,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
             onOpenRoute={handleOpenRoute}
             restoreScrollYRef={routesScrollYRef}
             restoreSearchQueryRef={routesSearchQueryRef}
+            pendingRouteSwitch={routeSwitchPrompt}
           />
         )}
         {screen === "riding" &&

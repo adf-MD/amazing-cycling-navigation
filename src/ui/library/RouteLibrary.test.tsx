@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { RouteLibrary } from "./RouteLibrary.tsx";
+import { RouteLibrary, type PendingRouteSwitch } from "./RouteLibrary.tsx";
 import type { PlannedRoute } from "../../domain/types.ts";
 import type { Clock } from "../../platform/clock.ts";
 import { db } from "../../storage/db.ts";
@@ -52,6 +52,29 @@ function getListItemByRouteId(id: string): HTMLElement {
     throw new Error(`No list item found for route id ${id}`);
   }
   return item;
+}
+
+/** Builds a complete PendingRouteSwitch bundle (backlog item 73 follow-up)
+ * with fresh vi.fn() handlers by default — mirrors the discriminated,
+ * complete-contract shape App.tsx actually builds. */
+function buildPendingRouteSwitch(
+  routeId: string,
+  overrides: Partial<PendingRouteSwitch> = {},
+): PendingRouteSwitch {
+  return {
+    routeId,
+    title: 'Switch to "Route B"?',
+    message: '"Route A" is paused. Return to it, or end it and switch to "Route B".',
+    confirmLabel: "End and switch",
+    confirmVariant: "danger",
+    offerReturn: true,
+    busy: false,
+    onCancel: vi.fn(),
+    onConfirm: vi.fn(),
+    onReturn: vi.fn(),
+    onTargetMissing: vi.fn(),
+    ...overrides,
+  };
 }
 
 beforeEach(async () => {
@@ -1182,6 +1205,208 @@ describe("RouteLibrary", () => {
         expect(screen.getByRole("button", { name: "Zebra Loop" })).toHaveFocus();
       });
     });
+  });
+});
+
+// Backlog item 73 follow-up: the inline unfinished-session switch prompt
+// and its cross-card coordination with delete-confirmation, both owned
+// here (RouteLibrary), where pendingDeleteId already lives.
+describe("RouteLibrary — pending route switch", () => {
+  // Saved only to restore afterwards, never called unbound.
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalScrollIntoView = Element.prototype.scrollIntoView;
+
+  beforeEach(() => {
+    // jsdom doesn't implement scrollIntoView at all — mirrors
+    // RouteSummaryPanel.test.tsx's/RouteListItem.test.tsx's own identical
+    // precedent, needed since a pending switch now renders inline.
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  afterEach(() => {
+    Element.prototype.scrollIntoView = originalScrollIntoView;
+  });
+
+  it("renders the prompt inline inside the target route's own list item", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "First Ride.gpx");
+    await importFixture(user, "Second Ride.gpx");
+    const [routeA, routeB] = (await routesRepository.listRoutes()) as [
+      PlannedRoute,
+      PlannedRoute,
+    ];
+
+    rerender(
+      <RouteLibrary
+        onOpenRoute={vi.fn()}
+        pendingRouteSwitch={buildPendingRouteSwitch(routeB.id)}
+      />,
+    );
+
+    expect(
+      within(getListItemByRouteId(routeB.id)).getByRole("alertdialog"),
+    ).toBeInTheDocument();
+    expect(within(getListItemByRouteId(routeA.id)).queryByRole("alertdialog")).toBeNull();
+    expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
+  });
+
+  it("forwards onCancel, onReturn and onConfirm to the matching card's own buttons", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user);
+    const [route] = (await routesRepository.listRoutes()) as [PlannedRoute];
+    const pendingRouteSwitch = buildPendingRouteSwitch(route.id);
+
+    rerender(
+      <RouteLibrary onOpenRoute={vi.fn()} pendingRouteSwitch={pendingRouteSwitch} />,
+    );
+    await user.click(screen.getByRole("button", { name: "Return to paused ride" }));
+    expect(pendingRouteSwitch.onReturn).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "End and switch" }));
+    expect(pendingRouteSwitch.onConfirm).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(pendingRouteSwitch.onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports the target as missing (rather than fabricating a non-matching card) when the current search text excludes it", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "First Ride.gpx");
+    const [route] = (await routesRepository.listRoutes()) as [PlannedRoute];
+    const pendingRouteSwitch = buildPendingRouteSwitch(route.id);
+    rerender(
+      <RouteLibrary onOpenRoute={vi.fn()} pendingRouteSwitch={pendingRouteSwitch} />,
+    );
+    expect(
+      within(getListItemByRouteId(route.id)).getByRole("alertdialog"),
+    ).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/search/i), "no such route");
+
+    await waitFor(() => {
+      expect(pendingRouteSwitch.onTargetMissing).toHaveBeenCalledWith(route.id);
+    });
+    expect(document.querySelector(`[data-route-id="${route.id}"]`)).toBeNull();
+  });
+
+  it("reports the target as missing when its routeId isn't in the live routes query at all", async () => {
+    const { rerender } = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await waitFor(() => {
+      expect(screen.getByText(/no routes saved yet/i)).toBeInTheDocument();
+    });
+    const pendingRouteSwitch = buildPendingRouteSwitch("route-that-does-not-exist");
+
+    rerender(
+      <RouteLibrary onOpenRoute={vi.fn()} pendingRouteSwitch={pendingRouteSwitch} />,
+    );
+
+    await waitFor(() => {
+      expect(pendingRouteSwitch.onTargetMissing).toHaveBeenCalledWith(
+        "route-that-does-not-exist",
+      );
+    });
+  });
+
+  // The full cancel-then-open round trip (this callback's mock onCancel
+  // doesn't itself flip the pendingRouteSwitch prop back to null the way
+  // App's real setPendingRideSwitch(null) does, batched with this same
+  // click) is proved end-to-end, with real state, by App.test.tsx's own
+  // A-card/B-card integration test. Here, in isolation, only the call
+  // itself is provable.
+  it("requesting delete while a switch prompt is pending on the same card cancels the switch prompt first", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user);
+    const [route] = (await routesRepository.listRoutes()) as [PlannedRoute];
+    const pendingRouteSwitch = buildPendingRouteSwitch(route.id);
+    rerender(
+      <RouteLibrary onOpenRoute={vi.fn()} pendingRouteSwitch={pendingRouteSwitch} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(pendingRouteSwitch.onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("A-card/B-card: requesting delete on a different card than the pending switch cancels the switch prompt first too, not only a same-card one", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "First Ride.gpx");
+    await importFixture(user, "Second Ride.gpx");
+    const [routeA, routeB] = (await routesRepository.listRoutes()) as [
+      PlannedRoute,
+      PlannedRoute,
+    ];
+    const pendingRouteSwitch = buildPendingRouteSwitch(routeB.id);
+    rerender(
+      <RouteLibrary onOpenRoute={vi.fn()} pendingRouteSwitch={pendingRouteSwitch} />,
+    );
+    expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
+
+    await user.click(
+      within(getListItemByRouteId(routeA.id)).getByRole("button", { name: "Delete" }),
+    );
+
+    expect(pendingRouteSwitch.onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("a switch prompt appearing while a different card's delete confirmation is open cancels that delete confirmation reactively, regardless of which card either belongs to", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "First Ride.gpx");
+    await importFixture(user, "Second Ride.gpx");
+    const [routeA, routeB] = (await routesRepository.listRoutes()) as [
+      PlannedRoute,
+      PlannedRoute,
+    ];
+
+    await user.click(
+      within(getListItemByRouteId(routeA.id)).getByRole("button", { name: "Delete" }),
+    );
+    expect(
+      within(getListItemByRouteId(routeA.id)).getByRole("alertdialog"),
+    ).toBeInTheDocument();
+
+    rerender(
+      <RouteLibrary
+        onOpenRoute={vi.fn()}
+        pendingRouteSwitch={buildPendingRouteSwitch(routeB.id)}
+      />,
+    );
+
+    expect(within(getListItemByRouteId(routeA.id)).queryByRole("alertdialog")).toBeNull();
+    expect(
+      within(getListItemByRouteId(routeB.id)).getByRole("alertdialog"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
+  });
+
+  it("does not cancel or interrupt a busy switch prompt merely because Delete was requested elsewhere", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "First Ride.gpx");
+    await importFixture(user, "Second Ride.gpx");
+    const [routeA, routeB] = (await routesRepository.listRoutes()) as [
+      PlannedRoute,
+      PlannedRoute,
+    ];
+    const pendingRouteSwitch = buildPendingRouteSwitch(routeB.id, { busy: true });
+    rerender(
+      <RouteLibrary onOpenRoute={vi.fn()} pendingRouteSwitch={pendingRouteSwitch} />,
+    );
+
+    await user.click(
+      within(getListItemByRouteId(routeA.id)).getByRole("button", { name: "Delete" }),
+    );
+
+    expect(pendingRouteSwitch.onCancel).not.toHaveBeenCalled();
+    expect(within(getListItemByRouteId(routeA.id)).queryByRole("alertdialog")).toBeNull();
+    expect(
+      within(getListItemByRouteId(routeB.id)).getByRole("alertdialog"),
+    ).toBeInTheDocument();
   });
 });
 

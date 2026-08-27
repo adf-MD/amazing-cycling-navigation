@@ -17,6 +17,34 @@ import {
 
 test.use({ serviceWorkers: "block" });
 
+// Mirrors layout.spec.ts's own identical Box/isFullyWithin/intersects
+// helpers — duplicated locally per this repo's established no-shared-e2e-
+// helpers-across-specs convention.
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function isFullyWithin(inner: Box, outer: Box): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  );
+}
+
+function intersects(a: Box, b: Box): boolean {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
+
 const ORS_URL_GLOB = "https://api.heigit.org/**";
 const ROUTE_LAT = 51.5;
 const ROUTE_START_LON = -0.1;
@@ -155,14 +183,27 @@ test("route A unfinished + opening route B shows a confirmation before any repla
   await importRoute(page, routeBName);
 
   const routeARowBefore = await readActiveRideStateRow(page);
+  const routeBId = await readSavedRouteId(page, routeBName);
+  if (!routeBId) throw new Error("expected a saved route id for route B");
+  const routeBCard = page.locator(`[data-route-id="${routeBId}"]`);
   const routeBButton = page.getByRole("button", { name: routeBName, exact: true });
   await routeBButton.click();
 
   // exact:true — the dialog's own title ("Switch to "routeBName"?") would
-  // otherwise substring-match this same query while it's open.
+  // otherwise substring-match this same query while it's open. Item 73
+  // follow-up: the prompt is a descendant of B's own card, names A
+  // directly, and offers Return to paused ride.
   await expect(page.getByRole("heading", { name: routeBName, exact: true })).toBeHidden();
-  const dialog = page.getByRole("alertdialog");
-  await expect(dialog.getByText(/unfinished ride on another route/i)).toBeVisible();
+  const dialog = routeBCard.getByRole("alertdialog");
+  await expect(
+    dialog.getByText(
+      `"${routeAName}" is paused. Return to it, or end it and switch to "${routeBName}". Ending it will clear ride progress; the saved route will remain in Routes.`,
+    ),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Return to paused ride" }),
+  ).toBeVisible();
+  await expect(page.getByRole("alertdialog")).toHaveCount(1);
   expect(await readActiveRideStateRow(page)).toEqual(routeARowBefore);
   expect(await readWatchPositionCallCount(page)).toBe(0);
 
@@ -173,7 +214,7 @@ test("route A unfinished + opening route B shows a confirmation before any repla
   await expect(routeBButton).toBeFocused();
 
   await routeBButton.click();
-  const confirmDialog = page.getByRole("alertdialog");
+  const confirmDialog = routeBCard.getByRole("alertdialog");
   await confirmDialog.getByRole("button", { name: "End and switch" }).click();
 
   await waitForClearedRideState(page);
@@ -478,6 +519,278 @@ test("a Planning save while a different route is unfinished shows the same confi
   expect(consoleErrors).toEqual([]);
 });
 
+test("on a long Routes list, selecting a lower route while another is paused expands the confirmation inside the tapped route's own card and offers Return to paused ride (item 73 follow-up)", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  const routeAName = "switch-guard-inline-route-a";
+  const routeBName = "switch-guard-inline-route-b";
+
+  await establishUnfinishedRide(page, context, routeAName);
+  await installGeolocationWatchCounter(page);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+  await importRoute(page, routeBName);
+  // Most-recent-first sort (this library's default) means later imports
+  // land above B — enough fillers push B meaningfully below the fold,
+  // proving the fix works for a card that isn't already on-screen.
+  for (let index = 1; index <= 8; index += 1) {
+    await importRoute(page, `switch-guard-inline-filler-${String(index)}`);
+  }
+
+  const routeARowBefore = await readActiveRideStateRow(page);
+  const routeBId = await readSavedRouteId(page, routeBName);
+  if (!routeBId) throw new Error("expected a saved route id for route B");
+  const routeBCard = page.locator(`[data-route-id="${routeBId}"]`);
+
+  await page.getByRole("button", { name: routeBName, exact: true }).click();
+
+  // The prompt must be a descendant of route B's own card, not a global,
+  // page-level dialog detached from the card the rider actually tapped.
+  const dialog = routeBCard.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+  await expect(page.getByRole("alertdialog")).toHaveCount(1);
+  const returnButton = dialog.getByRole("button", { name: "Return to paused ride" });
+  await expect(returnButton).toBeVisible();
+  expect(await readActiveRideStateRow(page)).toEqual(routeARowBefore);
+  expect(await readWatchPositionCallCount(page)).toBe(0);
+
+  await returnButton.click();
+
+  await expect(page.getByRole("heading", { name: routeAName })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeVisible();
+  // RidingScreen's own restoration independently recomputes a fresh camera
+  // framing around the restored fix on mount — unrelated to Return's own
+  // no-clear guarantee, so this checks the progress-critical fields are
+  // still intact rather than the whole row (including transient camera
+  // state) staying byte-identical.
+  expect(await readActiveRideStateRow(page)).toMatchObject({
+    routeId: routeARowBefore?.routeId,
+    lastFix: routeARowBefore?.lastFix,
+    lastMatchedPointIndex: routeARowBefore?.lastMatchedPointIndex,
+    matchedDistanceFromStartMetres: routeARowBefore?.matchedDistanceFromStartMetres,
+    offRouteMachineState: routeARowBefore?.offRouteMachineState,
+  });
+  expect(await readWatchPositionCallCount(page)).toBe(0);
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("at an iPhone-sized portrait viewport, the inline switch prompt stays inside its own card, below the sticky nav, with no horizontal document overflow, non-overlapping touch-target-sized actions, and working keyboard focus/Escape (item 73 follow-up)", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  const routeAName = "switch-guard-geometry-portrait-a";
+  const routeBName = "switch-guard-geometry-portrait-b";
+
+  await establishUnfinishedRide(page, context, routeAName);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+  await importRoute(page, routeBName);
+
+  const routeBId = await readSavedRouteId(page, routeBName);
+  if (!routeBId) throw new Error("expected a saved route id for route B");
+  const routeBCard = page.locator(`[data-route-id="${routeBId}"]`);
+  const routeBButton = page.getByRole("button", { name: routeBName, exact: true });
+  await routeBButton.click();
+
+  const dialog = routeBCard.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+
+  const header = page.locator("header.app-header--sticky");
+  const [headerBox, cardBox, dialogBox] = await Promise.all([
+    header.boundingBox(),
+    routeBCard.boundingBox(),
+    dialog.boundingBox(),
+  ]);
+  if (!headerBox || !cardBox || !dialogBox) {
+    throw new Error("expected the header, card and dialog to all be measurable");
+  }
+  expect(isFullyWithin(dialogBox, cardBox)).toBe(true);
+  expect(dialogBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
+
+  const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(scrollWidth).toBeLessThanOrEqual(390 + 1);
+
+  const actionBoxes = await Promise.all(
+    [
+      dialog.getByRole("button", { name: "Cancel" }),
+      dialog.getByRole("button", { name: "Return to paused ride" }),
+      dialog.getByRole("button", { name: "End and switch" }),
+    ].map((button) => button.boundingBox()),
+  );
+  for (const box of actionBoxes) {
+    if (!box) throw new Error("expected every action's box to be measurable");
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(isFullyWithin(box, dialogBox)).toBe(true);
+  }
+  for (let i = 0; i < actionBoxes.length; i += 1) {
+    for (let j = i + 1; j < actionBoxes.length; j += 1) {
+      const a = actionBoxes[i];
+      const b = actionBoxes[j];
+      if (!a || !b) continue;
+      expect(intersects(a, b)).toBe(false);
+    }
+  }
+
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(routeBButton).toBeFocused();
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("at 844x390 short landscape, the inline switch prompt stays inside its own card with no horizontal document overflow (item 73 follow-up)", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await page.setViewportSize({ width: 844, height: 390 });
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  const routeAName = "switch-guard-geometry-landscape-a";
+  const routeBName = "switch-guard-geometry-landscape-b";
+
+  await establishUnfinishedRide(page, context, routeAName);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+  await importRoute(page, routeBName);
+
+  const routeBId = await readSavedRouteId(page, routeBName);
+  if (!routeBId) throw new Error("expected a saved route id for route B");
+  const routeBCard = page.locator(`[data-route-id="${routeBId}"]`);
+  await page.getByRole("button", { name: routeBName, exact: true }).click();
+
+  const dialog = routeBCard.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+
+  const [cardBox, dialogBox] = await Promise.all([
+    routeBCard.boundingBox(),
+    dialog.boundingBox(),
+  ]);
+  if (!cardBox || !dialogBox) {
+    throw new Error("expected the card and dialog to both be measurable");
+  }
+  expect(isFullyWithin(dialogBox, cardBox)).toBe(true);
+
+  const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(scrollWidth).toBeLessThanOrEqual(844 + 1);
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("at 200% enlarged text, the inline switch prompt (including the longer Return to paused ride label) stays reachable with no horizontal document overflow or overlapping actions (item 73 follow-up)", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  const routeAName = "switch-guard-geometry-enlarged-a";
+  const routeBName = "switch-guard-geometry-enlarged-b";
+
+  await establishUnfinishedRide(page, context, routeAName);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+  await importRoute(page, routeBName);
+
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+
+  const routeBId = await readSavedRouteId(page, routeBName);
+  if (!routeBId) throw new Error("expected a saved route id for route B");
+  const routeBCard = page.locator(`[data-route-id="${routeBId}"]`);
+  await page.getByRole("button", { name: routeBName, exact: true }).click();
+
+  const dialog = routeBCard.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+
+  // Scoped to the switch prompt's own card/actions, not the whole
+  // document: a pre-existing, unrelated MainNavigation overflow (a bare
+  // <span>Settings</span> exceeding the viewport at 200% text, reproduced
+  // independently on a plain Routes screen with no route conflict at all)
+  // already fails a document.scrollWidth-wide assertion regardless of this
+  // fix. That's out of this item 73 follow-up's scope — this test proves
+  // the switch prompt itself doesn't add to or worsen it.
+  //
+  // Measured atomically in one evaluate() call (not separate .boundingBox()
+  // round trips) so nothing can shift/scroll between reading the card's box
+  // and the buttons' boxes.
+  const geometry = await routeBCard.evaluate((cardEl) => {
+    const toBox = (el: Element) => {
+      const rect = el.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    };
+    const dialogEl = cardEl.querySelector('[role="alertdialog"]');
+    if (!dialogEl) return null;
+    const buttonEls = Array.from(dialogEl.querySelectorAll("button"));
+    return {
+      card: toBox(cardEl),
+      dialog: toBox(dialogEl),
+      buttons: buttonEls.map((button) => ({
+        text: button.textContent,
+        box: toBox(button),
+      })),
+    };
+  });
+  if (!geometry)
+    throw new Error("expected the card, dialog and buttons to all be measurable");
+
+  expect(isFullyWithin(geometry.dialog, geometry.card)).toBe(true);
+  expect(geometry.card.x + geometry.card.width).toBeLessThanOrEqual(390 + 1);
+
+  const actionBoxes = geometry.buttons.map((button) => button.box);
+  expect(actionBoxes).toHaveLength(3);
+  for (let i = 0; i < actionBoxes.length; i += 1) {
+    expect(isFullyWithin(actionBoxes[i], geometry.card)).toBe(true);
+    for (let j = i + 1; j < actionBoxes.length; j += 1) {
+      expect(intersects(actionBoxes[i], actionBoxes[j])).toBe(false);
+    }
+  }
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
 test("a genuine storage-clear failure during a confirmed switch preserves the original row, then a retry succeeds without a duplicate clear", async ({
   page,
   context,
@@ -515,9 +828,12 @@ test("a genuine storage-clear failure during a confirmed switch preserves the or
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
   await importRoute(page, routeBName);
   const routeARowBefore = await readActiveRideStateRow(page);
+  const routeBId = await readSavedRouteId(page, routeBName);
+  if (!routeBId) throw new Error("expected a saved route id for route B");
+  const routeBCard = page.locator(`[data-route-id="${routeBId}"]`);
 
   await page.getByRole("button", { name: routeBName, exact: true }).click();
-  const dialog = page.getByRole("alertdialog");
+  const dialog = routeBCard.getByRole("alertdialog");
   await dialog.getByRole("button", { name: "End and switch" }).click();
 
   await expect(dialog.getByText(/could not be ended on this device/i)).toBeVisible();

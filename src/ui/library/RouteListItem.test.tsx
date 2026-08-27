@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { RouteListItem } from "./RouteListItem.tsx";
+import { RouteListItem, type RouteSwitchPrompt } from "./RouteListItem.tsx";
 import type { PlannedRoute } from "../../domain/types.ts";
 
 function buildRoute(overrides: Partial<PlannedRoute> = {}): PlannedRoute {
@@ -35,6 +35,52 @@ interface RenderOverrides {
   isPinPending?: boolean;
   pinError?: string | null;
   onPinToggle?: ReturnType<typeof vi.fn<(route: PlannedRoute) => void>>;
+  switchPrompt?: RouteSwitchPrompt | null;
+}
+
+/** Builds a complete RouteSwitchPrompt bundle (backlog item 73 follow-up)
+ * with fresh vi.fn() handlers by default — mirrors the discriminated,
+ * complete-contract shape App.tsx actually builds, so a test can never
+ * accidentally exercise a half-specified prompt. */
+function buildSwitchPrompt(
+  overrides: Partial<RouteSwitchPrompt> = {},
+): RouteSwitchPrompt {
+  return {
+    title: 'Switch to "Route B"?',
+    message: '"Route A" is paused. Return to it, or end it and switch to "Route B".',
+    confirmLabel: "End and switch",
+    confirmVariant: "danger",
+    offerReturn: true,
+    busy: false,
+    onCancel: vi.fn(),
+    onConfirm: vi.fn(),
+    onReturn: vi.fn(),
+    ...overrides,
+  };
+}
+
+function buildElement(route: PlannedRoute, overrides: RenderOverrides) {
+  return (
+    <RouteListItem
+      route={route}
+      onOpen={overrides.onOpen ?? vi.fn<(route: PlannedRoute) => void>()}
+      onRename={overrides.onRename ?? vi.fn<(id: string, name: string) => void>()}
+      onExport={overrides.onExport ?? vi.fn<(route: PlannedRoute) => void>()}
+      onDeleteRequest={overrides.onDeleteRequest ?? vi.fn<(id: string) => void>()}
+      onDeleteCancel={overrides.onDeleteCancel ?? vi.fn<(id: string) => void>()}
+      onDeleteConfirm={overrides.onDeleteConfirm ?? vi.fn<(id: string) => void>()}
+      isDeletePending={overrides.isDeletePending ?? false}
+      isDeleting={overrides.isDeleting ?? false}
+      deleteError={overrides.deleteError ?? null}
+      isPinned={overrides.isPinned ?? false}
+      isPinPending={overrides.isPinPending ?? false}
+      pinError={overrides.pinError ?? null}
+      onPinToggle={overrides.onPinToggle ?? vi.fn<(route: PlannedRoute) => void>()}
+      nameButtonRef={vi.fn()}
+      pinButtonRef={vi.fn()}
+      switchPrompt={overrides.switchPrompt ?? null}
+    />
+  );
 }
 
 function renderItem(overrides: RenderOverrides = {}) {
@@ -47,25 +93,17 @@ function renderItem(overrides: RenderOverrides = {}) {
   const onDeleteConfirm = overrides.onDeleteConfirm ?? vi.fn<(id: string) => void>();
   const onPinToggle = overrides.onPinToggle ?? vi.fn<(route: PlannedRoute) => void>();
 
-  const { unmount } = render(
-    <RouteListItem
-      route={route}
-      onOpen={onOpen}
-      onRename={onRename}
-      onExport={onExport}
-      onDeleteRequest={onDeleteRequest}
-      onDeleteCancel={onDeleteCancel}
-      onDeleteConfirm={onDeleteConfirm}
-      isDeletePending={overrides.isDeletePending ?? false}
-      isDeleting={overrides.isDeleting ?? false}
-      deleteError={overrides.deleteError ?? null}
-      isPinned={overrides.isPinned ?? false}
-      isPinPending={overrides.isPinPending ?? false}
-      pinError={overrides.pinError ?? null}
-      onPinToggle={onPinToggle}
-      nameButtonRef={vi.fn()}
-      pinButtonRef={vi.fn()}
-    />,
+  const { unmount, rerender } = render(
+    buildElement(route, {
+      ...overrides,
+      onOpen,
+      onRename,
+      onExport,
+      onDeleteRequest,
+      onDeleteCancel,
+      onDeleteConfirm,
+      onPinToggle,
+    }),
   );
 
   return {
@@ -74,6 +112,23 @@ function renderItem(overrides: RenderOverrides = {}) {
     onRename,
     onExport,
     unmount,
+    // Rerenders with the same route/callbacks but a new switchPrompt — the
+    // minimal seam needed to prove a later message change re-triggers the
+    // nearest-scroll check, without threading every prop through again.
+    rerenderWithSwitchPrompt: (switchPrompt: RouteSwitchPrompt | null) => {
+      rerender(
+        buildElement(route, {
+          onOpen,
+          onRename,
+          onExport,
+          onDeleteRequest,
+          onDeleteCancel,
+          onDeleteConfirm,
+          onPinToggle,
+          switchPrompt,
+        }),
+      );
+    },
     onDeleteRequest,
     onDeleteCancel,
     onDeleteConfirm,
@@ -428,6 +483,215 @@ describe("RouteListItem", () => {
       const pinButton = screen.getByRole("button", { name: `Pin ${longName}` });
       expect(titleButton.parentElement).toHaveClass("route-card-title-row");
       expect(pinButton.parentElement).toBe(titleButton.parentElement);
+    });
+  });
+
+  // Backlog item 73 follow-up: the inline unfinished-session switch prompt.
+  describe("switch prompt", () => {
+    // Saved only to restore afterwards, never called unbound.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+
+    beforeEach(() => {
+      // jsdom doesn't implement scrollIntoView at all — mirrors
+      // RouteSummaryPanel.test.tsx's own identical precedent.
+      Element.prototype.scrollIntoView = vi.fn();
+    });
+
+    afterEach(() => {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    });
+
+    it("renders no panel when switchPrompt is null", () => {
+      renderItem({ switchPrompt: null });
+
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+    });
+
+    it("renders the title, message and three actions in order (Cancel, Return to paused ride, End and switch) when offerReturn is true", () => {
+      renderItem({ switchPrompt: buildSwitchPrompt({ offerReturn: true }) });
+
+      const dialog = screen.getByRole("alertdialog");
+      expect(within(dialog).getByText('Switch to "Route B"?')).toBeInTheDocument();
+      expect(
+        within(dialog).getByText(
+          '"Route A" is paused. Return to it, or end it and switch to "Route B".',
+        ),
+      ).toBeInTheDocument();
+      const buttons = within(dialog).getAllByRole("button");
+      expect(buttons.map((button) => button.textContent)).toEqual([
+        "Cancel",
+        "Return to paused ride",
+        "End and switch",
+      ]);
+    });
+
+    it("renders only Cancel and the confirm action when offerReturn is false", () => {
+      renderItem({ switchPrompt: buildSwitchPrompt({ offerReturn: false }) });
+
+      const dialog = screen.getByRole("alertdialog");
+      const buttons = within(dialog).getAllByRole("button");
+      expect(buttons.map((button) => button.textContent)).toEqual([
+        "Cancel",
+        "End and switch",
+      ]);
+      expect(
+        within(dialog).queryByRole("button", { name: "Return to paused ride" }),
+      ).toBeNull();
+    });
+
+    it("gives the panel its own route-scoped labelling and no aria-modal", () => {
+      renderItem({ switchPrompt: buildSwitchPrompt() });
+
+      const dialog = screen.getByRole("alertdialog", { name: 'Switch to "Route B"?' });
+      expect(dialog).not.toHaveAttribute("aria-modal");
+      expect(dialog).toHaveAccessibleDescription(
+        '"Route A" is paused. Return to it, or end it and switch to "Route B".',
+      );
+    });
+
+    it("moves focus to Cancel when the prompt opens", () => {
+      renderItem({ switchPrompt: buildSwitchPrompt() });
+
+      expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    });
+
+    it("clicking Cancel calls onCancel and does not itself move focus — App owns the sole focus-restoration path", async () => {
+      const user = userEvent.setup();
+      const switchPrompt = buildSwitchPrompt();
+      renderItem({ switchPrompt });
+
+      const titleButton = screen.getByRole("button", { name: "Evening loop" });
+      const focusSpy = vi.spyOn(titleButton, "focus");
+
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+      expect(switchPrompt.onCancel).toHaveBeenCalledTimes(1);
+      expect(focusSpy).not.toHaveBeenCalled();
+    });
+
+    it("pressing Escape calls onCancel and does not itself move focus", async () => {
+      const user = userEvent.setup();
+      const switchPrompt = buildSwitchPrompt();
+      renderItem({ switchPrompt });
+
+      const titleButton = screen.getByRole("button", { name: "Evening loop" });
+      const focusSpy = vi.spyOn(titleButton, "focus");
+
+      await user.keyboard("{Escape}");
+
+      expect(switchPrompt.onCancel).toHaveBeenCalledTimes(1);
+      expect(focusSpy).not.toHaveBeenCalled();
+    });
+
+    it("clicking Return to paused ride calls onReturn", async () => {
+      const user = userEvent.setup();
+      const switchPrompt = buildSwitchPrompt();
+      renderItem({ switchPrompt });
+
+      await user.click(screen.getByRole("button", { name: "Return to paused ride" }));
+
+      expect(switchPrompt.onReturn).toHaveBeenCalledTimes(1);
+    });
+
+    it("clicking the confirm action calls onConfirm", async () => {
+      const user = userEvent.setup();
+      const switchPrompt = buildSwitchPrompt();
+      renderItem({ switchPrompt });
+
+      await user.click(screen.getByRole("button", { name: "End and switch" }));
+
+      expect(switchPrompt.onConfirm).toHaveBeenCalledTimes(1);
+    });
+
+    it("disables every rendered action while busy", () => {
+      renderItem({ switchPrompt: buildSwitchPrompt({ busy: true }) });
+
+      const dialog = screen.getByRole("alertdialog");
+      for (const button of within(dialog).getAllByRole("button")) {
+        expect(button).toBeDisabled();
+      }
+    });
+
+    it("styles the confirm action as destructive only when confirmVariant is danger", () => {
+      const { unmount } = renderItem({
+        switchPrompt: buildSwitchPrompt({
+          confirmVariant: "danger",
+          confirmLabel: "End and switch",
+        }),
+      });
+      expect(screen.getByRole("button", { name: "End and switch" })).toHaveClass(
+        "btn-danger",
+      );
+      unmount();
+
+      renderItem({
+        switchPrompt: buildSwitchPrompt({
+          confirmVariant: "secondary",
+          confirmLabel: "Check again",
+        }),
+      });
+      const secondaryConfirm = screen.getByRole("button", { name: "Check again" });
+      expect(secondaryConfirm).toHaveClass("btn-secondary");
+      expect(secondaryConfirm).not.toHaveClass("btn-danger");
+    });
+
+    it("never styles Cancel or Return as destructive", () => {
+      renderItem({ switchPrompt: buildSwitchPrompt({ offerReturn: true }) });
+
+      expect(screen.getByRole("button", { name: "Cancel" })).toHaveClass("btn-secondary");
+      expect(screen.getByRole("button", { name: "Return to paused ride" })).toHaveClass(
+        "btn-secondary",
+      );
+    });
+
+    it("clicking Rename while this card's switch prompt is open cancels it first, then enters rename mode", async () => {
+      const user = userEvent.setup();
+      const switchPrompt = buildSwitchPrompt();
+      renderItem({ switchPrompt });
+
+      await user.click(screen.getByRole("button", { name: "Rename" }));
+
+      expect(switchPrompt.onCancel).toHaveBeenCalledTimes(1);
+      expect(screen.getByLabelText("Route name")).toBeInTheDocument();
+    });
+
+    it("clicking the pin toggle while this card's switch prompt is open cancels it first, then still calls onPinToggle", async () => {
+      const user = userEvent.setup();
+      const switchPrompt = buildSwitchPrompt();
+      const { route, onPinToggle } = renderItem({ switchPrompt, isPinned: false });
+
+      await user.click(screen.getByRole("button", { name: "Pin Evening loop" }));
+
+      expect(switchPrompt.onCancel).toHaveBeenCalledTimes(1);
+      expect(onPinToggle).toHaveBeenCalledWith(route);
+    });
+
+    it("scrolls the panel into view (nearest) when it first opens, and again if the message changes within the same pending switch", () => {
+      const scrollIntoViewMock = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoViewMock;
+
+      const { rerenderWithSwitchPrompt } = renderItem({
+        switchPrompt: buildSwitchPrompt({ message: "Ending your current ride…" }),
+      });
+      expect(scrollIntoViewMock).toHaveBeenCalledTimes(1);
+      expect(scrollIntoViewMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ block: "nearest" }),
+      );
+
+      // Same message re-rendered: no extra scroll.
+      rerenderWithSwitchPrompt(
+        buildSwitchPrompt({ message: "Ending your current ride…" }),
+      );
+      expect(scrollIntoViewMock).toHaveBeenCalledTimes(1);
+
+      // A later status transition surfacing new error text re-checks.
+      rerenderWithSwitchPrompt(
+        buildSwitchPrompt({
+          message: "This unfinished ride could not be ended on this device. Try again.",
+        }),
+      );
+      expect(scrollIntoViewMock).toHaveBeenCalledTimes(2);
     });
   });
 });

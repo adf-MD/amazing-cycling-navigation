@@ -33,7 +33,21 @@ import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { ImportGpxButton } from "./ImportGpxButton.tsx";
 import { computeFocusRouteIdAfterDelete } from "./routeDeleteFocus.ts";
 import { isPinnedRoute, selectRouteLibraryGroups } from "./routeLibraryView.ts";
-import { RouteListItem } from "./RouteListItem.tsx";
+import { RouteListItem, type RouteSwitchPrompt } from "./RouteListItem.tsx";
+
+/** The inline switch-guard prompt (backlog item 73 follow-up), owned and
+ * fully computed by App.tsx — this is the single, complete, discriminated
+ * contract: when non-null, `routeId` identifies which card renders it and
+ * every handler the card and this library need is guaranteed present, so
+ * there is no way to have a visible prompt with a missing/no-op handler. */
+export interface PendingRouteSwitch extends RouteSwitchPrompt {
+  routeId: string;
+  /** Reported back to App when this route stops being visible in the
+   * current (search/sort-filtered) list — deleted, or merely filtered out
+   * by search text — so App can cancel the pending switch safely instead
+   * of leaving an invisible actionable prompt. */
+  onTargetMissing: (routeId: string) => void;
+}
 
 export interface RouteLibraryProps {
   onOpenRoute: (route: PlannedRoute) => void;
@@ -59,6 +73,10 @@ export interface RouteLibraryProps {
    * instead of depending on real clicks landing in different milliseconds.
    * Defaults to the real system clock in production. */
   clock?: Clock;
+  /** Optional at this outer level only (defaults to null) so existing call
+   * sites need no mechanical update; when present it is always the
+   * complete PendingRouteSwitch bundle — see that type's own doc comment. */
+  pendingRouteSwitch?: PendingRouteSwitch | null;
 }
 
 export function RouteLibrary({
@@ -66,6 +84,7 @@ export function RouteLibrary({
   restoreScrollYRef,
   restoreSearchQueryRef,
   clock = systemClock,
+  pendingRouteSwitch = null,
 }: RouteLibraryProps) {
   const listRoutesQuery = useCallback(() => listRoutes(), []);
   const routes = useLiveQuery(listRoutesQuery);
@@ -84,6 +103,12 @@ export function RouteLibrary({
   const [sortPreferenceError, setSortPreferenceError] = useState<string | null>(null);
   const [pinPendingIds, setPinPendingIds] = useState<ReadonlySet<string>>(new Set());
   const [pinErrors, setPinErrors] = useState<Record<string, string>>({});
+  // Tracks pendingRouteSwitch's own previous value so the delete-clearing
+  // adjustment below (backlog item 73 follow-up) can detect a genuine
+  // change during rendering, React's own documented alternative to an
+  // effect for this — see that adjustment's own doc comment.
+  const [previousPendingRouteSwitch, setPreviousPendingRouteSwitch] =
+    useState(pendingRouteSwitch);
 
   const nameButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const pinButtonRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -231,6 +256,43 @@ export function RouteLibrary({
     pendingPinFocusIdRef.current = null;
   }, [groups, pinPendingIds, isDeleting]);
 
+  // Cross-card coordination for backlog item 73 follow-up's inline switch
+  // prompt, owned here because pendingDeleteId is owned here — a per-card
+  // RouteListItem handler structurally cannot see another card's pending
+  // delete. The instant a switch prompt appears (on any card, for any
+  // reason), any open delete-confirmation anywhere in the list is cleared
+  // — covering both the same-card and cross-card cases with one mechanism.
+  //
+  // Adjusted during rendering (React's own documented alternative to an
+  // effect for "reset derived state when a prop changes": see
+  // react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes),
+  // not inside a useEffect — this project's react-hooks/set-state-in-effect
+  // rule only exempts a ref-gated "consume once" shape, which this isn't
+  // (pendingRouteSwitch is a prop, not a ref), and calling setState
+  // directly in an effect body here would also cost an extra render pass.
+  if (pendingRouteSwitch !== previousPendingRouteSwitch) {
+    setPreviousPendingRouteSwitch(pendingRouteSwitch);
+    if (pendingRouteSwitch && pendingDeleteId !== null) {
+      setPendingDeleteId(null);
+      setDeleteError(null);
+    }
+  }
+
+  // Search/sort/pin/delete safety net for backlog item 73 follow-up: if
+  // the pending switch's target route stops being visible in the current
+  // (search-filtered) list — deleted entirely, or merely no longer
+  // matching the search text — report it rather than leaving an invisible
+  // actionable prompt or fabricating a card that doesn't match the query.
+  useEffect(() => {
+    if (!pendingRouteSwitch) return;
+    const stillVisible = viewRoutes.some(
+      (route) => route.id === pendingRouteSwitch.routeId,
+    );
+    if (!stillVisible) {
+      pendingRouteSwitch.onTargetMissing(pendingRouteSwitch.routeId);
+    }
+  }, [pendingRouteSwitch, viewRoutes]);
+
   const handleImported = (result: GpxImportResult) => {
     setNotices(result.notices);
     setImportError(null);
@@ -315,6 +377,12 @@ export function RouteLibrary({
 
   const handleDeleteRequest = (id: string) => {
     if (isDeleting) return;
+    if (pendingRouteSwitch) {
+      // Busy (clearing/returning): don't interrupt an in-flight switch
+      // action — let it settle rather than racing a cancel against it.
+      if (pendingRouteSwitch.busy) return;
+      pendingRouteSwitch.onCancel();
+    }
     setPendingDeleteId(id);
     setDeleteError(null);
   };
@@ -410,6 +478,7 @@ export function RouteLibrary({
           pinButtonRefs.current.delete(route.id);
         }
       }}
+      switchPrompt={pendingRouteSwitch?.routeId === route.id ? pendingRouteSwitch : null}
     />
   );
 
