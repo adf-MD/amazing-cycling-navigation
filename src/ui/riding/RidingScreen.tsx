@@ -1808,6 +1808,9 @@ export function RidingScreen({
             points={route.points}
             matchedDistanceFromStartMetres={nav.matchedDistanceFromStartMetres ?? 0}
             distanceBadgeProgressMetres={nav.presentationDistanceFromStartMetres}
+            badgeDensityMode={
+              nav.geolocationStatus !== "idle" ? "active-upcoming" : "whole-route"
+            }
             currentPosition={nav.currentFix?.coordinate}
             mapFactory={mapFactory}
             routeFeatureOverlay={routeFeatureOverlay}

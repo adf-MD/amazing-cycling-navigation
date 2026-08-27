@@ -45,6 +45,7 @@ import {
   type PlanningOverlayWaypoint,
 } from "./planningLayer.ts";
 import {
+  buildActiveUpcomingDistanceBadgeMarkerSpecs,
   buildDistanceBadgeMarkerSpecs,
   selectDistanceBadgeIntervalMetres,
 } from "./distanceBadgeLayer.ts";
@@ -488,6 +489,25 @@ export interface ImageryRetryCommand {
   requestId: string;
 }
 
+/** "whole-route" (the default — every caller today except active Riding:
+ * Planning, the pre-ride overview, free roam) selects distance-badge
+ * density purely from settled zoom and total route length, capped at
+ * MAX_WHOLE_ROUTE_DISTANCE_BADGES — see selectDistanceBadgeIntervalMetres.
+ * "active-upcoming" selects density purely from settled zoom (a separate,
+ * finer-grained table — see selectActiveUpcomingBadgeSpacingMetres) and
+ * retains only the next MAX_ACTIVE_UPCOMING_DISTANCE_BADGES badges ahead
+ * of distanceBadgeProgressMetres, rolling forward as the rider passes
+ * them. If distanceBadgeProgressMetres is null/non-finite while this is
+ * "active-upcoming" (GPS/matching still starting after Start/Resume),
+ * MapView temporarily falls back to the whole-route policy rather than
+ * fabricating a zero-progress window — see
+ * buildActiveUpcomingDistanceBadgeMarkerSpecs. RidingScreen is the only
+ * caller expected to ever pass "active-upcoming", derived from
+ * nav.geolocationStatus !== "idle" (not from progress being non-null: a
+ * paused/restored idle ride can already carry a non-null frozen
+ * progress). */
+export type BadgeDensityMode = "whole-route" | "active-upcoming";
+
 export interface MapViewProps {
   points: readonly RoutePoint[];
   /** Distance already ridden; the route line before this point is shown
@@ -505,6 +525,9 @@ export interface MapViewProps {
    * off-route — this is an intentional divergence, not an oversight; see
    * distanceBadgeLayer.ts's own module doc comment. */
   distanceBadgeProgressMetres?: number | null;
+  /** Selects which distance-badge density policy applies — see
+   * BadgeDensityMode. Defaults to "whole-route". */
+  badgeDensityMode?: BadgeDensityMode;
   currentPosition?: Coordinate;
   tileSource?: TileSourceConfig;
   mapFactory?: MapFactory;
@@ -624,6 +647,7 @@ export function MapView({
   points,
   matchedDistanceFromStartMetres = 0,
   distanceBadgeProgressMetres = null,
+  badgeDensityMode = "whole-route",
   currentPosition,
   tileSource = DEFAULT_TILE_SOURCE,
   mapFactory = createMapLibreMap,
@@ -1940,15 +1964,29 @@ export function MapView({
 
   // Distance-from-start badges: an entirely independent marker
   // collection from the waypoint markers above (see setDistanceBadges),
-  // recomputed only when the route, the settled zoom band, or the
-  // rider's frozen ahead/completed progress actually changes — never on
-  // every animation frame. `points` already carries whatever Planning/
-  // Riding currently consider "the route" (empty until routed for
-  // Planning, the full canonical route for Riding), so this needs no
-  // camera-mode awareness of its own: "unfiltered" already falls out of
-  // distanceBadgeProgressMetres being null.
+  // recomputed only when the route, the settled zoom band, the rider's
+  // frozen ahead/completed progress, or the density mode itself actually
+  // changes — never on every animation frame. `points` already carries
+  // whatever Planning/Riding currently consider "the route" (empty until
+  // routed for Planning, the full canonical route for Riding).
+  // badgeDensityMode="active-upcoming" (RidingScreen only, once genuinely
+  // riding) switches to a separate, zoom-only spacing table and a rolling
+  // next-ten window — see distanceBadgeLayer.ts's own doc comments for
+  // why whole-route's cap-escalation-by-route-length must never apply
+  // there. Both branches only ever call setDistanceBadges — neither
+  // triggers a camera fit/centre/zoom as a side effect.
   useEffect(() => {
     if (!styleStructurallyReady) return;
+    if (badgeDensityMode === "active-upcoming") {
+      mapRef.current?.setDistanceBadges(
+        buildActiveUpcomingDistanceBadgeMarkerSpecs(
+          points,
+          distanceBadgeZoom ?? Number.NaN,
+          distanceBadgeProgressMetres ?? null,
+        ),
+      );
+      return;
+    }
     const routeLengthMetres = points.at(-1)?.distanceFromStartMetres ?? 0;
     const intervalMetres = selectDistanceBadgeIntervalMetres(
       distanceBadgeZoom ?? Number.NaN,
@@ -1961,7 +1999,13 @@ export function MapView({
         distanceBadgeProgressMetres ?? null,
       ),
     );
-  }, [points, distanceBadgeZoom, distanceBadgeProgressMetres, styleStructurallyReady]);
+  }, [
+    points,
+    distanceBadgeZoom,
+    distanceBadgeProgressMetres,
+    badgeDensityMode,
+    styleStructurallyReady,
+  ]);
 
   useEffect(() => {
     if (!styleStructurallyReady) return;

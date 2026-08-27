@@ -851,7 +851,7 @@ test.describe("Planning", () => {
 
     // 80 km — long enough that the 10/20 km bands and the 5 km band are
     // each observable (7, 3 and 15 candidates respectively, all under
-    // MAX_ACTIVE_DISTANCE_BADGES's cap of 24), without needing to reach
+    // MAX_WHOLE_ROUTE_DISTANCE_BADGES's cap of 24), without needing to reach
     // the 1 km band at all (which this route length would cap back down
     // to 5 km anyway, per distanceBadgeLayer.ts's own escalation rule).
     const zoomBandEastLon = FIXTURE_START_LON + 80_000 / FIXTURE_METRES_PER_DEGREE_LON;
@@ -1325,15 +1325,33 @@ test.describe("Riding", () => {
     await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
     await waitForStableBadgeCount(page);
+    // The Follow camera eases from the pre-ride overview to the close
+    // NAVIGATION_ZOOM=16 follow position — a "stable" badge count can
+    // still be a mid-flight snapshot if the ease hasn't crossed a rounded
+    // zoom boundary yet. Waiting for the settled camera too, before
+    // asserting the exact active-mode spacing below, avoids reading an
+    // intermediate zoom band's badges.
+    await waitForCameraSettled(page);
+    await waitForStableBadgeCount(page);
 
     const initialKilometres = await getVisibleBadgeKilometres(page);
     const [firstBadgeKm] = initialKilometres;
 
-    // Advances well past the first currently-visible badge — regardless
-    // of which interval is active, the badge that was nearest the start
-    // must disappear, and whatever remains must still read as a larger
-    // absolute value, never reset to a small one relative to the new
-    // position (the exact failure mode this test targets).
+    // Item 84 follow-up: the default Follow zoom (NAVIGATION_ZOOM = 16)
+    // now uses active-Riding's own 1 km spacing, capped to at most the
+    // next ten upcoming badges — not the whole-route policy's coarser
+    // interval a ~45 km route would otherwise escalate to.
+    expect(initialKilometres.length).toBeLessThanOrEqual(10);
+    for (let i = 1; i < initialKilometres.length; i += 1) {
+      expect(initialKilometres[i] - initialKilometres[i - 1]).toBe(1);
+    }
+
+    // Advances just past the first currently-visible badge (800 m short
+    // of the next 1 km interval) — regardless of which interval is
+    // active, the badge that was nearest the start must disappear, and
+    // whatever remains must still read as a larger absolute value, never
+    // reset to a small one relative to the new position (the exact
+    // failure mode this test targets).
     const advanceToMetres = firstBadgeKm * 1000 + 800;
     await context.setGeolocation({
       latitude: FIXTURE_LAT,
@@ -1353,6 +1371,208 @@ test.describe("Riding", () => {
 
     const laterKilometres = await getVisibleBadgeKilometres(page);
     expect(laterKilometres.every((km) => km > firstBadgeKm)).toBe(true);
+
+    // Rolling-window proof: advancing just past the first (1 km) badge
+    // without reaching the second rolls the entire ten-badge window
+    // forward by exactly one step in each direction — the oldest badge
+    // dropped, exactly one new one gained further out — not merely "some
+    // values increased".
+    expect(laterKilometres).toEqual(initialKilometres.map((km) => km + 1));
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test("zoom bands settle to the documented active spacing while genuinely riding, and a badge paints above imagery at a wide band", async ({
+    page,
+    context,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: FIXTURE_LAT, longitude: FIXTURE_START_LON });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+    await page.goto("/");
+    await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
+
+    const routeButton = page.getByRole("button", {
+      name: "distance-badges-route",
+      exact: true,
+    });
+    await expect(routeButton).toBeVisible();
+    await routeButton.click();
+
+    const startRidingButton = page.getByRole("button", { name: "Start riding" });
+    await expect(startRidingButton).toBeVisible();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    await startRidingButton.click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    await waitForStableBadgeCount(page);
+    await waitForCameraSettled(page);
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    const zoomOutButton = page.getByRole("button", { name: "Zoom out" });
+
+    // The default Follow zoom is 16 (>=15 -> 1km); the in-screen Zoom out
+    // control steps by exactly one level per press (RIDING_ZOOM_STEP), so
+    // two presses per checkpoint reaches the reachable 14/12/10/8
+    // sequence — the 13/15 boundaries are already covered exactly by
+    // distanceBadgeLayer.test.ts's pure boundary tests.
+    const checkpoints: readonly { zoom: string; spacingKm: number }[] = [
+      { zoom: "14", spacingKm: 2 },
+      { zoom: "12", spacingKm: 5 },
+      { zoom: "10", spacingKm: 10 },
+      { zoom: "8", spacingKm: 20 },
+    ];
+
+    for (const { zoom, spacingKm } of checkpoints) {
+      for (let press = 0; press < 2; press += 1) {
+        const zoomBefore = await mapContainer.getAttribute("data-camera-zoom");
+        await zoomOutButton.click();
+        await expect
+          .poll(() => mapContainer.getAttribute("data-camera-zoom"), { timeout: 5_000 })
+          .not.toBe(zoomBefore);
+      }
+      // Confirm the settled zoom genuinely reached the checkpoint before
+      // trusting the spacing assertion below, rather than assuming the
+      // requested two presses landed exactly on it.
+      await expect(mapContainer).toHaveAttribute("data-camera-zoom", zoom);
+      await waitForStableBadgeCount(page);
+
+      const kilometres = await getVisibleBadgeKilometres(page);
+      expect(kilometres.length).toBeLessThanOrEqual(10);
+      for (let i = 1; i < kilometres.length; i += 1) {
+        expect(kilometres[i] - kilometres[i - 1]).toBe(spacingKm);
+      }
+    }
+
+    // At the widest (20 km) band, the follow view comfortably frames
+    // several badges at once — reliable ground for the same real-paint
+    // proof item 84 already established for Planning/pre-ride, now
+    // repeated for an active-mode-rendered badge specifically.
+    await verifyBadgePaint(page, await pickNonOverlappingBadge(page));
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test("a genuine manual pan ahead at unchanged zoom leaves the retained badge set unchanged and reveals a further landmark", async ({
+    page,
+    context,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: FIXTURE_LAT, longitude: FIXTURE_START_LON });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+    await page.goto("/");
+    await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
+
+    const routeButton = page.getByRole("button", {
+      name: "distance-badges-route",
+      exact: true,
+    });
+    await expect(routeButton).toBeVisible();
+    await routeButton.click();
+
+    const startRidingButton = page.getByRole("button", { name: "Start riding" });
+    await expect(startRidingButton).toBeVisible();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    await startRidingButton.click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    await waitForStableBadgeCount(page);
+    await waitForCameraSettled(page);
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    const zoomOutButton = page.getByRole("button", { name: "Zoom out" });
+    // Zoom out a couple of steps first so more than one of the retained
+    // badges is plausibly framed at once — at the tight default Follow
+    // zoom, the next badge can legitimately be many screen-widths ahead,
+    // which would make "reveals a further landmark" unreliable by
+    // construction rather than by a real defect.
+    for (let press = 0; press < 4; press += 1) {
+      const zoomBefore = await mapContainer.getAttribute("data-camera-zoom");
+      await zoomOutButton.click();
+      await expect
+        .poll(() => mapContainer.getAttribute("data-camera-zoom"), { timeout: 5_000 })
+        .not.toBe(zoomBefore);
+    }
+    await waitForStableBadgeCount(page);
+    await waitForCameraSettled(page);
+
+    const zoomBeforePan = await mapContainer.getAttribute("data-camera-zoom");
+    const idsBefore = await page
+      .locator(".distance-badge-marker")
+      .evaluateAll((elements) => elements.map((el) => el.getAttribute("aria-label")));
+
+    const rawContainerBox = await mapContainer.boundingBox();
+    if (!rawContainerBox) throw new Error("expected a visible map container");
+    const containerBox: Box = rawContainerBox;
+    async function visibleBadgeLabelsAndKilometres(): Promise<
+      { label: string; km: number }[]
+    > {
+      const badges = page.locator(".distance-badge-marker");
+      const count = await badges.count();
+      const visible: { label: string; km: number }[] = [];
+      for (let i = 0; i < count; i += 1) {
+        const badge = badges.nth(i);
+        const box = await badge.boundingBox();
+        if (!box || !intersects(box, containerBox)) continue;
+        const label = await badge.getAttribute("aria-label");
+        const text = await badge.textContent();
+        const match = text ? /(\d+)/.exec(text) : null;
+        if (label && match) visible.push({ label, km: Number(match[1]) });
+      }
+      return visible;
+    }
+    const visibleBefore = await visibleBadgeLabelsAndKilometres();
+    const maxKmBefore = Math.max(0, ...visibleBefore.map((b) => b.km));
+
+    // Real MapLibre KeyboardHandler pan (an unmodified ArrowUp, matching
+    // Riding's course-up Follow bearing, so "up" is "ahead along the
+    // route") — mirrors planning.spec.ts's own established preference for
+    // this deterministic technique over a synthetic drag gesture
+    // (CLAUDE.md future-backlog item 21's drag/inertia flakiness class).
+    await mapContainer.locator("canvas").focus();
+    const centreBeforePan = await mapContainer.getAttribute("data-camera-center");
+    for (let i = 0; i < 20; i += 1) {
+      await page.keyboard.press("ArrowUp");
+    }
+    await expect
+      .poll(() => mapContainer.getAttribute("data-camera-center"))
+      .not.toBe(centreBeforePan);
+    await waitForCameraSettled(page);
+
+    // Panning must never change the settled rounded zoom, nor renumber,
+    // regenerate or reorder the retained badge set — only their
+    // projected screen positions may move.
+    expect(await mapContainer.getAttribute("data-camera-zoom")).toBe(zoomBeforePan);
+    const idsAfter = await page
+      .locator(".distance-badge-marker")
+      .evaluateAll((elements) => elements.map((el) => el.getAttribute("aria-label")));
+    expect(new Set(idsAfter)).toEqual(new Set(idsBefore));
+
+    const visibleAfter = await visibleBadgeLabelsAndKilometres();
+    const revealsFurtherLandmark = visibleAfter.some((b) => b.km > maxKmBefore);
+    expect(revealsFurtherLandmark).toBe(true);
 
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
     expect(consoleErrors).toEqual([]);

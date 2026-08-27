@@ -15,6 +15,11 @@ import type {
 } from "./mapAdapter.ts";
 import { clearErrorLog, getRecentErrors } from "../platform/errorLog.ts";
 import { clearMapDiagnostics, getRecentMapAttempts } from "./mapDiagnostics.ts";
+import {
+  buildActiveUpcomingDistanceBadgeMarkerSpecs,
+  buildDistanceBadgeMarkerSpecs,
+  selectDistanceBadgeIntervalMetres,
+} from "./distanceBadgeLayer.ts";
 import type { Coordinate, RoutePoint, RouteWarning } from "../domain/types.ts";
 import type { ClassifiedSegment } from "../navigation/gradient.ts";
 import type {
@@ -63,6 +68,16 @@ const badgeRoutePoints: RoutePoint[] = Array.from({ length: 11 }, (_, index) => 
 // marker cap, so a zoom-band change actually changes which interval is
 // selected (a short route de-escalates back to 1km regardless of zoom).
 const longBadgeRoutePoints: RoutePoint[] = Array.from({ length: 45 }, (_, index) => ({
+  coordinate: [(index * 500) / 100_000, 51] as Coordinate,
+  elevationMetres: null,
+  distanceFromStartMetres: index * 500,
+}));
+
+// ~45km (91 points, 500m spacing) — mirrors e2e's real distance-badges-route.gpx
+// fixture length. Long enough that the whole-route selector's cap escalation
+// (naive 1km candidate count exceeds MAX_WHOLE_ROUTE_DISTANCE_BADGES) coarsens
+// to 5km at any zoom — this is the item 84 follow-up's own regression fixture.
+const veryLongBadgeRoutePoints: RoutePoint[] = Array.from({ length: 91 }, (_, index) => ({
   coordinate: [(index * 500) / 100_000, 51] as Coordinate,
   elevationMetres: null,
   distanceFromStartMetres: index * 500,
@@ -4537,6 +4552,269 @@ describe("MapView", () => {
       );
       expect(mock.fitBoundsSpy.mock.calls.length).toBe(fitCountBeforeSecondSettle);
       expect(mock.setCameraSpy.mock.calls.length).toBe(setCameraCountBeforeSecondSettle);
+    });
+  });
+
+  describe("active-upcoming badge density mode (item 84 follow-up)", () => {
+    // Fail-first regression proof (item 84 follow-up): on the ~45km
+    // fixture, at a confirmed settled zoom of 16, active-Riding progress
+    // (34.5km in) leaves exactly ten consecutive 1km badges ahead
+    // (35..44km). Confirmed failing against the unmodified whole-route-
+    // only pipeline before badgeDensityMode existed — the whole-route
+    // selector escalated this 45km route to 5km spacing *before* the
+    // progress filter ever ran, leaving only two widely-spaced badges
+    // (35, 40) instead of ten evenly-spaced ones. Now passes with
+    // badgeDensityMode="active-upcoming" explicitly requesting the new
+    // policy.
+    it("produces exactly ten consecutive 1 km badges ahead of progress on a long route at a confirmed settled zoom of 16", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={veryLongBadgeRoutePoints}
+          distanceBadgeProgressMetres={34_500}
+          badgeDensityMode="active-upcoming"
+          mapFactory={mock.factory}
+        />,
+      );
+      mock.triggerLoad();
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 16,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      // Confirm the settled zoom genuinely reached 16 before trusting the
+      // spacing assertion below, rather than assuming the request landed.
+      expect(screen.getByTestId("map-container")).toHaveAttribute(
+        "data-camera-zoom",
+        "16",
+      );
+
+      const specs = lastCallFirstArg(mock.setDistanceBadgesSpy);
+      expect(specs.map((s: { label: string }) => s.label)).toEqual([
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+      ]);
+    });
+
+    it("treats an explicit 'whole-route' mode identically to omitting badgeDensityMode", () => {
+      const explicitMock = createMockMapFactory();
+      render(
+        <MapView
+          points={veryLongBadgeRoutePoints}
+          badgeDensityMode="whole-route"
+          mapFactory={explicitMock.factory}
+        />,
+      );
+      explicitMock.triggerLoad();
+      explicitMock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 16,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      const defaultMock = createMockMapFactory();
+      render(
+        <MapView points={veryLongBadgeRoutePoints} mapFactory={defaultMock.factory} />,
+      );
+      defaultMock.triggerLoad();
+      defaultMock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 16,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      expect(lastCallFirstArg(explicitMock.setDistanceBadgesSpy)).toEqual(
+        lastCallFirstArg(defaultMock.setDistanceBadgesSpy),
+      );
+    });
+
+    it("produces genuinely different output than whole-route mode for identical inputs, matching the layer function directly", () => {
+      const wholeRouteMock = createMockMapFactory();
+      render(
+        <MapView
+          points={veryLongBadgeRoutePoints}
+          distanceBadgeProgressMetres={34_500}
+          mapFactory={wholeRouteMock.factory}
+        />,
+      );
+      wholeRouteMock.triggerLoad();
+      wholeRouteMock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 16,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      const activeMock = createMockMapFactory();
+      render(
+        <MapView
+          points={veryLongBadgeRoutePoints}
+          distanceBadgeProgressMetres={34_500}
+          badgeDensityMode="active-upcoming"
+          mapFactory={activeMock.factory}
+        />,
+      );
+      activeMock.triggerLoad();
+      activeMock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 16,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      const wholeRouteSpecs = lastCallFirstArg(wholeRouteMock.setDistanceBadgesSpy);
+      const activeSpecs = lastCallFirstArg(activeMock.setDistanceBadgesSpy);
+      expect(activeSpecs).not.toEqual(wholeRouteSpecs);
+      expect(activeSpecs.length).toBeLessThanOrEqual(10);
+      expect(activeSpecs).toEqual(
+        buildActiveUpcomingDistanceBadgeMarkerSpecs(veryLongBadgeRoutePoints, 16, 34_500),
+      );
+    });
+
+    it("falls back to the whole-route output end-to-end when active-upcoming has no reliable progress yet", () => {
+      const activeMock = createMockMapFactory();
+      render(
+        <MapView
+          points={veryLongBadgeRoutePoints}
+          distanceBadgeProgressMetres={null}
+          badgeDensityMode="active-upcoming"
+          mapFactory={activeMock.factory}
+        />,
+      );
+      activeMock.triggerLoad();
+      activeMock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 16,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      const wholeRouteMock = createMockMapFactory();
+      render(
+        <MapView
+          points={veryLongBadgeRoutePoints}
+          distanceBadgeProgressMetres={null}
+          mapFactory={wholeRouteMock.factory}
+        />,
+      );
+      wholeRouteMock.triggerLoad();
+      wholeRouteMock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 16,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      expect(lastCallFirstArg(activeMock.setDistanceBadgesSpy)).toEqual(
+        lastCallFirstArg(wholeRouteMock.setDistanceBadgesSpy),
+      );
+      // Also matches the whole-route selector's own output directly, so
+      // this is proven to be the real whole-route policy, not merely
+      // "the two mocks happen to agree".
+      const routeLengthMetres =
+        veryLongBadgeRoutePoints.at(-1)?.distanceFromStartMetres ?? 0;
+      expect(lastCallFirstArg(activeMock.setDistanceBadgesSpy)).toEqual(
+        buildDistanceBadgeMarkerSpecs(
+          veryLongBadgeRoutePoints,
+          selectDistanceBadgeIntervalMetres(16, routeLengthMetres),
+          null,
+        ),
+      );
+    });
+
+    it("rolls the active window forward when progress advances, without a new camera settle", () => {
+      const mock = createMockMapFactory();
+      const { rerender } = render(
+        <MapView
+          points={veryLongBadgeRoutePoints}
+          distanceBadgeProgressMetres={34_500}
+          badgeDensityMode="active-upcoming"
+          mapFactory={mock.factory}
+        />,
+      );
+      mock.triggerLoad();
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 16,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      const specsBeforeAdvance = lastCallFirstArg(mock.setDistanceBadgesSpy);
+      expect(specsBeforeAdvance.map((s: { label: string }) => s.label)[0]).toBe("35");
+
+      rerender(
+        <MapView
+          points={veryLongBadgeRoutePoints}
+          distanceBadgeProgressMetres={35_001}
+          badgeDensityMode="active-upcoming"
+          mapFactory={mock.factory}
+        />,
+      );
+
+      // The fixture's own last placeable candidate is 44km (45km route
+      // minus finish clearance), so the rolled window has only nine
+      // entries left, not ten — not padded to a full window.
+      const specsAfterAdvance = lastCallFirstArg(mock.setDistanceBadgesSpy);
+      expect(specsAfterAdvance.map((s: { label: string }) => s.label)).toEqual([
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+      ]);
+    });
+
+    it("never triggers a camera fit as a side effect of an active-upcoming badge recompute", () => {
+      const mock = createMockMapFactory();
+      const { rerender } = render(
+        <MapView
+          points={veryLongBadgeRoutePoints}
+          distanceBadgeProgressMetres={34_500}
+          badgeDensityMode="active-upcoming"
+          mapFactory={mock.factory}
+        />,
+      );
+      mock.triggerLoad();
+      mock.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 16,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+      const fitCountBefore = mock.fitBoundsSpy.mock.calls.length;
+      const setCameraCountBefore = mock.setCameraSpy.mock.calls.length;
+      const badgeCallCountBefore = mock.setDistanceBadgesSpy.mock.calls.length;
+
+      rerender(
+        <MapView
+          points={veryLongBadgeRoutePoints}
+          distanceBadgeProgressMetres={35_001}
+          badgeDensityMode="active-upcoming"
+          mapFactory={mock.factory}
+        />,
+      );
+
+      expect(mock.setDistanceBadgesSpy.mock.calls.length).toBeGreaterThan(
+        badgeCallCountBefore,
+      );
+      expect(mock.fitBoundsSpy.mock.calls.length).toBe(fitCountBefore);
+      expect(mock.setCameraSpy.mock.calls.length).toBe(setCameraCountBefore);
     });
   });
 

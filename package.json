@@ -1,7 +1,7 @@
 {
   "name": "amazing-cycling-navigation",
   "private": true,
-  "version": "0.3.71",
+  "version": "0.3.72",
   "type": "module",
   "scripts": {
     "dev": "vite",

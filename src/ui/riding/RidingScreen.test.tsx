@@ -77,6 +77,24 @@ function pointAt(index: number): Coordinate {
   return routePoints[index]?.coordinate ?? [0, 51];
 }
 
+// ~45km (91 points, 500m spacing) — mirrors MapView.test.tsx's own
+// veryLongBadgeRoutePoints fixture, used by the item 84 follow-up's
+// "active-Riding badge density" describe block below. Long enough that
+// the whole-route selector's own cap escalation coarsens 1km spacing to
+// 5km at any zoom, which is exactly the density defect these tests exist
+// to prove fixed end-to-end through this screen.
+const LONG_BADGE_ROUTE_POINTS: RoutePoint[] = Array.from({ length: 91 }, (_, index) => ({
+  coordinate: [(index * 500) / 100_000, 51] as Coordinate,
+  elevationMetres: null,
+  distanceFromStartMetres: index * 500,
+}));
+const longBadgeRoute: PlannedRoute = {
+  ...route,
+  id: "item-84-followup-long-badge-route",
+  points: LONG_BADGE_ROUTE_POINTS,
+  distanceMetres: LONG_BADGE_ROUTE_POINTS.at(-1)?.distanceFromStartMetres ?? 0,
+};
+
 /** Active Riding now defaults to the Map view (backlog item 56) — Profile's
  * own content (elevation window buttons, chart, climb progress/selector,
  * gradient/feature detail panels) is aria-hidden and effectively
@@ -197,6 +215,7 @@ function buildStubMapFactory(): {
   fitBoundsSpy: ReturnType<typeof vi.fn>;
   changeZoomBySpy: ReturnType<typeof vi.fn>;
   setGeoJsonSourceDataSpy: ReturnType<typeof vi.fn>;
+  setDistanceBadgesSpy: ReturnType<typeof vi.fn>;
 } {
   let loadListener: (() => void) | undefined;
   let styleLoadedListener: (() => void) | undefined;
@@ -217,6 +236,7 @@ function buildStubMapFactory(): {
   const fitBoundsSpy = vi.fn();
   const changeZoomBySpy = vi.fn();
   const setGeoJsonSourceDataSpy = vi.fn();
+  const setDistanceBadgesSpy = vi.fn();
   const factory: MapFactory = () => {
     const map: MapLibreLike = {
       onLoad: (listener) => {
@@ -259,7 +279,7 @@ function buildStubMapFactory(): {
       queryTopWarningFeatureAt: () => null,
       queryTopRouteFeatureAt: () => null,
       setMarkers: () => undefined,
-      setDistanceBadges: () => undefined,
+      setDistanceBadges: setDistanceBadgesSpy,
       remove: () => undefined,
     };
     return map;
@@ -284,6 +304,7 @@ function buildStubMapFactory(): {
     fitBoundsSpy,
     changeZoomBySpy,
     setGeoJsonSourceDataSpy,
+    setDistanceBadgesSpy,
   };
 }
 
@@ -7945,6 +7966,115 @@ describe("RidingScreen", () => {
       // backlog item 80: the top-level compact disclosure (outside this
       // panel) still appears exactly once for this same preview.
       expect(screen.getAllByText("Local gradient colours on this climb")).toHaveLength(1);
+    });
+  });
+
+  describe("active-Riding badge density (item 84 follow-up)", () => {
+    it("keeps the whole-route badge output when Start riding flips to active before any fix arrives", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const mapFactory = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={longBadgeRoute}
+          geolocationSource={stub.source}
+          mapFactory={mapFactory.factory}
+        />,
+      );
+      // buildStubMapFactory's own trigger* helpers, unlike MapView.test.tsx's
+      // own mock, don't wrap listener invocation in act() — every existing
+      // test in this file relies on waitFor for the first observation
+      // after a raw trigger call, and this follows the same convention.
+      mapFactory.triggerLoad();
+      mapFactory.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 16,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      await waitFor(() => {
+        expect(mapFactory.setDistanceBadgesSpy).toHaveBeenCalled();
+      });
+      const specsBeforeStart = mapFactory.setDistanceBadgesSpy.mock.calls.at(-1)?.[0] as {
+        label: string;
+      }[];
+
+      // Deliberately never emits a fix: geolocationStatus flips to
+      // "watching" synchronously on click, but presentationDistanceFrom
+      // StartMetres stays null until a reliable match exists — the
+      // active-awaiting-first-fix window this fallback exists for.
+      await user.click(screen.getByRole("button", { name: "Start riding" }));
+
+      const specsAfterStart = mapFactory.setDistanceBadgesSpy.mock.calls.at(-1)?.[0] as {
+        label: string;
+      }[];
+      expect(specsAfterStart).toEqual(specsBeforeStart);
+    });
+
+    it("switches from the whole-route output to the active window when Resume ride is tapped on a restored idle progress", async () => {
+      // A paused/restored ride can already carry a non-null frozen
+      // progress while geolocationStatus is still "idle" — this must NOT
+      // be mistaken for active mode until Resume ride is actually tapped.
+      await setActiveRideState({
+        id: "active",
+        routeId: longBadgeRoute.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: [0.345, 51], accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 69,
+        matchedDistanceFromStartMetres: 34_500,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationViewMode: { kind: "full" },
+        lastReliableMatchedPointIndex: 69,
+        lastReliableMatchedDistanceFromStartMetres: 34_500,
+      });
+
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const mapFactory = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={longBadgeRoute}
+          geolocationSource={stub.source}
+          mapFactory={mapFactory.factory}
+        />,
+      );
+      mapFactory.triggerLoad();
+      mapFactory.triggerCameraSettled({
+        coordinate: [0, 51],
+        zoom: 16,
+        bearingDegrees: 0,
+        pitchDegrees: 0,
+      });
+
+      // Idle: whole-route policy escalates this 45km route to 5km
+      // spacing at zoom 16, leaving only two sparse badges ahead of the
+      // restored 34.5km progress — the exact defect this follow-up fixes.
+      await waitFor(() => {
+        const latest = mapFactory.setDistanceBadgesSpy.mock.calls.at(-1)?.[0] as
+          { label: string }[] | undefined;
+        expect(latest?.map((s) => s.label)).toEqual(["35", "40"]);
+      });
+
+      await user.click(await screen.findByRole("button", { name: "Resume ride" }));
+
+      // Active: the same route, zoom and progress now yield the dense
+      // rolling 1km window instead.
+      const specsAfterResume = mapFactory.setDistanceBadgesSpy.mock.calls.at(-1)?.[0] as {
+        label: string;
+      }[];
+      expect(specsAfterResume.map((s) => s.label)).toEqual([
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+      ]);
     });
   });
 });

@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { RoutePoint } from "../domain/types.ts";
 import {
+  buildActiveUpcomingDistanceBadgeMarkerSpecs,
   buildDistanceBadgeMarkerSpecs,
   capDistanceBadgeMarkerSpecs,
   DISTANCE_BADGE_INTERVALS_METRES,
   filterActiveRidingCandidates,
-  MAX_ACTIVE_DISTANCE_BADGES,
+  MAX_ACTIVE_UPCOMING_DISTANCE_BADGES,
+  MAX_WHOLE_ROUTE_DISTANCE_BADGES,
   mergeCoincidentDistanceBadges,
   placeDistanceBadgeCandidates,
+  selectActiveUpcomingBadgeSpacingMetres,
   selectDistanceBadgeIntervalMetres,
   type DistanceBadgeCandidate,
 } from "./distanceBadgeLayer.ts";
@@ -422,11 +425,13 @@ describe("capDistanceBadgeMarkerSpecs", () => {
     expect(capDistanceBadgeMarkerSpecs(specs, Number.NaN)).toEqual([]);
   });
 
-  it("applies the default MAX_ACTIVE_DISTANCE_BADGES cap when none is given", () => {
-    const specs = Array.from({ length: MAX_ACTIVE_DISTANCE_BADGES + 10 }, (_, i) =>
+  it("applies the default MAX_WHOLE_ROUTE_DISTANCE_BADGES cap when none is given", () => {
+    const specs = Array.from({ length: MAX_WHOLE_ROUTE_DISTANCE_BADGES + 10 }, (_, i) =>
       spec(String(i)),
     );
-    expect(capDistanceBadgeMarkerSpecs(specs)).toHaveLength(MAX_ACTIVE_DISTANCE_BADGES);
+    expect(capDistanceBadgeMarkerSpecs(specs)).toHaveLength(
+      MAX_WHOLE_ROUTE_DISTANCE_BADGES,
+    );
   });
 });
 
@@ -460,7 +465,7 @@ describe("buildDistanceBadgeMarkerSpecs", () => {
   it("caps a long route's badge count", () => {
     const route = longRoute(500_000, 1000);
     const specs = buildDistanceBadgeMarkerSpecs(route, 1000, null);
-    expect(specs).toHaveLength(MAX_ACTIVE_DISTANCE_BADGES);
+    expect(specs).toHaveLength(MAX_WHOLE_ROUTE_DISTANCE_BADGES);
     expect(specs[0]).toMatchObject({ label: "1" });
   });
 
@@ -495,5 +500,257 @@ describe("buildDistanceBadgeMarkerSpecs", () => {
     ];
     const specs = buildDistanceBadgeMarkerSpecs(points, 5000, 12000);
     expect(specs.map((s) => s.label)).toEqual(["15", "20"]);
+  });
+
+  it("accepts an explicit maxCount, capping below the default whole-route cap", () => {
+    const route = longRoute(50_000, 1000);
+    const specs = buildDistanceBadgeMarkerSpecs(route, 1000, null, 3);
+    expect(specs.map((s) => s.label)).toEqual(["1", "2", "3"]);
+  });
+});
+
+describe("selectActiveUpcomingBadgeSpacingMetres", () => {
+  // Distinct from selectDistanceBadgeIntervalMetres's own
+  // ISOLATED_ROUTE_LENGTH_METRES fixture — this selector never takes a
+  // route length at all, so no such fixture is needed here.
+
+  it("selects 20 km at wide overview zoom", () => {
+    expect(selectActiveUpcomingBadgeSpacingMetres(8)).toBe(20000);
+    expect(selectActiveUpcomingBadgeSpacingMetres(0)).toBe(20000);
+    expect(selectActiveUpcomingBadgeSpacingMetres(-5)).toBe(20000);
+  });
+
+  it("selects 10 km at regional zoom", () => {
+    expect(selectActiveUpcomingBadgeSpacingMetres(9)).toBe(10000);
+    expect(selectActiveUpcomingBadgeSpacingMetres(10)).toBe(10000);
+    expect(selectActiveUpcomingBadgeSpacingMetres(11)).toBe(10000);
+  });
+
+  it("selects 5 km at intermediate zoom", () => {
+    expect(selectActiveUpcomingBadgeSpacingMetres(12)).toBe(5000);
+    expect(selectActiveUpcomingBadgeSpacingMetres(13)).toBe(5000);
+  });
+
+  it("selects 2 km at the new near zoom band (exactly zoom 14)", () => {
+    expect(selectActiveUpcomingBadgeSpacingMetres(14)).toBe(2000);
+  });
+
+  it("selects 1 km at street zoom and above", () => {
+    expect(selectActiveUpcomingBadgeSpacingMetres(15)).toBe(1000);
+    expect(selectActiveUpcomingBadgeSpacingMetres(16)).toBe(1000);
+    expect(selectActiveUpcomingBadgeSpacingMetres(30)).toBe(1000);
+  });
+
+  it("is exact at every boundary, on both sides", () => {
+    expect(selectActiveUpcomingBadgeSpacingMetres(8.99)).toBe(20000);
+    expect(selectActiveUpcomingBadgeSpacingMetres(9.0)).toBe(10000);
+    expect(selectActiveUpcomingBadgeSpacingMetres(11.99)).toBe(10000);
+    expect(selectActiveUpcomingBadgeSpacingMetres(12.0)).toBe(5000);
+    expect(selectActiveUpcomingBadgeSpacingMetres(13.99)).toBe(5000);
+    expect(selectActiveUpcomingBadgeSpacingMetres(14.0)).toBe(2000);
+    expect(selectActiveUpcomingBadgeSpacingMetres(14.99)).toBe(2000);
+    expect(selectActiveUpcomingBadgeSpacingMetres(15.0)).toBe(1000);
+  });
+
+  it("handles non-finite zoom safely via an explicit guard (NaN, +Infinity, -Infinity all fall back to 20 km)", () => {
+    expect(selectActiveUpcomingBadgeSpacingMetres(Number.NaN)).toBe(20000);
+    // Without the explicit Number.isFinite guard, +Infinity would
+    // incorrectly satisfy `zoom >= ACTIVE_UPCOMING_BADGE_CLOSE_ZOOM_MIN`
+    // and wrongly select 1 km — this is the case the guard exists for.
+    expect(selectActiveUpcomingBadgeSpacingMetres(Number.POSITIVE_INFINITY)).toBe(20000);
+    expect(selectActiveUpcomingBadgeSpacingMetres(Number.NEGATIVE_INFINITY)).toBe(20000);
+  });
+
+  it("diverges from the whole-route selector at zoom 14, a band the whole-route family doesn't have", () => {
+    expect(selectActiveUpcomingBadgeSpacingMetres(14)).toBe(2000);
+    expect(selectDistanceBadgeIntervalMetres(14, 22_000)).toBe(5000);
+  });
+});
+
+describe("buildActiveUpcomingDistanceBadgeMarkerSpecs", () => {
+  function longRoute(totalMetres: number, stepMetres = 1000): RoutePoint[] {
+    const points: RoutePoint[] = [];
+    for (let d = 0; d <= totalMetres; d += stepMetres) {
+      points.push(point(d, d / 100_000));
+    }
+    return points;
+  }
+
+  // Builds a route identical to longRoute, except the point at
+  // `coincidentAtMetres` is given the same coordinate `longRoute` would
+  // have generated for `sameCoordinateAsMetres` — a deliberate geometric
+  // coincidence for exercising mergeCoincidentDistanceBadges end-to-end,
+  // independent of any real out-and-back route shape.
+  function longRouteWithCoincidence(
+    totalMetres: number,
+    stepMetres: number,
+    [sameCoordinateAsMetres, coincidentAtMetres]: readonly [number, number],
+  ): RoutePoint[] {
+    const points: RoutePoint[] = [];
+    for (let d = 0; d <= totalMetres; d += stepMetres) {
+      const lon =
+        d === coincidentAtMetres ? sameCoordinateAsMetres / 100_000 : d / 100_000;
+      points.push(point(d, lon));
+    }
+    return points;
+  }
+
+  it("falls back to the exact whole-route policy when progress is null (no reliable fix yet)", () => {
+    // Long enough that the whole-route selector's own escalation genuinely
+    // fires — proves the *whole* whole-route policy is used, not just
+    // interval-band lookup.
+    const route = longRoute(100_000);
+    const zoom = 16;
+    const routeLengthMetres = route.at(-1)?.distanceFromStartMetres ?? 0;
+    const expected = buildDistanceBadgeMarkerSpecs(
+      route,
+      selectDistanceBadgeIntervalMetres(zoom, routeLengthMetres),
+      null,
+    );
+    expect(buildActiveUpcomingDistanceBadgeMarkerSpecs(route, zoom, null)).toEqual(
+      expected,
+    );
+  });
+
+  it("falls back to the whole-route policy for non-finite progress too (NaN, +/-Infinity)", () => {
+    const route = longRoute(100_000);
+    const zoom = 16;
+    const routeLengthMetres = route.at(-1)?.distanceFromStartMetres ?? 0;
+    const expected = buildDistanceBadgeMarkerSpecs(
+      route,
+      selectDistanceBadgeIntervalMetres(zoom, routeLengthMetres),
+      null,
+    );
+    for (const progress of [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ]) {
+      expect(buildActiveUpcomingDistanceBadgeMarkerSpecs(route, zoom, progress)).toEqual(
+        expected,
+      );
+    }
+  });
+
+  it("keeps exactly the next ten 1 km badges ahead of progress (42.3 km worked example)", () => {
+    const route = longRoute(60_000);
+    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 42_300);
+    expect(specs.map((s) => s.label)).toEqual([
+      "43",
+      "44",
+      "45",
+      "46",
+      "47",
+      "48",
+      "49",
+      "50",
+      "51",
+      "52",
+    ]);
+  });
+
+  it("rolls the window forward by exactly one once progress crosses a badge", () => {
+    const route = longRoute(60_000);
+    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 43_001);
+    expect(specs.map((s) => s.label)).toEqual([
+      "44",
+      "45",
+      "46",
+      "47",
+      "48",
+      "49",
+      "50",
+      "51",
+      "52",
+      "53",
+    ]);
+  });
+
+  it("keeps a badge exactly at the current progress (inclusive boundary, matching filterActiveRidingCandidates)", () => {
+    const route = longRoute(60_000);
+    const atExactly43km = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 43_000);
+    const justBefore = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 42_300);
+    // Same leading edge (43 km) as the 42.3 km worked example above.
+    expect(atExactly43km).toEqual(justBefore);
+  });
+
+  it("caps after merging: an 11-raw/10-group window keeps every group, including the merged one", () => {
+    const route = longRouteWithCoincidence(52_000, 1000, [45_000, 50_000]);
+    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 40_500);
+    expect(specs.map((s) => s.label)).toEqual([
+      "41",
+      "42",
+      "43",
+      "44",
+      "45 / 50",
+      "46",
+      "47",
+      "48",
+      "49",
+      "51",
+    ]);
+  });
+
+  it("caps after merging: a 12-raw/11-group window drops the furthest unmerged group, not the merged one", () => {
+    const route = longRouteWithCoincidence(53_000, 1000, [45_000, 50_000]);
+    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 40_500);
+    expect(specs).toHaveLength(MAX_ACTIVE_UPCOMING_DISTANCE_BADGES);
+    expect(specs.map((s) => s.label)).toEqual([
+      "41",
+      "42",
+      "43",
+      "44",
+      "45 / 50",
+      "46",
+      "47",
+      "48",
+      "49",
+      "51",
+    ]);
+  });
+
+  it("keeps 1 km spacing at zoom 15 and 16 regardless of total route length (45/100/300 km) — the core regression proof", () => {
+    for (const zoom of [15, 16]) {
+      for (const totalKm of [45, 100, 300]) {
+        const route = longRoute(totalKm * 1000);
+        const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, zoom, 0);
+        expect(specs).toHaveLength(MAX_ACTIVE_UPCOMING_DISTANCE_BADGES);
+        const labels = specs.map((s) => Number(s.label));
+        for (let i = 1; i < labels.length; i += 1) {
+          expect((labels[i] ?? 0) - (labels[i - 1] ?? 0)).toBe(1);
+        }
+      }
+    }
+  });
+
+  it("sweeps zoom bands on a fixed long route/progress, matching the documented spacing at each", () => {
+    const route = longRoute(300_000);
+    const expectedSpacingKm: readonly (readonly [number, number])[] = [
+      [8, 20],
+      [10, 10],
+      [13, 5],
+      [14, 2],
+      [16, 1],
+    ];
+    for (const [zoom, spacingKm] of expectedSpacingKm) {
+      const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, zoom, 0);
+      expect(specs.length).toBeLessThanOrEqual(MAX_ACTIVE_UPCOMING_DISTANCE_BADGES);
+      const labels = specs.map((s) => Number(s.label));
+      for (let i = 1; i < labels.length; i += 1) {
+        expect((labels[i] ?? 0) - (labels[i - 1] ?? 0)).toBe(spacingKm);
+      }
+    }
+  });
+
+  it("does not pad the window when fewer than ten candidates remain near the route end", () => {
+    const route = longRoute(50_000);
+    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 47_500);
+    expect(specs.map((s) => s.label)).toEqual(["48", "49"]);
+  });
+
+  it("returns no badges for a route shorter than the active interval at the current zoom", () => {
+    const route = longRoute(500, 500);
+    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 0);
+    expect(specs).toEqual([]);
   });
 });

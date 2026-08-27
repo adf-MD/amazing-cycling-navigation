@@ -27,30 +27,61 @@ export const DISTANCE_BADGE_FINISH_CLEARANCE_METRES = 100;
  * two small on-screen badges would visually overlap. */
 export const DISTANCE_BADGE_COINCIDENCE_THRESHOLD_METRES = 15;
 
-/** Conservative hard cap on simultaneously-rendered badge DOM markers —
+/** Conservative hard cap on simultaneously-rendered badge DOM markers for
+ * whole-route presentation (Planning, the pre-ride overview, free roam) —
  * each is a real DOM node plus a MapLibre Marker instance, not a cheap
  * WebGL symbol, so this stays low enough to be cheap on an iPhone while
  * comfortably covering even a long audax-length route at the coarsest
  * (20 km) interval. selectDistanceBadgeIntervalMetres is expected to keep
  * counts near or under this on its own; this is a defensive backstop for
- * any caller that bypasses it. */
-export const MAX_ACTIVE_DISTANCE_BADGES = 24;
+ * any caller that bypasses it. See MAX_ACTIVE_UPCOMING_DISTANCE_BADGES for
+ * active-Riding's own, much smaller, rolling-window cap. */
+export const MAX_WHOLE_ROUTE_DISTANCE_BADGES = 24;
 
-/** The only approved badge intervals — chosen by zoom and route length,
- * never by rider progress. */
+/** Rolling-window cap for active-Riding's own "next upcoming badges" mode
+ * (see selectActiveUpcomingBadgeSpacingMetres / buildActiveUpcomingDistance
+ * BadgeMarkerSpecs) — deliberately far smaller than
+ * MAX_WHOLE_ROUTE_DISTANCE_BADGES, since active mode never needs the whole
+ * route's badges at once, only a handful of genuinely upcoming landmarks. */
+export const MAX_ACTIVE_UPCOMING_DISTANCE_BADGES = 10;
+
+/** The approved whole-route badge intervals — chosen by zoom and route
+ * length, never by rider progress. Used by Planning, the pre-ride
+ * overview and free roam. Active-Riding uses a separate, zoom-only family
+ * — see ACTIVE_UPCOMING_BADGE_SPACINGS_METRES. */
 export const DISTANCE_BADGE_INTERVALS_METRES = [1000, 5000, 10000, 20000] as const;
 export type DistanceBadgeIntervalMetres =
   (typeof DISTANCE_BADGE_INTERVALS_METRES)[number];
 
-// Provisional starting points for the approved 1/5/10/20 km family —
-// picked as reasonable bands, NOT yet verified against a real iPhone
-// viewport. Adjust only these three constants, if a real device shows
-// clutter or excessive thinning at a natural zoom level, without
+// Provisional starting points for the approved 1/5/10/20 km whole-route
+// family — picked as reasonable bands, NOT yet verified against a real
+// iPhone viewport. Adjust only these three constants, if a real device
+// shows clutter or excessive thinning at a natural zoom level, without
 // changing the family or the escalation/de-escalation logic below.
 export const DISTANCE_BADGE_STREET_ZOOM_MIN = 15; // >= this: 1 km
 export const DISTANCE_BADGE_INTERMEDIATE_ZOOM_MIN = 12; // >= this: 5 km
 export const DISTANCE_BADGE_REGIONAL_ZOOM_MIN = 9; // >= this: 10 km
 // below DISTANCE_BADGE_REGIONAL_ZOOM_MIN: 20 km
+
+/** Active-Riding's own zoom-only spacing family (item 84 follow-up) —
+ * deliberately separate from DISTANCE_BADGE_INTERVALS_METRES: it includes
+ * a 2 km spacing the whole-route family doesn't have, and its zoom bands
+ * (below) don't line up with the whole-route thresholds (14 is its own
+ * band here, folded into the whole-route family's 5 km band). Never
+ * mix the two families or their threshold constants — see
+ * selectActiveUpcomingBadgeSpacingMetres's own differential test against
+ * selectDistanceBadgeIntervalMetres at zoom 14. */
+export const ACTIVE_UPCOMING_BADGE_SPACINGS_METRES = [
+  1000, 2000, 5000, 10000, 20000,
+] as const;
+export type ActiveUpcomingBadgeSpacingMetres =
+  (typeof ACTIVE_UPCOMING_BADGE_SPACINGS_METRES)[number];
+
+export const ACTIVE_UPCOMING_BADGE_CLOSE_ZOOM_MIN = 15; // >= this: 1 km
+export const ACTIVE_UPCOMING_BADGE_NEAR_ZOOM_MIN = 14; // == this band: 2 km
+export const ACTIVE_UPCOMING_BADGE_INTERMEDIATE_ZOOM_MIN = 12; // >= this: 5 km
+export const ACTIVE_UPCOMING_BADGE_REGIONAL_ZOOM_MIN = 9; // >= this: 10 km
+// below ACTIVE_UPCOMING_BADGE_REGIONAL_ZOOM_MIN: 20 km
 
 export interface DistanceBadgeCandidate {
   distanceFromStartMetres: number;
@@ -187,11 +218,13 @@ function intervalAtBand(bandIndex: number): DistanceBadgeIntervalMetres {
 }
 
 /**
- * Zoom → interval band, then two escalation passes:
+ * Whole-route policy only (Planning, the pre-ride overview, free roam) —
+ * see selectActiveUpcomingBadgeSpacingMetres for active-Riding's separate,
+ * zoom-only policy. Zoom → interval band, then two escalation passes:
  *  - cap escalation: while the naive candidate count (ignoring merging)
- *    over the whole route would exceed MAX_ACTIVE_DISTANCE_BADGES, step
- *    to the next coarser family member ("route length may increase the
- *    interval");
+ *    over the whole route would exceed MAX_WHOLE_ROUTE_DISTANCE_BADGES,
+ *    step to the next coarser family member ("route length may increase
+ *    the interval");
  *  - minimum-usefulness de-escalation: while the resulting interval would
  *    place *zero* candidates on the route, step to the next finer family
  *    member, never going finer than 1 km ("a route of at least 1 km
@@ -228,7 +261,7 @@ export function selectDistanceBadgeIntervalMetres(
   while (
     bandIndex < DISTANCE_BADGE_INTERVALS_METRES.length - 1 &&
     naiveCandidateCount(safeLength, intervalAtBand(bandIndex)) >
-      MAX_ACTIVE_DISTANCE_BADGES
+      MAX_WHOLE_ROUTE_DISTANCE_BADGES
   ) {
     bandIndex += 1;
   }
@@ -241,6 +274,32 @@ export function selectDistanceBadgeIntervalMetres(
   }
 
   return intervalAtBand(bandIndex);
+}
+
+/**
+ * Active-Riding's own zoom-only spacing selector (item 84 follow-up) —
+ * unlike selectDistanceBadgeIntervalMetres, this never takes route length
+ * as input and never escalates/de-escalates: it is a pure zoom→spacing
+ * lookup. The rolling MAX_ACTIVE_UPCOMING_DISTANCE_BADGES cap (applied by
+ * buildActiveUpcomingDistanceBadgeMarkerSpecs, after placement, active-
+ * progress filtering and coincidence merging) is active mode's only
+ * count-limiting mechanism — a long route must never coarsen this
+ * selector's result.
+ *
+ * A non-finite zoom (NaN, ±Infinity) is guarded explicitly and resolves to
+ * the safest, coarsest 20 km spacing: without the explicit guard, +Infinity
+ * would incorrectly satisfy the `>= ACTIVE_UPCOMING_BADGE_CLOSE_ZOOM_MIN`
+ * check and wrongly select 1 km.
+ */
+export function selectActiveUpcomingBadgeSpacingMetres(
+  zoom: number,
+): ActiveUpcomingBadgeSpacingMetres {
+  if (!Number.isFinite(zoom)) return 20000;
+  if (zoom >= ACTIVE_UPCOMING_BADGE_CLOSE_ZOOM_MIN) return 1000;
+  if (zoom >= ACTIVE_UPCOMING_BADGE_NEAR_ZOOM_MIN) return 2000;
+  if (zoom >= ACTIVE_UPCOMING_BADGE_INTERMEDIATE_ZOOM_MIN) return 5000;
+  if (zoom >= ACTIVE_UPCOMING_BADGE_REGIONAL_ZOOM_MIN) return 10000;
+  return 20000;
 }
 
 /**
@@ -360,34 +419,82 @@ export function mergeCoincidentDistanceBadges(
 /**
  * Hard, order-preserving truncation to at most `maxCount` entries,
  * keeping the nearest-to-start survivors (see mergeCoincidentDistanceBadges's
- * own ordering guarantee) — a defensive backstop, not the primary
- * mechanism (selectDistanceBadgeIntervalMetres is expected to keep counts
- * near the cap already). Invalid `maxCount` (NaN, zero, negative) yields
- * [].
+ * own ordering guarantee) — a defensive backstop for whole-route mode, not
+ * the primary mechanism there (selectDistanceBadgeIntervalMetres is
+ * expected to keep counts near the cap already), and the *primary*,
+ * load-bearing mechanism for active-Riding's own rolling window (see
+ * buildActiveUpcomingDistanceBadgeMarkerSpecs). Invalid `maxCount` (NaN,
+ * zero, negative) yields [].
  */
 export function capDistanceBadgeMarkerSpecs(
   specs: readonly DistanceBadgeMarkerSpec[],
-  maxCount: number = MAX_ACTIVE_DISTANCE_BADGES,
+  maxCount: number = MAX_WHOLE_ROUTE_DISTANCE_BADGES,
 ): DistanceBadgeMarkerSpec[] {
   if (!Number.isFinite(maxCount) || maxCount <= 0) return [];
   return specs.slice(0, maxCount);
 }
 
 /**
- * The single function MapView calls: placement → active-Riding filter →
- * coincidence merge → cap, in that fixed order. `intervalMetres` must
- * already be one of DISTANCE_BADGE_INTERVALS_METRES (see
- * selectDistanceBadgeIntervalMetres) — this function itself accepts any
- * positive interval so it stays independently testable.
+ * The shared pipeline both whole-route and active-Riding modes call:
+ * placement → active-Riding filter → coincidence merge → cap, in that
+ * fixed order. `intervalMetres` may be any valid positive spacing, not
+ * only a member of DISTANCE_BADGE_INTERVALS_METRES — whole-route callers
+ * are expected to pass a value from selectDistanceBadgeIntervalMetres,
+ * and active-Riding callers a value from
+ * selectActiveUpcomingBadgeSpacingMetres (including its 2 km spacing,
+ * which is not a member of the whole-route family) — but this function
+ * itself stays agnostic to which family a caller's value came from, so it
+ * remains independently testable with any positive interval. `maxCount`
+ * defaults to the whole-route cap; active-Riding passes
+ * MAX_ACTIVE_UPCOMING_DISTANCE_BADGES explicitly.
  */
 export function buildDistanceBadgeMarkerSpecs(
   points: readonly RoutePoint[],
   intervalMetres: number,
   presentationDistanceFromStartMetres: number | null,
+  maxCount: number = MAX_WHOLE_ROUTE_DISTANCE_BADGES,
 ): DistanceBadgeMarkerSpec[] {
   const candidates = filterActiveRidingCandidates(
     placeDistanceBadgeCandidates(points, intervalMetres),
     presentationDistanceFromStartMetres,
   );
-  return capDistanceBadgeMarkerSpecs(mergeCoincidentDistanceBadges(candidates));
+  return capDistanceBadgeMarkerSpecs(mergeCoincidentDistanceBadges(candidates), maxCount);
+}
+
+/**
+ * Active-Riding's own pipeline entry point (item 84 follow-up): zoom-only
+ * spacing (selectActiveUpcomingBadgeSpacingMetres, never route length) and
+ * a rolling window of the next MAX_ACTIVE_UPCOMING_DISTANCE_BADGES
+ * upcoming badges — deliberately never escalated by total route length,
+ * so a 45/100/300 km route at a close zoom still gets fine spacing; the
+ * rolling cap alone bounds how much is rendered.
+ *
+ * If `presentationDistanceFromStartMetres` is null or non-finite (GPS/
+ * matching still starting after Start/Resume, before the first reliable
+ * fix), there is no reliable progress yet to anchor a rolling window
+ * around — this deliberately falls back to the exact whole-route policy
+ * (family, escalation, cap) rather than fabricating a zero-progress
+ * window, and switches to the active window once reliable progress
+ * exists.
+ */
+export function buildActiveUpcomingDistanceBadgeMarkerSpecs(
+  points: readonly RoutePoint[],
+  zoom: number,
+  presentationDistanceFromStartMetres: number | null,
+): DistanceBadgeMarkerSpec[] {
+  if (
+    presentationDistanceFromStartMetres === null ||
+    !Number.isFinite(presentationDistanceFromStartMetres)
+  ) {
+    const routeLengthMetres = points.at(-1)?.distanceFromStartMetres ?? 0;
+    const intervalMetres = selectDistanceBadgeIntervalMetres(zoom, routeLengthMetres);
+    return buildDistanceBadgeMarkerSpecs(points, intervalMetres, null);
+  }
+  const intervalMetres = selectActiveUpcomingBadgeSpacingMetres(zoom);
+  return buildDistanceBadgeMarkerSpecs(
+    points,
+    intervalMetres,
+    presentationDistanceFromStartMetres,
+    MAX_ACTIVE_UPCOMING_DISTANCE_BADGES,
+  );
 }

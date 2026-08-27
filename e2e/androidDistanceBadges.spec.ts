@@ -35,7 +35,7 @@ const DUMMY_KEY = "dummy-e2e-key";
 // Planning session's default framing is wide enough that two clicks a few
 // hundred pixels apart can resolve to a route hundreds or thousands of
 // kilometres long (confirmed empirically), packing all
-// MAX_ACTIVE_DISTANCE_BADGES badges into a short on-screen span with no
+// MAX_WHOLE_ROUTE_DISTANCE_BADGES badges into a short on-screen span with no
 // clearance from either waypoint marker — a known-length route avoids
 // that entirely.
 const WEST_COORDINATE = [-0.4, 51.5, 10];
