@@ -122,30 +122,6 @@ _Category: Platform compatibility_
 
 ---
 
-<a id="item-88"></a>
-
-## Item 88 — CI/supply-chain pinning and automated-advisory evaluation
-
-_Category: Supply-chain / CI hardening (from the release-readiness audit, item 86)_
-
-88. **CI/supply-chain pinning and automated-advisory evaluation**
-    - **Outcome.** `.github/workflows/deploy-pages.yml`'s five `uses:` action references are pinned to immutable commit SHAs (with the human-readable version kept as a trailing comment, GitHub's own documented convention, so the pin remains legible) instead of major-version tags, and the `mcr.microsoft.com/playwright` container reference is pinned to an image digest instead of the `v1.61.1-noble` tag. Separately, a documented decision exists on whether to add a repository-owned Dependabot and/or CodeQL configuration, including — if added — an explicit triage rule distinguishing production-reachable findings from unreachable dev-only ones (item 86's F-1 finding is the concrete example of why this distinction matters: a blind "any advisory blocks deployment" gate would have blocked this repository on five unreachable dev-only advisories).
-    - **Evidence/justification.** Item 86 ([`release-readiness-audit.md`](release-readiness-audit.md) §7) directly read `deploy-pages.yml` and confirmed all five actions (`actions/checkout@v7`, `actions/setup-node@v7`, `actions/configure-pages@v6`, `actions/upload-pages-artifact@v5`, `actions/deploy-pages@v5`) are tag-pinned, and the Playwright container is tag-pinned, not digest-pinned; and confirmed no Dependabot/CodeQL/audit workflow exists anywhere in the repository. Judged Low impact (GitHub's official actions are widely trusted, and the workflow's own strict toolchain-version check would catch many practical consequences of unexpected drift) but a real, inexpensive-to-close defence-in-depth gap.
-    - **Scope.** SHA-pin the five actions; digest-pin the Playwright container image; define (and implement only if judged worthwhile after that definition) a minimal Dependabot config scoped to flag, not auto-merge, and/or a CodeQL workflow for the small production TS/TSX surface — with an explicit written triage rule (e.g. "a production-reachable advisory blocks the next release; a confirmed dev-only-unreachable advisory is tracked, not blocking") so this repository's future dependency posture doesn't regress into either silently ignoring real findings or treating every advisory as an outage.
-    - **Non-goals.** No dependency version changes (item 87, deliberately separate). No branch-protection or repository-settings changes beyond what a Dependabot/CodeQL YAML file itself configures — GitHub org/repo settings were not observable to item 86 and remain outside a documentation-only backlog item's authority to assert are needed. No CSP or other browser-policy work (item 90).
-    - **Likely files.** `.github/workflows/deploy-pages.yml`; possibly new `.github/dependabot.yml` and/or `.github/workflows/codeql.yml`, only if the evaluation above concludes they're worthwhile.
-    - **Fail-first/characterisation evidence.** A SHA/digest-pinning change is inherently only provable by a full green CI run against the pinned references — there is no meaningful "fail first" for a pin-format change itself. If Dependabot/CodeQL is added, its own first scheduled run is the acceptance evidence, not a synthetic test.
-    - **Update strategy.** For each action, resolve today's tag to its current commit SHA via the action's own GitHub releases page and pin explicitly, commenting the human-readable version alongside (`uses: actions/checkout@<sha> # v7.x.x`). Define, in this item's own history entry, how future action-version bumps will actually happen (e.g. a documented manual quarterly check, or a scoped Dependabot "github-actions" ecosystem entry) — a pin with no update mechanism trades one risk (unexpected drift) for another (permanent staleness), and item 86 explicitly flags this tradeoff as needing an answer, not just the pin itself.
-    - **Narrow verification during development.** Run the pinned workflow via `workflow_dispatch` on a throwaway branch/fork before relying on a `main` push to prove it; confirm the "Verify pinned toolchain versions" and Playwright-compatibility steps still pass unchanged (they are unaffected by action/container pinning format, only by the underlying versions, which are not changing here).
-    - **Complete repository gate required:** the workflow's own three jobs (`verify`, `e2e`, `deploy`) passing end to end is the gate for this item specifically, since it _is_ the CI configuration; also run the ordinary local `npm run format`/`lint`/`typecheck`/`build`/`test`/`e2e`/`format:check` sequence if any non-workflow file changes.
-    - **Documentation/version rules.** No application version bump — this changes only CI configuration, not shipped behaviour. Record the chosen action SHAs' corresponding version tags and the update-mechanism decision in this item's completed-history entry so a future maintainer isn't left decoding raw SHAs.
-    - **Rollback/compatibility.** Low risk, high blast-radius-if-wrong: a bad pin breaks every future deployment, not just this one. Keep the change reviewable as a single, isolated diff so a revert is trivial if a pinned SHA turns out wrong (e.g. pinned to a yanked or incorrect commit).
-    - **Automated vs. real-device acceptance.** Fully automated (CI-only change); no real-device acceptance applies.
-    - **Prerequisites/ordering.** None; independent of item 87 by design.
-    - **Abandon/revise if:** SHA-pinning a given action turns out to conflict with that action's own documented usage (some actions explicitly require tag-based resolution for internal version-dispatch logic) — in that case, pin what can safely be pinned and document the specific exception rather than forcing every reference into the same pattern.
-
----
-
 <a id="item-89"></a>
 
 ## Item 89 — Verification-baseline polish: coverage reporting, import-cycle cleanup, test-noise triage, WebKit feasibility

@@ -245,6 +245,7 @@ The first provider adapter should target openrouteservice, offering its `cycling
 - Include a local diagnostics screen showing app version, online state, service-worker state, storage health, geolocation status, fix accuracy/age, active route ID, and recent redacted errors.
 - Prefer incremental, reviewable commits when asked to commit. Never commit generated personal data.
 - Before finishing a task, run the relevant formatter, type checker, tests, and production build. Report anything not run.
+- Dependency/supply-chain advisory triage: a confirmed production-reachable advisory (present in `npm audit --omit=dev`, or shown to run in the shipped bundle) blocks the next release candidate until fixed, contained, or explicitly accepted with rationale. A confirmed development-only advisory (absent from `--omit=dev`, demonstrated unreachable via `npm explain`/lockfile-path inspection) is tracked and prioritised by realistic build/contributor exposure, but does not itself block deployment. Dependabot/CodeQL findings are investigation inputs, not auto-merge instructions or proof of ACN-specific exploitability. Never use `npm audit fix --force` or a blind dependency re-resolution merely to make a count go to zero. Action-SHA/container-digest pin updates require provenance re-verification and a full green CI run before merging. Dependabot's `github-actions` ecosystem does not track the Playwright container image (`jobs.<job>.container.image`): every `@playwright/test` version bump must, in the same change, update the container's tag, its digest, and the workflow's `expected_playwright` value together by hand, plus a modest periodic (roughly six-monthly) manual check that the pinned digest still resolves.
 
 ## Change discipline
 
@@ -307,7 +308,7 @@ Archived implementation accounts in `docs/project/history/` describe the system 
 
 ### Queue index
 
-Stable item numbers never change regardless of which file an item's text lives in. Item 88 is currently selected as the next implementation item (see the release-readiness audit, item 86, for why).
+Stable item numbers never change regardless of which file an item's text lives in. Item 89 is currently selected as the next implementation item (see the release-readiness audit, item 86, for why).
 
 | Item | Title                                                                                         | Status                                           | Full entry                                                            |
 | ---- | --------------------------------------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
@@ -318,12 +319,11 @@ Stable item numbers never change regardless of which file an item's text lives i
 | 59   | Elevation and recognised-climb discrepancy investigation                                      | Pending investigation                            | [`backlog.md#item-59`](docs/project/backlog.md#item-59)               |
 | 60   | Battery consumption investigation and possible battery-saving mode                            | Pending investigation                            | [`backlog.md#item-60`](docs/project/backlog.md#item-60)               |
 | 61   | Android GPX share-sheet import feasibility                                                    | Pending feasibility study                        | [`backlog.md#item-61`](docs/project/backlog.md#item-61)               |
-| 88   | CI/supply-chain pinning and automated-advisory evaluation                                     | Pending — selected next item                     | [`backlog.md#item-88`](docs/project/backlog.md#item-88)               |
-| 89   | Verification-baseline polish: coverage, import cycles, test noise, WebKit feasibility         | Pending                                          | [`backlog.md#item-89`](docs/project/backlog.md#item-89)               |
+| 89   | Verification-baseline polish: coverage, import cycles, test noise, WebKit feasibility         | Pending — selected next item                     | [`backlog.md#item-89`](docs/project/backlog.md#item-89)               |
 | 90   | Content-Security-Policy compatibility investigation                                           | Pending investigation                            | [`backlog.md#item-90`](docs/project/backlog.md#item-90)               |
 | 91   | `App.tsx` route-switch coordinator characterization tests                                     | Pending                                          | [`backlog.md#item-91`](docs/project/backlog.md#item-91)               |
 | 92   | Storage-health quota/estimate signal                                                          | Pending                                          | [`backlog.md#item-92`](docs/project/backlog.md#item-92)               |
 | 32   | `ridingFinishAndEnd.spec.ts`'s completion-detection test: an unconfirmed CPU-contention flake | Monitored, unconfirmed                           | [`current-status.md#item-32`](docs/project/current-status.md#item-32) |
 | 66   | Investigate intermittent fresh-Start Follow remaining at route overview                       | Accepted for now, monitored                      | [`current-status.md#item-66`](docs/project/current-status.md#item-66) |
 
-Items 6–10, 13–15, 17–27, 29–31, 33–42, 44–58, 62–65 and 67–87 are completed (`— done`) and live in [`docs/project/history/`](docs/project/history/README.md). Item 43 is a follow-up acceptance checklist and lives in [`docs/project/current-status.md`](docs/project/current-status.md). Item 86 is the release-readiness audit that produced items 87–92; its full report is [`docs/project/release-readiness-audit.md`](docs/project/release-readiness-audit.md).
+Items 6–10, 13–15, 17–27, 29–31, 33–42, 44–58, 62–65 and 67–88 are completed (`— done`) and live in [`docs/project/history/`](docs/project/history/README.md). Item 43 is a follow-up acceptance checklist and lives in [`docs/project/current-status.md`](docs/project/current-status.md). Item 86 is the release-readiness audit that produced items 87–92; its full report is [`docs/project/release-readiness-audit.md`](docs/project/release-readiness-audit.md).

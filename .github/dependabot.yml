@@ -1,0 +1,35 @@
+version: 2
+
+updates:
+  # Keeps the SHA-pinned actions/container references in
+  # deploy-pages.yml from going stale (item 88). Note: Dependabot's
+  # github-actions ecosystem tracks `uses:` action references only —
+  # it does not track the Playwright container image
+  # (jobs.<job>.container.image), which stays a manual pin. See
+  # CLAUDE.md's advisory-triage rule for the manual update procedure.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+
+  # Flags npm dependency updates for manual review; never auto-merged.
+  # Development minor/patch updates are grouped to reduce noise;
+  # production updates and any major-version bump stay individually
+  # reviewable.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    versioning-strategy: "increase-if-necessary"
+    commit-message:
+      prefix: "chore"
+    groups:
+      dev-minor-patch:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
