@@ -16,14 +16,16 @@ updates:
       prefix: "ci"
 
   # Flags npm dependency updates for manual review; never auto-merged.
-  # Development minor/patch updates are grouped to reduce noise;
-  # production updates and any major-version bump stay individually
-  # reviewable.
+  # Development minor/patch updates are grouped to reduce noise; every
+  # production-dependency update stays individually reviewable, as do
+  # major-version updates except where explicitly ignored below.
+  # Monthly cadence and a low open-PR limit match a single maintainer's
+  # realistic review pace.
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
+      interval: "monthly"
+    open-pull-requests-limit: 2
     versioning-strategy: "increase-if-necessary"
     commit-message:
       prefix: "chore"
@@ -33,3 +35,30 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    # These ignore rules only suppress Dependabot's scheduled *version*
+    # updates. They deliberately list explicit `update-types` rather
+    # than a bare dependency-name-only ignore, because GitHub documents
+    # that a bare ignore can also suppress *security* updates — a
+    # genuine advisory for any of these dependencies can still open a
+    # PR.
+    ignore:
+      # @playwright/test's version must be updated together with the
+      # mcr.microsoft.com/playwright container tag, its digest, and
+      # deploy-pages.yml's `expected_playwright` value (see CLAUDE.md's
+      # advisory-triage rule) — a routine automatic bump of the package
+      # alone is actively misleading, so every scheduled update type is
+      # ignored here.
+      - dependency-name: "@playwright/test"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
+      # Ignored until the repository moves beyond Node 24 (.nvmrc pins
+      # 24.18.0).
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
+      # Ignored pending deliberate review.
+      - dependency-name: "jsdom"
+        update-types:
+          - "version-update:semver-major"
