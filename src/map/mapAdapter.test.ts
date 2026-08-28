@@ -568,6 +568,26 @@ describe("MapLibreAdapter", () => {
       });
     });
 
+    // Characterises MapLibre's declared ErrorLike contract ({ message: string }),
+    // not a reproduction of any observed CI/E2E failure: the maplibre-gl 6.6.0
+    // bump's real regression was lint-only (@typescript-eslint/no-base-to-string
+    // on the old `event.error instanceof Error ? ... : String(event.error)`
+    // fallback), never an E2E or runtime failure.
+    it("reads .message directly from a structural, non-Error ErrorLike payload", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+      const listener = vi.fn();
+
+      adapter.onError(listener);
+      const errorHandler = findHandler(fake, "error");
+      errorHandler({ error: { message: "tile failed" }, sourceId: "openmaptiles" });
+
+      expect(listener).toHaveBeenCalledWith({
+        message: "tile failed",
+        category: "source-or-tile",
+      });
+    });
+
     it("classifies a no-sourceId error before style.load as style-request-or-parse", () => {
       const fake = buildFakeMapLibreMap();
       const adapter = buildAdapter(fake);

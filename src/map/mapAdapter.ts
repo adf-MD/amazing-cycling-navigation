@@ -502,8 +502,7 @@ export class MapLibreAdapter implements MapLibreLike {
       });
     }
     this.map.on("error", (event) => {
-      const message =
-        event.error instanceof Error ? event.error.message : String(event.error);
+      const message = event.error.message;
       const sourceId = (event as { sourceId?: unknown }).sourceId;
       const category: MapErrorCategory =
         typeof sourceId === "string"
