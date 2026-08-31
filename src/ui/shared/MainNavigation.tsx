@@ -1,6 +1,12 @@
 import { NavIcon } from "./NavIcon.tsx";
+import type { Screen } from "./screenTypes.ts";
 
-export type Screen = "library" | "riding" | "diagnostics" | "planning" | "settings";
+// Re-exported so existing consumers (App.tsx, immersiveRidingShell.ts,
+// useResetScrollForNewRideContent.ts and their tests) don't need an
+// import-path change — NavIcon.tsx imports Screen directly from
+// screenTypes.ts, since importing it from here would recreate the
+// type-only cycle this module's own runtime import of NavIcon forms.
+export type { Screen } from "./screenTypes.ts";
 
 interface NavItem {
   screen: Screen;

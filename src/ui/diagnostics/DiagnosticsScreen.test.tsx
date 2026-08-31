@@ -17,6 +17,18 @@ import type { RoutingProvider } from "../../routing/provider.ts";
 import { RoutingError } from "../../routing/openRouteServiceErrors.ts";
 import type { PlannedRoute } from "../../domain/types.ts";
 
+// jsdom doesn't implement a real WebGL context, so the real
+// isMapRenderingSupported() would otherwise log a "Not implemented:
+// HTMLCanvasElement.getContext()" warning on every render (this
+// component calls it inline, unconditionally). Stubbed here at the
+// capability-result level, not by faking WebGL — mapSupport.test.ts
+// covers the underlying decision logic (webgl2/webgl/neither) against
+// its own targeted canvas.getContext stub instead.
+vi.mock("../../platform/mapSupport.ts", () => ({
+  isMapRenderingSupported: vi.fn(() => true),
+}));
+import { isMapRenderingSupported } from "../../platform/mapSupport.ts";
+
 function fakeRoutingProvider(behaviour: () => Promise<PlannedRoute>): RoutingProvider {
   return { calculateRoute: () => behaviour() };
 }
@@ -81,6 +93,19 @@ afterEach(() => {
 });
 
 describe("DiagnosticsScreen", () => {
+  it("shows Map rendering support as Supported or Not supported, driven by isMapRenderingSupported's result", () => {
+    vi.mocked(isMapRenderingSupported).mockReturnValueOnce(true);
+    const { unmount } = render(<DiagnosticsScreen />);
+    expect(getDetailValue("Map rendering support")).toHaveTextContent("Supported");
+    unmount();
+
+    vi.mocked(isMapRenderingSupported).mockReturnValueOnce(false);
+    render(<DiagnosticsScreen />);
+    expect(getDetailValue("Map rendering support")).toHaveTextContent(
+      "Not supported by this browser",
+    );
+  });
+
   it("renders every field with a value or an explicit placeholder, never blank", async () => {
     render(<DiagnosticsScreen />);
 

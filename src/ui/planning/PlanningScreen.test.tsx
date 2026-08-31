@@ -4390,12 +4390,20 @@ describe("PlanningScreen", () => {
         return "blob:mock-url";
       });
       URL.revokeObjectURL = vi.fn();
+      // downloadTextFile.ts triggers the download via a real anchor
+      // click; jsdom doesn't implement navigation, so unmocked this
+      // fires a "Not implemented: navigation to another Document"
+      // warning. Mirrors RouteLibrary.test.tsx's own export test.
+      const clickSpy = vi
+        .spyOn(HTMLAnchorElement.prototype, "click")
+        .mockImplementation(() => undefined);
 
       try {
         await user.click(screen.getByRole("button", { name: /export gpx/i }));
         await waitFor(() => {
           expect(capturedBlob).not.toBeNull();
         });
+        expect(clickSpy).toHaveBeenCalledOnce();
         const text = await (capturedBlob as unknown as Blob).text();
         expect(text).toContain("acn:planning");
         expect(text).toContain('lon="0"');

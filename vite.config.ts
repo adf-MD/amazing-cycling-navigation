@@ -70,5 +70,32 @@ export default defineConfig({
       "**/{vite,vitest}.config.*.timestamp-*",
       "e2e/**",
     ],
+    coverage: {
+      provider: "v8",
+      // By default coverage.include only counts files a test actually
+      // imports; an explicit include also counts untested production
+      // files as 0%, so this is deliberately wider than the ordinary
+      // test.exclude above and isn't reused from it.
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.d.ts",
+        "src/test/**",
+        // Pure Vite entry glue (DOM root mount): no branch logic worth
+        // unit testing; exercised instead by the e2e app-shell smoke.
+        "src/main.tsx",
+      ],
+      // Risk-based aggregate floors for the highest-consequence
+      // directories only (untrusted-input parsing, persistence,
+      // navigation/off-route logic) — deliberately no global threshold
+      // and no perFile, so this can't silently become a blanket gate.
+      // See docs/project/history/items-89-NN.md for how these figures
+      // were measured.
+      thresholds: {
+        "src/gpx/**": { statements: 99, branches: 90, functions: 100, lines: 99 },
+        "src/storage/**": { statements: 96, branches: 93, functions: 97, lines: 96 },
+        "src/navigation/**": { statements: 93, branches: 86, functions: 99, lines: 96 },
+      },
+    },
   },
 });

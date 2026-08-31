@@ -8,6 +8,17 @@ import { getActiveRideState, setActiveRideState } from "./storage/rideStateRepos
 import * as rideStateRepository from "./storage/rideStateRepository.ts";
 import { trackWithElevationGpx } from "./test/fixtures/gpx.ts";
 
+// Several tests below navigate to Diagnostics, mounting the real
+// DiagnosticsScreen, whose inline isMapRenderingSupported() call would
+// otherwise hit jsdom's unimplemented WebGL context and log a warning —
+// mirrors DiagnosticsScreen.test.tsx's own identical stub (see that
+// file's comment for why this is a capability-result stub, not a fake
+// WebGL implementation). No test here asserts on the specific
+// Supported/Not-supported text, so a static true is enough.
+vi.mock("./platform/mapSupport.ts", () => ({
+  isMapRenderingSupported: vi.fn(() => true),
+}));
+
 // jsdom doesn't implement scrollIntoView at all — mirrors
 // RouteSummaryPanel.test.tsx's/RouteListItem.test.tsx's own identical
 // precedent. Global here (not per-describe) since the item 73 follow-up's
@@ -21,6 +32,18 @@ beforeEach(() => {
 
 afterEach(() => {
   Element.prototype.scrollIntoView = originalScrollIntoView;
+});
+
+// jsdom doesn't implement window.scrollTo either (see
+// useResetScrollForNewRideContent.ts, which App wires up for every
+// screen, not only Riding-specific describe blocks below) — global for
+// the same reason as scrollIntoView above: any test that navigates to
+// Riding can trigger the real, unmocked call otherwise. restoreMocks in
+// vite.config.ts's test config auto-restores this vi.spyOn between
+// tests, so no matching afterEach is needed here (unlike scrollIntoView's
+// manual reassignment above, which restoreMocks doesn't cover).
+beforeEach(() => {
+  installScrollToSpy();
 });
 
 describe("App", () => {

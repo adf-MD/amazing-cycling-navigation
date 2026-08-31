@@ -43,5 +43,16 @@ export default defineConfig({
       use: { ...devices["Pixel 7"] },
       testMatch: /android.*\.spec\.ts$/,
     },
+    {
+      // A deliberately small WebKit smoke, not full parity with the
+      // chromium project — see item 89's history entry for the
+      // feasibility evidence and why this scope was chosen. This is a
+      // desktop WebKit engine check, not installed-iPhone/Safari-PWA
+      // acceptance: it cannot reproduce Home Screen PWA lifecycle,
+      // suspension/reload recovery or touch-specific gesture behaviour.
+      name: "webkit-smoke",
+      use: { ...devices["Desktop Safari"] },
+      testMatch: /smoke\.spec\.ts$/,
+    },
   ],
 });

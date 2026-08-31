@@ -1,4 +1,4 @@
-import type { DistanceBadgeMarkerSpec } from "./mapAdapter.ts";
+import type { DistanceBadgeMarkerSpec } from "./mapMarkerTypes.ts";
 
 const BASE_CLASS = "distance-badge-marker";
 

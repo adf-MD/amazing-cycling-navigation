@@ -4,7 +4,7 @@ The complete shipped implementation record, split into bounded files. See [`../R
 
 ## Completed backlog items
 
-Six files, each covering a contiguous range of item numbers in ascending order (pending/monitored/ledger items originally interleaved among these have moved to [`../backlog.md`](../backlog.md) or [`../current-status.md`](../current-status.md) instead — see each file's own intro for exactly which numbers it holds):
+Eight files, each covering a contiguous range of item numbers in ascending order (pending/monitored/ledger items originally interleaved among these have moved to [`../backlog.md`](../backlog.md) or [`../current-status.md`](../current-status.md) instead — see each file's own intro for exactly which numbers it holds):
 
 - [`items-06-29.md`](items-06-29.md)
 - [`items-30-38.md`](items-30-38.md)
@@ -13,6 +13,7 @@ Six files, each covering a contiguous range of item numbers in ascending order (
 - [`items-56-68.md`](items-56-68.md) — also carries the shared items-55–58 design-reference caveat (see that file's own note)
 - [`items-69-80.md`](items-69-80.md)
 - [`items-81-NN.md`](items-81-NN.md)
+- [`items-89-NN.md`](items-89-NN.md)
 
 When a new item is completed, append it to whichever of these files its number naturally continues (in ascending numeric order). If that would push a file past roughly 150,000 characters, start a new range file (e.g. `items-74-NN.md`) instead of letting an existing file grow unbounded, and add it to the list above.
 

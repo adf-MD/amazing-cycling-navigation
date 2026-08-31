@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Screen } from "./MainNavigation.tsx";
+import type { Screen } from "./screenTypes.ts";
 
 export interface NavIconProps {
   screen: Screen;

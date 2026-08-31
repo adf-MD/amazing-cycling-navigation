@@ -1,4 +1,4 @@
-import type { MapMarkerSpec } from "./mapAdapter.ts";
+import type { MapMarkerSpec } from "./mapMarkerTypes.ts";
 
 const BASE_CLASS = "planning-waypoint-marker";
 
