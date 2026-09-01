@@ -488,4 +488,102 @@ describe("DiagnosticsScreen", () => {
       expect(textarea.value).not.toContain("dummy-test-key");
     });
   });
+
+  describe("Storage quota estimate", () => {
+    it("shows an explicit unsupported estimate fallback once the database opens", async () => {
+      vi.stubGlobal("navigator", {
+        onLine: true,
+        storage: undefined,
+      });
+
+      render(<DiagnosticsScreen />);
+
+      await waitFor(() => {
+        expect(getDetailValue("Storage")).toHaveTextContent(/OK \(schema version 4\)/);
+      });
+      expect(getDetailValue("Storage")).toHaveTextContent(
+        "Estimated app storage: not supported by this browser",
+      );
+    });
+
+    it("shows a mid-range usage estimate with a formatted percentage and no pressure warning", async () => {
+      vi.stubGlobal("navigator", {
+        onLine: true,
+        storage: {
+          estimate: () =>
+            Promise.resolve({ usage: 10 * 1024 * 1024, quota: 500 * 1024 * 1024 }),
+        },
+      });
+
+      render(<DiagnosticsScreen />);
+
+      await waitFor(() => {
+        expect(getDetailValue("Storage")).toHaveTextContent(
+          "Estimated app storage: 10.0 MiB of 500.0 MiB used (2%)",
+        );
+      });
+      expect(getDetailValue("Storage")).not.toHaveTextContent("Storage pressure warning");
+    });
+
+    it("shows a sub-1% usage estimate as <1% rather than a misleadingly exact 0%", async () => {
+      vi.stubGlobal("navigator", {
+        onLine: true,
+        storage: {
+          estimate: () => Promise.resolve({ usage: 1_048_576, quota: 500 * 1024 * 1024 }),
+        },
+      });
+
+      render(<DiagnosticsScreen />);
+
+      await waitFor(() => {
+        expect(getDetailValue("Storage")).toHaveTextContent("<1%)");
+      });
+    });
+
+    it("shows an explicit pressure warning at exactly 90% usage", async () => {
+      vi.stubGlobal("navigator", {
+        onLine: true,
+        storage: { estimate: () => Promise.resolve({ usage: 900, quota: 1000 }) },
+      });
+
+      render(<DiagnosticsScreen />);
+
+      await waitFor(() => {
+        expect(getDetailValue("Storage")).toHaveTextContent("(90%)");
+      });
+      expect(getDetailValue("Storage")).toHaveTextContent(
+        "Storage pressure warning: estimated app storage usage is high.",
+      );
+    });
+
+    it("does not show a pressure warning just under 90% usage", async () => {
+      vi.stubGlobal("navigator", {
+        onLine: true,
+        storage: { estimate: () => Promise.resolve({ usage: 899, quota: 1000 }) },
+      });
+
+      render(<DiagnosticsScreen />);
+
+      await waitFor(() => {
+        expect(getDetailValue("Storage")).toHaveTextContent("(89%)");
+      });
+      expect(getDetailValue("Storage")).not.toHaveTextContent("Storage pressure warning");
+    });
+
+    it("shows the database as OK alongside an unavailable estimate when estimate() rejects", async () => {
+      vi.stubGlobal("navigator", {
+        onLine: true,
+        storage: { estimate: () => Promise.reject(new Error("quota check failed")) },
+      });
+
+      render(<DiagnosticsScreen />);
+
+      await waitFor(() => {
+        expect(getDetailValue("Storage")).toHaveTextContent(/OK \(schema version 4\)/);
+      });
+      expect(getDetailValue("Storage")).toHaveTextContent(
+        "Estimated app storage: unavailable",
+      );
+    });
+  });
 });

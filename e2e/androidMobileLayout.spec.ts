@@ -68,6 +68,20 @@ test("no horizontal overflow, sticky header, and usable touch targets across the
     const widths = await readScrollWidths(page);
     expect(widths.documentWidth).toBeLessThanOrEqual(viewport.width);
     expect(widths.bodyWidth).toBeLessThanOrEqual(viewport.width);
+
+    // Item 92: genuine (unstubbed) Chromium storage-quota evidence under
+    // android-chrome emulation — the plain diagnostics.spec.ts additions
+    // only ever run under the chromium project, so this is the one place
+    // that makes a "Chromium-emulated Android" evidence claim true rather
+    // than inherited boilerplate. Requires the real numeric branch, not
+    // merely the disappearance of "Checking storage estimate…".
+    if (label === "Diagnostics") {
+      const storageValue = page
+        .getByText("Storage", { exact: true })
+        .locator("xpath=following-sibling::dd[1]");
+      await expect(storageValue).toContainText("OK (schema version");
+      await expect(storageValue).toContainText(/Estimated app storage: .+ used \(.+\)/);
+    }
   }
 
   // Pre-ride/Resume screen: import a route and open it (never tap Start

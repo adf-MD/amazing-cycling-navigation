@@ -148,6 +148,12 @@ Do not treat the item above as fully verified until it has been tested on a movi
 
 ---
 
+### Outstanding: item 92's storage-health quota/estimate signal
+
+- **Storage-health quota/estimate signal (item 92):** shipped with automated (Vitest/Playwright Chromium and Chromium-emulated Android) evidence only — no physical iPhone or Android verification is claimed yet. Real-device acceptance still needed: whether `navigator.storage.estimate()` is available and its figures are honestly rendered on the installed iPhone PWA and physical Android Chrome; whether the displayed usage/quota/percentage stay plausible and reasonably stable over ordinary use; and, if genuine storage pressure ever occurs naturally, eventual observation that the 90% warning appears as designed — this is not an instruction to deliberately fill a primary phone's storage to test it. Automated simulation of the threshold (including the exactly-90% boundary) remains automated evidence, not physical-device acceptance, regardless of how deterministic it is. See [`docs/project/history/items-89-NN.md#item-92`](history/items-89-NN.md#item-92) for the full implementation record, including the native Chromium/WebKit decision-gate evidence this item's threshold decision was based on.
+
+---
+
 ## Monitored reliability observations
 
 These are explicitly **not** approved future work — see each entry's own text for why.

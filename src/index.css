@@ -2709,6 +2709,28 @@ button:focus-visible {
   font-size: 0.9rem;
 }
 
+/* Storage's database-open status and estimate detail render as separate
+ * block lines within one dt/dd pair for narrow-screen readability — a
+ * tighter gap than .stack's own 16px, which is tuned for whole page
+ * sections rather than a compact sub-value grouping. */
+.diagnostics-value-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.diagnostics-value-lines p {
+  margin: 0;
+}
+
+/* Storage-quota pressure warning (item 92) — never colour alone: the
+ * "Storage pressure warning" sentence already carries the meaning;
+ * colour is a secondary reinforcement only, mirroring
+ * .ride-status-card-status--possibly-off-route's identical convention. */
+.diagnostics-value--storage-pressure {
+  color: var(--colour-warning);
+}
+
 /* Constrains each Diagnostics panel to a readable text measure on a wide
  * desktop browser, reusing .planning-section's own 900px breakpoint
  * value — but as its own class, since .planning-section is documented as

@@ -61,6 +61,29 @@ function formatFixAge(ageMs: number): string {
   return `${String(Math.round(seconds / 60))} min ago`;
 }
 
+const STORAGE_BYTE_UNITS = ["KiB", "MiB", "GiB", "TiB"];
+
+function formatStorageBytes(bytes: number): string {
+  if (bytes < 1024) return `${String(Math.round(bytes))} B`;
+  let value = bytes;
+  let unitIndex = -1;
+  while (value >= 1024 && unitIndex < STORAGE_BYTE_UNITS.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(1)} ${STORAGE_BYTE_UNITS[unitIndex] ?? "TiB"}`;
+}
+
+// Floors so a displayed "90%" can never contradict the raw >=0.9 pressure
+// classification, except a genuinely non-zero fraction below 1% shows
+// "<1%" rather than a misleadingly exact "0%" — only an exact 0 ratio
+// still shows "0%".
+function formatStoragePercentage(usageRatio: number): string {
+  const flooredPercent = Math.floor(usageRatio * 100);
+  if (usageRatio > 0 && flooredPercent === 0) return "<1%";
+  return `${String(flooredPercent)}%`;
+}
+
 function formatDiagnosticsReportHeader(): string {
   return `App version: ${__APP_VERSION__}\nBuild: ${__BUILD_ID__}`;
 }
@@ -174,9 +197,35 @@ export function DiagnosticsScreen({
             <dt className="diagnostics-label">Storage</dt>
             <dd className="diagnostics-value">
               {storageHealth.status === "checking" && "Checking…"}
-              {storageHealth.status === "ok" &&
-                `OK (schema version ${String(storageHealth.schemaVersion)})`}
               {storageHealth.status === "error" && "Unavailable"}
+              {storageHealth.status === "ok" && (
+                <div className="diagnostics-value-lines">
+                  <p>{`OK (schema version ${String(storageHealth.schemaVersion)})`}</p>
+                  {storageHealth.estimate.status === "checking" && (
+                    <p className="field-hint">Checking storage estimate…</p>
+                  )}
+                  {storageHealth.estimate.status === "unsupported" && (
+                    <p className="field-hint">
+                      Estimated app storage: not supported by this browser
+                    </p>
+                  )}
+                  {storageHealth.estimate.status === "unavailable" && (
+                    <p className="field-hint">Estimated app storage: unavailable</p>
+                  )}
+                  {storageHealth.estimate.status === "available" && (
+                    <>
+                      <p>
+                        {`Estimated app storage: ${formatStorageBytes(storageHealth.estimate.usageBytes)} of ${formatStorageBytes(storageHealth.estimate.quotaBytes)} used (${formatStoragePercentage(storageHealth.estimate.usageRatio)})`}
+                      </p>
+                      {storageHealth.estimate.highPressure && (
+                        <p className="diagnostics-value--storage-pressure">
+                          Storage pressure warning: estimated app storage usage is high.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </dd>
           </div>
 
