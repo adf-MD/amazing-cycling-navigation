@@ -155,6 +155,13 @@ Do not treat the item above as fully verified until it has been tested on a movi
 
 ---
 
+### Outstanding: item 93's enforced Content-Security-Policy
+
+- **Enforce the proven Content Security Policy (item 93):** originally shipped with automated (Vitest/Playwright Chromium, `webkit-smoke` and Chromium-emulated Android) cross-engine evidence only — no physical-device verification was claimed at ship time. See [`docs/project/history/items-89-NN.md#item-93`](history/items-89-NN.md#item-93) for the full implementation record, including the item-90 compatibility investigation the enforced policy was based on.
+- **Installed-iPhone CSP smoke point — closed (2026-09-01).** A quick post-deployment regression pass on the installed iPhone Home Screen PWA found no CSP-caused breakage in the requested checks. This closes the narrow installed-iPhone CSP smoke point — it does not prove every CSP directive/resource path under all network states, and it does not provide physical Android acceptance, which **remains open**. The only newly noticed issue during this pass was the familiar `Map loading is taking longer than expected` message; the user believes it pre-dates the CSP change and is keeping it in a personal backlog — it is not attributed to CSP here, its thresholds are not being tuned by this entry, and it is not being promoted into the formal project backlog.
+
+---
+
 ## Monitored reliability observations
 
 These are explicitly **not** approved future work — see each entry's own text for why.

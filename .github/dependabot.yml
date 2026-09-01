@@ -62,3 +62,9 @@ updates:
       - dependency-name: "jsdom"
         update-types:
           - "version-update:semver-major"
+      # TypeScript 7 is deferred until the repository's lint/compiler
+      # toolchain officially supports it and the migration is reviewed
+      # separately.
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"

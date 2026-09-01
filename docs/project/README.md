@@ -10,6 +10,7 @@ Root `CLAUDE.md` remains the single always-loaded entry point: durable product a
 - **[`current-status.md`](current-status.md)** — the manual acceptance ledger (what has actually been verified on a real device) plus monitored reliability observations that are neither approved future work nor fully resolved.
 - **[`history/`](history/README.md)** — the complete shipped implementation record: every completed backlog item's full text, plus the Delivery-order milestone narrative and the Interface-and-accessibility visual-migration narrative that predate/parallel the numbered backlog. See `history/README.md` for how this is split across files.
 - **[`release-readiness-audit.md`](release-readiness-audit.md)** — item 86's evidence-based security/privacy/reliability/maintainability audit of the `0.3.73` baseline: a risk register, verified strengths, a `0.3.x`/`0.4.0`/`1.0.0` release-decision model, and the rationale behind backlog items 87–92.
+- **[`releases/`](releases/0.4.0.md)** — dated release/milestone documents, written to double as the basis for a later GitHub Release body. Each covers what shipped since the previous one, checks any applicable release gate against live evidence, and states known limitations honestly; it does not replace `current-status.md` or the `history/` record.
 
 ## The stable item-number convention
 

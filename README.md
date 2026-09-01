@@ -80,11 +80,12 @@ out of scope for now — see "Future backlog" and "Explicit non-goals" in
 - No licence is included; this repository is intentionally unlicensed.
 
 **Automated evidence vs. real-device acceptance.** The Playwright suite drives a real production
-build under two projects: desktop Chromium, and Chromium's Pixel 7 device emulation for Android.
-The Android project proves mobile viewport/UA/touch behaviour under a real Chromium engine — it is
-**not** a real Android phone or WebView, and does not substitute for one. iOS-specific behaviour
-(installation, background suspension, on-bike GPS) and genuine Android-hardware behaviour both
-still need manual, real-device acceptance.
+build under three projects: desktop Chromium, Chromium's Pixel 7 device emulation for Android, and
+a narrow WebKit-engine smoke project. The Android project proves mobile viewport/UA/touch behaviour
+under a real Chromium engine, and the WebKit project proves a small set of smoke checks under a
+real Safari engine — **neither** is a real Android phone, a real iPhone, or a real WebView, and
+neither substitutes for one. iOS-specific behaviour (installation, background suspension, on-bike
+GPS) and genuine Android-hardware behaviour both still need manual, real-device acceptance.
 [`docs/project/current-status.md`](./docs/project/current-status.md)'s "Manual acceptance status"
 ledger (summarised in `CLAUDE.md`) is the authoritative record of what has actually been confirmed
 that way, including bicycle field tests that remain outstanding — do not treat automated coverage
@@ -165,19 +166,22 @@ redirect there.
 validation and export; distance, elevation and gradient calculations; GPS-to-route projection,
 off-route and route-completion classification; IndexedDB repositories; and every UI screen.
 
-**End-to-end tests** (Playwright) drive a real browser against the production build across two
-projects — desktop Chromium, and Chromium's Pixel 7 emulation for Android (see
-[Platform, privacy and limitations](#platform-privacy-and-limitations) above for what that does
-and doesn't prove). Together they cover GPX import/export, Planning under both cycling profiles
-plus the edit-copy/reverse-route flows, the route library (search/sort/pin), active Riding (camera
-controls, next-manoeuvre, climb view, wake lock, finish/end ride), free roam, sticky navigation, the
-PWA manifest and service-worker scope, and Android-emulated layout/persistence/offline behaviour. See
-[`docs/android-chrome-acceptance.md`](./docs/android-chrome-acceptance.md) for the Android-specific
-acceptance checklist.
+**End-to-end tests** (Playwright) drive a real browser against the production build across three
+projects — desktop Chromium, Chromium's Pixel 7 emulation for Android, and a narrow WebKit-engine
+smoke project (see [Platform, privacy and limitations](#platform-privacy-and-limitations) above for
+what each does and doesn't prove). The Chromium project carries the full suite: GPX import/export,
+Planning under both cycling profiles plus the edit-copy/reverse-route flows, the route library
+(search/sort/pin), active Riding (camera controls, next-manoeuvre, climb view, wake lock, finish/end
+ride), free roam, sticky navigation, and the PWA manifest and service-worker scope. The
+Android-emulated project covers layout/persistence/offline behaviour under that same Chromium
+engine — see [`docs/android-chrome-acceptance.md`](./docs/android-chrome-acceptance.md) for the
+Android-specific acceptance checklist. The WebKit-smoke project is a narrow, real-Safari-engine
+smoke check, not a full duplicate of the Chromium suite and not installed-iPhone/Safari-PWA
+acceptance.
 
 ```bash
-npm run build                    # e2e tests run against dist/, not the dev server
-npx playwright install chromium  # first time only — covers both Playwright projects
+npm run build                            # e2e tests run against dist/, not the dev server
+npx playwright install chromium webkit   # first time only — covers all three Playwright projects
 npm run e2e
 ```
 
