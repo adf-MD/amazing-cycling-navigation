@@ -1264,7 +1264,7 @@ button:focus-visible {
  * previous version of this comment claimed the canvas "lives in a
  * separate stacking context below every DOM marker regardless", which
  * real-browser composite-pixel evidence proved false (the badge was
- * never actually visible; see docs/project/history/items-81-NN.md#item-84).
+ * never actually visible; see docs/project/history/items-81-88.md#item-84).
  * The canvas and a marker with no z-index of its own (z-index: auto) both
  * paint at the CSS 2.1 Appendix E painting algorithm's step 6, ordered by
  * DOM position — this is why .planning-waypoint-marker, which sets no
@@ -2145,7 +2145,7 @@ button:focus-visible {
  * device-pixel rows against its own top border's 3, at DPR 3, while four
  * other buttons sampled from the same screenshot (Pause, End ride, 2 km,
  * Map) all painted symmetrically. See the rule below for the fix this
- * evidence motivated; docs/project/history/items-81-NN.md#item-85 has the
+ * evidence motivated; docs/project/history/items-81-88.md#item-85 has the
  * full measured comparison and current-status.md tracks real-device
  * acceptance as still open. */
 .ride-profile-pane--immersive .clear-selection-button:focus-visible {
