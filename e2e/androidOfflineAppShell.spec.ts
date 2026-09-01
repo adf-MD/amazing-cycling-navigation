@@ -1,4 +1,8 @@
 import { expect, test } from "@playwright/test";
+import {
+  installCspViolationListener,
+  waitForServiceWorkerRegistration,
+} from "./support/csp.ts";
 
 // The one spec in this suite that deliberately does NOT set
 // `serviceWorkers: "block"` — every other android*.spec.ts file blocks
@@ -28,6 +32,8 @@ test("the installed service worker serves the app shell while genuinely offline"
     consoleErrors.push(error.message);
   });
 
+  const { violations } = await installCspViolationListener(page);
+
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
 
@@ -35,8 +41,13 @@ test("the installed service worker serves the app shell while genuinely offline"
   // navigations that start after it activates — the page that triggered
   // the install is never itself controlled. Wait for activation, then
   // reload once so the next navigation is actually served under the
-  // worker's control before testing the offline case.
-  await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
+  // worker's control before testing the offline case. Bounded (backlog
+  // item 93), not an unbounded navigator.serviceWorker.ready await, so a
+  // future CSP regression blocking worker-src fails fast and legibly
+  // instead of hanging — test-infrastructure-only change, no production
+  // service-worker behaviour touched.
+  const registration = await waitForServiceWorkerRegistration(page);
+  expect(registration).not.toBeNull();
   await page.reload();
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
 
@@ -58,4 +69,9 @@ test("the installed service worker serves the app shell while genuinely offline"
   expect(consoleErrors.filter((message) => !message.includes("net::ERR_FAILED"))).toEqual(
     [],
   );
+  // Covers offline/degraded behaviour (backlog item 93) without
+  // conflating a blocked service worker with a network outage: the CSP
+  // violation channel is entirely separate from the console-error/
+  // net::ERR_FAILED filtering above.
+  expect(violations).toEqual([]);
 });

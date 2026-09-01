@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { fileURLToPath } from "node:url";
+import { installCspViolationListener } from "./support/csp.ts";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 
 const FIXTURE_GPX_PATH = fileURLToPath(
@@ -15,11 +16,14 @@ test("app shell loads with no console errors", async ({ page }) => {
     consoleErrors.push(error.message);
   });
 
+  const { violations } = await installCspViolationListener(page);
+
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   expect(consoleErrors).toEqual([]);
+  expect(violations).toEqual([]);
 });
 
 test.describe("Riding mode map", () => {
@@ -50,6 +54,7 @@ test.describe("Riding mode map", () => {
     await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
 
     const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+    const { violations } = await installCspViolationListener(page);
 
     await page.goto("/");
 
@@ -112,5 +117,6 @@ test.describe("Riding mode map", () => {
 
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
     expect(consoleErrors).toEqual([]);
+    expect(violations).toEqual([]);
   });
 });

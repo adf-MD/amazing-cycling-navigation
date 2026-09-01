@@ -5,6 +5,7 @@ import { VitePWA } from "vite-plugin-pwa";
 import pkg from "./package.json" with { type: "json" };
 import { workboxOptions } from "./vite.pwa.workbox.ts";
 import { resolveBuildId } from "./vite.buildId.ts";
+import { cspPlugin } from "./vite.csp.ts";
 
 // GitHub Pages project site: https://<user>.github.io/amazing-cycling-navigation/
 // Kept as a single literal so dev, build, manifest and service-worker scope
@@ -24,6 +25,7 @@ export default defineConfig({
     __BUILD_ID__: JSON.stringify(BUILD_ID),
   },
   plugins: [
+    cspPlugin(),
     react(),
     VitePWA({
       // Never auto-activate a new service worker; the UI shows an

@@ -8,8 +8,16 @@ import { expect, test } from "@playwright/test";
  * this at all: its own fetch implementation never throws when detached,
  * so this can only be established against a real browser.
  *
- * Uses a `data:` URL Request so this is fully hermetic — no live network
- * or API dependency, safe to run in any sandbox.
+ * Uses a same-origin Request (the app's own favicon) so this is fully
+ * hermetic — no live network or third-party API dependency, safe to run
+ * in any sandbox. Originally used a `data:` URL for the same reason;
+ * changed to a same-origin path by backlog item 93, since the
+ * illegal-invocation phenomenon under test is a property of *how*
+ * `fetch` is invoked (as a detached reference vs. a plain-object
+ * property), entirely independent of the target URL's scheme — but
+ * `data:` is not itself a permitted `connect-src` source under item 93's
+ * shipped Content-Security-Policy, and this probe has no need to be
+ * exempt from that policy to prove what it proves.
  *
  * CONFIRMED RESULT (Chromium, this project's only locally runnable
  * engine — see the completion report for the WebKit/iOS coverage gap):
@@ -31,7 +39,7 @@ test("native fetch throws when called as an object property but not when called 
   await page.goto("/");
 
   const result = await page.evaluate(async () => {
-    const request = new Request("data:text/plain,hello");
+    const request = new Request("/favicon.ico");
 
     const detachedResult: { threw: boolean; name?: string; message?: string } = {
       threw: false,
@@ -82,7 +90,7 @@ test("the fix (binding fetch explicitly before storing it as a property) resolve
   await page.goto("/");
 
   const result = await page.evaluate(async () => {
-    const request = new Request("data:text/plain,hello");
+    const request = new Request("/favicon.ico");
     // The exact statement OpenRouteServiceAdapter's constructor now uses.
     const holder = { fetchImpl: globalThis.fetch.bind(globalThis) };
     try {

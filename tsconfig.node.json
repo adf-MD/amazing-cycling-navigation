@@ -23,6 +23,8 @@
     "vite.pwa.workbox.ts",
     "vite.buildId.ts",
     "vite.buildId.test.ts",
+    "vite.csp.ts",
+    "vite.csp.test.ts",
     "playwright.config.ts",
     "e2e"
   ]
