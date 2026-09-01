@@ -308,7 +308,7 @@ Archived implementation accounts in `docs/project/history/` describe the system 
 
 ### Queue index
 
-Stable item numbers never change regardless of which file an item's text lives in. Item 90 is currently selected as the next implementation item.
+Stable item numbers never change regardless of which file an item's text lives in. Item 91 is currently selected as the next implementation item.
 
 | Item | Title                                                                                         | Status                                           | Full entry                                                            |
 | ---- | --------------------------------------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
@@ -319,10 +319,9 @@ Stable item numbers never change regardless of which file an item's text lives i
 | 59   | Elevation and recognised-climb discrepancy investigation                                      | Pending investigation                            | [`backlog.md#item-59`](docs/project/backlog.md#item-59)               |
 | 60   | Battery consumption investigation and possible battery-saving mode                            | Pending investigation                            | [`backlog.md#item-60`](docs/project/backlog.md#item-60)               |
 | 61   | Android GPX share-sheet import feasibility                                                    | Pending feasibility study                        | [`backlog.md#item-61`](docs/project/backlog.md#item-61)               |
-| 90   | Content-Security-Policy compatibility investigation                                           | Pending investigation — selected next item       | [`backlog.md#item-90`](docs/project/backlog.md#item-90)               |
-| 91   | `App.tsx` route-switch coordinator characterization tests                                     | Pending                                          | [`backlog.md#item-91`](docs/project/backlog.md#item-91)               |
+| 91   | `App.tsx` route-switch coordinator characterization tests                                     | Pending — selected next item                     | [`backlog.md#item-91`](docs/project/backlog.md#item-91)               |
 | 92   | Storage-health quota/estimate signal                                                          | Pending                                          | [`backlog.md#item-92`](docs/project/backlog.md#item-92)               |
 | 32   | `ridingFinishAndEnd.spec.ts`'s completion-detection test: an unconfirmed CPU-contention flake | Monitored, unconfirmed                           | [`current-status.md#item-32`](docs/project/current-status.md#item-32) |
 | 66   | Investigate intermittent fresh-Start Follow remaining at route overview                       | Accepted for now, monitored                      | [`current-status.md#item-66`](docs/project/current-status.md#item-66) |
 
-Items 6–10, 13–15, 17–27, 29–31, 33–42, 44–58, 62–65 and 67–89 are completed (`— done`) and live in [`docs/project/history/`](docs/project/history/README.md). Item 43 is a follow-up acceptance checklist and lives in [`docs/project/current-status.md`](docs/project/current-status.md). Item 86 is the release-readiness audit that produced items 87–92; its full report is [`docs/project/release-readiness-audit.md`](docs/project/release-readiness-audit.md).
+Items 6–10, 13–15, 17–27, 29–31, 33–42, 44–58, 62–65 and 67–90 are completed (`— done`) and live in [`docs/project/history/`](docs/project/history/README.md). Item 43 is a follow-up acceptance checklist and lives in [`docs/project/current-status.md`](docs/project/current-status.md). Item 86 is the release-readiness audit that produced items 87–92; its full report is [`docs/project/release-readiness-audit.md`](docs/project/release-readiness-audit.md).
