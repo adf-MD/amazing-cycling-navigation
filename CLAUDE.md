@@ -308,7 +308,7 @@ Archived implementation accounts in `docs/project/history/` describe the system 
 
 ### Queue index
 
-Stable item numbers never change regardless of which file an item's text lives in. No implementation item is currently selected as next.
+Stable item numbers never change regardless of which file an item's text lives in. Item 94 is selected as the next implementation item. The current suggested order for the newly added items 94–103 is `94 → 95 → 96 → 97 → 98 → 99 → 100 → 101 → 102 → 103` — this is the current suggested order, not an immutable dependency chain.
 
 | Item | Title                                                                                         | Status                                           | Full entry                                                            |
 | ---- | --------------------------------------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
@@ -319,6 +319,16 @@ Stable item numbers never change regardless of which file an item's text lives i
 | 59   | Elevation and recognised-climb discrepancy investigation                                      | Pending investigation                            | [`backlog.md#item-59`](docs/project/backlog.md#item-59)               |
 | 60   | Battery consumption investigation and possible battery-saving mode                            | Pending investigation                            | [`backlog.md#item-60`](docs/project/backlog.md#item-60)               |
 | 61   | Android GPX share-sheet import feasibility                                                    | Pending feasibility study                        | [`backlog.md#item-61`](docs/project/backlog.md#item-61)               |
+| 94   | Preserve useful camera framing through offline map-imagery recovery                           | Pending — selected next                          | [`backlog.md#item-94`](docs/project/backlog.md#item-94)               |
+| 95   | Route-switch prompt visibility and action hierarchy                                           | Pending                                          | [`backlog.md#item-95`](docs/project/backlog.md#item-95)               |
+| 96   | Grace period for the slow map-imagery notice                                                  | Pending                                          | [`backlog.md#item-96`](docs/project/backlog.md#item-96)               |
+| 97   | Compact ongoing warning for imported routes without trusted turn cues                         | Pending                                          | [`backlog.md#item-97`](docs/project/backlog.md#item-97)               |
+| 98   | Direction-aware active-Riding route-segment layering                                          | Pending                                          | [`backlog.md#item-98`](docs/project/backlog.md#item-98)               |
+| 99   | Route Library sorting by distance and total ascent                                            | Pending                                          | [`backlog.md#item-99`](docs/project/backlog.md#item-99)               |
+| 100  | Reusable route tags and tag-based organisation                                                | Pending                                          | [`backlog.md#item-100`](docs/project/backlog.md#item-100)             |
+| 101  | Plain-language HTTP-status guidance in Routing diagnostics                                    | Pending                                          | [`backlog.md#item-101`](docs/project/backlog.md#item-101)             |
+| 102  | Primary-navigation symbol redesign with mock-ups                                              | Pending                                          | [`backlog.md#item-102`](docs/project/backlog.md#item-102)             |
+| 103  | Visual-consistency audit and staged control-style refinement                                  | Pending                                          | [`backlog.md#item-103`](docs/project/backlog.md#item-103)             |
 | 32   | `ridingFinishAndEnd.spec.ts`'s completion-detection test: an unconfirmed CPU-contention flake | Monitored, unconfirmed                           | [`current-status.md#item-32`](docs/project/current-status.md#item-32) |
 | 66   | Investigate intermittent fresh-Start Follow remaining at route overview                       | Accepted for now, monitored                      | [`current-status.md#item-66`](docs/project/current-status.md#item-66) |
 

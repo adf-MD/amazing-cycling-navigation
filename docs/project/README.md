@@ -14,7 +14,7 @@ Root `CLAUDE.md` remains the single always-loaded entry point: durable product a
 
 ## The stable item-number convention
 
-Every backlog item (currently numbered 6–93) keeps its number for as long as this project exists, **regardless of which file its text currently lives in**. An item's number is a permanent identifier; only its physical location moves as items are completed or as history files are split further. Never renumber an item, and never reuse a retired number for something unrelated.
+Every backlog item (currently numbered 6–103) keeps its number for as long as this project exists, **regardless of which file its text currently lives in**. An item's number is a permanent identifier; only its physical location moves as items are completed or as history files are split further. Never renumber an item, and never reuse a retired number for something unrelated.
 
 ## Adding new work
 

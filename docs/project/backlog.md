@@ -6,7 +6,7 @@ Item numbers are stable identifiers across this project's entire documentation s
 
 Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence. Items 87–92 were added by the [release-readiness audit](release-readiness-audit.md) (item 86); items 87–92 have since been completed.
 
-Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Each entry reproduces its original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this).
+Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Entries through item 93 reproduce their original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this). Items 94 and later are new post-0.4.0 specifications authored directly into this file, following the same structure and conventions.
 
 ---
 
@@ -119,3 +119,204 @@ _Category: Platform compatibility_
       4. **Conflict and recovery coverage:** an inbound share must respect the existing unfinished route/free-roam conflict guard (item 42's fail-closed `checkFreeRoamConflict`-style pattern) and must never silently replace an active session or Planning draft; it must work after a fresh install/relaunch. Add Playwright coverage where meaningful, then require real Android Chrome acceptance — Chromium/Playwright emulation cannot prove real OS share-sheet registration, matching this project's existing, repeatedly-stated distinction between the `android-chrome` Playwright project and genuine physical-device verification (item 25).
     - If step 1 finds only an `Open with` path and no Share/Send path, document that conclusively and record that no pure static-PWA solution is currently available for this exact flow — do not propose a native wrapper, Trusted Web Activity, APK, or other Android-specific packaging as a workaround; that would be a major architecture departure and is explicitly not approved by this backlog item.
     - Requires the "## Explicit non-goals" edit recorded above (item 61's own cross-reference) — that section stays in the root `CLAUDE.md` and already carries this cross-reference.
+
+---
+
+<a id="item-94"></a>
+
+## Item 94 — Preserve useful camera framing through offline map-imagery recovery
+
+_Category: Map camera and offline-recovery reliability_
+
+94. **Preserve useful camera framing through offline map-imagery recovery**
+    - Field observation (real-device, intermittent): opening Planning while offline, placing waypoints, then regaining connectivity and retrying map imagery can recreate the map at a raw world view rather than framing the placed waypoints or a useful known location. The same class of problem has also been observed in pre-ride when the screen first opens offline and imagery is retried after reconnecting; it is intermittent — sometimes the expected route framing is restored.
+    - This is no longer a Planning-only hypothesis: pre-ride already holds saved route geometry by the time it opens, so the earlier one-shot Planning-framing explanation (item 35, "One-time Planning camera fit for restored or seeded waypoints") cannot by itself explain the pre-ride occurrence too.
+    - Confirmed current mechanism (source-verified, recorded as ground truth, not yet proven to be the field cause): `createMapLibreMap` (`src/map/mapAdapter.ts`) constructs the underlying MapLibre map with no `center`/`zoom` option at all. Every imagery retry recreates the map instance (`MapView.tsx`'s `retryToken` bump reruns the container-creation effect), so the map briefly sits at MapLibre's own default centre/zoom — the raw world view — until a fit/`cameraTarget` operation repositions it. `MapView.tsx`'s route-overview `fitBounds` effect deliberately re-fits whenever `styleStructurallyReady` cycles, gated on `suppressInitialOverviewFit`; if that prop is true for a given generation and no `cameraTarget`/`boundsTarget` is supplied for it, nothing currently repositions the camera off the MapLibre default. Treat this as a **candidate mechanism**, not a confirmed root cause.
+    - Required investigation before any fix: fail-first browser reproduction of the exact offline-first/reconnect sequence in both Planning and pre-ride, covering both the explicit "Retry map imagery" action and automatic online recovery wherever both paths exist. Do not infer success merely from `data-map-ready` or fallback-style readiness reaching true — assert the actual resulting camera target/bounds. Investigate retry-generation sequencing, `suppressInitialOverviewFit`/`hasActionableCameraTarget`-style readiness latches, command replay/deduplication (the same `requestId`-based pattern already used for other explicit camera commands), and correlation with a stale or absent `cameraTarget` before naming a root cause.
+    - Desired camera precedence once a cause is confirmed:
+      1. preserve a meaningful camera that the user deliberately panned or zoomed in the same active context before the retry;
+      2. otherwise, in Planning, fit the current waypoint set;
+      3. otherwise, in Planning, frame a valid known location;
+      4. otherwise, in pre-ride, fit the complete saved-route geometry;
+      5. allow the raw world view only when no useful target exists.
+    - A raw MapLibre default/world-view camera snapshot must not override waypoint, location or route-geometry framing merely because it was captured during a failed or fallback generation.
+    - Preserve active-Riding and free-roam camera semantics, including Follow, manual-pan, stale-fix and retry protections already shipped. Cross-reference already-shipped, number-verified precedent rather than re-deriving it: item 67 ("Non-blocking map-tile failure presentation and genuine reconnection recovery"), item 81 ("Preserve Riding zoom through stale-GPS and imagery-retry recovery" — already preserves zoom through imagery-retry recovery in active Riding, so this item's real gap is most likely Planning's waypoint-framing case and pre-ride's pre-Start route-geometry case, which item 81's own scope did not cover), and item 83 ("Make offline and map-imagery recovery unobstructive" — relocated recovery presentation into the status card; a placement change, not a camera-semantics change). Item 66 ("Investigate intermittent fresh-Start Follow remaining at route overview") is a distinct, separately-tracked scenario — its own accepted-for-now closure concerns a fresh Start's GPS-fix/style-load commit-batching timing, not offline/imagery reconnection — but this item's own investigation should remain free to discover shared underlying camera/retry infrastructure between the two if the evidence leads there, rather than assuming the mechanisms are unrelated.
+    - Explicitly exclude offline tile storage, routing-provider changes and service-worker caching policy — those belong to item 12 or another deliberate slice, not this one.
+    - Require deterministic unit coverage wherever the logic can be isolated (retry-generation sequencing, precedence selection), real-browser geometry/camera evidence for both Planning and pre-ride, the project's full normal verification gate, and later physical-device confirmation — do not claim Playwright proves the installed-PWA result.
+
+---
+
+<a id="item-95"></a>
+
+## Item 95 — Route-switch prompt visibility and action hierarchy
+
+_Category: Route Library interaction reliability_
+
+95. **Route-switch prompt visibility and action hierarchy**
+    - Field observation: when a paused route exists and the user chooses a different saved route lower in the Route Library, the inline switch guard (`RouteListItem.tsx`'s switch-prompt panel) can appear without bringing the bottom of the complete chosen route card into view. The user may see no visible explanation for why opening the route apparently did nothing.
+    - Confirmed current implementation: the prompt panel scrolls itself into view via `switchPanelRef.current?.scrollIntoView({ block: "nearest" })` (`RouteListItem.tsx:119`), mirroring `RouteSummaryPanel.tsx`'s own identical pattern — it targets only the nested prompt sub-panel's own nearest scroll position, not the bottom of the outer route card. The implementation must instead target the bottom of the outer route card, or a deliberate end sentinel inside it, so the full card and the full prompt are both visible together.
+    - Confirmed current action set and order (source- and test-verified): `RouteListItem.tsx:336-368`, confirmed by `RouteListItem.test.tsx:511`, currently renders, in this order: **Cancel** (`btn-secondary`, `autoFocus`) → **Return to paused ride** (`btn-secondary`, only when `switchPrompt.offerReturn`) → the confirm action (`btn-danger` when destructive, `btn-secondary` otherwise; labelled `"End and switch"` in the common case, or `"Discard and continue"` when unsupported, per `App.tsx:164`). This is the exact reverse of the desired order below and must be corrected, including the existing test's order/focus assertions.
+    - Required new visual order when all three actions exist:
+      1. `End and switch` (preserve the existing conditional `"Discard and continue"` wording for the unsupported case — do not shorten either to an ambiguous `Switch`)
+      2. `Return to paused ride`
+      3. `Cancel`
+    - Style `End and switch`/`Discard and continue` as destructive (`btn-danger`), `Return to paused ride` as a positive green action, and `Cancel` as neutral (`btn-secondary`). The distinction must remain understandable from wording, DOM order, accessible names and focus behaviour, not colour alone. Preserve adequate contrast and touch targets.
+    - `Cancel` is the agreed label, not `Close` — it cancels the attempted switch and leaves the current state unchanged.
+    - Reversing the visual/DOM order must not move default keyboard focus onto the destructive action merely because it now renders first. The safe, non-destructive action should keep the default focus (matching the current `autoFocus` intent, redirected to whichever element remains the safe default under the new order), and `RouteListItem.test.tsx:511`'s existing order-and-focus assertions must be updated as part of this item, not left asserting the old order.
+    - Acceptance must prove the complete prompt and the chosen card's bottom are visible above the persistent navigation and safe-area region at ordinary phone size, narrow width and enlarged text, including a route lower in a scrollable list. Avoid an unnecessary scroll jump when the card is already fully visible, and respect `prefers-reduced-motion`.
+    - Preserve all item-73 ("Guard every unfinished-session switch against silent replacement") and item-91 ("`App.tsx` route-switch coordinator characterisation tests") state-machine, fail-closed conflict handling, interrupted-write protection and the existing meaning of returning to the paused ride. This is a presentation, scrolling and action-hierarchy correction, not a session-lifecycle rewrite.
+
+---
+
+<a id="item-96"></a>
+
+## Item 96 — Grace period for the slow map-imagery notice
+
+_Category: Map imagery status presentation_
+
+96. **Grace period for the slow map-imagery notice**
+    - Field observation (real-device): ordinary map loads frequently flash the "Map imagery is taking longer than usual to load. Your route and position are still shown." notice (`MapView.tsx`, `data-testid="map-imagery-delayed-banner"`) even on a good 5G connection.
+    - This was not introduced by the CSP work (item 93) or the 0.4.0 release-preparation slice — verify against the actual current constants and conditions rather than assuming a recent regression. Confirmed current trigger: the banner renders as soon as `styleStructurallyReady && !ready && !usingFallbackStyle && tileErrorMessage === null` becomes true — i.e. as soon as the style finishes its structural load while full tile imagery is still outstanding, with no delay of its own (confirmed by the existing test suite, which observes the banner immediately after style-ready with no elapsed time). This is a separate condition and a separate message from the terminal "Map is taking longer than expected to load." message, and separate again from the unrelated `STYLE_READY_TIMEOUT_MS = 15_000` style-ready fallback threshold — do not conflate the three in this item's implementation or its tests.
+    - Add a 2-second grace period before showing the slow-imagery notice specifically. Start the grace only when the current trigger condition above becomes true, rather than delaying map construction or route/position rendering, which must continue to appear immediately regardless of imagery state.
+    - Preserve immediate route/position presentation, the existing fallback/retry controls, and the existing 15-second `STYLE_READY_TIMEOUT_MS` fallback threshold unchanged.
+    - Cancel/reset the grace timer when imagery becomes ready, fallback begins, a terminal tile/style error supersedes it, a retry generation starts (`retryToken` changes), the screen unmounts, or the trigger condition otherwise stops holding. Obsolete timer callbacks from an earlier generation must never affect a later map generation's presentation.
+    - The grace notice is presentation state, not a style-timeout event: ordinary loading that resolves inside or shortly after the grace window must not create a false style-timeout entry in Diagnostics.
+    - Require fail-first fake-clock/timer tests around the 1,999 ms/2,000 ms boundary and around cancellation/generation changes, plus real-browser evidence that the notice neither flashes on an ordinary quick load nor blocks any immediate overlay.
+    - Keep this separate from item 94: item 96 changes only the timing of an existing status message; item 94 changes camera recovery/replay semantics. Also distinct from item 83 ("Make offline and map-imagery recovery unobstructive"), which changed where recovery presentation renders (status card vs in-map), not when it appears.
+
+---
+
+<a id="item-97"></a>
+
+## Item 97 — Compact ongoing warning for imported routes without trusted turn cues
+
+_Category: Riding navigation trust presentation_
+
+97. **Compact ongoing warning for imported routes without trusted turn cues**
+    - Confirmed current safety copy (`RidingNextManoeuvrePanel.tsx`, shown only when there is no active manoeuvre selection, the route is untrusted, and the source is a GPX import): "No trusted turn information is available for this imported GPX. Follow the route line on the map." A distinct sibling message exists for the non-GPX-import untrusted case ("Turn information is unavailable for this route.") and is out of scope for this item — do not alter its behaviour or timing.
+    - The full message is useful when starting or continuing the ride, but permanently reserving its full vertical space interferes with the active-Riding display.
+    - On a genuine start, resume, or return to that ride, show the full warning for approximately 10 seconds, then collapse it to a compact persistent indicator such as `No turn cues`.
+    - The compact indicator must remain honest and discoverable, and should allow the rider to reveal the full explanation again. Do not make the safety limitation disappear completely after the timer.
+    - Do not restart the full-message timer on GPS updates, rerenders, map recovery or unrelated state changes. Define and test the exact session transitions that intentionally re-present it (e.g. a genuine new Start/Resume, not a background rerender).
+    - Trusted or provider-generated routes remain unchanged. Do not fabricate manoeuvres or weaken the route-line instruction.
+    - Require accessible live-region behaviour that avoids repeated announcements, keyboard/touch access to the explanation, reduced-motion-safe presentation, and phone-layout evidence at enlarged text.
+
+---
+
+<a id="item-98"></a>
+
+## Item 98 — Direction-aware active-Riding route-segment layering
+
+_Category: Riding map presentation_
+
+98. **Direction-aware active-Riding route-segment layering**
+    - On route sections whose geometries overlap in opposite directions (for example an out-and-back climb/descent sharing the same road), the whole-route paint order can put a later descent above the segment the rider is currently climbing, making the colour at the rider's current direction misleading.
+    - Confirmed current implementation: route layers (`src/map/gradientRouteLayer.ts`, `routeFeatureLayer.ts`, `routeLayer.ts`, `warningLayer.ts`, composed in `MapView.tsx`) clip and order by distance-along-route, not by geographic overlap. No existing "current segment" or "near-ahead" geographic-overlay concept exists to reuse or extend — this is new work.
+    - Preserve the existing whole-route/latest-route-order presentation in Planning and the pre-ride overview unchanged. It remains the least surprising static overview when no single active direction should dominate.
+    - In active Riding only, retain the complete route underneath, then paint a short current/near-ahead segment last so the colour representing the rider's current direction wins locally at overlaps.
+    - Derive the overlay from matched canonical route progress and route order, not GPS bearing alone — bearing can be stale, noisy or ambiguous on overlapping/out-and-back geometry.
+    - Do not globally hide all descents while climbing or all climbs while descending; only the local current/near-ahead emphasis changes.
+    - Specify, before implementation, how the overlay behaves near feature boundaries, route completion, stale/unreliable fixes and off-route states. The rider marker and safety/recovery overlays must retain their established visual priority over this new overlay.
+    - Require deterministic synthetic fixtures containing an overlapping out-and-back climb/descent, layer-order unit tests, and real-browser visual evidence. Do not change gradient thresholds, climb detection, or overview colouring as part of this item.
+    - Direction arrows or laterally offset parallel lines may be investigated as alternatives, but must not be introduced without user-reviewed evidence, since they add clutter and can misrepresent the physical road. The current-segment overlay described above is the preferred starting design.
+
+---
+
+<a id="item-99"></a>
+
+## Item 99 — Route Library sorting by distance and total ascent
+
+_Category: Route Library organisation_
+
+99. **Route Library sorting by distance and total ascent**
+    - Confirmed current sort support: `RouteLibrarySortOrder = "most-recent" | "name-asc"` (`src/storage/mapping.ts`, default `"most-recent"`), implemented in `sortRoutesForLibrary` (`src/ui/library/routeLibraryView.ts`) and persisted via `routeLibraryPreferencesRepository` (Dexie-backed).
+    - Extend the existing sort choices with route distance and **total ascent** — use "total ascent" in user-facing copy, not ambiguous "elevation". Support ascending and descending order for both new fields while preserving the existing `"most-recent"`/`"name-asc"` choices unchanged.
+    - Sorting is presentation-only: never mutate stored route data or route arrays, and use deterministic tie-breakers, matching the existing `compareIds` convention.
+    - Preserve the existing pinned/unpinned grouping, search/filter behaviour, focus restoration and deletion/rename semantics. Verify, rather than assume, whether each new sort applies within the pinned and unpinned groups separately by following the current library contract — do not let a new sort silently erase pin priority.
+    - Use existing canonical route summary values (distance, ascent) and existing metric formatting. Do not recalculate or reinterpret ascent merely for sorting.
+    - Preserve the existing sort-preference persistence behaviour confirmed above — extend it to the two new fields rather than replacing the mechanism.
+    - Require pure-function coverage for ordering, ties, and missing/legacy values (for example a route with no recorded ascent), plus component/browser coverage for accessible selection and stable focus.
+    - Keep this as a small independent slice — it does not require route tags (item 100) or a storage-schema redesign.
+
+---
+
+<a id="item-100"></a>
+
+## Item 100 — Reusable route tags and tag-based organisation
+
+_Category: Route Library organisation_
+
+100. **Reusable route tags and tag-based organisation**
+     - Confirmed current state: no tag or folder concept exists anywhere in the codebase (`src/domain`, `src/storage`, `src/ui`) — this is genuinely new work, not an extension of a partially-built feature.
+     - Use user-facing **tags**, not exclusive folders. A saved route may naturally belong to several concepts, such as `commute`, `gravel` and `weekend`.
+     - When editing a route's tags, offer existing tags as suggestions and allow a new tag to be created without leaving the editor.
+     - Specify deterministic normalisation for whitespace, empty values, duplicates and case. Preserve one stable display spelling while preventing accidental case-only duplicates.
+     - Existing routes migrate safely to an empty tag collection. No route becomes hidden or inaccessible after the migration.
+     - Initial tags are local ACN library metadata. Do not silently alter GPX import/export or place tags inside the geometry-digest-bound `<acn:navigation>` GPX extension without a separately reviewed format/version decision.
+     - This is approved staged implementation work, not a feasibility study — stage the delivery so each slice ships independently, rather than an unreviewable vertical expansion in one commit. Later stages depend on the tag foundation earlier stages build, not on a feasibility gate:
+       1. **Data model and storage:** inspect migration implications and the compact phone editor's interaction pattern, then add the backward-compatible storage schema/migration for an empty-by-default tag collection per route.
+       2. **Tag editing:** add reusable-tag suggestions and new-tag creation in the route editor, built on stage 1's storage.
+       3. **Filtering and organisation:** add tag filtering and a useful organisation view without duplicating a multi-tag route confusingly across many sections, built on stage 2's tag data.
+       4. **Full lifecycle and acceptance:** add tag editing, deletion/rename and empty-state coverage plus real-device acceptance for the complete feature.
+     - Prefer filtering and tag chips before inventing nested folders. If a later grouped presentation is proposed, mock up how multi-tag routes appear before implementation.
+     - Preserve search, pinning, sorting (including item 99's new fields once delivered), import/export privacy, storage migrations and route-switch behaviour. Adding a third-party taxonomy or cloud synchronisation is out of scope.
+
+---
+
+<a id="item-101"></a>
+
+## Item 101 — Plain-language HTTP-status guidance in Routing diagnostics
+
+_Category: Routing diagnostics clarity_
+
+101. **Plain-language HTTP-status guidance in Routing diagnostics**
+     - Confirmed current state: Diagnostics already explains why a browser fetch can fail before an HTTP response is exposed, in a disclosure titled "Why a fetch can fail before an HTTP response" (`DiagnosticsScreen.tsx`), covering only the no-response-received ambiguity (a provider outage, a missing CORS header, a DNS/TLS failure, or a local network restriction — indistinguishable from each other). Where a response is received, `describeRoutingAttempt()` (`src/routing/routingDiagnostics.ts`) currently renders only the bare numeric status with no further explanation. This item complements that existing disclosure; it must not duplicate or contradict it.
+     - Add a concise disclosure such as "What HTTP statuses mean", or integrate an equally clear structure after inspecting the existing screen's layout.
+     - Keep the exact observed HTTP code visible, and explain broad, actionable categories in plain language:
+       - 400-class invalid/rejected request;
+       - 401/403 key, authorisation or access rejection;
+       - 408/timeout where actually exposed;
+       - 429 rate/quota limiting;
+       - 500-class provider-side failure;
+       - no exposed status as the existing transport/CORS/DNS/TLS/local-network ambiguity described above.
+     - Do not state a provider-specific cause as certain when a status only supports a likely category. Avoid turning Diagnostics into a general HTTP tutorial.
+     - Preserve API-key redaction and the existing distinction between request construction, fetch invocation, exposed HTTP response and transport failure.
+     - Require copy/accessibility tests and narrow-phone/enlarged-text layout evidence. No routing behaviour or retry policy changes belong here.
+
+---
+
+<a id="item-102"></a>
+
+## Item 102 — Primary-navigation symbol redesign with mock-ups
+
+_Category: Interface design_
+
+102. **Primary-navigation symbol redesign with mock-ups**
+     - Confirmed current implementation: `src/ui/shared/MainNavigation.tsx` (destinations/labels) rendering hand-drawn inline SVG glyphs per screen from `src/ui/shared/NavIcon.tsx`.
+     - The current primary-navigation symbols should be reconsidered for semantic clarity and a more coherent visual language.
+     - Before any production icon change, produce at least three concrete, phone-sized mock-up directions using the real navigation destinations and labels. Show selected/unselected states, normal and narrow widths, safe-area treatment and enlarged text.
+     - Keep visible text labels. Do not propose icon-only navigation, and do not use colour as the sole selected-state signal.
+     - Compare recognisability, visual weight, stroke/fill consistency, ambiguity, platform neutrality and fit with the ACN identity. Avoid emoji or symbols whose appearance depends on the operating-system font.
+     - Preserve established touch-target sizes, accessible names, keyboard focus and current navigation behaviour.
+     - Identify the provenance/licence of any external icon family. Prefer project-owned SVGs or a deliberately selected, compatible open-licence set rather than copying arbitrary artwork.
+     - Present the alternatives for explicit user choice. Production implementation, screenshots and physical-device acceptance follow only after a direction is approved, in a separate bounded slice if appropriate.
+     - Cross-reference item 28 ("Optional adaptive compact navigation while scrolling", pending, not approved/scheduled — candidate only): this item's symbol redesign does not approve, schedule or implement item 28's adaptive scroll-based compaction. The two are independent — one is visual language, the other is a still-unapproved behavioural change to the navigation itself.
+     - Do not use this item as permission to redesign every screen or restructure navigation destinations.
+
+---
+
+<a id="item-103"></a>
+
+## Item 103 — Visual-consistency audit and staged control-style refinement
+
+_Category: Interface and accessibility consistency_
+
+103. **Visual-consistency audit and staged control-style refinement**
+     - The application has accumulated inconsistent typography and control presentations. Confirmed concrete example: the `Avoid ferries by default` setting (`src/ui/settings/SettingsScreen.tsx`) currently renders as a bare native `<input type="checkbox">` with only touch-target sizing applied (`.setting-row-checkbox`, `src/index.css`) — not built on the shared `.btn-primary`/`.btn-secondary` token vocabulary used elsewhere, and visually out of place beside the surrounding route-planning controls.
+     - Begin with a bounded audit, not a blanket CSS rewrite. Inventory the typography hierarchy, labels/hints, buttons, checkbox/radio/toggle patterns, panels, disclosures, focus states, disabled states, errors and status treatments across the five screens.
+     - Reconcile findings with the existing shared token/button/layout foundation (`src/index.css`'s spacing/radius/shadow tokens, colour roles, button vocabulary, `.screen`/`.stack`/`.row` layout classes) and the completed interface/accessibility migration (`docs/project/history/interface-accessibility-migration.md`). Reuse or extend that vocabulary deliberately instead of introducing a second design system or third-party component framework.
+     - Produce focused mock-ups for materially different decisions, including the ferries control, before changing production presentation.
+     - Preserve native/accessibility semantics even if the visual treatment becomes custom. Cover checked/unchecked, focus-visible, disabled, saving, error, narrow-phone and 200%-text states.
+     - Split implementation into small component or pattern slices after the audit. Do not mechanically restyle every screen in one commit.
+     - Coordinate with item 102 so the navigation choice and broader visual vocabulary converge, but do not make every item technically dependent on a complete application redesign.
+     - No settings behaviour, routing preference semantics, persistence or navigation structure changes belong to this visual item.
