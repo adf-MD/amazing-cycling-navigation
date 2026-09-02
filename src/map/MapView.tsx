@@ -629,6 +629,25 @@ export interface MapViewProps {
    * becomes ready again) are both active precisely when
    * styleStructurallyReady is false. */
   imageryRetryCommand?: ImageryRetryCommand | null;
+  /** Backlog item 94: fired once per successful attachMap() generation
+   * (including a fallback swap within the same effect run), but ONLY when
+   * no manually-diverged camera needed restoring for that generation —
+   * checked live (hasCameraDivergedFromTargetsRef.current) at the moment
+   * of firing, not merely whether a restore was owed at attach time, so a
+   * gesture landing during the style-loading window (after attach but
+   * before this fires) also correctly suppresses it. A caller wanting to
+   * (re)supply its own "useful known camera" (e.g. Planning's current
+   * waypoint bounds or a cached location) when nothing else already
+   * repositions the camera should key an effect off this value changing,
+   * always recomputing fresh from current state rather than replaying a
+   * value computed at an earlier generation. Never fired for a generation
+   * where the live camera must be left alone — MapView itself owns that
+   * precedence decision, so a consuming screen needs no independent
+   * "is this manual" check of its own. Distinct from onImageryStatusChange,
+   * which dedupes by presentation kind, not generation — two consecutive
+   * generations of the same kind (e.g. fallback→fallback) would not
+   * re-report there but must both be visible here. */
+  onRecoveryFramingEligible?: (generation: number) => void;
 }
 
 /**
@@ -665,6 +684,7 @@ export function MapView({
   routeFeatureOverlay,
   onImageryStatusChange,
   imageryRetryCommand = null,
+  onRecoveryFramingEligible,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreLike | null>(null);
@@ -683,6 +703,10 @@ export function MapView({
   useEffect(() => {
     onImageryStatusChangeRef.current = onImageryStatusChange;
   }, [onImageryStatusChange]);
+  const onRecoveryFramingEligibleRef = useRef(onRecoveryFramingEligible);
+  useEffect(() => {
+    onRecoveryFramingEligibleRef.current = onRecoveryFramingEligible;
+  }, [onRecoveryFramingEligible]);
   // Diagnostic-only (see followAnchorPixel below, backlog item 65) — the
   // onCameraSettled handler reads this rather than closing over
   // currentPosition directly, since it's registered once inside the
@@ -1218,6 +1242,16 @@ export function MapView({
               followOffset: false,
             },
           );
+        }
+        // Backlog item 94: invites a caller to (re)compute its own camera
+        // intent for this generation, but only when the live camera is
+        // genuinely undiverged right now — checked fresh here rather than
+        // trusting cameraSnapshotToRestore (captured at attach start,
+        // above), because a real gesture can land during the style-
+        // loading window, after that capture but before this point, and
+        // must equally suppress this invitation.
+        if (!hasCameraDivergedFromTargetsRef.current) {
+          onRecoveryFramingEligibleRef.current?.(generation);
         }
         // The style becoming structurally ready only proves the style
         // document itself loaded — it says nothing about whether the

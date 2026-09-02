@@ -148,9 +148,12 @@ function isValidCoordinate(coordinate: Coordinate): boolean {
   return isValidLongitude(coordinate[0]) && isValidLatitude(coordinate[1]);
 }
 
-/** Bounds for the one-time camera fit applied to a restored or externally
- * seeded (edit-copy/reverse-copy) waypoint set at hydration time — see the
- * hydration effect below. A single waypoint reuses the existing "frame
+/** Bounds framing a waypoint set — used both for the one-time camera fit
+ * applied to a restored or externally seeded (edit-copy/reverse-copy)
+ * waypoint set at hydration time (see the hydration effect below), and,
+ * via selectRecoveryFramingBounds below, recomputed fresh for the
+ * CURRENT waypoint set on every genuine imagery-recovery generation
+ * (backlog item 94). A single waypoint reuses the existing "frame
  * reasonably around one coordinate" abstraction (the same ~50 km box the
  * fresh-session and Locate-me fits already use) rather than
  * computeBoundingBox's own degenerate zero-area box for a single
@@ -164,6 +167,33 @@ function computeWaypointHydrationBounds(
     return computeLocalAreaBounds(onlyWaypoint.coordinate);
   }
   return computeBoundingBox(waypoints.map((waypoint) => waypoint.coordinate));
+}
+
+/** Backlog item 94: selects the best available "useful known camera" to
+ * (re)frame on a genuine imagery-recovery generation — the current
+ * waypoint set outranks a cached location, and both outrank leaving the
+ * camera untouched (null — never a placeholder fit). Always recomputed
+ * from CURRENT state by the caller (never memoised across generations),
+ * so a later generation reflects waypoints placed or a location resolved
+ * since the last one, rather than replaying stale geometry. Deliberately
+ * takes an already-resolved cachedLocation rather than triggering a new
+ * geolocation request itself — re-querying on every retry is unnecessary
+ * and was explicitly rejected; see the effect that calls this. Exercised
+ * through PlanningScreen's own wiring in PlanningScreen.test.tsx (backlog
+ * item 94's own "imagery-recovery camera framing" describe block), the
+ * same indirect-coverage convention computeWaypointHydrationBounds above
+ * already uses, rather than exported for isolated fixture tests. */
+function selectRecoveryFramingBounds(
+  waypoints: readonly Waypoint[],
+  cachedLocation: Coordinate | null,
+): BoundingBox | null {
+  if (waypoints.length > 0) {
+    return computeWaypointHydrationBounds(waypoints);
+  }
+  if (cachedLocation) {
+    return computeLocalAreaBounds(cachedLocation);
+  }
+  return null;
 }
 
 /** Stamps the live Planning waypoints onto a route about to be saved or
@@ -371,6 +401,12 @@ export function PlanningScreen({
   const [orientNorthTarget, setOrientNorthTarget] =
     useState<OrientNorthCameraTarget | null>(null);
   const [zoomTarget, setZoomTarget] = useState<ZoomCameraTarget | null>(null);
+  // Backlog item 94: the generation number MapView most recently reported
+  // via onRecoveryFramingEligible — see that prop's own doc comment. 0
+  // (never a real generation, which starts at 1) until the first report.
+  // A plain state (not a ref) specifically so a new value retriggers the
+  // recovery-framing effect below.
+  const [recoveryFramingGeneration, setRecoveryFramingGeneration] = useState(0);
   // Null until the map's camera has genuinely settled at least once —
   // deliberately not defaulted to {bearingDegrees: 0, pitchDegrees: 0},
   // which would make the north-up control report pressed before the map
@@ -901,6 +937,32 @@ export function PlanningScreen({
     waypointsRef.current = state.present.waypoints;
   }, [state.present.waypoints]);
 
+  // Backlog item 94: mirrors currentPosition for the recovery-framing
+  // effect below, so that effect can depend ONLY on
+  // recoveryFramingGeneration — reading the latest cached location via
+  // this ref, rather than also listing currentPosition as a dependency,
+  // means a location resolving on its own (no new imagery-recovery
+  // generation) never itself re-triggers recovery framing, exactly
+  // mirroring waypointsRef's own identical purpose above.
+  const currentPositionRef = useRef(currentPosition);
+  useEffect(() => {
+    currentPositionRef.current = currentPosition;
+  }, [currentPosition]);
+
+  // Backlog item 94: mirrors whether a route currently exists, for the
+  // same reason currentPositionRef mirrors currentPosition above —
+  // routing.state.kind also changes on perfectly ordinary waypoint edits
+  // (ineligible → insufficient-waypoints → unrouted-preview, well before
+  // any route is calculated), so depending on it directly in the recovery-
+  // framing effect below would incorrectly re-run that effect on those
+  // ordinary edits too, not only on a genuine new imagery-recovery
+  // generation. Read via a ref instead, exactly like waypointsRef/
+  // currentPositionRef.
+  const isRoutedRef = useRef(routing.state.kind === "routed");
+  useEffect(() => {
+    isRoutedRef.current = routing.state.kind === "routed";
+  }, [routing.state.kind]);
+
   // Set true the instant the rider manually pans/pinches/rotates/pitches
   // the map, explicitly taps Locate me, or presses a Zoom in/out button
   // (see noteManualCameraControl below, shared by the onUserCameraInteraction
@@ -1029,6 +1091,49 @@ export function PlanningScreen({
     pendingWaypointHydrationBounds,
     freshSessionFramingToken,
   ]);
+
+  // Backlog item 94: recomputes and (re)supplies the current-waypoints-or-
+  // cached-location camera fresh on every genuine imagery-recovery
+  // generation (a retry, or a fallback swap that isn't the session's
+  // first attach) — never on an ordinary waypoint edit (this effect
+  // depends only on recoveryFramingGeneration, reading waypoints/location
+  // via refs, so placing or moving a waypoint alone never re-runs it), and
+  // never gated on whether an earlier automatic fit already happened: a
+  // previous automatic location or waypoint fit is not manual intent and
+  // must not block a later, better recomputation. Generation 1 is the
+  // mount effect's own job (immediately above) — this effect only acts on
+  // a later, genuinely new generation. MapView itself withholds
+  // recoveryFramingGeneration's bump entirely whenever a manually-diverged
+  // camera needed restoring (or was gestured into existence during style
+  // loading) for that generation — see onRecoveryFramingEligible's own doc
+  // comment — so this effect needs no independent "is this manual" check
+  // of its own; trusting that omission is the complete precedence-level-1
+  // signal. Always issues a fresh requestId, never relying on MapView's
+  // generic "reapply an unchanged still-current boundsTarget" mechanism —
+  // that would replay bounds describing an OLDER waypoint set, not the
+  // current one.
+  //
+  // Only acts while NOT YET routed (mirrors suppressInitialOverviewFit's
+  // own routing.state.kind === "routed" branch further below, read here via
+  // isRoutedRef rather than as a direct dependency — see that ref's own doc
+  // comment) — once a route exists, the routed geometry's own once-only
+  // overview fit (or a genuinely current boundsTarget) already owns camera
+  // framing correctly, and re-framing from the raw waypoint bounds here
+  // would silently substitute a narrower/different view than the routed
+  // polyline's own bounds (a real regression, caught by
+  // distanceBadges.spec.ts's "retrying imagery does not duplicate badges"
+  // — a zoom change alone changes which badge interval renders).
+  useEffect(() => {
+    if (recoveryFramingGeneration <= 1) return;
+    if (isRoutedRef.current) return;
+    const bounds = selectRecoveryFramingBounds(
+      waypointsRef.current,
+      currentPositionRef.current,
+    );
+    if (bounds) {
+      setBoundsTarget({ bounds, requestId: generateId() });
+    }
+  }, [recoveryFramingGeneration]);
 
   const handleLocateMe = useCallback(() => {
     if (isLocatingRef.current) return;
@@ -1586,6 +1691,7 @@ export function PlanningScreen({
           boundsTarget={boundsTarget}
           zoomTarget={zoomTarget}
           suppressInitialOverviewFit={suppressInitialOverviewFit}
+          onRecoveryFramingEligible={setRecoveryFramingGeneration}
           onUserCameraInteraction={noteManualCameraControl}
           onCameraSettled={(camera) => {
             setCrosshairCoordinate(camera.coordinate);

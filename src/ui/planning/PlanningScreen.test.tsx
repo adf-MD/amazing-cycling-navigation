@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { PlanningScreen } from "./PlanningScreen.tsx";
 import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
-import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
+import type { MapErrorCategory, MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
 import {
   buildPositionFeatureCollection,
@@ -31,6 +31,12 @@ interface MockMapHandle {
    * fired for MapView's own programmatic camera moves. */
   triggerUserCameraInteraction: () => void;
   triggerMapTap: (coordinate: Coordinate) => void;
+  /** Backlog item 94: simulates a genuine map error against whichever
+   * instance was constructed most recently — a fatal
+   * "style-request-or-parse" category (the default) drives MapView's real
+   * switchToFallback() path exactly like an offline-first style-document
+   * failure would. */
+  triggerError: (info?: { message?: string; category?: MapErrorCategory }) => void;
   /** Configures what the next (and subsequent) queryTopWarningFeatureAt
    * calls report as hit — null (the default) means every tap misses every
    * warning feature and falls through to placement, exactly like today. */
@@ -60,6 +66,8 @@ function createMockMapFactory(): MockMapHandle {
     | undefined;
   let mapTapListener: ((coordinate: Coordinate) => void) | undefined;
   let userCameraInteractionListener: (() => void) | undefined;
+  let errorListener:
+    ((info: { message: string; category: MapErrorCategory }) => void) | undefined;
   let warningHitIndex: number | null = null;
   let routeFeatureHitId: string | null = null;
   const setCameraSpy = vi.fn();
@@ -77,7 +85,9 @@ function createMockMapFactory(): MockMapHandle {
       onStyleLoaded: (listener) => {
         styleLoadedListener = listener;
       },
-      onError: () => undefined,
+      onError: (listener) => {
+        errorListener = listener;
+      },
       onSourceData: () => undefined,
       addGeoJsonSource: (id, data) => {
         sources.set(id, data);
@@ -160,6 +170,14 @@ function createMockMapFactory(): MockMapHandle {
     triggerMapTap: (coordinate) => {
       act(() => {
         mapTapListener?.(coordinate);
+      });
+    },
+    triggerError: (info) => {
+      act(() => {
+        errorListener?.({
+          message: info?.message ?? "style request failed",
+          category: info?.category ?? "style-request-or-parse",
+        });
       });
     },
   };
@@ -902,6 +920,170 @@ describe("PlanningScreen", () => {
     expect(screen.getByDisplayValue("Planned route")).toBeInTheDocument();
     expect(screen.getAllByRole("listitem")).toHaveLength(1);
     expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+  });
+
+  describe("backlog item 94: imagery-recovery camera framing", () => {
+    it("issues no camera command on a recovery generation when neither waypoints nor a cached location exist (precedence: leave the camera untouched)", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      // Never resolves, so currentPosition stays null — neither
+      // precedence source (waypoints, cached location) is ever available.
+      const requestApproximateLocation = vi.fn(
+        () => new Promise<Coordinate | null>(() => undefined),
+      );
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(requestApproximateLocation).toHaveBeenCalled();
+      });
+
+      map.triggerError();
+      await waitFor(() => {
+        expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("retry-map-imagery-button"));
+      map.triggerLoad();
+
+      // triggerLoad()'s own act() wrapper has already flushed the
+      // resulting synchronous onRecoveryFramingEligible callback and its
+      // React effect by the time it returns, so this reads the final
+      // state directly rather than polling for it.
+      expect(screen.getByTestId("map-container")).toHaveAttribute(
+        "data-map-ready",
+        "true",
+      );
+      expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+      expect(map.setCameraSpy).not.toHaveBeenCalled();
+    });
+    it("frames waypoints placed while offline once connectivity returns and imagery is retried", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      // Never resolves — mirrors an offline session where geolocation
+      // never settles, so currentPosition stays null throughout and only
+      // the placed waypoint can ever produce a non-raw-world camera.
+      const requestApproximateLocation = vi.fn(
+        () => new Promise<Coordinate | null>(() => undefined),
+      );
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      // The very first attach fails before ever loading (offline from the
+      // start) — MapView falls back to a fresh, local, sourceless style.
+      map.triggerError();
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+      });
+
+      // Placed while still on the fallback map — no new attach generation
+      // yet, so nothing frames it until the retry below.
+      map.triggerMapTap([9, 59]);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+      });
+      expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+
+      // Connectivity returns; the rider retries imagery — a genuine new
+      // attach generation against the original style.
+      await user.click(screen.getByTestId("retry-map-imagery-button"));
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledWith(computeLocalAreaBounds([9, 59]));
+      });
+    });
+
+    it("preserves an exact manually-adjusted camera across an imagery-retry recreation instead of framing an available waypoint", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+      map.triggerMapTap([9, 59]);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+      });
+
+      // A genuine manual gesture, then a settle at an arbitrary,
+      // non-default pose — the exact camera precedence level 1 must
+      // preserve through the recovery below.
+      map.triggerUserCameraInteraction();
+      map.triggerCameraSettled([5, 50], {
+        zoom: 10,
+        bearingDegrees: 20,
+        pitchDegrees: 15,
+      });
+
+      map.fitBoundsSpy.mockClear();
+      // hasLoaded is already true for this generation, so this is a
+      // post-load tile-error episode (reusing the exact same
+      // retryToken-driven teardown/reattach mechanism as a fallback swap
+      // — see MapView.tsx's own onError gate) rather than a fresh
+      // fallback swap — either way, the retry below produces a genuine
+      // new attach generation against the original style.
+      map.triggerError();
+      await waitFor(() => {
+        expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("retry-map-imagery-button"));
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledWith([5, 50], 10, 20, 15, {
+          animate: false,
+          followOffset: false,
+        });
+      });
+      // The just-restored manual camera must never be immediately
+      // overridden by a fresh waypoint-framing boundsTarget for the same
+      // generation (backlog item 94's manual-camera race).
+      expect(map.fitBoundsSpy).not.toHaveBeenCalled();
+    });
+
+    it("frames a cached location on a recovery generation when no waypoints exist, without re-querying geolocation", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue([-1.5, 53.8]);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledWith(
+          computeLocalAreaBounds([-1.5, 53.8]),
+        );
+      });
+      expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+      map.fitBoundsSpy.mockClear();
+
+      map.triggerError();
+      await waitFor(() => {
+        expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("retry-map-imagery-button"));
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledWith(
+          computeLocalAreaBounds([-1.5, 53.8]),
+        );
+      });
+      expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("Locate me", () => {

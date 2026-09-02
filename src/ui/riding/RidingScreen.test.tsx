@@ -6197,6 +6197,93 @@ describe("RidingScreen", () => {
     });
   });
 
+  describe("backlog item 94: pre-ride imagery-recovery camera framing (characterization)", () => {
+    it("re-fits the whole-route overview after a genuine imagery-retry recreation with no restored session", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+      });
+      map.fitBoundsSpy.mockClear();
+      expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
+
+      // A genuine mid-session tile/style failure (hasLoaded is already
+      // true, so this is a tile-error episode reusing the same
+      // retryToken-driven teardown/reattach mechanism a fallback swap
+      // uses), then manual Retry — never Start riding, staying pre-ride
+      // throughout.
+      map.triggerTileError();
+      await screen.findByTestId("tiles-unavailable-banner");
+      await user.click(screen.getByTestId("retry-map-imagery-button"));
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
+    });
+
+    it("preserves a free-mode-restored camera across a genuine imagery-retry recreation before any gesture or Resume", async () => {
+      await setActiveRideState({
+        id: "active",
+        routeId: route.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: pointAt(5), accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 5,
+        matchedDistanceFromStartMetres: routePoints[5]?.distanceFromStartMetres ?? 0,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        elevationWindowMetres: 5000,
+        cameraMode: "free",
+        cameraCoordinate: [1, 52],
+        cameraZoom: 12,
+        cameraBearingDegrees: 30,
+        cameraPitchDegrees: 10,
+      });
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const map = buildStubMapFactory();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={map.factory}
+        />,
+      );
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledWith([1, 52], 12, 30, 10, {
+          animate: false,
+          followOffset: false,
+        });
+      });
+      map.setCameraSpy.mockClear();
+
+      map.triggerTileError();
+      await waitFor(() => {
+        expect(screen.getByTestId("retry-map-imagery-button")).toBeInTheDocument();
+      });
+      await user.click(screen.getByTestId("retry-map-imagery-button"));
+      map.triggerLoad();
+
+      await waitFor(() => {
+        expect(map.setCameraSpy).toHaveBeenCalledWith([1, 52], 12, 30, 10, {
+          animate: false,
+          followOffset: false,
+        });
+      });
+    });
+  });
+
   describe("Zoom controls (backlog item 53)", () => {
     it("Zoom in/Zoom out are absent before Start riding is tapped", () => {
       render(

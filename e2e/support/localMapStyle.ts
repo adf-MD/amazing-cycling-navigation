@@ -320,3 +320,93 @@ export async function installLocalMapStyleWithTileSource(
     succeededTileRequestCount: () => succeededTileRequestCount,
   };
 }
+
+export interface StyleFailureController {
+  /** Subsequent style-DOCUMENT requests fail with a network-level abort
+   * (a genuine AJAXError, matching a real offline/unreachable style host)
+   * until succeedStyle() is called. Drives MapView's own
+   * onError("style-request-or-parse")/switchToFallback() path exactly as
+   * a real offline-first load would. */
+  failStyle: () => void;
+  /** Subsequent style-document requests succeed, fulfilled with the same
+   * minimal LOCAL_LIBERTY_STYLE installLocalMapStyle uses. */
+  succeedStyle: () => void;
+  /** Total style-document requests observed so far, succeeded or failed —
+   * one per genuine map (re)creation attempt against the real style URL.
+   * Mirrors TileFailureController's own styleRequestCount: a far more
+   * reliable proxy for "did the app actually attempt a fresh attach" than
+   * elapsed time or banner state alone. */
+  styleRequestCount: () => number;
+  /** Total style-document requests that were genuinely aborted, i.e. seen
+   * while failStyle() was in effect at interception time. Mirrors
+   * TileFailureController's failedTileRequestCount — proves a NEW attempt
+   * genuinely failed, rather than assuming a triggering action did. */
+  failedStyleRequestCount: () => number;
+  /** Total style-document requests that were genuinely fulfilled — the
+   * complement of failedStyleRequestCount(). */
+  succeededStyleRequestCount: () => number;
+}
+
+/**
+ * Registers page.route() interception for the OpenFreeMap tile host,
+ * exactly like installLocalMapStyle, but lets a test toggle the STYLE
+ * DOCUMENT itself between failing and succeeding within one test.
+ * Neither installLocalMapStyle (always succeeds) nor forceMapStyleFailure
+ * (fails permanently, no recovery toggle) can express the offline-first
+ * sequence backlog item 94 needs to reproduce: the style fails once
+ * (offline), the app's own fallback activates, then later the ORIGINAL
+ * style succeeds after a retry/reconnect. installLocalMapStyleWithTileSource
+ * is the nearest existing precedent but only ever toggles post-load TILE
+ * requests, never the style document itself (its own style always
+ * succeeds) — this controller is the style-document-level analogue.
+ *
+ * Call this instead of (never alongside) installLocalMapStyle/
+ * forceMapStyleFailure/installLocalMapStyleWithTileSource. Also requires
+ * `test.use({ serviceWorkers: "block" })`, for the same documented reason
+ * installLocalMapStyle does. The served style is sourceless
+ * (LOCAL_LIBERTY_STYLE), so any other request to this host is unexpected
+ * and aborted, exactly like installLocalMapStyle's own policy.
+ */
+export async function installLocalMapStyleWithFailureControl(
+  page: Page,
+): Promise<StyleFailureController> {
+  let shouldFail = false;
+  let styleRequestCount = 0;
+  let failedStyleRequestCount = 0;
+  let succeededStyleRequestCount = 0;
+
+  await page.route(OPENFREEMAP_HOST_GLOB, async (route) => {
+    const requestUrl = route.request().url();
+
+    if (isRecognisedLibertyStyleRequest(requestUrl)) {
+      styleRequestCount += 1;
+      if (shouldFail) {
+        failedStyleRequestCount += 1;
+        await route.abort("failed");
+        return;
+      }
+      succeededStyleRequestCount += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify(LOCAL_LIBERTY_STYLE),
+      });
+      return;
+    }
+
+    await route.abort("failed");
+  });
+
+  return {
+    failStyle: () => {
+      shouldFail = true;
+    },
+    succeedStyle: () => {
+      shouldFail = false;
+    },
+    styleRequestCount: () => styleRequestCount,
+    failedStyleRequestCount: () => failedStyleRequestCount,
+    succeededStyleRequestCount: () => succeededStyleRequestCount,
+  };
+}

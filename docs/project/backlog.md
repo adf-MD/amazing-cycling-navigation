@@ -122,30 +122,6 @@ _Category: Platform compatibility_
 
 ---
 
-<a id="item-94"></a>
-
-## Item 94 — Preserve useful camera framing through offline map-imagery recovery
-
-_Category: Map camera and offline-recovery reliability_
-
-94. **Preserve useful camera framing through offline map-imagery recovery**
-    - Field observation (real-device, intermittent): opening Planning while offline, placing waypoints, then regaining connectivity and retrying map imagery can recreate the map at a raw world view rather than framing the placed waypoints or a useful known location. The same class of problem has also been observed in pre-ride when the screen first opens offline and imagery is retried after reconnecting; it is intermittent — sometimes the expected route framing is restored.
-    - This is no longer a Planning-only hypothesis: pre-ride already holds saved route geometry by the time it opens, so the earlier one-shot Planning-framing explanation (item 35, "One-time Planning camera fit for restored or seeded waypoints") cannot by itself explain the pre-ride occurrence too.
-    - Confirmed current mechanism (source-verified, recorded as ground truth, not yet proven to be the field cause): `createMapLibreMap` (`src/map/mapAdapter.ts`) constructs the underlying MapLibre map with no `center`/`zoom` option at all. Every imagery retry recreates the map instance (`MapView.tsx`'s `retryToken` bump reruns the container-creation effect), so the map briefly sits at MapLibre's own default centre/zoom — the raw world view — until a fit/`cameraTarget` operation repositions it. `MapView.tsx`'s route-overview `fitBounds` effect deliberately re-fits whenever `styleStructurallyReady` cycles, gated on `suppressInitialOverviewFit`; if that prop is true for a given generation and no `cameraTarget`/`boundsTarget` is supplied for it, nothing currently repositions the camera off the MapLibre default. Treat this as a **candidate mechanism**, not a confirmed root cause.
-    - Required investigation before any fix: fail-first browser reproduction of the exact offline-first/reconnect sequence in both Planning and pre-ride, covering both the explicit "Retry map imagery" action and automatic online recovery wherever both paths exist. Do not infer success merely from `data-map-ready` or fallback-style readiness reaching true — assert the actual resulting camera target/bounds. Investigate retry-generation sequencing, `suppressInitialOverviewFit`/`hasActionableCameraTarget`-style readiness latches, command replay/deduplication (the same `requestId`-based pattern already used for other explicit camera commands), and correlation with a stale or absent `cameraTarget` before naming a root cause.
-    - Desired camera precedence once a cause is confirmed:
-      1. preserve a meaningful camera that the user deliberately panned or zoomed in the same active context before the retry;
-      2. otherwise, in Planning, fit the current waypoint set;
-      3. otherwise, in Planning, frame a valid known location;
-      4. otherwise, in pre-ride, fit the complete saved-route geometry;
-      5. allow the raw world view only when no useful target exists.
-    - A raw MapLibre default/world-view camera snapshot must not override waypoint, location or route-geometry framing merely because it was captured during a failed or fallback generation.
-    - Preserve active-Riding and free-roam camera semantics, including Follow, manual-pan, stale-fix and retry protections already shipped. Cross-reference already-shipped, number-verified precedent rather than re-deriving it: item 67 ("Non-blocking map-tile failure presentation and genuine reconnection recovery"), item 81 ("Preserve Riding zoom through stale-GPS and imagery-retry recovery" — already preserves zoom through imagery-retry recovery in active Riding, so this item's real gap is most likely Planning's waypoint-framing case and pre-ride's pre-Start route-geometry case, which item 81's own scope did not cover), and item 83 ("Make offline and map-imagery recovery unobstructive" — relocated recovery presentation into the status card; a placement change, not a camera-semantics change). Item 66 ("Investigate intermittent fresh-Start Follow remaining at route overview") is a distinct, separately-tracked scenario — its own accepted-for-now closure concerns a fresh Start's GPS-fix/style-load commit-batching timing, not offline/imagery reconnection — but this item's own investigation should remain free to discover shared underlying camera/retry infrastructure between the two if the evidence leads there, rather than assuming the mechanisms are unrelated.
-    - Explicitly exclude offline tile storage, routing-provider changes and service-worker caching policy — those belong to item 12 or another deliberate slice, not this one.
-    - Require deterministic unit coverage wherever the logic can be isolated (retry-generation sequencing, precedence selection), real-browser geometry/camera evidence for both Planning and pre-ride, the project's full normal verification gate, and later physical-device confirmation — do not claim Playwright proves the installed-PWA result.
-
----
-
 <a id="item-95"></a>
 
 ## Item 95 — Route-switch prompt visibility and action hierarchy
