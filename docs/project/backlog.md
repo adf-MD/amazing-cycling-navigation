@@ -122,24 +122,6 @@ _Category: Platform compatibility_
 
 ---
 
-<a id="item-96"></a>
-
-## Item 96 — Grace period for the slow map-imagery notice
-
-_Category: Map imagery status presentation_
-
-96. **Grace period for the slow map-imagery notice**
-    - Field observation (real-device): ordinary map loads frequently flash the "Map imagery is taking longer than usual to load. Your route and position are still shown." notice (`MapView.tsx`, `data-testid="map-imagery-delayed-banner"`) even on a good 5G connection.
-    - This was not introduced by the CSP work (item 93) or the 0.4.0 release-preparation slice — verify against the actual current constants and conditions rather than assuming a recent regression. Confirmed current trigger: the banner renders as soon as `styleStructurallyReady && !ready && !usingFallbackStyle && tileErrorMessage === null` becomes true — i.e. as soon as the style finishes its structural load while full tile imagery is still outstanding, with no delay of its own (confirmed by the existing test suite, which observes the banner immediately after style-ready with no elapsed time). This is a separate condition and a separate message from the terminal "Map is taking longer than expected to load." message, and separate again from the unrelated `STYLE_READY_TIMEOUT_MS = 15_000` style-ready fallback threshold — do not conflate the three in this item's implementation or its tests.
-    - Add a 2-second grace period before showing the slow-imagery notice specifically. Start the grace only when the current trigger condition above becomes true, rather than delaying map construction or route/position rendering, which must continue to appear immediately regardless of imagery state.
-    - Preserve immediate route/position presentation, the existing fallback/retry controls, and the existing 15-second `STYLE_READY_TIMEOUT_MS` fallback threshold unchanged.
-    - Cancel/reset the grace timer when imagery becomes ready, fallback begins, a terminal tile/style error supersedes it, a retry generation starts (`retryToken` changes), the screen unmounts, or the trigger condition otherwise stops holding. Obsolete timer callbacks from an earlier generation must never affect a later map generation's presentation.
-    - The grace notice is presentation state, not a style-timeout event: ordinary loading that resolves inside or shortly after the grace window must not create a false style-timeout entry in Diagnostics.
-    - Require fail-first fake-clock/timer tests around the 1,999 ms/2,000 ms boundary and around cancellation/generation changes, plus real-browser evidence that the notice neither flashes on an ordinary quick load nor blocks any immediate overlay.
-    - Keep this separate from item 94: item 96 changes only the timing of an existing status message; item 94 changes camera recovery/replay semantics. Also distinct from item 83 ("Make offline and map-imagery recovery unobstructive"), which changed where recovery presentation renders (status card vs in-map), not when it appears.
-
----
-
 <a id="item-97"></a>
 
 ## Item 97 — Compact ongoing warning for imported routes without trusted turn cues
