@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Page, Route } from "@playwright/test";
 import type { StyleSpecification } from "maplibre-gl";
 
 /**
@@ -249,6 +249,33 @@ export interface TileFailureController {
    * interception time. The complement of failedTileRequestCount() —
    * together they always sum to requestCount(). */
   succeededTileRequestCount: () => number;
+  /** Backlog item 96: subsequent tile requests are held genuinely
+   * pending — neither fulfilled nor aborted — until releaseTiles()
+   * resolves them. Takes priority over failTiles()/succeedTiles() at
+   * interception time; does not retroactively affect a request already
+   * intercepted before this call. Needed to construct a real-browser
+   * window where the style is structurally ready (so styleStructurallyReady
+   * flips true and the route/position overlays can render) while full
+   * tile imagery deliberately stays outstanding — neither
+   * failTiles()/succeedTiles() can hold that window open, since both
+   * resolve every intercepted request immediately. */
+  holdTiles: () => void;
+  /** Releases every currently-held tile request (see holdTiles()),
+   * fulfilling each with the same fixed-colour PNG succeedTiles() uses,
+   * and stops holding subsequent NEW requests (which revert to whatever
+   * failTiles()/succeedTiles() mode was last set — succeed, by default).
+   * Each held request's own route handler invocation stays genuinely
+   * pending (awaiting an internal promise) until this resolves it, not
+   * merely "returned from the handler with an unresolved Route" — so
+   * this Promise does not resolve until every held request has actually
+   * been fulfilled. A no-op if nothing is currently held. */
+  releaseTiles: () => Promise<void>;
+  /** Tile requests currently held pending since the most recent
+   * holdTiles() call, not yet released — lets a test prove a genuinely
+   * NEW request arrived and is actually being held, rather than trusting
+   * that calling holdTiles() alone was sufficient. Decreases only via
+   * releaseTiles(). */
+  heldTileRequestCount: () => number;
 }
 
 /**
@@ -268,10 +295,28 @@ export async function installLocalMapStyleWithTileSource(
 ): Promise<TileFailureController> {
   const style = buildLocalStyleWithTileSource();
   let shouldFail = false;
+  let shouldHold = false;
   let requestCount = 0;
   let styleRequestCount = 0;
   let failedTileRequestCount = 0;
   let succeededTileRequestCount = 0;
+  // Backlog item 96: parallel arrays for currently-held requests — each
+  // held request contributes one release callback (which fulfils its
+  // route and resolves that request's own pending handler promise) and
+  // one promise (which releaseTiles() awaits, so it never returns before
+  // every held request has genuinely been fulfilled).
+  const heldReleases: (() => void)[] = [];
+  const pendingFulfillments: Promise<void>[] = [];
+
+  async function fulfillTileSuccess(route: Route): Promise<void> {
+    succeededTileRequestCount += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "image/png",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: Buffer.from(TINY_TRANSPARENT_PNG_BASE64, "base64"),
+    });
+  }
 
   await page.route(OPENFREEMAP_HOST_GLOB, async (route) => {
     const requestUrl = route.request().url();
@@ -289,17 +334,26 @@ export async function installLocalMapStyleWithTileSource(
 
     if (isRecognisedTestTileRequest(requestUrl)) {
       requestCount += 1;
+      if (shouldHold) {
+        // Deliberately keeps this handler invocation itself pending —
+        // not merely "returned early holding an unresolved Route" — by
+        // awaiting a promise chain that only starts fulfilling the route
+        // once releaseTiles() calls this entry's release callback.
+        let releaseThisRequest!: () => void;
+        const held = new Promise<void>((resolveHeld) => {
+          releaseThisRequest = resolveHeld;
+        });
+        heldReleases.push(releaseThisRequest);
+        const fulfilled = held.then(() => fulfillTileSuccess(route));
+        pendingFulfillments.push(fulfilled);
+        await fulfilled;
+        return;
+      }
       if (shouldFail) {
         failedTileRequestCount += 1;
         await route.abort("failed");
       } else {
-        succeededTileRequestCount += 1;
-        await route.fulfill({
-          status: 200,
-          contentType: "image/png",
-          headers: { "Access-Control-Allow-Origin": "*" },
-          body: Buffer.from(TINY_TRANSPARENT_PNG_BASE64, "base64"),
-        });
+        await fulfillTileSuccess(route);
       }
       return;
     }
@@ -314,6 +368,19 @@ export async function installLocalMapStyleWithTileSource(
     succeedTiles: () => {
       shouldFail = false;
     },
+    holdTiles: () => {
+      shouldHold = true;
+    },
+    releaseTiles: async () => {
+      shouldHold = false;
+      const releases = heldReleases.splice(0, heldReleases.length);
+      const fulfillments = pendingFulfillments.splice(0, pendingFulfillments.length);
+      releases.forEach((release) => {
+        release();
+      });
+      await Promise.all(fulfillments);
+    },
+    heldTileRequestCount: () => heldReleases.length,
     requestCount: () => requestCount,
     styleRequestCount: () => styleRequestCount,
     failedTileRequestCount: () => failedTileRequestCount,

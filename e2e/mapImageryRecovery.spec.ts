@@ -933,3 +933,106 @@ test("being offline alone, with no genuine tile/style failure, never shows a map
     await context.setOffline(false);
   }
 });
+
+// Backlog item 96: a single, self-contained real-browser scenario
+// combining every required piece of the slow-imagery grace's integration
+// proof — immediate route/position overlays while imagery is genuinely
+// held back, the roughly 2-second delay before the notice appears (timed
+// from map-loading's own removal, which corresponds to
+// styleStructurallyReady becoming true — not from data-route-loaded,
+// since route-source processing happens after structural readiness and
+// could make a correct 2-second grace measure shorter than it actually
+// is), and the notice clearing once imagery genuinely completes. Kept as
+// one test rather than several, since later steps depend on state
+// established by earlier ones within the same held-tiles episode.
+test("route Riding: shows route/position immediately while imagery is held, delays the slow-imagery notice by its grace period (timed from map-loading's removal), and clears it once imagery is released", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ ...ROUTE_START, accuracy: 5 });
+
+  await page.addInitScript(() => {
+    const timestamps = {
+      mapLoadingRemovedAt: null as number | null,
+      bannerAttachedAt: null as number | null,
+    };
+    (
+      window as unknown as { __e2eGraceTimestamps: typeof timestamps }
+    ).__e2eGraceTimestamps = timestamps;
+    const observer = new MutationObserver(() => {
+      if (timestamps.mapLoadingRemovedAt === null) {
+        if (!document.querySelector('[data-testid="map-loading"]')) {
+          timestamps.mapLoadingRemovedAt = performance.now();
+        }
+      }
+      if (timestamps.bannerAttachedAt === null) {
+        if (document.querySelector('[data-testid="map-imagery-delayed-banner"]')) {
+          timestamps.bannerAttachedAt = performance.now();
+        }
+      }
+    });
+    observer.observe(document, { childList: true, subtree: true });
+  });
+
+  const tiles = await installLocalMapStyleWithTileSource(page);
+  tiles.holdTiles();
+
+  await page.goto("/");
+  try {
+    await importAndStartRiding(page);
+
+    // Proves a real tile request was actually intercepted and is
+    // genuinely being held, not merely that holdTiles() was called.
+    await expect.poll(() => tiles.heldTileRequestCount()).toBeGreaterThan(0);
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+
+    // Immediate overlays: structural readiness already lets route/
+    // position render, well before full imagery — independently of the
+    // slow-imagery notice's own timing, proven below.
+    await expect(mapContainer).toHaveAttribute("data-route-loaded", "true");
+    const coordinateCount = await mapContainer.getAttribute(
+      "data-route-coordinate-count",
+    );
+    expect(Number(coordinateCount)).toBeGreaterThan(0);
+    await expect(mapContainer).toHaveAttribute("data-map-ready", "false");
+
+    const banner = page.getByTestId("map-imagery-delayed-banner");
+    // Still within grace shortly after structural readiness.
+    await expect(banner).not.toBeAttached();
+    // Waits for the notice to genuinely appear — a real wall-clock
+    // interval, not asserted against an exact millisecond boundary here
+    // (that is MapView.test.tsx's fake-timer suite's job).
+    await expect(banner).toBeAttached({ timeout: 6_000 });
+
+    const timestamps = await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            __e2eGraceTimestamps: {
+              mapLoadingRemovedAt: number | null;
+              bannerAttachedAt: number | null;
+            };
+          }
+        ).__e2eGraceTimestamps,
+    );
+    expect(timestamps.mapLoadingRemovedAt).not.toBeNull();
+    expect(timestamps.bannerAttachedAt).not.toBeNull();
+    const graceDurationMs =
+      (timestamps.bannerAttachedAt ?? 0) - (timestamps.mapLoadingRemovedAt ?? 0);
+    // A small tolerance below the true 2000ms boundary absorbs ordinary
+    // scheduling jitter without loosening the assertion enough to stop
+    // proving anything; the upper bound rules out the notice appearing
+    // only much later for an unrelated reason.
+    expect(graceDurationMs).toBeGreaterThanOrEqual(1_900);
+    expect(graceDurationMs).toBeLessThan(5_000);
+
+    await tiles.releaseTiles();
+
+    await waitForMapFullyLoaded(mapContainer);
+    await expect(banner).not.toBeAttached();
+  } finally {
+    await tiles.releaseTiles();
+  }
+});

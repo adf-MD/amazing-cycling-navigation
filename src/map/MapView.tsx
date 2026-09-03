@@ -231,6 +231,16 @@ const APP_OWNED_SOURCE_IDS: ReadonlySet<string> = new Set([
  * cellular/Wi-Fi handoff completing a cold TLS handshake on an iPhone. */
 const STYLE_READY_TIMEOUT_MS = 15_000;
 
+/** Backlog item 96: how long the "Map imagery is taking longer than
+ * usual to load…" notice waits, once eligible, before it may render —
+ * field observation was that it flashed on ordinary fast loads because
+ * it previously had no delay of its own. Wholly independent of
+ * STYLE_READY_TIMEOUT_MS above: that constant gates the style document
+ * failing to become structurally ready at all (a fallback trigger); this
+ * one only delays a presentation notice once the style already IS
+ * structurally ready. Do not conflate the two. */
+const SLOW_IMAGERY_NOTICE_GRACE_MS = 2_000;
+
 /** How long to wait, after the map is ready, for the route's GeoJSON
  * source to finish processing before logging it as a diagnostic — this is
  * the signal that was missing every time the route silently failed to
@@ -946,6 +956,72 @@ export function MapView({
   // retry), never fired for an ordinary trouble-free load.
   const hadTroubleRef = useRef(false);
   const ready = loadState === "ready";
+  // Backlog item 96: the pre-existing trigger condition for the slow-
+  // imagery notice, unchanged — this item changes only WHEN the notice
+  // may render (see slowImageryNoticeVisible below), never WHAT counts
+  // as eligible. Recomputed fresh every render from existing state.
+  const slowImageryNoticeEligible =
+    styleStructurallyReady && !ready && !usingFallbackStyle && tileErrorMessage === null;
+  // Backlog item 96. A ref, read/written only inside the effect and its
+  // timer callback below (never during render — see slowImageryNoticeVisible,
+  // which deliberately does not read it). Each time the effect (re)starts
+  // — including a retryToken change whose eligibility value happens not
+  // to visibly differ from the previous render, which a boolean-only
+  // dependency would silently miss — a fresh episode id is minted here,
+  // synchronously, before anything else. The timer callback re-checks
+  // this ref at fire time; window.clearTimeout is not trusted alone to
+  // prevent a callback that became runnable before React got around to
+  // running the effect's own cleanup (passive effects are not guaranteed
+  // synchronous with the state change that makes them stale). The
+  // cleanup below also invalidates the episode, not just clearTimeout:
+  // on unmount specifically, no later effect run ever exists to mint a
+  // fresh episode and thereby make a pending one stale by comparison.
+  const imageryGraceEpisodeRef = useRef(0);
+  // Non-null only once a grace timer has genuinely elapsed for the
+  // retryToken value stored here — set exclusively from inside the timer
+  // callback (an external "clock" event), never synchronously in the
+  // effect body itself, since a direct effect-body setState call is
+  // flagged by this project's lint config as risking cascading renders.
+  const [elapsedForRetryToken, setElapsedForRetryToken] = useState<number | null>(null);
+  // React's own documented "adjust state during render" pattern (not an
+  // Effect): the instant slowImageryNoticeEligible's own value changes,
+  // discard any previously-recorded elapsed marker before this render
+  // commits. Closes the "immediate redisplay of an already-elapsed
+  // marker" gap for a same-retryToken eligibility resume (e.g. a tile
+  // error interrupting, then clearing, with no retry involved) — without
+  // calling setState from inside the Effect below merely to react to a
+  // derived value changing.
+  const [lastRenderedEligible, setLastRenderedEligible] = useState(
+    slowImageryNoticeEligible,
+  );
+  if (lastRenderedEligible !== slowImageryNoticeEligible) {
+    setLastRenderedEligible(slowImageryNoticeEligible);
+    setElapsedForRetryToken(null);
+  }
+  useEffect(() => {
+    const episode = ++imageryGraceEpisodeRef.current;
+    if (!slowImageryNoticeEligible) return;
+    const timeoutId = window.setTimeout(() => {
+      // Belt-and-braces: even if this callback fires despite the cleanup
+      // below having already run (or having raced and lost), a stale
+      // episode can never mark itself elapsed.
+      if (imageryGraceEpisodeRef.current !== episode) return;
+      setElapsedForRetryToken(retryToken);
+    }, SLOW_IMAGERY_NOTICE_GRACE_MS);
+    return () => {
+      if (imageryGraceEpisodeRef.current === episode) {
+        imageryGraceEpisodeRef.current += 1;
+      }
+      window.clearTimeout(timeoutId);
+    };
+  }, [slowImageryNoticeEligible, retryToken]);
+  // Re-derives live eligibility AND requires the elapsed marker to belong
+  // to the current retryToken — a timer firing is never sufficient by
+  // itself, and neither is a stale marker left over from an earlier,
+  // now-superseded episode of the same retry generation (see the
+  // render-time reset above).
+  const slowImageryNoticeVisible =
+    slowImageryNoticeEligible && elapsedForRetryToken === retryToken;
   // Backlog item 83: one source of truth for "which terminal, retryable
   // imagery state is active right now", reused by both the JSX suppression
   // below and the external reporting effect further down, so the two can
@@ -2308,10 +2384,7 @@ export function MapView({
               : "Loading map…"}
           </div>
         ) : null}
-        {styleStructurallyReady &&
-        !ready &&
-        !usingFallbackStyle &&
-        tileErrorMessage === null ? (
+        {slowImageryNoticeVisible ? (
           <div
             role="status"
             data-testid="map-imagery-delayed-banner"

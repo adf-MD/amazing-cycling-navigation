@@ -2038,40 +2038,52 @@ describe("MapView", () => {
     });
 
     it("populates route, position and start/finish data on style-ready alone, before full imagery loads", () => {
-      const mock = createMockMapFactory();
-      render(
-        <MapView
-          points={points}
-          currentPosition={[0.0005, 51]}
-          mapFactory={mock.factory}
-        />,
-      );
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        render(
+          <MapView
+            points={points}
+            currentPosition={[0.0005, 51]}
+            mapFactory={mock.factory}
+          />,
+        );
 
-      mock.triggerStyleLoaded();
+        mock.triggerStyleLoaded();
 
-      expect(
-        mock.sources.get("acn-route-remaining")?.features[0]?.geometry,
-      ).toMatchObject({
-        coordinates: [
-          [0, 51],
-          [0.001, 51],
-        ],
-      });
-      expect(mock.sources.get("acn-route-start")?.features[0]?.geometry).toEqual({
-        type: "Point",
-        coordinates: [0, 51],
-      });
-      expect(mock.sources.get("acn-position")?.features[0]?.geometry).toEqual({
-        type: "Point",
-        coordinates: [0.0005, 51],
-      });
-      expect(mock.fitBoundsSpy).toHaveBeenCalled();
-      expect(screen.getByTestId("map-container")).toHaveAttribute(
-        "data-route-coordinate-count",
-        "2",
-      );
-      expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
-      expect(screen.queryByTestId("map-loading")).toBeNull();
+        expect(
+          mock.sources.get("acn-route-remaining")?.features[0]?.geometry,
+        ).toMatchObject({
+          coordinates: [
+            [0, 51],
+            [0.001, 51],
+          ],
+        });
+        expect(mock.sources.get("acn-route-start")?.features[0]?.geometry).toEqual({
+          type: "Point",
+          coordinates: [0, 51],
+        });
+        expect(mock.sources.get("acn-position")?.features[0]?.geometry).toEqual({
+          type: "Point",
+          coordinates: [0.0005, 51],
+        });
+        expect(mock.fitBoundsSpy).toHaveBeenCalled();
+        expect(screen.getByTestId("map-container")).toHaveAttribute(
+          "data-route-coordinate-count",
+          "2",
+        );
+        // Backlog item 96: the notice is gated behind its own 2s grace —
+        // route/position/start-finish data above are all immediate.
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+        expect(screen.queryByTestId("map-loading")).toBeNull();
+
+        act(() => {
+          vi.advanceTimersByTime(2_000);
+        });
+        expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("applies a live cameraTarget on style-ready alone, before full imagery loads", () => {
@@ -3321,29 +3333,461 @@ describe("MapView", () => {
     });
   });
 
+  // Backlog item 96: a 2-second presentation grace on the slow-imagery
+  // notice alone, so an ordinary fast load never flashes it. Deliberately
+  // independent of STYLE_READY_TIMEOUT_MS (15s) and Diagnostics.
+  describe("backlog item 96: grace period for the slow map-imagery notice", () => {
+    it("keeps the notice absent 1ms before its 2-second grace period elapses", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerStyleLoaded();
+
+        act(() => {
+          vi.advanceTimersByTime(1_999);
+        });
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("shows the notice once its 2-second grace period fully elapses", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerStyleLoaded();
+
+        act(() => {
+          vi.advanceTimersByTime(2_000);
+        });
+        expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not credit time that passed before the style became structurally ready toward the grace period", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+
+        act(() => {
+          vi.advanceTimersByTime(10_000);
+        });
+        expect(screen.getByTestId("map-loading")).toBeInTheDocument();
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+
+        mock.triggerStyleLoaded();
+        act(() => {
+          vi.advanceTimersByTime(1_999);
+        });
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("never shows the notice if full imagery finishes loading before the grace period elapses, even past the old deadline", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerStyleLoaded();
+
+        act(() => {
+          vi.advanceTimersByTime(1_000);
+        });
+        mock.triggerLoad();
+
+        act(() => {
+          vi.advanceTimersByTime(1_500);
+        });
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("hides an already-shown notice immediately once full imagery finishes loading", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerStyleLoaded();
+
+        act(() => {
+          vi.advanceTimersByTime(2_000);
+        });
+        expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+
+        mock.triggerLoad();
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("cancels the grace period, and never shows the notice, when a tile error interrupts it while pending", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerStyleLoaded();
+
+        act(() => {
+          vi.advanceTimersByTime(1_000);
+        });
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+
+        act(() => {
+          vi.advanceTimersByTime(1_500);
+        });
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("never shows the notice once the style has fallen back, even long after the grace period's own duration", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+
+        // Drives fallback via the pre-existing 15s style-ready timeout,
+        // matching that test's own setup.
+        act(() => {
+          vi.advanceTimersByTime(15_000);
+        });
+        expect(mock.constructedStyles).toHaveLength(2);
+
+        mock.triggerLoad();
+        act(() => {
+          vi.advanceTimersByTime(2_500);
+        });
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+        expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("requires a completely fresh 2-second grace period after a manual retry, crediting none of the cancelled pre-retry episode's elapsed time", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        const { rerender } = render(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            imageryRetryCommand={null}
+          />,
+        );
+        mock.triggerStyleLoaded();
+
+        act(() => {
+          vi.advanceTimersByTime(1_900);
+        });
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+
+        rerender(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            imageryRetryCommand={{ requestId: "retry-1" }}
+          />,
+        );
+        expect(mock.constructedStyles).toHaveLength(2);
+
+        mock.triggerStyleLoaded();
+        act(() => {
+          vi.advanceTimersByTime(100);
+        });
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+
+        act(() => {
+          vi.advanceTimersByTime(1_900);
+        });
+        expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    // These two tests deliberately do NOT use vi.useFakeTimers(): they
+    // spy on the real window.setTimeout to capture the actual grace-timer
+    // callback function, then invoke it directly, bypassing whatever
+    // clearTimeout call the production cleanup makes. This is the only
+    // way to prove the callback's OWN imageryGraceEpisodeRef guard — not
+    // clearTimeout's ordinary cancellation — is what stops a callback
+    // that became runnable despite an intervening cleanup from
+    // corrupting a later episode's presentation. A bare setState(true)
+    // callback body with no episode check would fail both.
+    it("ignores an obsolete grace-timer callback from an earlier episode once a later episode has started", () => {
+      const originalSetTimeout = window.setTimeout.bind(window);
+      const capturedGraceCallbacks: (() => void)[] = [];
+      const setTimeoutSpy = vi.spyOn(window, "setTimeout").mockImplementation(((
+        handler: TimerHandler,
+        timeout?: number,
+      ) => {
+        if (typeof handler === "function" && timeout === 2_000) {
+          capturedGraceCallbacks.push(handler as () => void);
+        }
+        return originalSetTimeout(handler, timeout);
+      }) as typeof window.setTimeout);
+      try {
+        const mock = createMockMapFactory();
+        const { unmount } = render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerStyleLoaded();
+        expect(capturedGraceCallbacks).toHaveLength(1);
+        const [staleCallback] = capturedGraceCallbacks;
+        if (!staleCallback) throw new Error("expected a captured grace-timer callback");
+
+        // Drives a fresh episode (2) via an interrupt-then-resolve cycle
+        // that doesn't touch retryToken at all — deterministically exactly
+        // one further setTimeout(2000ms) call, unlike a retryToken-driven
+        // retry, which can legitimately mint one extra, immediately-
+        // superseded intermediate episode while the old eligibility value
+        // is still visible for a single render (see the dedicated retry
+        // test above, which proves that harmless artifact never reaches
+        // the screen either).
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        mock.triggerSourceData({ sourceId: "openmaptiles", isSourceLoaded: true });
+        expect(capturedGraceCallbacks).toHaveLength(2);
+
+        act(() => {
+          staleCallback();
+        });
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+
+        unmount();
+      } finally {
+        setTimeoutSpy.mockRestore();
+      }
+    });
+
+    // Unlike the test above, invoking a stale callback AFTER unmount has
+    // no DOM left to assert on, and React 18 deliberately treats a state
+    // update reaching an unmounted function component as a silent no-op
+    // (no throw, no dev warning) — confirmed empirically here by running
+    // this exact scenario with the cleanup's episode-invalidating line
+    // temporarily removed: the observable outcome (no throw) was
+    // identical either way, so "does not throw" cannot by itself
+    // discriminate the fix. This test instead exists as a basic crash-
+    // safety net for the unmount path; the actual argument for
+    // invalidating the episode on cleanup (not just on the next effect
+    // run, which never comes at unmount) is the code-level reasoning in
+    // MapView.tsx's own comment on that cleanup, verified by the negative
+    // control in the accompanying history entry.
+    it("does not throw when a stale grace-timer callback is invoked after unmount, with no later effect run to invalidate it otherwise", () => {
+      const originalSetTimeout = window.setTimeout.bind(window);
+      const capturedGraceCallbacks: (() => void)[] = [];
+      const setTimeoutSpy = vi.spyOn(window, "setTimeout").mockImplementation(((
+        handler: TimerHandler,
+        timeout?: number,
+      ) => {
+        if (typeof handler === "function" && timeout === 2_000) {
+          capturedGraceCallbacks.push(handler as () => void);
+        }
+        return originalSetTimeout(handler, timeout);
+      }) as typeof window.setTimeout);
+      try {
+        const mock = createMockMapFactory();
+        const { unmount } = render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerStyleLoaded();
+        expect(capturedGraceCallbacks).toHaveLength(1);
+        const [staleCallback] = capturedGraceCallbacks;
+        if (!staleCallback) throw new Error("expected a captured grace-timer callback");
+
+        unmount();
+
+        expect(() => {
+          staleCallback();
+        }).not.toThrow();
+      } finally {
+        setTimeoutSpy.mockRestore();
+      }
+    });
+
+    it("restarts the grace period from zero when a tile-error episode resolves via genuine external recovery, before the notice was ever shown", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerStyleLoaded();
+
+        act(() => {
+          vi.advanceTimersByTime(1_500);
+        });
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        mock.triggerSourceData({ sourceId: "openmaptiles", isSourceLoaded: true });
+
+        act(() => {
+          vi.advanceTimersByTime(1_999);
+        });
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+
+        act(() => {
+          vi.advanceTimersByTime(1);
+        });
+        expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("requires a fresh full grace period, not immediate redisplay, when eligibility returns after an already-visible notice was superseded by a tile error", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerStyleLoaded();
+
+        act(() => {
+          vi.advanceTimersByTime(2_000);
+        });
+        expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+
+        mock.triggerSourceData({ sourceId: "openmaptiles", isSourceLoaded: true });
+
+        act(() => {
+          vi.advanceTimersByTime(1_999);
+        });
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+
+        act(() => {
+          vi.advanceTimersByTime(1);
+        });
+        expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not record an initial-load-timeout diagnostic entry for an ordinary load that resolves inside the grace window", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerStyleLoaded();
+
+        act(() => {
+          vi.advanceTimersByTime(500);
+        });
+        mock.triggerLoad();
+
+        expect(
+          getRecentMapAttempts().some(
+            (entry) => entry.category === "initial-load-timeout",
+          ),
+        ).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not record an initial-load-timeout diagnostic entry merely because the notice is showing past its own grace period", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerStyleLoaded();
+
+        act(() => {
+          vi.advanceTimersByTime(2_100);
+        });
+        expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+
+        expect(
+          getRecentMapAttempts().some(
+            (entry) => entry.category === "initial-load-timeout",
+          ),
+        ).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("still records an initial-load-timeout diagnostic entry, unrelated to the 2-second grace, when the style genuinely isn't ready after 15 seconds", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+
+        act(() => {
+          vi.advanceTimersByTime(15_000);
+        });
+
+        expect(
+          getRecentMapAttempts().some(
+            (entry) => entry.category === "initial-load-timeout",
+          ),
+        ).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("clears the pending grace timer on unmount, leaving no pending timer behind", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        const { unmount } = render(<MapView points={points} mapFactory={mock.factory} />);
+        mock.triggerStyleLoaded();
+
+        act(() => {
+          vi.advanceTimersByTime(1_000);
+        });
+        unmount();
+
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   // Backlog item 83: a narrow typed seam letting an active-Riding/free-roam
   // status card present the same terminal imagery states in its own chrome
   // instead of MapView's in-map overlay, without touching item 67's retry/
   // episode/camera-preservation machinery itself.
   describe("backlog item 83: external imagery-recovery presentation seam", () => {
     it("suppresses the in-map tiles-unavailable banner when onImageryStatusChange is supplied, while the transient loading/delayed states remain", () => {
-      const mock = createMockMapFactory();
-      const onImageryStatusChange = vi.fn();
-      render(
-        <MapView
-          points={points}
-          mapFactory={mock.factory}
-          onImageryStatusChange={onImageryStatusChange}
-        />,
-      );
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        const onImageryStatusChange = vi.fn();
+        render(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            onImageryStatusChange={onImageryStatusChange}
+          />,
+        );
 
-      expect(screen.getByTestId("map-loading")).toBeInTheDocument();
+        expect(screen.getByTestId("map-loading")).toBeInTheDocument();
 
-      mock.triggerStyleLoaded();
-      expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+        mock.triggerStyleLoaded();
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
 
-      mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
-      expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+        act(() => {
+          vi.advanceTimersByTime(2_000);
+        });
+        expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+
+        mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("suppresses the in-map fallback banner when onImageryStatusChange is supplied", () => {

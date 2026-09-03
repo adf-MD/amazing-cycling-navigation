@@ -36,3 +36,44 @@ test("Planning's map reaches ready via the locally fulfilled style alone, with n
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
+
+// Backlog item 96: the "Map imagery is taking longer than usual to
+// load…" notice must never flash on an ordinary fast load — it has its
+// own 2-second presentation grace, proven at the exact-boundary level by
+// MapView.test.tsx's fake-timer suite. This test proves the real-browser
+// consequence: across a genuine, fast local-style load, the notice
+// element was never attached to the DOM at all, not merely absent at a
+// final snapshot. The observer is installed via page.addInitScript
+// before any app script runs, so a transient insertion earlier than any
+// subsequent Playwright poll could observe cannot escape it.
+test("does not flash the slow-imagery notice during an ordinary, fast local load", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as unknown as { __e2eBannerEverAttached: boolean }).__e2eBannerEverAttached =
+      false;
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('[data-testid="map-imagery-delayed-banner"]')) {
+        (
+          window as unknown as { __e2eBannerEverAttached: boolean }
+        ).__e2eBannerEverAttached = true;
+      }
+    });
+    observer.observe(document, { childList: true, subtree: true });
+  });
+
+  await installLocalMapStyle(page);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Plan" }).click();
+
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await expect(mapContainer.locator("canvas")).toBeVisible();
+
+  const bannerEverAttached = await page.evaluate(
+    () =>
+      (window as unknown as { __e2eBannerEverAttached: boolean }).__e2eBannerEverAttached,
+  );
+  expect(bannerEverAttached).toBe(false);
+});
