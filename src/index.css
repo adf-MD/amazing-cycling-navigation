@@ -665,6 +665,17 @@ button:focus-visible {
   box-shadow: var(--shadow-sm);
 }
 
+/* Reserves a little breathing room below the card's own bottom edge when
+ * its route-switch guard prompt is open (backlog item 95), so the native
+ * end-aligned scrollIntoView() that brings the card into view doesn't pin
+ * its actions flush against the visible viewport's bottom/safe area.
+ * Scoped to this modifier, not the base .route-card above, since ordinary
+ * cards (including one showing the unrelated delete-confirmation panel)
+ * have no scroll-into-view behaviour of their own to reserve space for. */
+.route-card--switch-pending {
+  scroll-margin-bottom: calc(var(--safe-area-inset-bottom) + var(--space-8));
+}
+
 /* The route name is itself the "open route" affordance — styled as a
  * full-width title rather than a pill button, but it's still a real
  * <button> so focus-visible styling (from the global `button` rule) still

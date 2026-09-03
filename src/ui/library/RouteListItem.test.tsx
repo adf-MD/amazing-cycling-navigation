@@ -36,6 +36,7 @@ interface RenderOverrides {
   pinError?: string | null;
   onPinToggle?: ReturnType<typeof vi.fn<(route: PlannedRoute) => void>>;
   switchPrompt?: RouteSwitchPrompt | null;
+  stickyHeaderRef?: { current: HTMLElement | null };
 }
 
 /** Builds a complete RouteSwitchPrompt bundle (backlog item 73 follow-up)
@@ -79,6 +80,7 @@ function buildElement(route: PlannedRoute, overrides: RenderOverrides) {
       nameButtonRef={vi.fn()}
       pinButtonRef={vi.fn()}
       switchPrompt={overrides.switchPrompt ?? null}
+      stickyHeaderRef={overrides.stickyHeaderRef}
     />
   );
 }
@@ -508,7 +510,7 @@ describe("RouteListItem", () => {
       expect(screen.queryByRole("alertdialog")).toBeNull();
     });
 
-    it("renders the title, message and three actions in order (Cancel, Return to paused ride, End and switch) when offerReturn is true", () => {
+    it("renders the title, message and three actions in order (End and switch, Return to paused ride, Cancel) when offerReturn is true", () => {
       renderItem({ switchPrompt: buildSwitchPrompt({ offerReturn: true }) });
 
       const dialog = screen.getByRole("alertdialog");
@@ -520,20 +522,20 @@ describe("RouteListItem", () => {
       ).toBeInTheDocument();
       const buttons = within(dialog).getAllByRole("button");
       expect(buttons.map((button) => button.textContent)).toEqual([
-        "Cancel",
-        "Return to paused ride",
         "End and switch",
+        "Return to paused ride",
+        "Cancel",
       ]);
     });
 
-    it("renders only Cancel and the confirm action when offerReturn is false", () => {
+    it("renders only the confirm action and Cancel, in that order, when offerReturn is false", () => {
       renderItem({ switchPrompt: buildSwitchPrompt({ offerReturn: false }) });
 
       const dialog = screen.getByRole("alertdialog");
       const buttons = within(dialog).getAllByRole("button");
       expect(buttons.map((button) => button.textContent)).toEqual([
-        "Cancel",
         "End and switch",
+        "Cancel",
       ]);
       expect(
         within(dialog).queryByRole("button", { name: "Return to paused ride" }),
@@ -636,13 +638,16 @@ describe("RouteListItem", () => {
       expect(secondaryConfirm).not.toHaveClass("btn-danger");
     });
 
-    it("never styles Cancel or Return as destructive", () => {
+    it("never styles Cancel as destructive, and styles Return as the positive primary action", () => {
       renderItem({ switchPrompt: buildSwitchPrompt({ offerReturn: true }) });
 
-      expect(screen.getByRole("button", { name: "Cancel" })).toHaveClass("btn-secondary");
-      expect(screen.getByRole("button", { name: "Return to paused ride" })).toHaveClass(
-        "btn-secondary",
-      );
+      const cancelButton = screen.getByRole("button", { name: "Cancel" });
+      expect(cancelButton).toHaveClass("btn-secondary");
+      expect(cancelButton).not.toHaveClass("btn-danger");
+
+      const returnButton = screen.getByRole("button", { name: "Return to paused ride" });
+      expect(returnButton).toHaveClass("btn-primary");
+      expect(returnButton).not.toHaveClass("btn-danger");
     });
 
     it("clicking Rename while this card's switch prompt is open cancels it first, then enters rename mode", async () => {
@@ -667,31 +672,136 @@ describe("RouteListItem", () => {
       expect(onPinToggle).toHaveBeenCalledWith(route);
     });
 
-    it("scrolls the panel into view (nearest) when it first opens, and again if the message changes within the same pending switch", () => {
-      const scrollIntoViewMock = vi.fn();
-      Element.prototype.scrollIntoView = scrollIntoViewMock;
+    describe("scroll-into-view target (backlog item 95)", () => {
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const originalMatchMedia = window.matchMedia;
 
-      const { rerenderWithSwitchPrompt } = renderItem({
-        switchPrompt: buildSwitchPrompt({ message: "Ending your current ride…" }),
+      afterEach(() => {
+        Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+        window.matchMedia = originalMatchMedia;
       });
-      expect(scrollIntoViewMock).toHaveBeenCalledTimes(1);
-      expect(scrollIntoViewMock).toHaveBeenLastCalledWith(
-        expect.objectContaining({ block: "nearest" }),
-      );
 
-      // Same message re-rendered: no extra scroll.
-      rerenderWithSwitchPrompt(
-        buildSwitchPrompt({ message: "Ending your current ride…" }),
-      );
-      expect(scrollIntoViewMock).toHaveBeenCalledTimes(1);
+      /** Every element reports this rect unless overridden per-test — tall
+       * enough (bottom 900, beyond jsdom's default 768 innerHeight) that a
+       * card using it is NOT already fully visible, so the default fixture
+       * exercises the "must scroll" branch unless a test overrides it. */
+      function stubRect(overrides: Partial<DOMRect> = {}): DOMRect {
+        return {
+          top: 100,
+          bottom: 900,
+          left: 0,
+          right: 320,
+          width: 320,
+          height: 800,
+          x: 0,
+          y: 100,
+          toJSON: () => "",
+          ...overrides,
+        };
+      }
 
-      // A later status transition surfacing new error text re-checks.
-      rerenderWithSwitchPrompt(
-        buildSwitchPrompt({
-          message: "This unfinished ride could not be ended on this device. Try again.",
-        }),
-      );
-      expect(scrollIntoViewMock).toHaveBeenCalledTimes(2);
+      function captureScrollCalls() {
+        const calls: { target: Element; options: ScrollIntoViewOptions }[] = [];
+        Element.prototype.scrollIntoView = function scrollIntoView(
+          this: Element,
+          options?: boolean | ScrollIntoViewOptions,
+        ) {
+          calls.push({ target: this, options: (options ?? {}) as ScrollIntoViewOptions });
+        };
+        return calls;
+      }
+
+      it("scrolls the outer route card (not the nested panel) into view, end-aligned, when it first opens", () => {
+        Element.prototype.getBoundingClientRect = () => stubRect();
+        const calls = captureScrollCalls();
+
+        const { route } = renderItem({
+          switchPrompt: buildSwitchPrompt({ message: "Ending your current ride…" }),
+        });
+
+        expect(calls).toHaveLength(1);
+        const card = document.querySelector(`[data-route-id="${route.id}"]`);
+        expect(calls[0]?.target).toBe(card);
+        expect(calls[0]?.target).not.toBe(screen.getByRole("alertdialog"));
+        expect(calls[0]?.options).toEqual(
+          expect.objectContaining({ block: "end", behavior: "smooth" }),
+        );
+      });
+
+      it("does not scroll again for an identical rerendered message, but does for a genuinely changed message", () => {
+        Element.prototype.getBoundingClientRect = () => stubRect();
+        const calls = captureScrollCalls();
+
+        const { rerenderWithSwitchPrompt } = renderItem({
+          switchPrompt: buildSwitchPrompt({ message: "Ending your current ride…" }),
+        });
+        expect(calls).toHaveLength(1);
+
+        rerenderWithSwitchPrompt(
+          buildSwitchPrompt({ message: "Ending your current ride…" }),
+        );
+        expect(calls).toHaveLength(1);
+
+        rerenderWithSwitchPrompt(
+          buildSwitchPrompt({
+            message: "This unfinished ride could not be ended on this device. Try again.",
+          }),
+        );
+        expect(calls).toHaveLength(2);
+      });
+
+      it("does not scroll at all when the card is already fully visible", () => {
+        // Well within jsdom's default 768px innerHeight, comfortably below
+        // a headerless (headerBottom 0) top boundary.
+        Element.prototype.getBoundingClientRect = () =>
+          stubRect({ top: 50, bottom: 200 });
+        const calls = captureScrollCalls();
+
+        renderItem({
+          switchPrompt: buildSwitchPrompt({ message: "Ending your current ride…" }),
+        });
+
+        expect(calls).toHaveLength(0);
+      });
+
+      it("scrolls when the sticky header (via stickyHeaderRef) occludes an otherwise short-enough card", () => {
+        const headerEl = document.createElement("header");
+        Element.prototype.getBoundingClientRect = function (this: Element) {
+          if (this === headerEl) return stubRect({ top: 0, bottom: 120 });
+          // Short card, would be "fully visible" against a headerless (0)
+          // top boundary, but its top (60) sits above the header's own
+          // bottom (120) — occluded, must still scroll.
+          return stubRect({ top: 60, bottom: 200 });
+        };
+        const calls = captureScrollCalls();
+        const stickyHeaderRef = { current: headerEl };
+
+        renderItem({
+          switchPrompt: buildSwitchPrompt({ message: "Ending your current ride…" }),
+          stickyHeaderRef,
+        });
+
+        expect(calls).toHaveLength(1);
+      });
+
+      it("uses immediate (auto) behaviour under prefers-reduced-motion, and smooth otherwise", () => {
+        Element.prototype.getBoundingClientRect = () => stubRect();
+        window.matchMedia = ((query: string) => ({
+          matches: query === "(prefers-reduced-motion: reduce)",
+        })) as typeof window.matchMedia;
+        const calls = captureScrollCalls();
+
+        renderItem({
+          switchPrompt: buildSwitchPrompt({ message: "Ending your current ride…" }),
+        });
+
+        expect(calls).toHaveLength(1);
+        expect(calls[0]?.options).toEqual(
+          expect.objectContaining({ block: "end", behavior: "auto" }),
+        );
+      });
     });
   });
 });

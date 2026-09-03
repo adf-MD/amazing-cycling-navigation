@@ -122,28 +122,6 @@ _Category: Platform compatibility_
 
 ---
 
-<a id="item-95"></a>
-
-## Item 95 — Route-switch prompt visibility and action hierarchy
-
-_Category: Route Library interaction reliability_
-
-95. **Route-switch prompt visibility and action hierarchy**
-    - Field observation: when a paused route exists and the user chooses a different saved route lower in the Route Library, the inline switch guard (`RouteListItem.tsx`'s switch-prompt panel) can appear without bringing the bottom of the complete chosen route card into view. The user may see no visible explanation for why opening the route apparently did nothing.
-    - Confirmed current implementation: the prompt panel scrolls itself into view via `switchPanelRef.current?.scrollIntoView({ block: "nearest" })` (`RouteListItem.tsx:119`), mirroring `RouteSummaryPanel.tsx`'s own identical pattern — it targets only the nested prompt sub-panel's own nearest scroll position, not the bottom of the outer route card. The implementation must instead target the bottom of the outer route card, or a deliberate end sentinel inside it, so the full card and the full prompt are both visible together.
-    - Confirmed current action set and order (source- and test-verified): `RouteListItem.tsx:336-368`, confirmed by `RouteListItem.test.tsx:511`, currently renders, in this order: **Cancel** (`btn-secondary`, `autoFocus`) → **Return to paused ride** (`btn-secondary`, only when `switchPrompt.offerReturn`) → the confirm action (`btn-danger` when destructive, `btn-secondary` otherwise; labelled `"End and switch"` in the common case, or `"Discard and continue"` when unsupported, per `App.tsx:164`). This is the exact reverse of the desired order below and must be corrected, including the existing test's order/focus assertions.
-    - Required new visual order when all three actions exist:
-      1. `End and switch` (preserve the existing conditional `"Discard and continue"` wording for the unsupported case — do not shorten either to an ambiguous `Switch`)
-      2. `Return to paused ride`
-      3. `Cancel`
-    - Style `End and switch`/`Discard and continue` as destructive (`btn-danger`), `Return to paused ride` as a positive green action, and `Cancel` as neutral (`btn-secondary`). The distinction must remain understandable from wording, DOM order, accessible names and focus behaviour, not colour alone. Preserve adequate contrast and touch targets.
-    - `Cancel` is the agreed label, not `Close` — it cancels the attempted switch and leaves the current state unchanged.
-    - Reversing the visual/DOM order must not move default keyboard focus onto the destructive action merely because it now renders first. The safe, non-destructive action should keep the default focus (matching the current `autoFocus` intent, redirected to whichever element remains the safe default under the new order), and `RouteListItem.test.tsx:511`'s existing order-and-focus assertions must be updated as part of this item, not left asserting the old order.
-    - Acceptance must prove the complete prompt and the chosen card's bottom are visible above the persistent navigation and safe-area region at ordinary phone size, narrow width and enlarged text, including a route lower in a scrollable list. Avoid an unnecessary scroll jump when the card is already fully visible, and respect `prefers-reduced-motion`.
-    - Preserve all item-73 ("Guard every unfinished-session switch against silent replacement") and item-91 ("`App.tsx` route-switch coordinator characterisation tests") state-machine, fail-closed conflict handling, interrupted-write protection and the existing meaning of returning to the paused ride. This is a presentation, scrolling and action-hierarchy correction, not a session-lifecycle rewrite.
-
----
-
 <a id="item-96"></a>
 
 ## Item 96 — Grace period for the slow map-imagery notice

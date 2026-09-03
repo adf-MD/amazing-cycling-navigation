@@ -171,6 +171,13 @@ Do not treat the item above as fully verified until it has been tested on a movi
 
 ---
 
+### Outstanding: item 95's route-switch prompt visibility and action hierarchy
+
+- **Route-switch prompt visibility and action hierarchy (item 95):** shipped with automated (Vitest, Playwright Chromium and Chromium-emulated Android) evidence only — no physical-device verification is claimed yet. See [`docs/project/history/items-89-NN.md#item-95`](history/items-89-NN.md#item-95) for the full implementation record, including the fail-first evidence (a deterministic component-level proof plus a genuinely reproduced real-Chromium header-occlusion failure), the confirmed root cause, and the negative control.
+- Required real-device checks, on the installed iPhone Home Screen PWA: pause a ride, then select a different saved route positioned low enough in the Route Library to require scrolling — confirm the inline switch prompt expands inside the chosen card, the complete prompt ends up below the sticky top navigation, and the chosen card's own bottom edge is visible without the page jumping unnecessarily if the card was already on-screen; confirm the action order reads `End and switch` (or `Discard and continue`), then `Return to paused ride` (shown in a clearly positive/primary style), then `Cancel` last, with `Cancel` still receiving keyboard focus by default; confirm the prompt and its actions remain usable at enlarged (accessibility) text size and in landscape orientation. Physical Android verification is separately outstanding, as for most recent items. Do not consider this item's field behaviour verified until the user has confirmed it directly on real hardware.
+
+---
+
 ## Monitored reliability observations
 
 These are explicitly **not** approved future work — see each entry's own text for why.

@@ -77,6 +77,12 @@ export interface RouteLibraryProps {
    * sites need no mechanical update; when present it is always the
    * complete PendingRouteSwitch bundle — see that type's own doc comment. */
   pendingRouteSwitch?: PendingRouteSwitch | null;
+  /** App's own sticky top-navigation element, threaded straight through to
+   * every RouteListItem row unchanged (a single shared ref, not per-row) —
+   * mirrors restoreScrollYRef's own shape. Lets a card measure the sticky
+   * header's live rendered height when deciding whether its route-switch
+   * guard prompt needs to scroll into view (backlog item 95). */
+  stickyHeaderRef?: RefObject<HTMLElement | null>;
 }
 
 export function RouteLibrary({
@@ -85,6 +91,7 @@ export function RouteLibrary({
   restoreSearchQueryRef,
   clock = systemClock,
   pendingRouteSwitch = null,
+  stickyHeaderRef,
 }: RouteLibraryProps) {
   const listRoutesQuery = useCallback(() => listRoutes(), []);
   const routes = useLiveQuery(listRoutesQuery);
@@ -479,6 +486,7 @@ export function RouteLibrary({
         }
       }}
       switchPrompt={pendingRouteSwitch?.routeId === route.id ? pendingRouteSwitch : null}
+      stickyHeaderRef={stickyHeaderRef}
     />
   );
 

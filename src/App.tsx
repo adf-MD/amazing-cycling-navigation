@@ -245,6 +245,13 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   const [isRidingActive, setIsRidingActive] = useState(false);
   const { needRefresh, offlineReady, updateNow, dismiss } = usePwaUpdate();
   const routesScrollYRef = useRef<number | null>(null);
+  // Read-only handle onto the sticky top navigation's own rendered box, so
+  // RouteListItem (several levels below, not a DOM ancestor of this
+  // element) can measure the header's live rendered height when deciding
+  // whether the route-switch guard prompt needs to scroll into view
+  // (backlog item 95) — mirrors routesScrollYRef's own "App owns a page-
+  // chrome fact a screen component needs" shape above.
+  const stickyHeaderRef = useRef<HTMLElement>(null);
   const routesSearchQueryRef = useRef<string>("");
   // Plain monotonic counter (never a timestamp/uuid) for resumeIntentToken —
   // mirrors useRideCamera.ts's own nextCameraRequestIdRef idiom (backlog
@@ -1006,7 +1013,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   return (
     <div className="app-shell">
       {isImmersive ? null : (
-        <header className="app-header--sticky">
+        <header className="app-header--sticky" ref={stickyHeaderRef}>
           <MainNavigation screen={screen} onNavigate={handleNavigate} />
         </header>
       )}
@@ -1052,6 +1059,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
             restoreScrollYRef={routesScrollYRef}
             restoreSearchQueryRef={routesSearchQueryRef}
             pendingRouteSwitch={routeSwitchPrompt}
+            stickyHeaderRef={stickyHeaderRef}
           />
         )}
         {screen === "riding" &&

@@ -532,6 +532,10 @@ test("on a long Routes list, selecting a lower route while another is paused exp
   });
 
   await page.setViewportSize({ width: 390, height: 844 });
+  // Deterministic, instant scroll geometry — the production scroll uses
+  // behavior:"smooth" unless reduced motion is requested, and this test
+  // measures boxes immediately after the triggering click.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
   const routeAName = "switch-guard-inline-route-a";
   const routeBName = "switch-guard-inline-route-b";
@@ -564,6 +568,29 @@ test("on a long Routes list, selecting a lower route while another is paused exp
   await expect(returnButton).toBeVisible();
   expect(await readActiveRideStateRow(page)).toEqual(routeARowBefore);
   expect(await readWatchPositionCallCount(page)).toBe(0);
+
+  // Item 95: the far-below-the-fold card's own complete bottom edge, and
+  // the full prompt, must both end up visible above the sticky header and
+  // below the visible viewport bottom — not merely the nested prompt panel
+  // scrolled to its own "nearest" position.
+  const header = page.locator("header.app-header--sticky");
+  const [headerBox, cardBox, dialogBox] = await Promise.all([
+    header.boundingBox(),
+    routeBCard.boundingBox(),
+    dialog.boundingBox(),
+  ]);
+  if (!headerBox || !cardBox || !dialogBox) {
+    throw new Error("expected the header, card and dialog to all be measurable");
+  }
+  const visibleBottom = await page.evaluate(() => {
+    const vv = window.visualViewport;
+    return vv ? vv.offsetTop + vv.height : window.innerHeight;
+  });
+  expect(dialogBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
+  expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(visibleBottom);
+
+  const buttonLabels = await dialog.locator("button").allTextContents();
+  expect(buttonLabels).toEqual(["End and switch", "Return to paused ride", "Cancel"]);
 
   await returnButton.click();
 
@@ -600,6 +627,7 @@ test("at an iPhone-sized portrait viewport, the inline switch prompt stays insid
   });
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
   const routeAName = "switch-guard-geometry-portrait-a";
   const routeBName = "switch-guard-geometry-portrait-b";
@@ -608,6 +636,12 @@ test("at an iPhone-sized portrait viewport, the inline switch prompt stays insid
   await page.reload();
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
   await importRoute(page, routeBName);
+  // Item 95: push the card below the fold so these strong hit-size/focus/
+  // Escape assertions are proven under a real scroll, not just initial
+  // layout.
+  for (let index = 1; index <= 8; index += 1) {
+    await importRoute(page, `switch-guard-geometry-portrait-filler-${String(index)}`);
+  }
 
   const routeBId = await readSavedRouteId(page, routeBName);
   if (!routeBId) throw new Error("expected a saved route id for route B");
@@ -627,8 +661,13 @@ test("at an iPhone-sized portrait viewport, the inline switch prompt stays insid
   if (!headerBox || !cardBox || !dialogBox) {
     throw new Error("expected the header, card and dialog to all be measurable");
   }
+  const visibleBottom = await page.evaluate(() => {
+    const vv = window.visualViewport;
+    return vv ? vv.offsetTop + vv.height : window.innerHeight;
+  });
   expect(isFullyWithin(dialogBox, cardBox)).toBe(true);
   expect(dialogBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
+  expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(visibleBottom);
 
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(scrollWidth).toBeLessThanOrEqual(390 + 1);
@@ -677,6 +716,7 @@ test("at 844x390 short landscape, the inline switch prompt stays inside its own 
   });
 
   await page.setViewportSize({ width: 844, height: 390 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
   const routeAName = "switch-guard-geometry-landscape-a";
   const routeBName = "switch-guard-geometry-landscape-b";
@@ -685,6 +725,12 @@ test("at 844x390 short landscape, the inline switch prompt stays inside its own 
   await page.reload();
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
   await importRoute(page, routeBName);
+  // Item 95: push the card below the fold in this much shorter viewport
+  // too, so the header-clearance/card-bottom-visibility assertions below
+  // exercise a genuine scroll, not just initial layout.
+  for (let index = 1; index <= 8; index += 1) {
+    await importRoute(page, `switch-guard-geometry-landscape-filler-${String(index)}`);
+  }
 
   const routeBId = await readSavedRouteId(page, routeBName);
   if (!routeBId) throw new Error("expected a saved route id for route B");
@@ -694,14 +740,22 @@ test("at 844x390 short landscape, the inline switch prompt stays inside its own 
   const dialog = routeBCard.getByRole("alertdialog");
   await expect(dialog).toBeVisible();
 
-  const [cardBox, dialogBox] = await Promise.all([
+  const header = page.locator("header.app-header--sticky");
+  const [headerBox, cardBox, dialogBox] = await Promise.all([
+    header.boundingBox(),
     routeBCard.boundingBox(),
     dialog.boundingBox(),
   ]);
-  if (!cardBox || !dialogBox) {
-    throw new Error("expected the card and dialog to both be measurable");
+  if (!headerBox || !cardBox || !dialogBox) {
+    throw new Error("expected the header, card and dialog to both be measurable");
   }
+  const visibleBottom = await page.evaluate(() => {
+    const vv = window.visualViewport;
+    return vv ? vv.offsetTop + vv.height : window.innerHeight;
+  });
   expect(isFullyWithin(dialogBox, cardBox)).toBe(true);
+  expect(dialogBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
+  expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(visibleBottom);
 
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(scrollWidth).toBeLessThanOrEqual(844 + 1);
@@ -723,6 +777,7 @@ test("at 200% enlarged text, the inline switch prompt (including the longer Retu
   });
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
   const routeAName = "switch-guard-geometry-enlarged-a";
   const routeBName = "switch-guard-geometry-enlarged-b";
@@ -731,6 +786,13 @@ test("at 200% enlarged text, the inline switch prompt (including the longer Retu
   await page.reload();
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
   await importRoute(page, routeBName);
+  // Item 95: enlarged text shrinks the effectively available vertical
+  // space per card, so push the card below the fold too — combining both
+  // extreme conditions is exactly where the header-clearance/card-bottom
+  // assertions below are most likely to matter.
+  for (let index = 1; index <= 8; index += 1) {
+    await importRoute(page, `switch-guard-geometry-enlarged-filler-${String(index)}`);
+  }
 
   await page.evaluate(() => {
     document.documentElement.style.fontSize = "200%";
@@ -763,6 +825,8 @@ test("at 200% enlarged text, the inline switch prompt (including the longer Retu
     const dialogEl = cardEl.querySelector('[role="alertdialog"]');
     if (!dialogEl) return null;
     const buttonEls = Array.from(dialogEl.querySelectorAll("button"));
+    const headerEl = document.querySelector("header.app-header--sticky");
+    const vv = window.visualViewport;
     return {
       card: toBox(cardEl),
       dialog: toBox(dialogEl),
@@ -770,6 +834,8 @@ test("at 200% enlarged text, the inline switch prompt (including the longer Retu
         text: button.textContent,
         box: toBox(button),
       })),
+      headerBottom: headerEl ? headerEl.getBoundingClientRect().bottom : null,
+      visibleBottom: vv ? vv.offsetTop + vv.height : window.innerHeight,
     };
   });
   if (!geometry)
@@ -777,15 +843,96 @@ test("at 200% enlarged text, the inline switch prompt (including the longer Retu
 
   expect(isFullyWithin(geometry.dialog, geometry.card)).toBe(true);
   expect(geometry.card.x + geometry.card.width).toBeLessThanOrEqual(390 + 1);
+  expect(geometry.card.y + geometry.card.height).toBeLessThanOrEqual(
+    geometry.visibleBottom,
+  );
 
   const actionBoxes = geometry.buttons.map((button) => button.box);
   expect(actionBoxes).toHaveLength(3);
+  expect(geometry.buttons.map((button) => button.text)).toEqual([
+    "End and switch",
+    "Return to paused ride",
+    "Cancel",
+  ]);
   for (let i = 0; i < actionBoxes.length; i += 1) {
     expect(isFullyWithin(actionBoxes[i], geometry.card)).toBe(true);
+    expect(actionBoxes[i].width).toBeGreaterThanOrEqual(44);
+    expect(actionBoxes[i].height).toBeGreaterThanOrEqual(44);
+    if (geometry.headerBottom !== null) {
+      expect(actionBoxes[i].y).toBeGreaterThanOrEqual(geometry.headerBottom);
+    }
+    expect(actionBoxes[i].y + actionBoxes[i].height).toBeLessThanOrEqual(
+      geometry.visibleBottom,
+    );
     for (let j = i + 1; j < actionBoxes.length; j += 1) {
       expect(intersects(actionBoxes[i], actionBoxes[j])).toBe(false);
     }
   }
+
+  // Backlog item 95's extreme-case fallback: when the enlarged-text card is
+  // genuinely taller than the entire band between the sticky header and
+  // the visible viewport bottom, only the complete prompt's own TOP
+  // (heading/message, above the actions) may end up scrolled out of
+  // immediate view — every action and the card's own bottom edge must
+  // still be immediately visible regardless (already proven above). When
+  // the card does fit within that band, the complete prompt (including
+  // its heading/message) must be immediately visible too, not merely
+  // reachable.
+  const availableBand = geometry.visibleBottom - (geometry.headerBottom ?? 0);
+  const cardFitsWithinBand = geometry.card.height <= availableBand;
+  if (cardFitsWithinBand && geometry.headerBottom !== null) {
+    expect(geometry.dialog.y).toBeGreaterThanOrEqual(geometry.headerBottom);
+  }
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("opening the switch prompt on a card that is already fully visible does not scroll the page (item 95)", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  const routeAName = "switch-guard-no-jump-a";
+  const routeBName = "switch-guard-no-jump-b";
+
+  await establishUnfinishedRide(page, context, routeAName);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+  // No fillers: route B is the most recently imported route, so it sorts
+  // to the top of the (most-recent-first) list and is already fully
+  // visible before the prompt ever opens.
+  await importRoute(page, routeBName);
+
+  const routeBId = await readSavedRouteId(page, routeBName);
+  if (!routeBId) throw new Error("expected a saved route id for route B");
+  const routeBCard = page.locator(`[data-route-id="${routeBId}"]`);
+
+  const cardBoxBefore = await routeBCard.boundingBox();
+  const scrollYBefore = await page.evaluate(() => window.scrollY);
+  if (!cardBoxBefore) throw new Error("expected route B's card to be measurable");
+
+  await page.getByRole("button", { name: routeBName, exact: true }).click();
+
+  const dialog = routeBCard.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+
+  const cardBoxAfter = await routeBCard.boundingBox();
+  const scrollYAfter = await page.evaluate(() => window.scrollY);
+  if (!cardBoxAfter) throw new Error("expected route B's card to still be measurable");
+
+  expect(scrollYAfter).toBe(scrollYBefore);
+  expect(cardBoxAfter.y).toBe(cardBoxBefore.y);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
