@@ -1006,8 +1006,29 @@ describe("PlanningScreen", () => {
     it("preserves an exact manually-adjusted camera across an imagery-retry recreation instead of framing an available waypoint", async () => {
       const user = userEvent.setup();
       const map = createMockMapFactory();
-      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      const requestApproximateLocation = vi.fn().mockResolvedValue([-1.5, 53.8]);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
       map.triggerLoad();
+      // Item 94 follow-up: a gesture only durably diverges the camera once
+      // this generation already has a real, established view (see
+      // MapView.tsx's own cameraEstablishedGenerationRef) — establish one
+      // first, via the automatic fresh-session regional fit, before
+      // placing the waypoint and gesturing, so this test continues to
+      // exercise "a manual gesture on an ALREADY-framed camera", its own
+      // actual intent, rather than a gesture on a still-raw one.
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledWith(
+          computeLocalAreaBounds([-1.5, 53.8]),
+        );
+      });
+      map.fitBoundsSpy.mockClear();
+
       map.triggerMapTap([9, 59]);
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
@@ -1453,7 +1474,19 @@ describe("PlanningScreen", () => {
       });
     });
 
-    it("a manual camera gesture before any successful geolocation makes the first successful Locate-me press recentre, not box-fit", async () => {
+    it("item 94 follow-up: a camera gesture before ANYTHING has ever been established still lets the first successful Locate-me press box-fit, not merely recentre", async () => {
+      // Corrected from this test's own pre-fix form (which asserted the
+      // opposite): a gesture landing while this generation has shown
+      // nothing real yet (MapLibre's own raw default transform, since
+      // requestApproximateLocation never resolved before it) does not
+      // durably count as "the rider already has a view they care about" —
+      // see MapView.tsx's own cameraEstablishedGenerationRef and
+      // hasManualGestureRef's doc comment above. This matches root
+      // CLAUDE.md's own Planning contract: "If Locate me/Retry produces
+      // the session's first successful location before the user has
+      // established another camera view, it may use the initial regional
+      // framing" — a gesture on a still-blank fallback map is not
+      // establishing a view worth protecting.
       const user = userEvent.setup();
       const map = createMockMapFactory();
       const requestApproximateLocation = vi.fn().mockResolvedValue(null);
@@ -1475,7 +1508,43 @@ describe("PlanningScreen", () => {
       await user.click(screen.getByRole("button", { name: "Locate me" }));
 
       await waitFor(() => {
-        expect(map.centreOnSpy).toHaveBeenCalledWith([-1.5, 53.8], { animate: true });
+        expect(map.fitBoundsSpy).toHaveBeenCalledWith(
+          computeLocalAreaBounds([-1.5, 53.8]),
+        );
+      });
+      expect(map.centreOnSpy).not.toHaveBeenCalled();
+    });
+
+    it("a manual camera gesture on an ALREADY-established camera makes a later successful Locate-me press recentre, not box-fit", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue([-1.5, 53.8]);
+      render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      // Establishes a real camera first (the automatic fresh-session
+      // regional fit), so the gesture below is genuinely a manual
+      // adjustment ON TOP OF something real — this is the case
+      // hasManualGestureRef exists to protect.
+      await waitFor(() => {
+        expect(map.fitBoundsSpy).toHaveBeenCalledWith(
+          computeLocalAreaBounds([-1.5, 53.8]),
+        );
+      });
+      map.fitBoundsSpy.mockClear();
+
+      map.triggerUserCameraInteraction();
+
+      requestApproximateLocation.mockResolvedValueOnce([2.5, 48.9]);
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+
+      await waitFor(() => {
+        expect(map.centreOnSpy).toHaveBeenCalledWith([2.5, 48.9], { animate: true });
       });
       expect(map.fitBoundsSpy).not.toHaveBeenCalled();
     });

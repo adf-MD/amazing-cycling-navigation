@@ -963,11 +963,17 @@ export function PlanningScreen({
     isRoutedRef.current = routing.state.kind === "routed";
   }, [routing.state.kind]);
 
-  // Set true the instant the rider manually pans/pinches/rotates/pitches
-  // the map, explicitly taps Locate me, or presses a Zoom in/out button
-  // (see noteManualCameraControl below, shared by the onUserCameraInteraction
-  // prop and handleZoomIn/handleZoomOut — backlog item 52) — blocks a
-  // still-in-flight automatic fresh-session framing result, or a
+  // Set true the instant the rider explicitly taps Locate me or presses a
+  // Zoom in/out button, or — item 94 follow-up — pans/pinches/rotates/
+  // pitches the map once this generation already has a real, established
+  // camera (see noteManualCameraControl below, shared by the
+  // onUserCameraInteraction prop and handleZoomIn/handleZoomOut — backlog
+  // item 52, and MapView's own hasEstablishedCamera argument doc comment)
+  // — a gesture landing before anything real has ever been shown here
+  // does NOT set this, so a still-in-flight automatic framing correctly
+  // still gets to frame the rider's own placed waypoint or resolved
+  // location once it lands, rather than being permanently pre-empted by a
+  // premature, otherwise-meaningless nudge. Blocks a
   // still-pending restored/seeded-waypoint hydration fit (see
   // pendingWaypointHydrationBounds and the fresh-session location effect
   // below, which is where this ref is actually consulted for that path),
@@ -977,9 +983,12 @@ export function PlanningScreen({
   // "the rider already has a view they care about" signal the way a pan,
   // Locate-me tap, or zoom press does.
   const hasManualCameraActionRef = useRef(false);
-  // Set true by a genuine pan/pinch/rotate/pitch gesture, or a Zoom in/out
-  // button press (via the same shared noteManualCameraControl callback) —
-  // never by a Locate-me tap, successful or not, unlike
+  // Set true by a Zoom in/out button press, or — item 94 follow-up — a
+  // genuine pan/pinch/rotate/pitch gesture once this generation already
+  // has a real, established camera (via the same shared
+  // noteManualCameraControl callback; see hasManualCameraActionRef's own
+  // fuller doc comment above for why a premature gesture must not set
+  // this) — never by a Locate-me tap, successful or not, unlike
   // hasManualCameraActionRef above. Used solely by handleLocateMe to decide
   // whether the session's one-time regional box-fit is still available: a
   // prior *failed* Locate-me attempt establishes no camera view at all
@@ -1184,28 +1193,43 @@ export function PlanningScreen({
   // genuine pan/pinch/rotate/pitch gesture) and the Zoom in/out button
   // handlers below (backlog item 52) — a zoom-button press genuinely and
   // synchronously changes the camera exactly like a real gesture, so it
-  // must have the same "manual camera control" consequences: both
-  // hasManualCameraActionRef and hasManualGestureRef become true, and
-  // isCameraSettled goes false until the resulting camera move (here,
-  // changeZoomBy's own short ease) genuinely settles. Deliberately NOT
-  // wired through MapLibreLike.onUserCameraInteraction itself, which stays
-  // gesture-only (see its own doc comment in mapAdapter.ts) — this is an
-  // explicit Planning-level state transition invoked directly wherever
+  // must have the same "manual camera control" consequences. Deliberately
+  // NOT wired through MapLibreLike.onUserCameraInteraction itself, which
+  // stays gesture-only (see its own doc comment in mapAdapter.ts) — this is
+  // an explicit Planning-level state transition invoked directly wherever
   // it's needed. A plain callback only, never read inside an effect — see
   // hasManualCameraActionRef/hasManualGestureRef's own doc comments above.
-  const noteManualCameraControl = useCallback(() => {
-    hasManualCameraActionRef.current = true;
-    hasManualGestureRef.current = true;
+  //
+  // Item 94 follow-up: isCameraSettled going false is a transient, in-
+  // flight-gesture safety signal (it disables placement so a waypoint
+  // can't be dropped while the crosshair's own coordinate is still
+  // moving) and must fire unconditionally, on every call. hasManualCameraActionRef/
+  // hasManualGestureRef, by contrast, are durable — they permanently
+  // suppress this screen's own automatic regional/Locate-me framing for
+  // the rest of the session — and must only become true when
+  // hasEstablishedCamera is true: MapView's own onUserCameraInteraction
+  // prop passes false for a gesture landing before this generation has
+  // ever shown a real camera (nothing genuine exists yet to protect), but
+  // true once one already has, including one built purely from an
+  // earlier gesture with no app command involved at all. The Zoom in/out
+  // handlers below call this directly (never through MapView's own
+  // gesture classification), so they pass true unconditionally — an
+  // explicit button press is always a deliberate, meaningful interaction.
+  const noteManualCameraControl = useCallback((hasEstablishedCamera: boolean) => {
+    if (hasEstablishedCamera) {
+      hasManualCameraActionRef.current = true;
+      hasManualGestureRef.current = true;
+    }
     setIsCameraSettled(false);
   }, []);
 
   const handleZoomIn = useCallback(() => {
-    noteManualCameraControl();
+    noteManualCameraControl(true);
     setZoomTarget({ delta: PLANNING_ZOOM_STEP, requestId: generateId() });
   }, [noteManualCameraControl]);
 
   const handleZoomOut = useCallback(() => {
-    noteManualCameraControl();
+    noteManualCameraControl(true);
     setZoomTarget({ delta: -PLANNING_ZOOM_STEP, requestId: generateId() });
   }, [noteManualCameraControl]);
 

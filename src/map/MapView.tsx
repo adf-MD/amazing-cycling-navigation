@@ -559,8 +559,17 @@ export interface MapViewProps {
   suppressInitialOverviewFit?: boolean;
   /** Fired the instant the rider manually drags/pinches/rotates/pitches
    * the map — never fired for MapView's own programmatic camera moves
-   * (fitBounds, cameraTarget-driven setCamera). */
-  onUserCameraInteraction?: () => void;
+   * (fitBounds, cameraTarget-driven setCamera). Fires on EVERY genuine
+   * gesture regardless of the argument below — a caller needing only the
+   * transient "the camera is moving right now" signal (e.g. disabling
+   * placement while a gesture is in flight) can ignore it. `true` only
+   * once this generation already has a real, established camera (an app
+   * command, or an earlier gesture's own settle) — item 94 follow-up: a
+   * caller that treats a gesture as durably/permanently authoritative
+   * (surviving an offline-imagery-recovery cycle) must gate that
+   * consequence on this being true, or a gesture landing before anything
+   * real has ever been shown can lock in a meaningless camera forever. */
+  onUserCameraInteraction?: (hasEstablishedCamera: boolean) => void;
   /** Fired whenever the camera finishes moving, for any reason — the
    * caller filters by its own current mode (only "free" cares, to persist
    * a manually-panned position); this fires for programmatic moves too.
@@ -813,6 +822,37 @@ export function MapView({
   // instance, the same self-invalidation pattern as
   // cameraRestorePendingGenerationRef.
   const appliedCameraCommandGenerationRef = useRef<number | null>(null);
+  // Item 94 follow-up: the generation for which a REAL camera view already
+  // exists — either an app-issued command (the overview fitBounds effect,
+  // the warning-selection fitBounds effect, a full cameraTarget apply, a
+  // boundsTarget apply) or a genuine user gesture that has already settled
+  // (see pendingGenuineGestureSettleRef
+  // below) — set at each of those points, never cleared explicitly, same
+  // self-invalidating convention as appliedCameraCommandGenerationRef.
+  // Consulted by onUserCameraInteraction's own registration below: a
+  // gesture landing while this is still stale for the current generation
+  // (nothing real has ever been shown yet — MapLibre's own raw default
+  // transform) must not durably lock hasCameraDivergedFromTargetsRef —
+  // there is nothing genuinely useful yet to protect, and doing so
+  // permanently withholds onRecoveryFramingEligible for a camera nobody
+  // ever actually saw. A SECOND gesture on the same generation, or any
+  // gesture once an app command has already landed, still correctly
+  // becomes durable, because by then this ref is already set — this is
+  // NOT a zoom-value/magnitude threshold; a rider who deliberately builds
+  // a useful camera by panning/zooming alone, with no app command ever
+  // involved, is still fully protected, since their own first gesture's
+  // settle establishes it for every gesture after.
+  const cameraEstablishedGenerationRef = useRef<number | null>(null);
+  // True from the moment a genuine gesture starts until its own next
+  // settle is consumed — lets onCameraSettled's registration below tell a
+  // real gesture-driven settle apart from MapLibre's own spurious
+  // pre-style-ready default-transform settle (which never sets this),
+  // so only a genuine settle can mark cameraEstablishedGenerationRef.
+  // Reset at the top of each attachMap() call so a gesture that starts on
+  // a generation torn down before its own settle ever fires cannot leak
+  // into wrongly establishing the next generation's own first (spurious)
+  // settle.
+  const pendingGenuineGestureSettleRef = useRef(false);
   // Each lets its own effect skip its own fit exactly once per flagged
   // generation (respecting a just-applied camera restore), then resume
   // completely normal behaviour for any later, unrelated dependency change
@@ -1193,6 +1233,11 @@ export function MapView({
       // to the NEXT generation, never retroactively to this one.
       attachGenerationRef.current += 1;
       const generation = attachGenerationRef.current;
+      // Item 94 follow-up: a gesture that started on a torn-down previous
+      // generation, whose own settle never fired, must not leak into
+      // wrongly establishing this fresh generation's own first (spurious)
+      // settle — see pendingGenuineGestureSettleRef's own doc comment.
+      pendingGenuineGestureSettleRef.current = false;
       // Captured as a VALUE here, synchronously, rather than merely
       // noting "a restore is needed" and re-reading
       // liveCameraSnapshotRef.current later inside onStyleLoaded: a
@@ -1242,6 +1287,10 @@ export function MapView({
               followOffset: false,
             },
           );
+          // Item 94 follow-up: a restored manual snapshot is itself a real,
+          // already-established camera for this new generation — see
+          // cameraEstablishedGenerationRef's own doc comment.
+          cameraEstablishedGenerationRef.current = generation;
         }
         // Backlog item 94: invites a caller to (re)compute its own camera
         // intent for this generation, but only when the live camera is
@@ -1298,11 +1347,32 @@ export function MapView({
       });
 
       map.onUserCameraInteraction(() => {
-        // Backlog item 67: a genuine gesture means the live camera is no
-        // longer represented by any of the caller's own target props —
-        // see hasCameraDivergedFromTargetsRef's own doc comment.
-        hasCameraDivergedFromTargetsRef.current = true;
-        onUserCameraInteractionRef.current?.();
+        // Item 94 follow-up: only a gesture landing once this generation
+        // already has a real, established camera (an app command or an
+        // earlier gesture's own settle — see cameraEstablishedGenerationRef's
+        // own doc comment) durably diverges it. A gesture on a generation
+        // that has shown nothing real yet (MapLibre's own raw default
+        // transform) still moves the camera exactly as normal — native
+        // gesture handling is untouched — but must not lock in that
+        // meaningless pose as manually authoritative forever.
+        const hasEstablishedCamera =
+          cameraEstablishedGenerationRef.current === generation;
+        if (hasEstablishedCamera) {
+          // Backlog item 67: a genuine gesture means the live camera is no
+          // longer represented by any of the caller's own target props —
+          // see hasCameraDivergedFromTargetsRef's own doc comment.
+          hasCameraDivergedFromTargetsRef.current = true;
+        }
+        // The next genuine settle (not a spurious pre-style-ready one) may
+        // establish this generation — see pendingGenuineGestureSettleRef's
+        // own doc comment.
+        pendingGenuineGestureSettleRef.current = true;
+        // Fires unconditionally on every genuine gesture, regardless of
+        // hasEstablishedCamera — this is the transient "the camera is
+        // moving right now" signal a caller (e.g. Planning's own in-flight
+        // placement guard) still needs even before anything durable is
+        // decided; only the durable classification above is deferred.
+        onUserCameraInteractionRef.current?.(hasEstablishedCamera);
       });
 
       map.onCameraSettled((camera) => {
@@ -1336,6 +1406,14 @@ export function MapView({
         // payload so it survives a later retry's own reset — see
         // liveCameraSnapshotRef's own doc comment.
         liveCameraSnapshotRef.current = camera;
+        // Item 94 follow-up: only a settle that genuinely follows a real
+        // gesture establishes this generation — never the spurious
+        // pre-style-ready default-transform settle, which never sets
+        // pendingGenuineGestureSettleRef in the first place.
+        if (pendingGenuineGestureSettleRef.current) {
+          pendingGenuineGestureSettleRef.current = false;
+          cameraEstablishedGenerationRef.current = generation;
+        }
         // Quantised to the nearest whole zoom level, with a no-op guard
         // (skip the state update entirely when unchanged) — this, plus
         // only ever reading zoom here rather than per animation frame,
@@ -1768,6 +1846,10 @@ export function MapView({
         mapRef.current?.fitBounds(bounds);
         const center = mapRef.current?.getCenter();
         if (center) setCameraCenter(center);
+        // Item 94 follow-up: a real route/points overview fit establishes
+        // this generation — see cameraEstablishedGenerationRef's own doc
+        // comment.
+        cameraEstablishedGenerationRef.current = generation;
       }
     }
 
@@ -1858,6 +1940,9 @@ export function MapView({
     // retry silently discarded the rider's panned position).
     if (cameraTarget.coordinate !== null && cameraTarget.zoom !== null) {
       hasCameraDivergedFromTargetsRef.current = false;
+      // Item 94 follow-up: a full coordinate+zoom apply establishes this
+      // generation — see cameraEstablishedGenerationRef's own doc comment.
+      cameraEstablishedGenerationRef.current = attachGenerationRef.current;
     }
     lastAppliedCameraTargetRef.current = {
       lon,
@@ -1906,6 +1991,9 @@ export function MapView({
     // instance with no prior state — see the cameraTarget effect's own
     // fuller note on why this distinction matters.
     hasCameraDivergedFromTargetsRef.current = false;
+    // Item 94 follow-up: a full bounds fit establishes this generation —
+    // see cameraEstablishedGenerationRef's own doc comment.
+    cameraEstablishedGenerationRef.current = attachGenerationRef.current;
     mapRef.current?.resize();
     mapRef.current?.fitBounds(boundsTarget.bounds);
     const center = mapRef.current?.getCenter();
@@ -2118,6 +2206,13 @@ export function MapView({
     );
     if (!bounds) return;
     mapRef.current?.fitBounds(bounds);
+    // Item 94 follow-up: a real warning-selection fit establishes this
+    // generation too — see cameraEstablishedGenerationRef's own doc
+    // comment. Genuinely reachable as this generation's ONLY establishing
+    // fit whenever a caller suppresses the overview fit (e.g.
+    // suppressInitialOverviewFit={true}) but still supplies a
+    // warningOverlay selection.
+    cameraEstablishedGenerationRef.current = generation;
   }, [
     warningOverlaySelectedIndex,
     warningOverlayWarnings,

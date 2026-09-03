@@ -254,12 +254,26 @@ test("pre-ride: frames the complete saved route once connectivity returns automa
 
 test("Planning: preserves an exact manually-adjusted camera across a style-document failure/recovery instead of framing an available waypoint", async ({
   page,
+  context,
 }) => {
+  // Item 94 follow-up: a gesture only durably diverges the camera once
+  // this generation already has a real, established view (see
+  // MapView.tsx's own cameraEstablishedGenerationRef) — grant geolocation
+  // so Planning's own automatic fresh-session regional fit establishes
+  // one first, before the pan below, so this test continues to exercise
+  // "a manual pan on an ALREADY-framed camera", its own actual intent,
+  // rather than a pan on a still-raw one.
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
+
   const styleController = await installLocalMapStyleWithFailureControl(page);
   styleController.failStyle();
 
   await openPlanningWithFallbackActive(page);
   const mapContainer = page.locator('[data-testid="map-container"]');
+  await expect
+    .poll(() => readZoom(mapContainer), { timeout: 15_000 })
+    .toBeGreaterThan(RAW_WORLD_ZOOM_CEILING);
   await placeWaypointAndConfirm(mapContainer, page);
 
   // A genuine manual pan while still on the fallback map establishes an

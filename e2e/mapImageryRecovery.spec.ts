@@ -78,6 +78,16 @@ async function readCameraAttributesAtomically(
   }));
 }
 
+/** Comfortably above MapLibre's own raw default zoom (0), comfortably
+ * below what a real regional fitBounds produces in this suite's viewport.
+ * Mirrors mapImageryCameraFraming.spec.ts's own identical constant. */
+const RAW_WORLD_ZOOM_CEILING = 2;
+
+async function readZoom(mapContainer: Locator): Promise<number> {
+  const zoom = await mapContainer.getAttribute("data-camera-zoom");
+  return zoom ? Number.parseFloat(zoom) : 0;
+}
+
 const ANCHOR_PIXEL_TOLERANCE = 2;
 
 function anchorWithinTolerance(
@@ -595,7 +605,17 @@ test("free roam: tile-error retry preserves the camera and issues no additional 
 
 test("Planning: a manually panned camera survives a tile-error retry, and the status overlay never blocks the zoom, Locate-me, North-up or crosshair controls", async ({
   page,
+  context,
 }) => {
+  // Item 94 follow-up: a gesture only durably diverges the camera once
+  // this generation already has a real, established view (see
+  // MapView.tsx's own cameraEstablishedGenerationRef) — grant geolocation
+  // so Planning's own automatic fresh-session regional fit establishes
+  // one first, before the pan below, so this test continues to exercise
+  // "a manual pan on an ALREADY-framed camera", its own actual intent.
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
+
   const tiles = await installLocalMapStyleWithTileSource(page);
 
   await page.goto("/");
@@ -605,6 +625,9 @@ test("Planning: a manually panned camera survives a tile-error retry, and the st
 
   const mapContainer = page.locator('[data-testid="map-container"]');
   await waitForMapFullyLoaded(mapContainer);
+  await expect
+    .poll(() => readZoom(mapContainer), { timeout: 15_000 })
+    .toBeGreaterThan(RAW_WORLD_ZOOM_CEILING);
   // Establishes a manually panned position first. Planning's own initial
   // camera sits at a much lower (wider-area) zoom than Riding's followed
   // camera, where a single keyboard pan may not reliably cross into a
