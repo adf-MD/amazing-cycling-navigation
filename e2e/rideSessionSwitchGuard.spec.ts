@@ -609,6 +609,401 @@ test("on a long Routes list, selecting a lower route while another is paused exp
     offRouteMachineState: routeARowBefore?.offRouteMachineState,
   });
   expect(await readWatchPositionCallCount(page)).toBe(0);
+  // Reduced motion has no real scroll animation to race in the first
+  // place, so this is cheap, deterministic regression coverage for the
+  // item 95 follow-up: Pre-Ride must open at its canonical top, not
+  // inherit the Library's own far-scrolled position.
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+/** Shared setup for the item 95 follow-up's ordinary-motion tests below:
+ * establishes route A as unfinished, reloads, and builds a long enough
+ * Routes list (route B plus 8 fillers, most-recent-first sort) that
+ * opening B's card genuinely requires scrolling — mirrors the long-list
+ * fixture the reduced-motion test above uses, but deliberately WITHOUT
+ * emulating reduced motion, so the real animated smooth-scroll path is
+ * exercised rather than avoided. */
+async function setupOrdinaryMotionLongList(
+  page: Page,
+  context: BrowserContext,
+  testId: string,
+) {
+  const routeAName = `switch-guard-${testId}-route-a`;
+  const routeBName = `switch-guard-${testId}-route-b`;
+
+  await establishUnfinishedRide(page, context, routeAName);
+  await installGeolocationWatchCounter(page);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+  await importRoute(page, routeBName);
+  for (let index = 1; index <= 8; index += 1) {
+    await importRoute(page, `switch-guard-${testId}-filler-${String(index)}`);
+  }
+
+  const routeARowBefore = await readActiveRideStateRow(page);
+  const routeBId = await readSavedRouteId(page, routeBName);
+  if (!routeBId) throw new Error("expected a saved route id for route B");
+  const routeBCard = page.locator(`[data-route-id="${routeBId}"]`);
+
+  return { routeAName, routeBName, routeARowBefore, routeBCard };
+}
+
+test("Return activated during a genuine ordinary-motion scroll leaves Pre-Ride at a stable top, and Routes-return restoration is unaffected (item 95 follow-up)", async ({
+  page,
+  context,
+}, testInfo) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  const { routeAName, routeBName, routeARowBefore, routeBCard } =
+    await setupOrdinaryMotionLongList(page, context, "ordinary-motion");
+
+  await page.getByRole("button", { name: routeBName, exact: true }).click();
+  const dialog = routeBCard.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+  const returnButton = dialog.getByRole("button", { name: "Return to paused ride" });
+  await expect(returnButton).toBeVisible();
+
+  const libraryScrollY = await page.evaluate(() => window.scrollY);
+  expect(libraryScrollY).toBeGreaterThan(0); // proves the library is genuinely scrolled
+
+  // A continuous in-page recorder — immune to Node-side round-trip
+  // latency between Playwright and the browser — samples scrollY every
+  // animation frame for a fixed real-time window spanning the Return
+  // click and the whole Pre-Ride settle, marking (a) the Return click's
+  // own timestamp via a real capture-phase DOM listener and (b) the
+  // moment Route A's Pre-Ride heading genuinely mounts.
+  const RECORD_MS = 2500;
+  await page.evaluate(
+    ({ routeAName, recordMs }) => {
+      const w = window as unknown as {
+        __e2eScrollRecorder?: {
+          samples: { t: number; y: number }[];
+          clickAt: number | null;
+          transitionAt: number | null;
+          done: boolean;
+        };
+      };
+      const start = performance.now();
+      const recorder = {
+        samples: [] as { t: number; y: number }[],
+        clickAt: null as number | null,
+        transitionAt: null as number | null,
+        done: false,
+      };
+      w.__e2eScrollRecorder = recorder;
+
+      const onClick = (event: MouseEvent) => {
+        const target = event.target;
+        const button = target instanceof Element ? target.closest("button") : null;
+        if (
+          recorder.clickAt === null &&
+          button?.textContent.includes("Return to paused ride")
+        ) {
+          recorder.clickAt = performance.now() - start;
+        }
+      };
+      document.addEventListener("click", onClick, { capture: true });
+
+      const tick = () => {
+        const now = performance.now() - start;
+        recorder.samples.push({ t: now, y: window.scrollY });
+        if (recorder.transitionAt === null) {
+          const heading = document.querySelector("h1.screen-title");
+          if (heading?.textContent.trim() === routeAName) {
+            recorder.transitionAt = now;
+          }
+        }
+        if (now < recordMs) {
+          requestAnimationFrame(tick);
+        } else {
+          recorder.done = true;
+          document.removeEventListener("click", onClick, { capture: true });
+        }
+      };
+      requestAnimationFrame(tick);
+    },
+    { routeAName, recordMs: RECORD_MS },
+  );
+
+  // force:true skips Playwright's normal actionability wait (which would
+  // wait for the target to become "stable" first, likely absorbing
+  // exactly the race window this test needs to hit) while still
+  // dispatching a real, trusted, CDP-level mouse click at a position
+  // measured immediately before dispatch — not a coordinate snapshot
+  // taken earlier, which proved unreliable here: with a still-scrolling
+  // page, a boundingBox() measured even a short time before the click
+  // could go stale enough that the click landed on a different button
+  // ("End and switch", one row above) instead of "Return to paused ride".
+  await returnButton.click({ force: true, noWaitAfter: true });
+
+  await expect(page.getByRole("heading", { name: routeAName })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeVisible();
+  expect(await readWatchPositionCallCount(page)).toBe(0);
+  expect(await readActiveRideStateRow(page)).toMatchObject({
+    routeId: routeARowBefore?.routeId,
+    lastFix: routeARowBefore?.lastFix,
+  });
+
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            (window as unknown as { __e2eScrollRecorder?: { done: boolean } })
+              .__e2eScrollRecorder?.done ?? false,
+        ),
+      { timeout: RECORD_MS + 3000 },
+    )
+    .toBe(true);
+
+  const recorded = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __e2eScrollRecorder: {
+            samples: { t: number; y: number }[];
+            clickAt: number | null;
+            transitionAt: number | null;
+          };
+        }
+      ).__e2eScrollRecorder,
+  );
+
+  // Honest, non-blocking observational evidence: whether the card's own
+  // item-95 scroll animation was still genuinely moving in the samples
+  // immediately preceding the Return click. Reported via a test
+  // annotation, not hard-asserted — Chromium's own smooth-scroll
+  // cancellation semantics may already have settled it by this point
+  // regardless of what this fix does, and that is an honest, useful
+  // result in itself, not a failure of this test.
+  const clickAt = recorded.clickAt;
+  const samplesBeforeClick =
+    clickAt === null ? [] : recorded.samples.filter((sample) => sample.t <= clickAt);
+  const recentSamples = samplesBeforeClick.slice(-5);
+  const motionObservedBeforeReturn = recentSamples.some((sample, index) => {
+    if (index === 0) return false;
+    const previous = recentSamples[index - 1];
+    return sample.y !== previous.y;
+  });
+  testInfo.annotations.push({
+    type: "item-95-follow-up-observation",
+    description:
+      `motionObservedBeforeReturn=${String(motionObservedBeforeReturn)} ` +
+      `clickAt=${String(clickAt)} transitionAt=${String(recorded.transitionAt)}`,
+  });
+
+  // The load-bearing assertion: from the moment Route A's Pre-Ride
+  // heading genuinely mounted onward, scrollY must reach and REMAIN
+  // within tolerance of the top for the rest of this recording — not one
+  // instantaneous check, and immune to Playwright's own round-trip
+  // latency since every sample was taken in-page.
+  expect(recorded.transitionAt).not.toBeNull();
+  const transitionAt = recorded.transitionAt ?? 0;
+  const samplesAfterTransition = recorded.samples.filter(
+    (sample) => sample.t >= transitionAt,
+  );
+  expect(samplesAfterTransition.length).toBeGreaterThan(10);
+  const TOP_TOLERANCE_PX = 1;
+  const offTopSamples = samplesAfterTransition.filter(
+    (sample) => Math.abs(sample.y) > TOP_TOLERANCE_PX,
+  );
+  testInfo.annotations.push({
+    type: "item-95-follow-up-measurement",
+    description:
+      `settleWindowMs=${String(transitionAt - (clickAt ?? 0))} ` +
+      `offTopSampleCount=${String(offTopSamples.length)} ` +
+      `maxOffTopY=${String(Math.max(0, ...offTopSamples.map((s) => Math.abs(s.y))))}`,
+  });
+  expect(offTopSamples).toEqual([]);
+
+  // The Library's own saved scroll position must remain available and be
+  // restored, not merely discarded/reset to the top by this fix — a
+  // qualitative check, not an exact predicted pixel value. openRideTarget
+  // captures window.scrollY only once Return actually succeeds, and by
+  // then Chromium's own native scroll anchoring (see the non-race test
+  // below for the measured mechanism), plus whatever point item 95's own
+  // conflict-state animation had reached, have both already had a chance
+  // to move it — genuinely unpredictable to the pixel from outside, and
+  // not a symptom of this fix.
+  await page.getByRole("button", { name: "Routes" }).click();
+  await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("Return activated after the initial item 95 scroll has fully settled still opens Pre-Ride at a stable top (item 95 follow-up, non-race control)", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  const { routeAName, routeBName, routeBCard } = await setupOrdinaryMotionLongList(
+    page,
+    context,
+    "settled-return",
+  );
+
+  await page.getByRole("button", { name: routeBName, exact: true }).click();
+  const dialog = routeBCard.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+  const returnButton = dialog.getByRole("button", { name: "Return to paused ride" });
+  await expect(returnButton).toBeVisible();
+
+  // Poll (never a fixed sleep) until scrollY has genuinely stopped
+  // changing across several consecutive real animation frames — i.e. the
+  // initial item 95 card-open animation has fully settled — before
+  // tapping Return, proving the already-working slow-tap path stays
+  // correct.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            new Promise<boolean>((resolve) => {
+              let stableFrames = 0;
+              let lastY: number | null = null;
+              const check = () => {
+                const y = window.scrollY;
+                stableFrames = lastY !== null && y === lastY ? stableFrames + 1 : 0;
+                lastY = y;
+                if (stableFrames >= 10) {
+                  resolve(true);
+                  return;
+                }
+                requestAnimationFrame(check);
+              };
+              requestAnimationFrame(check);
+            }),
+        ),
+      { timeout: 5000 },
+    )
+    .toBe(true);
+
+  await returnButton.click();
+
+  await expect(page.getByRole("heading", { name: routeAName })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeVisible();
+
+  const staysStable = await page.evaluate(
+    () =>
+      new Promise<boolean>((resolve) => {
+        let frames = 0;
+        const check = () => {
+          frames += 1;
+          if (Math.abs(window.scrollY) > 1) {
+            resolve(false);
+            return;
+          }
+          if (frames >= 10) {
+            resolve(true);
+            return;
+          }
+          requestAnimationFrame(check);
+        };
+        requestAnimationFrame(check);
+      }),
+  );
+  expect(staysStable).toBe(true);
+
+  // The Library's own saved scroll position must remain available and be
+  // restored, not discarded by this fix — a qualitative "not reset to
+  // the top" check, not an exact predicted pixel value: measured while
+  // building this test, Chromium's own native scroll anchoring shifts
+  // window.scrollY on its own once the busy "Opening your paused ride…"
+  // message (much shorter than the conflict message it replaces) shrinks
+  // the card content above the current viewport — a real, separate
+  // browser behaviour, unrelated to this fix, that makes the exact
+  // library-return value genuinely unpredictable from outside. The exact-
+  // value contract itself is proven in App.test.tsx's own mocked (and
+  // therefore exact and deterministic) environment instead.
+  await page.getByRole("button", { name: "Routes" }).click();
+  await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("End and switch activated during a genuine ordinary-motion scroll also leaves the new screen at a stable top (item 95 follow-up, shared transition boundary)", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  const { routeBName, routeBCard } = await setupOrdinaryMotionLongList(
+    page,
+    context,
+    "end-and-switch",
+  );
+
+  await page.getByRole("button", { name: routeBName, exact: true }).click();
+  const dialog = routeBCard.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+  const confirmButton = dialog.getByRole("button", { name: "End and switch" });
+  await expect(confirmButton).toBeVisible();
+
+  // force:true, mirroring the Return test above: skips Playwright's
+  // stability wait while still dispatching a real, trusted click measured
+  // immediately before firing, not a coordinate snapshot that could go
+  // stale while the page is still scrolling. This fix's busy-gate and
+  // reassertion loop are both shared by confirmPendingSwitch ("clearing")
+  // via the same RouteListItem effect and openRideTarget path, so the
+  // shared boundary needs its own, if minimal, real-browser proof rather
+  // than being assumed correct from code-sharing alone.
+  await confirmButton.click({ force: true, noWaitAfter: true });
+
+  await expect(page.getByRole("heading", { name: routeBName })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start riding" })).toBeVisible();
+
+  const staysStable = await page.evaluate(
+    () =>
+      new Promise<boolean>((resolve) => {
+        let frames = 0;
+        const check = () => {
+          frames += 1;
+          if (Math.abs(window.scrollY) > 1) {
+            resolve(false);
+            return;
+          }
+          if (frames >= 30) {
+            resolve(true);
+            return;
+          }
+          requestAnimationFrame(check);
+        };
+        requestAnimationFrame(check);
+      }),
+  );
+  expect(staysStable).toBe(true);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);

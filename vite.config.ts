@@ -91,7 +91,7 @@ export default defineConfig({
       // directories only (untrusted-input parsing, persistence,
       // navigation/off-route logic) — deliberately no global threshold
       // and no perFile, so this can't silently become a blanket gate.
-      // See docs/project/history/items-89-NN.md for how these figures
+      // See docs/project/history/items-89-94.md for how these figures
       // were measured.
       thresholds: {
         "src/gpx/**": { statements: 99, branches: 90, functions: 100, lines: 99 },

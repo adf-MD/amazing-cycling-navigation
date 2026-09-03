@@ -752,6 +752,45 @@ describe("RouteListItem", () => {
         expect(calls).toHaveLength(2);
       });
 
+      it("does not scroll again for a busy progress message, but re-arms for a later non-busy actionable message (item 95 follow-up)", () => {
+        Element.prototype.getBoundingClientRect = () => stubRect();
+        const calls = captureScrollCalls();
+
+        const { rerenderWithSwitchPrompt } = renderItem({
+          switchPrompt: buildSwitchPrompt({
+            busy: false,
+            message:
+              '"Route A" is paused. Return to it, or end it and switch to "Route B".',
+          }),
+        });
+        expect(calls).toHaveLength(1);
+
+        // Tapping "Return to paused ride" flips this card's own prompt into
+        // a busy, non-actionable progress message before the async storage
+        // reads resolve. This must NOT re-trigger a fresh scroll: the
+        // screen is about to leave Routes regardless of this scroll's
+        // outcome, and the busy state offers nothing actionable to bring
+        // into view.
+        rerenderWithSwitchPrompt(
+          buildSwitchPrompt({ busy: true, message: "Opening your paused ride…" }),
+        );
+        expect(calls).toHaveLength(1);
+
+        // A later, genuinely new ACTIONABLE message following the busy
+        // interval (e.g. a failed re-check) must still re-check visibility
+        // and scroll if needed — the busy message must not have been
+        // latched as "the last seen message" and permanently suppressed
+        // future checks.
+        rerenderWithSwitchPrompt(
+          buildSwitchPrompt({
+            busy: false,
+            message:
+              "This paused ride has changed since this screen opened. Check again to see its current status.",
+          }),
+        );
+        expect(calls).toHaveLength(2);
+      });
+
       it("does not scroll at all when the card is already fully visible", () => {
         // Well within jsdom's default 768px innerHeight, comfortably below
         // a headerless (headerBottom 0) top boundary.

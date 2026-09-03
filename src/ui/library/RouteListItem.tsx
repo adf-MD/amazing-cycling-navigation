@@ -137,6 +137,16 @@ export function RouteListItem({
       lastSwitchMessageRef.current = null;
       return;
     }
+    // Busy (non-actionable) progress text — e.g. "Opening your paused
+    // ride…"/"Ending your current ride…" — is skipped without recording it
+    // as the last-seen message, so lastSwitchMessageRef keeps holding the
+    // last ACTIONABLE text throughout the busy interval. This both avoids
+    // an avoidable extra scroll moments before the screen navigates away,
+    // and re-arms correctly once a genuinely new actionable message (e.g.
+    // a failure) follows a busy status (item 95 follow-up).
+    if (switchPrompt.busy) {
+      return;
+    }
     if (switchPrompt.message === lastSwitchMessageRef.current) {
       return;
     }

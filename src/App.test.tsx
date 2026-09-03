@@ -164,6 +164,28 @@ function installScrollToSpy() {
   });
 }
 
+// jsdom's default getBoundingClientRect() is all-zero, which trivially
+// satisfies isCardAlreadyFullyVisible and means RouteListItem's own
+// scroll-into-view effect never actually calls scrollIntoView here at
+// all — mirrors RouteListItem.test.tsx's own stubRect() shape (tall
+// enough to exceed jsdom's default 768 innerHeight) so a test that needs
+// to prove something about a REAL scrollIntoView call (or the deliberate
+// absence of one) exercises the "must scroll" branch instead of a
+// vacuously-already-satisfied one.
+function stubOffscreenCardGeometry() {
+  return vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+    top: 100,
+    bottom: 900,
+    left: 0,
+    right: 320,
+    width: 320,
+    height: 800,
+    x: 0,
+    y: 100,
+    toJSON: () => "",
+  });
+}
+
 function buildGpxFile(name: string, content: string): File {
   return new File([content], name, { type: "application/gpx+xml" });
 }
@@ -220,7 +242,15 @@ describe("App — document scroll around Ride content", () => {
     expect(scrollToSpy).toHaveBeenCalledTimes(1);
     expect(scrollToSpy).toHaveBeenNthCalledWith(1, { top: 0, left: 0, behavior: "auto" });
 
-    window.scrollY = 900; // simulates scrolling while on Riding — must not be reused as the library offset
+    // Simulates scrolling while on Riding — must not be reused as the
+    // library offset. A real user scroll is always preceded by a genuine
+    // input event (touch/wheel/pointer), which is exactly what the item
+    // 95 follow-up's reassertion loop (useResetScrollForNewRideContent)
+    // uses to recognise "this is deliberate, stop correcting it" rather
+    // than a leftover animation frame — dispatched here so this scroll is
+    // not fought even if that loop happens to still be active.
+    window.dispatchEvent(new Event("wheel"));
+    window.scrollY = 900;
     await user.click(screen.getByRole("button", { name: "Routes" }));
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Route B" })).toBeInTheDocument();
@@ -1301,6 +1331,59 @@ describe("App — Ride switch guard (item 73)", () => {
     expect(clearSpy).toHaveBeenCalledOnce();
   });
 
+  it("End and switch's busy 'clearing' state does not trigger a second card scroll while clearActiveRideState is still pending (item 95 follow-up)", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    await importFixture(user, "Route B.gpx");
+    const routes = await db.routes.toArray();
+    const routeA = routes.find((route) => route.name === "Route A");
+    const routeB = routes.find((route) => route.name === "Route B");
+    if (!routeA || !routeB) throw new Error("expected Route A and Route B");
+    await seedRouteRow(routeA.id);
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const scrollIntoViewMock = Element.prototype.scrollIntoView as ReturnType<
+      typeof vi.fn
+    >;
+    stubOffscreenCardGeometry();
+
+    await user.click(screen.getByRole("button", { name: "Route B" }));
+    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole(
+      "alertdialog",
+    );
+    // Opening the prompt is itself an actionable, non-busy state that
+    // must genuinely have scrolled the (deliberately off-screen) card
+    // into view — the baseline this test's later assertion compares
+    // against.
+    expect(scrollIntoViewMock.mock.calls.length).toBeGreaterThan(0);
+    const scrollCallsAtOpen = scrollIntoViewMock.mock.calls.length;
+
+    let resolveClear: (() => void) | undefined;
+    vi.spyOn(rideStateRepository, "clearActiveRideState").mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveClear = () => {
+            resolve(undefined);
+          };
+        }),
+    );
+
+    await user.click(within(dialog).getByRole("button", { name: "End and switch" }));
+
+    // Now busy ("clearing", "Ending your current ride…") while the write
+    // is held open — the same busy-gate that protects Return to paused
+    // ride's own "returning" status must protect this shared status too,
+    // since both go through RouteListItem's one scroll effect.
+    expect(within(dialog).getByText(/ending your current ride/i)).toBeInTheDocument();
+    expect(scrollIntoViewMock.mock.calls.length).toBe(scrollCallsAtOpen);
+
+    resolveClear?.();
+
+    expect(await screen.findByRole("heading", { name: "Route B" })).toBeInTheDocument();
+  });
+
   it("a stale launcher render exposing Start free roam is still guarded when a route session became active after hydration — clear happens before the fresh free-roam row is written and before the watch starts", async () => {
     const user = userEvent.setup();
     const watchPositionSpy = stubGeolocationWatch();
@@ -1836,6 +1919,90 @@ describe("App — Ride switch guard (item 73)", () => {
     expect(await getActiveRideState()).toMatchObject(routeARow);
     expect(clearSpy).not.toHaveBeenCalled();
     expect(watchPositionSpy).not.toHaveBeenCalled();
+  });
+
+  it("Return to paused ride resets the document scroll to the top exactly once — with no second card scroll during the busy 'returning' window — and preserves the Library's own saved offset for later restoration (item 95 follow-up)", async () => {
+    const user = userEvent.setup();
+    const watchPositionSpy = stubGeolocationWatch();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+
+    await importFixture(user, "Route A.gpx");
+    await importFixture(user, "Route B.gpx");
+    const routes = await db.routes.toArray();
+    const routeA = routes.find((route) => route.name === "Route A");
+    const routeB = routes.find((route) => route.name === "Route B");
+    if (!routeA || !routeB) throw new Error("expected Route A and Route B");
+    const routeARow = await seedRouteRow(routeA.id);
+    if (!routeARow) throw new Error("expected a seeded route row");
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const scrollIntoViewMock = Element.prototype.scrollIntoView as ReturnType<
+      typeof vi.fn
+    >;
+    const scrollToSpy = installScrollToSpy();
+    stubOffscreenCardGeometry();
+
+    window.scrollY = 4000; // simulates a meaningful scrolled Library position
+    await user.click(screen.getByRole("button", { name: "Route B" }));
+    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole(
+      "alertdialog",
+    );
+    // Opening the prompt is itself an actionable, non-busy state that
+    // must genuinely have scrolled the (deliberately off-screen) card
+    // into view — the baseline this test's later assertion compares
+    // against.
+    expect(scrollIntoViewMock.mock.calls.length).toBeGreaterThan(0);
+    const scrollCallsAtOpen = scrollIntoViewMock.mock.calls.length;
+
+    let resolveActiveRideStateRead:
+      ((value: Awaited<ReturnType<typeof getActiveRideState>>) => void) | undefined;
+    vi.spyOn(rideStateRepository, "getActiveRideState").mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveActiveRideStateRead = resolve;
+        }),
+    );
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Return to paused ride" }),
+    );
+
+    // Now busy ("returning", "Opening your paused ride…") while the read
+    // is held open — must not have triggered a further card scroll (item
+    // 95 follow-up), and the reset must not have fired yet either, since
+    // the screen has not actually transitioned to Riding.
+    expect(within(dialog).getByText(/opening your paused ride/i)).toBeInTheDocument();
+    expect(scrollIntoViewMock.mock.calls.length).toBe(scrollCallsAtOpen);
+    expect(scrollToSpy).not.toHaveBeenCalled();
+
+    resolveActiveRideStateRead?.(routeARow);
+
+    expect(await screen.findByRole("heading", { name: "Route A" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Resume ride" }),
+    ).toBeInTheDocument();
+    expect(watchPositionSpy).not.toHaveBeenCalled();
+
+    // The scroll-reset fires exactly once, at the correct transition —
+    // the new Ride content actually committing, not any earlier status
+    // change.
+    expect(scrollToSpy).toHaveBeenCalledTimes(1);
+    expect(scrollToSpy).toHaveBeenNthCalledWith(1, { top: 0, left: 0, behavior: "auto" });
+
+    // The Library's own saved scroll position — captured from the moment
+    // Return actually succeeded, per openRideTarget's existing contract —
+    // must still be available and restored the next time Routes is
+    // shown, not discarded by this fix.
+    await user.click(screen.getByRole("button", { name: "Routes" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Route B" })).toBeInTheDocument();
+    });
+    expect(scrollToSpy).toHaveBeenCalledTimes(2);
+    expect(scrollToSpy).toHaveBeenNthCalledWith(2, {
+      top: 4000,
+      left: 0,
+      behavior: "auto",
+    });
   });
 
   it("Return to paused ride resolves the paused route via the routes repository after a cold remount, with no in-memory route object available", async () => {
