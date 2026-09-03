@@ -2685,6 +2685,94 @@ describe("MapView", () => {
         });
       });
 
+      // Item 94 follow-up v2: a physical-device retest of the previous
+      // follow-up (v0.4.2) found a distinct, still-reproducible bug —
+      // proves the exact causal chain via generation counts and exact
+      // setCameraSpy arguments. Pressing Retry while the real style is
+      // STILL unreachable makes attachMap() run TWICE within the same
+      // retryToken effect run: once against the real style (generation N,
+      // which fails again and is torn down without ever becoming
+      // visible), then, via switchToFallback(), a second time against
+      // FALLBACK_STYLE (generation N+1, the one that actually becomes
+      // visible). Generation N still fires MapLibre's own pre-style-ready
+      // spurious settle at its raw default transform before its style
+      // request resolves — and since onCameraSettled writes
+      // liveCameraSnapshotRef unconditionally on every settle, that
+      // spurious settle would (on unfixed code) overwrite the genuinely
+      // useful pre-retry camera with garbage before generation N+1 reads
+      // it, well before generation N's own failure and the resulting
+      // fallback swap are ever assessed.
+      it("preserves the camera established on the fallback map through a retry whose own real-style attempt ALSO fails while offline (item 94 follow-up v2)", () => {
+        const mock = createMockMapFactory();
+        render(<MapView points={points} mapFactory={mock.factory} />);
+
+        // Offline from the start: the original style fails immediately,
+        // activating the fallback — generation 1 (real style, never
+        // loads) -> generation 2 (fallback).
+        mock.triggerError({
+          message: "style fetch failed",
+          category: "style-request-or-parse",
+        });
+        expect(mock.constructedStyles).toHaveLength(2);
+        mock.triggerLoad();
+        expect(screen.getByTestId("map-fallback-banner")).toBeInTheDocument();
+
+        // A useful view is established on the fallback generation, then a
+        // genuine gesture durably diverges it — mirrors the sibling test
+        // above, applied to the fallback generation instead of the
+        // original one.
+        mock.triggerUserCameraInteraction();
+        mock.triggerCameraSettled({
+          coordinate: [-2.5, 52.1],
+          zoom: 12,
+          bearingDegrees: 45,
+          pitchDegrees: 20,
+        });
+        mock.setCameraSpy.mockClear();
+
+        // "Retry map imagery" while STILL offline: bumps retryToken,
+        // tears down the fallback, re-attempts the ORIGINAL style —
+        // generation 3.
+        act(() => {
+          within(screen.getByTestId("map-fallback-banner"))
+            .getByTestId("retry-map-imagery-button")
+            .click();
+        });
+        expect(mock.constructedStyles).toHaveLength(3);
+
+        // Generation 3's own spurious pre-style-ready settle — fires with
+        // NO triggerLoad()/triggerStyleLoaded() ever called for
+        // generation 3, exactly mirroring MapLibre's own documented
+        // pre-style-ready behaviour on a still-loading instance.
+        mock.triggerCameraSettled({
+          coordinate: [0, 0],
+          zoom: 0,
+          bearingDegrees: 0,
+          pitchDegrees: 0,
+        });
+
+        // Generation 3's own real-style request genuinely fails too
+        // (still offline) -> switchToFallback() fires again, internally,
+        // within this SAME retryToken effect run -> generation 4
+        // (fallback again).
+        mock.triggerError({
+          message: "style fetch failed",
+          category: "style-request-or-parse",
+        });
+        expect(mock.constructedStyles).toHaveLength(4);
+
+        // Generation 4 becomes visible.
+        mock.triggerLoad();
+
+        // The genuinely useful, gesture-adjusted pre-retry camera must be
+        // what gets restored — not generation 3's own spurious
+        // raw-default settle.
+        expect(mock.setCameraSpy).toHaveBeenCalledWith([-2.5, 52.1], 12, 45, 20, {
+          animate: false,
+          followOffset: false,
+        });
+      });
+
       // The following camera-preservation tests all use the tile-error
       // retry path (not the fatal/fallback path): switchToFallback()'s own
       // `if (styleReady || usedFallback) return;` guard means a fatal

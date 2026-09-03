@@ -1007,6 +1007,37 @@ export function MapView({
       lastAppliedZoomRequestIdRef.current = null;
     }
 
+    // Item 94 follow-up v2: captured ONCE per outer-effect-run (i.e. once
+    // per retryToken bump/mount), before either attachMap() call below can
+    // run — not recomputed per attachMap() call. A single Retry (or
+    // automatic reconnection) while the real style is still unreachable
+    // causes attachMap() to run TWICE within this same effect run: first
+    // against the real remote style (which fails again and is torn down
+    // without ever becoming visible), then, via switchToFallback(), a
+    // second time against FALLBACK_STYLE (the one that actually becomes
+    // visible). That first, doomed attempt still fires MapLibre's own
+    // pre-style-ready spurious settle at its raw default transform (see
+    // onCameraSettled's own comment below) — and liveCameraSnapshotRef is
+    // written unconditionally on every settle, so that spurious settle
+    // would otherwise overwrite the genuinely useful pre-retry camera with
+    // garbage in the gap between the two attachMap() calls, which the
+    // SECOND call would then faithfully restore. Freezing this value once,
+    // before either call, means both calls restore the same genuinely
+    // useful pre-retry camera regardless of what the first, doomed
+    // generation's own spurious settle does to liveCameraSnapshotRef in
+    // between — that ref's transient corruption during this window is
+    // harmless, since nothing reads it again until the next effect run, by
+    // which point the surviving generation's own genuine settle will have
+    // overwritten it with a good value again. For the ordinary case (the
+    // retry succeeds on its first attempt, a single attachMap() call), this
+    // produces an identical result to reading the ref fresh, since nothing
+    // can corrupt liveCameraSnapshotRef between this point and that one
+    // call — the two statements execute back-to-back with no yield point,
+    // so no gesture or settle can land in between.
+    const cameraSnapshotToRestore = hasCameraDivergedFromTargetsRef.current
+      ? liveCameraSnapshotRef.current
+      : null;
+
     function recordAttempt(category: MapDiagnosticCategory, justResumed = false): void {
       recordMapAttempt({
         timestampIso: new Date().toISOString(),
@@ -1238,19 +1269,9 @@ export function MapView({
       // wrongly establishing this fresh generation's own first (spurious)
       // settle — see pendingGenuineGestureSettleRef's own doc comment.
       pendingGenuineGestureSettleRef.current = false;
-      // Captured as a VALUE here, synchronously, rather than merely
-      // noting "a restore is needed" and re-reading
-      // liveCameraSnapshotRef.current later inside onStyleLoaded: a
-      // spurious moveend can genuinely fire on the fresh instance before
-      // style.load (MapLibre settling at its own initial/default
-      // transform) and would otherwise clobber the ref in between these
-      // two points, restoring a bogus (0,0)/zero-zoom camera instead of
-      // the rider's actual last-known one. Freezing the value now closes
-      // that window without needing to gate onCameraSettled itself — see
-      // its own comment for why a broad gate there is wrong.
-      const cameraSnapshotToRestore = hasCameraDivergedFromTargetsRef.current
-        ? liveCameraSnapshotRef.current
-        : null;
+      // cameraSnapshotToRestore is captured once per outer-effect-run, not
+      // per attachMap() call — see its own declaration above this function
+      // for why (item 94 follow-up v2).
       if (cameraSnapshotToRestore !== null) {
         cameraRestorePendingGenerationRef.current = generation;
       }
@@ -1295,8 +1316,8 @@ export function MapView({
         // Backlog item 94: invites a caller to (re)compute its own camera
         // intent for this generation, but only when the live camera is
         // genuinely undiverged right now — checked fresh here rather than
-        // trusting cameraSnapshotToRestore (captured at attach start,
-        // above), because a real gesture can land during the style-
+        // trusting cameraSnapshotToRestore (captured once at effect start,
+        // well above), because a real gesture can land during the style-
         // loading window, after that capture but before this point, and
         // must equally suppress this invitation.
         if (!hasCameraDivergedFromTargetsRef.current) {
@@ -1389,9 +1410,14 @@ export function MapView({
         // (confirmed via a real e2e regression, not merely reasoned
         // about). The narrower, actually-needed protection against a
         // spurious pre-load settle corrupting a pending camera restore
-        // lives in attachMap's own cameraSnapshotToRestore — captured as
-        // a value once, synchronously, rather than by re-reading
-        // liveCameraSnapshotRef.current later.
+        // lives in this effect's own cameraSnapshotToRestore (declared
+        // once, near the top, before attachMap is even defined — item 94
+        // follow-up v2) — captured as a value once per effect run, rather
+        // than by re-reading liveCameraSnapshotRef.current per attachMap()
+        // call, so even a spurious settle from an intermediate, doomed
+        // generation between two attachMap() calls in the same retry
+        // can't corrupt what a LATER generation in that same retry
+        // restores.
         // Keeps the data-camera-center diagnostic attribute correct for
         // every way the camera can now move (following ease, restore
         // jump, free-mode panning), not just the initial overview fit,

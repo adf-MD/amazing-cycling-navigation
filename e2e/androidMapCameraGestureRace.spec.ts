@@ -36,6 +36,46 @@ const FIXTURE_GPX_PATH = fileURLToPath(
 
 const CACHED_LOCATION = { latitude: 51.5, longitude: -0.1 };
 
+// Mirrors mapImageryCameraFraming.spec.ts's own identical tolerance —
+// duplicated locally per this repo's no-shared-e2e-helpers-across-specs
+// convention. Exact-value tolerance is correct for a restored setCamera
+// snapshot (not a padded fitBounds result).
+const CAMERA_VALUE_TOLERANCE = 1e-6;
+
+function numbersClose(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  return Math.abs(Number.parseFloat(a) - Number.parseFloat(b)) < CAMERA_VALUE_TOLERANCE;
+}
+
+/** Asserts the two camera snapshots are the SAME camera (centre/zoom/
+ * bearing/pitch), not merely both "meaningfully framed" — required to
+ * prove a corrupted intermediate camera doesn't get silently replaced by
+ * a DIFFERENT, coincidentally-also-meaningful one rather than the actual
+ * pre-pinch camera being preserved. */
+function assertCameraMatches(
+  actual: CameraAttributeSnapshot,
+  expected: CameraAttributeSnapshot,
+  label: string,
+): void {
+  expect(
+    numbersClose(
+      actual.centre?.split(",")[0] ?? null,
+      expected.centre?.split(",")[0] ?? null,
+    ),
+    `${label}: centre longitude`,
+  ).toBe(true);
+  expect(
+    numbersClose(
+      actual.centre?.split(",")[1] ?? null,
+      expected.centre?.split(",")[1] ?? null,
+    ),
+    `${label}: centre latitude`,
+  ).toBe(true);
+  expect(numbersClose(actual.zoom, expected.zoom), `${label}: zoom`).toBe(true);
+  expect(numbersClose(actual.bearing, expected.bearing), `${label}: bearing`).toBe(true);
+  expect(numbersClose(actual.pitch, expected.pitch), `${label}: pitch`).toBe(true);
+}
+
 interface CameraAttributeSnapshot {
   centre: string | null;
   bearing: string | null;
@@ -228,6 +268,59 @@ async function placeWaypoint(mapContainer: Locator, page: Page): Promise<void> {
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
 }
 
+// Mirrors planning.spec.ts's own identical helper — duplicated locally
+// per this repo's established e2e-spec precedent.
+function isFullyWithin(inner: Box, outer: Box): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  );
+}
+
+// A second tap position, genuinely separated from SAFE_MAP_TAP_POSITION,
+// still within the same safe band (clear of every top-anchored control
+// cluster, within the container's own shortest observed height).
+const SECOND_SAFE_MAP_TAP_POSITION = { x: 320, y: 290 };
+
+/** Places two genuinely separated waypoints on an already cached-location-
+ * framed camera (geolocation resolved before the map ever attached, so
+ * Planning's own initial regional box-fit genuinely applies while still
+ * offline) and proves the resulting view is meaningfully framed by BOTH a
+ * real zoom condition AND real waypoint-geometry containment — two
+ * distinct markers, each fully inside the map container — not merely a
+ * single, trivially-contained point. */
+// Callers must grant geolocation permission and set the coordinate BEFORE
+// opening Planning (before openPlanningOffline/page.goto) — Planning's own
+// mount effect calls requestApproximateLocation() exactly once and never
+// retries later just because permission was subsequently granted, matching
+// this file's own pre-existing "case 2" pattern.
+async function establishPlanningViewWithTwoWaypoints(
+  page: Page,
+  mapContainer: Locator,
+): Promise<void> {
+  await expect
+    .poll(async () => zoomOf(await readFullSnapshot(page, mapContainer, "A (poll)")), {
+      timeout: 15_000,
+    })
+    .toBeGreaterThan(RAW_WORLD_ZOOM_CEILING);
+
+  await mapContainer.click({ position: SAFE_MAP_TAP_POSITION });
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+  await mapContainer.click({ position: SECOND_SAFE_MAP_TAP_POSITION });
+
+  const markers = page.locator(".planning-waypoint-marker");
+  await expect(markers).toHaveCount(2);
+  const mapBox = await mapContainer.boundingBox();
+  if (!mapBox) throw new Error("expected the map container to lay out");
+  for (const marker of await markers.all()) {
+    const markerBox = await marker.boundingBox();
+    if (!markerBox) throw new Error("expected each waypoint marker to lay out");
+    expect(isFullyWithin(markerBox, mapBox)).toBe(true);
+  }
+}
+
 async function importGpxAndOpenPreRideOffline(
   page: Page,
   styleController: StyleFailureController,
@@ -278,6 +371,37 @@ async function recoverViaOnlineEvent(
   await expect(page.getByTestId("map-fallback-banner")).not.toBeAttached({
     timeout: 15_000,
   });
+  await waitForCameraToSettle(mapContainer);
+}
+
+/** Item 94 follow-up v2: attempts recovery via `trigger` WITHOUT ever
+ * calling styleController.succeedStyle() first, so the retry's own
+ * attempt to reach the real remote style genuinely fails again — the
+ * "sustained offline" reproduction. Proves, in order: (1) the fallback
+ * genuinely unmounts, synchronously with the triggering action, well
+ * before its own remote-style request could possibly resolve — a stale
+ * leftover banner could never satisfy this; (2) a genuinely NEW
+ * remote-style request was attempted and failed (styleController's own
+ * failedStyleRequestCount, a real network-level proof, not DOM state);
+ * (3) a fresh fallback generation subsequently completed and its camera
+ * genuinely settled. Does NOT call succeedStyle() — the style endpoint
+ * stays unavailable throughout, matching the field report's "press Retry
+ * map imagery" (or, for the online-triggered variant, "connectivity
+ * returns") while imagery specifically remains unreachable. */
+async function attemptFailingRecoveryToFallback(
+  page: Page,
+  mapContainer: Locator,
+  styleController: StyleFailureController,
+  trigger: () => Promise<void>,
+): Promise<void> {
+  const failedBefore = styleController.failedStyleRequestCount();
+  const banner = page.getByTestId("map-fallback-banner");
+  await trigger();
+  await expect(banner).not.toBeAttached({ timeout: 15_000 });
+  await expect
+    .poll(() => styleController.failedStyleRequestCount())
+    .toBeGreaterThan(failedBefore);
+  await expect(banner).toBeVisible({ timeout: 15_000 });
   await waitForCameraToSettle(mapContainer);
 }
 
@@ -567,4 +691,206 @@ test("Pre-ride supplementary: pinch before the original style ever settles, then
   });
   expect(isMeaningfullyFramed(c)).toBe(true);
   await expect(page.getByRole("button", { name: "Start riding" })).toBeVisible();
+});
+
+// --- Item 94 follow-up v2: sustained-offline retry cascade ---
+// A physical-device retest of the v0.4.2 fix (the cases above) found it
+// insufficient for a distinct, more precise reproduction: pressing Retry
+// (or reconnecting) while imagery is STILL unreachable makes MapView
+// internally attempt the real remote style a second time (which fails
+// again) before automatically falling back once more — and that
+// intermediate, doomed attempt's own spurious pre-style-ready settle can
+// corrupt the camera the surviving fallback generation then restores. See
+// MapView.tsx's own "item 94 follow-up v2" comment (near the top of its
+// map-creation effect) for the confirmed mechanism.
+//
+// Unlike the cases above (which always call succeedStyle() before
+// triggering recovery, so the retry's own remote attempt always succeeds
+// on the first try), every test below deliberately keeps the style
+// endpoint failing through the FIRST recovery attempt — the intermediate
+// camera is asserted BEFORE any genuine success, so a future
+// implementation that merely reframes correctly on eventual success
+// (while still passing through a wrong intermediate state) cannot pass.
+
+// Deliberately NOT parametrized with a "newly placed waypoint(s), no
+// geolocation" variant: that starting state never genuinely establishes a
+// camera before the pinch (per this file's own case 1 above), so a pinch
+// on it is correctly NOT durably preserved — recovery legitimately
+// reframes to the waypoint instead, per v0.4.2's own confirmed, correct
+// behaviour. Asserting exact preservation there would be asserting the
+// wrong contract. Only the genuinely-established case can test "does a
+// real, useful pre-retry camera survive the sustained-offline cascade".
+test("Planning (cached-location-framed, two separated waypoints): small pinch survives a retry whose own remote-style attempt also fails, both immediately and after genuine recovery", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation(CACHED_LOCATION);
+  const styleController = await installLocalMapStyleWithFailureControl(page);
+  const mapContainer = await openPlanningOffline(page, styleController);
+  await establishPlanningViewWithTwoWaypoints(page, mapContainer);
+
+  await pinchAndSettle(page, mapContainer, SMALL_PINCH);
+  const postPinch = await readFullSnapshot(
+    page,
+    mapContainer,
+    "post-pinch (still offline)",
+  );
+
+  // The retry's own remote-style attempt genuinely fails again — no
+  // succeedStyle() call — so this exercises the real, confirmed
+  // sustained-offline cascade: attempt real style (fails) -> automatic
+  // fallback (generation N -> N+1 within one retryToken effect run).
+  await attemptFailingRecoveryToFallback(page, mapContainer, styleController, () =>
+    page.getByTestId("retry-map-imagery-button").click(),
+  );
+  const intermediate = await readFullSnapshot(
+    page,
+    mapContainer,
+    "immediately after the failed retry's own fallback (before genuine recovery)",
+  );
+  assertCameraMatches(
+    intermediate.camera,
+    postPinch.camera,
+    "intermediate camera after the failed-retry fallback",
+  );
+
+  // Now let a genuine recovery succeed, and prove the SAME camera still
+  // holds — not merely that it happens to look correct once real success
+  // eventually arrives.
+  await recoverViaRetryButton(page, mapContainer, styleController);
+  const final = await readFullSnapshot(
+    page,
+    mapContainer,
+    "final camera after genuine recovery",
+  );
+  assertCameraMatches(
+    final.camera,
+    postPinch.camera,
+    "final camera after genuine recovery",
+  );
+
+  test.info().annotations.push({
+    type: "camera-race-sustained-offline-retry",
+    description: JSON.stringify({ postPinch, intermediate, final }),
+  });
+});
+
+test("Planning: small pinch survives connectivity returning while imagery is still unreachable (genuine offline-to-online transition, not a synthetic event)", async ({
+  page,
+  context,
+}) => {
+  // Geolocation must be granted/set BEFORE Planning ever mounts — see
+  // establishPlanningViewWithTwoWaypoints's own doc comment.
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation(CACHED_LOCATION);
+  const styleController = await installLocalMapStyleWithFailureControl(page);
+  const mapContainer = await openPlanningOffline(page, styleController);
+  // A genuine browser-level offline state, applied only once the app
+  // shell itself has already loaded (setOffline(true) blocks ALL network
+  // traffic, including the local preview server's own app-shell
+  // requests, confirmed directly — it cannot be applied before page.goto)
+  // — not merely a mocked style failure, matching the field report's own
+  // "remain offline" starting condition more faithfully. Proven
+  // compatible with page.route() interception by existing precedent in
+  // this repo (e.g. mapImageryRecovery.spec.ts's "being offline alone..."
+  // test): route handlers still fully control the outcome regardless of
+  // setOffline's own state.
+  await context.setOffline(true);
+  await establishPlanningViewWithTwoWaypoints(page, mapContainer);
+
+  await pinchAndSettle(page, mapContainer, SMALL_PINCH);
+  const postPinch = await readFullSnapshot(
+    page,
+    mapContainer,
+    "post-pinch (still offline)",
+  );
+
+  try {
+    // The genuine offline -> online transition: a real browser-level
+    // network-state change (fires the page's own real "online" event),
+    // NOT a synthetic dispatchEvent — while the style endpoint itself
+    // stays unavailable throughout (styleController.failStyle() is never
+    // cleared here), matching "online but imagery still unreachable"
+    // rather than "still offline".
+    await attemptFailingRecoveryToFallback(page, mapContainer, styleController, () =>
+      page.context().setOffline(false),
+    );
+    const intermediate = await readFullSnapshot(
+      page,
+      mapContainer,
+      "immediately after the failed reconnection's own fallback (before genuine recovery)",
+    );
+    assertCameraMatches(
+      intermediate.camera,
+      postPinch.camera,
+      "intermediate camera after the failed-reconnection fallback",
+    );
+
+    await recoverViaOnlineEvent(page, mapContainer, styleController);
+    const final = await readFullSnapshot(
+      page,
+      mapContainer,
+      "final camera after genuine recovery",
+    );
+    assertCameraMatches(
+      final.camera,
+      postPinch.camera,
+      "final camera after genuine recovery",
+    );
+
+    test.info().annotations.push({
+      type: "camera-race-sustained-offline-online-then-unreachable",
+      description: JSON.stringify({ postPinch, intermediate, final }),
+    });
+  } finally {
+    await context.setOffline(false);
+  }
+});
+
+test("Pre-ride: small pinch survives a retry whose own remote-style attempt also fails, both immediately and after genuine recovery", async ({
+  page,
+}) => {
+  const styleController = await installLocalMapStyleWithFailureControl(page);
+  const mapContainer = await importGpxAndOpenPreRideOffline(page, styleController);
+
+  await pinchAndSettle(page, mapContainer, SMALL_PINCH);
+  const postPinch = await readFullSnapshot(
+    page,
+    mapContainer,
+    "post-pinch (still offline)",
+  );
+
+  await attemptFailingRecoveryToFallback(page, mapContainer, styleController, () =>
+    page.getByTestId("retry-map-imagery-button").click(),
+  );
+  const intermediate = await readFullSnapshot(
+    page,
+    mapContainer,
+    "immediately after the failed retry's own fallback (before genuine recovery)",
+  );
+  assertCameraMatches(
+    intermediate.camera,
+    postPinch.camera,
+    "intermediate camera after the failed-retry fallback",
+  );
+  await expect(page.getByRole("button", { name: "Start riding" })).toBeVisible();
+
+  await recoverViaRetryButton(page, mapContainer, styleController);
+  const final = await readFullSnapshot(
+    page,
+    mapContainer,
+    "final camera after genuine recovery",
+  );
+  assertCameraMatches(
+    final.camera,
+    postPinch.camera,
+    "final camera after genuine recovery",
+  );
+  await expect(page.getByRole("button", { name: "Start riding" })).toBeVisible();
+
+  test.info().annotations.push({
+    type: "camera-race-preride-sustained-offline-retry",
+    description: JSON.stringify({ postPinch, intermediate, final }),
+  });
 });
