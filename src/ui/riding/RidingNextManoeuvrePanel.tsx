@@ -46,16 +46,18 @@ const URGENCY_FONT_WEIGHT: Record<ReturnType<typeof classifyManoeuvreUrgency>, n
  * Riding-only "what's next" panel, sourced solely from trusted
  * route.manoeuvres — either provider-generated or from a validated ACN GPX
  * navigation extension (see domain/manoeuvreTrust.ts), never geometry-
- * inferred. Four mutually exclusive states: an active next-manoeuvre
- * display; an explanatory "unavailable" message for an untrusted planner
- * route with no usable manoeuvres; an explanatory message for an untrusted
- * imported GPX (no ACN extension, or one that failed validation); or
- * nothing at all once there is nothing meaningful to show — either every
- * manoeuvre has already been reliably passed (end of route: a stale final
- * turn must not be left showing indefinitely) or there is no reliable
- * presentation distance yet (e.g. before the first GPS fix is accepted;
- * the existing "Waiting for a GPS fix…" status above already covers that
- * wait, so this panel need not duplicate it).
+ * inferred. Three mutually exclusive rendered states: an active
+ * next-manoeuvre display; an explanatory "unavailable" message for an
+ * untrusted planner route with no usable manoeuvres; or nothing at all —
+ * either every manoeuvre has already been reliably passed (end of route: a
+ * stale final turn must not be left showing indefinitely), there is no
+ * reliable presentation distance yet (e.g. before the first GPS fix is
+ * accepted; the existing "Waiting for a GPS fix…" status above already
+ * covers that wait, so this panel need not duplicate it), or the route is an
+ * untrusted `gpx-import` (backlog item 97: that case is delegated entirely
+ * to RidingUntrustedGpxNotice, rendered by RidingScreen outside this
+ * Map-exclusive panel so its compact "No turn cues" indicator survives
+ * Map<->Profile switching — rendering it here too would duplicate it).
  *
  * Accessibility: only the instruction+qualifier text carries
  * `role="status"`. Its rendered content changes only at a meaningful
@@ -75,12 +77,9 @@ export function RidingNextManoeuvrePanel({
   if (!selection) {
     if (!isTrusted) {
       if (sourceKind === "gpx-import") {
-        return (
-          <p role="status" className="status-row">
-            No trusted turn information is available for this imported GPX. Follow the
-            route line on the map.
-          </p>
-        );
+        // Handled by RidingUntrustedGpxNotice instead (backlog item 97) —
+        // see this component's own doc comment above.
+        return null;
       }
       return (
         <p role="status" className="status-row">

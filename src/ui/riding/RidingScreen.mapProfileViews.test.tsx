@@ -496,11 +496,16 @@ describe("RidingScreen — fixed Map/Profile shell (backlog item 56)", () => {
       expect(
         screen.queryByRole("button", { name: "North-up, top-down view" }),
       ).toBeNull();
+      // Backlog item 97: the untrusted-GPX trust notice is deliberately NOT
+      // Map-only (unlike RidingNextManoeuvrePanel itself, which no longer
+      // renders this message at all) — it must remain reachable from Profile
+      // too. See RidingScreen.untrustedGpxNotice.test.tsx for the dedicated
+      // coverage of its own timing/persistence behaviour.
       expect(
-        screen.queryByText(
+        screen.getByText(
           /No trusted turn information is available for this imported GPX/,
         ),
-      ).toBeNull();
+      ).toBeInTheDocument();
     });
   });
 

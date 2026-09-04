@@ -308,7 +308,7 @@ Archived implementation accounts in `docs/project/history/` describe the system 
 
 ### Queue index
 
-Stable item numbers never change regardless of which file an item's text lives in. Item 97 is selected as the next implementation item. The current suggested order for the remaining newly added items 97–103 is `97 → 98 → 99 → 100 → 101 → 102 → 103` — this is the current suggested order, not an immutable dependency chain.
+Stable item numbers never change regardless of which file an item's text lives in. Item 98 is selected as the next implementation item. The current suggested order for the remaining newly added items 98–103 is `98 → 99 → 100 → 101 → 102 → 103` — this is the current suggested order, not an immutable dependency chain.
 
 | Item | Title                                                                                         | Status                                           | Full entry                                                            |
 | ---- | --------------------------------------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
@@ -319,8 +319,7 @@ Stable item numbers never change regardless of which file an item's text lives i
 | 59   | Elevation and recognised-climb discrepancy investigation                                      | Pending investigation                            | [`backlog.md#item-59`](docs/project/backlog.md#item-59)               |
 | 60   | Battery consumption investigation and possible battery-saving mode                            | Pending investigation                            | [`backlog.md#item-60`](docs/project/backlog.md#item-60)               |
 | 61   | Android GPX share-sheet import feasibility                                                    | Pending feasibility study                        | [`backlog.md#item-61`](docs/project/backlog.md#item-61)               |
-| 97   | Compact ongoing warning for imported routes without trusted turn cues                         | Pending — selected next                          | [`backlog.md#item-97`](docs/project/backlog.md#item-97)               |
-| 98   | Direction-aware active-Riding route-segment layering                                          | Pending                                          | [`backlog.md#item-98`](docs/project/backlog.md#item-98)               |
+| 98   | Direction-aware active-Riding route-segment layering                                          | Pending — selected next                          | [`backlog.md#item-98`](docs/project/backlog.md#item-98)               |
 | 99   | Route Library sorting by distance and total ascent                                            | Pending                                          | [`backlog.md#item-99`](docs/project/backlog.md#item-99)               |
 | 100  | Reusable route tags and tag-based organisation                                                | Pending                                          | [`backlog.md#item-100`](docs/project/backlog.md#item-100)             |
 | 101  | Plain-language HTTP-status guidance in Routing diagnostics                                    | Pending                                          | [`backlog.md#item-101`](docs/project/backlog.md#item-101)             |
@@ -329,4 +328,4 @@ Stable item numbers never change regardless of which file an item's text lives i
 | 32   | `ridingFinishAndEnd.spec.ts`'s completion-detection test: an unconfirmed CPU-contention flake | Monitored, unconfirmed                           | [`current-status.md#item-32`](docs/project/current-status.md#item-32) |
 | 66   | Investigate intermittent fresh-Start Follow remaining at route overview                       | Accepted for now, monitored                      | [`current-status.md#item-66`](docs/project/current-status.md#item-66) |
 
-Items 6–10, 13–15, 17–27, 29–31, 33–42, 44–58, 62–65 and 67–96 are completed (`— done`) and live in [`docs/project/history/`](docs/project/history/README.md). Item 43 is a follow-up acceptance checklist and lives in [`docs/project/current-status.md`](docs/project/current-status.md). Item 86 is the release-readiness audit that produced items 87–92; its full report is [`docs/project/release-readiness-audit.md`](docs/project/release-readiness-audit.md).
+Items 6–10, 13–15, 17–27, 29–31, 33–42, 44–58, 62–65 and 67–97 are completed (`— done`) and live in [`docs/project/history/`](docs/project/history/README.md). Item 43 is a follow-up acceptance checklist and lives in [`docs/project/current-status.md`](docs/project/current-status.md). Item 86 is the release-readiness audit that produced items 87–92; its full report is [`docs/project/release-readiness-audit.md`](docs/project/release-readiness-audit.md).

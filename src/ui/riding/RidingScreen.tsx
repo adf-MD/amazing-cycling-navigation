@@ -76,6 +76,7 @@ import { RidingNextManoeuvrePanel } from "./RidingNextManoeuvrePanel.tsx";
 import { RidingRouteCompletionPanel } from "./RidingRouteCompletionPanel.tsx";
 import { RidingSelectedFeatureSummaryPanel } from "./RidingSelectedFeatureSummaryPanel.tsx";
 import { RidingStatusCard } from "./RidingStatusCard.tsx";
+import { RidingUntrustedGpxNotice } from "./RidingUntrustedGpxNotice.tsx";
 import { useRideCamera } from "./useRideCamera.ts";
 import { useRideNavigation } from "./useRideNavigation.ts";
 import { useRouteCompletionCandidate } from "./useRouteCompletionCandidate.ts";
@@ -407,6 +408,16 @@ export function RidingScreen({
   // untrusted manoeuvres (structurally possible now that GPX re-imports
   // can carry manoeuvres) never drives live turn-by-turn navigation.
   const isTrustedForNavigation = hasTrustedManoeuvres(route);
+  // Backlog item 97: gates RidingUntrustedGpxNotice, rendered once below
+  // outside the Map-only .ride-content-area toggle (unlike
+  // RidingNextManoeuvrePanel) so its compact "No turn cues" indicator
+  // survives Map<->Profile switching. geolocationStatus !== "idle" is this
+  // notice's own episode boundary — see its doc comment for why no separate
+  // counter is needed.
+  const showUntrustedGpxNotice =
+    nav.geolocationStatus !== "idle" &&
+    !isTrustedForNavigation &&
+    route.source.kind === "gpx-import";
   const { reachedIndex: nextReachedManoeuvreIndex, selection: nextManoeuvre } =
     selectNextManoeuvre(
       isTrustedForNavigation ? route.manoeuvres : [],
@@ -1744,6 +1755,11 @@ export function RidingScreen({
           isFrozen={isManoeuvreFrozen}
         />
       ) : null}
+
+      {/* Backlog item 97: deliberately NOT nested inside the Map-only block
+       * above, and not gated by activeView at all — it must remain visible
+       * and undisturbed across Map<->Profile switching. */}
+      {showUntrustedGpxNotice ? <RidingUntrustedGpxNotice /> : null}
 
       {completion.isConfirmed ? (
         <RidingRouteCompletionPanel

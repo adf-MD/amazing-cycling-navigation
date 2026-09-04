@@ -81,8 +81,8 @@ describe("RidingNextManoeuvrePanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the imported-GPX message for an untrusted gpx-import route", () => {
-    render(
+  it("renders nothing for an untrusted gpx-import route — delegated to RidingUntrustedGpxNotice", () => {
+    const { container } = render(
       <RidingNextManoeuvrePanel
         sourceKind="gpx-import"
         isTrusted={false}
@@ -90,11 +90,7 @@ describe("RidingNextManoeuvrePanel", () => {
         isFrozen={false}
       />,
     );
-    expect(
-      screen.getByText(
-        "No trusted turn information is available for this imported GPX. Follow the route line on the map.",
-      ),
-    ).toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("shows the active display for a trusted gpx-import route (ACN extension)", () => {

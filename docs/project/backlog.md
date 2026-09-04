@@ -122,23 +122,6 @@ _Category: Platform compatibility_
 
 ---
 
-<a id="item-97"></a>
-
-## Item 97 — Compact ongoing warning for imported routes without trusted turn cues
-
-_Category: Riding navigation trust presentation_
-
-97. **Compact ongoing warning for imported routes without trusted turn cues**
-    - Confirmed current safety copy (`RidingNextManoeuvrePanel.tsx`, shown only when there is no active manoeuvre selection, the route is untrusted, and the source is a GPX import): "No trusted turn information is available for this imported GPX. Follow the route line on the map." A distinct sibling message exists for the non-GPX-import untrusted case ("Turn information is unavailable for this route.") and is out of scope for this item — do not alter its behaviour or timing.
-    - The full message is useful when starting or continuing the ride, but permanently reserving its full vertical space interferes with the active-Riding display.
-    - On a genuine start, resume, or return to that ride, show the full warning for approximately 10 seconds, then collapse it to a compact persistent indicator such as `No turn cues`.
-    - The compact indicator must remain honest and discoverable, and should allow the rider to reveal the full explanation again. Do not make the safety limitation disappear completely after the timer.
-    - Do not restart the full-message timer on GPS updates, rerenders, map recovery or unrelated state changes. Define and test the exact session transitions that intentionally re-present it (e.g. a genuine new Start/Resume, not a background rerender).
-    - Trusted or provider-generated routes remain unchanged. Do not fabricate manoeuvres or weaken the route-line instruction.
-    - Require accessible live-region behaviour that avoids repeated announcements, keyboard/touch access to the explanation, reduced-motion-safe presentation, and phone-layout evidence at enlarged text.
-
----
-
 <a id="item-98"></a>
 
 ## Item 98 — Direction-aware active-Riding route-segment layering

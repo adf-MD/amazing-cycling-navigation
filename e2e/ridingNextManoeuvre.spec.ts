@@ -691,4 +691,233 @@ test.describe("ordinary imported GPX", () => {
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
     expect(consoleErrors).toEqual([]);
   });
+
+  const FULL_WARNING_TEXT =
+    "No trusted turn information is available for this imported GPX. Follow the route line on the map.";
+
+  // Backlog item 97. This suite tolerates a real, bounded ~10s wait
+  // elsewhere (map-loading timeouts already reach 15s) — the production
+  // UNTRUSTED_GPX_FULL_WARNING_MS constant is never shortened for this test,
+  // and no production-only test hook is added. A single comprehensive test
+  // pays that wait once and chains the structural-layout, touch-target,
+  // Map/Profile-persistence and keyboard-disclosure proofs on the resulting
+  // state, matching this suite's own established style (e.g.
+  // ridingMapProfileViews.spec.ts) of one thorough test over many small
+  // re-setups.
+  test("compacts the full warning into a persistent, keyboard-operable 'No turn cues' control that reclaims usable vertical space", async ({
+    page,
+    context,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+    await page.goto("/");
+    await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
+    await page.getByRole("button", { name: "smoke-route", exact: true }).click();
+    await page.getByRole("button", { name: "Start riding" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    const contentArea = page.locator(".ride-content-area--immersive");
+    await expect(page.getByText(FULL_WARNING_TEXT)).toBeVisible();
+    const fullWarningBox = await page.getByText(FULL_WARNING_TEXT).boundingBox();
+    const contentBoxBeforeCompaction = await contentArea.boundingBox();
+    if (!fullWarningBox || !contentBoxBeforeCompaction) {
+      throw new Error(
+        "expected both the full warning and the content area to be laid out",
+      );
+    }
+
+    // Bounded real wait for the production 10s deadline — not shortened.
+    const compactButton = page.getByRole("button", { name: "No turn cues" });
+    await expect(compactButton).toBeVisible({ timeout: 12_000 });
+    await expect(page.getByText(FULL_WARNING_TEXT)).toBeHidden();
+
+    // Structural layout evidence (element geometry, not rendered pixels):
+    // the notice's own box shrinks, and — since .ride-content-area--immersive
+    // is a flex:1 sibling that fills whatever vertical space its fixed-size
+    // siblings leave (per RidingScreen.tsx's own "backlog item 56" comment)
+    // — the content area's usable box genuinely grows to fill the reclaimed
+    // space, not merely "looks smaller" in isolation.
+    const compactButtonBox = await compactButton.boundingBox();
+    const contentBoxAfterCompaction = await contentArea.boundingBox();
+    if (!compactButtonBox || !contentBoxAfterCompaction) {
+      throw new Error(
+        "expected both the compact control and the content area to be laid out",
+      );
+    }
+    expect(compactButtonBox.height).toBeLessThan(fullWarningBox.height);
+    expect(contentBoxAfterCompaction.height).toBeGreaterThan(
+      contentBoxBeforeCompaction.height,
+    );
+
+    // 44x44 minimum touch target, fully within the visible viewport.
+    const viewport = page.viewportSize();
+    if (!viewport) throw new Error("expected a configured viewport");
+    expect(compactButtonBox.width).toBeGreaterThanOrEqual(44);
+    expect(compactButtonBox.height).toBeGreaterThanOrEqual(44);
+    expect(compactButtonBox.x).toBeGreaterThanOrEqual(0);
+    expect(compactButtonBox.y).toBeGreaterThanOrEqual(0);
+    expect(compactButtonBox.x + compactButtonBox.width).toBeLessThanOrEqual(
+      viewport.width,
+    );
+    expect(compactButtonBox.y + compactButtonBox.height).toBeLessThanOrEqual(
+      viewport.height,
+    );
+
+    // Remains available, undisturbed, across a Map -> Profile -> Map switch.
+    await page.getByRole("button", { name: "Profile" }).click();
+    await expect(compactButton).toBeVisible();
+    await expect(page.getByText(FULL_WARNING_TEXT)).toBeHidden();
+    await page.getByRole("button", { name: "Map" }).click();
+    await expect(compactButton).toBeVisible();
+
+    // Keyboard-driven disclosure: reach the toggle via a real Tab traversal
+    // (mirroring ridingWakeLock.spec.ts's/ridingClimbView.spec.ts's own
+    // documented gotcha: a scripted .focus() call does not reliably engage
+    // Chromium's :focus-visible heuristic, so it under-proves a visible
+    // focus indicator). A bounded loop, rather than a single Tab press,
+    // since the exact number of intervening focusable elements is an
+    // implementation detail this test should not hard-code.
+    await page.getByRole("button", { name: "Map" }).focus();
+    let reachedToggleByTab = false;
+    for (let tabPress = 0; tabPress < 10; tabPress += 1) {
+      await page.keyboard.press("Tab");
+      if (await compactButton.evaluate((element) => element === document.activeElement)) {
+        reachedToggleByTab = true;
+        break;
+      }
+    }
+    expect(reachedToggleByTab).toBe(true);
+    await expect(compactButton).toBeFocused();
+    const outlineWidth = await compactButton.evaluate(
+      (element) => window.getComputedStyle(element).outlineWidth,
+    );
+    expect(outlineWidth).not.toBe("0px");
+
+    await page.keyboard.press("Enter");
+    await expect(compactButton).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByText(FULL_WARNING_TEXT)).toBeVisible();
+
+    // Collapse again via the keyboard, proving the same control (not a
+    // fresh element) still carries focus.
+    await expect(compactButton).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(compactButton).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByText(FULL_WARNING_TEXT)).toBeHidden();
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
+
+  // Backlog item 97: the established 200%-text-size and short-landscape
+  // simulation (page.evaluate(() => { document.documentElement.style
+  // .fontSize = "200%"; }), 844x390) already used across
+  // ridingSelectedFeatureSummary.spec.ts/ridingMapProfileViews.spec.ts/etc.,
+  // applied to the already-collapsed compact control and its expanded
+  // explanation.
+  test("the compact control and its expanded explanation stay reachable, unclipped and within the fixed shell at 200% text size and in short landscape", async ({
+    page,
+    context,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+    await page.goto("/");
+    await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
+    await page.getByRole("button", { name: "smoke-route", exact: true }).click();
+    await page.getByRole("button", { name: "Start riding" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    await expect(page.getByText(FULL_WARNING_TEXT)).toBeVisible();
+
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "200%";
+    });
+    let overflow = await page.evaluate(() => ({
+      horizontal:
+        document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    }));
+    expect(overflow.horizontal).toBe(false);
+
+    // Short landscape, still at 200% text, still within the initial full-
+    // warning presentation — captures the "before compaction" content-area
+    // height at this same extreme combination, so the comparison below is a
+    // robust relative claim rather than a fragile absolute pixel floor (this
+    // combination is already a known, pre-existing tight fit for the fixed
+    // shell's shared chrome generally, unrelated to this item — see
+    // docs/project/current-status.md's item 97 entry).
+    await page.setViewportSize({ width: 844, height: 390 });
+    await expect(page.getByText(FULL_WARNING_TEXT)).toBeVisible();
+    overflow = await page.evaluate(() => ({
+      horizontal:
+        document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    }));
+    expect(overflow.horizontal).toBe(false);
+    const contentArea = page.locator(".ride-content-area--immersive");
+    const contentBoxBeforeCompaction = await contentArea.boundingBox();
+
+    const compactButton = page.getByRole("button", { name: "No turn cues" });
+    await expect(compactButton).toBeVisible({ timeout: 12_000 });
+    await expect(page.getByText(FULL_WARNING_TEXT)).toBeHidden();
+    overflow = await page.evaluate(() => ({
+      horizontal:
+        document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    }));
+    expect(overflow.horizontal).toBe(false);
+    const contentBoxAfterCompaction = await contentArea.boundingBox();
+    expect(contentBoxAfterCompaction?.height ?? 0).toBeGreaterThanOrEqual(
+      contentBoxBeforeCompaction?.height ?? 0,
+    );
+
+    // Expanding is a deliberate, occasional, reversible rider action — prove
+    // it stays free of horizontal clipping and that collapsing again
+    // recovers the more-usable compact state, without asserting the
+    // expanded explanation's own vertical usability at this specific
+    // extreme combination (a pre-existing limitation, not a regression —
+    // see the comment above).
+    await compactButton.click();
+    await expect(page.getByText(FULL_WARNING_TEXT)).toBeVisible();
+    overflow = await page.evaluate(() => ({
+      horizontal:
+        document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    }));
+    expect(overflow.horizontal).toBe(false);
+    const viewportAt200Percent = page.viewportSize();
+    if (!viewportAt200Percent) throw new Error("expected a configured viewport");
+    const explanationBox = await page.getByText(FULL_WARNING_TEXT).boundingBox();
+    if (!explanationBox)
+      throw new Error("expected the expanded explanation to be laid out");
+    expect(explanationBox.x).toBeGreaterThanOrEqual(0);
+    expect(explanationBox.x + explanationBox.width).toBeLessThanOrEqual(
+      viewportAt200Percent.width,
+    );
+
+    await compactButton.click();
+    await expect(page.getByText(FULL_WARNING_TEXT)).toBeHidden();
+    await expect(compactButton).toBeVisible();
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
 });
