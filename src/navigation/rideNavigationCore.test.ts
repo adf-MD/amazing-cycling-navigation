@@ -8,6 +8,11 @@ import type { ProjectionResult } from "./types.ts";
 import { buildRoutePointsFromWaypoints } from "../test/fixtures/routeGeometry.ts";
 import { CLOSED_LOOP_ROUTE_POINTS } from "../test/fixtures/closedLoopRoute.ts";
 import { OFF_ROUTE_BASE_METRES, POSSIBLY_OFF_ROUTE_BASE_METRES } from "./offRoute.ts";
+import {
+  OUT_AND_BACK_COINCIDENT_ROUTE_POINTS,
+  OUT_AND_BACK_COINCIDENT_TURNAROUND_INDEX,
+} from "../test/fixtures/outAndBackCoincidentRoute.ts";
+import type { ProjectionMatch } from "./types.ts";
 
 const ROUTE_POINTS = buildRoutePointsFromWaypoints(
   [
@@ -220,6 +225,109 @@ describe("processFix", () => {
       expect(state.lastReliableMatch?.distanceFromStartMetres).toBeCloseTo(
         routeTotalDistanceMetres,
         0,
+      );
+    });
+  });
+
+  describe("out-and-back with an exactly coincident return leg (backlog item 104)", () => {
+    const POINTS = OUT_AND_BACK_COINCIDENT_ROUTE_POINTS;
+    const TURNAROUND_INDEX = OUT_AND_BACK_COINCIDENT_TURNAROUND_INDEX;
+    const T = POINTS[TURNAROUND_INDEX]?.distanceFromStartMetres ?? 0;
+
+    it("keeps lastMatch and lastReliableMatch advancing through approach, the turnaround and the return leg, with no false reacquire", () => {
+      let state: RideNavigationCoreState = INITIAL_RIDE_NAVIGATION_CORE_STATE;
+
+      for (const routePoint of POINTS) {
+        const previousMatchDistance = state.lastMatch?.distanceFromStartMetres ?? 0;
+        const previousReliableDistance =
+          state.lastReliableMatch?.distanceFromStartMetres ?? 0;
+
+        const result = processFix(POINTS, routePoint.coordinate, 5, state);
+
+        expect(
+          result.coreState.lastMatch?.distanceFromStartMetres ?? 0,
+        ).toBeGreaterThanOrEqual(previousMatchDistance);
+        expect(
+          result.coreState.lastReliableMatch?.distanceFromStartMetres ?? 0,
+        ).toBeGreaterThanOrEqual(previousReliableDistance);
+
+        state = result.coreState;
+      }
+
+      const routeTotalDistanceMetres = POINTS.at(-1)?.distanceFromStartMetres ?? 0;
+      expect(state.lastMatch?.distanceFromStartMetres).toBeCloseTo(
+        routeTotalDistanceMetres,
+        0,
+      );
+      expect(state.lastReliableMatch?.distanceFromStartMetres).toBeCloseTo(
+        routeTotalDistanceMetres,
+        0,
+      );
+    });
+
+    it("distinguishes raw classification from the debounced level through a beyond-turn excursion, and resumes reliable progress on the return leg", () => {
+      // Seeded directly (not via a fresh reacquire, which is itself
+      // ambiguous on this exactly-coincident fixture — see
+      // outAndBackCoincidentRoute.ts's own module comment) at a known
+      // point 5 m short of the turnaround, already on-route.
+      const seedMatch: ProjectionMatch = {
+        pointIndex: TURNAROUND_INDEX - 1,
+        distanceFromStartMetres: T - 5,
+      };
+      let state: RideNavigationCoreState = {
+        lastMatch: seedMatch,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        lastReliableMatch: seedMatch,
+      };
+
+      // Reach the turnaround exactly.
+      const atTurnaround = processFix(
+        POINTS,
+        POINTS[TURNAROUND_INDEX]?.coordinate ?? [0, 51],
+        5,
+        state,
+      );
+      state = atTurnaround.coreState;
+      expect(state.offRouteMachineState.level).toBe("on-route");
+      expect(state.lastMatch?.distanceFromStartMetres).toBeCloseTo(T, 0);
+
+      // Continue ~100 m past the turnaround in the original outbound
+      // direction — off the route entirely. CONSECUTIVE_TO_ESCALATE (3)
+      // consecutive raw off-route fixes are required before the
+      // debounced, displayed level flips; lastReliableMatch freezes from
+      // the FIRST one regardless (existing, unrelated behaviour).
+      const overshootCoordinate: [number, number] = [
+        0.03 + 100 / (111_320 * Math.cos((51 * Math.PI) / 180)),
+        51,
+      ];
+      const reliableAtTurnaround = state.lastReliableMatch;
+
+      for (let i = 0; i < 2; i += 1) {
+        const step = processFix(POINTS, overshootCoordinate, 5, state);
+        state = step.coreState;
+        expect(state.offRouteMachineState.level).toBe("on-route");
+        expect(state.lastReliableMatch).toEqual(reliableAtTurnaround);
+      }
+      const thirdOvershoot = processFix(POINTS, overshootCoordinate, 5, state);
+      state = thirdOvershoot.coreState;
+      expect(state.offRouteMachineState.level).toBe("off-route");
+      expect(state.lastReliableMatch).toEqual(reliableAtTurnaround);
+
+      // Turn back for real: a genuine return-leg fix clears the debounced
+      // warning (per the existing, unmodified off-route recovery rules)
+      // and lastMatch/lastReliableMatch both resume, advancing beyond the
+      // turnaround on the return leg rather than reverting to the
+      // outbound occurrence.
+      const backOnReturn = processFix(
+        POINTS,
+        POINTS[TURNAROUND_INDEX + 3]?.coordinate ?? [0, 51],
+        5,
+        state,
+      );
+      state = backOnReturn.coreState;
+      expect(state.lastMatch?.distanceFromStartMetres ?? 0).toBeGreaterThan(T);
+      expect(state.lastReliableMatch?.distanceFromStartMetres ?? 0).toBeGreaterThan(
+        reliableAtTurnaround?.distanceFromStartMetres ?? 0,
       );
     });
   });

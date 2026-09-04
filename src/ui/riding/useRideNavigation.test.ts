@@ -9,6 +9,10 @@ import type {
 } from "../../platform/geolocation.ts";
 import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
 import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry.ts";
+import {
+  OUT_AND_BACK_COINCIDENT_ROUTE_POINTS,
+  OUT_AND_BACK_COINCIDENT_TURNAROUND_INDEX,
+} from "../../test/fixtures/outAndBackCoincidentRoute.ts";
 import type { PlannedRoute, RoutePoint } from "../../domain/types.ts";
 import { db, type StoredRideState } from "../../storage/db.ts";
 import {
@@ -941,6 +945,66 @@ describe("useRideNavigation remaining distance/ascent", () => {
     );
     expect(expectNumber(result.current.remainingAscentMetres)).toBeLessThan(
       expectNumber(frozenAscent),
+    );
+  });
+});
+
+describe("useRideNavigation resume near an exactly coincident out-and-back turnaround (backlog item 104)", () => {
+  const coincidentRoute: PlannedRoute = {
+    ...route,
+    id: "coincident-out-and-back-1",
+    points: OUT_AND_BACK_COINCIDENT_ROUTE_POINTS,
+    distanceMetres:
+      OUT_AND_BACK_COINCIDENT_ROUTE_POINTS.at(-1)?.distanceFromStartMetres ?? 0,
+  };
+  const turnaroundPoint =
+    OUT_AND_BACK_COINCIDENT_ROUTE_POINTS[OUT_AND_BACK_COINCIDENT_TURNAROUND_INDEX];
+  if (!turnaroundPoint) throw new Error("fixture missing turnaround point");
+
+  it("advances remaining distance on the return leg after a resume seeded exactly at the turnaround, never regressing to the outbound occurrence", async () => {
+    await setActiveRideState({
+      id: "active",
+      routeId: coincidentRoute.id,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: {
+        coordinate: turnaroundPoint.coordinate,
+        accuracyMetres: 6,
+        timestampMs: 1000,
+      },
+      lastMatchedPointIndex: OUT_AND_BACK_COINCIDENT_TURNAROUND_INDEX,
+      matchedDistanceFromStartMetres: turnaroundPoint.distanceFromStartMetres,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+      lastReliableMatchedPointIndex: OUT_AND_BACK_COINCIDENT_TURNAROUND_INDEX,
+      lastReliableMatchedDistanceFromStartMetres: turnaroundPoint.distanceFromStartMetres,
+    });
+
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(coincidentRoute, { geolocationSource: fake.source }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.restorationStatus).toBe("ready");
+    });
+    expect(result.current.restoredForThisRoute).toBe(true);
+    const remainingAtTurnaround = expectNumber(result.current.distanceRemainingMetres);
+
+    act(() => {
+      result.current.start();
+    });
+    // A fix ~20 m onto the return leg — exactly coincident, in reverse,
+    // with the point 20 m before the turnaround on the outbound leg. A
+    // matcher that regressed to that outbound occurrence would show
+    // remaining distance INCREASE here instead.
+    const returnLegPoint =
+      OUT_AND_BACK_COINCIDENT_ROUTE_POINTS[OUT_AND_BACK_COINCIDENT_TURNAROUND_INDEX + 1];
+    if (!returnLegPoint) throw new Error("fixture missing return-leg point");
+    act(() => {
+      fake.watches[0]?.emitFix(fixAt(returnLegPoint.coordinate, 2000));
+    });
+
+    expect(expectNumber(result.current.distanceRemainingMetres)).toBeLessThan(
+      remainingAtTurnaround,
     );
   });
 });
