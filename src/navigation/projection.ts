@@ -351,6 +351,45 @@ function selectAmongOccurrences(
 }
 
 /**
+ * Backlog item 104 follow-up. Whether `candidate` — the occurrence
+ * selectAmongOccurrences actually chose from a set of geometrically tied
+ * ones — sits behind `lastMatch` by a positive amount no greater than
+ * PROGRESS_EPSILON_METRES.
+ *
+ * This is exactly the band in which selectAmongOccurrences deliberately
+ * declines to act: `isGenuineRegression` requires strictly MORE than
+ * PROGRESS_EPSILON_METRES, so inside this band the forward override is
+ * never even evaluated and the trailing occurrence is returned unchanged.
+ * That is the right call for a single projection — a couple of metres
+ * backwards is indistinguishable from noise — but it is not a decision the
+ * ride can afford to make afresh against a *new* anchor every fix. Because
+ * every accepted match becomes the next fix's own lastMatch, a rider
+ * moving slowly enough that each step is smaller than the epsilon (walking
+ * pace produces roughly 0.5-1.5 m of route distance per fix) can never
+ * accumulate a regression the selector will look at, and the match walks
+ * backwards along an exactly retraced leg indefinitely. That is the
+ * confirmed cause of the first physical acceptance failure of item 104.
+ *
+ * Labelling this band lets the navigation core keep one stable anchor
+ * across such fixes, so the comparison the selector eventually makes is
+ * against cumulative movement rather than the last few centimetres. The
+ * hold is therefore bounded by 5 m of cumulative tied route-distance
+ * regression, not by time, fix count or physical travel — a stationary
+ * rider supplies no movement evidence and correctly stays held.
+ *
+ * Deliberately gated on the regression being strictly positive: a repeated
+ * or advancing fix has nothing to hold.
+ */
+function isTiedSubEpsilonRegression(
+  lastMatch: ProjectionMatch,
+  candidate: ProjectionMatch,
+): boolean {
+  const regressionMetres =
+    lastMatch.distanceFromStartMetres - candidate.distanceFromStartMetres;
+  return regressionMetres > 0 && regressionMetres <= PROGRESS_EPSILON_METRES;
+}
+
+/**
  * A windowed match is only distrusted as "clipped" when the specific edge
  * it sits near was itself truncated by the search window — never merely
  * because the *other* edge happened to be. Near a closed loop's finish,
@@ -409,16 +448,28 @@ export function projectFixOntoRoute(
         fixCoordinate,
         primary,
       );
-      const windowed =
-        occurrences.length <= 1
-          ? primary
-          : (selectAmongOccurrences(occurrences, lastMatch) ?? primary);
+      const isTied = occurrences.length > 1;
+      const windowed = isTied
+        ? (selectAmongOccurrences(occurrences, lastMatch) ?? primary)
+        : primary;
 
       if (
         windowed.lateralDistanceMetres <= MAX_ACCEPTABLE_LATERAL_METRES &&
         !isClippedAtEdge(windowed, windowRange, points.length)
       ) {
-        return { ...windowed, reacquired: false };
+        // Backlog item 104 follow-up: the result is unchanged; only its
+        // disposition is recorded, and only for a genuinely tied set of
+        // occurrences. Single-occurrence geometry can never be held, so
+        // ordinary backwards movement anywhere else behaves exactly as
+        // before.
+        return {
+          ...windowed,
+          reacquired: false,
+          disposition:
+            isTied && isTiedSubEpsilonRegression(lastMatch, windowed)
+              ? "tied-sub-epsilon-regression"
+              : "resolved",
+        };
       }
     }
   }
@@ -431,5 +482,7 @@ export function projectFixOntoRoute(
   if (!wholeRoute) {
     return null;
   }
-  return { ...wholeRoute, reacquired: true };
+  // A whole-route reacquire is a fresh lock with no continuity to hold on
+  // to, so it is never an unresolved tied regression.
+  return { ...wholeRoute, reacquired: true, disposition: "resolved" };
 }

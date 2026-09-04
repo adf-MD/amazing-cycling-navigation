@@ -19,7 +19,13 @@ import {
   OUT_AND_BACK_COINCIDENT_TURNAROUND_INDEX,
   OUT_AND_BACK_COINCIDENT_SPARSE_ROUTE_POINTS,
   OUT_AND_BACK_COINCIDENT_SPARSE_TURNAROUND_INDEX,
+  OUT_AND_BACK_COINCIDENT_SHORT_ROUTE_POINTS,
+  OUT_AND_BACK_COINCIDENT_SHORT_TURNAROUND_INDEX,
 } from "../test/fixtures/outAndBackCoincidentRoute.ts";
+import {
+  REPEATED_PASS_ROUTE_POINTS,
+  REPEATED_PASS_SECOND_STEM_START_INDEX,
+} from "../test/fixtures/repeatedPassRoute.ts";
 import { OFF_ROUTE_BASE_METRES } from "./offRoute.ts";
 
 const STRAIGHT_ROUTE_POINTS = buildRoutePointsFromWaypoints(
@@ -853,6 +859,223 @@ describe("projectFixOntoRoute", () => {
       expect(resultOver.distanceFromStartMetres).toBeGreaterThan(
         lastMatch.distanceFromStartMetres,
       );
+    });
+  });
+
+  // Backlog item 104 follow-up. The boundary test directly above pins the
+  // defect this block exists to close: a tied regression of less than
+  // PROGRESS_EPSILON_METRES leaves the selector's forward override
+  // completely unengaged and the trailing (outbound) occurrence is
+  // returned. That is correct as a *projection* — but because every
+  // accepted match becomes the next fix's own lastMatch, the epsilon then
+  // gets applied per fix and never cumulatively, so a rider moving slowly
+  // enough (walking, or any cadence producing sub-epsilon route-distance
+  // steps) walks the match backwards down the mirror indefinitely, five
+  // metres at a time, with the override never once evaluated.
+  //
+  // projectFixOntoRoute therefore does not change what it *returns* here;
+  // it only labels the result, so the navigation core can decline to adopt
+  // it as progress and keep measuring the next fix's regression against
+  // the same stable anchor. See ProjectionDisposition in types.ts and
+  // processFix in rideNavigationCore.ts, which is where the hold actually
+  // happens — selectAmongOccurrences itself is unchanged and holds nothing.
+  describe("tied sub-epsilon regression disposition (backlog item 104 follow-up)", () => {
+    const SHORT_POINTS = OUT_AND_BACK_COINCIDENT_SHORT_ROUTE_POINTS;
+    const SHORT_T_IDX = OUT_AND_BACK_COINCIDENT_SHORT_TURNAROUND_INDEX;
+    const SHORT_T = SHORT_POINTS[SHORT_T_IDX]?.distanceFromStartMetres ?? 0;
+
+    /** lastMatch exactly at the short fixture's turnaround, expressed on
+     * the outbound side (pointIndex before the turnaround), matching the
+     * seeding discipline the block above documents. */
+    function atShortTurnaround(): ProjectionMatch {
+      return { pointIndex: SHORT_T_IDX - 1, distanceFromStartMetres: SHORT_T };
+    }
+
+    /** How far short of the turnaround the boundary tests below anchor
+     * lastMatch. Deliberately non-zero: with lastMatch exactly AT the
+     * turnaround, the two mirrored occurrences of any return fix are
+     * equidistant from it, and which one wins is then decided by
+     * sub-millimetre floating-point asymmetry in two great-circle
+     * calculations — fine in practice (both readings are the rider's true
+     * position and progress never regresses either way) but far too
+     * knife-edge to pin a documented boundary against. Offsetting the
+     * anchor makes the trailing occurrence unambiguously the nearer one,
+     * so each test exercises exactly the comparison it names. */
+    const ANCHOR_OFFSET_METRES = 2;
+
+    function shortlyBeforeShortTurnaround(): ProjectionMatch {
+      return {
+        pointIndex: SHORT_T_IDX - 1,
+        distanceFromStartMetres: SHORT_T - ANCHOR_OFFSET_METRES,
+      };
+    }
+
+    it("detects the tie on short, sparse, DIAGONAL exact-retrace geometry, not just along a line of constant latitude", () => {
+      // A regression comfortably over epsilon: if — and only if — both
+      // mirrored occurrences of this fix are found and tied, the existing
+      // override fires and progress advances past the turnaround. On an
+      // 8-point, sub-400 m route the window always spans the whole route,
+      // so this cannot be a whole-route reacquire in disguise.
+      const result = expectResult(
+        projectFixOntoRoute(
+          coordinateAtDistance(SHORT_POINTS, SHORT_T + 20),
+          SHORT_POINTS,
+          atShortTurnaround(),
+        ),
+      );
+
+      expect(result.reacquired).toBe(false);
+      expect(result.distanceFromStartMetres).toBeGreaterThan(SHORT_T);
+      expect(result.disposition).toBe("resolved");
+    });
+
+    it("labels a tied regression of exactly PROGRESS_EPSILON_METRES as an unresolved hold, still reporting the current geometric candidate", () => {
+      // Physical distance past the turnaround at which the trailing
+      // occurrence sits exactly PROGRESS_EPSILON_METRES behind the anchor.
+      const beyondTurnMetres = ANCHOR_OFFSET_METRES + PROGRESS_EPSILON_METRES;
+      const fixCoordinate = coordinateAtDistance(
+        SHORT_POINTS,
+        SHORT_T + beyondTurnMetres,
+      );
+      const result = expectResult(
+        projectFixOntoRoute(fixCoordinate, SHORT_POINTS, shortlyBeforeShortTurnaround()),
+      );
+
+      expect(result.disposition).toBe("tied-sub-epsilon-regression");
+      // The returned projection is still the honest current geometry: the
+      // trailing occurrence's own route distance, and this fix's own
+      // (essentially zero) lateral distance. Nothing is synthesised.
+      expect(result.distanceFromStartMetres).toBeCloseTo(SHORT_T - beyondTurnMetres, 3);
+      expect(result.lateralDistanceMetres).toBeLessThan(0.1);
+      expect(result.matchedCoordinate[0]).toBeCloseTo(fixCoordinate[0], 8);
+      expect(result.matchedCoordinate[1]).toBeCloseTo(fixCoordinate[1], 8);
+    });
+
+    it("labels the first tied regression past PROGRESS_EPSILON_METRES as resolved, letting the unchanged selector transfer forward", () => {
+      const result = expectResult(
+        projectFixOntoRoute(
+          coordinateAtDistance(
+            SHORT_POINTS,
+            SHORT_T + ANCHOR_OFFSET_METRES + PROGRESS_EPSILON_METRES + 0.1,
+          ),
+          SHORT_POINTS,
+          shortlyBeforeShortTurnaround(),
+        ),
+      );
+
+      expect(result.disposition).toBe("resolved");
+      expect(result.distanceFromStartMetres).toBeGreaterThan(SHORT_T);
+    });
+
+    it("labels a tied ADVANCE as resolved — only a genuine backwards step is ever held", () => {
+      const lastMatch: ProjectionMatch = {
+        pointIndex: SHORT_T_IDX - 1,
+        distanceFromStartMetres: SHORT_T - 40,
+      };
+      const result = expectResult(
+        projectFixOntoRoute(
+          coordinateAtDistance(SHORT_POINTS, SHORT_T - 30),
+          SHORT_POINTS,
+          lastMatch,
+        ),
+      );
+
+      expect(result.disposition).toBe("resolved");
+      expect(result.distanceFromStartMetres).toBeGreaterThan(
+        lastMatch.distanceFromStartMetres,
+      );
+    });
+
+    it("leaves an ordinary small regression on non-tied geometry completely unaffected", () => {
+      const lastMatch: ProjectionMatch = { pointIndex: 4, distanceFromStartMetres: 100 };
+      const result = expectResult(
+        projectFixOntoRoute(
+          coordinateAtDistance(STRAIGHT_ROUTE_POINTS, 98),
+          STRAIGHT_ROUTE_POINTS,
+          lastMatch,
+        ),
+      );
+
+      // A single-occurrence route can never be held: the disposition is
+      // gated on there being more than one tied occurrence at all, so
+      // genuine backwards movement anywhere else still moves progress.
+      expect(result.disposition).toBe("resolved");
+      expect(result.distanceFromStartMetres).toBeLessThan(
+        lastMatch.distanceFromStartMetres,
+      );
+    });
+
+    it("labels a whole-route reacquire as resolved", () => {
+      const farAwayLastMatch: ProjectionMatch = {
+        pointIndex: 0,
+        distanceFromStartMetres: 0,
+      };
+      const farFixCoordinate: Coordinate = [0.005, 51.02];
+      const result = expectResult(
+        projectFixOntoRoute(farFixCoordinate, STRAIGHT_ROUTE_POINTS, farAwayLastMatch),
+      );
+
+      expect(result.reacquired).toBe(true);
+      expect(result.disposition).toBe("resolved");
+    });
+
+    describe("same-direction coincident passes", () => {
+      const REPEAT_POINTS = REPEATED_PASS_ROUTE_POINTS;
+      const SECOND_STEM_START =
+        REPEAT_POINTS[REPEATED_PASS_SECOND_STEM_START_INDEX]?.distanceFromStartMetres ??
+        0;
+
+      it("does not disturb ordinary forward progress across either pass of the repeated stretch", () => {
+        // Walk the whole route in small steps, feeding each result back
+        // in — the same discipline a real ride uses.
+        let lastMatch: ProjectionMatch = { pointIndex: 0, distanceFromStartMetres: 0 };
+        const total = REPEAT_POINTS.at(-1)?.distanceFromStartMetres ?? 0;
+        for (let distance = 5; distance <= total - 5; distance += 5) {
+          const result = expectResult(
+            projectFixOntoRoute(
+              coordinateAtDistance(REPEAT_POINTS, distance),
+              REPEAT_POINTS,
+              lastMatch,
+            ),
+          );
+          expect(result.distanceFromStartMetres).toBeGreaterThanOrEqual(
+            lastMatch.distanceFromStartMetres - PROGRESS_EPSILON_METRES,
+          );
+          lastMatch = result;
+        }
+        // Finished on the SECOND pass, not re-matched onto the first.
+        expect(lastMatch.distanceFromStartMetres).toBeGreaterThan(SECOND_STEM_START);
+      });
+
+      it("holds a jitter-sized regression on the shared stretch and then resolves forward, never latching onto the earlier pass", () => {
+        const onSecondPass: ProjectionMatch = {
+          pointIndex: REPEATED_PASS_SECOND_STEM_START_INDEX + 4,
+          distanceFromStartMetres: SECOND_STEM_START + 40,
+        };
+        const jitterBack = expectResult(
+          projectFixOntoRoute(
+            coordinateAtDistance(REPEAT_POINTS, SECOND_STEM_START + 38),
+            REPEAT_POINTS,
+            onSecondPass,
+          ),
+        );
+        expect(jitterBack.disposition).toBe("tied-sub-epsilon-regression");
+
+        // Holding, the anchor stays put; once the rider is genuinely
+        // further back than epsilon the unchanged selector resolves it —
+        // and with both occurrences pointing the same way there is no
+        // advancing alternative within the margin, so it correctly stays
+        // on this pass rather than jumping to the earlier one.
+        const resolved = expectResult(
+          projectFixOntoRoute(
+            coordinateAtDistance(REPEAT_POINTS, SECOND_STEM_START + 30),
+            REPEAT_POINTS,
+            onSecondPass,
+          ),
+        );
+        expect(resolved.disposition).toBe("resolved");
+        expect(resolved.distanceFromStartMetres).toBeGreaterThan(SECOND_STEM_START);
+      });
     });
   });
 });

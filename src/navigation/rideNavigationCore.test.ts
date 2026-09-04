@@ -7,11 +7,20 @@ import {
 import type { ProjectionResult } from "./types.ts";
 import { buildRoutePointsFromWaypoints } from "../test/fixtures/routeGeometry.ts";
 import { CLOSED_LOOP_ROUTE_POINTS } from "../test/fixtures/closedLoopRoute.ts";
-import { OFF_ROUTE_BASE_METRES, POSSIBLY_OFF_ROUTE_BASE_METRES } from "./offRoute.ts";
+import {
+  CONSECUTIVE_TO_ESCALATE,
+  OFF_ROUTE_BASE_METRES,
+  POSSIBLY_OFF_ROUTE_BASE_METRES,
+} from "./offRoute.ts";
 import {
   OUT_AND_BACK_COINCIDENT_ROUTE_POINTS,
   OUT_AND_BACK_COINCIDENT_TURNAROUND_INDEX,
+  OUT_AND_BACK_COINCIDENT_SHORT_ROUTE_POINTS,
+  OUT_AND_BACK_COINCIDENT_SHORT_TURNAROUND_INDEX,
 } from "../test/fixtures/outAndBackCoincidentRoute.ts";
+import { CONTINUITY_PREFERENCE_METRES, PROGRESS_EPSILON_METRES } from "./projection.ts";
+import { selectNextManoeuvre } from "./nextManoeuvre.ts";
+import type { Coordinate, Manoeuvre, RoutePoint } from "../domain/types.ts";
 import type { ProjectionMatch } from "./types.ts";
 
 const ROUTE_POINTS = buildRoutePointsFromWaypoints(
@@ -329,6 +338,302 @@ describe("processFix", () => {
       expect(state.lastReliableMatch?.distanceFromStartMetres ?? 0).toBeGreaterThan(
         reliableAtTurnaround?.distanceFromStartMetres ?? 0,
       );
+    });
+  });
+
+  // Backlog item 104 follow-up. Item 104's own coverage above steps 25 m,
+  // 42 m or 100 m at a time; the block below steps 1.4 m, the cadence a
+  // rider actually produces on foot (and the cadence at which the deployed
+  // 0.4.8 failed its first physical acceptance). Because every accepted
+  // match becomes the next fix's anchor, a per-fix regression smaller than
+  // PROGRESS_EPSILON_METRES never registers as a regression at all, so the
+  // selector's forward override is never evaluated and progress walks
+  // backwards down the mirror indefinitely. processFix therefore declines
+  // to adopt a projection labelled "tied-sub-epsilon-regression", holding
+  // BOTH anchors so the next fix's regression is measured cumulatively
+  // against the same stable match. The hold is bounded by 5 m of
+  // *cumulative tied route-distance regression from that anchor* — not by
+  // elapsed time, fix count or physical travel: a stationary or
+  // sub-threshold-jittering rider stays held for as long as they supply no
+  // movement evidence, which is the correct outcome, not a stall.
+  describe("walking-cadence turnaround (backlog item 104 follow-up)", () => {
+    const SHORT_POINTS = OUT_AND_BACK_COINCIDENT_SHORT_ROUTE_POINTS;
+    const SHORT_T_IDX = OUT_AND_BACK_COINCIDENT_SHORT_TURNAROUND_INDEX;
+    const SHORT_T = SHORT_POINTS[SHORT_T_IDX]?.distanceFromStartMetres ?? 0;
+    const SHORT_TOTAL = SHORT_POINTS.at(-1)?.distanceFromStartMetres ?? 0;
+    const WALKING_STEP_METRES = 1.4;
+    /** How far short of a turnaround the boundary tests below anchor
+     * lastMatch. Deliberately non-zero: anchored exactly AT a turnaround,
+     * the two mirrored occurrences of a return fix are equidistant and
+     * which wins is decided by sub-millimetre floating-point asymmetry —
+     * harmless in practice (progress never regresses either way) but far
+     * too knife-edge to pin a documented boundary against. */
+    const ANCHOR_OFFSET_METRES = 2;
+
+    /** Synthetic trusted manoeuvres for this fixture: the finish cue is
+     * what the field report actually showed running backwards (150 m ->
+     * 180 m), so the cue path is asserted here rather than assumed. */
+    const SHORT_MANOEUVRES: Manoeuvre[] = [
+      { distanceFromStartMetres: 0, type: "start" },
+      { distanceFromStartMetres: SHORT_T, type: "waypoint" },
+      { distanceFromStartMetres: SHORT_TOTAL, type: "finish" },
+    ];
+
+    function coordinateAtDistance(
+      points: readonly RoutePoint[],
+      targetDistanceMetres: number,
+    ): Coordinate {
+      for (let i = 0; i < points.length - 1; i += 1) {
+        const a = points[i];
+        const b = points[i + 1];
+        if (!a || !b) continue;
+        if (
+          targetDistanceMetres >= a.distanceFromStartMetres &&
+          targetDistanceMetres <= b.distanceFromStartMetres
+        ) {
+          const span = b.distanceFromStartMetres - a.distanceFromStartMetres;
+          const fraction =
+            span === 0 ? 0 : (targetDistanceMetres - a.distanceFromStartMetres) / span;
+          return [
+            a.coordinate[0] + fraction * (b.coordinate[0] - a.coordinate[0]),
+            a.coordinate[1] + fraction * (b.coordinate[1] - a.coordinate[1]),
+          ];
+        }
+      }
+      throw new Error(`distance ${String(targetDistanceMetres)} outside fixture range`);
+    }
+
+    /** Seeds a known outbound-side state, per the seeding discipline
+     * outAndBackCoincidentRoute.ts's own module comment documents. */
+    function seedOutboundState(distanceFromStartMetres: number): RideNavigationCoreState {
+      const match: ProjectionMatch = {
+        pointIndex: SHORT_T_IDX - 1,
+        distanceFromStartMetres,
+      };
+      return {
+        lastMatch: match,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        lastReliableMatch: match,
+      };
+    }
+
+    it("never regresses committed progress or the trusted finish cue at ANY intermediate walking-pace fix across the turnaround", () => {
+      let state = seedOutboundState(SHORT_T - 7);
+      let reachedManoeuvreIndex = 0;
+      let previousCommitted = state.lastReliableMatch?.distanceFromStartMetres ?? 0;
+      let previousCueMetres = Number.POSITIVE_INFINITY;
+      let transferred = false;
+
+      const distances = [SHORT_T];
+      for (let x = WALKING_STEP_METRES; x <= 35; x += WALKING_STEP_METRES) {
+        distances.push(SHORT_T + x);
+      }
+
+      for (const targetDistance of distances) {
+        state = processFix(
+          SHORT_POINTS,
+          coordinateAtDistance(SHORT_POINTS, targetDistance),
+          14,
+          state,
+        ).coreState;
+
+        const committed = state.lastReliableMatch?.distanceFromStartMetres ?? 0;
+        expect(committed).toBeGreaterThanOrEqual(previousCommitted);
+        previousCommitted = committed;
+
+        const { reachedIndex, selection } = selectNextManoeuvre(
+          SHORT_MANOEUVRES,
+          committed,
+          reachedManoeuvreIndex,
+        );
+        reachedManoeuvreIndex = reachedIndex;
+        if (selection) {
+          expect(selection.remainingDistanceMetres).toBeLessThanOrEqual(
+            previousCueMetres,
+          );
+          previousCueMetres = selection.remainingDistanceMetres;
+        }
+
+        if (committed > SHORT_T) transferred = true;
+        expect(state.offRouteMachineState.level).toBe("on-route");
+      }
+
+      // Freezing at the turnaround for ever is not sufficient: progress
+      // must genuinely transfer onto the return leg and keep going.
+      expect(transferred).toBe(true);
+      expect(state.lastReliableMatch?.distanceFromStartMetres ?? 0).toBeGreaterThan(
+        SHORT_T + 25,
+      );
+    });
+
+    it("during a hold, reports the current geometric candidate while leaving both anchors at their stable previous values", () => {
+      const state = seedOutboundState(SHORT_T - ANCHOR_OFFSET_METRES);
+      const previousLastMatch = state.lastMatch;
+      const previousReliable = state.lastReliableMatch;
+      const beyondTurnMetres = ANCHOR_OFFSET_METRES + 2;
+      const fixCoordinate = coordinateAtDistance(
+        SHORT_POINTS,
+        SHORT_T + beyondTurnMetres,
+      );
+
+      const result = processFix(SHORT_POINTS, fixCoordinate, 14, state);
+
+      // The projection is the honest current geometry — the trailing
+      // occurrence's own route distance and this fix's own lateral
+      // distance and matched coordinate. Nothing is recombined.
+      expect(result.projection?.disposition).toBe("tied-sub-epsilon-regression");
+      expect(result.projection?.distanceFromStartMetres).toBeCloseTo(
+        SHORT_T - beyondTurnMetres,
+        3,
+      );
+      expect(result.projection?.lateralDistanceMetres ?? 1).toBeLessThan(0.1);
+      expect(result.projection?.matchedCoordinate[0]).toBeCloseTo(fixCoordinate[0], 8);
+
+      // Committed state is untouched — the very same objects, not merely
+      // equal values.
+      expect(result.coreState.lastMatch).toBe(previousLastMatch);
+      expect(result.coreState.lastReliableMatch).toBe(previousReliable);
+    });
+
+    it("holds at exactly PROGRESS_EPSILON_METRES of cumulative regression and resolves just past it", () => {
+      const anchorDistance = SHORT_T - ANCHOR_OFFSET_METRES;
+      const atExactly = processFix(
+        SHORT_POINTS,
+        coordinateAtDistance(
+          SHORT_POINTS,
+          SHORT_T + ANCHOR_OFFSET_METRES + PROGRESS_EPSILON_METRES,
+        ),
+        14,
+        seedOutboundState(anchorDistance),
+      );
+      expect(atExactly.coreState.lastMatch?.distanceFromStartMetres).toBeCloseTo(
+        anchorDistance,
+        6,
+      );
+
+      const justPast = processFix(
+        SHORT_POINTS,
+        coordinateAtDistance(
+          SHORT_POINTS,
+          SHORT_T + ANCHOR_OFFSET_METRES + PROGRESS_EPSILON_METRES + 0.1,
+        ),
+        14,
+        seedOutboundState(anchorDistance),
+      );
+      expect(
+        justPast.coreState.lastReliableMatch?.distanceFromStartMetres ?? 0,
+      ).toBeGreaterThan(SHORT_T);
+    });
+
+    it("keeps holding through stationary and sub-threshold jitter, then resolves once real movement arrives", () => {
+      let state = seedOutboundState(SHORT_T - ANCHOR_OFFSET_METRES);
+      const anchor = state.lastMatch;
+
+      for (let i = 0; i < 20; i += 1) {
+        // Always strictly past the anchor's own distance from the
+        // turnaround, and always well inside epsilon.
+        const beyondTurnMetres = ANCHOR_OFFSET_METRES + 0.3 + (i % 8) * 0.4;
+        state = processFix(
+          SHORT_POINTS,
+          coordinateAtDistance(SHORT_POINTS, SHORT_T + beyondTurnMetres),
+          14,
+          state,
+        ).coreState;
+      }
+      // Twenty fixes' worth of jitter supplies no movement evidence, so
+      // the anchor is still exactly where it was — held, not stalled. The
+      // bound on a hold is 5 m of cumulative tied regression, never a fix
+      // count or elapsed time.
+      expect(state.lastMatch).toBe(anchor);
+      expect(state.lastReliableMatch).toBe(anchor);
+
+      state = processFix(
+        SHORT_POINTS,
+        coordinateAtDistance(
+          SHORT_POINTS,
+          SHORT_T + ANCHOR_OFFSET_METRES + PROGRESS_EPSILON_METRES + 1,
+        ),
+        14,
+        state,
+      ).coreState;
+      expect(state.lastReliableMatch?.distanceFromStartMetres ?? 0).toBeGreaterThan(
+        SHORT_T,
+      );
+    });
+
+    it("preserves genuine backtracking that begins beyond the existing ambiguity boundary, and resolves forward inside it", () => {
+      const halfMargin = CONTINUITY_PREFERENCE_METRES / 2;
+
+      /** Walks backwards from `startShortOfTurnaround` at walking pace
+       * until the hold resolves, then reports committed progress. */
+      function backtrackFrom(startShortOfTurnaround: number): number {
+        let state = seedOutboundState(SHORT_T - startShortOfTurnaround);
+        for (
+          let x = startShortOfTurnaround + WALKING_STEP_METRES;
+          x <= startShortOfTurnaround + 20;
+          x += WALKING_STEP_METRES
+        ) {
+          state = processFix(
+            SHORT_POINTS,
+            coordinateAtDistance(SHORT_POINTS, SHORT_T - x),
+            14,
+            state,
+          ).coreState;
+        }
+        return state.lastReliableMatch?.distanceFromStartMetres ?? 0;
+      }
+
+      // Beyond the boundary the advancing alternative is further than
+      // CONTINUITY_PREFERENCE_METRES away, so the unchanged selector keeps
+      // the outbound branch and progress correctly runs backwards.
+      expect(backtrackFrom(halfMargin + 1)).toBeLessThan(SHORT_T);
+
+      // Inside it, the geometry is genuinely ambiguous from route distance
+      // alone and item 104 already resolves that narrow zone forward. This
+      // boundary is inherited unchanged; the follow-up adds no constant of
+      // its own.
+      expect(backtrackFrom(halfMargin)).toBeGreaterThan(SHORT_T);
+    });
+
+    it("keeps classifying the current fix's own lateral distance while progress is held", () => {
+      // The dense, constant-latitude coincident fixture, so a latitude
+      // offset is exactly perpendicular to the mirrored leg.
+      const points = OUT_AND_BACK_COINCIDENT_ROUTE_POINTS;
+      const turnaroundIndex = OUT_AND_BACK_COINCIDENT_TURNAROUND_INDEX;
+      const denseT = points[turnaroundIndex]?.distanceFromStartMetres ?? 0;
+      const seed: ProjectionMatch = {
+        pointIndex: turnaroundIndex - 1,
+        distanceFromStartMetres: denseT - ANCHOR_OFFSET_METRES,
+      };
+      let state: RideNavigationCoreState = {
+        lastMatch: seed,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        lastReliableMatch: seed,
+      };
+
+      const accuracyMetres = 5;
+      const lateralOffsetMetres = POSSIBLY_OFF_ROUTE_BASE_METRES + accuracyMetres + 5;
+      const beyondTurnMetres = ANCHOR_OFFSET_METRES + 2;
+      const driftedCoordinate: Coordinate = [
+        0.03 - beyondTurnMetres / (111_320 * Math.cos((51 * Math.PI) / 180)),
+        51 + lateralOffsetMetres / 111_132,
+      ];
+
+      for (let i = 0; i < CONSECUTIVE_TO_ESCALATE; i += 1) {
+        const step = processFix(points, driftedCoordinate, accuracyMetres, state);
+        expect(step.projection?.disposition).toBe("tied-sub-epsilon-regression");
+        expect(step.projection?.lateralDistanceMetres ?? 0).toBeGreaterThan(
+          POSSIBLY_OFF_ROUTE_BASE_METRES,
+        );
+        state = step.coreState;
+      }
+
+      // Progress held throughout, yet the debounced level still escalated
+      // from this fix's own lateral distance — the hold changes what is
+      // adopted as progress, never what is classified.
+      expect(state.offRouteMachineState.level).toBe("possibly-off-route");
+      expect(state.lastMatch).toBe(seed);
+      expect(state.lastReliableMatch).toBe(seed);
     });
   });
 });

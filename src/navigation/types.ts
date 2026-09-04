@@ -19,9 +19,32 @@ export interface ProjectionMatch {
   distanceFromStartMetres: number;
 }
 
+/**
+ * Whether a projection may be adopted as the ride's route progress, or is
+ * the one narrow case where it must not be (backlog item 104 follow-up).
+ *
+ * `tied-sub-epsilon-regression` means: this fix had more than one
+ * geometrically tied occurrence (exactly overlapping route geometry, such
+ * as an out-and-back turnaround's outbound and return legs), and the
+ * occurrence selected by the unchanged selector sits *behind* the previous
+ * match by no more than PROGRESS_EPSILON_METRES — too little for the
+ * selector's own forward override to engage, and therefore not yet
+ * evidence of anything. The projection itself is still completely honest:
+ * its matchedCoordinate, lateralDistanceMetres and distanceFromStartMetres
+ * all describe the candidate genuinely chosen for this fix, and nothing is
+ * recombined from an earlier one. The label only tells the navigation core
+ * to keep measuring against its existing stable anchor rather than adopt
+ * this reading, so a slow rider's repeated sub-epsilon steps accumulate
+ * into one comparison instead of eroding the anchor a few metres at a
+ * time. See rideNavigationCore.ts's processFix, which is where the hold
+ * actually happens.
+ */
+export type ProjectionDisposition = "resolved" | "tied-sub-epsilon-regression";
+
 export interface ProjectionResult extends ProjectionMatch {
   matchedCoordinate: Coordinate;
   lateralDistanceMetres: number;
   /** True if the windowed search around the last match was untrustworthy and a whole-route search was used instead. */
   reacquired: boolean;
+  disposition: ProjectionDisposition;
 }

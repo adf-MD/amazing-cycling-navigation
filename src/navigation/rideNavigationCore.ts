@@ -52,12 +52,51 @@ export function processFix(
     return { coreState: previous, projection: null };
   }
 
+  // Classification is deliberately computed BEFORE the hold decision
+  // below, and always from this fix's own lateral distance. On exactly
+  // overlapping geometry both tied occurrences sit on the same line, so
+  // lateral distance is identical whichever one was selected — holding
+  // progress must therefore never hold off-route classification with it.
+  // A rider drifting sideways while progress is held still escalates
+  // through the unchanged debounce exactly as they otherwise would.
   const raw = classifyFix(
     projection.lateralDistanceMetres,
     accuracyMetres,
     projection.reacquired,
   );
   const offRouteMachineState = nextOffRouteState(previous.offRouteMachineState, raw);
+
+  // Backlog item 104 follow-up. An unresolved tied regression (see
+  // ProjectionDisposition) is not yet evidence of anything: it is a step
+  // too small for the projection layer's own forward override to consider,
+  // on geometry where the same coordinate legitimately means two different
+  // route distances. Adopting it would make it the next fix's anchor, and
+  // a slow rider's repeated sub-epsilon steps would then walk progress
+  // backwards down an exactly retraced leg indefinitely, never once
+  // accumulating a regression large enough to be examined.
+  //
+  // So both anchors are held at their previous values — lastMatch because
+  // it is the comparison basis the next fix's regression is measured
+  // against, and lastReliableMatch because it is what the rider actually
+  // sees as remaining distance, remaining ascent and the trusted
+  // next-manoeuvre cue. The hold lasts until cumulative regression from
+  // that stable anchor passes PROGRESS_EPSILON_METRES, at which point the
+  // unchanged selector resolves it — either onto the return occurrence, or
+  // (when the advancing alternative is further away than
+  // CONTINUITY_PREFERENCE_METRES allows) onto genuine outbound
+  // backtracking. Nothing here is a monotonic clamp: outside a tie,
+  // progress still moves backwards whenever the rider does.
+  if (projection.disposition === "tied-sub-epsilon-regression") {
+    return {
+      coreState: {
+        lastMatch: previous.lastMatch,
+        offRouteMachineState,
+        lastReliableMatch: previous.lastReliableMatch,
+      },
+      projection,
+    };
+  }
+
   const lastReliableMatch = raw === "off-route" ? previous.lastReliableMatch : projection;
 
   return {

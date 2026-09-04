@@ -1,5 +1,8 @@
 import type { Coordinate } from "../../domain/types.ts";
-import { buildRoutePointsFromWaypoints } from "./routeGeometry.ts";
+import {
+  buildRoutePointsFromCoordinates,
+  buildRoutePointsFromWaypoints,
+} from "./routeGeometry.ts";
 
 /**
  * An out-and-back route whose return leg is an EXACT geometric retrace of
@@ -95,3 +98,52 @@ export const OUT_AND_BACK_COINCIDENT_SPARSE_ROUTE_POINTS = buildRoutePointsFromW
  * array index 6 into the 13-point sparse route (indices 0..12), since
  * stepsPerSegment = 1 means one route point per waypoint. */
 export const OUT_AND_BACK_COINCIDENT_SPARSE_TURNAROUND_INDEX = 6;
+
+/**
+ * A third coincident out-and-back: SHORT (~370 m), only eight points, and
+ * DIAGONAL — the structural analogue of the real route on which item 104's
+ * first physical acceptance failed, reconstructed at unrelated generic
+ * coordinates. Three properties matter and are all deliberate:
+ *
+ * - Eight points and a total length under WINDOW_RADIUS_METRES (400 m), so
+ *   findWindowRange() always spans the entire route and isClippedAtEdge()
+ *   is never true — the clipped-window/whole-route-reacquire path is
+ *   structurally excluded, and any failure here is genuinely in the
+ *   windowed branch.
+ * - Index 4 and index 6 are the SAME coordinate value, so the mirrored leg
+ *   between them is one exact reversed segment each way, not two nearly
+ *   equal ones. Built through buildRoutePointsFromCoordinates (never
+ *   interpolation) precisely so that identity is byte-exact — see that
+ *   helper's own comment.
+ * - The mirrored leg runs diagonally rather than along a line of constant
+ *   latitude, unlike both fixtures above. That is what proves
+ *   LATERAL_TIE_TOLERANCE_METRES is not silently relying on the
+ *   arithmetic symmetry of a constant-latitude line: the two occurrences'
+ *   own lateral distances stay tied on genuinely two-dimensional geometry
+ *   too.
+ *
+ * Approximate cumulative distances: 0, 31, 38, 113, 114, 224, 334, 373 —
+ * read the fixture's own `distanceFromStartMetres` values rather than
+ * assuming these, exactly as for the two fixtures above.
+ */
+const SHORT_DIAGONAL_MIRROR_START: Coordinate = [1.000562, 52.000682];
+
+const OUT_AND_BACK_COINCIDENT_SHORT_COORDINATES: readonly Coordinate[] = [
+  [1.0, 52.0],
+  [1.000452, 52.0],
+  [1.000554, 52.0],
+  [1.000554, 52.000675],
+  SHORT_DIAGONAL_MIRROR_START,
+  [0.999249, 52.001249],
+  // Deliberately the same value, not a re-typed literal: this is what
+  // makes the return leg an exact byte-for-byte retrace.
+  SHORT_DIAGONAL_MIRROR_START,
+  [1.001131, 52.000682],
+];
+
+export const OUT_AND_BACK_COINCIDENT_SHORT_ROUTE_POINTS = buildRoutePointsFromCoordinates(
+  OUT_AND_BACK_COINCIDENT_SHORT_COORDINATES,
+);
+
+/** The turnaround is array index 5 of the eight-point short route. */
+export const OUT_AND_BACK_COINCIDENT_SHORT_TURNAROUND_INDEX = 5;

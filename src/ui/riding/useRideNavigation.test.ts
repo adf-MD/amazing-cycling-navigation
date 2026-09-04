@@ -12,6 +12,8 @@ import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry
 import {
   OUT_AND_BACK_COINCIDENT_ROUTE_POINTS,
   OUT_AND_BACK_COINCIDENT_TURNAROUND_INDEX,
+  OUT_AND_BACK_COINCIDENT_SHORT_ROUTE_POINTS,
+  OUT_AND_BACK_COINCIDENT_SHORT_TURNAROUND_INDEX,
 } from "../../test/fixtures/outAndBackCoincidentRoute.ts";
 import type { PlannedRoute, RoutePoint } from "../../domain/types.ts";
 import { db, type StoredRideState } from "../../storage/db.ts";
@@ -1006,5 +1008,102 @@ describe("useRideNavigation resume near an exactly coincident out-and-back turna
     expect(expectNumber(result.current.distanceRemainingMetres)).toBeLessThan(
       remainingAtTurnaround,
     );
+  });
+});
+
+describe("useRideNavigation resume mid-hold at walking pace (backlog item 104 follow-up)", () => {
+  const shortRoute: PlannedRoute = {
+    ...route,
+    id: "short-coincident-out-and-back-1",
+    points: OUT_AND_BACK_COINCIDENT_SHORT_ROUTE_POINTS,
+    distanceMetres:
+      OUT_AND_BACK_COINCIDENT_SHORT_ROUTE_POINTS.at(-1)?.distanceFromStartMetres ?? 0,
+  };
+  const turnaroundPoint =
+    OUT_AND_BACK_COINCIDENT_SHORT_ROUTE_POINTS[
+      OUT_AND_BACK_COINCIDENT_SHORT_TURNAROUND_INDEX
+    ];
+  if (!turnaroundPoint) throw new Error("fixture missing short turnaround point");
+  const turnaroundDistanceMetres = turnaroundPoint.distanceFromStartMetres;
+
+  /** The short fixture has only eight points, so return-leg fixes have to
+   * be interpolated rather than taken from the point array. */
+  function coordinateAtDistance(targetMetres: number): readonly [number, number] {
+    const points = OUT_AND_BACK_COINCIDENT_SHORT_ROUTE_POINTS;
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const a = points[i];
+      const b = points[i + 1];
+      if (!a || !b) continue;
+      if (
+        targetMetres >= a.distanceFromStartMetres &&
+        targetMetres <= b.distanceFromStartMetres
+      ) {
+        const span = b.distanceFromStartMetres - a.distanceFromStartMetres;
+        const fraction =
+          span === 0 ? 0 : (targetMetres - a.distanceFromStartMetres) / span;
+        return [
+          a.coordinate[0] + fraction * (b.coordinate[0] - a.coordinate[0]),
+          a.coordinate[1] + fraction * (b.coordinate[1] - a.coordinate[1]),
+        ];
+      }
+    }
+    throw new Error("distance outside short fixture range");
+  }
+
+  it("resumes from the stable match a hold had already persisted, then advances on the return leg without a single backwards step", async () => {
+    // Exactly the row a pause taken DURING a hold writes: the held anchor
+    // is what lastMatch/lastReliableMatch already are, so nothing new has
+    // to be persisted for a resume to behave correctly — this test exists
+    // to prove that, since it is the reason the follow-up adds no storage
+    // field of its own.
+    await setActiveRideState({
+      id: "active",
+      routeId: shortRoute.id,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: {
+        coordinate: coordinateAtDistance(turnaroundDistanceMetres + 3),
+        accuracyMetres: 14,
+        timestampMs: 1000,
+      },
+      lastMatchedPointIndex: OUT_AND_BACK_COINCIDENT_SHORT_TURNAROUND_INDEX,
+      matchedDistanceFromStartMetres: turnaroundDistanceMetres,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+      lastReliableMatchedPointIndex: OUT_AND_BACK_COINCIDENT_SHORT_TURNAROUND_INDEX,
+      lastReliableMatchedDistanceFromStartMetres: turnaroundDistanceMetres,
+    });
+
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(shortRoute, { geolocationSource: fake.source }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.restorationStatus).toBe("ready");
+    });
+    expect(result.current.restoredForThisRoute).toBe(true);
+    expect(expectNumber(result.current.matchedDistanceFromStartMetres)).toBeCloseTo(
+      turnaroundDistanceMetres,
+      6,
+    );
+
+    act(() => {
+      result.current.start();
+    });
+
+    // Walking pace along the exactly retraced return leg: every step is
+    // smaller than PROGRESS_EPSILON_METRES.
+    let previousRemaining = expectNumber(result.current.distanceRemainingMetres);
+    const remainingAtResume = previousRemaining;
+    for (let beyondTurn = 1.4, tick = 0; beyondTurn <= 28; beyondTurn += 1.4, tick += 1) {
+      const coordinate = coordinateAtDistance(turnaroundDistanceMetres + beyondTurn);
+      act(() => {
+        fake.watches[0]?.emitFix(fixAt(coordinate, 2000 + tick * 1000));
+      });
+      const remaining = expectNumber(result.current.distanceRemainingMetres);
+      expect(remaining).toBeLessThanOrEqual(previousRemaining + 1e-6);
+      previousRemaining = remaining;
+    }
+
+    expect(previousRemaining).toBeLessThan(remainingAtResume - 20);
   });
 });
