@@ -4464,7 +4464,7 @@ describe("MapView", () => {
       expect(activeDirectionFeatures(mock)).toEqual([]);
     });
 
-    it("clips to matchedDistanceFromStartMetres, so a live match ahead of the frozen window never repaints completed road", () => {
+    it("freezes the whole overlay independent of matchedDistanceFromStartMetres, both endpoints held while the live match moves", () => {
       const mock = createMockMapFactory();
       const spans = [span(100, 300, "ordinary-route", 0)];
       const { rerender } = render(
@@ -4476,18 +4476,35 @@ describe("MapView", () => {
         />,
       );
       mock.triggerLoad();
-      expect(activeDirectionFeatures(mock)).toHaveLength(1);
+      const baseline = activeDirectionFeatures(mock);
+      expect(baseline.length).toBeGreaterThan(0);
 
-      // The live match has moved past the whole frozen window.
+      // Equal to the interval start; ahead but still inside it; beyond its
+      // end; and behind its start — none of these may change a single
+      // endpoint, any intervening geometry, or any feature's properties.
+      for (const matchedDistanceFromStartMetres of [100, 150, 350, 50]) {
+        rerender(
+          <MapView
+            points={warningPoints}
+            matchedDistanceFromStartMetres={matchedDistanceFromStartMetres}
+            mapFactory={mock.factory}
+            activeDirectionOverlay={{ spans }}
+          />,
+        );
+        expect(activeDirectionFeatures(mock)).toEqual(baseline);
+      }
+
+      // The freeze is not an inert/broken effect: genuinely new reliable
+      // spans from the caller still update it, whatever the raw match is.
       rerender(
         <MapView
           points={warningPoints}
           matchedDistanceFromStartMetres={350}
           mapFactory={mock.factory}
-          activeDirectionOverlay={{ spans }}
+          activeDirectionOverlay={{ spans: [span(100, 300, "very-steep", 0)] }}
         />,
       );
-      expect(activeDirectionFeatures(mock)).toEqual([]);
+      expect(activeDirectionFeatures(mock)).not.toEqual(baseline);
     });
 
     it("keeps the existing global remaining-then-completed base order, proving the correction is local", () => {

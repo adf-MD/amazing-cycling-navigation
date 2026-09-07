@@ -502,44 +502,6 @@ export function RidingScreen({
       microDetailFeature ? buildFeatureDetailSegments(microDetailFeature, runs) : [],
     [microDetailFeature, runs],
   );
-  // Backlog item 98: the short current/near-ahead route interval whose
-  // colour must represent the direction the rider is travelling RIGHT NOW,
-  // so it wins locally wherever an out-and-back's two legs share the same
-  // road. Derived from canonical route progress and route order only —
-  // never GPS bearing, and never a separately recomputed projection.
-  //
-  // presentationDistanceFromStartMetres, not the raw match: the overlay
-  // then freezes with every other trusted Riding figure while a fix is
-  // stale or strongly off route, instead of recolouring the road under the
-  // rider from a noisy match. geolocationStatus !== "idle" is this file's
-  // own established active-Riding boundary, and is what keeps the pre-ride
-  // overview's static whole-route presentation untouched even though a
-  // restored, paused session still carries real progress.
-  //
-  // microDetailSegments is passed as-is: the overlay's job is to decide
-  // WHICH route occurrence a colour belongs to, not to recolour anything,
-  // so it reproduces exactly what this screen already shows for that
-  // occurrence. Direction-correctness is independent of any explicit
-  // selection regardless, because the geometry it emphasises is chosen by
-  // route distance from progress, not by what happens to be selected.
-  const activeDirectionOverlay = useMemo(() => {
-    if (nav.geolocationStatus === "idle") return undefined;
-    if (nav.presentationDistanceFromStartMetres === null) return undefined;
-    return {
-      spans: buildActiveDirectionSpans({
-        features: routeFeatures,
-        microSegments: microDetailSegments,
-        progressDistanceMetres: nav.presentationDistanceFromStartMetres,
-        routeLengthMetres: route.points.at(-1)?.distanceFromStartMetres ?? 0,
-      }),
-    };
-  }, [
-    nav.geolocationStatus,
-    nav.presentationDistanceFromStartMetres,
-    routeFeatures,
-    microDetailSegments,
-    route.points,
-  ]);
 
   // A read-only, whole-climb preview of whatever's selected in the pre-ride
   // dropdown — same gate as preRideClimbNumber above, so the heading, this
@@ -651,6 +613,69 @@ export function RidingScreen({
           : buildFeatureDetailSegments(upcomingClimb, runs),
     [upcomingClimb, microDetailFeature, microDetailSegments, runs],
   );
+  // Backlog item 98 follow-up: the active-direction overlay's own local
+  // detail must reflect the feature the rider is actually riding through,
+  // never an unrelated explicit inspection selection elsewhere
+  // (microDetailFeature above) — mirrors activeClimb's own independence
+  // from selection, generalised to descents (activeClimb/
+  // activeClimbDetailSegments only ever cover climbs). Reuses
+  // microDetailSegments when nothing overrides activeFeature (the common
+  // case), and activeClimbDetailSegments's already-classified result for
+  // an active climb even when something else is selected, rather than
+  // re-running buildFeatureDetailSegments a second time for the same
+  // feature on the same tick. Only a genuinely active, differently-
+  // selected DESCENT reaches a fresh classification here.
+  const activeFeatureMicroDetailSegments = useMemo(() => {
+    if (activeFeature === null) return [];
+    if (activeFeature === microDetailFeature) return microDetailSegments;
+    if (activeFeature.kind === "climb") return activeClimbDetailSegments;
+    return buildFeatureDetailSegments(activeFeature, runs);
+  }, [
+    activeFeature,
+    microDetailFeature,
+    microDetailSegments,
+    activeClimbDetailSegments,
+    runs,
+  ]);
+  // Backlog item 98: the short current/near-ahead route interval whose
+  // colour must represent the direction the rider is travelling RIGHT NOW,
+  // so it wins locally wherever an out-and-back's two legs share the same
+  // road. Derived from canonical route progress and route order only —
+  // never GPS bearing, and never a separately recomputed projection.
+  //
+  // presentationDistanceFromStartMetres, not the raw match: the overlay
+  // then freezes with every other trusted Riding figure while a fix is
+  // stale or strongly off route, instead of recolouring the road under the
+  // rider from a noisy match — MapView performs no live trimming of it
+  // either (see its own doc comment), so the freeze covers the whole
+  // window, not just its far end. geolocationStatus !== "idle" is this
+  // file's own established active-Riding boundary, and is what keeps the
+  // pre-ride overview's static whole-route presentation untouched even
+  // though a restored, paused session still carries real progress.
+  //
+  // activeFeatureMicroDetailSegments, not microDetailSegments: the
+  // overlay's job is to decide WHICH route occurrence a colour belongs to,
+  // not to recolour anything, so it must reproduce what this screen shows
+  // for the feature actually being ridden — never an unrelated explicit
+  // selection, which the block above already keeps independent.
+  const activeDirectionOverlay = useMemo(() => {
+    if (nav.geolocationStatus === "idle") return undefined;
+    if (nav.presentationDistanceFromStartMetres === null) return undefined;
+    return {
+      spans: buildActiveDirectionSpans({
+        features: routeFeatures,
+        microSegments: activeFeatureMicroDetailSegments,
+        progressDistanceMetres: nav.presentationDistanceFromStartMetres,
+        routeLengthMetres: route.points.at(-1)?.distanceFromStartMetres ?? 0,
+      }),
+    };
+  }, [
+    nav.geolocationStatus,
+    nav.presentationDistanceFromStartMetres,
+    routeFeatures,
+    activeFeatureMicroDetailSegments,
+    route.points,
+  ]);
   const climbProgressMetrics = activeClimb
     ? computeClimbProgressMetrics(
         activeClimb,

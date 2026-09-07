@@ -1898,14 +1898,18 @@ export function MapView({
 
   const activeDirectionSpans = activeDirectionOverlay?.spans;
 
-  // Backlog item 98. Clipped by exactly the same
-  // matchedDistanceFromStartMetres every other overlay uses, which is what
-  // keeps the emphasis honest without a bespoke reliability gate of its
-  // own: the caller derives the window from the frozen/reliable
-  // presentation distance, so if a stale or strongly off-route fix leaves
-  // that behind the live match, this clip stops the overlay from repainting
-  // road the rider has already ridden, and empties it entirely once the
-  // live match has moved past the whole window.
+  // Backlog item 98, corrected by its own follow-up: unlike every other
+  // overlay on this screen, this one must NOT clip by the live
+  // matchedDistanceFromStartMetres. The caller (RidingScreen) already
+  // supplies spans fully bounded to the frozen/reliable presentation
+  // window, so the only bound this effect still needs is the route's own
+  // domain — clamping to [0, routeEnd] is defensive route-domain clamping,
+  // not a reliability gate. Clipping by the raw match here previously
+  // trimmed the near end, and could empty the overlay entirely, whenever
+  // raw progress ran ahead of the frozen window (a stale or strongly
+  // off-route fix) — exactly the case the freeze exists to protect, and
+  // the opposite of the intended contract: the whole window freezes with
+  // the rest of the trusted presentation, not just its far end.
   useEffect(() => {
     if (!styleStructurallyReady) return;
     mapRef.current?.setGeoJsonSourceData(
@@ -1913,16 +1917,11 @@ export function MapView({
       buildActiveDirectionFeatureCollection(
         points,
         activeDirectionSpans ?? [],
-        matchedDistanceFromStartMetres,
+        0,
         points.at(-1)?.distanceFromStartMetres ?? 0,
       ),
     );
-  }, [
-    points,
-    matchedDistanceFromStartMetres,
-    activeDirectionSpans,
-    styleStructurallyReady,
-  ]);
+  }, [points, activeDirectionSpans, styleStructurallyReady]);
 
   const routeFeatures = routeFeatureOverlay?.features;
   const routeFeatureSelectedId = routeFeatureOverlay?.selectedFeatureId ?? null;

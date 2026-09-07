@@ -400,10 +400,13 @@ test("paints the current route direction above the coincident completed trace on
 // leg the macro/micro layers already clip to [matched, routeEnd], which
 // excludes the outbound occurrence entirely.
 //
-// The classified defect is consequently reachable only on the OUTBOUND leg,
-// and only when the active climb's own micro detail is NOT covering the road
-// — i.e. when a different feature has been explicitly selected. Both states
-// are measured below.
+// The classified layering defect (grey completed trace over the coincident
+// road) is consequently reachable only on the OUTBOUND leg. `0.4.10`
+// additionally let a different explicit selection swap the climb's own
+// local colour for its macro band there — this item's own follow-up
+// removed that dependency on selection, so both states measured below (no
+// selection, and the opposite descent explicitly selected) are now
+// expected to read identically: the climb's own local micro colour.
 
 const CLIMB_LAT = 51.5;
 const CLIMB_START_LON = -0.2;
@@ -543,22 +546,28 @@ test("keeps the climbed direction's colour immediately ahead on a coincident cli
   const withSelection = await captureRoadSample(page, CLASSIFIED_COLOURS);
   // The selection stays truthfully represented in the details panel and on
   // the rest of the route, but must not decide the colour of the road the
-  // rider is climbing right now. With the descent selected, the climb's own
-  // presentation is its macro category colour, so that is what the local
-  // overlay reproduces here.
-  expect(withSelection.ahead.byColour.macroClimb).toBeGreaterThan(100);
+  // rider is climbing right now, and must not even fall back to the
+  // climb's own macro category colour: the local overlay's detail is
+  // independent of selection, so it still reproduces the climb's own
+  // local (micro) presentation here, exactly as if nothing were selected.
+  expect(withSelection.ahead.byColour.microClimb).toBeGreaterThan(100);
+  expect(withSelection.ahead.byColour.macroClimb).toBeLessThan(ANTIALIASING_FLOOR_PIXELS);
   expect(withSelection.ahead.byColour.descent).toBeLessThan(ANTIALIASING_FLOOR_PIXELS);
 
   // Where the window's own two halves are geographically identical, the
   // piece nearest the rider in route order must win. Without that rule the
   // last stretch of the climb would paint as the descent that retraces it.
+  // That nearer piece is the climb's own local detail (see above), not its
+  // macro band, since this whole climb's micro band is uniformly
+  // "very-hard-climb" through the sampled region.
   const overlap = await captureRoadSample(
     page,
     CLASSIFIED_COLOURS,
     OVERLAP_NEAR_OFFSET_PX,
     OVERLAP_FAR_OFFSET_PX,
   );
-  expect(overlap.ahead.byColour.macroClimb).toBeGreaterThan(100);
+  expect(overlap.ahead.byColour.microClimb).toBeGreaterThan(100);
+  expect(overlap.ahead.byColour.macroClimb).toBeLessThan(ANTIALIASING_FLOOR_PIXELS);
   expect(overlap.ahead.byColour.descent).toBeLessThan(ANTIALIASING_FLOOR_PIXELS);
 
   expect(consoleErrors).toEqual([]);
