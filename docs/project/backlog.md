@@ -122,24 +122,6 @@ _Category: Platform compatibility_
 
 ---
 
-<a id="item-99"></a>
-
-## Item 99 — Route Library sorting by distance and total ascent
-
-_Category: Route Library organisation_
-
-99. **Route Library sorting by distance and total ascent**
-    - Confirmed current sort support: `RouteLibrarySortOrder = "most-recent" | "name-asc"` (`src/storage/mapping.ts`, default `"most-recent"`), implemented in `sortRoutesForLibrary` (`src/ui/library/routeLibraryView.ts`) and persisted via `routeLibraryPreferencesRepository` (Dexie-backed).
-    - Extend the existing sort choices with route distance and **total ascent** — use "total ascent" in user-facing copy, not ambiguous "elevation". Support ascending and descending order for both new fields while preserving the existing `"most-recent"`/`"name-asc"` choices unchanged.
-    - Sorting is presentation-only: never mutate stored route data or route arrays, and use deterministic tie-breakers, matching the existing `compareIds` convention.
-    - Preserve the existing pinned/unpinned grouping, search/filter behaviour, focus restoration and deletion/rename semantics. Verify, rather than assume, whether each new sort applies within the pinned and unpinned groups separately by following the current library contract — do not let a new sort silently erase pin priority.
-    - Use existing canonical route summary values (distance, ascent) and existing metric formatting. Do not recalculate or reinterpret ascent merely for sorting.
-    - Preserve the existing sort-preference persistence behaviour confirmed above — extend it to the two new fields rather than replacing the mechanism.
-    - Require pure-function coverage for ordering, ties, and missing/legacy values (for example a route with no recorded ascent), plus component/browser coverage for accessible selection and stable focus.
-    - Keep this as a small independent slice — it does not require route tags (item 100) or a storage-schema redesign.
-
----
-
 <a id="item-100"></a>
 
 ## Item 100 — Reusable route tags and tag-based organisation

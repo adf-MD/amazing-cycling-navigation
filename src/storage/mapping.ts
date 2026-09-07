@@ -488,13 +488,29 @@ export function fromStoredPlanningPreferences(
 
 /** The Route Library screen's persisted sort choice. "Most recent" keeps
  * today's exact PlannedRoute.createdAt-descending meaning; "Name A-Z" is
- * locale-aware, case-insensitive and numeric (see routeLibraryView.ts). */
-export type RouteLibrarySortOrder = "most-recent" | "name-asc";
+ * locale-aware, case-insensitive and numeric; "distance-*"/"ascent-*" order
+ * by the route's own canonical PlannedRoute.distanceMetres/ascentMetres,
+ * with unknown ascent (null) always sorting after every known value in
+ * both directions (see routeLibraryView.ts). */
+export type RouteLibrarySortOrder =
+  | "most-recent"
+  | "name-asc"
+  | "distance-asc"
+  | "distance-desc"
+  | "ascent-asc"
+  | "ascent-desc";
 
 export const DEFAULT_ROUTE_LIBRARY_SORT_ORDER: RouteLibrarySortOrder = "most-recent";
 
 export function isRouteLibrarySortOrder(value: unknown): value is RouteLibrarySortOrder {
-  return value === "most-recent" || value === "name-asc";
+  return (
+    value === "most-recent" ||
+    value === "name-asc" ||
+    value === "distance-asc" ||
+    value === "distance-desc" ||
+    value === "ascent-asc" ||
+    value === "ascent-desc"
+  );
 }
 
 /** Route Library's persisted sort preference, resolved for use. The

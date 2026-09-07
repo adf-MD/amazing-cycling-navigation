@@ -381,6 +381,168 @@ describe("RouteLibrary", () => {
       });
     });
 
+    describe("distance and total ascent (item 99)", () => {
+      // Imports three routes then overwrites their canonical
+      // distanceMetres/ascentMetres directly (the same db.routes.update
+      // precedent this file already uses for name/pinnedAt), since
+      // importFixture always uploads the same GPX content and this file's
+      // convention is to vary fields this way rather than via distinct GPX
+      // fixtures. "Mid Unknown" gets a genuine null ascent, distinct from
+      // "Short Flat"'s known zero.
+      async function seedDistinctRoutes(user: ReturnType<typeof userEvent.setup>) {
+        await importFixture(user, "Short Flat.gpx");
+        await importFixture(user, "Long Climb.gpx");
+        await importFixture(user, "Mid Unknown.gpx");
+
+        const routes = await routesRepository.listRoutes();
+        const short = routes.find((route) => route.name === "Short Flat");
+        const long = routes.find((route) => route.name === "Long Climb");
+        const mid = routes.find((route) => route.name === "Mid Unknown");
+        if (!short || !long || !mid) throw new Error("fixture routes not found");
+
+        await db.routes.update(short.id, { distanceMetres: 5_000, ascentMetres: 0 });
+        await db.routes.update(long.id, { distanceMetres: 40_000, ascentMetres: 900 });
+        await db.routes.update(mid.id, { distanceMetres: 15_000, ascentMetres: null });
+      }
+
+      it("the select exposes all six sort choices with the intended values and labels", async () => {
+        const user = userEvent.setup();
+        render(<RouteLibrary onOpenRoute={vi.fn()} />);
+        await importFixture(user);
+
+        const select = screen.getByLabelText("Sort by");
+        const options = within(select).getAllByRole("option");
+        expect(
+          options.map((option) => [
+            (option as HTMLOptionElement).value,
+            option.textContent,
+          ]),
+        ).toEqual([
+          ["most-recent", "Most recent"],
+          ["name-asc", "Name A–Z"],
+          ["distance-asc", "Distance: shortest first"],
+          ["distance-desc", "Distance: longest first"],
+          ["ascent-asc", "Total ascent: least first"],
+          ["ascent-desc", "Total ascent: most first"],
+        ]);
+      });
+
+      it("distance-asc / distance-desc reorder the rendered cards by canonical distanceMetres", async () => {
+        const user = userEvent.setup();
+        render(<RouteLibrary onOpenRoute={vi.fn()} />);
+        await seedDistinctRoutes(user);
+
+        await user.selectOptions(screen.getByLabelText("Sort by"), "distance-asc");
+        await waitFor(() => {
+          expect(getVisibleRouteNames()).toEqual([
+            "Short Flat",
+            "Mid Unknown",
+            "Long Climb",
+          ]);
+        });
+
+        await user.selectOptions(screen.getByLabelText("Sort by"), "distance-desc");
+        await waitFor(() => {
+          expect(getVisibleRouteNames()).toEqual([
+            "Long Climb",
+            "Mid Unknown",
+            "Short Flat",
+          ]);
+        });
+      });
+
+      it("ascent-asc / ascent-desc reorder the rendered cards by canonical ascentMetres, with unknown ascent last in BOTH directions", async () => {
+        const user = userEvent.setup();
+        render(<RouteLibrary onOpenRoute={vi.fn()} />);
+        // short: ascentMetres 0 (known); long: 900 (known); mid: null (unknown)
+        await seedDistinctRoutes(user);
+
+        await user.selectOptions(screen.getByLabelText("Sort by"), "ascent-asc");
+        await waitFor(() => {
+          expect(getVisibleRouteNames()).toEqual([
+            "Short Flat",
+            "Long Climb",
+            "Mid Unknown",
+          ]);
+        });
+
+        await user.selectOptions(screen.getByLabelText("Sort by"), "ascent-desc");
+        await waitFor(() => {
+          expect(getVisibleRouteNames()).toEqual([
+            "Long Climb",
+            "Short Flat",
+            "Mid Unknown",
+          ]);
+        });
+      });
+
+      it("a distance/ascent sort choice persists across a remount, reading from IndexedDB rather than local state", async () => {
+        const user = userEvent.setup();
+        const first = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+        await seedDistinctRoutes(user);
+
+        await user.selectOptions(screen.getByLabelText("Sort by"), "distance-desc");
+        await waitFor(() => {
+          expect(getVisibleRouteNames()).toEqual([
+            "Long Climb",
+            "Mid Unknown",
+            "Short Flat",
+          ]);
+        });
+        first.unmount();
+
+        render(<RouteLibrary onOpenRoute={vi.fn()} />);
+
+        await waitFor(() => {
+          expect(screen.getByLabelText("Sort by")).toHaveValue("distance-desc");
+        });
+        expect(getVisibleRouteNames()).toEqual([
+          "Long Climb",
+          "Mid Unknown",
+          "Short Flat",
+        ]);
+      });
+
+      it("shows an inline error and reverts to the last-persisted value when saving a new distance/ascent preference fails", async () => {
+        const user = userEvent.setup();
+        vi.spyOn(
+          routeLibraryPreferencesRepository,
+          "saveRouteLibraryPreferences",
+        ).mockRejectedValueOnce(new Error("Save failed."));
+        render(<RouteLibrary onOpenRoute={vi.fn()} />);
+        await importFixture(user);
+
+        const sortSelect = screen.getByLabelText("Sort by");
+        await user.selectOptions(sortSelect, "ascent-asc");
+
+        await waitFor(() => {
+          expect(screen.getByRole("alert")).toHaveTextContent(
+            "This preference could not be saved on this device. Try again.",
+          );
+        });
+        await waitFor(() => {
+          expect(sortSelect).toHaveValue("most-recent");
+        });
+      });
+
+      it("keeps keyboard focus on the Sort by select through a distance/ascent reorder", async () => {
+        const user = userEvent.setup();
+        render(<RouteLibrary onOpenRoute={vi.fn()} />);
+        await seedDistinctRoutes(user);
+
+        const sortSelect = screen.getByLabelText("Sort by");
+        await user.selectOptions(sortSelect, "distance-asc");
+        await waitFor(() => {
+          expect(getVisibleRouteNames()).toEqual([
+            "Short Flat",
+            "Mid Unknown",
+            "Long Climb",
+          ]);
+        });
+        expect(sortSelect).toHaveFocus();
+      });
+    });
+
     it("shows Loading until both routes and the sort preference have resolved, never a flash of the wrong order", async () => {
       const user = userEvent.setup();
       const seeding = render(<RouteLibrary onOpenRoute={vi.fn()} />);
@@ -880,6 +1042,77 @@ describe("RouteLibrary", () => {
           "Mountain Pass",
           "Alpine Climb",
           "Zebra Loop",
+        ]);
+      });
+    });
+
+    // Item 99: at least TWO pinned routes, whose pin-recency order actively
+    // conflicts with their distance order, so this genuinely proves the
+    // internal pinned order survives a distance/ascent sort — a single
+    // pinned route (as in the name-asc test above) can only prove
+    // pinned-vs-unpinned partitioning, not that the pinned block's own
+    // internal order is untouched.
+    it("changing the sort order to distance-asc/distance-desc still leaves the pinned block's own newest-pinned-first order unchanged, even though it conflicts with distance order (item 99)", async () => {
+      const user = userEvent.setup();
+      const clock = buildSteppingClock("2026-02-01T09:00:00.000Z");
+      render(<RouteLibrary onOpenRoute={vi.fn()} clock={clock} />);
+      await importFixture(user, "Older Pin Long.gpx");
+      await importFixture(user, "Newer Pin Short.gpx");
+      await importFixture(user, "Unpinned Mid.gpx");
+      await importFixture(user, "Unpinned Short.gpx");
+
+      const routes = await routesRepository.listRoutes();
+      const olderPinLong = routes.find((route) => route.name === "Older Pin Long");
+      const newerPinShort = routes.find((route) => route.name === "Newer Pin Short");
+      const unpinnedMid = routes.find((route) => route.name === "Unpinned Mid");
+      const unpinnedShort = routes.find((route) => route.name === "Unpinned Short");
+      if (!olderPinLong || !newerPinShort || !unpinnedMid || !unpinnedShort) {
+        throw new Error("fixture routes not found");
+      }
+
+      // Pinned-first order will be [Newer Pin Short, Older Pin Long]
+      // (newest-pinned-first), but distance order alone would want the
+      // OPPOSITE for distance-asc (Newer Pin Short is shortest) and the
+      // SAME only by distance-desc coincidence for a 2-element list — so
+      // both pinned routes are also interleaved with distinct unpinned
+      // distances, which a whole-list (not unpinned-only) sort would
+      // scatter rather than merely transpose.
+      await db.routes.update(olderPinLong.id, { distanceMetres: 40_000 });
+      await db.routes.update(newerPinShort.id, { distanceMetres: 5_000 });
+      await db.routes.update(unpinnedMid.id, { distanceMetres: 20_000 });
+      await db.routes.update(unpinnedShort.id, { distanceMetres: 10_000 });
+
+      await user.click(screen.getByRole("button", { name: "Pin Older Pin Long" }));
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Unpin Older Pin Long" }),
+        ).toHaveAttribute("aria-pressed", "true");
+      });
+      clock.advance(1000);
+      await user.click(screen.getByRole("button", { name: "Pin Newer Pin Short" }));
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Unpin Newer Pin Short" }),
+        ).toHaveAttribute("aria-pressed", "true");
+      });
+
+      await user.selectOptions(screen.getByLabelText("Sort by"), "distance-asc");
+      await waitFor(() => {
+        expect(getVisibleRouteNames()).toEqual([
+          "Newer Pin Short",
+          "Older Pin Long",
+          "Unpinned Short",
+          "Unpinned Mid",
+        ]);
+      });
+
+      await user.selectOptions(screen.getByLabelText("Sort by"), "distance-desc");
+      await waitFor(() => {
+        expect(getVisibleRouteNames()).toEqual([
+          "Newer Pin Short",
+          "Older Pin Long",
+          "Unpinned Mid",
+          "Unpinned Short",
         ]);
       });
     });

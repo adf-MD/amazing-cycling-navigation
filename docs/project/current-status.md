@@ -224,6 +224,14 @@ Do not treat the item above as fully verified until it has been tested on a movi
 
 ---
 
+### Outstanding: item 99's Route Library distance/ascent sorting
+
+- **Route Library sorting by distance and total ascent (item 99):** shipped in `0.4.12` with automated (Vitest and Playwright Chromium) evidence only — no physical iPhone or Android verification is claimed. See [`docs/project/history/items-95-NN.md#item-99`](history/items-95-NN.md#item-99) for the full implementation record, including the fail-first evidence at every layer, the confirmed no-migration/no-CSS-change findings, the negative controls, and the out-of-scope 200%-text primary-navigation overflow observation.
+- **Required manual check, kept narrow.** On the installed iPhone PWA: the `Sort by` control reads correctly with all six choices (`Most recent`, `Name A–Z`, `Distance: shortest first`, `Distance: longest first`, `Total ascent: least first`, `Total ascent: most first`) and remains usable, with no clipped/overlapping text, in portrait, short landscape and at enlarged (accessibility) text size; selecting a distance or total-ascent order visibly reorders real saved routes correctly, with a pinned route's own position never disturbed by the selected order; a chosen new sort survives a genuine reload; and a route with no recorded total ascent reads as "ascent not available" rather than a misleading number.
+- Physical Android verification is separately outstanding, as for most recent items.
+
+---
+
 ## Monitored reliability observations
 
 These are explicitly **not** approved future work — see each entry's own text for why.

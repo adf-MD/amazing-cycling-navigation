@@ -1165,6 +1165,19 @@ describe("toStoredRouteLibraryPreferences / fromStoredRouteLibraryPreferences", 
     expect(restored).toEqual({ sortOrder: "most-recent" });
   });
 
+  it.each(["distance-asc", "distance-desc", "ascent-asc", "ascent-desc"] as const)(
+    "round-trips an explicitly saved %s value (item 99)",
+    (sortOrder) => {
+      const stored = toStoredRouteLibraryPreferences({ sortOrder });
+      const restored = fromStoredRouteLibraryPreferences({
+        id: "route-library",
+        ...stored,
+      });
+
+      expect(restored).toEqual({ sortOrder });
+    },
+  );
+
   it("recovers safely to most-recent for a corrupt or unrecognised stored sort order value", () => {
     const corruptRow: StoredRouteLibraryPreferences = {
       id: "route-library",

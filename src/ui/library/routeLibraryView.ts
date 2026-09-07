@@ -44,22 +44,72 @@ export function filterRoutesByName(
  * holds). "most-recent" preserves PlannedRoute.createdAt descending, the
  * app's pre-existing meaning; "name-asc" uses locale-aware, case-
  * insensitive, numeric-aware collation (so "Route 2" sorts before
- * "Route 10"). Both orders are tie-broken deterministically by route id. */
+ * "Route 10"); "distance-*"/"ascent-*" order by the route's own canonical
+ * distanceMetres/ascentMetres. Every order is tie-broken deterministically
+ * by route id. */
 export function sortRoutesForLibrary(
   routes: readonly PlannedRoute[],
   sortOrder: RouteLibrarySortOrder,
 ): PlannedRoute[] {
   const copy = [...routes];
-  if (sortOrder === "name-asc") {
-    copy.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name) || compareIds(a.id, b.id));
-  } else {
-    copy.sort((a, b) => {
+  copy.sort((a, b) => compareRoutesForSort(a, b, sortOrder));
+  return copy;
+}
+
+/** An exhaustive switch, not an if/else chain, so a future RouteLibrarySortOrder
+ * value that's added without a case here is a TypeScript compile error (the
+ * `default` branch's `never` assignment) rather than silently falling
+ * through to "most-recent" behaviour. */
+function compareRoutesForSort(
+  a: PlannedRoute,
+  b: PlannedRoute,
+  sortOrder: RouteLibrarySortOrder,
+): number {
+  switch (sortOrder) {
+    case "most-recent": {
       const timeDifference =
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       return timeDifference !== 0 ? timeDifference : compareIds(a.id, b.id);
-    });
+    }
+    case "name-asc":
+      return NAME_COLLATOR.compare(a.name, b.name) || compareIds(a.id, b.id);
+    case "distance-asc":
+      return a.distanceMetres - b.distanceMetres || compareIds(a.id, b.id);
+    case "distance-desc":
+      return b.distanceMetres - a.distanceMetres || compareIds(a.id, b.id);
+    case "ascent-asc":
+      return (
+        compareKnownOrNullLast(a.ascentMetres, b.ascentMetres, "asc") ||
+        compareIds(a.id, b.id)
+      );
+    case "ascent-desc":
+      return (
+        compareKnownOrNullLast(a.ascentMetres, b.ascentMetres, "desc") ||
+        compareIds(a.id, b.id)
+      );
+    default: {
+      const exhaustive: never = sortOrder;
+      throw new Error(`Unhandled RouteLibrarySortOrder: ${String(exhaustive)}`);
+    }
   }
-  return copy;
+}
+
+/** A route's total ascent can be unknown (null, e.g. a legacy/imported route
+ * with no usable elevation summary) rather than merely small — null must
+ * never be conflated with zero, and it always sorts after every known
+ * value, in BOTH directions (a descending sort must not resurrect unknown
+ * routes to the front). Two unknown values are treated as equal here; the
+ * caller's own compareIds tie-break then orders them deterministically. */
+function compareKnownOrNullLast(
+  a: number | null,
+  b: number | null,
+  direction: "asc" | "desc",
+): number {
+  if (a === null || b === null) {
+    if (a === null && b === null) return 0;
+    return a === null ? 1 : -1;
+  }
+  return direction === "asc" ? a - b : b - a;
 }
 
 function compareIds(a: string, b: string): number {

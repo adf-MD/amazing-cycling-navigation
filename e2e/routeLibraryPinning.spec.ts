@@ -7,6 +7,18 @@ import { installLocalMapStyle } from "./support/localMapStyle.ts";
 const FIXTURE_GPX_PATH = fileURLToPath(
   new URL("./fixtures/smoke-route.gpx", import.meta.url),
 );
+// Item 99: reuses routeLibrarySearchSort.spec.ts's own three genuinely
+// distinct-distance synthetic fixtures (~0.6 km / ~1.6 km / ~4.3 km), so a
+// distance sort actually discriminates here too.
+const SHORT_FLAT_GPX_PATH = fileURLToPath(
+  new URL("./fixtures/sort-short-flat-route.gpx", import.meta.url),
+);
+const NO_ELEVATION_GPX_PATH = fileURLToPath(
+  new URL("./fixtures/sort-no-elevation-route.gpx", import.meta.url),
+);
+const LONG_HILLY_GPX_PATH = fileURLToPath(
+  new URL("./fixtures/sort-long-hilly-route.gpx", import.meta.url),
+);
 
 test.use({ viewport: { width: 390, height: 844 } });
 
@@ -16,8 +28,8 @@ test.use({ viewport: { width: 390, height: 844 } });
 // same workaround.
 test.use({ serviceWorkers: "block" });
 
-async function importRoute(page: Page, name: string) {
-  const gpxContents = await readFile(FIXTURE_GPX_PATH, "utf-8");
+async function importRoute(page: Page, name: string, gpxPath: string = FIXTURE_GPX_PATH) {
+  const gpxContents = await readFile(gpxPath, "utf-8");
   await page.getByLabel("Import GPX file").setInputFiles({
     name: `${name}.gpx`,
     mimeType: "application/gpx+xml",
@@ -225,5 +237,61 @@ test("opening a pinned route and returning restores the pinned-first order along
   ).toHaveAttribute("aria-pressed", "true");
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+// Item 99: the existing combined test above only ever has ONE pinned route
+// at the moment a new sort is selected, which can only prove
+// pinned-vs-unpinned partitioning, not that the pinned block's own INTERNAL
+// order survives a distance/ascent sort. This test pins two routes, whose
+// pin-recency order actively conflicts with their distance order, before
+// selecting distance-asc/distance-desc.
+test("a distance sort leaves two pinned routes' own newest-pinned-first order unchanged, even though it conflicts with their distance order (item 99)", async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await page.goto("/");
+  await importRoute(page, "Older Pin Long", LONG_HILLY_GPX_PATH); // ~4.3 km
+  await importRoute(page, "Newer Pin Short", SHORT_FLAT_GPX_PATH); // ~0.6 km
+  await importRoute(page, "Unpinned Mid", NO_ELEVATION_GPX_PATH); // ~1.6 km
+
+  await pinAndWait(page, "Older Pin Long");
+  await pinAndWait(page, "Newer Pin Short");
+
+  // Pinned-first order is fixed at [Newer Pin Short, Older Pin Long]
+  // (newest-pinned-first) regardless of the chosen sort.
+  await expect(async () => {
+    expect(await visibleCardTitles(page)).toEqual([
+      "Newer Pin Short",
+      "Older Pin Long",
+      "Unpinned Mid",
+    ]);
+  }).toPass();
+
+  await page.getByLabel("Sort by").selectOption("distance-asc");
+  await expect(async () => {
+    expect(await visibleCardTitles(page)).toEqual([
+      "Newer Pin Short",
+      "Older Pin Long",
+      "Unpinned Mid",
+    ]);
+  }).toPass();
+
+  await page.getByLabel("Sort by").selectOption("distance-desc");
+  await expect(async () => {
+    expect(await visibleCardTitles(page)).toEqual([
+      "Newer Pin Short",
+      "Older Pin Long",
+      "Unpinned Mid",
+    ]);
+  }).toPass();
+
   expect(consoleErrors).toEqual([]);
 });

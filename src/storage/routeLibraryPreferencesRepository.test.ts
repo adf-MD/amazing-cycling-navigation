@@ -24,6 +24,15 @@ describe("routeLibraryPreferencesRepository", () => {
     });
   });
 
+  it.each(["distance-asc", "distance-desc", "ascent-asc", "ascent-desc"] as const)(
+    "saves and retrieves sortOrder: %s (item 99)",
+    async (sortOrder) => {
+      await saveRouteLibraryPreferences({ sortOrder });
+
+      await expect(getRouteLibraryPreferences()).resolves.toEqual({ sortOrder });
+    },
+  );
+
   it("saving most-recent after name-asc persists the updated value", async () => {
     await saveRouteLibraryPreferences({ sortOrder: "name-asc" });
     await saveRouteLibraryPreferences({ sortOrder: "most-recent" });
