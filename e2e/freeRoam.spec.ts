@@ -10,11 +10,11 @@ import { readActiveRideStateRow } from "./support/rideStateDb.ts";
 // this screen's own fixed, non-scrolling immersive shell (mirroring
 // backlog item 56's identical layout for route Riding).
 
-// A real service worker registering mid-test can render an unrelated
-// "Ready to work offline" banner outside .screen, adding height this
-// file's own no-scroll/dominant-map assertions (backlog item 58) would
-// otherwise (correctly) flag — mirrors ridingMapProfileViews.spec.ts's own
-// identical, file-wide precedent and rationale.
+// Requests handled by the app's own service worker never reach
+// page.route()'s interception (a documented Playwright limitation) —
+// installLocalMapStyle() below needs this, mirroring
+// ridingMapProfileViews.spec.ts's and planning.spec.ts's own identical,
+// file-wide precedent and rationale.
 test.use({ serviceWorkers: "block" });
 
 const ORS_URL_GLOB = "https://api.heigit.org/**";

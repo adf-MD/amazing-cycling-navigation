@@ -21,12 +21,15 @@ beforeEach(() => {
 });
 
 describe("usePwaUpdate", () => {
-  it("exposes the current offline-ready/need-refresh flags", async () => {
+  it("exposes needRefresh but not the plugin's offlineReady flag", async () => {
     const { usePwaUpdate } = await import("./registerSW.ts");
     const { result } = renderHook(() => usePwaUpdate());
 
-    expect(result.current.offlineReady).toBe(true);
     expect(result.current.needRefresh).toBe(false);
+    // The underlying plugin mock above still reports offlineReady as true —
+    // this proves the project's own hook deliberately narrows it away,
+    // rather than merely happening not to be exercised.
+    expect(result.current).not.toHaveProperty("offlineReady");
   });
 
   it("only applies the waiting service worker on an explicit call", async () => {
@@ -42,7 +45,7 @@ describe("usePwaUpdate", () => {
     expect(updateServiceWorker).toHaveBeenCalledWith(true);
   });
 
-  it("dismiss clears both flags without applying the update", async () => {
+  it("dismiss clears only needRefresh, never the plugin's offlineReady flag", async () => {
     const { usePwaUpdate } = await import("./registerSW.ts");
     const { result } = renderHook(() => usePwaUpdate());
 
@@ -50,8 +53,8 @@ describe("usePwaUpdate", () => {
       result.current.dismiss();
     });
 
-    expect(setOfflineReady).toHaveBeenCalledWith(false);
     expect(setNeedRefresh).toHaveBeenCalledWith(false);
+    expect(setOfflineReady).not.toHaveBeenCalled();
     expect(updateServiceWorker).not.toHaveBeenCalled();
   });
 });

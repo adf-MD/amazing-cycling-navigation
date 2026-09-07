@@ -14,10 +14,7 @@ import { installLocalMapStyle } from "./support/localMapStyle.ts";
 // Requests handled by the app's own service worker never reach
 // page.route()'s interception (a documented Playwright limitation) — see
 // planning.spec.ts, which needs the same workaround. Applied file-wide
-// (not just the phone-viewport describe block) since a real service worker
-// registering mid-test can also render an unrelated "Ready to work
-// offline" banner outside .screen, adding height this file's own no-scroll
-// assertions would otherwise (correctly) flag.
+// since every test in this file calls installLocalMapStyle().
 test.use({ serviceWorkers: "block" });
 
 const ROUTE_LAT = 51.5;

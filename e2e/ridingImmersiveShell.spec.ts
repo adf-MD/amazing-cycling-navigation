@@ -551,15 +551,15 @@ test.describe("390×844 phone viewport", () => {
     if (!headerBox)
       throw new Error("expected the immersive header to have a bounding box");
 
-    // RidingWakeLockControl renders before this header in document order
-    // (unchanged from before item 55 — see .riding-immersive-header's own
-    // CSS comment, and stickyNavigation.spec.ts's identical finding for
-    // this same layout), so at rest (scroll 0) the header's own natural
-    // flow position sits below that control, not yet genuinely "stuck".
-    // The touch-target/horizontal checks below don't depend on this, so
-    // they use this pre-scroll box; the true-viewport-top proof is a
-    // separate, later check after scrolling to the very bottom of this
-    // page's own scrollable range.
+    // Backlog item 56 made the whole active-riding .screen a fixed,
+    // non-scrolling shell (.riding-fixed-shell, height: 100dvh; overflow:
+    // hidden — see stickyNavigation.spec.ts's own identical finding for
+    // this same layout, updated there when item 56 landed), and this
+    // header is that shell's own first child, so headerBox already
+    // reflects its true, permanently-stuck viewport-top position at rest
+    // — there is nothing to scroll past. The touch-target/horizontal
+    // checks below use this same box; the true-viewport-top proof further
+    // down re-confirms headerBox directly, with no scroll involved.
     const pauseButton = page.getByRole("button", { name: "Pause" });
     const endButton = page.getByRole("button", { name: "End ride" });
     for (const control of [pauseButton, endButton]) {
@@ -591,20 +591,17 @@ test.describe("390×844 phone viewport", () => {
     expect(widths.bodyWidth).toBeLessThanOrEqual(viewport.width);
 
     // The opaque box (background/border-bottom) starts at the true
-    // viewport top once genuinely stuck, not below the synthetic
-    // safe-area strip — proven by scrolling to the very bottom of this
-    // page's own scrollable range and confirming it settles at y ≈ 0,
-    // mirroring stickyNavigation.spec.ts's own identical technique (a
-    // two-step "partially, then further" comparison is unreliable here
-    // given this page's modest total scrollable range).
-    await page.evaluate(() => {
-      window.scrollTo(0, document.documentElement.scrollHeight);
-    });
-    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
-    const scrolledBox = await header.boundingBox();
-    if (!scrolledBox) throw new Error("expected the header to still have a bounding box");
-    expect(scrolledBox.y).toBeGreaterThanOrEqual(0);
-    expect(scrolledBox.y).toBeLessThan(2);
+    // viewport top, not below the synthetic safe-area strip — proven by
+    // confirming there is no scrollable range for this page at all
+    // (backlog item 56's fixed shell, per the comment above) and that
+    // headerBox itself already sits at y ≈ 0, mirroring
+    // stickyNavigation.spec.ts's own item-56-updated technique exactly
+    // rather than the pre-item-56 scroll-to-bottom proof this test used
+    // before item 56 landed.
+    const scrollHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+    expect(scrollHeight).toBeLessThanOrEqual(viewport.height);
+    expect(headerBox.y).toBeGreaterThanOrEqual(0);
+    expect(headerBox.y).toBeLessThan(2);
 
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
   });

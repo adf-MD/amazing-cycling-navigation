@@ -243,7 +243,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   const [screen, setScreen] = useState<Screen>("library");
   const [ridingContent, setRidingContent] = useState<RidingContent>(NONE_RIDING_CONTENT);
   const [isRidingActive, setIsRidingActive] = useState(false);
-  const { needRefresh, offlineReady, updateNow, dismiss } = usePwaUpdate();
+  const { needRefresh, updateNow, dismiss } = usePwaUpdate();
   const routesScrollYRef = useRef<number | null>(null);
   // Read-only handle onto the sticky top navigation's own rendered box, so
   // RouteListItem (several levels below, not a DOM ancestor of this
@@ -1040,14 +1040,6 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
           </button>
           <button type="button" onClick={dismiss}>
             Later
-          </button>
-        </div>
-      ) : null}
-      {offlineReady && !needRefresh ? (
-        <div role="status">
-          <p>Ready to work offline.</p>
-          <button type="button" onClick={dismiss}>
-            Dismiss
           </button>
         </div>
       ) : null}
