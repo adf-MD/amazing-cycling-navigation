@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ClimbCategory, DescentBand } from "./routeFeatures.ts";
 import {
+  ACTIVE_DIRECTION_COLOURS,
   CLIMB_CATEGORY_NAMES,
   CLIMB_GRADIENT_BAND_COLOUR_NAMES,
   MICRO_DETAIL_COLOURS,
@@ -221,6 +222,26 @@ describe("micro detail (local gradient band) colours", () => {
       }
     }
     expect(tooClose).toEqual([]);
+  });
+
+  it("reuses the two authoritative maps verbatim for the active-direction overlay, adding only the ordinary-route key", () => {
+    // Deliberately NOT a pairwise-distinguishability check: "ordinary-route"
+    // is an intentional duplicate of "neutral"'s colour (both are plain
+    // route green) with a different meaning, so distinguishability would be
+    // the wrong contract. What matters is that no entry silently drifts
+    // from the map it came from, including the three keys the two source
+    // maps share.
+    for (const [key, colour] of Object.entries(ROUTE_FEATURE_COLOURS)) {
+      if (key in MICRO_DETAIL_COLOURS) continue;
+      expect(ACTIVE_DIRECTION_COLOURS[key as RouteFeatureVisualKey]).toBe(colour);
+    }
+    for (const [key, colour] of Object.entries(MICRO_DETAIL_COLOURS)) {
+      expect(ACTIVE_DIRECTION_COLOURS[key as MicroDetailVisualKey]).toBe(colour);
+    }
+    for (const sharedKey of ["moderate", "steep", "very-steep"] as const) {
+      expect(ROUTE_FEATURE_COLOURS[sharedKey]).toBe(MICRO_DETAIL_COLOURS[sharedKey]);
+    }
+    expect(ACTIVE_DIRECTION_COLOURS["ordinary-route"]).toBe(ORDINARY_ROUTE_COLOUR);
   });
 
   it("keeps the 5 climb bands and the neutral colour pairwise distinguishable from each other", () => {

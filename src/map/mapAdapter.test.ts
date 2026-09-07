@@ -396,6 +396,40 @@ describe("MapLibreAdapter", () => {
     expect(dashedCall[0].paint["line-dasharray"]).toEqual([2, 2]);
   });
 
+  describe("addLineLayer's optional line-sort-key layout binding", () => {
+    it("binds line-sort-key to the named feature property, in the data-driven get form", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+
+      adapter.addLineLayer(
+        "active-direction",
+        "active-direction-source",
+        { lineColor: "#0a5f38", lineWidth: 5 },
+        { lineSortKeyProperty: "paintPriority" },
+      );
+
+      const [call] = fake.addLayer.mock.calls as [[{ layout: Record<string, unknown> }]];
+      expect(call[0].layout).toEqual({
+        "line-join": "round",
+        "line-cap": "round",
+        // Must be the data-driven ["get", ...] form: MapLibre only sorts a
+        // layer's features when the sort key is NOT constant, so a plain
+        // number here would silently disable sorting altogether.
+        "line-sort-key": ["get", "paintPriority"],
+      });
+    });
+
+    it("omits line-sort-key entirely when no property is given, leaving every existing layer's layout unchanged", () => {
+      const fake = buildFakeMapLibreMap();
+      const adapter = buildAdapter(fake);
+
+      adapter.addLineLayer("plain", "source-a", { lineColor: "#0a5f38", lineWidth: 5 });
+
+      const [call] = fake.addLayer.mock.calls as [[{ layout: Record<string, unknown> }]];
+      expect(call[0].layout).toEqual({ "line-join": "round", "line-cap": "round" });
+    });
+  });
+
   describe("addLineLayer with a data-driven line colour", () => {
     it("builds a match expression keyed on the given property with an explicit fallback", () => {
       const fake = buildFakeMapLibreMap();

@@ -17,7 +17,11 @@ function toGeoJsonCoordinate(coordinate: Coordinate): [number, number] {
   return [coordinate[0], coordinate[1]];
 }
 
-function visualKeyOf(feature: RouteFeature): RouteFeatureVisualKey {
+/** A recognised feature's macro visual key. Exported so the active-Riding
+ * direction overlay (activeDirectionLayer.ts, backlog item 98) derives the
+ * macro key through exactly this function rather than a second copy that
+ * could silently drift from this layer's own colouring. */
+export function visualKeyOf(feature: RouteFeature): RouteFeatureVisualKey {
   return feature.kind === "climb" ? feature.category : feature.band;
 }
 

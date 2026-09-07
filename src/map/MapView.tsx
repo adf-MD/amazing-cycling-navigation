@@ -6,6 +6,7 @@ import { logError } from "../platform/errorLog.ts";
 import type { ClassifiedSegment } from "../navigation/gradient.ts";
 import type { RouteFeature } from "../navigation/routeFeatures.ts";
 import {
+  ACTIVE_DIRECTION_COLOURS,
   MICRO_DETAIL_COLOURS,
   ROUTE_FEATURE_COLOURS,
   UNREACHABLE_FALLBACK_COLOUR,
@@ -33,6 +34,8 @@ import {
   type BoundingBox,
 } from "./routeLayer.ts";
 import { buildGradientFeatureCollection } from "./gradientRouteLayer.ts";
+import type { ActiveDirectionSpan } from "./activeDirectionLayer.ts";
+import { buildActiveDirectionFeatureCollection } from "./activeDirectionLayer.ts";
 import {
   buildRouteFeatureFeatureCollection,
   buildSelectedRouteFeatureFeatureCollection,
@@ -82,6 +85,8 @@ const ROUTE_FEATURE_SOURCE_ID = "acn-route-feature";
 const ROUTE_FEATURE_LAYER_ID = "acn-route-feature-line";
 const ROUTE_FEATURE_SELECTED_SOURCE_ID = "acn-route-feature-selected";
 const ROUTE_FEATURE_SELECTED_LAYER_ID = "acn-route-feature-selected-line";
+const ACTIVE_DIRECTION_SOURCE_ID = "acn-route-active-direction";
+const ACTIVE_DIRECTION_LAYER_ID = "acn-route-active-direction-line";
 /** Matches the base route-line width, same footprint principle as
  * GRADIENT_LINE_WIDTH — see the layer-order comment in
  * addRouteAndPositionLayers for why this is added before (and is
@@ -215,6 +220,7 @@ const APP_OWNED_SOURCE_IDS: ReadonlySet<string> = new Set([
   GRADIENT_SOURCE_ID,
   ROUTE_FEATURE_SOURCE_ID,
   ROUTE_FEATURE_SELECTED_SOURCE_ID,
+  ACTIVE_DIRECTION_SOURCE_ID,
   ...Object.values(WARNING_SOURCE_ID_BY_CATEGORY),
   WARNING_SELECTED_SOURCE_ID,
 ]);
@@ -626,6 +632,16 @@ export interface MapViewProps {
    * route-line split and the direction arrows, so the micro-coloured
    * centre always agrees with the line it recolours during active Riding. */
   gradientOverlay?: { segments: readonly ClassifiedSegment<MicroDetailVisualKey>[] };
+  /** Backlog item 98. The short current/near-ahead route interval whose
+   * colour must represent the rider's CURRENT direction, painted above the
+   * whole-route macro/micro presentation so it wins locally wherever two
+   * route occurrences share the same geography (an out-and-back's coincident
+   * legs). Already composed and windowed by the caller from canonical route
+   * progress — MapView adds no route analysis of its own, and clips it to
+   * the same what's-left-to-ride range every other overlay uses. Absent in
+   * Planning, pre-ride and free roam, which keep the existing static
+   * whole-route presentation exactly as before. */
+  activeDirectionOverlay?: { spans: readonly ActiveDirectionSpan[] };
   /** The shared macro climb/descent feature list and selection — omitted
    * (the default) leaves both the macro and selected-feature sources
    * empty. See RouteFeatureOverlay's own doc comment. */
@@ -700,6 +716,7 @@ export function MapView({
   planningOverlay,
   warningOverlay,
   gradientOverlay,
+  activeDirectionOverlay,
   routeFeatureOverlay,
   onImageryStatusChange,
   imageryRetryCommand = null,
@@ -1226,6 +1243,36 @@ export function MapView({
           },
           lineWidth: recedingWidthStops(GRADIENT_LINE_WIDTH),
         });
+      } catch (error) {
+        logError("map", error);
+      }
+      // The active-Riding direction overlay (backlog item 98) sits directly
+      // above the macro/micro climb-descent trio and still entirely below
+      // the warning group, so it can win a geographic overlap against the
+      // whole-route presentation while surface/access warnings keep their
+      // established priority over it. Same recedingWidthStops(5) footprint
+      // as the micro layer, so it adds no new visual weight and leaves the
+      // wider selected-feature halo (legibleWidthStops(9)) visible as a
+      // ring exactly as before.
+      //
+      // Deliberately its OWN try/catch rather than joining the block above:
+      // these are independent decorations, and a failure to set up either
+      // one must not silently take the other down with it.
+      try {
+        map.addGeoJsonSource(ACTIVE_DIRECTION_SOURCE_ID, EMPTY_FEATURE_COLLECTION);
+        map.addLineLayer(
+          ACTIVE_DIRECTION_LAYER_ID,
+          ACTIVE_DIRECTION_SOURCE_ID,
+          {
+            lineColor: {
+              property: "visualKey",
+              cases: ACTIVE_DIRECTION_COLOURS,
+              fallback: UNREACHABLE_FALLBACK_COLOUR,
+            },
+            lineWidth: recedingWidthStops(GRADIENT_LINE_WIDTH),
+          },
+          { lineSortKeyProperty: "paintPriority" },
+        );
       } catch (error) {
         logError("map", error);
       }
@@ -1848,6 +1895,34 @@ export function MapView({
       ),
     );
   }, [points, matchedDistanceFromStartMetres, gradientSegments, styleStructurallyReady]);
+
+  const activeDirectionSpans = activeDirectionOverlay?.spans;
+
+  // Backlog item 98. Clipped by exactly the same
+  // matchedDistanceFromStartMetres every other overlay uses, which is what
+  // keeps the emphasis honest without a bespoke reliability gate of its
+  // own: the caller derives the window from the frozen/reliable
+  // presentation distance, so if a stale or strongly off-route fix leaves
+  // that behind the live match, this clip stops the overlay from repainting
+  // road the rider has already ridden, and empties it entirely once the
+  // live match has moved past the whole window.
+  useEffect(() => {
+    if (!styleStructurallyReady) return;
+    mapRef.current?.setGeoJsonSourceData(
+      ACTIVE_DIRECTION_SOURCE_ID,
+      buildActiveDirectionFeatureCollection(
+        points,
+        activeDirectionSpans ?? [],
+        matchedDistanceFromStartMetres,
+        points.at(-1)?.distanceFromStartMetres ?? 0,
+      ),
+    );
+  }, [
+    points,
+    matchedDistanceFromStartMetres,
+    activeDirectionSpans,
+    styleStructurallyReady,
+  ]);
 
   const routeFeatures = routeFeatureOverlay?.features;
   const routeFeatureSelectedId = routeFeatureOverlay?.selectedFeatureId ?? null;

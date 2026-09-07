@@ -354,6 +354,39 @@ export const MICRO_DETAIL_COLOURS: Readonly<Record<MicroDetailVisualKey, string>
   neutral: ORDINARY_ROUTE_COLOUR,
 };
 
+/** The keys the active-Riding direction overlay stamps (backlog item 98).
+ * It reproduces, for a short current/near-ahead route interval, exactly the
+ * colour the existing stack would paint for that route occurrence — a micro
+ * detail key where the currently-detailed feature covers it, otherwise the
+ * containing recognised feature's macro key, otherwise plain route. The
+ * third case gets its OWN key rather than reusing MicroDetailVisualKey's
+ * "neutral": "neutral" specifically means "a locally shallow stretch within
+ * a recognised descent" (see DESCENT_LOCAL_LABELS), which is not what
+ * "outside every recognised feature" means, even though the two
+ * deliberately share a colour. */
+export type ActiveDirectionVisualKey =
+  RouteFeatureVisualKey | MicroDetailVisualKey | "ordinary-route";
+
+/** The active-direction overlay's own colour lookup. Every entry is reused
+ * from the two authoritative maps above — no new shade is introduced — plus
+ * ORDINARY_ROUTE_COLOUR for spans outside every recognised feature, which is
+ * byte-identical to MapView's own remaining-route green so an unclassified
+ * span is invisible except where it wins a geographic overlap.
+ *
+ * The three keys ROUTE_FEATURE_COLOURS and MICRO_DETAIL_COLOURS share
+ * ("moderate"/"steep"/"very-steep") hold identical values in both, so the
+ * spread order below cannot change any colour; this module's own test pins
+ * that. Deliberately NOT added to MICRO_DETAIL_COLOURS itself, whose
+ * pairwise-distinguishability test would rightly reject an intentional
+ * duplicate of "neutral". */
+export const ACTIVE_DIRECTION_COLOURS: Readonly<
+  Record<ActiveDirectionVisualKey, string>
+> = {
+  ...ROUTE_FEATURE_COLOURS,
+  ...MICRO_DETAIL_COLOURS,
+  "ordinary-route": ORDINARY_ROUTE_COLOUR,
+};
+
 /** One combined lookup for GradientSegmentDetailsPanel's heading — safe
  * since ClimbGradientBand and DescentLocalKey are disjoint string unions
  * (no shared key, so the spread below can never silently overwrite an

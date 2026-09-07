@@ -166,6 +166,20 @@ export interface LineLayerPaint {
   lineDasharray?: number[];
 }
 
+/** Non-paint line-layer options. Kept separate from LineLayerPaint because
+ * `line-sort-key` is a MapLibre LAYOUT property, not paint — mixing it into
+ * the paint contract would misrepresent what it is and what re-evaluates
+ * when it changes. Optional, so every existing addLineLayer call site and
+ * every MapLibreLike test double stays valid unchanged. */
+export interface LineLayerOptions {
+  /** Feature property to bind MapLibre's `line-sort-key` to, as the
+   * data-driven `["get", property]` form. A constant would be
+   * `isConstant()` and would silently disable sorting altogether, so only
+   * the property-bound form is expressible here. Features with a higher
+   * value paint above features with a lower one. */
+  lineSortKeyProperty?: string;
+}
+
 export interface CircleLayerPaint {
   circleRadius: number;
   circleColor: string;
@@ -226,7 +240,12 @@ export interface MapLibreLike {
   addGeoJsonSource(id: string, data: GeoJSON.FeatureCollection): void;
   setGeoJsonSourceData(id: string, data: GeoJSON.FeatureCollection): void;
   hasSource(id: string): boolean;
-  addLineLayer(id: string, sourceId: string, paint: LineLayerPaint): void;
+  addLineLayer(
+    id: string,
+    sourceId: string,
+    paint: LineLayerPaint,
+    options?: LineLayerOptions,
+  ): void;
   addCircleLayer(id: string, sourceId: string, paint: CircleLayerPaint): void;
   hasLayer(id: string): boolean;
   /** Whether a project-owned image is already registered under `id` —
@@ -504,7 +523,12 @@ export class MapLibreAdapter implements MapLibreLike {
     return this.map.getSource(id) !== undefined;
   }
 
-  addLineLayer(id: string, sourceId: string, paint: LineLayerPaint): void {
+  addLineLayer(
+    id: string,
+    sourceId: string,
+    paint: LineLayerPaint,
+    options?: LineLayerOptions,
+  ): void {
     // Built and typed loosely (never a bare `any`): MapLibre's own
     // ExpressionSpecification union is a deep, purpose-built recursive
     // type that isn't practical to satisfy for a programmatically-built
@@ -539,7 +563,18 @@ export class MapLibreAdapter implements MapLibreLike {
       id,
       type: "line",
       source: sourceId,
-      layout: { "line-join": "round", "line-cap": "round" },
+      layout: {
+        "line-join": "round",
+        "line-cap": "round",
+        // Same loosely-typed-cast convention as the paint fields below: the
+        // runtime shape is exactly the data-driven expression MapLibre
+        // itself accepts and validates.
+        ...(options?.lineSortKeyProperty
+          ? {
+              "line-sort-key": ["get", options.lineSortKeyProperty] as unknown as number,
+            }
+          : {}),
+      },
       paint: {
         "line-color": lineColor as string,
         "line-width": lineWidth as number,

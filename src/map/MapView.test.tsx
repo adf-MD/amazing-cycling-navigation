@@ -28,11 +28,14 @@ import type {
   RouteFeature,
 } from "../navigation/routeFeatures.ts";
 import {
+  ACTIVE_DIRECTION_COLOURS,
   MICRO_DETAIL_COLOURS,
   ROUTE_FEATURE_COLOURS,
   UNREACHABLE_FALLBACK_COLOUR,
+  type ActiveDirectionVisualKey,
   type MicroDetailVisualKey,
 } from "../navigation/routeFeaturePalette.ts";
+import type { ActiveDirectionSpan } from "./activeDirectionLayer.ts";
 import type { ZoomInterpolatedLineWidth } from "./mapAdapter.ts";
 import {
   legibleWidthStops,
@@ -226,9 +229,9 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
         sources.set(id, data);
       },
       hasSource: (id) => sources.has(id),
-      addLineLayer: (id, sourceId, paint) => {
+      addLineLayer: (id, sourceId, paint, options) => {
         layers.add(id);
-        addLineLayerSpy(id, sourceId, paint);
+        addLineLayerSpy(id, sourceId, paint, options);
       },
       addCircleLayer: (id: string) => {
         layers.add(id);
@@ -2170,6 +2173,15 @@ describe("MapView", () => {
       expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
 
       mock.triggerSourceData({ sourceId: "acn-position", isSourceLoaded: true });
+      expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
+
+      // The active-direction overlay's source is rewritten on every GPS
+      // tick, so if it were ever missing from APP_OWNED_SOURCE_IDS it would
+      // clear this banner continuously throughout a ride.
+      mock.triggerSourceData({
+        sourceId: "acn-route-active-direction",
+        isSourceLoaded: true,
+      });
       expect(screen.getByTestId("tiles-unavailable-banner")).toBeInTheDocument();
 
       mock.triggerSourceData({ sourceId: "openmaptiles", isSourceLoaded: true });
@@ -4360,8 +4372,208 @@ describe("MapView", () => {
       expect(mock.layers.has("acn-finish-marker")).toBe(true);
       expect(mock.layers.has("acn-planning-preview-line")).toBe(true);
       expect(mock.addSymbolLayerSpy).toHaveBeenCalled(); // arrows still set up
+      // The active-direction overlay is set up in its OWN try/catch, so a
+      // gradient failure must not take it down too.
+      expect(mock.layers.has("acn-route-active-direction-line")).toBe(true);
       expect(screen.queryByTestId("map-fallback-banner")).toBeNull();
       expect(getRecentErrors().some((entry) => entry.context === "map")).toBe(true);
+    });
+  });
+
+  describe("activeDirectionOverlay (backlog item 98)", () => {
+    function span(
+      startDistanceMetres: number,
+      endDistanceMetres: number,
+      visualKey: ActiveDirectionVisualKey,
+      paintPriority: number,
+    ): ActiveDirectionSpan {
+      return { startDistanceMetres, endDistanceMetres, visualKey, paintPriority };
+    }
+
+    function activeDirectionCall(mock: MockMapHandle) {
+      return mock.addLineLayerSpy.mock.calls.find(
+        ([id]) => id === "acn-route-active-direction-line",
+      ) as
+        | [
+            string,
+            string,
+            { lineColor: unknown; lineWidth: unknown },
+            { lineSortKeyProperty?: string } | undefined,
+          ]
+        | undefined;
+    }
+
+    function activeDirectionFeatures(mock: MockMapHandle) {
+      return mock.sources.get("acn-route-active-direction")?.features ?? [];
+    }
+
+    it("colours by the shared active-direction palette and sorts by the stamped paint priority", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={warningPoints} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      const call = activeDirectionCall(mock);
+      expect(call?.[1]).toBe("acn-route-active-direction");
+      expect(call?.[2].lineColor).toEqual({
+        property: "visualKey",
+        cases: ACTIVE_DIRECTION_COLOURS,
+        fallback: UNREACHABLE_FALLBACK_COLOUR,
+      });
+      expect(call?.[2].lineWidth).toEqual(recedingWidthStops(5));
+      expect(call?.[3]).toEqual({ lineSortKeyProperty: "paintPriority" });
+    });
+
+    it("resolves an unclassified span to exactly the existing remaining-route green", () => {
+      expect(ACTIVE_DIRECTION_COLOURS["ordinary-route"]).toBe("#0a5f38");
+    });
+
+    it("is created empty when no overlay prop is supplied", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={warningPoints} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      expect(mock.layers.has("acn-route-active-direction-line")).toBe(true);
+      expect(activeDirectionFeatures(mock)).toEqual([]);
+    });
+
+    it("populates one feature per span, and empties again when the caller returns to pre-ride", () => {
+      const mock = createMockMapFactory();
+      const { rerender } = render(
+        <MapView
+          points={warningPoints}
+          matchedDistanceFromStartMetres={0}
+          mapFactory={mock.factory}
+          activeDirectionOverlay={{
+            spans: [
+              span(100, 200, "ordinary-route", 0),
+              span(200, 300, "very-steep", -100),
+            ],
+          }}
+        />,
+      );
+      mock.triggerLoad();
+      expect(activeDirectionFeatures(mock)).toHaveLength(2);
+
+      rerender(
+        <MapView
+          points={warningPoints}
+          matchedDistanceFromStartMetres={0}
+          mapFactory={mock.factory}
+        />,
+      );
+      expect(activeDirectionFeatures(mock)).toEqual([]);
+    });
+
+    it("clips to matchedDistanceFromStartMetres, so a live match ahead of the frozen window never repaints completed road", () => {
+      const mock = createMockMapFactory();
+      const spans = [span(100, 300, "ordinary-route", 0)];
+      const { rerender } = render(
+        <MapView
+          points={warningPoints}
+          matchedDistanceFromStartMetres={100}
+          mapFactory={mock.factory}
+          activeDirectionOverlay={{ spans }}
+        />,
+      );
+      mock.triggerLoad();
+      expect(activeDirectionFeatures(mock)).toHaveLength(1);
+
+      // The live match has moved past the whole frozen window.
+      rerender(
+        <MapView
+          points={warningPoints}
+          matchedDistanceFromStartMetres={350}
+          mapFactory={mock.factory}
+          activeDirectionOverlay={{ spans }}
+        />,
+      );
+      expect(activeDirectionFeatures(mock)).toEqual([]);
+    });
+
+    it("keeps the existing global remaining-then-completed base order, proving the correction is local", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={warningPoints} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      const order = Array.from(mock.layers);
+      expect(order.indexOf("acn-route-remaining-line")).toBeLessThan(
+        order.indexOf("acn-route-completed-line"),
+      );
+    });
+
+    it("paints above the whole-route feature and gradient layers, below every warning, and below arrows and markers", () => {
+      const mock = createMockMapFactory();
+      render(<MapView points={warningPoints} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      const order = Array.from(mock.layers);
+      const active = order.indexOf("acn-route-active-direction-line");
+
+      expect(order.indexOf("acn-route-completed-line")).toBeLessThan(active);
+      expect(order.indexOf("acn-route-feature-selected-line")).toBeLessThan(active);
+      expect(order.indexOf("acn-route-feature-line")).toBeLessThan(active);
+      expect(order.indexOf("acn-route-gradient-line")).toBeLessThan(active);
+      expect(active).toBeLessThan(order.indexOf("acn-warning-selected-line"));
+      expect(active).toBeLessThan(order.indexOf("acn-warning-unknown-surface-line"));
+      expect(active).toBeLessThan(order.indexOf("acn-warning-obstacle-line"));
+      expect(active).toBeLessThan(order.indexOf("acn-route-arrows"));
+      expect(active).toBeLessThan(order.indexOf("acn-position-marker"));
+    });
+
+    it("survives fallback and manual retry without duplication, and repopulates current data", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={warningPoints}
+          matchedDistanceFromStartMetres={0}
+          mapFactory={mock.factory}
+          activeDirectionOverlay={{ spans: [span(100, 300, "ordinary-route", 0)] }}
+        />,
+      );
+
+      mock.triggerError({
+        message: "style fetch failed",
+        category: "style-request-or-parse",
+      });
+      mock.triggerLoad();
+      expect(
+        mock.addLineLayerSpy.mock.calls.filter(
+          ([id]) => id === "acn-route-active-direction-line",
+        ),
+      ).toHaveLength(1);
+      expect(activeDirectionFeatures(mock)).toHaveLength(1);
+
+      act(() => {
+        screen.getByTestId("retry-map-imagery-button").click();
+      });
+      mock.triggerLoad();
+
+      expect(
+        mock.addLineLayerSpy.mock.calls.filter(
+          ([id]) => id === "acn-route-active-direction-line",
+        ),
+      ).toHaveLength(2);
+      expect(activeDirectionFeatures(mock)).toHaveLength(1);
+    });
+
+    it("is not part of route-feature tap hit-testing", () => {
+      const mock = createMockMapFactory();
+      render(
+        <MapView
+          points={warningPoints}
+          mapFactory={mock.factory}
+          routeFeatureOverlay={{
+            features: [],
+            selectedFeatureId: null,
+            onSelectRouteFeature: () => undefined,
+          }}
+        />,
+      );
+      mock.triggerLoad();
+
+      for (const call of mock.queryTopRouteFeatureAtSpy.mock.calls) {
+        expect(call[1]).not.toContain("acn-route-active-direction-line");
+      }
     });
   });
 
@@ -4573,6 +4785,29 @@ describe("MapView", () => {
       expect(mock.layers.has("acn-route-completed-line")).toBe(true);
       expect(mock.layers.has("acn-warning-unknown-surface-line")).toBe(true);
       expect(mock.layers.has("acn-position-marker")).toBe(true);
+      expect(mock.layers.has("acn-route-active-direction-line")).toBe(true);
+      expect(screen.queryByTestId("map-fallback-banner")).toBeNull();
+      expect(getRecentErrors().some((entry) => entry.context === "map")).toBe(true);
+    });
+
+    it("an active-direction-layer setup failure leaves every other layer intact, is logged, and never forces fallback", () => {
+      clearErrorLog();
+      const mock = createMockMapFactory();
+      mock.addLineLayerSpy.mockImplementation((id: string) => {
+        if (id === "acn-route-active-direction-line") {
+          throw new Error("simulated active-direction-layer failure");
+        }
+      });
+      render(<MapView points={points} mapFactory={mock.factory} />);
+      mock.triggerLoad();
+
+      expect(mock.layers.has("acn-route-remaining-line")).toBe(true);
+      expect(mock.layers.has("acn-route-completed-line")).toBe(true);
+      expect(mock.layers.has("acn-route-feature-line")).toBe(true);
+      expect(mock.layers.has("acn-route-gradient-line")).toBe(true);
+      expect(mock.layers.has("acn-warning-unknown-surface-line")).toBe(true);
+      expect(mock.layers.has("acn-position-marker")).toBe(true);
+      expect(mock.addSymbolLayerSpy).toHaveBeenCalled();
       expect(screen.queryByTestId("map-fallback-banner")).toBeNull();
       expect(getRecentErrors().some((entry) => entry.context === "map")).toBe(true);
     });
@@ -5408,6 +5643,9 @@ describe("MapView", () => {
       );
       expect(paintFor(mock, "acn-route-feature-line")).toEqual(recedingWidthStops(5));
       expect(paintFor(mock, "acn-route-gradient-line")).toEqual(recedingWidthStops(5));
+      expect(paintFor(mock, "acn-route-active-direction-line")).toEqual(
+        recedingWidthStops(5),
+      );
       expect(paintFor(mock, "acn-warning-selected-line")).toEqual(warningWidthStops(13));
       expect(paintFor(mock, "acn-warning-unknown-surface-line")).toEqual(
         warningWidthStops(8),
@@ -5538,6 +5776,7 @@ describe("MapView", () => {
         "acn-route-completed-line",
         "acn-route-feature-line",
         "acn-route-gradient-line",
+        "acn-route-active-direction-line",
         "acn-warning-selected-line",
         "acn-warning-unknown-surface-line",
         "acn-warning-other-line",

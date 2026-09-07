@@ -36,6 +36,7 @@ import {
   buildFeatureDetailSegments,
   computeFeatureRelativePosition,
 } from "../../navigation/routeFeatureDetail.ts";
+import { buildActiveDirectionSpans } from "../../map/activeDirectionLayer.ts";
 import type { MicroDetailVisualKey } from "../../navigation/routeFeaturePalette.ts";
 import type { ClassifiedSegment } from "../../navigation/gradient.ts";
 import {
@@ -501,6 +502,45 @@ export function RidingScreen({
       microDetailFeature ? buildFeatureDetailSegments(microDetailFeature, runs) : [],
     [microDetailFeature, runs],
   );
+  // Backlog item 98: the short current/near-ahead route interval whose
+  // colour must represent the direction the rider is travelling RIGHT NOW,
+  // so it wins locally wherever an out-and-back's two legs share the same
+  // road. Derived from canonical route progress and route order only —
+  // never GPS bearing, and never a separately recomputed projection.
+  //
+  // presentationDistanceFromStartMetres, not the raw match: the overlay
+  // then freezes with every other trusted Riding figure while a fix is
+  // stale or strongly off route, instead of recolouring the road under the
+  // rider from a noisy match. geolocationStatus !== "idle" is this file's
+  // own established active-Riding boundary, and is what keeps the pre-ride
+  // overview's static whole-route presentation untouched even though a
+  // restored, paused session still carries real progress.
+  //
+  // microDetailSegments is passed as-is: the overlay's job is to decide
+  // WHICH route occurrence a colour belongs to, not to recolour anything,
+  // so it reproduces exactly what this screen already shows for that
+  // occurrence. Direction-correctness is independent of any explicit
+  // selection regardless, because the geometry it emphasises is chosen by
+  // route distance from progress, not by what happens to be selected.
+  const activeDirectionOverlay = useMemo(() => {
+    if (nav.geolocationStatus === "idle") return undefined;
+    if (nav.presentationDistanceFromStartMetres === null) return undefined;
+    return {
+      spans: buildActiveDirectionSpans({
+        features: routeFeatures,
+        microSegments: microDetailSegments,
+        progressDistanceMetres: nav.presentationDistanceFromStartMetres,
+        routeLengthMetres: route.points.at(-1)?.distanceFromStartMetres ?? 0,
+      }),
+    };
+  }, [
+    nav.geolocationStatus,
+    nav.presentationDistanceFromStartMetres,
+    routeFeatures,
+    microDetailSegments,
+    route.points,
+  ]);
+
   // A read-only, whole-climb preview of whatever's selected in the pre-ride
   // dropdown — same gate as preRideClimbNumber above, so the heading, this
   // chart, and RouteFeatureDetailsPanel's own facts always describe the
@@ -1831,6 +1871,7 @@ export function RidingScreen({
             mapFactory={mapFactory}
             routeFeatureOverlay={routeFeatureOverlay}
             gradientOverlay={{ segments: microDetailSegments }}
+            activeDirectionOverlay={activeDirectionOverlay}
             cameraTarget={camera.cameraTarget}
             zoomTarget={camera.zoomTarget}
             suppressInitialOverviewFit={camera.hasActionableCameraTarget}

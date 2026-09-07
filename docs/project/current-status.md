@@ -209,6 +209,20 @@ Do not treat the item above as fully verified until it has been tested on a movi
 
 ---
 
+### Outstanding: item 98's direction-aware active-Riding route layering
+
+- **Direction-aware active-Riding route-segment layering (item 98):** shipped in `0.4.10` with automated (Vitest and Playwright Chromium) evidence only — no physical iPhone or Android verification is claimed. See [`docs/project/history/items-95-NN.md#item-98`](history/items-95-NN.md#item-98) for the full implementation record, including the rendered fail-first measurements and the negative controls.
+- **Required manual check, in this order.** On the installed iPhone PWA:
+  1. **The confirmed defect first.** Ride or walk an out-and-back whose two legs overlap exactly. On the return leg, the road immediately ahead must now read as the ordinary remaining-route green rather than the grey completed outbound trace — this is the exact `0.4.9` symptom the screenshots captured. Behind the rider it must still read as completed.
+  2. **A coincident climb/descent**, before and after the turnaround: while climbing, the road immediately ahead carries the climb's own colour, not the return descent's; after the turnaround the same stretch of road carries the descent's colour.
+  3. **With a feature explicitly selected**, including deliberately selecting the opposite-direction feature: the road right around the rider still shows the direction actually being ridden, while the selected feature stays correctly described in its details panel and correctly coloured elsewhere on the route.
+  4. **Legibility of everything layered around it** while mounted and moving: surface warnings still clearly win over the route colour where they overlap, direction arrows stay visible, and the live position marker and start/finish markers stay above the line.
+  5. **Pre-ride is unchanged** — opening a route and looking at the overview before pressing Start shows exactly the whole-route presentation it did before, with no local emphasis anywhere.
+- **What automated evidence already covers, so it need not be re-checked by hand:** the layer order, the frozen/off-route behaviour, the pre-ride/idle gate, fallback and manual imagery retry, and the rendered colour outcome of items 1–3 above in Chromium. The manual check is specifically about how this reads on a real phone, outdoors, at speed.
+- Physical Android verification is separately outstanding, as for most recent items.
+
+---
+
 ## Monitored reliability observations
 
 These are explicitly **not** approved future work — see each entry's own text for why.
