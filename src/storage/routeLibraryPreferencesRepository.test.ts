@@ -24,7 +24,7 @@ describe("routeLibraryPreferencesRepository", () => {
     });
   });
 
-  it.each(["distance-asc", "distance-desc", "ascent-asc", "ascent-desc"] as const)(
+  it.each(["distance-desc", "ascent-desc"] as const)(
     "saves and retrieves sortOrder: %s (item 99)",
     async (sortOrder) => {
       await saveRouteLibraryPreferences({ sortOrder });
@@ -32,6 +32,28 @@ describe("routeLibraryPreferencesRepository", () => {
       await expect(getRouteLibraryPreferences()).resolves.toEqual({ sortOrder });
     },
   );
+
+  it("normalises a raw legacy distance-asc row (written by 0.4.12 or earlier) to distance-desc (item 99 follow-up)", async () => {
+    await db.routeLibraryPreferences.put({
+      id: "route-library",
+      sortOrder: "distance-asc",
+    });
+
+    await expect(getRouteLibraryPreferences()).resolves.toEqual({
+      sortOrder: "distance-desc",
+    });
+  });
+
+  it("normalises a raw legacy ascent-asc row (written by 0.4.12 or earlier) to ascent-desc (item 99 follow-up)", async () => {
+    await db.routeLibraryPreferences.put({
+      id: "route-library",
+      sortOrder: "ascent-asc",
+    });
+
+    await expect(getRouteLibraryPreferences()).resolves.toEqual({
+      sortOrder: "ascent-desc",
+    });
+  });
 
   it("saving most-recent after name-asc persists the updated value", async () => {
     await saveRouteLibraryPreferences({ sortOrder: "name-asc" });

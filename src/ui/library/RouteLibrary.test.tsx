@@ -405,7 +405,7 @@ describe("RouteLibrary", () => {
         await db.routes.update(mid.id, { distanceMetres: 15_000, ascentMetres: null });
       }
 
-      it("the select exposes all six sort choices with the intended values and labels", async () => {
+      it("the select exposes exactly four sort choices with the intended values and labels (item 99 follow-up)", async () => {
         const user = userEvent.setup();
         render(<RouteLibrary onOpenRoute={vi.fn()} />);
         await importFixture(user);
@@ -420,26 +420,57 @@ describe("RouteLibrary", () => {
         ).toEqual([
           ["most-recent", "Most recent"],
           ["name-asc", "Name A–Z"],
-          ["distance-asc", "Distance: shortest first"],
-          ["distance-desc", "Distance: longest first"],
-          ["ascent-asc", "Total ascent: least first"],
-          ["ascent-desc", "Total ascent: most first"],
+          ["distance-desc", "Longest route"],
+          ["ascent-desc", "Most total ascent"],
         ]);
       });
 
-      it("distance-asc / distance-desc reorder the rendered cards by canonical distanceMetres", async () => {
+      it("a raw legacy distance-asc preference (written by 0.4.12 or earlier) renders with distance-desc selected (item 99 follow-up)", async () => {
+        const user = userEvent.setup();
+        await db.routeLibraryPreferences.put({
+          id: "route-library",
+          sortOrder: "distance-asc",
+        });
+        const consoleErrorSpy = vi
+          .spyOn(console, "error")
+          .mockImplementation(() => undefined);
+
+        render(<RouteLibrary onOpenRoute={vi.fn()} />);
+        await importFixture(user);
+
+        const select = await screen.findByLabelText("Sort by");
+        await waitFor(() => {
+          expect(select).toHaveValue("distance-desc");
+        });
+        expect(consoleErrorSpy).not.toHaveBeenCalled();
+        consoleErrorSpy.mockRestore();
+      });
+
+      it("a raw legacy ascent-asc preference (written by 0.4.12 or earlier) renders with ascent-desc selected (item 99 follow-up)", async () => {
+        const user = userEvent.setup();
+        await db.routeLibraryPreferences.put({
+          id: "route-library",
+          sortOrder: "ascent-asc",
+        });
+        const consoleErrorSpy = vi
+          .spyOn(console, "error")
+          .mockImplementation(() => undefined);
+
+        render(<RouteLibrary onOpenRoute={vi.fn()} />);
+        await importFixture(user);
+
+        const select = await screen.findByLabelText("Sort by");
+        await waitFor(() => {
+          expect(select).toHaveValue("ascent-desc");
+        });
+        expect(consoleErrorSpy).not.toHaveBeenCalled();
+        consoleErrorSpy.mockRestore();
+      });
+
+      it("distance-desc reorders the rendered cards by canonical distanceMetres (item 99)", async () => {
         const user = userEvent.setup();
         render(<RouteLibrary onOpenRoute={vi.fn()} />);
         await seedDistinctRoutes(user);
-
-        await user.selectOptions(screen.getByLabelText("Sort by"), "distance-asc");
-        await waitFor(() => {
-          expect(getVisibleRouteNames()).toEqual([
-            "Short Flat",
-            "Mid Unknown",
-            "Long Climb",
-          ]);
-        });
 
         await user.selectOptions(screen.getByLabelText("Sort by"), "distance-desc");
         await waitFor(() => {
@@ -451,20 +482,11 @@ describe("RouteLibrary", () => {
         });
       });
 
-      it("ascent-asc / ascent-desc reorder the rendered cards by canonical ascentMetres, with unknown ascent last in BOTH directions", async () => {
+      it("ascent-desc reorders the rendered cards by canonical ascentMetres, with unknown ascent last (item 99)", async () => {
         const user = userEvent.setup();
         render(<RouteLibrary onOpenRoute={vi.fn()} />);
         // short: ascentMetres 0 (known); long: 900 (known); mid: null (unknown)
         await seedDistinctRoutes(user);
-
-        await user.selectOptions(screen.getByLabelText("Sort by"), "ascent-asc");
-        await waitFor(() => {
-          expect(getVisibleRouteNames()).toEqual([
-            "Short Flat",
-            "Long Climb",
-            "Mid Unknown",
-          ]);
-        });
 
         await user.selectOptions(screen.getByLabelText("Sort by"), "ascent-desc");
         await waitFor(() => {
@@ -513,7 +535,7 @@ describe("RouteLibrary", () => {
         await importFixture(user);
 
         const sortSelect = screen.getByLabelText("Sort by");
-        await user.selectOptions(sortSelect, "ascent-asc");
+        await user.selectOptions(sortSelect, "ascent-desc");
 
         await waitFor(() => {
           expect(screen.getByRole("alert")).toHaveTextContent(
@@ -531,12 +553,12 @@ describe("RouteLibrary", () => {
         await seedDistinctRoutes(user);
 
         const sortSelect = screen.getByLabelText("Sort by");
-        await user.selectOptions(sortSelect, "distance-asc");
+        await user.selectOptions(sortSelect, "distance-desc");
         await waitFor(() => {
           expect(getVisibleRouteNames()).toEqual([
-            "Short Flat",
-            "Mid Unknown",
             "Long Climb",
+            "Mid Unknown",
+            "Short Flat",
           ]);
         });
         expect(sortSelect).toHaveFocus();
@@ -1052,7 +1074,7 @@ describe("RouteLibrary", () => {
     // pinned route (as in the name-asc test above) can only prove
     // pinned-vs-unpinned partitioning, not that the pinned block's own
     // internal order is untouched.
-    it("changing the sort order to distance-asc/distance-desc still leaves the pinned block's own newest-pinned-first order unchanged, even though it conflicts with distance order (item 99)", async () => {
+    it("changing the sort order to distance-desc still leaves the pinned block's own newest-pinned-first order unchanged, even though it conflicts with distance order (item 99)", async () => {
       const user = userEvent.setup();
       const clock = buildSteppingClock("2026-02-01T09:00:00.000Z");
       render(<RouteLibrary onOpenRoute={vi.fn()} clock={clock} />);
@@ -1071,12 +1093,11 @@ describe("RouteLibrary", () => {
       }
 
       // Pinned-first order will be [Newer Pin Short, Older Pin Long]
-      // (newest-pinned-first), but distance order alone would want the
-      // OPPOSITE for distance-asc (Newer Pin Short is shortest) and the
-      // SAME only by distance-desc coincidence for a 2-element list — so
-      // both pinned routes are also interleaved with distinct unpinned
-      // distances, which a whole-list (not unpinned-only) sort would
-      // scatter rather than merely transpose.
+      // (newest-pinned-first), but distance-desc order alone would want
+      // the OPPOSITE (Newer Pin Short is shortest) — so both pinned routes
+      // are also interleaved with distinct unpinned distances, which a
+      // whole-list (not unpinned-only) sort would scatter rather than
+      // merely transpose.
       await db.routes.update(olderPinLong.id, { distanceMetres: 40_000 });
       await db.routes.update(newerPinShort.id, { distanceMetres: 5_000 });
       await db.routes.update(unpinnedMid.id, { distanceMetres: 20_000 });
@@ -1094,16 +1115,6 @@ describe("RouteLibrary", () => {
         expect(
           screen.getByRole("button", { name: "Unpin Newer Pin Short" }),
         ).toHaveAttribute("aria-pressed", "true");
-      });
-
-      await user.selectOptions(screen.getByLabelText("Sort by"), "distance-asc");
-      await waitFor(() => {
-        expect(getVisibleRouteNames()).toEqual([
-          "Newer Pin Short",
-          "Older Pin Long",
-          "Unpinned Short",
-          "Unpinned Mid",
-        ]);
       });
 
       await user.selectOptions(screen.getByLabelText("Sort by"), "distance-desc");

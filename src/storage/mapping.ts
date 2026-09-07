@@ -488,17 +488,19 @@ export function fromStoredPlanningPreferences(
 
 /** The Route Library screen's persisted sort choice. "Most recent" keeps
  * today's exact PlannedRoute.createdAt-descending meaning; "Name A-Z" is
- * locale-aware, case-insensitive and numeric; "distance-*"/"ascent-*" order
- * by the route's own canonical PlannedRoute.distanceMetres/ascentMetres,
- * with unknown ascent (null) always sorting after every known value in
- * both directions (see routeLibraryView.ts). */
+ * locale-aware, case-insensitive and numeric; "distance-desc"/"ascent-desc"
+ * order by the route's own canonical PlannedRoute.distanceMetres/
+ * ascentMetres, descending, with unknown ascent (null) always sorting after
+ * every known value (see routeLibraryView.ts). Item 99 originally shipped
+ * (0.4.12) both an ascending and a descending choice for distance and
+ * ascent; a follow-up retired the ascending half of each, since the
+ * project only ever wants "longest route" / "most total ascent", matching
+ * the existing "most recent"/"A-Z" asymmetry. `distance-asc`/`ascent-asc`
+ * are RETIRED, not active, values — see resolveLegacyRouteLibrarySortOrder
+ * below for how a row written by an older build (0.4.12 or earlier) is
+ * still recognised and normalised, rather than treated as corrupt. */
 export type RouteLibrarySortOrder =
-  | "most-recent"
-  | "name-asc"
-  | "distance-asc"
-  | "distance-desc"
-  | "ascent-asc"
-  | "ascent-desc";
+  "most-recent" | "name-asc" | "distance-desc" | "ascent-desc";
 
 export const DEFAULT_ROUTE_LIBRARY_SORT_ORDER: RouteLibrarySortOrder = "most-recent";
 
@@ -506,11 +508,23 @@ export function isRouteLibrarySortOrder(value: unknown): value is RouteLibrarySo
   return (
     value === "most-recent" ||
     value === "name-asc" ||
-    value === "distance-asc" ||
     value === "distance-desc" ||
-    value === "ascent-asc" ||
     value === "ascent-desc"
   );
+}
+
+/** Recognises the two ascending sort options retired in the item 99
+ * follow-up and maps each to the one surviving direction for that
+ * criterion — a deliberate, named branch distinct from "malformed",
+ * mirroring normalizeStoredElevationWindowMetres's own retired-value
+ * precedent above. A device that saved its Route Library preference on
+ * package 0.4.12 or earlier may still hold one of these two values. */
+function resolveLegacyRouteLibrarySortOrder(
+  value: string,
+): RouteLibrarySortOrder | undefined {
+  if (value === "distance-asc") return "distance-desc";
+  if (value === "ascent-asc") return "ascent-desc";
+  return undefined;
 }
 
 /** Route Library's persisted sort preference, resolved for use. The
@@ -533,13 +547,18 @@ export function toStoredRouteLibraryPreferences(
  * always resolves it to a concrete value. A real validity check, not a
  * bare `??` — a corrupt or future-unknown stored string must never flow
  * through to the sort logic, so it recovers to the app's default order.
+ * A recognised retired value (see resolveLegacyRouteLibrarySortOrder)
+ * normalises to its surviving direction instead of falling all the way
+ * back to the default, preserving the rider's chosen criterion.
  */
 export function fromStoredRouteLibraryPreferences(
   stored: StoredRouteLibraryPreferences | undefined,
 ): RouteLibraryPreferences {
-  return {
-    sortOrder: isRouteLibrarySortOrder(stored?.sortOrder)
-      ? stored.sortOrder
-      : DEFAULT_ROUTE_LIBRARY_SORT_ORDER,
-  };
+  const raw = stored?.sortOrder;
+  if (isRouteLibrarySortOrder(raw)) {
+    return { sortOrder: raw };
+  }
+  const legacy =
+    typeof raw === "string" ? resolveLegacyRouteLibrarySortOrder(raw) : undefined;
+  return { sortOrder: legacy ?? DEFAULT_ROUTE_LIBRARY_SORT_ORDER };
 }

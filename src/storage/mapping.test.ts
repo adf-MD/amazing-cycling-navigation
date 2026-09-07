@@ -1165,7 +1165,7 @@ describe("toStoredRouteLibraryPreferences / fromStoredRouteLibraryPreferences", 
     expect(restored).toEqual({ sortOrder: "most-recent" });
   });
 
-  it.each(["distance-asc", "distance-desc", "ascent-asc", "ascent-desc"] as const)(
+  it.each(["distance-desc", "ascent-desc"] as const)(
     "round-trips an explicitly saved %s value (item 99)",
     (sortOrder) => {
       const stored = toStoredRouteLibraryPreferences({ sortOrder });
@@ -1187,6 +1187,28 @@ describe("toStoredRouteLibraryPreferences / fromStoredRouteLibraryPreferences", 
     const restored = fromStoredRouteLibraryPreferences(corruptRow);
 
     expect(restored).toEqual({ sortOrder: "most-recent" });
+  });
+
+  it("normalises a legacy stored distance-asc value to distance-desc (item 99 follow-up)", () => {
+    const legacyRow: StoredRouteLibraryPreferences = {
+      id: "route-library",
+      sortOrder: "distance-asc",
+    };
+
+    const restored = fromStoredRouteLibraryPreferences(legacyRow);
+
+    expect(restored).toEqual({ sortOrder: "distance-desc" });
+  });
+
+  it("normalises a legacy stored ascent-asc value to ascent-desc (item 99 follow-up)", () => {
+    const legacyRow: StoredRouteLibraryPreferences = {
+      id: "route-library",
+      sortOrder: "ascent-asc",
+    };
+
+    const restored = fromStoredRouteLibraryPreferences(legacyRow);
+
+    expect(restored).toEqual({ sortOrder: "ascent-desc" });
   });
 
   it("never includes the row id in the stored shape", () => {

@@ -245,7 +245,7 @@ test("opening a pinned route and returning restores the pinned-first order along
 // pinned-vs-unpinned partitioning, not that the pinned block's own INTERNAL
 // order survives a distance/ascent sort. This test pins two routes, whose
 // pin-recency order actively conflicts with their distance order, before
-// selecting distance-asc/distance-desc.
+// selecting distance-desc.
 test("a distance sort leaves two pinned routes' own newest-pinned-first order unchanged, even though it conflicts with their distance order (item 99)", async ({
   page,
 }) => {
@@ -267,15 +267,6 @@ test("a distance sort leaves two pinned routes' own newest-pinned-first order un
 
   // Pinned-first order is fixed at [Newer Pin Short, Older Pin Long]
   // (newest-pinned-first) regardless of the chosen sort.
-  await expect(async () => {
-    expect(await visibleCardTitles(page)).toEqual([
-      "Newer Pin Short",
-      "Older Pin Long",
-      "Unpinned Mid",
-    ]);
-  }).toPass();
-
-  await page.getByLabel("Sort by").selectOption("distance-asc");
   await expect(async () => {
     expect(await visibleCardTitles(page)).toEqual([
       "Newer Pin Short",

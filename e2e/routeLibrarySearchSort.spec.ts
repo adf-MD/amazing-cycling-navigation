@@ -200,7 +200,7 @@ test("opening a filtered, sorted, lower route shows Riding from the top; returni
   expect(consoleErrors).toEqual([]);
 });
 
-test("distance and total-ascent sorting order correctly, unknown ascent sorts last in both directions, search stays active through a sort change, the sort select stays focused, and the choice survives reload (item 99)", async ({
+test("the sort select exposes exactly four choices, distance and total-ascent sorting order correctly with unknown ascent sorting last, search stays active through a sort change, the sort select stays focused, and the choice survives reload (item 99 follow-up)", async ({
   page,
 }) => {
   const consoleErrors: string[] = [];
@@ -235,14 +235,20 @@ test("distance and total-ascent sorting order correctly, unknown ascent sorts la
     throw new Error("expected Long Hilly to have a known ascent");
   expect(longAscentMetres).toBeGreaterThan(50);
 
-  await page.getByLabel("Sort by").selectOption("distance-asc");
-  await expect(async () => {
-    expect(await visibleCardTitles(page)).toEqual([
-      "Short Flat",
-      "No Elevation",
-      "Long Hilly",
-    ]);
-  }).toPass();
+  // The real, browser-rendered select exposes exactly the four agreed
+  // choices, in order, with their final values and labels (item 99
+  // follow-up: distance-asc/ascent-asc are retired).
+  const sortOptionEntries = await page
+    .locator("#route-library-sort option")
+    .evaluateAll((options) =>
+      options.map((option) => [(option as HTMLOptionElement).value, option.textContent]),
+    );
+  expect(sortOptionEntries).toEqual([
+    ["most-recent", "Most recent"],
+    ["name-asc", "Name A–Z"],
+    ["distance-desc", "Longest route"],
+    ["ascent-desc", "Most total ascent"],
+  ]);
 
   await page.getByLabel("Sort by").selectOption("distance-desc");
   await expect(async () => {
@@ -253,17 +259,8 @@ test("distance and total-ascent sorting order correctly, unknown ascent sorts la
     ]);
   }).toPass();
 
-  // ascent-asc / ascent-desc: "No Elevation" (unknown ascent) stays last in
-  // BOTH directions, never reordered to the front under descending.
-  await page.getByLabel("Sort by").selectOption("ascent-asc");
-  await expect(async () => {
-    expect(await visibleCardTitles(page)).toEqual([
-      "Short Flat",
-      "Long Hilly",
-      "No Elevation",
-    ]);
-  }).toPass();
-
+  // "No Elevation" (unknown ascent) sorts last even under descending order,
+  // never reordered to the front.
   await page.getByLabel("Sort by").selectOption("ascent-desc");
   await expect(async () => {
     expect(await visibleCardTitles(page)).toEqual([
@@ -278,15 +275,15 @@ test("distance and total-ascent sorting order correctly, unknown ascent sorts la
   const search = page.getByLabel("Search routes");
   await search.fill("hilly");
   await expect(page.locator(".route-list > li")).toHaveCount(1);
-  await page.getByLabel("Sort by").selectOption("ascent-asc");
+  await page.getByLabel("Sort by").selectOption("distance-desc");
   await expect(page.locator(".route-list > li")).toHaveCount(1);
   await page.getByRole("button", { name: "Clear search" }).click();
   await expect(search).toHaveValue("");
   await expect(async () => {
     expect(await visibleCardTitles(page)).toEqual([
-      "Short Flat",
       "Long Hilly",
       "No Elevation",
+      "Short Flat",
     ]);
   }).toPass();
 
@@ -318,13 +315,13 @@ test("distance and total-ascent sorting order correctly, unknown ascent sorts la
   expect(consoleErrors).toEqual([]);
 });
 
-test.describe("six-option toolbar at enlarged text and short landscape (item 99)", () => {
+test.describe("four-option toolbar at enlarged text and short landscape (item 99 follow-up)", () => {
   async function seedThreeRoutes(page: Page) {
     await page.goto("/");
     await importRoute(page, "Short Flat", SHORT_FLAT_GPX_PATH);
     await importRoute(page, "No Elevation", NO_ELEVATION_GPX_PATH);
     await importRoute(page, "Long Hilly", LONG_HILLY_GPX_PATH);
-    // Select a non-default sort so all six real options are the ones
+    // Select a non-default sort so all four real options are the ones
     // actually rendered/measured, not merely present in markup.
     await page.getByLabel("Sort by").selectOption("ascent-desc");
   }

@@ -152,20 +152,12 @@ describe("sortRoutesForLibrary", () => {
   // deliberately built so name/createdAt order disagrees with the order
   // under test, so a passing assertion can only be explained by the new
   // comparator actually reading distanceMetres/ascentMetres.
-  describe("distance-asc / distance-desc (item 99)", () => {
+  describe("distance-desc (item 99, narrowed to descending-only by the item 99 follow-up)", () => {
     const routes = [
       buildRoute("a", "Zebra", "2026-01-03T00:00:00.000Z", { distanceMetres: 30_000 }),
       buildRoute("b", "Mid", "2026-01-02T00:00:00.000Z", { distanceMetres: 10_000 }),
       buildRoute("c", "Alpine", "2026-01-01T00:00:00.000Z", { distanceMetres: 20_000 }),
     ];
-
-    it("orders shortest first", () => {
-      expect(sortRoutesForLibrary(routes, "distance-asc").map((r) => r.id)).toEqual([
-        "b",
-        "c",
-        "a",
-      ]);
-    });
 
     it("orders longest first", () => {
       expect(sortRoutesForLibrary(routes, "distance-desc").map((r) => r.id)).toEqual([
@@ -175,16 +167,12 @@ describe("sortRoutesForLibrary", () => {
       ]);
     });
 
-    it("breaks equal-distance ties deterministically by id, both directions", () => {
+    it("breaks equal-distance ties deterministically by id", () => {
       const tied = [
         buildRoute("b", "Second", undefined, { distanceMetres: 5_000 }),
         buildRoute("a", "First", undefined, { distanceMetres: 5_000 }),
       ];
 
-      expect(sortRoutesForLibrary(tied, "distance-asc").map((r) => r.id)).toEqual([
-        "a",
-        "b",
-      ]);
       expect(sortRoutesForLibrary(tied, "distance-desc").map((r) => r.id)).toEqual([
         "a",
         "b",
@@ -193,16 +181,14 @@ describe("sortRoutesForLibrary", () => {
 
     it("never mutates the input array", () => {
       const copy = [...routes];
-      sortRoutesForLibrary(routes, "distance-asc");
       sortRoutesForLibrary(routes, "distance-desc");
       expect(routes).toEqual(copy);
     });
   });
 
-  describe("ascent-asc / ascent-desc (item 99)", () => {
-    // Known zero must stay distinct from unknown (null) in both
-    // directions, and unknown must always sort last regardless of
-    // direction.
+  describe("ascent-desc (item 99, narrowed to descending-only by the item 99 follow-up)", () => {
+    // Known zero must stay distinct from unknown (null), and unknown must
+    // always sort last, even under descending order.
     const withUnknown = [
       buildRoute("zero", "Zebra flat", "2026-01-03T00:00:00.000Z", { ascentMetres: 0 }),
       buildRoute("mid", "Mid climb", "2026-01-02T00:00:00.000Z", { ascentMetres: 250 }),
@@ -211,15 +197,7 @@ describe("sortRoutesForLibrary", () => {
       }),
     ];
 
-    it("orders least-known-ascent first, unknown last", () => {
-      expect(sortRoutesForLibrary(withUnknown, "ascent-asc").map((r) => r.id)).toEqual([
-        "zero",
-        "mid",
-        "unknown",
-      ]);
-    });
-
-    it("orders most-known-ascent first, unknown STILL last (not reversed to first)", () => {
+    it("orders most-known-ascent first, unknown last (not resurrected to first)", () => {
       expect(sortRoutesForLibrary(withUnknown, "ascent-desc").map((r) => r.id)).toEqual([
         "mid",
         "zero",
@@ -227,16 +205,12 @@ describe("sortRoutesForLibrary", () => {
       ]);
     });
 
-    it("breaks equal-known-ascent ties deterministically by id, both directions", () => {
+    it("breaks equal-known-ascent ties deterministically by id", () => {
       const tied = [
         buildRoute("b", "Second", undefined, { ascentMetres: 400 }),
         buildRoute("a", "First", undefined, { ascentMetres: 400 }),
       ];
 
-      expect(sortRoutesForLibrary(tied, "ascent-asc").map((r) => r.id)).toEqual([
-        "a",
-        "b",
-      ]);
       expect(sortRoutesForLibrary(tied, "ascent-desc").map((r) => r.id)).toEqual([
         "a",
         "b",
@@ -250,11 +224,6 @@ describe("sortRoutesForLibrary", () => {
         buildRoute("m", "Known", undefined, { ascentMetres: 100 }),
       ];
 
-      expect(sortRoutesForLibrary(routes, "ascent-asc").map((r) => r.id)).toEqual([
-        "m",
-        "k",
-        "z",
-      ]);
       expect(sortRoutesForLibrary(routes, "ascent-desc").map((r) => r.id)).toEqual([
         "m",
         "k",
@@ -264,7 +233,6 @@ describe("sortRoutesForLibrary", () => {
 
     it("never mutates the input array", () => {
       const copy = [...withUnknown];
-      sortRoutesForLibrary(withUnknown, "ascent-asc");
       sortRoutesForLibrary(withUnknown, "ascent-desc");
       expect(withUnknown).toEqual(copy);
     });
@@ -367,7 +335,7 @@ describe("selectRouteLibraryGroups", () => {
   // distance/ascent order actively disagrees with their pin-recency order
   // — proving the sort is applied to the unpinned partition only, not to
   // both.
-  it("changing sortOrder to a distance/ascent order still reorders only the unpinned group, leaving pinned order unchanged (item 99)", () => {
+  it("changing sortOrder to distance-desc still reorders only the unpinned group, leaving pinned order unchanged (item 99)", () => {
     const routes = [
       // Pinned most recently (should stay first) but the SMALLEST distance
       // — if distance-desc leaked into the pinned group this would move
@@ -387,20 +355,11 @@ describe("selectRouteLibraryGroups", () => {
       }),
     ];
 
-    const distanceAsc = selectRouteLibraryGroups(routes, "", "distance-asc");
     const distanceDesc = selectRouteLibraryGroups(routes, "", "distance-desc");
 
-    expect(distanceAsc.pinned.map((r) => r.id)).toEqual([
-      "newer-pin-short",
-      "older-pin-long",
-    ]);
     expect(distanceDesc.pinned.map((r) => r.id)).toEqual([
       "newer-pin-short",
       "older-pin-long",
-    ]);
-    expect(distanceAsc.unpinned.map((r) => r.id)).toEqual([
-      "unpinned-short",
-      "unpinned-mid",
     ]);
     expect(distanceDesc.unpinned.map((r) => r.id)).toEqual([
       "unpinned-mid",

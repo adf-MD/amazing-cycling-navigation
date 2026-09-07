@@ -544,10 +544,8 @@ export function RouteLibrary({
             >
               <option value="most-recent">Most recent</option>
               <option value="name-asc">Name A–Z</option>
-              <option value="distance-asc">Distance: shortest first</option>
-              <option value="distance-desc">Distance: longest first</option>
-              <option value="ascent-asc">Total ascent: least first</option>
-              <option value="ascent-desc">Total ascent: most first</option>
+              <option value="distance-desc">Longest route</option>
+              <option value="ascent-desc">Most total ascent</option>
             </select>
           </div>
           {isSavingSortPreference ? (
