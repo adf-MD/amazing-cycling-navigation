@@ -1494,7 +1494,11 @@ describe("RouteLibrary", () => {
       });
 
       await openTagEditor(user, "Zebra Loop");
-      expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
+      // Backlog item 100 stage 3 added a "Filter by tags" chip of the
+      // same name once any route carries "Gravel" — scoped to this
+      // route's own editor to disambiguate it from that chip.
+      const zebraLoopEditor = within(getListItemForName("Zebra Loop"));
+      expect(zebraLoopEditor.getByRole("button", { name: "Gravel" })).toHaveAttribute(
         "aria-pressed",
         "false",
       );
@@ -1502,8 +1506,10 @@ describe("RouteLibrary", () => {
       // A case/whitespace variant of the established suggestion adopts its
       // spelling rather than creating a second identity.
       await user.type(screen.getByLabelText("Add a tag"), "  gravel  {Enter}");
-      expect(screen.queryAllByRole("button", { name: /gravel/i })).toHaveLength(1);
-      expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
+      expect(zebraLoopEditor.queryAllByRole("button", { name: /gravel/i })).toHaveLength(
+        1,
+      );
+      expect(zebraLoopEditor.getByRole("button", { name: "Gravel" })).toHaveAttribute(
         "aria-pressed",
         "true",
       );
@@ -1540,7 +1546,12 @@ describe("RouteLibrary", () => {
       });
 
       await openTagEditor(user, "Zebra Loop");
-      expect(screen.getByRole("button", { name: "Gravel" })).toBeInTheDocument();
+      // Backlog item 100 stage 3 added a "Filter by tags" chip of the
+      // same name once any route carries "Gravel" — scoped to this
+      // route's own editor to disambiguate it from that chip.
+      expect(
+        within(getListItemForName("Zebra Loop")).getByRole("button", { name: "Gravel" }),
+      ).toBeInTheDocument();
     });
 
     it("search continues to match route names only — a term matching only a tag returns no results", async () => {
@@ -2093,5 +2104,896 @@ describe("RouteLibrary — scroll restoration", () => {
     await importFixture(user);
 
     expect(scrollToSpy).not.toHaveBeenCalled();
+  });
+});
+
+// Backlog item 100 stage 3: tag filtering. Uses the real fake-indexeddb
+// storage and the real stage-2 tag editor throughout, following this
+// file's own established convention (rather than seeding private
+// component state), with own locally-scoped helpers per the "tag
+// editing" describe block's own precedent.
+describe("RouteLibrary — tag filtering", () => {
+  function getListItemForName(name: string): HTMLElement {
+    const title =
+      screen.queryByRole("button", { name }) ?? screen.getByRole("heading", { name });
+    const item = title.closest("li");
+    if (!item) throw new Error(`No list item found for route named ${name}`);
+    return item;
+  }
+
+  async function openTagEditor(
+    user: ReturnType<typeof userEvent.setup>,
+    routeName: string,
+    label: "Add tags" | "Edit tags" = "Add tags",
+  ) {
+    await user.click(
+      within(getListItemForName(routeName)).getByRole("button", { name: label }),
+    );
+  }
+
+  async function tagRoute(
+    user: ReturnType<typeof userEvent.setup>,
+    routeName: string,
+    tag: string,
+    label: "Add tags" | "Edit tags" = "Add tags",
+  ) {
+    await openTagEditor(user, routeName, label);
+    await user.type(screen.getByLabelText("Add a tag"), `${tag}{Enter}`);
+    await user.click(screen.getByRole("button", { name: "Save tags" }));
+    await waitFor(() => {
+      expect(
+        within(getListItemForName(routeName)).getByRole("button", { name: "Edit tags" }),
+      ).toBeInTheDocument();
+    });
+  }
+
+  // Scopes a filter-chip lookup to the "Filter by tags" region, since an
+  // open card editor's own suggestion button can share the same
+  // accessible name (e.g. two "Gravel" buttons on screen at once).
+  function getTagFilterButton(name: string): HTMLElement {
+    return within(screen.getByRole("group", { name: "Filter by tags" })).getByRole(
+      "button",
+      {
+        name,
+      },
+    );
+  }
+
+  // Toggles a suggestion INSIDE an open card editor (as opposed to the
+  // top-level filter chip of the same name) by tag name.
+  async function toggleSuggestion(
+    user: ReturnType<typeof userEvent.setup>,
+    routeName: string,
+    tag: string,
+  ) {
+    await user.click(
+      within(getListItemForName(routeName)).getByRole("button", { name: tag }),
+    );
+  }
+
+  it("omits the tag-filter region when no imported route has any tag", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Alpine Climb.gpx");
+
+    expect(screen.queryByText("Filter by tags")).toBeNull();
+  });
+
+  it("selecting a single tag filter narrows the visible list to routes carrying that tag", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Zebra Loop.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+
+    await user.click(screen.getByRole("button", { name: "Gravel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
+    });
+    expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+  });
+
+  it("selecting two tag filters together narrows to routes carrying both (AND), not either", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Both Tags.gpx");
+    await importFixture(user, "Gravel Only.gpx");
+    await importFixture(user, "Weekend Only.gpx");
+    await tagRoute(user, "Both Tags", "Gravel");
+    await tagRoute(user, "Both Tags", "Weekend", "Edit tags");
+    await tagRoute(user, "Gravel Only", "Gravel");
+    await tagRoute(user, "Weekend Only", "Weekend");
+
+    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await user.click(screen.getByRole("button", { name: "Weekend" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Both Tags" })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: "Gravel Only" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Weekend Only" })).toBeNull();
+  });
+
+  it("a chip's aria-pressed reflects and toggles selection state", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Alpine Climb.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+
+    const chip = screen.getByRole("button", { name: "Gravel" });
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+    expect(chip.className).not.toContain("is-selected");
+
+    await user.click(chip);
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+    // A visible non-colour cue independent of aria-pressed.
+    expect(chip.className).toContain("is-selected");
+
+    await user.click(chip);
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("matches a route tagged with a case/whitespace-differing spelling of the selected filter", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Alpine Climb.gpx");
+    await openTagEditor(user, "Alpine Climb");
+    await user.type(screen.getByLabelText("Add a tag"), "  GRAVEL  {Enter}");
+    await user.click(screen.getByRole("button", { name: "Save tags" }));
+    await waitFor(() => {
+      expect(
+        within(getListItemForName("Alpine Climb")).getByRole("button", {
+          name: "Edit tags",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    // The suggestion grid adopts the established (first-seen) spelling —
+    // "GRAVEL" here, since no prior route established "Gravel" first.
+    await user.click(screen.getByRole("button", { name: "GRAVEL" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+    });
+  });
+
+  it("composes name search and an active tag filter as an intersection", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Alpine Descent.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+
+    await user.type(screen.getByLabelText("Search routes"), "alpine");
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Alpine Descent" })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Gravel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Alpine Descent" })).toBeNull();
+    });
+    expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+  });
+
+  it("search stays name-only under an active tag filter — a tag-only term still returns no results", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Alpine Climb.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+    await user.click(screen.getByRole("button", { name: "Gravel" }));
+
+    await user.type(screen.getByLabelText("Search routes"), "Gravel");
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("No routes match “Gravel” and the selected tags."),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("pin priority and all four sort orders survive an active tag filter", async () => {
+    const user = userEvent.setup();
+    const clock = buildSteppingClock("2026-02-01T09:00:00.000Z");
+    render(<RouteLibrary onOpenRoute={vi.fn()} clock={clock} />);
+    await importFixture(user, "Older Pin Long.gpx");
+    await importFixture(user, "Newer Pin Short.gpx");
+    await importFixture(user, "Unpinned Mid.gpx");
+    await importFixture(user, "Unpinned Short.gpx");
+
+    const routes = await routesRepository.listRoutes();
+    const byName = (name: string) => {
+      const route = routes.find((r) => r.name === name);
+      if (!route) throw new Error(`fixture route not found: ${name}`);
+      return route;
+    };
+    await db.routes.update(byName("Older Pin Long").id, {
+      distanceMetres: 40_000,
+      ascentMetres: 100,
+    });
+    await db.routes.update(byName("Newer Pin Short").id, {
+      distanceMetres: 5_000,
+      ascentMetres: 400,
+    });
+    await db.routes.update(byName("Unpinned Mid").id, {
+      distanceMetres: 20_000,
+      ascentMetres: 200,
+    });
+    await db.routes.update(byName("Unpinned Short").id, {
+      distanceMetres: 10_000,
+      ascentMetres: 300,
+    });
+
+    for (const name of [
+      "Older Pin Long",
+      "Newer Pin Short",
+      "Unpinned Mid",
+      "Unpinned Short",
+    ]) {
+      await tagRoute(user, name, "Gravel");
+    }
+
+    await user.click(screen.getByRole("button", { name: "Pin Older Pin Long" }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Unpin Older Pin Long" }),
+      ).toHaveAttribute("aria-pressed", "true");
+    });
+    clock.advance(1000);
+    await user.click(screen.getByRole("button", { name: "Pin Newer Pin Short" }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Unpin Newer Pin Short" }),
+      ).toHaveAttribute("aria-pressed", "true");
+    });
+
+    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await waitFor(() => {
+      expect(getVisibleRouteNames()).toHaveLength(4);
+    });
+
+    for (const sortOrder of ["most-recent", "name-asc", "distance-desc", "ascent-desc"]) {
+      await user.selectOptions(screen.getByLabelText("Sort by"), sortOrder);
+      await waitFor(() => {
+        expect(screen.getByLabelText<HTMLSelectElement>("Sort by").value).toBe(sortOrder);
+      });
+      // Pinned pair always first, in pin-recency order, regardless of sortOrder.
+      expect(getVisibleRouteNames().slice(0, 2)).toEqual([
+        "Newer Pin Short",
+        "Older Pin Long",
+      ]);
+    }
+  });
+
+  it("hides a non-matching pinned route under an active tag filter", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Pinned No Tag.gpx");
+    await importFixture(user, "Unpinned Tagged.gpx");
+    await tagRoute(user, "Unpinned Tagged", "Gravel");
+    await user.click(screen.getByRole("button", { name: "Pin Pinned No Tag" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Unpin Pinned No Tag" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    await user.click(screen.getByRole("button", { name: "Gravel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Pinned No Tag" })).toBeNull();
+    });
+    expect(screen.getByRole("button", { name: "Unpinned Tagged" })).toBeInTheDocument();
+  });
+
+  it("derives available filter chips from the full route corpus, not the currently filtered view", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Zebra Loop.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+    await tagRoute(user, "Zebra Loop", "Weekend");
+
+    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
+    });
+
+    // "Weekend" belongs only to the now-hidden Zebra Loop, yet its own
+    // chip must remain present and selectable.
+    expect(screen.getByRole("button", { name: "Weekend" })).toBeInTheDocument();
+  });
+
+  it("Clear tag filters is absent with none selected, appears once one is, restores the full list and moves focus to the region's own label", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Zebra Loop.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+
+    expect(screen.queryByRole("button", { name: "Clear tag filters" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Clear tag filters" }),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Clear tag filters" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Zebra Loop" })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: "Clear tag filters" })).toBeNull();
+    expect(screen.getByText("Filter by tags")).toHaveFocus();
+  });
+
+  it("tagging a route through the live editor immediately affects an active filter's result, with no reload", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Zebra Loop.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+    // Tag Zebra Loop too, before the filter is active, so its card is
+    // still reachable through the ordinary Route Library UI — an active
+    // filter that already excludes it would also unmount its editor
+    // button entirely.
+    await tagRoute(user, "Zebra Loop", "Gravel");
+
+    await user.click(getTagFilterButton("Gravel"));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Zebra Loop" })).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+
+    // Now remove Gravel from Zebra Loop through its own live editor —
+    // still reachable since it currently matches the active filter — and
+    // confirm the filtered RESULT updates immediately, with no reload.
+    await openTagEditor(user, "Zebra Loop", "Edit tags");
+    await toggleSuggestion(user, "Zebra Loop", "Gravel");
+    await user.click(
+      within(getListItemForName("Zebra Loop")).getByRole("button", { name: "Save tags" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
+    });
+    expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+  });
+
+  it("tag-only no-match copy is shown when only a tag filter excludes every route", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Zebra Loop.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+    await tagRoute(user, "Zebra Loop", "Weekend");
+
+    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await user.click(screen.getByRole("button", { name: "Weekend" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("No routes match the selected tags.")).toBeInTheDocument();
+    });
+  });
+
+  it("moves focus to the next visible route when the currently-edited route drops out of an active tag filter", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Zebra Loop.gpx");
+    await importFixture(user, "Alpine Climb.gpx");
+    await tagRoute(user, "Zebra Loop", "Weekend");
+    await tagRoute(user, "Alpine Climb", "Weekend");
+
+    await user.click(getTagFilterButton("Weekend"));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Zebra Loop" })).toBeInTheDocument();
+    });
+
+    // most-recent order: Alpine Climb (imported second) is first, Zebra
+    // Loop second — editing away Alpine Climb's own match leaves Zebra
+    // Loop as the next visible route.
+    await openTagEditor(user, "Alpine Climb", "Edit tags");
+    await toggleSuggestion(user, "Alpine Climb", "Weekend");
+    await user.click(
+      within(getListItemForName("Alpine Climb")).getByRole("button", {
+        name: "Save tags",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Alpine Climb" })).toBeNull();
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Zebra Loop" })).toHaveFocus();
+    });
+  });
+
+  it("moves focus to the Clear tag filters button when the disappearing route was the only match under an AND filter, with no route to fall back to", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Weekend Only.gpx");
+    await importFixture(user, "Gravel Only.gpx");
+
+    await openTagEditor(user, "Alpine Climb");
+    await user.type(screen.getByLabelText("Add a tag"), "Weekend{Enter}");
+    await user.type(screen.getByLabelText("Add a tag"), "Gravel{Enter}");
+    await user.click(screen.getByRole("button", { name: "Save tags" }));
+    await waitFor(() => {
+      expect(
+        within(getListItemForName("Alpine Climb")).getByRole("button", {
+          name: "Edit tags",
+        }),
+      ).toBeInTheDocument();
+    });
+    await tagRoute(user, "Weekend Only", "Weekend");
+    await tagRoute(user, "Gravel Only", "Gravel");
+
+    await user.click(getTagFilterButton("Weekend"));
+    await user.click(getTagFilterButton("Gravel"));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: "Weekend Only" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Gravel Only" })).toBeNull();
+
+    await openTagEditor(user, "Alpine Climb", "Edit tags");
+    await toggleSuggestion(user, "Alpine Climb", "Gravel"); // toggle off
+    await user.click(
+      within(getListItemForName("Alpine Climb")).getByRole("button", {
+        name: "Save tags",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Alpine Climb" })).toBeNull();
+    });
+    // "Gravel" stays valid (Gravel Only still carries it) so it is NOT
+    // pruned — Clear tag filters remains rendered and is the correct
+    // fallback, since no route now matches the AND filter.
+    expect(screen.getByRole("button", { name: "Clear tag filters" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Clear tag filters" })).toHaveFocus();
+    });
+  });
+
+  it("prunes a selected tag filter once its last backing route is deleted, and does not silently reactivate it if the same spelling is retagged later in the session", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Zebra Loop.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+    await user.click(getTagFilterButton("Gravel"));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Clear tag filters" }),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(
+      within(getListItemForName("Alpine Climb")).getByRole("button", { name: "Delete" }),
+    );
+    await user.click(
+      within(getListItemForName("Alpine Climb")).getByRole("button", {
+        name: "Delete route",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText("Filter by tags")).toBeNull();
+    });
+
+    // Retagging Zebra Loop with the identical spelling later in the same
+    // session must not resurrect the previously-selected (now-pruned)
+    // filter — the fresh "Gravel" chip must start unselected.
+    await tagRoute(user, "Zebra Loop", "Gravel");
+    await waitFor(() => {
+      expect(getTagFilterButton("Gravel")).toHaveAttribute("aria-pressed", "false");
+    });
+    expect(screen.getByRole("button", { name: "Zebra Loop" })).toBeInTheDocument();
+  });
+
+  it("prunes a selected tag filter once the last route using it is edited to remove it", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Alpine Climb.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+    await user.click(getTagFilterButton("Gravel"));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Clear tag filters" }),
+      ).toBeInTheDocument();
+    });
+
+    await openTagEditor(user, "Alpine Climb", "Edit tags");
+    await toggleSuggestion(user, "Alpine Climb", "Gravel"); // toggle off
+    await user.click(
+      within(getListItemForName("Alpine Climb")).getByRole("button", {
+        name: "Save tags",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText("Filter by tags")).toBeNull();
+    });
+    expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+  });
+
+  it("cancels an actionable pending switch prompt whose target a newly-selected tag filter hides, via onTargetMissing", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Zebra Loop.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+    await tagRoute(user, "Zebra Loop", "Weekend");
+    const routes = await routesRepository.listRoutes();
+    const alpine = routes.find((route) => route.name === "Alpine Climb");
+    if (!alpine) throw new Error("Alpine Climb not found");
+    const pendingRouteSwitch = buildPendingRouteSwitch(alpine.id);
+    rerender(
+      <RouteLibrary onOpenRoute={vi.fn()} pendingRouteSwitch={pendingRouteSwitch} />,
+    );
+    expect(
+      within(getListItemForName("Alpine Climb")).getByRole("alertdialog"),
+    ).toBeInTheDocument();
+
+    // A filter Alpine Climb DOES carry must not cancel the prompt.
+    await user.click(getTagFilterButton("Gravel"));
+    expect(pendingRouteSwitch.onTargetMissing).not.toHaveBeenCalled();
+
+    // Adding a second, AND-combined filter Alpine Climb does NOT carry
+    // hides it — the prompt must be reported missing rather than left
+    // invisible.
+    await user.click(getTagFilterButton("Weekend"));
+
+    await waitFor(() => {
+      expect(pendingRouteSwitch.onTargetMissing).toHaveBeenCalledWith(alpine.id);
+    });
+  });
+
+  describe("session restoration", () => {
+    it("hydrates the selected filters from restoreTagFilterKeysRef on mount", async () => {
+      const user = userEvent.setup();
+      const seed = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await tagRoute(user, "Alpine Climb", "Gravel");
+      seed.unmount();
+
+      const restoreTagFilterKeysRef = { current: ["gravel"] };
+      render(
+        <RouteLibrary
+          onOpenRoute={vi.fn()}
+          restoreTagFilterKeysRef={restoreTagFilterKeysRef}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+      });
+    });
+
+    it("writes a toggled selection through to restoreTagFilterKeysRef", async () => {
+      const user = userEvent.setup();
+      const restoreTagFilterKeysRef = { current: [] as readonly string[] };
+      render(
+        <RouteLibrary
+          onOpenRoute={vi.fn()}
+          restoreTagFilterKeysRef={restoreTagFilterKeysRef}
+        />,
+      );
+      await importFixture(user, "Alpine Climb.gpx");
+      await tagRoute(user, "Alpine Climb", "Gravel");
+
+      await user.click(screen.getByRole("button", { name: "Gravel" }));
+
+      await waitFor(() => {
+        expect(restoreTagFilterKeysRef.current).toEqual(["gravel"]);
+      });
+    });
+
+    it("a restored tag-filter selection survives while routes is initially undefined, and is not written back to the restoration ref as empty during that window", async () => {
+      const user = userEvent.setup();
+      const seed = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+      await tagRoute(user, "Alpine Climb", "Gravel");
+      seed.unmount();
+
+      const originalListRoutes = routesRepository.listRoutes;
+      let releaseRoutes: (() => void) | undefined;
+      const heldRoutes = new Promise<void>((resolve) => {
+        releaseRoutes = resolve;
+      });
+      vi.spyOn(routesRepository, "listRoutes").mockImplementation(async () => {
+        await heldRoutes;
+        return originalListRoutes();
+      });
+
+      const restoreTagFilterKeysRef = { current: ["gravel"] };
+      render(
+        <RouteLibrary
+          onOpenRoute={vi.fn()}
+          restoreTagFilterKeysRef={restoreTagFilterKeysRef}
+        />,
+      );
+
+      expect(screen.getByText("Loading routes…")).toBeInTheDocument();
+      // Must not have been pruned to empty (and synced back as such)
+      // merely because the real route/tag corpus hasn't loaded yet.
+      expect(restoreTagFilterKeysRef.current).toEqual(["gravel"]);
+
+      releaseRoutes?.();
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+      });
+      expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
+      expect(restoreTagFilterKeysRef.current).toEqual(["gravel"]);
+    });
+
+    it("does not restore scroll position until both tag-filter hydration and the loaded/filtered route list are established", async () => {
+      const scrollToSpy = installScrollToSpy();
+      const user = userEvent.setup();
+      const seed = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await tagRoute(user, "Alpine Climb", "Gravel");
+      seed.unmount();
+
+      const originalListRoutes = routesRepository.listRoutes;
+      let releaseRoutes: (() => void) | undefined;
+      const heldRoutes = new Promise<void>((resolve) => {
+        releaseRoutes = resolve;
+      });
+      vi.spyOn(routesRepository, "listRoutes").mockImplementation(async () => {
+        await heldRoutes;
+        return originalListRoutes();
+      });
+
+      render(
+        <RouteLibrary
+          onOpenRoute={vi.fn()}
+          restoreScrollYRef={{ current: 400 }}
+          restoreTagFilterKeysRef={{ current: ["gravel"] }}
+        />,
+      );
+
+      expect(screen.getByText("Loading routes…")).toBeInTheDocument();
+      expect(scrollToSpy).not.toHaveBeenCalled();
+
+      releaseRoutes?.();
+
+      await waitFor(() => {
+        expect(scrollToSpy).toHaveBeenCalledTimes(1);
+      });
+    });
+  });
+
+  describe("ordering-sensitive tag-save focus repair (mirrors item 100 stage 2's own race)", () => {
+    it("moves focus correctly even when the live query reflects a tag change before the save's own caller-visible promise resolves", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+      await tagRoute(user, "Alpine Climb", "Weekend");
+      await openTagEditor(user, "Zebra Loop");
+      await toggleSuggestion(user, "Zebra Loop", "Weekend");
+      await user.click(
+        within(getListItemForName("Zebra Loop")).getByRole("button", {
+          name: "Save tags",
+        }),
+      );
+      await waitFor(() => {
+        expect(
+          within(getListItemForName("Zebra Loop")).getByRole("button", {
+            name: "Edit tags",
+          }),
+        ).toBeInTheDocument();
+      });
+
+      await user.click(getTagFilterButton("Weekend"));
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+      });
+      expect(screen.getByRole("button", { name: "Zebra Loop" })).toBeInTheDocument();
+
+      const originalUpdateRouteTags = routesRepository.updateRouteTags;
+      let releaseWrite: (() => void) | undefined;
+      const heldWrite = new Promise<void>((resolve) => {
+        releaseWrite = resolve;
+      });
+      vi.spyOn(routesRepository, "updateRouteTags").mockImplementation(
+        async (id: string, tags: readonly string[]) => {
+          // The exact ordering that broke item 100 stage 2 (39e45fe ->
+          // 6f3e2d3): the real write commits (so the live query can react
+          // immediately) while the CALLER's own promise is held.
+          await originalUpdateRouteTags(id, tags);
+          await heldWrite;
+        },
+      );
+
+      await openTagEditor(user, "Alpine Climb", "Edit tags");
+      await toggleSuggestion(user, "Alpine Climb", "Weekend"); // toggle off
+      await user.click(
+        within(getListItemForName("Alpine Climb")).getByRole("button", {
+          name: "Save tags",
+        }),
+      );
+
+      try {
+        // The live query has already propagated the real write — Alpine
+        // Climb's card has already unmounted from the active filter's
+        // view — even though the save's own promise is still held.
+        await waitFor(() => {
+          expect(screen.queryByRole("button", { name: "Alpine Climb" })).toBeNull();
+        });
+        await waitFor(() => {
+          expect(screen.getByRole("button", { name: "Zebra Loop" })).toHaveFocus();
+        });
+      } finally {
+        releaseWrite?.();
+      }
+    });
+
+    it("moves focus correctly even when the save's own caller-visible promise resolves well before the (deliberately delayed) live query reflects the change", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+      await tagRoute(user, "Alpine Climb", "Weekend");
+      await openTagEditor(user, "Zebra Loop");
+      await toggleSuggestion(user, "Zebra Loop", "Weekend");
+      await user.click(
+        within(getListItemForName("Zebra Loop")).getByRole("button", {
+          name: "Save tags",
+        }),
+      );
+      await waitFor(() => {
+        expect(
+          within(getListItemForName("Zebra Loop")).getByRole("button", {
+            name: "Edit tags",
+          }),
+        ).toBeInTheDocument();
+      });
+
+      await user.click(getTagFilterButton("Weekend"));
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+      });
+
+      const originalListRoutes = routesRepository.listRoutes;
+      vi.spyOn(routesRepository, "listRoutes").mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        return originalListRoutes();
+      });
+
+      await openTagEditor(user, "Alpine Climb", "Edit tags");
+      await toggleSuggestion(user, "Alpine Climb", "Weekend"); // toggle off
+      await user.click(
+        within(getListItemForName("Alpine Climb")).getByRole("button", {
+          name: "Save tags",
+        }),
+      );
+
+      // The write itself is real and unheld (only the READ side is
+      // delayed) — the card must not disappear, and focus must not move,
+      // until the delayed live query genuinely reflects the change. Its
+      // own editor stays open ("Saving…") throughout, per the unchanged
+      // stage-2 child handshake, so it is looked up by heading, not by
+      // its (currently absent) name button.
+      expect(screen.getByRole("heading", { name: "Alpine Climb" })).toBeInTheDocument();
+
+      await waitFor(
+        () => {
+          expect(screen.queryByRole("heading", { name: "Alpine Climb" })).toBeNull();
+          expect(screen.queryByRole("button", { name: "Alpine Climb" })).toBeNull();
+        },
+        { timeout: 2000 },
+      );
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Zebra Loop" })).toHaveFocus();
+      });
+    });
+
+    it("a failed tag save clears only its own pending focus intent, leaving a different, still-pending save's intent untouched", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Coastal Ride.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+      await tagRoute(user, "Alpine Climb", "Weekend");
+      await openTagEditor(user, "Coastal Ride");
+      await toggleSuggestion(user, "Coastal Ride", "Weekend");
+      await user.click(
+        within(getListItemForName("Coastal Ride")).getByRole("button", {
+          name: "Save tags",
+        }),
+      );
+      await waitFor(() => {
+        expect(
+          within(getListItemForName("Coastal Ride")).getByRole("button", {
+            name: "Edit tags",
+          }),
+        ).toBeInTheDocument();
+      });
+      await tagRoute(user, "Zebra Loop", "Weekend");
+
+      await user.click(getTagFilterButton("Weekend"));
+      await waitFor(() => {
+        expect(getVisibleRouteNames()).toHaveLength(3);
+      });
+
+      const [alpine] = (await routesRepository.listRoutes()).filter(
+        (route) => route.name === "Alpine Climb",
+      );
+      if (!alpine) throw new Error("Alpine Climb not found");
+
+      const originalUpdateRouteTags = routesRepository.updateRouteTags;
+      let rejectAlpineWrite: (() => void) | undefined;
+      vi.spyOn(routesRepository, "updateRouteTags").mockImplementation(
+        (id: string, tags: readonly string[]) => {
+          if (id === alpine.id) {
+            return new Promise<void>((_resolve, reject) => {
+              rejectAlpineWrite = () => {
+                reject(new Error("Save failed."));
+              };
+            });
+          }
+          return originalUpdateRouteTags(id, tags);
+        },
+      );
+
+      // Alpine Climb's own save is started (and its intent recorded)
+      // first, then Zebra Loop's save overwrites the single shared
+      // marker — the accepted, documented narrow gap — before Alpine
+      // Climb's write is rejected.
+      await openTagEditor(user, "Alpine Climb", "Edit tags");
+      await toggleSuggestion(user, "Alpine Climb", "Weekend");
+      await user.click(
+        within(getListItemForName("Alpine Climb")).getByRole("button", {
+          name: "Save tags",
+        }),
+      );
+
+      await openTagEditor(user, "Zebra Loop", "Edit tags");
+      await toggleSuggestion(user, "Zebra Loop", "Weekend");
+      await user.click(
+        within(getListItemForName("Zebra Loop")).getByRole("button", {
+          name: "Save tags",
+        }),
+      );
+
+      rejectAlpineWrite?.();
+
+      // Alpine Climb's own editor recovers locally with its draft intact
+      // and its own error shown.
+      await waitFor(() => {
+        expect(
+          within(getListItemForName("Alpine Climb")).getByRole("alert"),
+        ).toHaveTextContent("This route's tags could not be saved. Try again.");
+      });
+
+      // Zebra Loop's save is real and unheld: it commits, drops out of
+      // the filter, and focus repair must still apply — proof that
+      // Alpine Climb's failed save did not null out Zebra Loop's own,
+      // still-pending intent. Coastal Ride is the adjacent surviving
+      // route in most-recent order.
+      await waitFor(() => {
+        expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
+      });
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Coastal Ride" })).toHaveFocus();
+      });
+    });
   });
 });

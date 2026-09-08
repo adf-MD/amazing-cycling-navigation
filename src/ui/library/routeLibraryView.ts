@@ -1,4 +1,5 @@
-import type { PlannedRoute } from "../../domain/types.ts";
+import type { LibraryRoute, PlannedRoute } from "../../domain/types.ts";
+import { tagIdentityKey } from "../../domain/routeTags.ts";
 import type { RouteLibrarySortOrder } from "../../storage/mapping.ts";
 
 // Pinned to en-GB rather than the runtime default (see
@@ -40,6 +41,34 @@ export function filterRoutesByName<T extends PlannedRoute>(
   return routes.filter((route) =>
     normalizeSearchText(route.name).includes(normalizedQuery),
   );
+}
+
+/** Narrows `routes` to those carrying EVERY selected tag (AND semantics),
+ * matched by identity (tagIdentityKey), never display-string equality — a
+ * filter chip selected as "Gravel" still matches a route whose own stored
+ * tag is "gravel". `tagKeys` is a set of ALREADY-canonicalised
+ * tagIdentityKey outputs, never raw display spellings — the caller
+ * computes these once, so this function never re-derives identity logic
+ * itself, matching domain/routeTags.ts's own single-normalisation-
+ * authority contract. An empty `tagKeys` matches every route (mirrors
+ * filterRoutesByName's own empty-query passthrough) via a vacuous
+ * `.every()`, not a special case.
+ *
+ * Bound to LibraryRoute (guaranteed `tags: string[]`), not a defensively-
+ * optional PlannedRoute — the only real caller (selectRouteLibraryGroups,
+ * below) always supplies LibraryRoute[]. Legacy/malformed-row
+ * compatibility is already proven at storage/routesRepository.ts's own
+ * boundary, where a Dexie row becomes a canonical LibraryRoute; it is not
+ * re-proven here. Never mutates or returns the same array reference as
+ * `routes`. */
+export function filterRoutesByTags<T extends LibraryRoute>(
+  routes: readonly T[],
+  tagKeys: ReadonlySet<string>,
+): T[] {
+  return routes.filter((route) => {
+    const routeKeys = new Set(route.tags.map(tagIdentityKey));
+    return [...tagKeys].every((key) => routeKeys.has(key));
+  });
 }
 
 /** Sorts a copy of `routes` (never mutates the input — Array.prototype.sort
@@ -145,19 +174,33 @@ function sortPinnedRoutes<T extends PlannedRoute>(
 }
 
 /** The full Route Library pipeline: normalise query -> filter by name ->
- * partition pinned/unpinned -> sort pinned by pin recency (never by
- * sortOrder) -> sort unpinned via the rider's chosen order -> return as two
- * explicit groups, since each still needs its own sort policy — the caller
+ * filter by tag identity (AND semantics, item 100 stage 3) -> partition
+ * pinned/unpinned -> sort pinned by pin recency (never by sortOrder) ->
+ * sort unpinned via the rider's chosen order -> return as two explicit
+ * groups, since each still needs its own sort policy — the caller
  * (RouteLibrary.tsx) flattens them into one combined, pinned-first render
- * order rather than rendering them as separate visual groups. Neither
- * group mutates or aliases `routes`; the partition is exhaustive and
- * disjoint by construction, so no route can appear in both groups. */
-export function selectRouteLibraryGroups<T extends PlannedRoute>(
+ * order rather than rendering them as separate visual groups. Both groups
+ * are partitioned from the SAME post-name-and-tag-filter set, so a tag
+ * filter narrows pinned and unpinned identically, by construction rather
+ * than incidentally. Neither group mutates or aliases `routes`; the
+ * partition is exhaustive and disjoint by construction, so no route can
+ * appear in both groups.
+ *
+ * Bound to LibraryRoute (not the looser PlannedRoute filterRoutesByName/
+ * sortRoutesForLibrary/isPinnedRoute themselves stay bound to) because
+ * filterRoutesByTags needs tags guaranteed present, and this function's
+ * only real caller (RouteLibrary.tsx) already always supplies
+ * LibraryRoute[]. tagKeys has no default, matching `query`'s own existing
+ * convention of no default — every caller passes the quiescent value
+ * (`new Set()`) explicitly rather than relying on parameter omission. */
+export function selectRouteLibraryGroups<T extends LibraryRoute>(
   routes: readonly T[],
   query: string,
   sortOrder: RouteLibrarySortOrder,
+  tagKeys: ReadonlySet<string>,
 ): RouteLibraryGroups<T> {
-  const filtered = filterRoutesByName(routes, query);
+  const nameFiltered = filterRoutesByName(routes, query);
+  const filtered = filterRoutesByTags(nameFiltered, tagKeys);
   const pinned = sortPinnedRoutes(filtered.filter(isPinnedRoute));
   const unpinned = sortRoutesForLibrary(
     filtered.filter((route) => !isPinnedRoute(route)),

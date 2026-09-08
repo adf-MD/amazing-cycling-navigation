@@ -234,17 +234,23 @@ Do not treat the item above as fully verified until it has been tested on a movi
 
 ---
 
-### Outstanding: item 100 stage 2's compact tag editor and reusable suggestions
+### Outstanding: item 100 stages 2–3's tag editor and tag filtering
 
-- **Reusable route tags and tag-based organisation, stage 2 (item 100):** the tag-editing UI (assigned-tag chips, an inline editor, reusable cross-route suggestions and in-place new-tag creation) shipped in `0.4.16` with automated evidence only — Vitest (domain, `RouteListItem`, and real-fake-indexeddb `RouteLibrary` integration tests) and Playwright (chromium and android-chrome; WebKit could not launch in the implementing sandbox and is deferred to CI). See [`docs/project/backlog.md#item-100`](backlog.md#item-100) for the full stage-1/stage-2 implementation record, including the identity-vs-display-spelling design, the write/live-query-sync mechanism, the save-guard reliability proof, and every negative control.
-- **No physical-device acceptance yet.** Stage 4 ("full lifecycle and acceptance") is where formal real-device acceptance for the complete feature happens — this stage-2 slice's browser evidence does not itself constitute that acceptance.
+- **Reusable route tags and tag-based organisation, stages 2–3 (item 100):** the tag-editing UI (assigned-tag chips, an inline editor, reusable cross-route suggestions and in-place new-tag creation) shipped in `0.4.16` with automated evidence only — Vitest (domain, `RouteListItem`, and real-fake-indexeddb `RouteLibrary` integration tests) and Playwright (chromium and android-chrome; WebKit could not launch in the implementing sandbox and is deferred to CI). Stage 3's tag-filter control (a labelled "Filter by tags" region of native buttons near Search/Sort, AND semantics across several selected tags, same-session restoration, and safe behaviour when an edit or deletion removes a route from the active filter) shipped in `0.4.17`, also browser-tested only. See [`docs/project/backlog.md#item-100`](backlog.md#item-100) for the full stage-1/stage-2/stage-3 implementation record, including the identity-vs-display-spelling design, the write/live-query-sync mechanism, the save-guard reliability proof, the tag-filter stale-key reconciliation and disappearance-focus-repair mechanisms, and every negative control.
+- **No physical-device acceptance yet.** Stage 4 ("full lifecycle and acceptance") is where formal real-device acceptance for the complete feature happens — neither the stage-2 nor the stage-3 slice's browser evidence constitutes that acceptance.
 - **Suggested later device checklist**, on the installed iPhone Home Screen PWA:
   - add a new multi-word tag and save;
   - reuse it from another route's suggestions;
   - confirm a case variant does not create a duplicate;
   - cancel an edit and verify the previous tags remain;
   - remove all tags from one route;
-  - reload the installed PWA and verify persistence and comfortable portrait/enlarged-text use.
+  - reload the installed PWA and verify persistence and comfortable portrait/enlarged-text use;
+  - select one, then a second tag filter and confirm AND narrowing rather than either-tag matching;
+  - combine an active tag filter with name search;
+  - use Clear tag filters and confirm the full permitted list returns;
+  - open a matching route and return to Routes with the tag-filter selection, search text and scroll position all restored;
+  - edit or remove a tag so the currently open route drops out of the active filter and confirm focus lands somewhere usable, never lost;
+  - confirm long tag labels wrap and stay legible and touch-usable at enlarged (accessibility) text size.
 - Physical Android verification is separately outstanding, as for most recent items.
 
 ---

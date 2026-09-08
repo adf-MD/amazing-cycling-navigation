@@ -629,6 +629,138 @@ describe("App — Route Library search restoration across navigation", () => {
   });
 });
 
+// Backlog item 100 stage 3: the tag-filter counterpart of the search-
+// restoration describe block above — same session-mount-lifetime
+// contract (restores across navigate-away/return, resets on a full
+// remount), proven through the real import/tag-editor/filter UI rather
+// than seeded component state.
+describe("App — Route Library tag-filter restoration across navigation", () => {
+  beforeEach(async () => {
+    await db.routes.clear();
+    await db.rideState.clear();
+    await db.routeLibraryPreferences.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function getListItemForName(name: string): HTMLElement {
+    const title =
+      screen.queryByRole("button", { name }) ?? screen.getByRole("heading", { name });
+    const item = title.closest("li");
+    if (!item) throw new Error(`No list item found for route named ${name}`);
+    return item;
+  }
+
+  async function tagRoute(
+    user: ReturnType<typeof userEvent.setup>,
+    routeName: string,
+    tag: string,
+  ) {
+    await user.click(
+      within(getListItemForName(routeName)).getByRole("button", { name: "Add tags" }),
+    );
+    await user.type(screen.getByLabelText("Add a tag"), `${tag}{Enter}`);
+    await user.click(screen.getByRole("button", { name: "Save tags" }));
+    await waitFor(() => {
+      expect(
+        within(getListItemForName(routeName)).getByRole("button", { name: "Edit tags" }),
+      ).toBeInTheDocument();
+    });
+  }
+
+  it("selecting a tag filter, navigating away, and returning to Routes restores the same filter and narrowed list", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Zebra Loop.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+
+    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Diagnostics" }));
+    expect(screen.getByRole("heading", { name: "Diagnostics" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Routes" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+    expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
+  });
+
+  it("a full App remount (simulating reload) does not restore the tag-filter selection", async () => {
+    const user = userEvent.setup();
+    const first = render(<App />);
+
+    await importFixture(user, "Alpine Climb.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+    first.unmount();
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+    expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+  });
+
+  it("tag-filter and search restoration compose without clobbering each other", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Alpine Descent.gpx");
+    await importFixture(user, "Zebra Loop.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+
+    await user.type(screen.getByLabelText("Search routes"), "alpine");
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
+    });
+    expect(screen.getByRole("button", { name: "Alpine Descent" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Alpine Descent" })).toBeNull();
+    });
+    expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Diagnostics" }));
+    await user.click(screen.getByRole("button", { name: "Routes" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Search routes")).toHaveValue("alpine");
+    });
+    expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Alpine Descent" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
+  });
+});
+
 describe("App — Ride launcher session recovery", () => {
   beforeEach(async () => {
     await db.routes.clear();

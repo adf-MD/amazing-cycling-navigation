@@ -27,8 +27,15 @@ async function importRoute(page: Page, name: string) {
   await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
 }
 
+// Matches a route's own <li> whether it's showing its ordinary card
+// (title as a .route-card-title button) or its own open tag editor
+// (title as a bare, class-less <h2>, per RouteListItem.tsx) — item 100
+// stage 3's own "Filter by tags" chips share suggestion names, so a
+// suggestion click must stay scoped to the specific editor it's open in.
 function getListItemForName(page: Page, name: string) {
-  return page.locator(`li:has(.route-card-title:text-is("${name}"))`);
+  return page.locator(
+    `li:has(.route-card-title:text-is("${name}")), li:has(h2:text-is("${name}"))`,
+  );
 }
 
 async function openTagEditor(
@@ -88,16 +95,23 @@ test("adding, reusing, deduplicating and removing tags through the real tag edit
     getListItemForName(page, "Alpine Climb").getByText("Weekend ride"),
   ).toBeVisible();
 
-  // Open Zebra Loop's editor and select the "Gravel" suggestion.
+  // Open Zebra Loop's editor and select the "Gravel" suggestion. Scoped
+  // to Zebra Loop's own editor: item 100 stage 3 adds a "Filter by tags"
+  // chip of the same name once any route carries "Gravel".
   await openTagEditor(page, "Zebra Loop");
-  await expect(page.getByRole("button", { name: "Gravel", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Gravel", exact: true }).click();
+  const zebraLoopItem = getListItemForName(page, "Zebra Loop");
+  await expect(
+    zebraLoopItem.getByRole("button", { name: "Gravel", exact: true }),
+  ).toBeVisible();
+  await zebraLoopItem.getByRole("button", { name: "Gravel", exact: true }).click();
 
   // Typing a casing/whitespace variant of an existing suggestion must not
   // create a duplicate identity — it must adopt the established spelling.
   await tagInput.fill("  gravel  ");
   await tagInput.press("Enter");
-  await expect(page.getByRole("button", { name: "Gravel", exact: true })).toHaveCount(1);
+  await expect(
+    zebraLoopItem.getByRole("button", { name: "Gravel", exact: true }),
+  ).toHaveCount(1);
 
   await page.getByRole("button", { name: "Save tags", exact: true }).click();
   await expect(
@@ -117,9 +131,14 @@ test("adding, reusing, deduplicating and removing tags through the real tag edit
 
   // Remove a tag from Alpine Climb and save an empty collection — its
   // last remaining tag stays intact until explicitly toggled off too.
+  // Scoped to Alpine Climb's own editor: both "Weekend ride" and
+  // "Gravel" are also, by now, established filter chips of the same name.
   await openTagEditor(page, "Alpine Climb", "Edit tags");
-  await page.getByRole("button", { name: "Weekend ride", exact: true }).click();
-  await page.getByRole("button", { name: "Gravel", exact: true }).click();
+  const alpineClimbItem = getListItemForName(page, "Alpine Climb");
+  await alpineClimbItem
+    .getByRole("button", { name: "Weekend ride", exact: true })
+    .click();
+  await alpineClimbItem.getByRole("button", { name: "Gravel", exact: true }).click();
   await page.getByRole("button", { name: "Save tags", exact: true }).click();
   await expect(
     getListItemForName(page, "Alpine Climb").getByRole("button", { name: "Add tags" }),

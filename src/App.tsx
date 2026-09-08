@@ -253,6 +253,11 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // chrome fact a screen component needs" shape above.
   const stickyHeaderRef = useRef<HTMLElement>(null);
   const routesSearchQueryRef = useRef<string>("");
+  // Selected tag-filter identity keys (tagIdentityKey outputs), mirroring
+  // routesSearchQueryRef's own contract exactly: never one-shot-nulled,
+  // continuously synced by RouteLibrary, resets only when App itself
+  // remounts (backlog item 100 stage 3).
+  const routesTagFilterKeysRef = useRef<readonly string[]>([]);
   // Plain monotonic counter (never a timestamp/uuid) for resumeIntentToken —
   // mirrors useRideCamera.ts's own nextCameraRequestIdRef idiom (backlog
   // item 72).
@@ -1050,6 +1055,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
             onOpenRoute={handleOpenRoute}
             restoreScrollYRef={routesScrollYRef}
             restoreSearchQueryRef={routesSearchQueryRef}
+            restoreTagFilterKeysRef={routesTagFilterKeysRef}
             pendingRouteSwitch={routeSwitchPrompt}
             stickyHeaderRef={stickyHeaderRef}
           />

@@ -852,6 +852,47 @@ button:focus-visible {
   width: 1em;
 }
 
+/* Route Library tag-filter chips (backlog item 100 stage 3). Mirrors
+ * .tag-suggestions/.tag-suggestion/.tag-suggestion.is-selected/
+ * .tag-suggestion-check's own shape exactly (native button, aria-pressed,
+ * a decorative check as the non-colour cue), but given its own class
+ * names rather than sharing the stage-2 ones: an open tag editor's own
+ * suggestion button and this region's filter button for the same tag
+ * name can be rendered on screen at the same time. */
+.tag-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin-top: 0.5rem;
+}
+
+.tag-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-12);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-sm);
+  background: var(--colour-bg-elevated);
+  color: var(--colour-text);
+  overflow-wrap: anywhere;
+}
+
+/* Never colour alone: the aria-hidden check-mark glyph below is the
+ * primary visible cue, reinforced here by a pale accent surface and ring,
+ * mirroring .tag-suggestion.is-selected's own convention. */
+.tag-filter-chip.is-selected {
+  background: var(--colour-accent-soft);
+  border-color: var(--colour-accent);
+  box-shadow: inset 0 0 0 1px var(--colour-accent);
+  color: var(--colour-accent);
+}
+
+.tag-filter-check {
+  display: inline-block;
+  width: 1em;
+}
+
 /* Planning's own two map controls (Locate me, north-up) — top-right,
  * clear of the centred crosshair, the bottom-centre "Add waypoint here"
  * button, and .map-attribution's bottom-left corner. Riding/free-roam's

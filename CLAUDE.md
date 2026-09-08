@@ -308,7 +308,7 @@ Archived implementation accounts in `docs/project/history/` describe the system 
 
 ### Queue index
 
-Stable item numbers never change regardless of which file an item's text lives in. Item 100 stages 1–2 (data model and storage; tag editing and reusable suggestions) are done; item 100 stage 3 (filtering and organisation) is selected as the next implementation slice, ahead of item 101. The current suggested order for the remaining newly added items 100–103 is `100 → 101 → 102 → 103` — this is the current suggested order, not an immutable dependency chain.
+Stable item numbers never change regardless of which file an item's text lives in. Item 100 stages 1–3 (data model and storage; tag editing and reusable suggestions; tag filtering and organisation) are done; item 100 stage 4 (full lifecycle and acceptance) is selected as the next implementation slice, ahead of item 101. The current suggested order for the remaining newly added items 100–103 is `100 → 101 → 102 → 103` — this is the current suggested order, not an immutable dependency chain.
 
 | Item | Title                                                                                         | Status                                               | Full entry                                                            |
 | ---- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------- |
@@ -319,7 +319,7 @@ Stable item numbers never change regardless of which file an item's text lives i
 | 59   | Elevation and recognised-climb discrepancy investigation                                      | Pending investigation                                | [`backlog.md#item-59`](docs/project/backlog.md#item-59)               |
 | 60   | Battery consumption investigation and possible battery-saving mode                            | Pending investigation                                | [`backlog.md#item-60`](docs/project/backlog.md#item-60)               |
 | 61   | Android GPX share-sheet import feasibility                                                    | Pending feasibility study                            | [`backlog.md#item-61`](docs/project/backlog.md#item-61)               |
-| 100  | Reusable route tags and tag-based organisation                                                | In progress — stages 1–2 done; stage 3 selected next | [`backlog.md#item-100`](docs/project/backlog.md#item-100)             |
+| 100  | Reusable route tags and tag-based organisation                                                | In progress — stages 1–3 done; stage 4 selected next | [`backlog.md#item-100`](docs/project/backlog.md#item-100)             |
 | 101  | Plain-language HTTP-status guidance in Routing diagnostics                                    | Pending                                              | [`backlog.md#item-101`](docs/project/backlog.md#item-101)             |
 | 102  | Primary-navigation symbol redesign with mock-ups                                              | Pending                                              | [`backlog.md#item-102`](docs/project/backlog.md#item-102)             |
 | 103  | Visual-consistency audit and staged control-style refinement                                  | Pending                                              | [`backlog.md#item-103`](docs/project/backlog.md#item-103)             |

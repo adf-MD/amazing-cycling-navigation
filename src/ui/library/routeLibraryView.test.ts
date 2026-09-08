@@ -1,28 +1,33 @@
 import { describe, expect, it } from "vitest";
-import type { PlannedRoute } from "../../domain/types.ts";
+import type { LibraryRoute, PlannedRoute } from "../../domain/types.ts";
 import {
   filterRoutesByName,
+  filterRoutesByTags,
   isPinnedRoute,
   normalizeSearchText,
   selectRouteLibraryGroups,
   sortRoutesForLibrary,
 } from "./routeLibraryView.ts";
 
+const NO_TAG_FILTERS = new Set<string>();
+
 /** `overrides` is a single trailing object (rather than more positional
- * parameters) so a test sets distanceMetres/ascentMetres/pinnedAt
+ * parameters) so a test sets distanceMetres/ascentMetres/pinnedAt/tags
  * explicitly by name — reduces the chance of a test value landing in the
  * wrong field as fields are added (item 99). `pinnedAt` is only included in
  * the built route when the caller supplies the key at all (whether `null`
  * or a string), matching a real unpinned route's own shape (no `pinnedAt`
- * key), distinct from an explicit `null`. */
+ * key), distinct from an explicit `null`. Returns LibraryRoute (tags always
+ * present, defaulting to `[]`), matching the only real production shape
+ * (item 100 stage 3) rather than the looser PlannedRoute. */
 function buildRoute(
   id: string,
   name: string,
   createdAt = "2026-01-01T00:00:00.000Z",
   overrides: Partial<
     Pick<PlannedRoute, "pinnedAt" | "distanceMetres" | "ascentMetres">
-  > = {},
-): PlannedRoute {
+  > & { tags?: string[] } = {},
+): LibraryRoute {
   return {
     id,
     name,
@@ -34,6 +39,7 @@ function buildRoute(
     descentMetres: null,
     warnings: [],
     source: { kind: "gpx-import" },
+    tags: overrides.tags ?? [],
     ...("pinnedAt" in overrides ? { pinnedAt: overrides.pinnedAt } : {}),
   };
 }
@@ -86,6 +92,69 @@ describe("filterRoutesByName", () => {
   it("never mutates the input array", () => {
     const copy = [...routes];
     filterRoutesByName(routes, "loop");
+    expect(routes).toEqual(copy);
+  });
+});
+
+describe("filterRoutesByTags", () => {
+  const routes = [
+    buildRoute("a", "Zebra Loop", undefined, { tags: ["Gravel", "Weekend"] }),
+    buildRoute("b", "Alpine Climb", undefined, { tags: ["Weekend"] }),
+    buildRoute("c", "Hütte Loop", undefined, { tags: [] }),
+  ];
+
+  it("returns every route, copied, for an empty tag-key selection", () => {
+    const result = filterRoutesByTags(routes, NO_TAG_FILTERS);
+    expect(result).toEqual(routes);
+    expect(result).not.toBe(routes);
+  });
+
+  it("matches a single selected identity", () => {
+    expect(filterRoutesByTags(routes, new Set(["gravel"])).map((r) => r.id)).toEqual([
+      "a",
+    ]);
+  });
+
+  it("applies AND semantics across several selected identities", () => {
+    expect(
+      filterRoutesByTags(routes, new Set(["gravel", "weekend"])).map((r) => r.id),
+    ).toEqual(["a"]);
+  });
+
+  it("excludes a route missing even one of several selected identities", () => {
+    expect(filterRoutesByTags(routes, new Set(["weekend"])).map((r) => r.id)).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("matches by identity across case, whitespace and NFC spelling variants", () => {
+    const spelled = [
+      buildRoute("a", "Alpine Climb", undefined, { tags: ["  GRAVEL  Path"] }),
+    ];
+    expect(
+      filterRoutesByTags(spelled, new Set(["gravel path"])).map((r) => r.id),
+    ).toEqual(["a"]);
+  });
+
+  it("keeps diacritic variants distinct, matching tagIdentityKey's own rules", () => {
+    const cafe = [buildRoute("a", "Alpine Climb", undefined, { tags: ["café"] })];
+    expect(filterRoutesByTags(cafe, new Set(["cafe"]))).toEqual([]);
+  });
+
+  it("treats an explicitly untagged route (tags: []) as excluded by any selection", () => {
+    expect(
+      filterRoutesByTags(routes, new Set(["gravel"])).map((r) => r.id),
+    ).not.toContain("c");
+  });
+
+  it("returns an empty array when no route satisfies every selected tag", () => {
+    expect(filterRoutesByTags(routes, new Set(["mountain"]))).toEqual([]);
+  });
+
+  it("never mutates the input array or any route's own tags array", () => {
+    const copy = routes.map((route) => ({ ...route, tags: [...route.tags] }));
+    filterRoutesByTags(routes, new Set(["weekend"]));
     expect(routes).toEqual(copy);
   });
 });
@@ -274,7 +343,7 @@ describe("selectRouteLibraryGroups", () => {
       }),
     ];
 
-    const result = selectRouteLibraryGroups(routes, "", "most-recent");
+    const result = selectRouteLibraryGroups(routes, "", "most-recent", NO_TAG_FILTERS);
 
     expect(result.pinned.map((r) => r.id)).toEqual(["b"]);
     expect(result.unpinned.map((r) => r.id)).toEqual(["a"]);
@@ -293,7 +362,7 @@ describe("selectRouteLibraryGroups", () => {
       }),
     ];
 
-    const result = selectRouteLibraryGroups(routes, "", "most-recent");
+    const result = selectRouteLibraryGroups(routes, "", "most-recent", NO_TAG_FILTERS);
 
     expect(result.pinned.map((r) => r.id)).toEqual(["b", "c", "a"]);
   });
@@ -304,7 +373,7 @@ describe("selectRouteLibraryGroups", () => {
       buildRoute("a", "First", undefined, { pinnedAt: "2026-02-01T00:00:00.000Z" }),
     ];
 
-    const result = selectRouteLibraryGroups(routes, "", "most-recent");
+    const result = selectRouteLibraryGroups(routes, "", "most-recent", NO_TAG_FILTERS);
 
     expect(result.pinned.map((r) => r.id)).toEqual(["a", "b"]);
   });
@@ -321,8 +390,13 @@ describe("selectRouteLibraryGroups", () => {
       buildRoute("d", "Alpine plain", "2026-01-01T00:00:00.000Z"),
     ];
 
-    const mostRecent = selectRouteLibraryGroups(routes, "", "most-recent");
-    const nameAsc = selectRouteLibraryGroups(routes, "", "name-asc");
+    const mostRecent = selectRouteLibraryGroups(
+      routes,
+      "",
+      "most-recent",
+      NO_TAG_FILTERS,
+    );
+    const nameAsc = selectRouteLibraryGroups(routes, "", "name-asc", NO_TAG_FILTERS);
 
     expect(mostRecent.pinned.map((r) => r.id)).toEqual(["b", "a"]);
     expect(nameAsc.pinned.map((r) => r.id)).toEqual(["b", "a"]);
@@ -355,7 +429,12 @@ describe("selectRouteLibraryGroups", () => {
       }),
     ];
 
-    const distanceDesc = selectRouteLibraryGroups(routes, "", "distance-desc");
+    const distanceDesc = selectRouteLibraryGroups(
+      routes,
+      "",
+      "distance-desc",
+      NO_TAG_FILTERS,
+    );
 
     expect(distanceDesc.pinned.map((r) => r.id)).toEqual([
       "newer-pin-short",
@@ -379,7 +458,12 @@ describe("selectRouteLibraryGroups", () => {
       buildRoute("d", "Zebra plain"),
     ];
 
-    const result = selectRouteLibraryGroups(routes, "alpine", "most-recent");
+    const result = selectRouteLibraryGroups(
+      routes,
+      "alpine",
+      "most-recent",
+      NO_TAG_FILTERS,
+    );
 
     expect(result.pinned.map((r) => r.id)).toEqual(["a"]);
     expect(result.unpinned.map((r) => r.id)).toEqual(["c"]);
@@ -394,7 +478,7 @@ describe("selectRouteLibraryGroups", () => {
       buildRoute("e", "Malformed pin", undefined, { pinnedAt: "not-a-date" }),
     ];
 
-    const result = selectRouteLibraryGroups(routes, "", "most-recent");
+    const result = selectRouteLibraryGroups(routes, "", "most-recent", NO_TAG_FILTERS);
     const pinnedIds = new Set(result.pinned.map((r) => r.id));
     const unpinnedIds = new Set(result.unpinned.map((r) => r.id));
 
@@ -411,8 +495,79 @@ describe("selectRouteLibraryGroups", () => {
     ];
     const copy = [...routes];
 
-    selectRouteLibraryGroups(routes, "", "most-recent");
+    selectRouteLibraryGroups(routes, "", "most-recent", NO_TAG_FILTERS);
 
     expect(routes).toEqual(copy);
+  });
+
+  // Item 100 stage 3: tag filtering.
+  it("filters both pinned and unpinned groups by tag identity before partitioning", () => {
+    const routes = [
+      buildRoute("a", "Alpine pinned", undefined, {
+        pinnedAt: "2026-02-01T00:00:00.000Z",
+        tags: ["Gravel"],
+      }),
+      buildRoute("b", "Zebra pinned", undefined, {
+        pinnedAt: "2026-02-02T00:00:00.000Z",
+        tags: ["Road"],
+      }),
+      buildRoute("c", "Alpine plain", undefined, { tags: ["Gravel"] }),
+      buildRoute("d", "Zebra plain", undefined, { tags: ["Road"] }),
+    ];
+
+    const result = selectRouteLibraryGroups(
+      routes,
+      "",
+      "most-recent",
+      new Set(["gravel"]),
+    );
+
+    expect(result.pinned.map((r) => r.id)).toEqual(["a"]);
+    expect(result.unpinned.map((r) => r.id)).toEqual(["c"]);
+  });
+
+  it("applies AND semantics across two selected tags through the full pipeline", () => {
+    const routes = [
+      buildRoute("a", "Both tags", undefined, { tags: ["Gravel", "Weekend"] }),
+      buildRoute("b", "One tag", undefined, { tags: ["Gravel"] }),
+    ];
+
+    const result = selectRouteLibraryGroups(
+      routes,
+      "",
+      "most-recent",
+      new Set(["gravel", "weekend"]),
+    );
+
+    expect(result.unpinned.map((r) => r.id)).toEqual(["a"]);
+  });
+
+  it("composes name query and tag filter as an intersection, not a union", () => {
+    const routes = [
+      buildRoute("a", "Alpine Climb", undefined, { tags: ["Gravel"] }),
+      buildRoute("b", "Alpine Descent", undefined, { tags: ["Road"] }),
+      buildRoute("c", "Zebra Loop", undefined, { tags: ["Gravel"] }),
+    ];
+
+    const result = selectRouteLibraryGroups(
+      routes,
+      "alpine",
+      "most-recent",
+      new Set(["gravel"]),
+    );
+
+    expect(result.unpinned.map((r) => r.id)).toEqual(["a"]);
+  });
+
+  it("preserves sort order and tie-breaking within the unpinned group under an active tag filter", () => {
+    const routes = [
+      buildRoute("b", "Route 10", undefined, { tags: ["Gravel"] }),
+      buildRoute("a", "Route 2", undefined, { tags: ["Gravel"] }),
+      buildRoute("c", "Excluded", undefined, { tags: ["Road"] }),
+    ];
+
+    const result = selectRouteLibraryGroups(routes, "", "name-asc", new Set(["gravel"]));
+
+    expect(result.unpinned.map((r) => r.id)).toEqual(["a", "b"]);
   });
 });

@@ -33,8 +33,15 @@ async function importRoute(page: Page, name: string) {
   await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
 }
 
+// Matches a route's own <li> whether it's showing its ordinary card
+// (title as a .route-card-title button) or its own open tag editor
+// (title as a bare, class-less <h2>, per RouteListItem.tsx) — item 100
+// stage 3's own "Filter by tags" chips share suggestion names, so a
+// suggestion click must stay scoped to the specific editor it's open in.
 function getListItemForName(page: Page, name: string) {
-  return page.locator(`li:has(.route-card-title:text-is("${name}"))`);
+  return page.locator(
+    `li:has(.route-card-title:text-is("${name}")), li:has(h2:text-is("${name}"))`,
+  );
 }
 
 test("tagging one route, reusing the tag as a suggestion on another, and reload persist correctly, with the editor remaining touch-usable", async ({
@@ -75,8 +82,13 @@ test("tagging one route, reusing the tag as a suggestion on another, and reload 
   await getListItemForName(page, "Zebra Loop")
     .getByRole("button", { name: "Add tags", exact: true })
     .click();
-  await expect(page.getByRole("button", { name: "Gravel", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Gravel", exact: true }).click();
+  // Scoped to Zebra Loop's own editor: item 100 stage 3 adds a "Filter by
+  // tags" chip of the same name once any route carries "Gravel".
+  const zebraLoopItem = getListItemForName(page, "Zebra Loop");
+  await expect(
+    zebraLoopItem.getByRole("button", { name: "Gravel", exact: true }),
+  ).toBeVisible();
+  await zebraLoopItem.getByRole("button", { name: "Gravel", exact: true }).click();
   await page.getByRole("button", { name: "Save tags", exact: true }).click();
   await expect(
     getListItemForName(page, "Zebra Loop").getByRole("button", { name: "Edit tags" }),
@@ -87,6 +99,59 @@ test("tagging one route, reusing the tag as a suggestion on another, and reload 
     getListItemForName(page, "Alpine Climb").getByText("Gravel"),
   ).toBeVisible();
   await expect(getListItemForName(page, "Zebra Loop").getByText("Gravel")).toBeVisible();
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(overflow).toBe(false);
+
+  expect(consoleErrors).toEqual([]);
+});
+
+// Backlog item 100 stage 3: the tag-filter chip's own identity/AND/
+// touch-target contract is already exhaustively proven in
+// routeLibraryTagFiltering.spec.ts and the unit/integration suites —
+// this narrow addition proves the same core capability (select a chip,
+// see the single-list result narrow) still works under Android
+// emulation, with the chip meeting the shared touch-target minimum,
+// mirroring this file's own stated scope.
+test("selecting a tag filter chip narrows the visible list, with the chip meeting the touch-target minimum", async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await page.goto("/");
+  await importRoute(page, "Alpine Climb");
+  await importRoute(page, "Zebra Loop");
+
+  await getListItemForName(page, "Alpine Climb")
+    .getByRole("button", { name: "Add tags", exact: true })
+    .click();
+  const tagInput = page.getByLabel("Add a tag");
+  await tagInput.fill("Gravel");
+  await tagInput.press("Enter");
+  await page.getByRole("button", { name: "Save tags", exact: true }).click();
+  await expect(
+    getListItemForName(page, "Alpine Climb").getByRole("button", { name: "Edit tags" }),
+  ).toBeVisible();
+
+  const chip = page
+    .getByRole("group", { name: "Filter by tags" })
+    .getByRole("button", { name: "Gravel", exact: true });
+  const chipBox = await chip.boundingBox();
+  if (!chipBox) throw new Error("expected the filter chip to have a bounding box");
+  expect(chipBox.width).toBeGreaterThanOrEqual(44);
+  expect(chipBox.height).toBeGreaterThanOrEqual(44);
+
+  await chip.click();
+  await expect(getListItemForName(page, "Zebra Loop")).toHaveCount(0);
+  await expect(getListItemForName(page, "Alpine Climb")).toBeVisible();
 
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth,

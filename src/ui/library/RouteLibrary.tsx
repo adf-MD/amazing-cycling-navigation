@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -8,7 +9,11 @@ import {
 } from "react";
 import type { RefObject } from "react";
 import type { LibraryRoute, PlannedRoute } from "../../domain/types.ts";
-import { collectTagSuggestions } from "../../domain/routeTags.ts";
+import {
+  collectTagSuggestions,
+  tagIdentityKey,
+  tagsEqualByIdentity,
+} from "../../domain/routeTags.ts";
 import { exportRouteToGpx } from "../../gpx/exportGpx.ts";
 import type { GpxImportResult } from "../../gpx/importGpx.ts";
 import type { GpxImportNotice } from "../../gpx/parseGpx.ts";
@@ -70,6 +75,14 @@ export interface RouteLibraryProps {
    * an effect below, never a lazy useState initializer, for the same
    * react-hooks/refs reason as restoreScrollYRef. */
   restoreSearchQueryRef?: RefObject<string>;
+  /** A ref holding the current session's selected tag-filter identity keys
+   * (tagIdentityKey outputs, not display spellings) — mirrors
+   * restoreSearchQueryRef's own contract exactly: never one-shot-nulled,
+   * continuously synced, owned by App (survives this component's own
+   * unmount/remount on every screen switch), resets only when App itself
+   * remounts. Hydrated once per mount via an effect below (backlog item
+   * 100 stage 3). */
+  restoreTagFilterKeysRef?: RefObject<readonly string[]>;
   /** Injectable for tests, mirroring PlanningScreen's own clock prop
    * convention — lets a test control pin-timestamp ordering deterministically
    * instead of depending on real clicks landing in different milliseconds.
@@ -91,6 +104,7 @@ export function RouteLibrary({
   onOpenRoute,
   restoreScrollYRef,
   restoreSearchQueryRef,
+  restoreTagFilterKeysRef,
   clock = systemClock,
   pendingRouteSwitch = null,
   stickyHeaderRef,
@@ -102,6 +116,16 @@ export function RouteLibrary({
   const sortOrder = preferences?.sortOrder ?? DEFAULT_ROUTE_LIBRARY_SORT_ORDER;
 
   const [searchQuery, setSearchQuery] = useState("");
+  // Backlog item 100 stage 3: selected tag-filter identity keys
+  // (tagIdentityKey outputs). tagFiltersHydrated distinguishes "nothing
+  // restored yet" from "genuinely nothing to restore" — see the
+  // hydration effect below for why the stale-key pruning and
+  // restoration-ref sync both must wait for it.
+  const [selectedTagFilters, setSelectedTagFilters] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const [tagFiltersHydrated, setTagFiltersHydrated] = useState(false);
+  const tagFilterLabelId = useId();
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -137,13 +161,20 @@ export function RouteLibrary({
   // focus-unrestored — sub-perceptible given how fast a local write+re-
   // render round-trips.
   const pendingPinFocusIdRef = useRef<string | null>(null);
+  // Set on a successful tag save (backlog item 100 stage 3), consumed by
+  // the disappearance focus-repair effect below — see handleTagsSave's
+  // own doc comment for why the intent is set BEFORE the write starts,
+  // not inside its .then().
+  const lastTagsSaveIntentRef = useRef<{ id: string; tags: string[] } | null>(null);
+  const tagFilterHeadingRef = useRef<HTMLSpanElement>(null);
+  const clearTagFiltersButtonRef = useRef<HTMLButtonElement>(null);
 
   const groups = useMemo(
     () =>
       routes === undefined
         ? { pinned: [], unpinned: [] }
-        : selectRouteLibraryGroups(routes, searchQuery, sortOrder),
-    [routes, searchQuery, sortOrder],
+        : selectRouteLibraryGroups(routes, searchQuery, sortOrder, selectedTagFilters),
+    [routes, searchQuery, sortOrder, selectedTagFilters],
   );
   const viewRoutes = useMemo(() => [...groups.pinned, ...groups.unpinned], [groups]);
   const previousViewRoutesRef = useRef<readonly PlannedRoute[]>(viewRoutes);
@@ -152,7 +183,52 @@ export function RouteLibrary({
   // from the FULL, unfiltered live-query result, never from viewRoutes/
   // groups — a suggestion must remain available regardless of the current
   // search text, sort order, or pin state (negative control #1's target).
+  // Reused unchanged as the tag-filter chip source (stage 3).
   const tagSuggestions = useMemo(() => collectTagSuggestions(routes ?? []), [routes]);
+
+  const availableTagIdentityKeys = useMemo(
+    () => new Set(tagSuggestions.map(tagIdentityKey)),
+    [tagSuggestions],
+  );
+
+  // Prunes any previously-selected tag-filter identity key that no longer
+  // names a real tag anywhere in the full route corpus — its last route
+  // was untagged, retagged, or deleted (backlog item 100 stage 3).
+  // Adjusted during rendering (React's own documented "adjust state when
+  // a value changes" pattern — see this file's own pendingRouteSwitch/
+  // previousPendingRouteSwitch adjustment below, and RouteListItem.tsx's
+  // pendingSyncTags adjustment, for the same react-hooks/set-state-in-
+  // effect reason), not inside a useEffect.
+  //
+  // Gated on tagFiltersHydrated && routes !== undefined: useLiveQuery
+  // returns undefined until IndexedDB resolves, so tagSuggestions/
+  // availableTagIdentityKeys are legitimately empty during that window —
+  // pruning against an empty corpus before it's real would erase a
+  // just-restored selection before routes has ever loaded. Both
+  // conditions are read fresh every render, not cached, so pruning
+  // engages the instant they're both true, whichever settles last.
+  //
+  // Deliberately a genuine removal from state, not a read-time filter
+  // applied only where selectedTagFilters is consumed: masking would let
+  // an identical spelling re-typed later in the SAME session silently
+  // reactivate a filter the rider never re-selected.
+  //
+  // Self-terminating: pruning is itself a selectedTagFilters update, so
+  // the very next render recomputes staleTagFilterKeys as [] — it only
+  // fires again once a genuinely new identity goes stale, not on every
+  // unrelated routes-changing render (a rename, a pin toggle) that would
+  // otherwise misfire a reference-equality "did this change" check.
+  const staleTagFilterKeys =
+    tagFiltersHydrated && routes !== undefined
+      ? [...selectedTagFilters].filter((key) => !availableTagIdentityKeys.has(key))
+      : [];
+  if (staleTagFilterKeys.length > 0) {
+    const nextSelectedTagFilters = new Set(selectedTagFilters);
+    for (const key of staleTagFilterKeys) {
+      nextSelectedTagFilters.delete(key);
+    }
+    setSelectedTagFilters(nextSelectedTagFilters);
+  }
 
   // Hydrates the search query from the session-lifetime ref exactly once
   // per mount — never via a lazy useState initializer, since reading a
@@ -166,8 +242,39 @@ export function RouteLibrary({
     }
   }, [restoreSearchQueryRef]);
 
+  // Hydrates the selected tag filters from the session-lifetime ref
+  // exactly once per mount (backlog item 100 stage 3), mirroring the
+  // search-query hydration effect above — but, unlike search, also sets
+  // an explicit tagFiltersHydrated completion flag. Scroll restoration
+  // and the restoration-ref sync effect below both gate on this flag
+  // directly, rather than relying on their declaration order relative to
+  // this effect, so their correctness doesn't depend on an implicit
+  // ordering assumption.
+  useLayoutEffect(() => {
+    if (restoreTagFilterKeysRef?.current && restoreTagFilterKeysRef.current.length > 0) {
+      setSelectedTagFilters(new Set(restoreTagFilterKeysRef.current));
+    }
+    setTagFiltersHydrated(true);
+  }, [restoreTagFilterKeysRef]);
+
+  // Keeps the session-restoration ref in sync with selectedTagFilters from
+  // whichever cause changed it — a toggle click, Clear, hydration itself,
+  // or the render-phase stale-key pruning above — the last of which runs
+  // during render, where writing restoreTagFilterKeysRef.current directly
+  // would trip react-hooks/refs. A dedicated effect (unlike
+  // handleSearchChange's inline write-through) is needed for that reason,
+  // and is gated on tagFiltersHydrated so the initial, pre-hydration empty
+  // selection can never overwrite a not-yet-consumed restoration ref.
+  useEffect(() => {
+    if (!tagFiltersHydrated) return;
+    if (restoreTagFilterKeysRef) {
+      restoreTagFilterKeysRef.current = [...selectedTagFilters];
+    }
+  }, [selectedTagFilters, restoreTagFilterKeysRef, tagFiltersHydrated]);
+
   useLayoutEffect(() => {
     if (hasAppliedScrollRestoreRef.current) return;
+    if (!tagFiltersHydrated) return;
     if (routes === undefined || preferences === undefined) return; // still "Loading routes…"
     hasAppliedScrollRestoreRef.current = true;
     const restoreScrollY = restoreScrollYRef?.current ?? null;
@@ -177,7 +284,7 @@ export function RouteLibrary({
     if (restoreScrollYRef) {
       restoreScrollYRef.current = null;
     }
-  }, [routes, preferences, viewRoutes, restoreScrollYRef]);
+  }, [routes, preferences, viewRoutes, restoreScrollYRef, tagFiltersHydrated]);
 
   // If a rename causes the renamed route to drop out of the active search
   // filter, its row (and any focus within it) unmounts — move focus to
@@ -207,13 +314,20 @@ export function RouteLibrary({
   // outcome — the route's name matches what was written, or the route no
   // longer exists — never on an unrelated re-render in between.
   useEffect(() => {
+    // Hoisted once (backlog item 100 stage 3) so both the rename block
+    // below and the tag-save block that follows it inspect the exact
+    // same pre-change snapshot, and previousViewRoutesRef.current is
+    // updated exactly once at the end — two independent effects with the
+    // same [viewRoutes, routes] deps would each race to update this ref
+    // first, corrupting the other's own "previous" comparison.
+    const previous = previousViewRoutesRef.current;
+
     const renamedId = lastRenamedIdRef.current;
     if (renamedId) {
       const currentRoute = (routes ?? []).find((route) => route.id === renamedId);
       const outcomeKnown =
         !currentRoute || currentRoute.name === lastRenamedNameRef.current;
       if (outcomeKnown) {
-        const previous = previousViewRoutesRef.current;
         const wasVisible = previous.some((route) => route.id === renamedId);
         const stillVisible = viewRoutes.some((route) => route.id === renamedId);
         const stillExists = currentRoute !== undefined;
@@ -226,6 +340,40 @@ export function RouteLibrary({
         lastRenamedNameRef.current = null;
       }
     }
+
+    // Tag-save-caused disappearance (backlog item 100 stage 3): a saved
+    // tag change can newly fail the active tag filter (rarely, the active
+    // search text too) and unmount the row mid-edit. An entirely separate
+    // marker from lastRenamedIdRef/lastRenamedNameRef above, set only by
+    // handleTagsSave — see its own doc comment for why the intent is set
+    // BEFORE the write starts, as one atomic object, rather than inside
+    // a .then().
+    const tagsSaveIntent = lastTagsSaveIntentRef.current;
+    if (tagsSaveIntent) {
+      const currentRoute = (routes ?? []).find((route) => route.id === tagsSaveIntent.id);
+      const outcomeKnown =
+        !currentRoute || tagsEqualByIdentity(currentRoute.tags, tagsSaveIntent.tags);
+      if (outcomeKnown) {
+        const wasVisible = previous.some((route) => route.id === tagsSaveIntent.id);
+        const stillVisible = viewRoutes.some((route) => route.id === tagsSaveIntent.id);
+        const stillExists = currentRoute !== undefined;
+        if (wasVisible && !stillVisible && stillExists) {
+          const focusTargetId = computeFocusRouteIdAfterDelete(
+            previous,
+            tagsSaveIntent.id,
+          );
+          const target = focusTargetId ? nameButtonRefs.current.get(focusTargetId) : null;
+          (
+            target ??
+            clearTagFiltersButtonRef.current ??
+            tagFilterHeadingRef.current ??
+            searchInputRef.current
+          )?.focus();
+        }
+        lastTagsSaveIntentRef.current = null;
+      }
+    }
+
     previousViewRoutesRef.current = viewRoutes;
   }, [viewRoutes, routes]);
 
@@ -395,13 +543,56 @@ export function RouteLibrary({
   // calling card's own local try/catch still sees the rejection and can
   // show its own generic recovery UI. Save-pending/error/draft state is
   // deliberately NOT lifted here — unlike pin, a tag change never
-  // reorders or hides a card, so RouteListItem's own local state is
-  // sufficient (see RouteListItem.tsx's own doc comments).
-  const handleTagsSave = (id: string, tags: readonly string[]): Promise<void> =>
-    updateRouteTags(id, tags).catch((error: unknown) => {
+  // reorders or hides a card on its own, so RouteListItem's own local
+  // state is sufficient for the EDITOR's own lifecycle (see
+  // RouteListItem.tsx's own doc comments); this file only needs to know
+  // about a save for its own, separate disappearance-focus-repair concern
+  // (backlog item 100 stage 3, see the merged effect above).
+  //
+  // The focus-repair intent is set as one atomic object BEFORE
+  // updateRouteTags is even called, never inside its .then() — setting it
+  // only on success recreates the exact ordering race that broke item
+  // 100 stage 2 (39e45fe -> 6f3e2d3): if the live query updates `routes`
+  // before the write's .then() fires, the consuming effect's own trailing
+  // `previousViewRoutesRef.current = viewRoutes` update already advances
+  // past the change with no marker in place, and nothing re-triggers the
+  // effect once one is finally set. Setting it eagerly (mirroring
+  // handleRename's own working pattern exactly) means the consuming
+  // effect works correctly regardless of which async signal — write
+  // settlement or live-query update — arrives first.
+  const handleTagsSave = (id: string, tags: readonly string[]): Promise<void> => {
+    const intent = { id, tags: [...tags] };
+    lastTagsSaveIntentRef.current = intent;
+    return updateRouteTags(id, intent.tags).catch((error: unknown) => {
+      // Guarded clear, mirroring handleRename's own: only clear if this
+      // call's own intent is still the recorded one (identity comparison
+      // via ===, not value comparison) — a later save for the same or a
+      // different route may have already legitimately overwritten it.
+      if (lastTagsSaveIntentRef.current === intent) {
+        lastTagsSaveIntentRef.current = null;
+      }
       logError("route-tags-save", error);
       throw error;
     });
+  };
+
+  const handleToggleTagFilter = (tag: string) => {
+    const key = tagIdentityKey(tag);
+    setSelectedTagFilters((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const handleClearTagFilters = () => {
+    setSelectedTagFilters(new Set());
+    tagFilterHeadingRef.current?.focus();
+  };
 
   const handleDeleteRequest = (id: string) => {
     if (isDeleting) return;
@@ -474,6 +665,11 @@ export function RouteLibrary({
   };
 
   const trimmedQuery = searchQuery.trim();
+  // Named distinctly from handleDeleteConfirm's own local hasActiveQuery
+  // above (an unrelated, differently-scoped delete-focus-fallback flag)
+  // to avoid a same-named-but-different-purpose variable in this file.
+  const hasActiveNameQuery = trimmedQuery.length > 0;
+  const hasActiveTagFilters = selectedTagFilters.size > 0;
 
   const renderCard = (route: LibraryRoute) => (
     <RouteListItem
@@ -581,6 +777,49 @@ export function RouteLibrary({
               {sortPreferenceError}
             </p>
           ) : null}
+          {tagSuggestions.length > 0 ? (
+            <div className="route-library-field">
+              <span id={tagFilterLabelId} ref={tagFilterHeadingRef} tabIndex={-1}>
+                Filter by tags
+              </span>
+              <div
+                className="tag-filters"
+                role="group"
+                aria-labelledby={tagFilterLabelId}
+              >
+                {tagSuggestions.map((tag) => {
+                  const key = tagIdentityKey(tag);
+                  const isSelected = selectedTagFilters.has(key);
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`tag-filter-chip${isSelected ? " is-selected" : ""}`}
+                      aria-pressed={isSelected}
+                      onClick={() => {
+                        handleToggleTagFilter(tag);
+                      }}
+                    >
+                      <span aria-hidden="true" className="tag-filter-check">
+                        {isSelected ? "✓" : ""}
+                      </span>
+                      {tag}
+                    </button>
+                  );
+                })}
+              </div>
+              {hasActiveTagFilters ? (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  ref={clearTagFiltersButtonRef}
+                  onClick={handleClearTagFilters}
+                >
+                  Clear tag filters
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -589,7 +828,13 @@ export function RouteLibrary({
       ) : routes.length === 0 ? (
         <p>No routes saved yet. Import a GPX file to get started.</p>
       ) : viewRoutes.length === 0 ? (
-        <p role="status">No routes match “{trimmedQuery}”.</p>
+        <p role="status">
+          {hasActiveNameQuery && hasActiveTagFilters
+            ? `No routes match “${trimmedQuery}” and the selected tags.`
+            : hasActiveTagFilters
+              ? "No routes match the selected tags."
+              : `No routes match “${trimmedQuery}”.`}
+        </p>
       ) : (
         <ul className="route-list">{viewRoutes.map(renderCard)}</ul>
       )}
