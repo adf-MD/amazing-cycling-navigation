@@ -1665,7 +1665,11 @@ describe("App — Ride switch guard (item 73)", () => {
     await importFixture(user, "Route A.gpx");
     await importFixture(user, "Route B.gpx");
     await importFixture(user, "Route C.gpx");
-    const routes = await db.routes.toArray();
+    // The real production accessor, not the raw db.routes.toArray() read
+    // used elsewhere in this file for plain id/name lookups: routeA below
+    // stands in for a real getRoute() resolution, so it must carry the
+    // same canonical LibraryRoute shape a genuine call would return.
+    const routes = await routesRepository.listRoutes();
     const routeA = routes.find((route) => route.name === "Route A");
     const routeB = routes.find((route) => route.name === "Route B");
     const routeC = routes.find((route) => route.name === "Route C");

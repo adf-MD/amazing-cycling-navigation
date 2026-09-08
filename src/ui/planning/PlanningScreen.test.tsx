@@ -752,6 +752,7 @@ describe("PlanningScreen", () => {
 
     const routes = await listRoutes();
     expect(routes).toHaveLength(1);
+    expect(routes[0]?.tags).toEqual([]);
 
     const draft = await getDraft();
     expect(draft).toBeUndefined();

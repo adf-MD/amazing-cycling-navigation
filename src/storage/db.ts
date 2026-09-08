@@ -452,6 +452,13 @@ export class AcnDatabase extends Dexie {
     // version(5) needed for any of them. StoredRideState becoming a union
     // of StoredRouteRideState | StoredFreeRoamRideState (item 42) is a
     // TypeScript-only change; it doesn't affect what's actually indexed.
+    //
+    // routes' later `tags` field (backlog item 100 stage 1, the route-tag
+    // storage foundation) is the same kind of plain, non-indexed data
+    // field as pinnedAt/manoeuvreProvenance/planningProvenance/
+    // surfaceSummary above — routesRepository.ts canonicalises it on
+    // every read and write via domain/routeTags.ts's normalizeRouteTags,
+    // so no version(5) or index change is needed for it either.
   }
 }
 

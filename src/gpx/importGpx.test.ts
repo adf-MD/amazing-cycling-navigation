@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { importGpxFile } from "./importGpx.ts";
 import { exportRouteToGpx } from "./exportGpx.ts";
 import { GpxParseError } from "./errors.ts";
@@ -11,6 +11,8 @@ import {
   routeNoElevationGpx,
   trackWithElevationGpx,
 } from "../test/fixtures/gpx.ts";
+import { db } from "../storage/db.ts";
+import { getRoute, saveRoute } from "../storage/routesRepository.ts";
 
 const fixedClock: Clock = { now: () => Date.parse("2026-02-01T09:00:00.000Z") };
 
@@ -280,6 +282,33 @@ describe("importGpxFile", () => {
       });
       expect(reimported.planningProvenance?.kind).toBe("acn-gpx-extension");
       expect(notices).toEqual([]);
+    });
+  });
+
+  // The only place in this file that writes through the real Route
+  // Library (db.routes) rather than only exercising importGpxFile's own
+  // parsing in isolation — clear it before and after each test so a
+  // saved route can never leak into another import test in this file.
+  describe("saving an imported route to the Route Library (ingress path)", () => {
+    beforeEach(async () => {
+      await db.routes.clear();
+    });
+
+    afterEach(async () => {
+      await db.routes.clear();
+    });
+
+    it("an imported route, saved the same way ImportGpxButton does (importGpxFile then saveRoute), has an empty canonical tag collection", async () => {
+      const { route } = await importGpxFile(
+        buildGpxFile("Evening Ride.gpx", trackWithElevationGpx),
+        fixedClock,
+      );
+
+      // The exact sequence src/ui/library/ImportGpxButton.tsx performs.
+      await saveRoute(route);
+
+      const saved = await getRoute(route.id);
+      expect(saved?.tags).toEqual([]);
     });
   });
 });

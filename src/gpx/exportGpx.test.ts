@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { exportRouteToGpx } from "./exportGpx.ts";
 import { GpxExportError } from "./exportErrors.ts";
 import { extractRoutePoints, parseGpxDocument } from "./parseGpx.ts";
@@ -6,6 +6,8 @@ import { importGpxFile } from "./importGpx.ts";
 import { totalDistanceMetres } from "../navigation/distance.ts";
 import type { PlannedRoute } from "../domain/types.ts";
 import { trackWithElevationGpx } from "../test/fixtures/gpx.ts";
+import { db } from "../storage/db.ts";
+import { getRoute, saveRoute } from "../storage/routesRepository.ts";
 
 function buildRoute(overrides: Partial<PlannedRoute> = {}): PlannedRoute {
   return {
@@ -387,6 +389,62 @@ describe("GPX round-trip", () => {
     const file = new File([exportedXml], "pinned.gpx", { type: "application/gpx+xml" });
     const { route: reimported } = await importGpxFile(file);
     expect(reimported.pinnedAt).toBeUndefined();
+  });
+
+  // This block is the only place in this file that writes through the
+  // real Route Library (db.routes) rather than only exercising GPX
+  // parsing/serialisation in isolation — clear it before and after each
+  // test so a saved probe route can never leak into another GPX test in
+  // this file or elsewhere.
+  describe("tags privacy boundary", () => {
+    const PROBE_TAG = "zzz-stage1-privacy-probe-tag";
+
+    beforeEach(async () => {
+      await db.routes.clear();
+    });
+
+    afterEach(async () => {
+      await db.routes.clear();
+    });
+
+    it("does not serialise tags, and re-saving/reading a reimported route through the library produces an empty canonical tag collection", async () => {
+      const original = buildRoute({ tags: [PROBE_TAG] });
+
+      const exportedXml = await exportRouteToGpx(original);
+      expect(exportedXml).not.toContain(PROBE_TAG);
+      expect(exportedXml).not.toContain("tags");
+
+      const file = new File([exportedXml], "tagged.gpx", { type: "application/gpx+xml" });
+      const { route: reimported } = await importGpxFile(file);
+      expect(reimported.tags).toBeUndefined();
+
+      // Close the loop through the actual Route Library boundary, not
+      // just the raw import result: the exact sequence ImportGpxButton.tsx
+      // performs (importGpxFile then saveRoute), read back canonically.
+      await saveRoute(reimported);
+      const saved = await getRoute(reimported.id);
+      expect(saved?.tags).toEqual([]);
+    });
+
+    it("tags do not change the acn:navigation extension or its geometrySha256", async () => {
+      const untaggedXml = await exportRouteToGpx(buildTrustedRoute());
+      const taggedXml = await exportRouteToGpx(
+        buildTrustedRoute({ tags: [PROBE_TAG, "commute"] }),
+      );
+
+      expect(taggedXml).not.toContain(PROBE_TAG);
+
+      const untaggedDoc = new DOMParser().parseFromString(untaggedXml, "application/xml");
+      const taggedDoc = new DOMParser().parseFromString(taggedXml, "application/xml");
+      const untaggedNav = untaggedDoc.getElementsByTagNameNS("*", "navigation");
+      const taggedNav = taggedDoc.getElementsByTagNameNS("*", "navigation");
+
+      expect(untaggedNav).toHaveLength(1);
+      expect(taggedNav).toHaveLength(1);
+      expect(taggedNav[0]?.getAttribute("geometrySha256")).toBe(
+        untaggedNav[0]?.getAttribute("geometrySha256"),
+      );
+    });
   });
 
   it("preserves the routing profile through import -> export -> reimport -> export again", async () => {

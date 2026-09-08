@@ -197,4 +197,27 @@ export interface PlannedRoute {
    * (not a boolean) so pin order is itself well-defined: pinned routes
    * sort by this value descending. */
   pinnedAt?: string | null;
+  /** Local Route Library metadata: reusable, user-assigned tags (backlog
+   * item 100), e.g. "commute", "gravel". Never route geometry or
+   * provenance — never read by gpx/, routing/ or navigation/. Absent or
+   * `[]` both mean untagged. Optional here only so routes constructed
+   * before this field existed, and the many routing/GPX/navigation
+   * fixtures that predate it, need no changes; a route read through
+   * storage/routesRepository.ts's getRoute()/listRoutes() is always typed
+   * as LibraryRoute (below), which requires this field, so application
+   * code never needs a defensive `route.tags ?? []`. */
+  tags?: string[];
+}
+
+/**
+ * A PlannedRoute as returned by the Route Library repository
+ * (storage/routesRepository.ts): identical to PlannedRoute except `tags`
+ * is guaranteed present as an already-canonicalised array. The repository
+ * is the only place that constructs a LibraryRoute value (via
+ * domain/routeTags.ts's normalizeRouteTags); nothing else should cast to
+ * this type. A LibraryRoute is always assignable where a PlannedRoute is
+ * expected, so existing call sites are unaffected by this addition.
+ */
+export interface LibraryRoute extends PlannedRoute {
+  tags: string[];
 }

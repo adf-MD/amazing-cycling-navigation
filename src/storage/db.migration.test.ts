@@ -281,6 +281,36 @@ describe("planningDrafts editCopySourceRouteId/editCopyWaypointsOrigin (no schem
   });
 });
 
+describe("routes tags field (no schema version bump)", () => {
+  it("a legacy v4 routes row written before tags existed loads cleanly", async () => {
+    // The schema itself (routes: "id, name, createdAt") is unchanged —
+    // tags is a plain field addition, not a new Dexie version; no
+    // upgrade path is exercised here at all.
+    const db = new AcnDatabase(TEST_DB_NAME);
+    await db.open();
+    await db.routes.put(route);
+
+    const stored = await db.routes.get(route.id);
+    expect(stored).not.toHaveProperty("tags");
+    expect(db.verno).toBe(4);
+
+    db.close();
+  });
+
+  it("round-trips a routes row with tags set", async () => {
+    const db = new AcnDatabase(TEST_DB_NAME);
+    await db.open();
+    await db.routes.put({ ...route, tags: ["commute", "gravel"] });
+
+    await expect(db.routes.get(route.id)).resolves.toMatchObject({
+      tags: ["commute", "gravel"],
+    });
+    expect(db.verno).toBe(4);
+
+    db.close();
+  });
+});
+
 describe("planningPreferences profileByDefault (no schema version bump)", () => {
   it("a legacy planningPreferences row written before profileByDefault existed loads cleanly", async () => {
     // Simulates a real installation whose planningPreferences row predates
