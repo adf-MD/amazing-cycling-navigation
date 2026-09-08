@@ -123,12 +123,23 @@ export function RouteListItem({
   // is batched/deferred), so this is safe even against two invocations
   // landing before React has re-rendered the disabled state at all.
   const isSavingTagsRef = useRef(false);
-  // Set to the exact tag collection just written, once the write itself
-  // has settled; cleared once route.tags (via the live query) demonstrably
-  // reflects it BY IDENTITY — see the effect below. The editor only closes
-  // once that happens, never merely on write-promise-resolution, so it
-  // can never close onto stale chips.
-  const savedTagsAwaitingSyncRef = useRef<string[] | null>(null);
+  // The write's own "settled" signal, held in STATE rather than a ref —
+  // deliberately, unlike isSavingTagsRef above. Two independent async
+  // events must both be observed before the editor closes: the write
+  // promise settling, and route.tags (via the live query) demonstrably
+  // reflecting it BY IDENTITY (see the effect below). Either can arrive
+  // first. A ref here would only become visible the next time something
+  // ELSE causes a re-render — if the live-query notification wins the
+  // race (route.tags updates first), a mere ref set once the write later
+  // settles triggers no re-render and no effect re-run, so the editor
+  // would then never close. This was a real production race: CI failed
+  // at the same boundary in both the chromium and android-chrome
+  // Playwright projects during run 226 (item 100 stage 2, commit
+  // 39e45fe). useState makes this a second genuine reactive signal,
+  // symmetric with route.tags, so whichever of the two arrives second is
+  // what closes the editor — including the successful-no-op-save case,
+  // where route.tags may never change again at all.
+  const [pendingSyncTags, setPendingSyncTags] = useState<string[] | null>(null);
   const headingId = useId();
   const descriptionId = useId();
   const nameFieldId = useId();
@@ -173,26 +184,49 @@ export function RouteListItem({
     wasEditingTagsRef.current = isEditingTags;
   }, [isEditingTags]);
 
-  // Closes the tag editor only once route.tags (via the live query, after
-  // a successful write) demonstrably reflects the exact collection just
-  // saved — BY IDENTITY, never a display-string/reference comparison —
-  // rather than as soon as the write's own promise resolves. Dexie's
-  // live-query notification is a separate, asynchronous step after a
-  // write settles, so closing on promise-resolution alone risks a render
-  // where the editor has closed but the chip list still shows the
-  // pre-save tags. Mirrors RouteLibrary.tsx's own lastRenamedIdRef/
-  // lastRenamedNameRef "wait until the live query demonstrably reflects
-  // an async local write" precedent.
+  // Closes the tag editor only once BOTH of two independent async facts
+  // are established: the write settled (pendingSyncTags is set) and
+  // route.tags (via the live query) demonstrably reflects it BY IDENTITY
+  // — never a display-string/reference comparison, and never merely on
+  // write-promise-resolution alone, so the editor can never close onto
+  // stale chips. Either signal can arrive first; whichever becomes true
+  // second is what closes the editor.
+  //
+  // Adjusted during rendering (React's own documented alternative to an
+  // effect for "reset derived state when a prop changes": see
+  // react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  // and RouteLibrary.tsx's/RidingScreen.tsx's identical convention), not
+  // inside a useEffect — this project's react-hooks/set-state-in-effect
+  // rule only exempts a ref-gated "consume once" shape, which this isn't:
+  // pendingSyncTags is deliberately state, not a ref, precisely so that
+  // setting it is itself a re-render (see its own doc comment above for
+  // the real production race, item 100 stage 2 CI run 226, a plain ref
+  // here caused). Self-terminating with no separate "previous value"
+  // mirror needed: clearing pendingSyncTags is itself one of this
+  // condition's own inputs, so it becomes false the instant it's
+  // actioned, with no risk of a repeat/infinite loop. Mirrors
+  // RouteLibrary.tsx's own lastRenamedIdRef/lastRenamedNameRef "wait
+  // until the live query demonstrably reflects an async local write"
+  // precedent, generalised here to a genuine two-signal handshake.
+  // isSavingTagsRef itself is reset separately below (refs cannot be
+  // written during render), not here.
+  if (pendingSyncTags !== null && tagsEqualByIdentity(route.tags, pendingSyncTags)) {
+    setPendingSyncTags(null);
+    setIsSavingTags(false);
+    setIsEditingTags(false);
+  }
+
+  // The other half of isSavingTagsRef's reset on the success path above
+  // (its failure-path reset in handleSaveTags's own .catch() already runs
+  // in a plain callback, not during render, so it's unaffected by this).
+  // A ref mutation, not a setState call, so react-hooks/set-state-in-effect
+  // doesn't apply here; only react-hooks/refs' "not during render" rule
+  // does, satisfied by doing it in an effect instead.
   useEffect(() => {
-    const awaiting = savedTagsAwaitingSyncRef.current;
-    if (!awaiting) return;
-    if (tagsEqualByIdentity(route.tags, awaiting)) {
-      savedTagsAwaitingSyncRef.current = null;
+    if (!isSavingTags) {
       isSavingTagsRef.current = false;
-      setIsSavingTags(false);
-      setIsEditingTags(false);
     }
-  }, [route.tags]);
+  }, [isSavingTags]);
 
   // Re-checks scroll visibility whenever this card's switch prompt first
   // appears, or its message text changes (a later status transition within
@@ -326,6 +360,12 @@ export function RouteListItem({
     setTagsSaveError(null);
     isSavingTagsRef.current = false;
     setIsSavingTags(false);
+    // Defensive, not reachable in practice: pendingSyncTags is only ever
+    // non-null while isEditingTags is true, and the closing effect always
+    // clears both in the same update, so this button (rendered only
+    // while isEditingTags is false) can never fire while a sync is still
+    // pending.
+    setPendingSyncTags(null);
     setIsEditingTags(true);
   };
 
@@ -371,9 +411,10 @@ export function RouteListItem({
   // useState) rather than the isSavingTags state value, so two
   // invocations landing before React has re-rendered the disabled state
   // at all still result in exactly one write. Success does not close the
-  // editor directly — see the route.tags sync effect above, which is what
-  // actually closes it once the live query demonstrably reflects this
-  // save, so the editor never closes onto stale chips.
+  // editor directly — see the route.tags/pendingSyncTags sync effect
+  // above, which is what actually closes it once both the write has
+  // settled and the live query demonstrably reflects this save, so the
+  // editor never closes onto stale chips.
   const handleSaveTags = () => {
     if (isSavingTagsRef.current) return;
     isSavingTagsRef.current = true;
@@ -382,7 +423,7 @@ export function RouteListItem({
     const tagsToSave = [...tagDraft];
     onTagsSave(route.id, tagsToSave)
       .then(() => {
-        savedTagsAwaitingSyncRef.current = tagsToSave;
+        setPendingSyncTags(tagsToSave);
       })
       .catch(() => {
         isSavingTagsRef.current = false;

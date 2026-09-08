@@ -23,13 +23,6 @@ const FIXTURE_GPX_PATH = fileURLToPath(
 
 test.use({ serviceWorkers: "block" });
 
-// See routeLibraryTags.spec.ts's own identical constant/comment: a real
-// IndexedDB write + live-query refresh has no hard latency guarantee and
-// can occasionally exceed Playwright's default 5s timeout under heavy
-// parallel load (the same class of round trip as ridingFinishAndEnd.spec.ts's
-// own item-32 documented CPU-contention flake).
-const SAVE_ROUND_TRIP_TIMEOUT = 25_000;
-
 async function importRoute(page: Page, name: string) {
   const gpxContents = await readFile(FIXTURE_GPX_PATH, "utf-8");
   await page.getByLabel("Import GPX file").setInputFiles({
@@ -77,7 +70,7 @@ test("tagging one route, reusing the tag as a suggestion on another, and reload 
   await saveButton.click();
   await expect(
     getListItemForName(page, "Alpine Climb").getByRole("button", { name: "Edit tags" }),
-  ).toBeVisible({ timeout: SAVE_ROUND_TRIP_TIMEOUT });
+  ).toBeVisible();
 
   await getListItemForName(page, "Zebra Loop")
     .getByRole("button", { name: "Add tags", exact: true })
@@ -87,7 +80,7 @@ test("tagging one route, reusing the tag as a suggestion on another, and reload 
   await page.getByRole("button", { name: "Save tags", exact: true }).click();
   await expect(
     getListItemForName(page, "Zebra Loop").getByRole("button", { name: "Edit tags" }),
-  ).toBeVisible({ timeout: SAVE_ROUND_TRIP_TIMEOUT });
+  ).toBeVisible();
 
   await page.reload();
   await expect(

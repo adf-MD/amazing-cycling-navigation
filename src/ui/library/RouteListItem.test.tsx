@@ -721,11 +721,19 @@ describe("RouteListItem", () => {
       releaseSave?.();
     });
 
-    it("keeps the editor open and Saving… visible until route.tags reflects the save by identity, then closes and shows the new chips", async () => {
+    it("Ordering A: write settles before route.tags arrives — closes only once route.tags then reflects the save by identity", async () => {
       const user = userEvent.setup();
-      const { onTagsSave, rerenderWithRoute } = renderItem({
+      let releaseSave: (() => void) | undefined;
+      const held = new Promise<void>((resolve) => {
+        releaseSave = resolve;
+      });
+      const onTagsSave = vi
+        .fn<(id: string, tags: readonly string[]) => Promise<void>>()
+        .mockReturnValue(held);
+      const { rerenderWithRoute } = renderItem({
         route: buildRoute({ tags: [] }),
         tagSuggestions: ["Gravel"],
+        onTagsSave,
       });
 
       await openEditor(user);
@@ -733,13 +741,100 @@ describe("RouteListItem", () => {
       await user.click(screen.getByRole("button", { name: "Save tags" }));
 
       expect(onTagsSave).toHaveBeenCalledWith("route-1", ["Gravel"]);
-      // The write's own promise has resolved (it's a plain mockResolvedValue),
-      // but the parent hasn't yet supplied an updated route — the editor
-      // must not have closed onto stale chips.
+      expect(screen.getByRole("status")).toHaveTextContent("Saving…");
+
+      // The write settles first. Its own .then() runs and is flushed by
+      // React inside act() below, but route.tags hasn't arrived yet — the
+      // editor must still be open.
+      await act(async () => {
+        releaseSave?.();
+        await held;
+      });
       expect(screen.getByRole("status")).toHaveTextContent("Saving…");
       expect(screen.getByRole("button", { name: "Save tags" })).toBeInTheDocument();
 
+      // Only now does route.tags "arrive" (the live-query update) — this
+      // is what finally closes the editor.
       rerenderWithRoute(buildRoute({ tags: ["Gravel"] }));
+
+      await screen.findByRole("button", { name: "Edit tags" });
+      expect(screen.getByText("Gravel")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Save tags" })).toBeNull();
+    });
+
+    it("Ordering B: route.tags arrives before the write settles — must not get stuck on Saving… forever", async () => {
+      const user = userEvent.setup();
+      let releaseSave: (() => void) | undefined;
+      const held = new Promise<void>((resolve) => {
+        releaseSave = resolve;
+      });
+      const onTagsSave = vi
+        .fn<(id: string, tags: readonly string[]) => Promise<void>>()
+        .mockReturnValue(held);
+      const { rerenderWithRoute } = renderItem({
+        route: buildRoute({ tags: [] }),
+        tagSuggestions: ["Gravel"],
+        onTagsSave,
+      });
+
+      await openEditor(user);
+      await user.click(screen.getByRole("button", { name: "Gravel" }));
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+
+      expect(onTagsSave).toHaveBeenCalledWith("route-1", ["Gravel"]);
+      expect(screen.getByRole("status")).toHaveTextContent("Saving…");
+
+      // route.tags "arrives" (the live-query update) BEFORE the write's
+      // own promise settles.
+      rerenderWithRoute(buildRoute({ tags: ["Gravel"] }));
+      expect(screen.getByRole("status")).toHaveTextContent("Saving…");
+      expect(screen.getByRole("button", { name: "Save tags" })).toBeInTheDocument();
+
+      // The write finally settles. A ref-only "write settled" signal would
+      // trigger no re-render here, route.tags would never change again,
+      // and the editor would be stuck on "Saving…" forever — the
+      // findByRole below would time out. The state-based two-signal
+      // handshake re-evaluates the closing condition against the
+      // route.tags value already delivered above.
+      await act(async () => {
+        releaseSave?.();
+        await held;
+      });
+
+      await screen.findByRole("button", { name: "Edit tags" });
+      expect(screen.getByText("Gravel")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Save tags" })).toBeNull();
+    });
+
+    it("a successful no-op save (route.tags already equal) closes the editor once the write settles, with no further route.tags change required", async () => {
+      const user = userEvent.setup();
+      let releaseSave: (() => void) | undefined;
+      const held = new Promise<void>((resolve) => {
+        releaseSave = resolve;
+      });
+      const onTagsSave = vi
+        .fn<(id: string, tags: readonly string[]) => Promise<void>>()
+        .mockReturnValue(held);
+      renderItem({
+        route: buildRoute({ tags: ["Gravel"] }),
+        tagSuggestions: ["Gravel"],
+        onTagsSave,
+      });
+
+      // Re-saving without changing the draft: route.tags already equals
+      // what is being written, so the live query may never emit a
+      // distinguishable update — this must not be required for the
+      // editor to close.
+      await openEditor(user, "Edit tags");
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+
+      expect(onTagsSave).toHaveBeenCalledWith("route-1", ["Gravel"]);
+      expect(screen.getByRole("status")).toHaveTextContent("Saving…");
+
+      await act(async () => {
+        releaseSave?.();
+        await held;
+      });
 
       await screen.findByRole("button", { name: "Edit tags" });
       expect(screen.getByText("Gravel")).toBeInTheDocument();

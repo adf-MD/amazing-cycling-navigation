@@ -17,16 +17,6 @@ test.use({ viewport: { width: 390, height: 844 } });
 // routeLibraryPinning.spec.ts, which needs the same workaround.
 test.use({ serviceWorkers: "block" });
 
-// A real IndexedDB write followed by a live-query refresh and re-render
-// (the same class of round trip ridingFinishAndEnd.spec.ts's own item-32
-// documented CPU-contention flake also hits) has no hard latency
-// guarantee — under heavy parallel Playwright load this can occasionally
-// exceed Playwright's default 5s assertion timeout even though the
-// underlying mechanism is correct and always eventually settles. Applied
-// only to the assertions that immediately follow a real Save, not
-// blanket-applied to the whole file.
-const SAVE_ROUND_TRIP_TIMEOUT = 25_000;
-
 async function importRoute(page: Page, name: string) {
   const gpxContents = await readFile(FIXTURE_GPX_PATH, "utf-8");
   await page.getByLabel("Import GPX file").setInputFiles({
@@ -90,7 +80,7 @@ test("adding, reusing, deduplicating and removing tags through the real tag edit
   await page.getByRole("button", { name: "Save tags", exact: true }).click();
   await expect(
     getListItemForName(page, "Alpine Climb").getByRole("button", { name: "Edit tags" }),
-  ).toBeVisible({ timeout: SAVE_ROUND_TRIP_TIMEOUT });
+  ).toBeVisible();
   await expect(
     getListItemForName(page, "Alpine Climb").getByText("Gravel"),
   ).toBeVisible();
@@ -112,7 +102,7 @@ test("adding, reusing, deduplicating and removing tags through the real tag edit
   await page.getByRole("button", { name: "Save tags", exact: true }).click();
   await expect(
     getListItemForName(page, "Zebra Loop").getByRole("button", { name: "Edit tags" }),
-  ).toBeVisible({ timeout: SAVE_ROUND_TRIP_TIMEOUT });
+  ).toBeVisible();
   await expect(getListItemForName(page, "Zebra Loop").getByText("Gravel")).toBeVisible();
 
   // Reload: both cards retain their intended tags.
@@ -133,7 +123,7 @@ test("adding, reusing, deduplicating and removing tags through the real tag edit
   await page.getByRole("button", { name: "Save tags", exact: true }).click();
   await expect(
     getListItemForName(page, "Alpine Climb").getByRole("button", { name: "Add tags" }),
-  ).toBeVisible({ timeout: SAVE_ROUND_TRIP_TIMEOUT });
+  ).toBeVisible();
   await expect(getListItemForName(page, "Alpine Climb").getByText("Gravel")).toBeHidden();
 
   // Search remains name-only: a term matching only a tag finds nothing.

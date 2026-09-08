@@ -1464,8 +1464,13 @@ describe("RouteLibrary", () => {
       );
     }
 
+    // Falls back to the heading role because a card whose own tag editor
+    // is open renders its route name as a plain <h2>, not the normal-mode
+    // title <button> — needed so a test can locate a card while its
+    // editor is still open (e.g. mid-save), not only in normal mode.
     function getListItemForName(name: string): HTMLElement {
-      const title = screen.getByRole("button", { name });
+      const title =
+        screen.queryByRole("button", { name }) ?? screen.getByRole("heading", { name });
       const item = title.closest("li");
       if (!item) throw new Error(`No list item found for route named ${name}`);
       return item;
@@ -1750,6 +1755,79 @@ describe("RouteLibrary", () => {
           ).toBeInTheDocument();
         });
       }
+    });
+
+    it("Ordering B (real pipeline): the write's caller-visible resolution is deliberately held until after the live query has already propagated the real write elsewhere", async () => {
+      const user = userEvent.setup();
+      const originalUpdateRouteTags = routesRepository.updateRouteTags;
+      let releaseWrite: (() => void) | undefined;
+      const heldWrite = new Promise<void>((resolve) => {
+        releaseWrite = resolve;
+      });
+      vi.spyOn(routesRepository, "updateRouteTags").mockImplementation(
+        async (id: string, tags: readonly string[]) => {
+          // The real underlying write commits now — Dexie's live query
+          // can react to it immediately — while the CALLER
+          // (handleSaveTags's own .then()) is deliberately held until the
+          // test releases it below. This constructs the exact ordering
+          // that broke CI (item 100 stage 2, run 226) rather than merely
+          // making it likely with a fixed delay: proven, not assumed, by
+          // checking the write's real effect (a reusable suggestion on a
+          // DIFFERENT route's editor) before this promise is ever
+          // released.
+          await originalUpdateRouteTags(id, tags);
+          await heldWrite;
+        },
+      );
+
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+      await openTagEditor(user, "Alpine Climb");
+      await user.type(screen.getByLabelText("Add a tag"), "Gravel{Enter}");
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+
+      // A failed assertion below must not leave the mocked write's
+      // internal await heldWrite dangling unresolved for a later test —
+      // always release it, even if the intermediate proof fails.
+      try {
+        // Prove the live query has already propagated the real write —
+        // the ordering-B condition — before the write's caller-visible
+        // promise has resolved at all: "Gravel" is already offered as a
+        // suggestion opening a DIFFERENT route's editor, which can only
+        // be true once RouteLibrary's own live query has re-emitted with
+        // Alpine Climb's new tags and recomputed tagSuggestions from the
+        // full route list.
+        await openTagEditor(user, "Zebra Loop");
+        await waitFor(() => {
+          expect(
+            within(getListItemForName("Zebra Loop")).getByRole("button", {
+              name: "Gravel",
+            }),
+          ).toBeInTheDocument();
+        });
+
+        // Alpine Climb's own card must still be open/saving — the
+        // write's caller-visible resolution has not been released yet.
+        expect(
+          within(getListItemForName("Alpine Climb")).getByRole("button", {
+            name: "Save tags",
+          }),
+        ).toBeInTheDocument();
+      } finally {
+        releaseWrite?.();
+      }
+
+      await waitFor(() => {
+        expect(
+          within(getListItemForName("Alpine Climb")).getByRole("button", {
+            name: "Edit tags",
+          }),
+        ).toBeInTheDocument();
+      });
+      expect(
+        within(getListItemForName("Alpine Climb")).getByText("Gravel"),
+      ).toBeInTheDocument();
     });
   });
 });
