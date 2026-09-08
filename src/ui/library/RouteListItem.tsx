@@ -1,6 +1,13 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent, RefObject, SubmitEvent } from "react";
-import type { PlannedRoute } from "../../domain/types.ts";
+import type { LibraryRoute, PlannedRoute } from "../../domain/types.ts";
+import {
+  normalizeRouteTags,
+  resolveTagSpelling,
+  sortTagsForDisplay,
+  tagIdentityKey,
+  tagsEqualByIdentity,
+} from "../../domain/routeTags.ts";
 import { prefersReducedMotion } from "../../platform/environmentContext.ts";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 import { PinIcon } from "./PinIcon.tsx";
@@ -27,7 +34,7 @@ export interface RouteSwitchPrompt {
 }
 
 export interface RouteListItemProps {
-  route: PlannedRoute;
+  route: LibraryRoute;
   onOpen: (route: PlannedRoute) => void;
   onRename: (id: string, name: string) => void;
   onExport: (route: PlannedRoute) => void;
@@ -41,6 +48,15 @@ export interface RouteListItemProps {
   isPinPending: boolean;
   pinError: string | null;
   onPinToggle: (route: PlannedRoute) => void;
+  /** Every tag currently used by any saved route (backlog item 100 stage
+   * 2), deduplicated by identity and sorted for display — always derived
+   * from RouteLibrary's full, unfiltered route list, never the current
+   * search/sort/pin view. */
+  tagSuggestions: readonly string[];
+  /** Persists this route's tag collection. Resolves once the write has
+   * settled; rejects (after RouteLibrary has already logged the failure)
+   * so this card can show its own generic recovery UI. */
+  onTagsSave: (id: string, tags: readonly string[]) => Promise<void>;
   /** Registers/unregisters this row's name button so RouteLibrary can move
    * focus to it after a different route is deleted. */
   nameButtonRef: (element: HTMLButtonElement | null) => void;
@@ -78,6 +94,8 @@ export function RouteListItem({
   isPinPending,
   pinError,
   onPinToggle,
+  tagSuggestions,
+  onTagsSave,
   nameButtonRef,
   pinButtonRef,
   switchPrompt,
@@ -85,13 +103,37 @@ export function RouteListItem({
 }: RouteListItemProps) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [draftName, setDraftName] = useState(route.name);
+  const [isEditingTags, setIsEditingTags] = useState(false);
+  const [tagDraft, setTagDraft] = useState<string[]>(() => [...route.tags]);
+  const [newTagInput, setNewTagInput] = useState("");
+  // Drives only the visible disabled/"Saving…" UI — never the correctness
+  // guard itself (see isSavingTagsRef below and the doc comment on
+  // handleSaveTags).
+  const [isSavingTags, setIsSavingTags] = useState(false);
+  const [tagsSaveError, setTagsSaveError] = useState<string | null>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const renameButtonRef = useRef<HTMLButtonElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const wasRenamingRef = useRef(false);
+  const tagsButtonRef = useRef<HTMLButtonElement>(null);
+  const tagInputRef = useRef<HTMLInputElement>(null);
+  const wasEditingTagsRef = useRef(false);
+  // The synchronous, render-timing-independent guard for Save/Cancel/
+  // Escape: a ref mutation is immediate, unlike a useState update (which
+  // is batched/deferred), so this is safe even against two invocations
+  // landing before React has re-rendered the disabled state at all.
+  const isSavingTagsRef = useRef(false);
+  // Set to the exact tag collection just written, once the write itself
+  // has settled; cleared once route.tags (via the live query) demonstrably
+  // reflects it BY IDENTITY — see the effect below. The editor only closes
+  // once that happens, never merely on write-promise-resolution, so it
+  // can never close onto stale chips.
+  const savedTagsAwaitingSyncRef = useRef<string[] | null>(null);
   const headingId = useId();
   const descriptionId = useId();
   const nameFieldId = useId();
+  const tagInputId = useId();
+  const tagsHeadingId = useId();
   const cardRef = useRef<HTMLLIElement>(null);
   const switchHeadingId = useId();
   const switchDescriptionId = useId();
@@ -119,6 +161,38 @@ export function RouteListItem({
     }
     wasRenamingRef.current = isRenaming;
   }, [isRenaming]);
+
+  // Mirrors the isRenaming focus effect immediately above, for the tag
+  // editor's own open/close transitions.
+  useEffect(() => {
+    if (isEditingTags) {
+      tagInputRef.current?.focus();
+    } else if (wasEditingTagsRef.current) {
+      tagsButtonRef.current?.focus();
+    }
+    wasEditingTagsRef.current = isEditingTags;
+  }, [isEditingTags]);
+
+  // Closes the tag editor only once route.tags (via the live query, after
+  // a successful write) demonstrably reflects the exact collection just
+  // saved — BY IDENTITY, never a display-string/reference comparison —
+  // rather than as soon as the write's own promise resolves. Dexie's
+  // live-query notification is a separate, asynchronous step after a
+  // write settles, so closing on promise-resolution alone risks a render
+  // where the editor has closed but the chip list still shows the
+  // pre-save tags. Mirrors RouteLibrary.tsx's own lastRenamedIdRef/
+  // lastRenamedNameRef "wait until the live query demonstrably reflects
+  // an async local write" precedent.
+  useEffect(() => {
+    const awaiting = savedTagsAwaitingSyncRef.current;
+    if (!awaiting) return;
+    if (tagsEqualByIdentity(route.tags, awaiting)) {
+      savedTagsAwaitingSyncRef.current = null;
+      isSavingTagsRef.current = false;
+      setIsSavingTags(false);
+      setIsEditingTags(false);
+    }
+  }, [route.tags]);
 
   // Re-checks scroll visibility whenever this card's switch prompt first
   // appears, or its message text changes (a later status transition within
@@ -234,6 +308,89 @@ export function RouteListItem({
     }
   };
 
+  // Mirrors openRename's cancel-pending-delete/cancel-switch-prompt
+  // preamble, with one deliberate strengthening: a busy, non-interruptible
+  // switch (see RouteLibrary.tsx's handleDeleteRequest, the only existing
+  // site with this exact guard) must never be silently interrupted by
+  // opening the tag editor.
+  const openTagEditor = () => {
+    if (isDeletePending) {
+      onDeleteCancel(route.id);
+    }
+    if (switchPrompt) {
+      if (switchPrompt.busy) return;
+      switchPrompt.onCancel();
+    }
+    setTagDraft([...route.tags]);
+    setNewTagInput("");
+    setTagsSaveError(null);
+    isSavingTagsRef.current = false;
+    setIsSavingTags(false);
+    setIsEditingTags(true);
+  };
+
+  // Every draft membership/duplicate check below compares tags by
+  // tagIdentityKey, never by direct display-string equality — so a route
+  // whose own stored tag is "gravel" while the established suggestion
+  // spelling is "Gravel" is recognised as the same tag.
+  const handleAddTag = (event: SubmitEvent) => {
+    event.preventDefault();
+    const resolved = resolveTagSpelling(newTagInput, tagSuggestions);
+    if (resolved === null) return;
+    setNewTagInput("");
+    const key = tagIdentityKey(resolved);
+    setTagDraft((previous) =>
+      previous.some((tag) => tagIdentityKey(tag) === key)
+        ? previous
+        : [...previous, resolved],
+    );
+  };
+
+  const handleToggleSuggestion = (tag: string) => {
+    const key = tagIdentityKey(tag);
+    setTagDraft((previous) => {
+      const isSelected = previous.some((draftTag) => tagIdentityKey(draftTag) === key);
+      return isSelected
+        ? previous.filter((draftTag) => tagIdentityKey(draftTag) !== key)
+        : [...previous, tag];
+    });
+  };
+
+  const handleCancelTags = () => {
+    if (isSavingTagsRef.current) return;
+    setIsEditingTags(false);
+  };
+
+  const handleTagsEditorKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      handleCancelTags();
+    }
+  };
+
+  // Guarded synchronously via isSavingTagsRef (immediate, unlike
+  // useState) rather than the isSavingTags state value, so two
+  // invocations landing before React has re-rendered the disabled state
+  // at all still result in exactly one write. Success does not close the
+  // editor directly — see the route.tags sync effect above, which is what
+  // actually closes it once the live query demonstrably reflects this
+  // save, so the editor never closes onto stale chips.
+  const handleSaveTags = () => {
+    if (isSavingTagsRef.current) return;
+    isSavingTagsRef.current = true;
+    setIsSavingTags(true);
+    setTagsSaveError(null);
+    const tagsToSave = [...tagDraft];
+    onTagsSave(route.id, tagsToSave)
+      .then(() => {
+        savedTagsAwaitingSyncRef.current = tagsToSave;
+      })
+      .catch(() => {
+        isSavingTagsRef.current = false;
+        setIsSavingTags(false);
+        setTagsSaveError("This route's tags could not be saved. Try again.");
+      });
+  };
+
   return (
     <li
       className={`route-card stack${switchPrompt ? " route-card--switch-pending" : ""}`}
@@ -268,6 +425,82 @@ export function RouteListItem({
             </button>
           </div>
         </form>
+      ) : isEditingTags ? (
+        <div className="tag-editor stack" onKeyDown={handleTagsEditorKeyDown}>
+          <h2 id={tagsHeadingId}>{route.name}</h2>
+          <p className="route-card-meta">
+            {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
+          </p>
+          <form className="row" onSubmit={handleAddTag}>
+            <div className="route-library-field">
+              <label htmlFor={tagInputId}>Add a tag</label>
+              <input
+                id={tagInputId}
+                ref={tagInputRef}
+                className="field-input"
+                value={newTagInput}
+                disabled={isSavingTags}
+                onChange={(event) => {
+                  setNewTagInput(event.target.value);
+                }}
+              />
+            </div>
+            <button type="submit" className="btn-secondary" disabled={isSavingTags}>
+              Add tag
+            </button>
+          </form>
+          <div className="tag-suggestions" role="group" aria-label="Tag suggestions">
+            {sortTagsForDisplay(normalizeRouteTags([...tagSuggestions, ...tagDraft])).map(
+              (tag) => {
+                const key = tagIdentityKey(tag);
+                const isSelected = tagDraft.some(
+                  (draftTag) => tagIdentityKey(draftTag) === key,
+                );
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`tag-suggestion${isSelected ? " is-selected" : ""}`}
+                    aria-pressed={isSelected}
+                    disabled={isSavingTags}
+                    onClick={() => {
+                      handleToggleSuggestion(tag);
+                    }}
+                  >
+                    <span aria-hidden="true" className="tag-suggestion-check">
+                      {isSelected ? "✓" : ""}
+                    </span>
+                    {tag}
+                  </button>
+                );
+              },
+            )}
+          </div>
+          {isSavingTags ? <p role="status">Saving…</p> : null}
+          {tagsSaveError ? (
+            <p role="alert" className="field-error">
+              {tagsSaveError}
+            </p>
+          ) : null}
+          <div className="row">
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={isSavingTags}
+              onClick={handleSaveTags}
+            >
+              Save tags
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={isSavingTags}
+              onClick={handleCancelTags}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       ) : (
         <>
           <div className="route-card-title-row">
@@ -302,6 +535,15 @@ export function RouteListItem({
               {pinError}
             </p>
           ) : null}
+          {route.tags.length > 0 ? (
+            <ul className="route-card-tags" aria-label="Tags">
+              {route.tags.map((tag) => (
+                <li key={tag} className="route-card-tag">
+                  {tag}
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <div className="route-list-item-actions">
             <button
               type="button"
@@ -310,6 +552,14 @@ export function RouteListItem({
               onClick={openRename}
             >
               Rename
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              ref={tagsButtonRef}
+              onClick={openTagEditor}
+            >
+              {route.tags.length > 0 ? "Edit tags" : "Add tags"}
             </button>
             <button
               type="button"

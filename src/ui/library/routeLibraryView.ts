@@ -25,11 +25,14 @@ export function normalizeSearchText(value: string): string {
 
 /** Case- and diacritic-insensitive substring match on route name only. An
  * empty/whitespace-only query matches every route. Never mutates or
- * returns the same array reference as `routes`. */
-export function filterRoutesByName(
-  routes: readonly PlannedRoute[],
+ * returns the same array reference as `routes`. Generic over T so a
+ * caller holding the stronger LibraryRoute guarantee (item 100 stage 2)
+ * gets it back unweakened, while existing PlannedRoute[] callers are
+ * unaffected. */
+export function filterRoutesByName<T extends PlannedRoute>(
+  routes: readonly T[],
   query: string,
-): PlannedRoute[] {
+): T[] {
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) {
     return [...routes];
@@ -47,10 +50,10 @@ export function filterRoutesByName(
  * "Route 10"); "distance-desc"/"ascent-desc" order by the route's own
  * canonical distanceMetres/ascentMetres, descending. Every order is
  * tie-broken deterministically by route id. */
-export function sortRoutesForLibrary(
-  routes: readonly PlannedRoute[],
+export function sortRoutesForLibrary<T extends PlannedRoute>(
+  routes: readonly T[],
   sortOrder: RouteLibrarySortOrder,
-): PlannedRoute[] {
+): T[] {
   const copy = [...routes];
   copy.sort((a, b) => compareRoutesForSort(a, b, sortOrder));
   return copy;
@@ -110,17 +113,17 @@ function compareIds(a: string, b: string): number {
   return 0;
 }
 
-export interface RouteLibraryGroups {
-  pinned: readonly PlannedRoute[];
-  unpinned: readonly PlannedRoute[];
+export interface RouteLibraryGroups<T extends PlannedRoute = PlannedRoute> {
+  pinned: readonly (T & { pinnedAt: string })[];
+  unpinned: readonly T[];
 }
 
 /** A route counts as pinned only when pinnedAt is a string that parses to
  * a finite timestamp — missing, null, or malformed local data is treated
  * as unpinned rather than destabilising ordering. */
-export function isPinnedRoute(
-  route: PlannedRoute,
-): route is PlannedRoute & { pinnedAt: string } {
+export function isPinnedRoute<T extends PlannedRoute>(
+  route: T,
+): route is T & { pinnedAt: string } {
   return (
     typeof route.pinnedAt === "string" && Number.isFinite(Date.parse(route.pinnedAt))
   );
@@ -130,9 +133,9 @@ export function isPinnedRoute(
  * first), tie-broken by id; never mutates the input. Takes the type
  * `isPinnedRoute` narrows to, rather than plain `PlannedRoute`, so
  * `pinnedAt` is known to be a `string` here with no assertion needed. */
-function sortPinnedRoutes(
-  routes: readonly (PlannedRoute & { pinnedAt: string })[],
-): (PlannedRoute & { pinnedAt: string })[] {
+function sortPinnedRoutes<T extends PlannedRoute>(
+  routes: readonly (T & { pinnedAt: string })[],
+): (T & { pinnedAt: string })[] {
   const copy = [...routes];
   copy.sort((a, b) => {
     const timeDifference = Date.parse(b.pinnedAt) - Date.parse(a.pinnedAt);
@@ -149,11 +152,11 @@ function sortPinnedRoutes(
  * order rather than rendering them as separate visual groups. Neither
  * group mutates or aliases `routes`; the partition is exhaustive and
  * disjoint by construction, so no route can appear in both groups. */
-export function selectRouteLibraryGroups(
-  routes: readonly PlannedRoute[],
+export function selectRouteLibraryGroups<T extends PlannedRoute>(
+  routes: readonly T[],
   query: string,
   sortOrder: RouteLibrarySortOrder,
-): RouteLibraryGroups {
+): RouteLibraryGroups<T> {
   const filtered = filterRoutesByName(routes, query);
   const pinned = sortPinnedRoutes(filtered.filter(isPinnedRoute));
   const unpinned = sortRoutesForLibrary(

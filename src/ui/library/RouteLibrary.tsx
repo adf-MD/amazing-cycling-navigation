@@ -7,7 +7,8 @@ import {
   useState,
 } from "react";
 import type { RefObject } from "react";
-import type { PlannedRoute } from "../../domain/types.ts";
+import type { LibraryRoute, PlannedRoute } from "../../domain/types.ts";
+import { collectTagSuggestions } from "../../domain/routeTags.ts";
 import { exportRouteToGpx } from "../../gpx/exportGpx.ts";
 import type { GpxImportResult } from "../../gpx/importGpx.ts";
 import type { GpxImportNotice } from "../../gpx/parseGpx.ts";
@@ -27,6 +28,7 @@ import {
   pinRoute,
   renameRoute,
   unpinRoute,
+  updateRouteTags,
 } from "../../storage/routesRepository.ts";
 import { downloadTextFile } from "../shared/downloadTextFile.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
@@ -145,6 +147,12 @@ export function RouteLibrary({
   );
   const viewRoutes = useMemo(() => [...groups.pinned, ...groups.unpinned], [groups]);
   const previousViewRoutesRef = useRef<readonly PlannedRoute[]>(viewRoutes);
+
+  // The reusable-tag suggestion corpus (backlog item 100 stage 2): derived
+  // from the FULL, unfiltered live-query result, never from viewRoutes/
+  // groups — a suggestion must remain available regardless of the current
+  // search text, sort order, or pin state (negative control #1's target).
+  const tagSuggestions = useMemo(() => collectTagSuggestions(routes ?? []), [routes]);
 
   // Hydrates the search query from the session-lifetime ref exactly once
   // per mount — never via a lazy useState initializer, since reading a
@@ -382,6 +390,19 @@ export function RouteLibrary({
       });
   };
 
+  // Thin wrapper around the stage-1 storage primitive: logs and rethrows
+  // on failure (matching every other handler here), rethrowing so the
+  // calling card's own local try/catch still sees the rejection and can
+  // show its own generic recovery UI. Save-pending/error/draft state is
+  // deliberately NOT lifted here — unlike pin, a tag change never
+  // reorders or hides a card, so RouteListItem's own local state is
+  // sufficient (see RouteListItem.tsx's own doc comments).
+  const handleTagsSave = (id: string, tags: readonly string[]): Promise<void> =>
+    updateRouteTags(id, tags).catch((error: unknown) => {
+      logError("route-tags-save", error);
+      throw error;
+    });
+
   const handleDeleteRequest = (id: string) => {
     if (isDeleting) return;
     if (pendingRouteSwitch) {
@@ -454,7 +475,7 @@ export function RouteLibrary({
 
   const trimmedQuery = searchQuery.trim();
 
-  const renderCard = (route: PlannedRoute) => (
+  const renderCard = (route: LibraryRoute) => (
     <RouteListItem
       key={route.id}
       route={route}
@@ -471,6 +492,8 @@ export function RouteLibrary({
       isPinPending={pinPendingIds.has(route.id)}
       pinError={pinErrors[route.id] ?? null}
       onPinToggle={handlePinToggle}
+      tagSuggestions={tagSuggestions}
+      onTagsSave={handleTagsSave}
       nameButtonRef={(element) => {
         if (element) {
           nameButtonRefs.current.set(route.id, element);

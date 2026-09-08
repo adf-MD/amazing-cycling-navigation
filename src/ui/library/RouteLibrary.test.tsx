@@ -1450,6 +1450,308 @@ describe("RouteLibrary", () => {
       });
     });
   });
+
+  // Backlog item 100 stage 2: the compact tag editor and reusable
+  // suggestions, exercised end-to-end against the real fake-indexeddb db.
+  describe("tag editing", () => {
+    async function openTagEditor(
+      user: ReturnType<typeof userEvent.setup>,
+      routeName: string,
+      label: "Add tags" | "Edit tags" = "Add tags",
+    ) {
+      await user.click(
+        within(getListItemForName(routeName)).getByRole("button", { name: label }),
+      );
+    }
+
+    function getListItemForName(name: string): HTMLElement {
+      const title = screen.getByRole("button", { name });
+      const item = title.closest("li");
+      if (!item) throw new Error(`No list item found for route named ${name}`);
+      return item;
+    }
+
+    it("a tag saved on one route appears as a suggestion opening another route's editor, without a reload, and a typed variant adopts the established spelling", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+
+      await openTagEditor(user, "Alpine Climb");
+      await user.type(screen.getByLabelText("Add a tag"), "Gravel{Enter}");
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+      await waitFor(() => {
+        expect(
+          within(getListItemForName("Alpine Climb")).getByRole("button", {
+            name: "Edit tags",
+          }),
+        ).toBeInTheDocument();
+      });
+
+      await openTagEditor(user, "Zebra Loop");
+      expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+
+      // A case/whitespace variant of the established suggestion adopts its
+      // spelling rather than creating a second identity.
+      await user.type(screen.getByLabelText("Add a tag"), "  gravel  {Enter}");
+      expect(screen.queryAllByRole("button", { name: /gravel/i })).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+      await waitFor(() => {
+        expect(
+          within(getListItemForName("Zebra Loop")).getByText("Gravel"),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("a suggestion remains available for another route even while the tagged route is excluded by the active name search", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+
+      await openTagEditor(user, "Alpine Climb");
+      await user.type(screen.getByLabelText("Add a tag"), "Gravel{Enter}");
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+      await waitFor(() => {
+        expect(
+          within(getListItemForName("Alpine Climb")).getByRole("button", {
+            name: "Edit tags",
+          }),
+        ).toBeInTheDocument();
+      });
+
+      // Excludes "Alpine Climb" from the visible/filtered list.
+      await user.type(screen.getByLabelText("Search routes"), "Zebra");
+      await waitFor(() => {
+        expect(screen.queryByRole("button", { name: "Alpine Climb" })).toBeNull();
+      });
+
+      await openTagEditor(user, "Zebra Loop");
+      expect(screen.getByRole("button", { name: "Gravel" })).toBeInTheDocument();
+    });
+
+    it("search continues to match route names only — a term matching only a tag returns no results", async () => {
+      const user = userEvent.setup();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+
+      await openTagEditor(user, "Alpine Climb");
+      await user.type(screen.getByLabelText("Add a tag"), "Gravel{Enter}");
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+      await waitFor(() => {
+        expect(
+          within(getListItemForName("Alpine Climb")).getByRole("button", {
+            name: "Edit tags",
+          }),
+        ).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByLabelText("Search routes"), "Gravel");
+
+      await waitFor(() => {
+        expect(screen.getByText("No routes match “Gravel”.")).toBeInTheDocument();
+      });
+    });
+
+    it("all four sort modes and pin priority remain unchanged after a tag save", async () => {
+      const user = userEvent.setup();
+      const clock = buildSteppingClock("2026-02-01T09:00:00.000Z");
+      render(<RouteLibrary onOpenRoute={vi.fn()} clock={clock} />);
+      await importFixture(user, "Older Pin Long.gpx");
+      await importFixture(user, "Newer Pin Short.gpx");
+      await importFixture(user, "Unpinned Mid.gpx");
+      await importFixture(user, "Unpinned Short.gpx");
+
+      const routes = await routesRepository.listRoutes();
+      const olderPinLong = routes.find((route) => route.name === "Older Pin Long");
+      const newerPinShort = routes.find((route) => route.name === "Newer Pin Short");
+      const unpinnedMid = routes.find((route) => route.name === "Unpinned Mid");
+      const unpinnedShort = routes.find((route) => route.name === "Unpinned Short");
+      if (!olderPinLong || !newerPinShort || !unpinnedMid || !unpinnedShort) {
+        throw new Error("fixture routes not found");
+      }
+      await db.routes.update(olderPinLong.id, {
+        distanceMetres: 40_000,
+        ascentMetres: 100,
+      });
+      await db.routes.update(newerPinShort.id, {
+        distanceMetres: 5_000,
+        ascentMetres: 400,
+      });
+      await db.routes.update(unpinnedMid.id, {
+        distanceMetres: 20_000,
+        ascentMetres: 200,
+      });
+      await db.routes.update(unpinnedShort.id, {
+        distanceMetres: 10_000,
+        ascentMetres: 300,
+      });
+
+      await user.click(screen.getByRole("button", { name: "Pin Older Pin Long" }));
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Unpin Older Pin Long" }),
+        ).toHaveAttribute("aria-pressed", "true");
+      });
+      clock.advance(1000);
+      await user.click(screen.getByRole("button", { name: "Pin Newer Pin Short" }));
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Unpin Newer Pin Short" }),
+        ).toHaveAttribute("aria-pressed", "true");
+      });
+
+      const ordersBySortOrder = new Map<string, string[]>();
+      for (const sortOrder of [
+        "most-recent",
+        "name-asc",
+        "distance-desc",
+        "ascent-desc",
+      ]) {
+        await user.selectOptions(screen.getByLabelText("Sort by"), sortOrder);
+        await waitFor(() => {
+          expect(screen.getByLabelText<HTMLSelectElement>("Sort by").value).toBe(
+            sortOrder,
+          );
+        });
+        ordersBySortOrder.set(sortOrder, getVisibleRouteNames());
+      }
+
+      await openTagEditor(user, "Unpinned Mid");
+      await user.type(screen.getByLabelText("Add a tag"), "Gravel{Enter}");
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+      await waitFor(() => {
+        expect(
+          within(getListItemForName("Unpinned Mid")).getByRole("button", {
+            name: "Edit tags",
+          }),
+        ).toBeInTheDocument();
+      });
+
+      for (const sortOrder of [
+        "most-recent",
+        "name-asc",
+        "distance-desc",
+        "ascent-desc",
+      ]) {
+        await user.selectOptions(screen.getByLabelText("Sort by"), sortOrder);
+        await waitFor(() => {
+          expect(screen.getByLabelText<HTMLSelectElement>("Sort by").value).toBe(
+            sortOrder,
+          );
+        });
+        expect(getVisibleRouteNames()).toEqual(ordersBySortOrder.get(sortOrder));
+      }
+    });
+
+    it("tag persistence survives an unmount/remount of RouteLibrary", async () => {
+      const user = userEvent.setup();
+      const { unmount } = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+
+      await openTagEditor(user, "Alpine Climb");
+      await user.type(screen.getByLabelText("Add a tag"), "Gravel{Enter}");
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+      await waitFor(() => {
+        expect(
+          within(getListItemForName("Alpine Climb")).getByRole("button", {
+            name: "Edit tags",
+          }),
+        ).toBeInTheDocument();
+      });
+
+      unmount();
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(
+          within(getListItemForName("Alpine Climb")).getByText("Gravel"),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("a rejected updateRouteTags write keeps the editor open with the draft intact, shows generic recovery copy, and a retry then succeeds", async () => {
+      const user = userEvent.setup();
+      vi.spyOn(routesRepository, "updateRouteTags").mockRejectedValueOnce(
+        new Error("Save failed."),
+      );
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+
+      await openTagEditor(user, "Alpine Climb");
+      await user.type(screen.getByLabelText("Add a tag"), "Gravel{Enter}");
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "This route's tags could not be saved. Try again.",
+        );
+      });
+      expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+
+      // mockRejectedValueOnce only overrides the first call — the retry
+      // falls through to the real implementation.
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+      await waitFor(() => {
+        expect(
+          within(getListItemForName("Alpine Climb")).getByText("Gravel"),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("the editor never closes onto stale chips: it stays open until the (deliberately delayed) live query demonstrably reflects the save", async () => {
+      const user = userEvent.setup();
+      const originalListRoutes = routesRepository.listRoutes;
+      vi.spyOn(routesRepository, "listRoutes").mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        return originalListRoutes();
+      });
+
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await openTagEditor(user, "Alpine Climb");
+      await user.type(screen.getByLabelText("Add a tag"), "Gravel{Enter}");
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+
+      // Sample repeatedly across the whole delayed window (the write path
+      // itself is completely real/undelayed — only the read side is
+      // slowed) rather than checking once: at every sampled instant, if
+      // the editor has closed, the chip list must already show "Gravel",
+      // never the pre-save (untagged) state.
+      const deadline = Date.now() + 400;
+      let observedClosed = false;
+      while (Date.now() < deadline) {
+        const stillEditing = screen.queryByRole("button", { name: "Save tags" }) !== null;
+        if (!stillEditing) {
+          observedClosed = true;
+          expect(
+            within(getListItemForName("Alpine Climb")).getByText("Gravel"),
+          ).toBeInTheDocument();
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      if (!observedClosed) {
+        await waitFor(() => {
+          expect(
+            within(getListItemForName("Alpine Climb")).getByText("Gravel"),
+          ).toBeInTheDocument();
+        });
+      }
+    });
+  });
 });
 
 // Backlog item 73 follow-up: the inline unfinished-session switch prompt

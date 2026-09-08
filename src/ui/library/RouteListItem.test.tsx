@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouteListItem, type RouteSwitchPrompt } from "./RouteListItem.tsx";
-import type { PlannedRoute } from "../../domain/types.ts";
+import type { LibraryRoute, PlannedRoute } from "../../domain/types.ts";
 
-function buildRoute(overrides: Partial<PlannedRoute> = {}): PlannedRoute {
+function buildRoute(overrides: Partial<LibraryRoute> = {}): LibraryRoute {
   return {
     id: "route-1",
     name: "Evening loop",
@@ -16,12 +16,13 @@ function buildRoute(overrides: Partial<PlannedRoute> = {}): PlannedRoute {
     descentMetres: null,
     warnings: [],
     source: { kind: "gpx-import" },
+    tags: [],
     ...overrides,
   };
 }
 
 interface RenderOverrides {
-  route?: PlannedRoute;
+  route?: LibraryRoute;
   onOpen?: ReturnType<typeof vi.fn<(route: PlannedRoute) => void>>;
   onRename?: ReturnType<typeof vi.fn<(id: string, name: string) => void>>;
   onExport?: ReturnType<typeof vi.fn<(route: PlannedRoute) => void>>;
@@ -35,6 +36,10 @@ interface RenderOverrides {
   isPinPending?: boolean;
   pinError?: string | null;
   onPinToggle?: ReturnType<typeof vi.fn<(route: PlannedRoute) => void>>;
+  tagSuggestions?: readonly string[];
+  onTagsSave?: ReturnType<
+    typeof vi.fn<(id: string, tags: readonly string[]) => Promise<void>>
+  >;
   switchPrompt?: RouteSwitchPrompt | null;
   stickyHeaderRef?: { current: HTMLElement | null };
 }
@@ -60,7 +65,7 @@ function buildSwitchPrompt(
   };
 }
 
-function buildElement(route: PlannedRoute, overrides: RenderOverrides) {
+function buildElement(route: LibraryRoute, overrides: RenderOverrides) {
   return (
     <RouteListItem
       route={route}
@@ -77,6 +82,13 @@ function buildElement(route: PlannedRoute, overrides: RenderOverrides) {
       isPinPending={overrides.isPinPending ?? false}
       pinError={overrides.pinError ?? null}
       onPinToggle={overrides.onPinToggle ?? vi.fn<(route: PlannedRoute) => void>()}
+      tagSuggestions={overrides.tagSuggestions ?? []}
+      onTagsSave={
+        overrides.onTagsSave ??
+        vi
+          .fn<(id: string, tags: readonly string[]) => Promise<void>>()
+          .mockResolvedValue(undefined)
+      }
       nameButtonRef={vi.fn()}
       pinButtonRef={vi.fn()}
       switchPrompt={overrides.switchPrompt ?? null}
@@ -94,6 +106,11 @@ function renderItem(overrides: RenderOverrides = {}) {
   const onDeleteCancel = overrides.onDeleteCancel ?? vi.fn<(id: string) => void>();
   const onDeleteConfirm = overrides.onDeleteConfirm ?? vi.fn<(id: string) => void>();
   const onPinToggle = overrides.onPinToggle ?? vi.fn<(route: PlannedRoute) => void>();
+  const onTagsSave =
+    overrides.onTagsSave ??
+    vi
+      .fn<(id: string, tags: readonly string[]) => Promise<void>>()
+      .mockResolvedValue(undefined);
 
   const { unmount, rerender } = render(
     buildElement(route, {
@@ -105,6 +122,7 @@ function renderItem(overrides: RenderOverrides = {}) {
       onDeleteCancel,
       onDeleteConfirm,
       onPinToggle,
+      onTagsSave,
     }),
   );
 
@@ -127,7 +145,25 @@ function renderItem(overrides: RenderOverrides = {}) {
           onDeleteCancel,
           onDeleteConfirm,
           onPinToggle,
+          onTagsSave,
           switchPrompt,
+        }),
+      );
+    },
+    // Rerenders with an updated route (same id) — the seam used to prove
+    // the tag editor only closes once route.tags reflects a save, by
+    // simulating the live query supplying a fresh canonical route.
+    rerenderWithRoute: (nextRoute: LibraryRoute) => {
+      rerender(
+        buildElement(nextRoute, {
+          onOpen,
+          onRename,
+          onExport,
+          onDeleteRequest,
+          onDeleteCancel,
+          onDeleteConfirm,
+          onPinToggle,
+          onTagsSave,
         }),
       );
     },
@@ -135,6 +171,7 @@ function renderItem(overrides: RenderOverrides = {}) {
     onDeleteCancel,
     onDeleteConfirm,
     onPinToggle,
+    onTagsSave,
   };
 }
 
@@ -395,6 +432,410 @@ describe("RouteListItem", () => {
     expect(
       within(screen.getByRole("alertdialog")).getByText(`Delete “${longName}”?`),
     ).toBeInTheDocument();
+  });
+
+  describe("tag editor", () => {
+    async function openEditor(
+      user: ReturnType<typeof userEvent.setup>,
+      label = "Add tags",
+    ) {
+      await user.click(screen.getByRole("button", { name: label }));
+    }
+
+    it("shows an untagged card with Add tags and no chip list", () => {
+      renderItem({ route: buildRoute({ tags: [] }) });
+
+      expect(screen.getByRole("button", { name: "Add tags" })).toBeInTheDocument();
+      expect(screen.queryByRole("list", { name: "Tags" })).toBeNull();
+    });
+
+    it("shows a tagged card with Edit tags and the assigned tags", () => {
+      renderItem({ route: buildRoute({ tags: ["Gravel"] }) });
+
+      expect(screen.getByRole("button", { name: "Edit tags" })).toBeInTheDocument();
+      expect(screen.getByText("Gravel")).toBeInTheDocument();
+    });
+
+    it("opening from Add tags seeds an empty draft; opening from Edit tags seeds the route's current tags", async () => {
+      const user = userEvent.setup();
+      renderItem({
+        route: buildRoute({ tags: ["Gravel"] }),
+        tagSuggestions: ["Gravel", "Weekend"],
+      });
+
+      await openEditor(user, "Edit tags");
+
+      expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.getByRole("button", { name: "Weekend" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+
+    it("gives suggestion buttons correct aria-pressed state and a decorative, aria-hidden check-mark when pressed", async () => {
+      const user = userEvent.setup();
+      renderItem({
+        route: buildRoute({ tags: ["Gravel"] }),
+        tagSuggestions: ["Gravel", "Weekend"],
+      });
+
+      await openEditor(user, "Edit tags");
+
+      const pressed = screen.getByRole("button", { name: "Gravel" });
+      const unpressed = screen.getByRole("button", { name: "Weekend" });
+      expect(pressed).toHaveAttribute("aria-pressed", "true");
+      expect(unpressed).toHaveAttribute("aria-pressed", "false");
+      const pressedCheck = pressed.querySelector(".tag-suggestion-check");
+      const unpressedCheck = unpressed.querySelector(".tag-suggestion-check");
+      expect(pressedCheck).toHaveAttribute("aria-hidden", "true");
+      expect(pressedCheck).toHaveTextContent("✓");
+      expect(unpressedCheck).toHaveTextContent("");
+    });
+
+    it("merges a route's own differently-spelled tag with the established suggestion spelling into one pressed entry, matched by identity not display text", async () => {
+      const user = userEvent.setup();
+      const { onTagsSave } = renderItem({
+        route: buildRoute({ tags: ["gravel"] }),
+        tagSuggestions: ["Gravel"],
+      });
+
+      await openEditor(user, "Edit tags");
+
+      expect(screen.queryByRole("button", { name: "gravel" })).toBeNull();
+      const merged = screen.getByRole("button", { name: "Gravel" });
+      expect(merged).toHaveAttribute("aria-pressed", "true");
+
+      // Saving without touching it preserves the route's original spelling.
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+      expect(onTagsSave).toHaveBeenCalledWith("route-1", ["gravel"]);
+    });
+
+    it("toggling off a merged entry removes the route's own tag by identity, even though the displayed label differs", async () => {
+      const user = userEvent.setup();
+      const { onTagsSave } = renderItem({
+        route: buildRoute({ tags: ["gravel"] }),
+        tagSuggestions: ["Gravel"],
+      });
+
+      await openEditor(user, "Edit tags");
+      await user.click(screen.getByRole("button", { name: "Gravel" }));
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+
+      expect(onTagsSave).toHaveBeenCalledWith("route-1", []);
+    });
+
+    it("adds a new multi-word tag via the Add tag button", async () => {
+      const user = userEvent.setup();
+      const { onTagsSave } = renderItem({ route: buildRoute({ tags: [] }) });
+
+      await openEditor(user);
+      await user.type(screen.getByLabelText("Add a tag"), "Weekend ride");
+      await user.click(screen.getByRole("button", { name: "Add tag" }));
+      expect(screen.getByRole("button", { name: "Weekend ride" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+      expect(onTagsSave).toHaveBeenCalledWith("route-1", ["Weekend ride"]);
+    });
+
+    it("adds a new tag by pressing Enter in the input, without saving the whole editor", async () => {
+      const user = userEvent.setup();
+      const { onTagsSave } = renderItem({ route: buildRoute({ tags: [] }) });
+
+      await openEditor(user);
+      await user.type(screen.getByLabelText("Add a tag"), "Commute{Enter}");
+
+      expect(screen.getByRole("button", { name: "Commute" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(onTagsSave).not.toHaveBeenCalled();
+    });
+
+    it("adding an empty or whitespace-only value is a no-op", async () => {
+      const user = userEvent.setup();
+      renderItem({ route: buildRoute({ tags: [] }) });
+
+      await openEditor(user);
+      await user.type(screen.getByLabelText("Add a tag"), "   ");
+      await user.click(screen.getByRole("button", { name: "Add tag" }));
+
+      expect(screen.queryAllByRole("button", { name: /^$/ })).toEqual([]);
+      expect(document.querySelectorAll(".tag-suggestion")).toHaveLength(0);
+    });
+
+    it("typing a case/whitespace variant of an already-drafted tag does not create a second entry", async () => {
+      const user = userEvent.setup();
+      renderItem({ route: buildRoute({ tags: [] }) });
+
+      await openEditor(user);
+      await user.type(screen.getByLabelText("Add a tag"), "Gravel{Enter}");
+      await user.type(screen.getByLabelText("Add a tag"), "  GRAVEL  {Enter}");
+
+      expect(document.querySelectorAll(".tag-suggestion")).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "Gravel" })).toBeInTheDocument();
+    });
+
+    it("toggles a suggestion on and off", async () => {
+      const user = userEvent.setup();
+      const { onTagsSave } = renderItem({
+        route: buildRoute({ tags: [] }),
+        tagSuggestions: ["Gravel"],
+      });
+
+      await openEditor(user);
+      const toggle = screen.getByRole("button", { name: "Gravel" });
+      await user.click(toggle);
+      expect(toggle).toHaveAttribute("aria-pressed", "true");
+      await user.click(toggle);
+      expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+      expect(onTagsSave).toHaveBeenCalledWith("route-1", []);
+    });
+
+    it("clicking every assigned tag off leaves an empty draft", async () => {
+      const user = userEvent.setup();
+      const { onTagsSave } = renderItem({
+        route: buildRoute({ tags: ["Gravel", "Commute"] }),
+      });
+
+      await openEditor(user, "Edit tags");
+      await user.click(screen.getByRole("button", { name: "Gravel" }));
+      await user.click(screen.getByRole("button", { name: "Commute" }));
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+
+      expect(onTagsSave).toHaveBeenCalledWith("route-1", []);
+    });
+
+    it("Cancel discards the draft and does not call onTagsSave, whether the draft was mutated by typing or by toggling a suggestion", async () => {
+      const user = userEvent.setup();
+      const { onTagsSave } = renderItem({
+        route: buildRoute({ tags: [] }),
+        tagSuggestions: ["Weekend"],
+      });
+
+      await openEditor(user);
+      await user.type(screen.getByLabelText("Add a tag"), "Gravel{Enter}");
+      await user.click(screen.getByRole("button", { name: "Weekend" }));
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+      expect(onTagsSave).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "Add tags" })).toBeInTheDocument();
+    });
+
+    it("Escape discards the draft and does not call onTagsSave", async () => {
+      const user = userEvent.setup();
+      const { onTagsSave } = renderItem({ route: buildRoute({ tags: [] }) });
+
+      await openEditor(user);
+      await user.type(screen.getByLabelText("Add a tag"), "Gravel{Enter}");
+      await user.keyboard("{Escape}");
+
+      expect(onTagsSave).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "Add tags" })).toBeInTheDocument();
+    });
+
+    it("focuses the tag input on entering the editor", async () => {
+      const user = userEvent.setup();
+      renderItem({ route: buildRoute({ tags: [] }) });
+
+      await openEditor(user);
+
+      expect(screen.getByLabelText("Add a tag")).toHaveFocus();
+    });
+
+    it("returns focus to the Add tags/Edit tags button after Cancel, Save (deferred promise resolved+synced) and Escape", async () => {
+      const user = userEvent.setup();
+      renderItem({ route: buildRoute({ tags: [] }) });
+
+      await openEditor(user);
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.getByRole("button", { name: "Add tags" })).toHaveFocus();
+
+      await openEditor(user);
+      await user.keyboard("{Escape}");
+      expect(screen.getByRole("button", { name: "Add tags" })).toHaveFocus();
+    });
+
+    it("calls onTagsSave exactly once and shows pending/disabled state, whether two clicks land after React re-renders or before it ever gets the chance to", async () => {
+      const user = userEvent.setup();
+      let releaseSave: (() => void) | undefined;
+      const held = new Promise<void>((resolve) => {
+        releaseSave = resolve;
+      });
+      const onTagsSave = vi
+        .fn<(id: string, tags: readonly string[]) => Promise<void>>()
+        .mockReturnValue(held);
+      renderItem({ route: buildRoute({ tags: [] }), onTagsSave });
+
+      await openEditor(user);
+      const saveButton = screen.getByRole("button", { name: "Save tags" });
+
+      // Standard project convention: two synchronous fireEvent.click()s.
+      fireEvent.click(saveButton);
+      fireEvent.click(saveButton);
+      expect(onTagsSave).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("status")).toHaveTextContent("Saving…");
+      expect(screen.getByRole("button", { name: "Save tags" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+      expect(screen.getByLabelText("Add a tag")).toBeDisabled();
+
+      // Cancel and Escape are no-ops while a save is in flight.
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      await user.keyboard("{Escape}");
+      expect(screen.getByRole("status")).toHaveTextContent("Saving…");
+
+      releaseSave?.();
+    });
+
+    it("still calls onTagsSave exactly once when two invocations land inside a single act() with no intervening re-render at all", async () => {
+      let releaseSave: (() => void) | undefined;
+      const held = new Promise<void>((resolve) => {
+        releaseSave = resolve;
+      });
+      const onTagsSave = vi
+        .fn<(id: string, tags: readonly string[]) => Promise<void>>()
+        .mockReturnValue(held);
+      const user = userEvent.setup();
+      renderItem({ route: buildRoute({ tags: [] }), onTagsSave });
+      await openEditor(user);
+      const saveButton = screen.getByRole("button", { name: "Save tags" });
+
+      // Both raw clicks happen inside ONE act() call, so React genuinely
+      // gets no chance to flush/re-render between them — this is what
+      // proves the isSavingTagsRef guard itself (not merely React's own
+      // batching between two separately-act()-wrapped fireEvent calls) is
+      // what prevents a duplicate write.
+      act(() => {
+        saveButton.click();
+        saveButton.click();
+      });
+
+      expect(onTagsSave).toHaveBeenCalledTimes(1);
+      releaseSave?.();
+    });
+
+    it("keeps the editor open and Saving… visible until route.tags reflects the save by identity, then closes and shows the new chips", async () => {
+      const user = userEvent.setup();
+      const { onTagsSave, rerenderWithRoute } = renderItem({
+        route: buildRoute({ tags: [] }),
+        tagSuggestions: ["Gravel"],
+      });
+
+      await openEditor(user);
+      await user.click(screen.getByRole("button", { name: "Gravel" }));
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+
+      expect(onTagsSave).toHaveBeenCalledWith("route-1", ["Gravel"]);
+      // The write's own promise has resolved (it's a plain mockResolvedValue),
+      // but the parent hasn't yet supplied an updated route — the editor
+      // must not have closed onto stale chips.
+      expect(screen.getByRole("status")).toHaveTextContent("Saving…");
+      expect(screen.getByRole("button", { name: "Save tags" })).toBeInTheDocument();
+
+      rerenderWithRoute(buildRoute({ tags: ["Gravel"] }));
+
+      await screen.findByRole("button", { name: "Edit tags" });
+      expect(screen.getByText("Gravel")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Save tags" })).toBeNull();
+    });
+
+    it("a rejected save keeps the draft and editor open, shows a generic alert, and permits retry and Cancel", async () => {
+      const user = userEvent.setup();
+      const onTagsSave = vi
+        .fn<(id: string, tags: readonly string[]) => Promise<void>>()
+        .mockRejectedValueOnce(new Error("boom"))
+        .mockResolvedValueOnce(undefined);
+      const { rerenderWithRoute } = renderItem({
+        route: buildRoute({ tags: [] }),
+        tagSuggestions: ["Gravel"],
+        onTagsSave,
+      });
+
+      await openEditor(user);
+      await user.click(screen.getByRole("button", { name: "Gravel" }));
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent("This route's tags could not be saved. Try again.");
+      expect(alert.textContent).not.toContain("Gravel");
+      expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+      expect(onTagsSave).toHaveBeenCalledTimes(2);
+      rerenderWithRoute(buildRoute({ tags: ["Gravel"] }));
+      await screen.findByRole("button", { name: "Edit tags" });
+    });
+
+    it("opening the tag editor cancels this route's pending delete confirmation first", async () => {
+      const user = userEvent.setup();
+      const { onDeleteCancel, route } = renderItem({
+        isDeletePending: true,
+        route: buildRoute({ tags: [] }),
+      });
+
+      await user.click(screen.getByRole("button", { name: "Add tags" }));
+
+      expect(onDeleteCancel).toHaveBeenCalledWith(route.id);
+      expect(screen.getByRole("button", { name: "Save tags" })).toBeInTheDocument();
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+    });
+
+    it("opening the tag editor while this card's switch prompt is busy does nothing", async () => {
+      const user = userEvent.setup();
+      const switchPrompt = buildSwitchPrompt({ busy: true });
+      renderItem({ switchPrompt, route: buildRoute({ tags: [] }) });
+
+      await user.click(screen.getByRole("button", { name: "Add tags" }));
+
+      expect(switchPrompt.onCancel).not.toHaveBeenCalled();
+      expect(screen.queryByRole("button", { name: "Save tags" })).toBeNull();
+    });
+
+    it("opening the tag editor while this card's switch prompt is actionable cancels it first, then opens", async () => {
+      const user = userEvent.setup();
+      const switchPrompt = buildSwitchPrompt({ busy: false });
+      renderItem({ switchPrompt, route: buildRoute({ tags: [] }) });
+
+      await user.click(screen.getByRole("button", { name: "Add tags" }));
+
+      expect(switchPrompt.onCancel).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("button", { name: "Save tags" })).toBeInTheDocument();
+    });
+
+    it("hides Rename, Pin, Export, Delete, delete confirmation and the switch prompt while the tag editor is open", async () => {
+      const user = userEvent.setup();
+      renderItem({
+        route: buildRoute({ tags: [] }),
+        isPinned: false,
+        switchPrompt: buildSwitchPrompt(),
+      });
+
+      await user.click(screen.getByRole("button", { name: "Add tags" }));
+
+      expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Export" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Pin Evening loop" })).toBeNull();
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+    });
+
+    it("renders a very long tag's text in full", () => {
+      const longTag =
+        "A genuinely very long tag describing a specific recurring commute variant";
+      renderItem({ route: buildRoute({ tags: [longTag] }) });
+
+      expect(screen.getByText(longTag)).toBeInTheDocument();
+    });
   });
 
   describe("pin toggle", () => {

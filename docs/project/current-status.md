@@ -234,6 +234,21 @@ Do not treat the item above as fully verified until it has been tested on a movi
 
 ---
 
+### Outstanding: item 100 stage 2's compact tag editor and reusable suggestions
+
+- **Reusable route tags and tag-based organisation, stage 2 (item 100):** the tag-editing UI (assigned-tag chips, an inline editor, reusable cross-route suggestions and in-place new-tag creation) shipped in `0.4.16` with automated evidence only — Vitest (domain, `RouteListItem`, and real-fake-indexeddb `RouteLibrary` integration tests) and Playwright (chromium and android-chrome; WebKit could not launch in the implementing sandbox and is deferred to CI). See [`docs/project/backlog.md#item-100`](backlog.md#item-100) for the full stage-1/stage-2 implementation record, including the identity-vs-display-spelling design, the write/live-query-sync mechanism, the save-guard reliability proof, and every negative control.
+- **No physical-device acceptance yet.** Stage 4 ("full lifecycle and acceptance") is where formal real-device acceptance for the complete feature happens — this stage-2 slice's browser evidence does not itself constitute that acceptance.
+- **Suggested later device checklist**, on the installed iPhone Home Screen PWA:
+  - add a new multi-word tag and save;
+  - reuse it from another route's suggestions;
+  - confirm a case variant does not create a duplicate;
+  - cancel an edit and verify the previous tags remain;
+  - remove all tags from one route;
+  - reload the installed PWA and verify persistence and comfortable portrait/enlarged-text use.
+- Physical Android verification is separately outstanding, as for most recent items.
+
+---
+
 ## Monitored reliability observations
 
 These are explicitly **not** approved future work — see each entry's own text for why.
