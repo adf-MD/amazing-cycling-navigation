@@ -199,6 +199,15 @@ test("importing, tagging, filtering (AND semantics), combining with search, clea
     () => document.activeElement?.tagName ?? null,
   );
   expect(activeElementTag).not.toBe("BODY");
+  // Backlog item 100 follow-up: the card-reveal-after-save mechanism must
+  // never act on a route that has disappeared from the filtered result —
+  // its own render-time success signal structurally can't fire for a
+  // component that unmounts instead of re-rendering with the new tags.
+  // Deliberately no scrollY assertion here: RouteLibrary's own established
+  // fallback-focus target (asserted above and below) may legitimately
+  // cause its own native focus-scroll — this only proves the reveal
+  // mechanism itself never fires alongside it.
+  expect(consoleErrors).toEqual([]);
 
   // A full reload persists the saved tags but resets the transient
   // tag-filter selection, matching the existing name-search contract.

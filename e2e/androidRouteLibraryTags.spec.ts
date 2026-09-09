@@ -108,6 +108,97 @@ test("tagging one route, reusing the tag as a suggestion on another, and reload 
   expect(consoleErrors).toEqual([]);
 });
 
+// Backlog item 100 follow-up: the reveal-after-save mechanism's own
+// geometry/no-scroll/Cancel contract is already exhaustively proven under
+// Chromium (routeLibraryTags.spec.ts, including landscape and 200% text)
+// and at the unit level — this narrow addition proves the same reveal
+// still lands the card's title below the sticky header under Android
+// emulation, mirroring this file's own stated scope.
+test("a successful Save tags reveals the card's title below the sticky header under Android emulation", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await importRoute(page, "Reveal Target Route");
+  for (let i = 1; i <= 10; i++) {
+    await importRoute(page, `Reveal Filler ${String(i)}`);
+  }
+
+  await getListItemForName(page, "Reveal Target Route")
+    .getByRole("button", { name: "Add tags", exact: true })
+    .click();
+  const tagInput = page.getByLabel("Add a tag");
+  for (let i = 1; i <= 100; i++) {
+    await tagInput.fill(`tag-${String(i).padStart(3, "0")}`);
+    await tagInput.press("Enter");
+  }
+
+  await page.getByRole("button", { name: "Save tags", exact: true }).click();
+  await expect(
+    getListItemForName(page, "Reveal Target Route").getByRole("button", {
+      name: "Edit tags",
+    }),
+  ).toBeVisible();
+
+  // Poll (never a fixed sleep) until the reveal's own smooth-scroll
+  // animation has genuinely settled — mirrors routeLibraryTags.spec.ts's
+  // own waitForScrollToSettle convention.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            new Promise<boolean>((resolve) => {
+              let stableFrames = 0;
+              let lastY: number | null = null;
+              const check = () => {
+                const y = window.scrollY;
+                stableFrames = lastY !== null && y === lastY ? stableFrames + 1 : 0;
+                lastY = y;
+                if (stableFrames >= 10) {
+                  resolve(true);
+                  return;
+                }
+                requestAnimationFrame(check);
+              };
+              requestAnimationFrame(check);
+            }),
+        ),
+      { timeout: 5000 },
+    )
+    .toBe(true);
+
+  const geometry = await page.evaluate((name) => {
+    const header = document.querySelector("header.app-header--sticky");
+    const items = Array.from(document.querySelectorAll("li[data-route-id]"));
+    const li = items.find(
+      (el) => el.querySelector(".route-card-title, h2")?.textContent.trim() === name,
+    );
+    const title = li?.querySelector(".route-card-title");
+    const vv = window.visualViewport;
+    const toBox = (el: Element | null | undefined) => {
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom };
+    };
+    return {
+      header: toBox(header),
+      title: toBox(title),
+      visibleBottom: vv ? vv.offsetTop + vv.height : window.innerHeight,
+    };
+  }, "Reveal Target Route");
+
+  if (!geometry.header || !geometry.title) {
+    throw new Error("expected the header and title to both be measurable");
+  }
+  expect(geometry.title.top).toBeGreaterThanOrEqual(geometry.header.bottom - 2);
+  expect(geometry.title.bottom).toBeLessThanOrEqual(geometry.visibleBottom + 2);
+  await expect(
+    getListItemForName(page, "Reveal Target Route").getByRole("button", {
+      name: "Edit tags",
+    }),
+  ).toBeFocused();
+});
+
 // Backlog item 100 stage 3: the tag-filter chip's own identity/AND/
 // touch-target contract is already exhaustively proven in
 // routeLibraryTagFiltering.spec.ts and the unit/integration suites —

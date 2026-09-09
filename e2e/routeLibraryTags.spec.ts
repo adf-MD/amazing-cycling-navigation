@@ -52,6 +52,124 @@ function visibleCardTitles(page: Page) {
   return page.locator(".route-card-title").allInnerTexts();
 }
 
+/** Imports a target route, then enough filler routes (most-recent sort
+ * pushes the target below the fold) and enough short tags (added but not
+ * yet saved) that the reappearing ordinary card, once saved, is genuinely
+ * taller than the visible band between the sticky header and the visible
+ * viewport — backlog item 100's card-reveal-after-save follow-up. Leaves
+ * the target's tag editor open with the draft tags added, unsaved. */
+async function importRouteWithManyTags(
+  page: Page,
+  targetName: string,
+  fillerCount: number,
+  tagCount: number,
+) {
+  await importRoute(page, targetName);
+  for (let i = 1; i <= fillerCount; i++) {
+    await importRoute(page, `Reveal Filler ${String(i)}`);
+  }
+  await openTagEditor(page, targetName);
+  const tagInput = page.getByLabel("Add a tag");
+  for (let i = 1; i <= tagCount; i++) {
+    await tagInput.fill(`tag-${String(i).padStart(3, "0")}`);
+    await tagInput.press("Enter");
+  }
+}
+
+interface RevealGeometryBox {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+interface RevealGeometry {
+  header: RevealGeometryBox | null;
+  card: RevealGeometryBox | null;
+  title: RevealGeometryBox | null;
+  button: RevealGeometryBox | null;
+  visibleTop: number;
+  visibleBottom: number;
+  scrollX: number;
+  scrollWidth: number;
+  clientWidth: number;
+}
+
+/** Measures the sticky header, the target card, its title and its "Edit
+ * tags" button atomically in one evaluate() call — mirrors
+ * rideSessionSwitchGuard.spec.ts's own item-95 geometry convention, so
+ * nothing can shift/scroll between reads. */
+async function measureRevealGeometry(
+  page: Page,
+  targetName: string,
+): Promise<RevealGeometry> {
+  return page.evaluate((name) => {
+    const toBox = (el: Element | null | undefined) => {
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };
+    };
+    const header = document.querySelector("header.app-header--sticky");
+    const items = Array.from(document.querySelectorAll("li[data-route-id]"));
+    const li = items.find(
+      (el) => el.querySelector(".route-card-title, h2")?.textContent.trim() === name,
+    );
+    const title = li?.querySelector(".route-card-title");
+    const button = Array.from(li?.querySelectorAll("button") ?? []).find(
+      (candidate) => candidate.textContent.trim() === "Edit tags",
+    );
+    const vv = window.visualViewport;
+    return {
+      header: toBox(header),
+      card: toBox(li),
+      title: toBox(title),
+      button: toBox(button),
+      visibleTop: vv?.offsetTop ?? 0,
+      visibleBottom: vv ? vv.offsetTop + vv.height : window.innerHeight,
+      scrollX: window.scrollX,
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    };
+  }, targetName);
+}
+
+/** A small, documented pixel tolerance for the reveal geometry assertions
+ * below — sub-pixel layout rounding, not a meaningful placement error. */
+const REVEAL_TOLERANCE_PX = 2;
+
+/** Polls (never a fixed sleep) until window.scrollY has genuinely stopped
+ * changing across several consecutive real animation frames — the reveal's
+ * own scrollBy call uses behavior:"smooth" unless reduced motion is
+ * requested, so geometry read immediately after the click can otherwise be
+ * a mid-animation snapshot. Mirrors rideSessionSwitchGuard.spec.ts's own
+ * item-95 "poll until scrollY has genuinely stopped changing" convention. */
+async function waitForScrollToSettle(page: Page) {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            new Promise<boolean>((resolve) => {
+              let stableFrames = 0;
+              let lastY: number | null = null;
+              const check = () => {
+                const y = window.scrollY;
+                stableFrames = lastY !== null && y === lastY ? stableFrames + 1 : 0;
+                lastY = y;
+                if (stableFrames >= 10) {
+                  resolve(true);
+                  return;
+                }
+                requestAnimationFrame(check);
+              };
+              requestAnimationFrame(check);
+            }),
+        ),
+      { timeout: 5000 },
+    )
+    .toBe(true);
+}
+
 test("adding, reusing, deduplicating and removing tags through the real tag editor persists across reload without disturbing search, pin or sort", async ({
   page,
 }) => {
@@ -163,6 +281,103 @@ test("adding, reusing, deduplicating and removing tags through the real tag edit
   expect(consoleErrors).toEqual([]);
 });
 
+test("a successful Save tags reveals the card's top and title below the sticky header, not just the focused button (item 100 follow-up)", async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await page.goto("/");
+  await importRouteWithManyTags(page, "Reveal Target Route", 10, 100);
+
+  const scrollXBefore = await page.evaluate(() => window.scrollX);
+  await page.getByRole("button", { name: "Save tags", exact: true }).click();
+  await expect(
+    getListItemForName(page, "Reveal Target Route").getByRole("button", {
+      name: "Edit tags",
+    }),
+  ).toBeVisible();
+  await waitForScrollToSettle(page);
+
+  const geometry = await measureRevealGeometry(page, "Reveal Target Route");
+  if (!geometry.header || !geometry.card || !geometry.title || !geometry.button) {
+    throw new Error("expected header, card, title and button to all be measurable");
+  }
+
+  // The card is taller than the visible band (100 tags), so only its top
+  // and title are guaranteed — never its bottom, which is the whole point
+  // of top-prioritisation over the browser's own button-only native scroll.
+  expect(geometry.title.top).toBeGreaterThanOrEqual(
+    geometry.header.bottom - REVEAL_TOLERANCE_PX,
+  );
+  expect(geometry.title.bottom).toBeLessThanOrEqual(
+    geometry.visibleBottom + REVEAL_TOLERANCE_PX,
+  );
+  expect(geometry.card.top).toBeGreaterThanOrEqual(
+    geometry.header.bottom - REVEAL_TOLERANCE_PX,
+  );
+  await expect(
+    getListItemForName(page, "Reveal Target Route").getByRole("button", {
+      name: "Edit tags",
+    }),
+  ).toBeFocused();
+  expect(geometry.scrollX).toBe(scrollXBefore);
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+
+  expect(consoleErrors).toEqual([]);
+});
+
+test("does not scroll the page when the card is already visible before saving tags (item 100 follow-up)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await importRoute(page, "Already Visible Route");
+  await openTagEditor(page, "Already Visible Route");
+  await page.getByLabel("Add a tag").fill("Gravel");
+  await page.getByRole("button", { name: "Add tag", exact: true }).click();
+
+  const scrollYBefore = await page.evaluate(() => window.scrollY);
+  await page.getByRole("button", { name: "Save tags", exact: true }).click();
+  await expect(
+    getListItemForName(page, "Already Visible Route").getByRole("button", {
+      name: "Edit tags",
+    }),
+  ).toBeVisible();
+
+  const scrollYAfter = await page.evaluate(() => window.scrollY);
+  expect(scrollYAfter).toBe(scrollYBefore);
+});
+
+test("Cancel discards the draft, returns focus to the tags button, and leaves it comfortably visible without a forced reveal (item 100 follow-up)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await importRouteWithManyTags(page, "Cancel Target Route", 10, 100);
+
+  // Deliberately no scrollY assertion here: native focus-scroll (kept
+  // unchanged for Cancel) may legitimately make its own small adjustment —
+  // only draft-discard, correct focus and comfortable visibility are the
+  // contract for this path.
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  const item = getListItemForName(page, "Cancel Target Route");
+  await expect(item.getByRole("button", { name: "Add tags" })).toBeVisible();
+  await expect(item.getByRole("button", { name: "Add tags" })).toBeFocused();
+  expect(await item.locator(".route-card-tags").count()).toBe(0);
+
+  const buttonBox = await item.getByRole("button", { name: "Add tags" }).boundingBox();
+  if (!buttonBox) throw new Error("expected the Add tags button to have a bounding box");
+  const viewportSize = page.viewportSize();
+  if (!viewportSize) throw new Error("expected a viewport size");
+  expect(buttonBox.y).toBeGreaterThanOrEqual(0);
+  expect(buttonBox.y + buttonBox.height).toBeLessThanOrEqual(viewportSize.height);
+});
+
 /** This item's own contract is that the tag editor stays fully contained
  * and every interactive tag control meets the shared 44x44 touch-target
  * minimum — checked via real bounding boxes, not screenshots. Mirrors
@@ -230,6 +445,36 @@ test.describe("tag editor geometry and accessibility (item 100 stage 2)", () => 
       // comment) — the scoped containment checks above are what this item
       // actually governs.
     });
+
+    test("a successful Save tags still reveals the card's top and title below the sticky header (item 100 follow-up)", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await importRouteWithManyTags(page, "Reveal Target Route", 10, 40);
+
+      await page.evaluate(() => {
+        document.documentElement.style.fontSize = "200%";
+      });
+
+      await page.getByRole("button", { name: "Save tags", exact: true }).click();
+      await expect(
+        getListItemForName(page, "Reveal Target Route").getByRole("button", {
+          name: "Edit tags",
+        }),
+      ).toBeVisible();
+      await waitForScrollToSettle(page);
+
+      const geometry = await measureRevealGeometry(page, "Reveal Target Route");
+      if (!geometry.header || !geometry.title) {
+        throw new Error("expected the header and title to both be measurable");
+      }
+      expect(geometry.title.top).toBeGreaterThanOrEqual(
+        geometry.header.bottom - REVEAL_TOLERANCE_PX,
+      );
+      expect(geometry.title.bottom).toBeLessThanOrEqual(
+        geometry.visibleBottom + REVEAL_TOLERANCE_PX,
+      );
+    });
   });
 
   test.describe("844x390 short landscape", () => {
@@ -249,6 +494,32 @@ test.describe("tag editor geometry and accessibility (item 100 stage 2)", () => 
 
       await suggestionButton.focus();
       await expect(suggestionButton).toBeFocused();
+    });
+
+    test("a successful Save tags still reveals the card's top and title below the sticky header (item 100 follow-up)", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await importRouteWithManyTags(page, "Reveal Target Route", 10, 40);
+
+      await page.getByRole("button", { name: "Save tags", exact: true }).click();
+      await expect(
+        getListItemForName(page, "Reveal Target Route").getByRole("button", {
+          name: "Edit tags",
+        }),
+      ).toBeVisible();
+      await waitForScrollToSettle(page);
+
+      const geometry = await measureRevealGeometry(page, "Reveal Target Route");
+      if (!geometry.header || !geometry.title) {
+        throw new Error("expected the header and title to both be measurable");
+      }
+      expect(geometry.title.top).toBeGreaterThanOrEqual(
+        geometry.header.bottom - REVEAL_TOLERANCE_PX,
+      );
+      expect(geometry.title.bottom).toBeLessThanOrEqual(
+        geometry.visibleBottom + REVEAL_TOLERANCE_PX,
+      );
     });
   });
 });

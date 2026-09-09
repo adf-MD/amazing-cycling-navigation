@@ -237,7 +237,8 @@ Do not treat the item above as fully verified until it has been tested on a movi
 ### Outstanding: item 100 stages 2–3's tag editor and tag filtering
 
 - **Reusable route tags and tag-based organisation, stages 2–3 (item 100):** the tag-editing UI (assigned-tag chips, an inline editor, reusable cross-route suggestions and in-place new-tag creation) shipped in `0.4.16` with automated evidence only — Vitest (domain, `RouteListItem`, and real-fake-indexeddb `RouteLibrary` integration tests) and Playwright (chromium and android-chrome; WebKit could not launch in the implementing sandbox and is deferred to CI). Stage 3's tag-filter control (a labelled "Filter by tags" region of native buttons near Search/Sort, AND semantics across several selected tags, same-session restoration, and safe behaviour when an edit or deletion removes a route from the active filter) shipped in `0.4.17`, also browser-tested only. See [`docs/project/backlog.md#item-100`](backlog.md#item-100) for the full stage-1/stage-2/stage-3 implementation record, including the identity-vs-display-spelling design, the write/live-query-sync mechanism, the save-guard reliability proof, the tag-filter stale-key reconciliation and disappearance-focus-repair mechanisms, and every negative control.
-- **No physical-device acceptance yet.** Stage 4 ("full lifecycle and acceptance") is where formal real-device acceptance for the complete feature happens — neither the stage-2 nor the stage-3 slice's browser evidence constitutes that acceptance.
+- **Card-reveal-after-save fix (9 September 2026):** a defect where a successful "Save tags" press could leave the card's title hidden under the sticky header or above the fold — only the focused tag button was guaranteed visible — was found (from an installed-iPhone observation) and fixed. Shipped as `0.4.18`, browser-tested only (Vitest and Playwright chromium/android-chrome; WebKit unavailable in this sandbox, deferred to CI). See [`docs/project/backlog.md#item-100`](backlog.md#item-100)'s dated "Follow-up" entry for the fail-first evidence, root cause, fix and negative controls. Not yet physically accepted on a device.
+- **No physical-device acceptance yet.** Stage 4 ("full lifecycle and acceptance") is where formal real-device acceptance for the complete feature happens — neither the stage-2 nor the stage-3 slice's browser evidence, nor the card-reveal follow-up above, constitutes that acceptance.
 - **Suggested later device checklist**, on the installed iPhone Home Screen PWA:
   - add a new multi-word tag and save;
   - reuse it from another route's suggestions;
@@ -250,7 +251,10 @@ Do not treat the item above as fully verified until it has been tested on a movi
   - use Clear tag filters and confirm the full permitted list returns;
   - open a matching route and return to Routes with the tag-filter selection, search text and scroll position all restored;
   - edit or remove a tag so the currently open route drops out of the active filter and confirm focus lands somewhere usable, never lost;
-  - confirm long tag labels wrap and stay legible and touch-usable at enlarged (accessibility) text size.
+  - confirm long tag labels wrap and stay legible and touch-usable at enlarged (accessibility) text size;
+  - save tags on a route scrolled well down a long, heavily-tagged list and confirm the card's title is visibly framed below the sticky header, with the tag button still focused;
+  - with the tag input and on-screen keyboard active, scroll down to Save tags and tap it — confirm the title remains visible once the keyboard closes and the visual viewport expands back to full height; automated desktop/mobile emulation cannot fully establish this iOS keyboard-transition behaviour;
+  - confirm Cancel, an already-visible card, and enlarged (200%) text all remain comfortable and don't scroll unexpectedly.
 - Physical Android verification is separately outstanding, as for most recent items.
 
 ---

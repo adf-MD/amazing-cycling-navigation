@@ -11,6 +11,7 @@ import {
 import { prefersReducedMotion } from "../../platform/environmentContext.ts";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 import { PinIcon } from "./PinIcon.tsx";
+import { computeTopRevealScrollDelta } from "./routeCardTopReveal.ts";
 import { isCardAlreadyFullyVisible } from "./routeSwitchCardVisibility.ts";
 
 /** The inline, route-card-scoped presentation of backlog item 73's
@@ -140,12 +141,26 @@ export function RouteListItem({
   // what closes the editor — including the successful-no-op-save case,
   // where route.tags may never change again at all.
   const [pendingSyncTags, setPendingSyncTags] = useState<string[] | null>(null);
+  // Distinguishes a successful-save close from a Cancel/Escape close, so
+  // the close/focus effect below can reveal the card's top only on the
+  // former (backlog item 100 follow-up). Set only inside the render-time
+  // handshake block that ALSO closes the editor on success (never inferred
+  // merely from isEditingTags becoming false, which Cancel/Escape trigger
+  // too); reset defensively on every openTagEditor() open, mirroring that
+  // function's other three defensive resets. Cancel/Escape cannot race
+  // with this: both no-op while isSavingTagsRef/isSavingTags are true,
+  // which stay true for the entire window from handleSaveTags's start
+  // until the success block below runs.
+  const [tagsSaveSucceeded, setTagsSaveSucceeded] = useState(false);
   const headingId = useId();
   const descriptionId = useId();
   const nameFieldId = useId();
   const tagInputId = useId();
   const tagsHeadingId = useId();
   const cardRef = useRef<HTMLLIElement>(null);
+  // The reappearing ordinary-card title row, measured (alongside cardRef)
+  // by the successful-save reveal below — see its own doc comment.
+  const titleRowRef = useRef<HTMLDivElement>(null);
   const switchHeadingId = useId();
   const switchDescriptionId = useId();
   // Tracks the last message this card scrolled for, so a later status
@@ -174,15 +189,56 @@ export function RouteListItem({
   }, [isRenaming]);
 
   // Mirrors the isRenaming focus effect immediately above, for the tag
-  // editor's own open/close transitions.
+  // editor's own open/close transitions. A successful save (tagsSaveSucceeded)
+  // additionally reveals the card's own top/title below the sticky header —
+  // backlog item 100 follow-up: a plain focus() only ever guarantees the
+  // BUTTON'S visibility via the browser's own "scroll nearest into view"
+  // algorithm, which has no notion of the sticky header's overlap or of the
+  // title several rows above the button on a card grown tall from many
+  // tags. Cancel/Escape (tagsSaveSucceeded stays false) keep today's plain
+  // focus() unchanged, native scroll included.
   useEffect(() => {
     if (isEditingTags) {
       tagInputRef.current?.focus();
     } else if (wasEditingTagsRef.current) {
-      tagsButtonRef.current?.focus();
+      if (tagsSaveSucceeded) {
+        // preventScroll suppresses the browser's own competing scroll, so
+        // exactly one deliberate scroll (below) ever runs for this close.
+        tagsButtonRef.current?.focus({ preventScroll: true });
+        const cardEl = cardRef.current;
+        const titleRowEl = titleRowRef.current;
+        if (cardEl && titleRowEl) {
+          const cardRect = cardEl.getBoundingClientRect();
+          const titleRowRect = titleRowEl.getBoundingClientRect();
+          const headerBottom =
+            stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0;
+          const visualViewport = window.visualViewport;
+          const visibleTop = visualViewport?.offsetTop ?? 0;
+          const visibleBottom = visualViewport
+            ? visualViewport.offsetTop + visualViewport.height
+            : window.innerHeight;
+          const delta = computeTopRevealScrollDelta(
+            { top: cardRect.top, bottom: titleRowRect.bottom },
+            headerBottom,
+            visibleTop,
+            visibleBottom,
+          );
+          if (delta !== 0) {
+            // left: 0 guarantees horizontal scroll position is never
+            // touched by this reveal.
+            window.scrollBy({
+              top: delta,
+              left: 0,
+              behavior: prefersReducedMotion() ? "auto" : "smooth",
+            });
+          }
+        }
+      } else {
+        tagsButtonRef.current?.focus();
+      }
     }
     wasEditingTagsRef.current = isEditingTags;
-  }, [isEditingTags]);
+  }, [isEditingTags, tagsSaveSucceeded, stickyHeaderRef]);
 
   // Closes the tag editor only once BOTH of two independent async facts
   // are established: the write settled (pendingSyncTags is set) and
@@ -214,6 +270,7 @@ export function RouteListItem({
     setPendingSyncTags(null);
     setIsSavingTags(false);
     setIsEditingTags(false);
+    setTagsSaveSucceeded(true);
   }
 
   // The other half of isSavingTagsRef's reset on the success path above
@@ -366,6 +423,11 @@ export function RouteListItem({
     // while isEditingTags is false) can never fire while a sync is still
     // pending.
     setPendingSyncTags(null);
+    // Unlike pendingSyncTags above, THIS reset is very much reachable: a
+    // prior successful save leaves tagsSaveSucceeded true, and without
+    // clearing it here, a later Cancel/Escape in this new editing session
+    // would spuriously trigger the top-reveal scroll again.
+    setTagsSaveSucceeded(false);
     setIsEditingTags(true);
   };
 
@@ -544,7 +606,7 @@ export function RouteListItem({
         </div>
       ) : (
         <>
-          <div className="route-card-title-row">
+          <div className="route-card-title-row" ref={titleRowRef}>
             <button
               type="button"
               className="route-card-title"

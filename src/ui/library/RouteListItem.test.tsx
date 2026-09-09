@@ -931,6 +931,282 @@ describe("RouteListItem", () => {
 
       expect(screen.getByText(longTag)).toBeInTheDocument();
     });
+
+    describe("card reveal after a successful save (item 100 follow-up)", () => {
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const originalScrollBy = window.scrollBy;
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const originalFocus = HTMLElement.prototype.focus;
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const originalMatchMedia = window.matchMedia;
+
+      afterEach(() => {
+        Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+        window.scrollBy = originalScrollBy;
+        HTMLElement.prototype.focus = originalFocus;
+        window.matchMedia = originalMatchMedia;
+      });
+
+      function stubRect(overrides: Partial<DOMRect> = {}): DOMRect {
+        return {
+          top: 0,
+          bottom: 0,
+          left: 0,
+          right: 320,
+          width: 320,
+          height: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => "",
+          ...overrides,
+        };
+      }
+
+      /** Distinguishes the always-mounted outer card (`[data-route-id]`)
+       * from the title row (`.route-card-title-row`, only present once the
+       * ordinary-card branch has re-rendered after a successful save) —
+       * every other element falls back to an empty rect. */
+      function stubCardGeometry(
+        card: { top: number; bottom: number },
+        titleRow: { top: number; bottom: number },
+      ) {
+        Element.prototype.getBoundingClientRect = function (this: Element) {
+          if (this.classList.contains("route-card-title-row")) {
+            return stubRect(titleRow);
+          }
+          if (this.hasAttribute("data-route-id")) {
+            return stubRect(card);
+          }
+          return stubRect();
+        };
+      }
+
+      function captureScrollByCalls() {
+        const calls: ScrollToOptions[] = [];
+        window.scrollBy = (options?: ScrollToOptions | number) => {
+          if (typeof options === "object") {
+            calls.push(options);
+          }
+        };
+        return calls;
+      }
+
+      function captureFocusCalls() {
+        const calls: { target: Element; options: FocusOptions | undefined }[] = [];
+        HTMLElement.prototype.focus = function focus(
+          this: HTMLElement,
+          options?: FocusOptions,
+        ) {
+          calls.push({ target: this, options });
+          // Delegates to the real implementation so jsdom's activeElement
+          // (and therefore userEvent's own keyboard/focus behaviour, e.g.
+          // Escape handling) is unaffected — this only observes calls.
+          originalFocus.call(this, options);
+        };
+        return calls;
+      }
+
+      // A tall card, scrolled such that its top/title sit above the
+      // effective top boundary (jsdom's default headerless boundary is
+      // just the top-reveal gap, 8px) — mirrors the real fail-first
+      // evidence gathered against unmodified 0.4.17, where the browser's
+      // own "scroll nearest into view" for the focused button left the
+      // card's top and title scrolled to a negative (off-screen) position.
+      const hiddenTitleGeometry = {
+        card: { top: -300, bottom: 400 },
+        titleRow: { top: -300, bottom: -256 },
+      };
+      // Comfortably within the visible band (jsdom's default 768px
+      // innerHeight) — already suitably placed, no scroll required.
+      const alreadyVisibleGeometry = {
+        card: { top: 100, bottom: 300 },
+        titleRow: { top: 100, bottom: 144 },
+      };
+
+      it("a successful save suppresses native focus-scroll and issues one leftward-neutral scrollBy call to reveal the card's top", async () => {
+        const user = userEvent.setup();
+        stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
+        const scrollCalls = captureScrollByCalls();
+        const focusCalls = captureFocusCalls();
+        const { rerenderWithRoute } = renderItem({
+          route: buildRoute({ tags: [] }),
+          tagSuggestions: ["Gravel"],
+        });
+
+        await openEditor(user);
+        await user.click(screen.getByRole("button", { name: "Gravel" }));
+        await user.click(screen.getByRole("button", { name: "Save tags" }));
+        rerenderWithRoute(buildRoute({ tags: ["Gravel"] }));
+        await screen.findByRole("button", { name: "Edit tags" });
+
+        const buttonFocusCall = focusCalls.find(
+          (call) => call.target === screen.getByRole("button", { name: "Edit tags" }),
+        );
+        expect(buttonFocusCall?.options).toEqual({ preventScroll: true });
+
+        expect(scrollCalls).toHaveLength(1);
+        expect(scrollCalls[0]).toEqual(
+          expect.objectContaining({ top: -308, left: 0, behavior: "smooth" }),
+        );
+      });
+
+      it("a successful no-op save (route.tags already equal) still reveals the card once the write settles", async () => {
+        stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
+        const scrollCalls = captureScrollByCalls();
+        let releaseSave: (() => void) | undefined;
+        const held = new Promise<void>((resolve) => {
+          releaseSave = resolve;
+        });
+        const onTagsSave = vi
+          .fn<(id: string, tags: readonly string[]) => Promise<void>>()
+          .mockReturnValue(held);
+        const user = userEvent.setup();
+        renderItem({
+          route: buildRoute({ tags: ["Gravel"] }),
+          tagSuggestions: ["Gravel"],
+          onTagsSave,
+        });
+
+        await openEditor(user, "Edit tags");
+        await user.click(screen.getByRole("button", { name: "Save tags" }));
+        await act(async () => {
+          releaseSave?.();
+          await held;
+        });
+        await screen.findByRole("button", { name: "Edit tags" });
+
+        expect(scrollCalls).toHaveLength(1);
+      });
+
+      it("does not scroll when the card's top band is already suitably visible, but still returns focus", async () => {
+        const user = userEvent.setup();
+        stubCardGeometry(alreadyVisibleGeometry.card, alreadyVisibleGeometry.titleRow);
+        const scrollCalls = captureScrollByCalls();
+        const focusCalls = captureFocusCalls();
+        const { rerenderWithRoute } = renderItem({
+          route: buildRoute({ tags: [] }),
+          tagSuggestions: ["Gravel"],
+        });
+
+        await openEditor(user);
+        await user.click(screen.getByRole("button", { name: "Gravel" }));
+        await user.click(screen.getByRole("button", { name: "Save tags" }));
+        rerenderWithRoute(buildRoute({ tags: ["Gravel"] }));
+        await screen.findByRole("button", { name: "Edit tags" });
+
+        expect(scrollCalls).toHaveLength(0);
+        const buttonFocusCall = focusCalls.find(
+          (call) => call.target === screen.getByRole("button", { name: "Edit tags" }),
+        );
+        expect(buttonFocusCall?.options).toEqual({ preventScroll: true });
+      });
+
+      it("Cancel returns focus without preventScroll and never calls scrollBy", async () => {
+        const user = userEvent.setup();
+        stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
+        const scrollCalls = captureScrollByCalls();
+        const focusCalls = captureFocusCalls();
+        renderItem({ route: buildRoute({ tags: [] }) });
+
+        await openEditor(user);
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+        const buttonFocusCall = focusCalls.find(
+          (call) => call.target === screen.getByRole("button", { name: "Add tags" }),
+        );
+        expect(buttonFocusCall?.options).toBeUndefined();
+        expect(scrollCalls).toHaveLength(0);
+      });
+
+      it("Escape returns focus without preventScroll and never calls scrollBy", async () => {
+        const user = userEvent.setup();
+        stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
+        const scrollCalls = captureScrollByCalls();
+        const focusCalls = captureFocusCalls();
+        renderItem({ route: buildRoute({ tags: [] }) });
+
+        await openEditor(user);
+        await user.keyboard("{Escape}");
+
+        const buttonFocusCall = focusCalls.find(
+          (call) => call.target === screen.getByRole("button", { name: "Add tags" }),
+        );
+        expect(buttonFocusCall?.options).toBeUndefined();
+        expect(scrollCalls).toHaveLength(0);
+      });
+
+      it("a rejected save never scrolls, and a subsequent Cancel after the failure behaves like an ordinary cancel", async () => {
+        const user = userEvent.setup();
+        stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
+        const scrollCalls = captureScrollByCalls();
+        const onTagsSave = vi
+          .fn<(id: string, tags: readonly string[]) => Promise<void>>()
+          .mockRejectedValueOnce(new Error("boom"));
+        renderItem({
+          route: buildRoute({ tags: [] }),
+          tagSuggestions: ["Gravel"],
+          onTagsSave,
+        });
+
+        await openEditor(user);
+        await user.click(screen.getByRole("button", { name: "Gravel" }));
+        await user.click(screen.getByRole("button", { name: "Save tags" }));
+        await screen.findByRole("alert");
+
+        expect(scrollCalls).toHaveLength(0);
+
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+        expect(screen.getByRole("button", { name: "Add tags" })).toBeInTheDocument();
+        expect(scrollCalls).toHaveLength(0);
+      });
+
+      it("re-opening the editor after a successful save resets the reveal signal, so a later Cancel does not spuriously reveal", async () => {
+        const user = userEvent.setup();
+        stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
+        const scrollCalls = captureScrollByCalls();
+        const { rerenderWithRoute } = renderItem({
+          route: buildRoute({ tags: [] }),
+          tagSuggestions: ["Gravel"],
+        });
+
+        await openEditor(user);
+        await user.click(screen.getByRole("button", { name: "Gravel" }));
+        await user.click(screen.getByRole("button", { name: "Save tags" }));
+        rerenderWithRoute(buildRoute({ tags: ["Gravel"] }));
+        await screen.findByRole("button", { name: "Edit tags" });
+        expect(scrollCalls).toHaveLength(1);
+
+        await openEditor(user, "Edit tags");
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+        expect(screen.getByRole("button", { name: "Edit tags" })).toBeInTheDocument();
+
+        expect(scrollCalls).toHaveLength(1);
+      });
+
+      it("uses immediate (auto) behaviour under prefers-reduced-motion, and smooth otherwise", async () => {
+        const user = userEvent.setup();
+        stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
+        window.matchMedia = ((query: string) => ({
+          matches: query === "(prefers-reduced-motion: reduce)",
+        })) as typeof window.matchMedia;
+        const scrollCalls = captureScrollByCalls();
+        const { rerenderWithRoute } = renderItem({
+          route: buildRoute({ tags: [] }),
+          tagSuggestions: ["Gravel"],
+        });
+
+        await openEditor(user);
+        await user.click(screen.getByRole("button", { name: "Gravel" }));
+        await user.click(screen.getByRole("button", { name: "Save tags" }));
+        rerenderWithRoute(buildRoute({ tags: ["Gravel"] }));
+        await screen.findByRole("button", { name: "Edit tags" });
+
+        expect(scrollCalls).toHaveLength(1);
+        expect(scrollCalls[0]).toEqual(expect.objectContaining({ behavior: "auto" }));
+      });
+    });
   });
 
   describe("pin toggle", () => {

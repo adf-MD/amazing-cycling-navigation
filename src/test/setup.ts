@@ -25,3 +25,13 @@ class NoopResizeObserver implements ResizeObserver {
   }
 }
 globalThis.ResizeObserver = NoopResizeObserver;
+
+// jsdom doesn't implement window.scrollBy either — it logs a noisy "Not
+// implemented" console warning and otherwise does nothing. A no-op stub
+// here (mirroring the ResizeObserver stub above) keeps that off every
+// test's output; a test that specifically needs to observe scrollBy calls
+// (e.g. RouteListItem.test.tsx's tag-save reveal tests) still overrides
+// this itself and restores it afterward.
+window.scrollBy = () => {
+  // no-op: jsdom has no layout engine to scroll.
+};
