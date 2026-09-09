@@ -1,3 +1,5 @@
+import { prefersReducedMotion } from "../../platform/environmentContext.ts";
+
 /** A small fixed gap kept between the sticky header's bottom edge (or the
  * visible viewport's own top, whichever is lower) and a revealed card's
  * top, so the title doesn't sit flush against the header's border. */
@@ -41,4 +43,48 @@ export function computeTopRevealScrollDelta(
     delta = Math.min(idealDownward, maxWithoutHidingTop);
   }
   return Math.abs(delta) < TOP_REVEAL_TOLERANCE_PX ? 0 : delta;
+}
+
+/**
+ * The single place a top-reveal is actually performed. Measures the usable
+ * visible band (the visual viewport when the on-screen keyboard or a pinch
+ * zoom has shrunk it, else the layout viewport), asks
+ * computeTopRevealScrollDelta above for the delta, and issues at most ONE
+ * window.scrollBy for it. `left: 0` guarantees horizontal scroll position
+ * is never touched, and a zero delta issues no call at all.
+ *
+ * Shared deliberately rather than duplicated: item 105 added a second and
+ * third caller (a card's Cancel/Escape close, and the Manage tags panel's
+ * own top after a successful global tag operation) to the original
+ * successful-save one, and the item's own wording asks for one reveal path
+ * rather than several. The module keeps its name — CLAUDE.md, backlog.md
+ * and current-status.md all cite `routeCardTopReveal.ts` by name — even
+ * though it now also serves the tag manager, which is not a card.
+ *
+ * Returns the applied delta (0 when nothing was needed) so callers and
+ * tests can assert on the decision rather than only on its side effect.
+ */
+export function applyTopRevealScroll(
+  band: { top: number; bottom: number },
+  headerBottomPx: number,
+): number {
+  const visualViewport = window.visualViewport;
+  const visibleTop = visualViewport?.offsetTop ?? 0;
+  const visibleBottom = visualViewport
+    ? visualViewport.offsetTop + visualViewport.height
+    : window.innerHeight;
+  const delta = computeTopRevealScrollDelta(
+    band,
+    headerBottomPx,
+    visibleTop,
+    visibleBottom,
+  );
+  if (delta !== 0) {
+    window.scrollBy({
+      top: delta,
+      left: 0,
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+    });
+  }
+  return delta;
 }

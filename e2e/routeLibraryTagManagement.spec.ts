@@ -329,3 +329,259 @@ test.describe("844x390 short landscape", () => {
     expect(overflow).toBe(false);
   });
 });
+
+/** Polls (never a fixed sleep) until window.scrollY has genuinely stopped
+ * changing across several consecutive real animation frames. The reveal's
+ * own scrollBy uses behavior:"smooth" unless reduced motion is requested,
+ * so geometry read immediately after the action can otherwise be a
+ * mid-animation snapshot — indistinguishable from no scroll at all. Copied
+ * rather than shared, per this project's no-shared-e2e-helpers convention
+ * (routeLibraryTags.spec.ts carries the same poll). */
+async function waitForScrollToSettle(page: Page) {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            new Promise<boolean>((resolve) => {
+              let stableFrames = 0;
+              let lastY: number | null = null;
+              const check = () => {
+                const y = window.scrollY;
+                stableFrames = lastY !== null && y === lastY ? stableFrames + 1 : 0;
+                lastY = y;
+                if (stableFrames >= 10) {
+                  resolve(true);
+                  return;
+                }
+                requestAnimationFrame(check);
+              };
+              requestAnimationFrame(check);
+            }),
+        ),
+      { timeout: 5000 },
+    )
+    .toBe(true);
+}
+
+interface PanelGeometryBox {
+  top: number;
+  bottom: number;
+}
+
+interface PanelGeometry {
+  header: PanelGeometryBox | null;
+  panel: PanelGeometryBox | null;
+  heading: PanelGeometryBox | null;
+  visibleBottom: number;
+  scrollX: number;
+  scrollY: number;
+}
+
+/** Measures the sticky header, the Manage tags panel and its own heading
+ * atomically in one evaluate() call, so nothing can shift between reads. */
+async function measurePanelGeometry(page: Page): Promise<PanelGeometry> {
+  return page.evaluate(() => {
+    const toBox = (el: Element | null | undefined) => {
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom };
+    };
+    const panel = document.querySelector(".tag-manager");
+    const vv = window.visualViewport;
+    return {
+      header: toBox(document.querySelector("header.app-header--sticky")),
+      panel: toBox(panel),
+      heading: toBox(panel?.querySelector("h2")),
+      visibleBottom: vv ? vv.offsetTop + vv.height : window.innerHeight,
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+    };
+  });
+}
+
+const PANEL_REVEAL_TOLERANCE_PX = 2;
+
+interface ScrollByCounterWindow extends Window {
+  __acnScrollByCalls?: number;
+  __acnScrollByPatched?: boolean;
+}
+
+/** Counts the application's OWN deliberate scrolls. Every reveal in this
+ * feature goes through routeCardTopReveal.ts's single
+ * `window.scrollBy({ top, left: 0, behavior })` call, while the browser's
+ * native focus-scroll does not — so this separates "the app decided to
+ * scroll" from "the view moved because focus moved", which a raw scrollY
+ * comparison cannot. Resets the counter on each call. */
+async function instrumentDeliberateScrolls(page: Page) {
+  await page.evaluate(() => {
+    const holder = window as ScrollByCounterWindow;
+    holder.__acnScrollByCalls = 0;
+    if (holder.__acnScrollByPatched === true) return;
+    holder.__acnScrollByPatched = true;
+    const original = window.scrollBy.bind(window);
+    window.scrollBy = ((options?: ScrollToOptions) => {
+      holder.__acnScrollByCalls = (holder.__acnScrollByCalls ?? 0) + 1;
+      original(options);
+    }) as typeof window.scrollBy;
+  });
+}
+
+async function countDeliberateScrolls(page: Page): Promise<number> {
+  return page.evaluate(() => (window as ScrollByCounterWindow).__acnScrollByCalls ?? 0);
+}
+
+/** Scrolls the window so the Manage tags panel's own top sits a given
+ * distance ABOVE the sticky header's bottom edge — the state the installed
+ * iPhone reaches when the on-screen keyboard shrinks the visual viewport
+ * around a panel that was already near the top of a long list. Deliberately
+ * a window scroll rather than relying on Playwright's own
+ * scroll-into-view, which would be undone the moment a locator is clicked. */
+async function scrollPanelTopAboveHeader(page: Page, overlapPx: number) {
+  await page.evaluate((overlap) => {
+    const header = document.querySelector("header.app-header--sticky");
+    const panel = document.querySelector(".tag-manager");
+    if (!header || !panel) throw new Error("expected a header and an open panel");
+    const headerBottom = header.getBoundingClientRect().bottom;
+    const panelTop = panel.getBoundingClientRect().top;
+    window.scrollBy({
+      top: panelTop - (headerBottom - overlap),
+      left: 0,
+      behavior: "auto",
+    });
+  }, overlapPx);
+  await waitForScrollToSettle(page);
+}
+
+// Backlog item 105's second behaviour. A successful global operation leaves
+// the panel open, so its own top/heading must be brought back below the
+// sticky header. Every other transition through the same focus hand-off
+// keeps 0.4.19's behaviour and must not scroll deliberately.
+test.describe("Manage tags panel reveal (item 105)", () => {
+  async function seedTwoTags(page: Page) {
+    // No installLocalMapStyle here: these tests never open a route, so the
+    // map is never mounted and no tile-provider request is ever made —
+    // matching the other Route Library-only tests in this file.
+    await page.goto("/");
+    for (let i = 1; i <= 8; i++) {
+      await importRoute(page, `Panel Filler ${String(i)}`);
+    }
+    await tagRoute(page, "Panel Filler 1", "Gravel");
+    await tagRoute(page, "Panel Filler 2", "Gravel");
+    await tagRoute(page, "Panel Filler 3", "Road");
+  }
+
+  test("a successful rename reveals the panel's top below the sticky header", async ({
+    page,
+  }) => {
+    await seedTwoTags(page);
+    await openManager(page);
+    await chooseTag(page, "Gravel (2 routes)");
+    await getManager(page).getByLabel("New name").fill("Trail");
+
+    // Focus the action FIRST, then scroll, then activate by keyboard: a
+    // locator click would scroll the button back into view and silently
+    // undo the occlusion this test depends on.
+    const rename = getManager(page).getByRole("button", { name: "Rename tag" });
+    await rename.focus();
+    await scrollPanelTopAboveHeader(page, 60);
+
+    const before = await measurePanelGeometry(page);
+    if (!before.header || !before.panel) {
+      throw new Error("expected the header and panel to be measurable");
+    }
+    // The precondition the test rests on — fails loudly rather than
+    // passing for the wrong reason if the layout ever changes.
+    expect(before.panel.top).toBeLessThan(before.header.bottom);
+    const scrollXBefore = before.scrollX;
+
+    await instrumentDeliberateScrolls(page);
+    await page.keyboard.press("Enter");
+    await expect(getTagFilterButton(page, "Trail")).toBeVisible();
+    await waitForScrollToSettle(page);
+
+    const after = await measurePanelGeometry(page);
+    if (!after.header || !after.panel || !after.heading) {
+      throw new Error("expected the header, panel and heading to be measurable");
+    }
+    expect(after.panel.top).toBeGreaterThanOrEqual(
+      after.header.bottom - PANEL_REVEAL_TOLERANCE_PX,
+    );
+    expect(after.heading.bottom).toBeLessThanOrEqual(
+      after.visibleBottom + PANEL_REVEAL_TOLERANCE_PX,
+    );
+    // The post-success focus target is unchanged from 0.4.19.
+    await expect(getManager(page).getByLabel("Tag to manage")).toBeFocused();
+    expect(after.scrollX).toBe(scrollXBefore);
+    // Exactly one deliberate scroll, and the positive control for the
+    // instrumented counter used by the no-scroll test below: without this,
+    // a counter that silently observed nothing would let that test pass
+    // vacuously.
+    expect(await countDeliberateScrolls(page)).toBe(1);
+  });
+
+  // The negative control for the test above: the same successful rename,
+  // differing only in that the panel's top was already framed, must scroll
+  // nothing. Without this, a reveal that fired unconditionally — or one
+  // that scrolled for any reason at all — would look identical.
+  test("performs no scroll when the panel's top is already framed", async ({ page }) => {
+    await seedTwoTags(page);
+    await openManager(page);
+    await chooseTag(page, "Gravel (2 routes)");
+    await getManager(page).getByLabel("New name").fill("Trail");
+    await waitForScrollToSettle(page);
+
+    const before = await measurePanelGeometry(page);
+    if (!before.header || !before.panel) {
+      throw new Error("expected the header and panel to be measurable");
+    }
+    expect(before.panel.top).toBeGreaterThanOrEqual(before.header.bottom);
+
+    await getManager(page).getByRole("button", { name: "Rename tag" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(getTagFilterButton(page, "Trail")).toBeVisible();
+    await waitForScrollToSettle(page);
+
+    const after = await measurePanelGeometry(page);
+    expect(after.scrollY).toBe(before.scrollY);
+  });
+
+  test("never scrolls deliberately when a confirmation is cancelled or the panel is closed", async ({
+    page,
+  }) => {
+    await seedTwoTags(page);
+    await openManager(page);
+    await chooseTag(page, "Gravel (2 routes)");
+    const deleteTag = getManager(page).getByRole("button", { name: "Delete tag" });
+    await deleteTag.click();
+    await expect(page.getByRole("alertdialog")).toBeVisible();
+    await waitForScrollToSettle(page);
+
+    // Escape rather than a Cancel click: dismissing by keyboard needs no
+    // scroll-into-view, so any movement observed would be the application's
+    // own doing rather than Playwright's.
+    await instrumentDeliberateScrolls(page);
+    const beforeCancel = await measurePanelGeometry(page);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("alertdialog")).toBeHidden();
+    await expect(deleteTag).toBeFocused();
+    await waitForScrollToSettle(page);
+    expect((await measurePanelGeometry(page)).scrollY).toBe(beforeCancel.scrollY);
+    expect(await countDeliberateScrolls(page)).toBe(0);
+
+    // Closing the panel is deliberately NOT asserted on raw scrollY. Focus
+    // returns to the "Manage tags" button, which sits well above the panel,
+    // and the browser's own focus-scroll legitimately brings it into view —
+    // that IS "where the viewport naturally ends after the panel closes".
+    // What must not happen is a deliberate scroll of the application's own,
+    // and native focus-scroll never goes through window.scrollBy, so the
+    // instrumented count is what discriminates the two.
+    await instrumentDeliberateScrolls(page);
+    await getManager(page).getByRole("button", { name: "Close" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(getManager(page)).toBeHidden();
+    await expect(page.getByRole("button", { name: "Manage tags" })).toBeFocused();
+    await waitForScrollToSettle(page);
+    expect(await countDeliberateScrolls(page)).toBe(0);
+  });
+});

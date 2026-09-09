@@ -15,6 +15,7 @@ import {
   tagIdentityKey,
   tagsEqualByIdentity,
 } from "../../domain/routeTags.ts";
+import { applyTopRevealScroll } from "./routeCardTopReveal.ts";
 import { RouteTagManager } from "./RouteTagManager.tsx";
 import {
   reconcileTagLifecycle,
@@ -170,6 +171,14 @@ export function RouteLibrary({
   const [pendingFocusHandoff, setPendingFocusHandoff] = useState<{
     target: "select" | "search" | "rename" | "delete";
     id: number;
+    /** Backlog item 105. Set on exactly ONE transition — a successful
+     * rename/merge/non-final delete, where the panel stays open — and
+     * never by requestManagerFocus, which serves the failed-operation and
+     * cancelled-confirmation paths. The effect below branches on this
+     * flag rather than on `target === "select"`: that the two currently
+     * coincide is a fact about today's call sites, not a contract, and
+     * this is deliberately not a general scroll-on-focus rule. */
+    reveal?: boolean;
   } | null>(null);
   // The one-at-a-time admission state, reported upward by each card.
   const [inlineEditorRouteIds, setInlineEditorRouteIds] = useState<ReadonlySet<string>>(
@@ -184,6 +193,9 @@ export function RouteLibrary({
   const tagManagerRenameButtonRef = useRef<HTMLButtonElement>(null);
   const tagManagerDeleteButtonRef = useRef<HTMLButtonElement>(null);
   const tagManagerCloseButtonRef = useRef<HTMLButtonElement>(null);
+  // Measured by the post-success reveal below; see its own comment.
+  const tagManagerPanelRef = useRef<HTMLDivElement>(null);
+  const tagManagerHeadingRef = useRef<HTMLHeadingElement>(null);
   const [tagFiltersHydrated, setTagFiltersHydrated] = useState(false);
   const tagFilterLabelId = useId();
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -329,6 +341,10 @@ export function RouteLibrary({
     setPendingFocusHandoff((previous) => ({
       target: focusTarget,
       id: (previous?.id ?? 0) + 1,
+      // Only when the panel survives the operation is there a panel top to
+      // reveal; the final-tag case closes it below and hands focus to
+      // Search instead, so it deliberately carries no reveal.
+      reveal: focusTarget === "select",
     }));
     // Phase one of the final-tag transition: the panel is closed here, in
     // the same render pass, and phase two (the layout effect below)
@@ -982,8 +998,31 @@ export function RouteLibrary({
       tagManagerDeleteButtonRef.current?.focus();
       return;
     }
-    tagManagerSelectRef.current?.focus();
-  }, [pendingFocusHandoff]);
+    if (!pendingFocusHandoff.reveal) {
+      tagManagerSelectRef.current?.focus();
+      return;
+    }
+    // Backlog item 105's one reveal transition. preventScroll suppresses
+    // the browser's own "scroll nearest into view" for the newly focused
+    // select — which knows nothing of the sticky header, and would
+    // otherwise compete with (and could override) the deliberate scroll
+    // below. The focus TARGET is unchanged from 0.4.19; only the scroll
+    // that accompanies it is new. Measured here, in the layout effect,
+    // after the confirmation (if any) has already unmounted, so the
+    // geometry is the settled post-operation geometry.
+    tagManagerSelectRef.current?.focus({ preventScroll: true });
+    const panelEl = tagManagerPanelRef.current;
+    const headingEl = tagManagerHeadingRef.current;
+    if (panelEl && headingEl) {
+      applyTopRevealScroll(
+        {
+          top: panelEl.getBoundingClientRect().top,
+          bottom: headingEl.getBoundingClientRect().bottom,
+        },
+        stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+      );
+    }
+  }, [pendingFocusHandoff, stickyHeaderRef]);
 
   // Every manager focus move goes through the hand-off above rather than
   // calling .focus() inline. The confirmation disables the Rename/Delete
@@ -1289,6 +1328,8 @@ export function RouteLibrary({
           renameButtonRef={tagManagerRenameButtonRef}
           deleteButtonRef={tagManagerDeleteButtonRef}
           closeButtonRef={tagManagerCloseButtonRef}
+          panelRef={tagManagerPanelRef}
+          headingRef={tagManagerHeadingRef}
         />
       ) : null}
 

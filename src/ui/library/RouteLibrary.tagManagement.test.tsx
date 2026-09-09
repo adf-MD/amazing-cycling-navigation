@@ -1054,39 +1054,342 @@ describe("RouteLibrary — global tag management, the final-tag empty state", ()
     });
     await expectFinalTagEmptyState();
   });
+});
 
-  it("never triggers the card-top reveal scroll for a global operation", async () => {
-    const user = userEvent.setup();
-    // Mirrors RouteListItem.test.tsx's own scrollBy capture convention,
-    // including its unbound-method disable for reading the original off
-    // window before replacing it.
-    // eslint-disable-next-line @typescript-eslint/unbound-method
-    const originalScrollBy = window.scrollBy;
-    const scrollByCalls: unknown[] = [];
-    window.scrollBy = (options?: ScrollToOptions | number) => {
-      scrollByCalls.push(options);
+// Backlog item 105. The Manage tags panel gets a top-reveal, but only on
+// one specific transition: a SUCCESSFUL rename, merge or non-final delete,
+// where the panel stays open and its heading may have been scrolled under
+// the sticky header. Every other transition through the same shared focus
+// hand-off — a cancelled confirmation, a failed operation, a final-tag
+// deletion (the panel is gone), and a manual Close (which doesn't use the
+// hand-off at all) — must keep exactly the behaviour it had in 0.4.19,
+// with no deliberate scroll. These tests exist to prove those paths cannot
+// leak into one another.
+describe("RouteLibrary — global tag management, the manager-panel reveal (item 105)", () => {
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalScrollBy = window.scrollBy;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalFocus = HTMLElement.prototype.focus;
+
+  afterEach(() => {
+    Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    window.scrollBy = originalScrollBy;
+    HTMLElement.prototype.focus = originalFocus;
+  });
+
+  function stubRect(overrides: Partial<DOMRect> = {}): DOMRect {
+    return {
+      top: 0,
+      bottom: 0,
+      left: 0,
+      right: 320,
+      width: 320,
+      height: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => "",
+      ...overrides,
     };
-    try {
-      render(<RouteLibrary onOpenRoute={vi.fn()} />);
-      await seedSingleTaggedRoute(user);
-      scrollByCalls.length = 0;
+  }
 
-      await openManager(user);
-      await chooseTag(user, "Gravel (1 route)");
-      await user.type(within(getManager()).getByLabelText("New name"), "Trail");
-      await user.click(within(getManager()).getByRole("button", { name: "Rename tag" }));
-      await waitFor(() => {
-        expect(
-          within(getListItemForName("Alpine Climb")).getByText("Trail"),
-        ).toBeVisible();
-      });
+  /** Dispatches by class, mirroring RouteListItem.test.tsx's own
+   * stubCardGeometry: the panel root (.tag-manager) and its own heading —
+   * the <h2> whose parent is that root, so a card's inline-editor <h2> can
+   * never be mistaken for it. Everything else gets an empty rect. */
+  function stubPanelGeometry(
+    panel: { top: number; bottom: number },
+    heading: { top: number; bottom: number },
+  ) {
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this.classList.contains("tag-manager")) {
+        return stubRect(panel);
+      }
+      if (
+        this.tagName === "H2" &&
+        this.parentElement?.classList.contains("tag-manager") === true
+      ) {
+        return stubRect(heading);
+      }
+      return stubRect();
+    };
+  }
 
-      // The reveal belongs to a card's own successful Save tags press
-      // (backlog item 100's 0.4.18 follow-up) and must not fire for a
-      // global rename that no card editor was involved in.
-      expect(scrollByCalls).toEqual([]);
-    } finally {
-      window.scrollBy = originalScrollBy;
-    }
+  function captureScrollByCalls() {
+    const calls: ScrollToOptions[] = [];
+    window.scrollBy = (options?: ScrollToOptions | number) => {
+      if (typeof options === "object") {
+        calls.push(options);
+      }
+    };
+    return calls;
+  }
+
+  /** Observes focus options while still delegating to the real
+   * implementation, so activeElement (and userEvent's own behaviour) is
+   * unaffected — RouteListItem.test.tsx's own convention. */
+  function captureFocusCalls() {
+    const calls: { target: Element; options: FocusOptions | undefined }[] = [];
+    HTMLElement.prototype.focus = function focus(
+      this: HTMLElement,
+      options?: FocusOptions,
+    ) {
+      calls.push({ target: this, options });
+      originalFocus.call(this, options);
+    };
+    return calls;
+  }
+
+  // The panel scrolled up under the (headerless, so 8px gap only) effective
+  // top boundary: delta = -220 - 8.
+  const hiddenPanelGeometry = {
+    panel: { top: -220, bottom: 300 },
+    heading: { top: -220, bottom: -180 },
+  };
+  const HIDDEN_PANEL_DELTA = -228;
+  // Comfortably inside jsdom's default 768px viewport — nothing to do.
+  const framedPanelGeometry = {
+    panel: { top: 120, bottom: 400 },
+    heading: { top: 120, bottom: 160 },
+  };
+
+  async function seedTwoTags(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Zebra Loop.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+    await tagRoute(user, "Alpine Climb", "Road");
+    await tagRoute(user, "Zebra Loop", "Gravel");
+  }
+
+  function getSelect(): HTMLElement {
+    return within(getManager()).getByLabelText("Tag to manage");
+  }
+
+  it("reveals the panel's top after a successful rename, focusing the select without a native scroll", async () => {
+    const user = userEvent.setup();
+    stubPanelGeometry(hiddenPanelGeometry.panel, hiddenPanelGeometry.heading);
+    const scrollCalls = captureScrollByCalls();
+    const focusCalls = captureFocusCalls();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    scrollCalls.length = 0;
+
+    await openManager(user);
+    await chooseTag(user, "Gravel (2 routes)");
+    await user.type(within(getManager()).getByLabelText("New name"), "Trail");
+    await user.click(within(getManager()).getByRole("button", { name: "Rename tag" }));
+    await waitFor(() => {
+      expect(within(getListItemForName("Alpine Climb")).getByText("Trail")).toBeVisible();
+    });
+
+    const selectFocusCall = focusCalls
+      .filter((call) => call.target === getSelect())
+      .at(-1);
+    expect(selectFocusCall?.options).toEqual({ preventScroll: true });
+    expect(scrollCalls).toHaveLength(1);
+    expect(scrollCalls[0]).toEqual(
+      expect.objectContaining({
+        top: HIDDEN_PANEL_DELTA,
+        left: 0,
+        behavior: "smooth",
+      }),
+    );
+  });
+
+  it("reveals the panel's top after a confirmed merge", async () => {
+    const user = userEvent.setup();
+    stubPanelGeometry(hiddenPanelGeometry.panel, hiddenPanelGeometry.heading);
+    const scrollCalls = captureScrollByCalls();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    scrollCalls.length = 0;
+
+    await openManager(user);
+    await chooseTag(user, "Gravel (2 routes)");
+    await user.type(within(getManager()).getByLabelText("New name"), "Road");
+    await user.click(within(getManager()).getByRole("button", { name: "Merge tags" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Merge tags" }),
+    );
+    await waitFor(() => {
+      expect(
+        within(screen.getByRole("group", { name: "Filter by tags" })).queryByRole(
+          "button",
+          { name: "Gravel" },
+        ),
+      ).not.toBeInTheDocument();
+    });
+
+    expect(scrollCalls).toHaveLength(1);
+    expect(scrollCalls[0]).toEqual(
+      expect.objectContaining({ top: HIDDEN_PANEL_DELTA, left: 0 }),
+    );
+  });
+
+  it("reveals the panel's top after a confirmed non-final delete", async () => {
+    const user = userEvent.setup();
+    stubPanelGeometry(hiddenPanelGeometry.panel, hiddenPanelGeometry.heading);
+    const scrollCalls = captureScrollByCalls();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    scrollCalls.length = 0;
+
+    await openManager(user);
+    await chooseTag(user, "Gravel (2 routes)");
+    await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete tag" }),
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByText("Deleted “Gravel” from 2 routes. Those routes are still saved."),
+      ).toBeInTheDocument();
+    });
+    // "Road" survives, so the panel is still open — there is something to
+    // reveal, unlike the final-tag case below.
+    expect(getManager()).toBeInTheDocument();
+    expect(scrollCalls).toHaveLength(1);
+    expect(scrollCalls[0]).toEqual(
+      expect.objectContaining({ top: HIDDEN_PANEL_DELTA, left: 0 }),
+    );
+  });
+
+  // The negative control for the three tests above: the identical flow, with
+  // only the panel's measured position changed, must scroll nothing at all.
+  // If this passed for any other reason (a reveal that never fires, a
+  // mis-wired capture), the rename test above would not be able to fail.
+  it("performs no redundant scroll when the panel's top is already correctly framed", async () => {
+    const user = userEvent.setup();
+    stubPanelGeometry(framedPanelGeometry.panel, framedPanelGeometry.heading);
+    const scrollCalls = captureScrollByCalls();
+    const focusCalls = captureFocusCalls();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    scrollCalls.length = 0;
+
+    await openManager(user);
+    await chooseTag(user, "Gravel (2 routes)");
+    await user.type(within(getManager()).getByLabelText("New name"), "Trail");
+    await user.click(within(getManager()).getByRole("button", { name: "Rename tag" }));
+    await waitFor(() => {
+      expect(within(getListItemForName("Alpine Climb")).getByText("Trail")).toBeVisible();
+    });
+
+    // Focus still moves, and still suppresses the native focus-scroll — the
+    // reveal decision is about the delta, not about skipping the hand-off.
+    const selectFocusCall = focusCalls
+      .filter((call) => call.target === getSelect())
+      .at(-1);
+    expect(selectFocusCall?.options).toEqual({ preventScroll: true });
+    expect(scrollCalls).toHaveLength(0);
+  });
+
+  it("keeps the Search focus hand-off, and never reveals, when the final tag is deleted", async () => {
+    const user = userEvent.setup();
+    stubPanelGeometry(hiddenPanelGeometry.panel, hiddenPanelGeometry.heading);
+    const scrollCalls = captureScrollByCalls();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Zebra Loop.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+    scrollCalls.length = 0;
+
+    await openManager(user);
+    await chooseTag(user, "Gravel (1 route)");
+    await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete tag" }),
+    );
+    await waitFor(() => {
+      expect(queryManager()).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByLabelText("Search routes")).toHaveFocus();
+    expect(scrollCalls).toHaveLength(0);
+  });
+
+  it("restores focus without any deliberate scroll when a confirmation is cancelled, with Cancel and with Escape", async () => {
+    const user = userEvent.setup();
+    stubPanelGeometry(hiddenPanelGeometry.panel, hiddenPanelGeometry.heading);
+    const scrollCalls = captureScrollByCalls();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    scrollCalls.length = 0;
+
+    await openManager(user);
+    await chooseTag(user, "Gravel (2 routes)");
+
+    await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel" }),
+    );
+    await waitFor(() => {
+      expect(
+        within(getManager()).getByRole("button", { name: "Delete tag" }),
+      ).toHaveFocus();
+    });
+    expect(scrollCalls).toHaveLength(0);
+
+    await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(
+        within(getManager()).getByRole("button", { name: "Delete tag" }),
+      ).toHaveFocus();
+    });
+    expect(scrollCalls).toHaveLength(0);
+  });
+
+  it("restores focus without any deliberate scroll when the operation fails", async () => {
+    const user = userEvent.setup();
+    stubPanelGeometry(hiddenPanelGeometry.panel, hiddenPanelGeometry.heading);
+    const scrollCalls = captureScrollByCalls();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    scrollCalls.length = 0;
+    vi.spyOn(routesRepository, "applyRouteTagLifecycle").mockRejectedValue(
+      new Error("boom"),
+    );
+
+    await openManager(user);
+    await chooseTag(user, "Gravel (2 routes)");
+    await user.type(within(getManager()).getByLabelText("New name"), "Trail");
+    await user.click(within(getManager()).getByRole("button", { name: "Rename tag" }));
+    await waitFor(() => {
+      expect(within(getManager()).getByRole("alert")).toHaveTextContent(
+        "That tag could not be renamed. Try again.",
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        within(getManager()).getByRole("button", { name: "Rename tag" }),
+      ).toHaveFocus();
+    });
+    expect(scrollCalls).toHaveLength(0);
+  });
+
+  it("never scrolls when the manager is closed manually, by Close or by the toggle", async () => {
+    const user = userEvent.setup();
+    stubPanelGeometry(hiddenPanelGeometry.panel, hiddenPanelGeometry.heading);
+    const scrollCalls = captureScrollByCalls();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    scrollCalls.length = 0;
+
+    await openManager(user);
+    await user.click(within(getManager()).getByRole("button", { name: "Close" }));
+    await waitFor(() => {
+      expect(queryManager()).not.toBeInTheDocument();
+    });
+    expect(scrollCalls).toHaveLength(0);
+
+    await openManager(user);
+    await user.click(screen.getByRole("button", { name: "Manage tags" }));
+    await waitFor(() => {
+      expect(queryManager()).not.toBeInTheDocument();
+    });
+    expect(scrollCalls).toHaveLength(0);
   });
 });

@@ -31,6 +31,15 @@ export interface RouteTagManagerProps {
   renameButtonRef?: RefObject<HTMLButtonElement | null>;
   deleteButtonRef?: RefObject<HTMLButtonElement | null>;
   closeButtonRef?: RefObject<HTMLButtonElement | null>;
+  /** The panel root and its own heading, measured (never written) by
+   * RouteLibrary's post-success top-reveal — backlog item 105. Mirrors
+   * RouteListItem's own cardRef/titleRowRef pair: the band revealed is the
+   * root's top through the heading's bottom, so the panel's title is what
+   * is guaranteed clear of the sticky header. Presentation stays here;
+   * the decision of when to reveal stays in RouteLibrary, alongside the
+   * focus hand-off it must not fight with. */
+  panelRef?: RefObject<HTMLDivElement | null>;
+  headingRef?: RefObject<HTMLHeadingElement | null>;
 }
 
 /**
@@ -78,6 +87,8 @@ export function RouteTagManager({
   renameButtonRef,
   deleteButtonRef,
   closeButtonRef,
+  panelRef,
+  headingRef,
 }: RouteTagManagerProps) {
   const headingId = useId();
   const selectId = useId();
@@ -98,8 +109,15 @@ export function RouteTagManager({
   };
 
   return (
-    <div className="tag-manager stack" role="group" aria-labelledby={headingId}>
-      <h2 id={headingId}>Manage tags</h2>
+    <div
+      className="tag-manager stack"
+      role="group"
+      aria-labelledby={headingId}
+      ref={panelRef}
+    >
+      <h2 id={headingId} ref={headingRef}>
+        Manage tags
+      </h2>
 
       {tags.length === 0 ? (
         <>

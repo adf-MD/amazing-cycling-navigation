@@ -42,6 +42,7 @@ interface RenderOverrides {
   >;
   switchPrompt?: RouteSwitchPrompt | null;
   stickyHeaderRef?: { current: HTMLElement | null };
+  dismissInlineEditorsToken?: number;
 }
 
 /** Builds a complete RouteSwitchPrompt bundle (backlog item 73 follow-up)
@@ -93,6 +94,7 @@ function buildElement(route: LibraryRoute, overrides: RenderOverrides) {
       pinButtonRef={vi.fn()}
       switchPrompt={overrides.switchPrompt ?? null}
       stickyHeaderRef={overrides.stickyHeaderRef}
+      dismissInlineEditorsToken={overrides.dismissInlineEditorsToken}
     />
   );
 }
@@ -164,6 +166,29 @@ function renderItem(overrides: RenderOverrides = {}) {
           onDeleteConfirm,
           onPinToggle,
           onTagsSave,
+        }),
+      );
+    },
+    // Rerenders with a bumped dismissal token — the seam RouteLibrary uses
+    // when the global tag manager opens. Deliberately distinct from an
+    // explicit Cancel: this close must NOT reveal the card (item 105), so
+    // the seam is what makes that difference provable at this level rather
+    // than only through the full RouteLibrary integration test.
+    rerenderWithDismissToken: (
+      dismissInlineEditorsToken: number,
+      nextRoute: LibraryRoute = route,
+    ) => {
+      rerender(
+        buildElement(nextRoute, {
+          onOpen,
+          onRename,
+          onExport,
+          onDeleteRequest,
+          onDeleteCancel,
+          onDeleteConfirm,
+          onPinToggle,
+          onTagsSave,
+          dismissInlineEditorsToken,
         }),
       );
     },
@@ -1103,7 +1128,14 @@ describe("RouteListItem", () => {
         expect(buttonFocusCall?.options).toEqual({ preventScroll: true });
       });
 
-      it("Cancel returns focus without preventScroll and never calls scrollBy", async () => {
+      // Backlog item 105 deliberately INVERTS 0.4.18's Cancel/Escape
+      // contract (which these two tests previously asserted: plain focus(),
+      // never scrollBy). The installed-iPhone field test showed a card
+      // whose top could be left out of view after Cancel, so both explicit
+      // close paths now match the accepted successful-save reveal. The save
+      // path keeps its own separate tests above, so a regression in either
+      // is still caught on its own.
+      it("Cancel suppresses native focus-scroll and reveals the card's top, like a successful save", async () => {
         const user = userEvent.setup();
         stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
         const scrollCalls = captureScrollByCalls();
@@ -1116,11 +1148,14 @@ describe("RouteListItem", () => {
         const buttonFocusCall = focusCalls.find(
           (call) => call.target === screen.getByRole("button", { name: "Add tags" }),
         );
-        expect(buttonFocusCall?.options).toBeUndefined();
-        expect(scrollCalls).toHaveLength(0);
+        expect(buttonFocusCall?.options).toEqual({ preventScroll: true });
+        expect(scrollCalls).toHaveLength(1);
+        expect(scrollCalls[0]).toEqual(
+          expect.objectContaining({ top: -308, left: 0, behavior: "smooth" }),
+        );
       });
 
-      it("Escape returns focus without preventScroll and never calls scrollBy", async () => {
+      it("Escape follows the same reveal contract as Cancel", async () => {
         const user = userEvent.setup();
         stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
         const scrollCalls = captureScrollByCalls();
@@ -1133,11 +1168,49 @@ describe("RouteListItem", () => {
         const buttonFocusCall = focusCalls.find(
           (call) => call.target === screen.getByRole("button", { name: "Add tags" }),
         );
-        expect(buttonFocusCall?.options).toBeUndefined();
-        expect(scrollCalls).toHaveLength(0);
+        expect(buttonFocusCall?.options).toEqual({ preventScroll: true });
+        expect(scrollCalls).toHaveLength(1);
+        expect(scrollCalls[0]).toEqual(
+          expect.objectContaining({ top: -308, left: 0, behavior: "smooth" }),
+        );
       });
 
-      it("a rejected save never scrolls, and a subsequent Cancel after the failure behaves like an ordinary cancel", async () => {
+      it("does not scroll on Cancel when the card's top band is already suitably visible, but still returns focus", async () => {
+        const user = userEvent.setup();
+        stubCardGeometry(alreadyVisibleGeometry.card, alreadyVisibleGeometry.titleRow);
+        const scrollCalls = captureScrollByCalls();
+        const focusCalls = captureFocusCalls();
+        renderItem({ route: buildRoute({ tags: [] }) });
+
+        await openEditor(user);
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+        expect(scrollCalls).toHaveLength(0);
+        const buttonFocusCall = focusCalls.find(
+          (call) => call.target === screen.getByRole("button", { name: "Add tags" }),
+        );
+        expect(buttonFocusCall?.options).toEqual({ preventScroll: true });
+      });
+
+      it("reveals on Cancel with immediate (auto) behaviour under prefers-reduced-motion", async () => {
+        const user = userEvent.setup();
+        stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
+        window.matchMedia = ((query: string) => ({
+          matches: query === "(prefers-reduced-motion: reduce)",
+        })) as typeof window.matchMedia;
+        const scrollCalls = captureScrollByCalls();
+        renderItem({ route: buildRoute({ tags: [] }) });
+
+        await openEditor(user);
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+        expect(scrollCalls).toHaveLength(1);
+        expect(scrollCalls[0]).toEqual(
+          expect.objectContaining({ left: 0, behavior: "auto" }),
+        );
+      });
+
+      it("a rejected save never scrolls, and the subsequent explicit Cancel reveals exactly once", async () => {
         const user = userEvent.setup();
         stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
         const scrollCalls = captureScrollByCalls();
@@ -1157,16 +1230,60 @@ describe("RouteListItem", () => {
 
         expect(scrollCalls).toHaveLength(0);
 
+        // The editor stayed open through the failure, so this is an
+        // ordinary explicit Cancel and reveals like any other (item 105) —
+        // the point of the test is that the REJECTION itself scrolled
+        // nothing, not that the later Cancel is special.
         await user.click(screen.getByRole("button", { name: "Cancel" }));
         expect(screen.getByRole("button", { name: "Add tags" })).toBeInTheDocument();
-        expect(scrollCalls).toHaveLength(0);
+        expect(scrollCalls).toHaveLength(1);
+        expect(scrollCalls[0]).toEqual(
+          expect.objectContaining({ top: -308, left: 0, behavior: "smooth" }),
+        );
       });
 
-      it("re-opening the editor after a successful save resets the reveal signal, so a later Cancel does not spuriously reveal", async () => {
+      // A manager-driven dismissal (RouteLibrary bumps
+      // dismissInlineEditorsToken when the global tag manager opens) is the
+      // third way this editor can close, and item 105 deliberately leaves
+      // it alone: the user's attention is moving to the manager panel, so
+      // the page must not jump to a card instead. Only a successful Save
+      // and an explicit Cancel/Escape set the reveal signal.
+      it("a manager-driven dismissal closes the editor with a plain focus and never reveals", async () => {
         const user = userEvent.setup();
         stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
         const scrollCalls = captureScrollByCalls();
-        const { rerenderWithRoute } = renderItem({
+        const focusCalls = captureFocusCalls();
+        const { rerenderWithDismissToken } = renderItem({
+          route: buildRoute({ tags: [] }),
+        });
+
+        await openEditor(user);
+        await act(async () => {
+          rerenderWithDismissToken(1);
+          await Promise.resolve();
+        });
+
+        expect(screen.getByRole("button", { name: "Add tags" })).toBeInTheDocument();
+        const buttonFocusCall = focusCalls.find(
+          (call) => call.target === screen.getByRole("button", { name: "Add tags" }),
+        );
+        expect(buttonFocusCall?.options).toBeUndefined();
+        expect(scrollCalls).toHaveLength(0);
+      });
+
+      // The genuinely discriminating proof that openTagEditor still resets
+      // the reveal signal. Deliberately NOT "re-open then Cancel": Cancel
+      // sets the signal again, so a leaked signal and a correctly reset one
+      // would produce identical output. Closing through the dismissal path
+      // instead means the ONLY way a scroll can appear here is a stale
+      // signal surviving the re-open.
+      it("does not let a previous save's reveal signal leak through a re-open into a later dismissal", async () => {
+        const user = userEvent.setup();
+        stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
+        const scrollCalls = captureScrollByCalls();
+        const focusCalls = captureFocusCalls();
+        const saved = buildRoute({ tags: ["Gravel"] });
+        const { rerenderWithRoute, rerenderWithDismissToken } = renderItem({
           route: buildRoute({ tags: [] }),
           tagSuggestions: ["Gravel"],
         });
@@ -1174,14 +1291,23 @@ describe("RouteListItem", () => {
         await openEditor(user);
         await user.click(screen.getByRole("button", { name: "Gravel" }));
         await user.click(screen.getByRole("button", { name: "Save tags" }));
-        rerenderWithRoute(buildRoute({ tags: ["Gravel"] }));
+        rerenderWithRoute(saved);
         await screen.findByRole("button", { name: "Edit tags" });
         expect(scrollCalls).toHaveLength(1);
 
         await openEditor(user, "Edit tags");
-        await user.click(screen.getByRole("button", { name: "Cancel" }));
-        expect(screen.getByRole("button", { name: "Edit tags" })).toBeInTheDocument();
+        await act(async () => {
+          rerenderWithDismissToken(1, saved);
+          await Promise.resolve();
+        });
 
+        expect(screen.getByRole("button", { name: "Edit tags" })).toBeInTheDocument();
+        const dismissFocusCall = focusCalls
+          .filter(
+            (call) => call.target === screen.getByRole("button", { name: "Edit tags" }),
+          )
+          .at(-1);
+        expect(dismissFocusCall?.options).toBeUndefined();
         expect(scrollCalls).toHaveLength(1);
       });
 

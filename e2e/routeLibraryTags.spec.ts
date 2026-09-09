@@ -353,29 +353,90 @@ test("does not scroll the page when the card is already visible before saving ta
   expect(scrollYAfter).toBe(scrollYBefore);
 });
 
-test("Cancel discards the draft, returns focus to the tags button, and leaves it comfortably visible without a forced reveal (item 100 follow-up)", async ({
+// Backlog item 105 deliberately replaces this journey's 0.4.18 contract.
+// It previously asserted the opposite — "leaves it comfortably visible
+// without a forced reveal", with no scrollY assertion at all, because
+// Cancel kept the browser's own native focus-scroll. The installed-iPhone
+// field test found that leaves a tall card's top out of view, so Cancel now
+// matches the accepted successful-save reveal.
+test("Cancel discards the draft, returns focus to the tags button, and reveals the card's top and title below the sticky header (item 105)", async ({
   page,
 }) => {
   await page.goto("/");
-  await importRouteWithManyTags(page, "Cancel Target Route", 10, 100);
+  await importRouteWithManyTags(page, "Cancel Target Route", 10, 40);
 
-  // Deliberately no scrollY assertion here: native focus-scroll (kept
-  // unchanged for Cancel) may legitimately make its own small adjustment —
-  // only draft-discard, correct focus and comfortable visibility are the
-  // contract for this path.
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
-
+  // Save first, so the card is still genuinely TALL after the later Cancel
+  // discards its next draft. Cancelling a card that shrinks back to nothing
+  // would let the browser's own scroll clamping frame the top for us, and
+  // the test would pass without the reveal ever running.
+  await page.getByRole("button", { name: "Save tags", exact: true }).click();
   const item = getListItemForName(page, "Cancel Target Route");
+  await expect(item.getByRole("button", { name: "Edit tags" })).toBeVisible();
+  await waitForScrollToSettle(page);
+
+  await item.getByRole("button", { name: "Edit tags" }).click();
+  await page.getByLabel("Add a tag").fill("discard-me");
+  await page.getByRole("button", { name: "Add tag", exact: true }).click();
+
+  // Put Cancel in view explicitly. Playwright would scroll to it anyway on
+  // click, which would silently undo the setup this test depends on.
+  const cancel = page.getByRole("button", { name: "Cancel", exact: true });
+  await cancel.scrollIntoViewIfNeeded();
+  await waitForScrollToSettle(page);
+
+  const before = await measureRevealGeometry(page, "Cancel Target Route");
+  if (!before.header || !before.card) {
+    throw new Error("expected the header and card to be measurable before cancelling");
+  }
+  // The precondition the whole test rests on: the card's own top really is
+  // occluded before Cancel. If this ever stops holding, the test fails here
+  // rather than passing for the wrong reason.
+  expect(before.card.top).toBeLessThan(before.header.bottom);
+  const scrollXBefore = before.scrollX;
+
+  await cancel.click();
+  await expect(item.getByRole("button", { name: "Edit tags" })).toBeVisible();
+  await waitForScrollToSettle(page);
+
+  const geometry = await measureRevealGeometry(page, "Cancel Target Route");
+  if (!geometry.header || !geometry.card || !geometry.title) {
+    throw new Error("expected header, card and title to all be measurable");
+  }
+  expect(geometry.card.top).toBeGreaterThanOrEqual(
+    geometry.header.bottom - REVEAL_TOLERANCE_PX,
+  );
+  expect(geometry.title.top).toBeGreaterThanOrEqual(
+    geometry.header.bottom - REVEAL_TOLERANCE_PX,
+  );
+  expect(geometry.title.bottom).toBeLessThanOrEqual(
+    geometry.visibleBottom + REVEAL_TOLERANCE_PX,
+  );
+  await expect(item.getByRole("button", { name: "Edit tags" })).toBeFocused();
+  // Horizontal position is never touched by the reveal.
+  expect(geometry.scrollX).toBe(scrollXBefore);
+  // The draft really was discarded: the 40 saved tags, and not the 41st.
+  expect(await item.locator(".route-card-tag").count()).toBe(40);
+});
+
+test("does not scroll the page when the card is already visible before cancelling tag editing (item 105)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await importRoute(page, "Already Visible Cancel Route");
+  await openTagEditor(page, "Already Visible Cancel Route");
+  await page.getByLabel("Add a tag").fill("Gravel");
+  await page.getByRole("button", { name: "Add tag", exact: true }).click();
+
+  // No settle poll needed, and deliberately so: nothing is expected to
+  // animate, which is exactly what this asserts.
+  const scrollYBefore = await page.evaluate(() => window.scrollY);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  const item = getListItemForName(page, "Already Visible Cancel Route");
   await expect(item.getByRole("button", { name: "Add tags" })).toBeVisible();
   await expect(item.getByRole("button", { name: "Add tags" })).toBeFocused();
-  expect(await item.locator(".route-card-tags").count()).toBe(0);
 
-  const buttonBox = await item.getByRole("button", { name: "Add tags" }).boundingBox();
-  if (!buttonBox) throw new Error("expected the Add tags button to have a bounding box");
-  const viewportSize = page.viewportSize();
-  if (!viewportSize) throw new Error("expected a viewport size");
-  expect(buttonBox.y).toBeGreaterThanOrEqual(0);
-  expect(buttonBox.y + buttonBox.height).toBeLessThanOrEqual(viewportSize.height);
+  const scrollYAfter = await page.evaluate(() => window.scrollY);
+  expect(scrollYAfter).toBe(scrollYBefore);
 });
 
 /** This item's own contract is that the tag editor stays fully contained

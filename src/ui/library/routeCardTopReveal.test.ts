@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+  applyTopRevealScroll,
   computeTopRevealScrollDelta,
   TOP_REVEAL_TOLERANCE_PX,
 } from "./routeCardTopReveal.ts";
@@ -64,5 +65,93 @@ describe("computeTopRevealScrollDelta", () => {
     expect(computeTopRevealScrollDelta({ top: 20, bottom: 400 }, 65, 0, 800)).toBe(
       20 - 73,
     );
+  });
+});
+
+// The single shared applier (backlog item 105): three callers now depend on
+// it — a card's successful save, a card's Cancel/Escape, and the Manage
+// tags panel's top after a successful global operation — so its viewport
+// measurement and its "one scrollBy at most" rule are worth pinning here
+// rather than only through each caller's own component test.
+describe("applyTopRevealScroll", () => {
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalScrollBy = window.scrollBy;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalMatchMedia = window.matchMedia;
+  const originalVisualViewport = window.visualViewport;
+
+  afterEach(() => {
+    window.scrollBy = originalScrollBy;
+    window.matchMedia = originalMatchMedia;
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: originalVisualViewport,
+    });
+  });
+
+  function captureScrollByCalls() {
+    const calls: ScrollToOptions[] = [];
+    window.scrollBy = (options?: ScrollToOptions | number) => {
+      if (typeof options === "object") {
+        calls.push(options);
+      }
+    };
+    return calls;
+  }
+
+  function stubVisualViewport(value: { offsetTop: number; height: number } | null) {
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value,
+    });
+  }
+
+  it("scrolls by the computed delta, never touching horizontal position", () => {
+    const calls = captureScrollByCalls();
+    // jsdom's innerHeight is 768 and no sticky header is supplied, so the
+    // effective top boundary is the 8px gap alone: -300 - 8.
+    expect(applyTopRevealScroll({ top: -300, bottom: -256 }, 0)).toBe(-308);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ top: -308, left: 0, behavior: "smooth" });
+  });
+
+  it("issues no call at all when the band is already suitably framed", () => {
+    const calls = captureScrollByCalls();
+    expect(applyTopRevealScroll({ top: 100, bottom: 144 }, 0)).toBe(0);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("accounts for a sticky header's own bottom edge", () => {
+    const calls = captureScrollByCalls();
+    // Without the header this band would need no scroll at all; the header
+    // occluding its top is the only reason a delta exists.
+    expect(applyTopRevealScroll({ top: 60, bottom: 100 }, 120)).toBe(60 - 128);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("prefers the visual viewport's own band over the layout viewport", () => {
+    const calls = captureScrollByCalls();
+    stubVisualViewport({ offsetTop: 200, height: 300 });
+    // The band sits below the shrunken visible band's bottom (200 + 300),
+    // so it must scroll down — against the layout viewport's 768 it would
+    // have been considered already visible and scrolled nothing.
+    expect(applyTopRevealScroll({ top: 520, bottom: 560 }, 0)).toBeGreaterThan(0);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("falls back to the layout viewport when no visual viewport is exposed", () => {
+    const calls = captureScrollByCalls();
+    stubVisualViewport(null);
+    expect(applyTopRevealScroll({ top: 520, bottom: 560 }, 0)).toBe(0);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("uses immediate behaviour under prefers-reduced-motion", () => {
+    const calls = captureScrollByCalls();
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(prefers-reduced-motion: reduce)",
+    })) as typeof window.matchMedia;
+    applyTopRevealScroll({ top: -300, bottom: -256 }, 0);
+    expect(calls[0]).toEqual({ top: -308, left: 0, behavior: "auto" });
   });
 });
