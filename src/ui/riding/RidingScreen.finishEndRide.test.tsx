@@ -526,11 +526,21 @@ describe("RidingScreen Finish/End ride", () => {
     const dialog = await screen.findByRole("alertdialog");
     await user.click(within(dialog).getByRole("button", { name: "End ride" }));
 
+    // finish() deliberately awaits clearActiveRideState() FIRST, and only
+    // then calls stop() and setWakeLockDesired(false) — after which React
+    // must still commit a re-render, unmount RidingWakeLockControl, run
+    // useScreenWakeLock's cleanup, and let its own un-awaited
+    // `void handle.release()` settle. So an empty rideState row proves
+    // only the first of those steps; asserting the rest immediately after
+    // it is a race, and it is the assertion that is wrong, not the
+    // production ordering. Both remaining facts are therefore polled.
     await waitFor(async () => {
       expect(await getActiveRideState()).toBeUndefined();
     });
-    expect(fake.watches[0]?.disposed).toBe(true);
-    expect(fakeWakeLock.instances[0]?.releaseCallCount).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(fake.watches[0]?.disposed).toBe(true);
+      expect(fakeWakeLock.instances[0]?.releaseCallCount).toBeGreaterThan(0);
+    });
   });
 
   it("a late callback from the disposed watch cannot alter the finished state", async () => {
