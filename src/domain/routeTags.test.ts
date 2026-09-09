@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyTagRemoval,
+  applyTagRename,
   collectTagSuggestions,
+  countRoutesByTagIdentity,
   normalizeRouteTags,
   resolveTagSpelling,
   sortTagsForDisplay,
   tagIdentityKey,
+  tagsContainIdentity,
   tagsEqualByIdentity,
 } from "./routeTags.ts";
 
@@ -214,5 +218,162 @@ describe("collectTagSuggestions", () => {
     collectTagSuggestions(routes);
 
     expect(routes).toEqual(routesCopy);
+  });
+});
+
+describe("tagsContainIdentity", () => {
+  it("matches a differing display spelling by identity", () => {
+    expect(tagsContainIdentity(["  GRAVEL  "], "gravel")).toBe(true);
+    expect(tagsContainIdentity(["Gravel"], "  gravel  ")).toBe(true);
+  });
+
+  it("is false for a tag the route does not carry", () => {
+    expect(tagsContainIdentity(["Gravel"], "road")).toBe(false);
+  });
+
+  it("matches when the key is passed as a display spelling", () => {
+    expect(tagsContainIdentity(["gravel"], "Gravel")).toBe(true);
+  });
+
+  it("treats a non-array or malformed stored value as carrying nothing", () => {
+    expect(tagsContainIdentity(undefined, "gravel")).toBe(false);
+    expect(tagsContainIdentity("gravel", "gravel")).toBe(false);
+    expect(tagsContainIdentity([42, null], "gravel")).toBe(false);
+  });
+
+  it("ignores malformed entries alongside a genuine match", () => {
+    expect(tagsContainIdentity([42, "Gravel", null], "gravel")).toBe(true);
+  });
+
+  it("matches across NFC composition variants", () => {
+    expect(tagsContainIdentity([CAFE_COMBINING], tagIdentityKey(CAFE_PRECOMPOSED))).toBe(
+      true,
+    );
+  });
+});
+
+describe("applyTagRename", () => {
+  it("renames to a novel identity, preserving unrelated tags and their order", () => {
+    expect(applyTagRename(["Road", "Gravel", "Loop"], "gravel", "Trail")).toEqual([
+      "Road",
+      "Trail",
+      "Loop",
+    ]);
+  });
+
+  it("matches the source by identity, not display spelling", () => {
+    expect(applyTagRename(["  GRAVEL  "], "gravel", "Trail")).toEqual(["Trail"]);
+  });
+
+  it("applies a display-only respelling of the same identity", () => {
+    expect(applyTagRename(["Gravel"], "gravel", "gravel")).toEqual(["gravel"]);
+    expect(applyTagRename(["gravel"], "gravel", "Gravel")).toEqual(["Gravel"]);
+  });
+
+  it("merges source into target, keeping the earlier position, when the source comes first", () => {
+    expect(applyTagRename(["Gravel", "Road", "Trail"], "gravel", "Trail")).toEqual([
+      "Trail",
+      "Road",
+    ]);
+  });
+
+  it("merges source into target, keeping the earlier position, when the target comes first", () => {
+    expect(applyTagRename(["Trail", "Road", "Gravel"], "gravel", "Trail")).toEqual([
+      "Trail",
+      "Road",
+    ]);
+  });
+
+  it("converges both spellings on the target spelling within an affected row", () => {
+    expect(applyTagRename(["Gravel", "trail"], "gravel", "Trail")).toEqual(["Trail"]);
+  });
+
+  it("leaves a row without the source unchanged apart from canonicalisation", () => {
+    expect(applyTagRename(["Road", "  Loop  "], "gravel", "Trail")).toEqual([
+      "Road",
+      "Loop",
+    ]);
+  });
+
+  it("canonicalises a malformed stored value while renaming", () => {
+    expect(applyTagRename(["  Gravel  ", "gravel", 42, null], "gravel", "Trail")).toEqual(
+      ["Trail"],
+    );
+  });
+
+  it("normalises whitespace and NFC noise in the target spelling", () => {
+    expect(applyTagRename(["Gravel"], "gravel", "  Long   Trail  ")).toEqual([
+      "Long Trail",
+    ]);
+  });
+
+  it("treats a non-array stored value as empty", () => {
+    expect(applyTagRename(undefined, "gravel", "Trail")).toEqual([]);
+  });
+
+  it("never mutates its input", () => {
+    const tags = ["Gravel", "Road"];
+    applyTagRename(tags, "gravel", "Trail");
+    expect(tags).toEqual(["Gravel", "Road"]);
+  });
+});
+
+describe("applyTagRemoval", () => {
+  it("removes the tag by identity regardless of spelling", () => {
+    expect(applyTagRemoval(["Road", "  GRAVEL  ", "Loop"], "gravel")).toEqual([
+      "Road",
+      "Loop",
+    ]);
+  });
+
+  it("returns an empty array when the removed tag was the only one", () => {
+    expect(applyTagRemoval(["Gravel"], "gravel")).toEqual([]);
+  });
+
+  it("leaves a route without the tag unchanged apart from canonicalisation", () => {
+    expect(applyTagRemoval(["  Road  "], "gravel")).toEqual(["Road"]);
+  });
+
+  it("treats a non-array stored value as empty", () => {
+    expect(applyTagRemoval({ nope: true }, "gravel")).toEqual([]);
+  });
+
+  it("never mutates its input", () => {
+    const tags = ["Gravel", "Road"];
+    applyTagRemoval(tags, "gravel");
+    expect(tags).toEqual(["Gravel", "Road"]);
+  });
+});
+
+describe("countRoutesByTagIdentity", () => {
+  it("counts routes, never occurrences", () => {
+    const counts = countRoutesByTagIdentity([
+      { tags: ["Gravel", "gravel", "Road"] },
+      { tags: ["Gravel"] },
+    ]);
+    expect(counts.get("gravel")).toBe(2);
+    expect(counts.get("road")).toBe(1);
+  });
+
+  it("collapses differing spellings onto one identity key", () => {
+    const counts = countRoutesByTagIdentity([
+      { tags: ["Gravel"] },
+      { tags: ["  gravel  "] },
+      { tags: ["GRAVEL"] },
+    ]);
+    expect([...counts.keys()]).toEqual(["gravel"]);
+    expect(counts.get("gravel")).toBe(3);
+  });
+
+  it("returns an empty map for an empty or untagged corpus", () => {
+    expect(countRoutesByTagIdentity([]).size).toBe(0);
+    expect(countRoutesByTagIdentity([{ tags: [] }]).size).toBe(0);
+  });
+
+  it("keeps diacritic and eszett variants as distinct identities", () => {
+    const counts = countRoutesByTagIdentity([
+      { tags: [CAFE_PRECOMPOSED, "cafe", STRASSE_ESZETT, "strasse"] },
+    ]);
+    expect(counts.size).toBe(4);
   });
 });

@@ -893,6 +893,28 @@ button:focus-visible {
   width: 1em;
 }
 
+/* The global tag manager panel (backlog item 100 stage 4A). Mirrors
+ * .tag-editor's own left-accent card treatment above — neither
+ * destructive nor a success state — but kept as its own class since it is
+ * a screen-level panel below the toolbar rather than an in-card editor,
+ * and the two can never be confused in a query. */
+.tag-manager {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--colour-border);
+  border-left: 4px solid var(--colour-border-strong);
+  border-radius: 6px;
+  background: var(--colour-bg-elevated);
+}
+
+/* Matches the global `button` touch-target rule, exactly as
+ * .route-library-sort-select does for the Sort by control — a native
+ * <select> has no equivalent default sizing rule of its own. */
+.tag-manager-select {
+  min-height: var(--touch-target-min);
+  width: 100%;
+}
+
 /* Planning's own two map controls (Locate me, north-up) — top-right,
  * clear of the centred crosshair, the bottom-centre "Add waypoint here"
  * button, and .map-attribution's bottom-left corner. Riding/free-roam's

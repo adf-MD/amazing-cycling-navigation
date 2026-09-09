@@ -251,3 +251,85 @@ test("selecting a tag filter chip narrows the visible list, with the chip meetin
 
   expect(consoleErrors).toEqual([]);
 });
+
+// Backlog item 100 stage 4A, kept to this file's own deliberately narrower
+// charter: the global tag lifecycle's full contract (merge deduplication,
+// identity handling, filter reconciliation orderings, failure paths) is
+// proven in routeLibraryTagManagement.spec.ts and the unit/integration
+// suites — what is proven here is that the same journey still works, and
+// the panel stays touch-usable, under mobile viewport/touch/UA emulation.
+async function tagRouteFor(page: Page, routeName: string, tag: string) {
+  const card = getListItemForName(page, routeName);
+  const addTags = card.getByRole("button", { name: "Add tags", exact: true });
+  const editTags = card.getByRole("button", { name: "Edit tags", exact: true });
+  if (await addTags.count()) {
+    await addTags.click();
+  } else {
+    await editTags.click();
+  }
+  const tagInput = page.getByLabel("Add a tag");
+  await tagInput.fill(tag);
+  await tagInput.press("Enter");
+  await page.getByRole("button", { name: "Save tags", exact: true }).click();
+  await expect(editTags).toBeVisible();
+}
+
+test("globally renaming a tag updates every card and the filter chip, with the manager touch-usable", async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await page.goto("/");
+  await importRoute(page, "Alpine Climb");
+  await importRoute(page, "Zebra Loop");
+  await tagRouteFor(page, "Alpine Climb", "Gravel");
+  await tagRouteFor(page, "Zebra Loop", "Gravel");
+
+  await page.getByRole("button", { name: "Manage tags", exact: true }).click();
+  const manager = page.getByRole("group", { name: "Manage tags" });
+  await expect(manager).toBeVisible();
+
+  const tagSelect = manager.getByLabel("Tag to manage");
+  await tagSelect.selectOption({ label: "Gravel (2 routes)" });
+  await manager.getByLabel("New name").fill("Trail");
+
+  // Real bounding boxes, never screenshots, matching this file's own
+  // established touch-target convention.
+  for (const control of [
+    tagSelect,
+    manager.getByLabel("New name"),
+    manager.getByRole("button", { name: "Rename tag", exact: true }),
+    manager.getByRole("button", { name: "Delete tag", exact: true }),
+    manager.getByRole("button", { name: "Close", exact: true }),
+  ]) {
+    const box = await control.boundingBox();
+    if (!box) throw new Error("expected element to have a bounding box");
+    expect(box.height).toBeGreaterThanOrEqual(44);
+  }
+
+  await manager.getByRole("button", { name: "Rename tag", exact: true }).click();
+
+  await expect(page.getByText("Renamed “Gravel” to “Trail” on 2 routes.")).toBeVisible();
+  await expect(getListItemForName(page, "Alpine Climb").getByText("Trail")).toBeVisible();
+  await expect(getListItemForName(page, "Zebra Loop").getByText("Trail")).toBeVisible();
+  await expect(
+    page
+      .getByRole("group", { name: "Filter by tags" })
+      .getByRole("button", { name: "Trail", exact: true }),
+  ).toBeVisible();
+
+  const viewport = page.viewportSize();
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(overflow).toBe(false);
+  expect(viewport).not.toBeNull();
+
+  expect(consoleErrors).toEqual([]);
+});

@@ -1,6 +1,8 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "./db.ts";
+import * as routeTags from "../domain/routeTags.ts";
 import {
+  applyRouteTagLifecycle,
   deleteRoute,
   getRoute,
   listRoutes,
@@ -317,5 +319,279 @@ describe("routesRepository", () => {
       const rawStored = await db.routes.get(route.id);
       expect(rawStored?.tags).toEqual(["Weekend", "gravel"]);
     });
+  });
+});
+
+describe("routesRepository tag lifecycle (backlog item 100 stage 4A)", () => {
+  beforeEach(async () => {
+    await db.routes.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function seed(...tagSets: readonly (readonly unknown[])[]): Promise<string[]> {
+    const ids: string[] = [];
+    for (const tags of tagSets) {
+      const route = buildRoute();
+      ids.push(route.id);
+      // Written with a raw put so a deliberately malformed or
+      // non-canonical stored value survives to the assertion — saveRoute
+      // would canonicalise it on the way in.
+      await db.routes.put({ ...route, tags } as unknown as PlannedRoute);
+    }
+    return ids;
+  }
+
+  async function rawTags(id: string): Promise<unknown> {
+    const stored = await db.routes.get(id);
+    return stored?.tags;
+  }
+
+  it("renames a tag across every route carrying it, matching by identity not spelling", async () => {
+    const [a, b, c] = await seed(["Gravel"], ["  gravel  "], ["GRAVEL", "Road"]);
+
+    const outcome = await applyRouteTagLifecycle({
+      kind: "rename",
+      sourceKey: "gravel",
+      targetSpelling: "Trail",
+    });
+
+    expect(outcome).toEqual({
+      status: "applied",
+      sourceRouteCount: 3,
+      writtenRouteCount: 3,
+    });
+    await expect(rawTags(a ?? "")).resolves.toEqual(["Trail"]);
+    await expect(rawTags(b ?? "")).resolves.toEqual(["Trail"]);
+    await expect(rawTags(c ?? "")).resolves.toEqual(["Trail", "Road"]);
+  });
+
+  it("leaves a route carrying only the target identity byte-identical", async () => {
+    // Candidate rows are selected by the SOURCE identity alone. This row
+    // never carried "gravel", so a merge must not rewrite it — not even
+    // to settle its spelling against the target's.
+    const [source, targetOnly] = await seed(["Gravel"], ["trail"]);
+
+    const outcome = await applyRouteTagLifecycle({
+      kind: "rename",
+      sourceKey: "gravel",
+      targetSpelling: "Trail",
+    });
+
+    expect(outcome).toEqual({
+      status: "applied",
+      sourceRouteCount: 1,
+      writtenRouteCount: 1,
+    });
+    await expect(rawTags(source ?? "")).resolves.toEqual(["Trail"]);
+    await expect(rawTags(targetOnly ?? "")).resolves.toEqual(["trail"]);
+  });
+
+  it("merges into an existing tag, leaving exactly one entry at the earlier position", async () => {
+    const [sourceFirst, targetFirst, neither] = await seed(
+      ["Gravel", "Road", "Trail"],
+      ["Trail", "Road", "Gravel"],
+      ["Road"],
+    );
+
+    await applyRouteTagLifecycle({
+      kind: "rename",
+      sourceKey: "gravel",
+      targetSpelling: "Trail",
+    });
+
+    await expect(rawTags(sourceFirst ?? "")).resolves.toEqual(["Trail", "Road"]);
+    await expect(rawTags(targetFirst ?? "")).resolves.toEqual(["Trail", "Road"]);
+    await expect(rawTags(neither ?? "")).resolves.toEqual(["Road"]);
+  });
+
+  it("converges an affected row's own target spelling on the operation's target spelling", async () => {
+    // The discriminating case for applyTagRename's target mapping. Plain
+    // dedup is NOT what that mapping buys: normalizeRouteTags already
+    // collapses two identity-equal entries on its own. What it buys is
+    // the surviving SPELLING when an affected row happens to carry the
+    // target first, under a different spelling — without it, that row's
+    // own older spelling would win and the library would show two
+    // spellings of one tag.
+    const [targetFirst] = await seed(["TRAIL", "Gravel"]);
+
+    await applyRouteTagLifecycle({
+      kind: "rename",
+      sourceKey: "gravel",
+      targetSpelling: "Trail",
+    });
+
+    await expect(rawTags(targetFirst ?? "")).resolves.toEqual(["Trail"]);
+  });
+
+  it("applies a display-only respelling to every carrying route", async () => {
+    const [a, b] = await seed(["Gravel"], ["GRAVEL", "Road"]);
+
+    const outcome = await applyRouteTagLifecycle({
+      kind: "rename",
+      sourceKey: "gravel",
+      targetSpelling: "gravel",
+    });
+
+    expect(outcome).toEqual({
+      status: "applied",
+      sourceRouteCount: 2,
+      writtenRouteCount: 2,
+    });
+    await expect(rawTags(a ?? "")).resolves.toEqual(["gravel"]);
+    await expect(rawTags(b ?? "")).resolves.toEqual(["gravel", "Road"]);
+  });
+
+  it("reports sourceRouteCount without writing when the stored rows are already canonical", async () => {
+    await seed(["Gravel"], ["Gravel"], ["Gravel"]);
+    const update = vi.spyOn(db.routes, "update");
+
+    const outcome = await applyRouteTagLifecycle({
+      kind: "rename",
+      sourceKey: "gravel",
+      targetSpelling: "Gravel",
+    });
+
+    expect(outcome).toEqual({
+      status: "applied",
+      sourceRouteCount: 3,
+      writtenRouteCount: 0,
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("canonicalises a malformed legacy row that carries the source, without crashing", async () => {
+    const [malformedSource] = await seed(["  Gravel  ", "gravel", 42, null]);
+
+    await applyRouteTagLifecycle({
+      kind: "rename",
+      sourceKey: "gravel",
+      targetSpelling: "Trail",
+    });
+
+    await expect(rawTags(malformedSource ?? "")).resolves.toEqual(["Trail"]);
+  });
+
+  it("leaves a malformed legacy row that does not carry the source untouched", async () => {
+    const [malformedOther] = await seed(["  Road  ", 42, null]);
+
+    await applyRouteTagLifecycle({
+      kind: "rename",
+      sourceKey: "gravel",
+      targetSpelling: "Trail",
+    });
+
+    await expect(rawTags(malformedOther ?? "")).resolves.toEqual(["  Road  ", 42, null]);
+  });
+
+  it("never touches a non-tag field of an affected route", async () => {
+    const route = buildRoute({ name: "Alpine", pinnedAt: "2026-01-01T00:00:00.000Z" });
+    await db.routes.put({ ...route, tags: ["Gravel"] });
+
+    await applyRouteTagLifecycle({
+      kind: "rename",
+      sourceKey: "gravel",
+      targetSpelling: "Trail",
+    });
+
+    const stored = await db.routes.get(route.id);
+    expect(stored).toEqual({ ...route, tags: ["Trail"] });
+  });
+
+  it("rejects an empty or whitespace-only target without opening a transaction", async () => {
+    const [only] = await seed(["Gravel"]);
+    const update = vi.spyOn(db.routes, "update");
+
+    for (const targetSpelling of ["", "   ", "\t\n"]) {
+      await expect(
+        applyRouteTagLifecycle({ kind: "rename", sourceKey: "gravel", targetSpelling }),
+      ).resolves.toEqual({ status: "invalid-target" });
+    }
+
+    expect(update).not.toHaveBeenCalled();
+    await expect(rawTags(only ?? "")).resolves.toEqual(["Gravel"]);
+  });
+
+  it("reports a zero sourceRouteCount, and writes nothing, when no route carries the tag", async () => {
+    const [other] = await seed(["Road"]);
+    const update = vi.spyOn(db.routes, "update");
+
+    await expect(
+      applyRouteTagLifecycle({
+        kind: "rename",
+        sourceKey: "gravel",
+        targetSpelling: "Trail",
+      }),
+    ).resolves.toEqual({ status: "applied", sourceRouteCount: 0, writtenRouteCount: 0 });
+    await expect(
+      applyRouteTagLifecycle({ kind: "delete", sourceKey: "gravel" }),
+    ).resolves.toEqual({ status: "applied", sourceRouteCount: 0, writtenRouteCount: 0 });
+
+    expect(update).not.toHaveBeenCalled();
+    await expect(rawTags(other ?? "")).resolves.toEqual(["Road"]);
+  });
+
+  it("deletes a tag from every route without deleting any route", async () => {
+    const [a, b, c] = await seed(["Gravel", "Road"], ["  GRAVEL  "], ["Road"]);
+
+    const outcome = await applyRouteTagLifecycle({
+      kind: "delete",
+      sourceKey: "gravel",
+    });
+
+    expect(outcome).toEqual({
+      status: "applied",
+      sourceRouteCount: 2,
+      writtenRouteCount: 2,
+    });
+    await expect(rawTags(a ?? "")).resolves.toEqual(["Road"]);
+    await expect(rawTags(b ?? "")).resolves.toEqual([]);
+    await expect(rawTags(c ?? "")).resolves.toEqual(["Road"]);
+    await expect(db.routes.count()).resolves.toBe(3);
+  });
+
+  it("stores an empty array, never a missing key, when the last tag is deleted", async () => {
+    const [only] = await seed(["Gravel"]);
+
+    await applyRouteTagLifecycle({ kind: "delete", sourceKey: "gravel" });
+
+    const stored = await db.routes.get(only ?? "");
+    expect(stored).toHaveProperty("tags");
+    expect(stored?.tags).toEqual([]);
+  });
+
+  it("leaves every route unchanged when the operation fails part-way through", async () => {
+    // The atomicity proof. applyTagRename is called through the module
+    // namespace by routesRepository precisely so a failure can be injected
+    // mid-transaction here without any production test seam, and without
+    // weakening the transaction itself. The first row's own db.routes
+    // .update() has genuinely been issued and awaited before the second
+    // row's computation throws, so a plain loop of independent writes
+    // would leave route A renamed — only a real transaction rolls it back.
+    const ids = await seed(["Gravel"], ["Gravel"], ["Gravel"]);
+    const realApplyTagRename = routeTags.applyTagRename;
+    const spy = vi
+      .spyOn(routeTags, "applyTagRename")
+      .mockImplementationOnce(realApplyTagRename)
+      .mockImplementationOnce(() => {
+        throw new Error("injected mid-transaction failure");
+      });
+
+    await expect(
+      applyRouteTagLifecycle({
+        kind: "rename",
+        sourceKey: "gravel",
+        targetSpelling: "Trail",
+      }),
+    ).rejects.toThrow("injected mid-transaction failure");
+
+    // Guards the control itself: if the namespace spy silently failed to
+    // intercept, every assertion below would pass for the wrong reason.
+    expect(spy).toHaveBeenCalledTimes(2);
+    for (const id of ids) {
+      await expect(rawTags(id)).resolves.toEqual(["Gravel"]);
+    }
   });
 });

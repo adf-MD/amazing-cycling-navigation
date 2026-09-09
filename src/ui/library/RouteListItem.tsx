@@ -78,6 +78,30 @@ export interface RouteListItemProps {
    * to measure its live rendered height when deciding whether the switch
    * prompt needs to scroll into view; this card never writes to it. */
   stickyHeaderRef?: RefObject<HTMLElement | null>;
+  /** Reports whether this card currently has an inline interaction on
+   * screen — a rename editor, a tag editor, or its delete confirmation —
+   * so RouteLibrary can enforce the one-at-a-time contract with the
+   * global tag manager (backlog item 100 stage 4A). Always reported false
+   * on unmount: a stale route id left registered would permanently
+   * prevent the manager from ever appearing. */
+  onInlineEditorOpenChange?: (routeId: string, isOpen: boolean) => void;
+  /** Reports whether a tag save is in flight for this card, INCLUDING the
+   * post-write window where the editor is still waiting for the live
+   * query to reflect it. RouteLibrary refuses to open the tag manager
+   * while any such save is running, rather than interrupting it. Also
+   * always reported false on unmount, for the same reason as above. */
+  onTagsSaveBusyChange?: (routeId: string, isBusy: boolean) => void;
+  /** Bumped by RouteLibrary when the global tag manager opens: this card
+   * dismisses any idle inline interaction it has open. A card whose tag
+   * save is in flight deliberately ignores it — RouteLibrary has already
+   * refused to open the manager in that case, so the token can never
+   * arrive mid-save. */
+  dismissInlineEditorsToken?: number;
+  /** Synchronous admission check, asked BEFORE an inline editor opens:
+   * false while a global tag lifecycle operation is applying, in which
+   * case the editor does not open at all. Asking after the fact would
+   * allow one frame with both interactions on screen. */
+  requestInlineEditorOpen?: () => boolean;
 }
 
 export function RouteListItem({
@@ -101,6 +125,10 @@ export function RouteListItem({
   pinButtonRef,
   switchPrompt,
   stickyHeaderRef,
+  onInlineEditorOpenChange,
+  onTagsSaveBusyChange,
+  dismissInlineEditorsToken,
+  requestInlineEditorOpen,
 }: RouteListItemProps) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [draftName, setDraftName] = useState(route.name);
@@ -240,6 +268,63 @@ export function RouteListItem({
     wasEditingTagsRef.current = isEditingTags;
   }, [isEditingTags, tagsSaveSucceeded, stickyHeaderRef]);
 
+  // Reports this card's inline-interaction state upward so RouteLibrary
+  // can enforce the one-at-a-time contract with the global tag manager
+  // (backlog item 100 stage 4A). The cleanup deliberately reports `false`
+  // rather than merely dropping the subscription: a card can unmount at
+  // any moment — filtered out by a search or tag change, or deleted — and
+  // a stale route id left registered would leave the manager permanently
+  // unable to appear, since its own render condition requires the set to
+  // be empty.
+  const isInlineEditorOpen = isRenaming || isEditingTags || isDeletePending;
+  useEffect(() => {
+    if (!onInlineEditorOpenChange) return;
+    const routeId = route.id;
+    onInlineEditorOpenChange(routeId, isInlineEditorOpen);
+    return () => {
+      onInlineEditorOpenChange(routeId, false);
+    };
+  }, [onInlineEditorOpenChange, route.id, isInlineEditorOpen]);
+
+  // The same contract for an in-flight tag save, which RouteLibrary
+  // refuses to interrupt rather than dismissing. isSavingTags stays true
+  // across the whole write plus the live-query handshake that follows it,
+  // which is exactly the window that must not be disturbed.
+  useEffect(() => {
+    if (!onTagsSaveBusyChange) return;
+    const routeId = route.id;
+    onTagsSaveBusyChange(routeId, isSavingTags);
+    return () => {
+      onTagsSaveBusyChange(routeId, false);
+    };
+  }, [onTagsSaveBusyChange, route.id, isSavingTags]);
+
+  // Consumes RouteLibrary's dismissal token when the global tag manager
+  // opens. Written as React's own "adjust state during render" pattern
+  // against a state mirror of the token, following this file's own
+  // pendingSyncTags precedent and RouteLibrary's
+  // pendingRouteSwitch/previousPendingRouteSwitch one — not as an effect,
+  // which this project's react-hooks/set-state-in-effect rule only
+  // exempts for a ref-gated "consume once" shape. Self-terminating: the
+  // mirror update is itself one of the condition's own inputs.
+  const [previousDismissToken, setPreviousDismissToken] = useState(
+    dismissInlineEditorsToken,
+  );
+  if (dismissInlineEditorsToken !== previousDismissToken) {
+    setPreviousDismissToken(dismissInlineEditorsToken);
+    // isSavingTags (state) rather than isSavingTagsRef: a ref may not be
+    // read during rendering. It is sufficient here because RouteLibrary
+    // already refuses to open the manager at all while any tag save is in
+    // flight, so this token cannot arrive mid-save; this is the card's own
+    // belt-and-braces check. The pending delete confirmation needs no
+    // handling here either — it is RouteLibrary's own state, and
+    // handleOpenTagManager clears it before bumping the token.
+    if (!isSavingTags) {
+      setIsRenaming(false);
+      setIsEditingTags(false);
+    }
+  }
+
   // Closes the tag editor only once BOTH of two independent async facts
   // are established: the write settled (pendingSyncTags is set) and
   // route.tags (via the live query) demonstrably reflects it BY IDENTITY
@@ -344,6 +429,7 @@ export function RouteListItem({
   }, [switchPrompt, stickyHeaderRef]);
 
   const openRename = () => {
+    if (requestInlineEditorOpen && !requestInlineEditorOpen()) return;
     if (isDeletePending) {
       onDeleteCancel(route.id);
     }
@@ -405,6 +491,7 @@ export function RouteListItem({
   // site with this exact guard) must never be silently interrupted by
   // opening the tag editor.
   const openTagEditor = () => {
+    if (requestInlineEditorOpen && !requestInlineEditorOpen()) return;
     if (isDeletePending) {
       onDeleteCancel(route.id);
     }

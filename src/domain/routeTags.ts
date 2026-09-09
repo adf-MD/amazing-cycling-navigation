@@ -119,3 +119,75 @@ export function collectTagSuggestions(
 ): string[] {
   return sortTagsForDisplay(normalizeRouteTags(routes.flatMap((route) => route.tags)));
 }
+
+/** True when `tags` carries a tag whose identity equals `key` (backlog
+ * item 100 stage 4A). Takes `unknown` and routes through
+ * normalizeRouteTags, so a raw, legacy or malformed stored Dexie row is
+ * safe to pass directly — no caller has to assume `string[]`. `key` is
+ * itself re-keyed (tagIdentityKey is idempotent), so a caller that
+ * accidentally passes a display spelling still gets identity semantics. */
+export function tagsContainIdentity(tags: unknown, key: string): boolean {
+  const wanted = tagIdentityKey(key);
+  return normalizeRouteTags(tags).some((tag) => tagIdentityKey(tag) === wanted);
+}
+
+/** Rewrites one route's tags for a global rename, merge or display-only
+ * respelling (backlog item 100 stage 4A): every tag whose identity equals
+ * `sourceKey` OR equals the target's own identity becomes
+ * `targetSpelling`, and the result is normalised.
+ *
+ * Mapping the TARGET identity as well as the source is what makes a merge
+ * correct WITHIN an affected row: a route carrying both tags collapses to
+ * exactly one entry, and both spellings converge on targetSpelling. It is
+ * deliberately not a row-SELECTION rule — storage/routesRepository.ts
+ * selects candidate rows by the source identity alone, so a route that
+ * only ever carried the target is left untouched.
+ *
+ * The surviving tag takes the earliest position of either occurrence and
+ * unrelated tags keep their relative order, both falling out of
+ * normalizeRouteTags's existing first-occurrence ordering rather than any
+ * new ordering logic. Never mutates the input. */
+export function applyTagRename(
+  tags: unknown,
+  sourceKey: string,
+  targetSpelling: string,
+): string[] {
+  const wantedSource = tagIdentityKey(sourceKey);
+  const wantedTarget = tagIdentityKey(targetSpelling);
+  return normalizeRouteTags(
+    normalizeRouteTags(tags).map((tag) => {
+      const key = tagIdentityKey(tag);
+      return key === wantedSource || key === wantedTarget ? targetSpelling : tag;
+    }),
+  );
+}
+
+/** Rewrites one route's tags for a global delete (backlog item 100 stage
+ * 4A): every tag whose identity equals `sourceKey` is dropped and the
+ * remainder normalised. Deleting a tag never deletes a route — a route
+ * left with no tags stores `[]`. Never mutates the input. */
+export function applyTagRemoval(tags: unknown, sourceKey: string): string[] {
+  const wanted = tagIdentityKey(sourceKey);
+  return normalizeRouteTags(
+    normalizeRouteTags(tags).filter((tag) => tagIdentityKey(tag) !== wanted),
+  );
+}
+
+/** How many ROUTES (never occurrences) carry each tag identity across the
+ * whole corpus, keyed by tagIdentityKey (backlog item 100 stage 4A) — the
+ * counts the global tag manager shows beside each tag. Takes the same
+ * minimal structural type as collectTagSuggestions, and reuses
+ * normalizeRouteTags per route so a route listing two spellings of one
+ * identity still counts once. */
+export function countRoutesByTagIdentity(
+  routes: readonly { tags: readonly string[] }[],
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const route of routes) {
+    for (const tag of normalizeRouteTags(route.tags)) {
+      const key = tagIdentityKey(tag);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return counts;
+}

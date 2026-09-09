@@ -15,7 +15,7 @@ Ten files, each covering a contiguous range of item numbers in ascending order (
 - [`items-81-88.md`](items-81-88.md)
 - [`items-89-94.md`](items-89-94.md)
 - [`items-95-99.md`](items-95-99.md)
-- [`items-100-NN.md`](items-100-NN.md) — starts the 100– range, but its first entry is item 104, implemented ahead of pending items 100–103 (see the file's own intro)
+- [`items-100-NN.md`](items-100-NN.md) — starts the 100– range; holds items 100 and 104, the latter having been implemented ahead of items 100–103 (see the file's own intro)
 
 When a new item is completed, append it to whichever of these files its number naturally continues (in ascending numeric order). If that would push a file past roughly 150,000 characters, start a new range file (e.g. `items-74-NN.md`) instead of letting an existing file grow unbounded, and add it to the list above.
 

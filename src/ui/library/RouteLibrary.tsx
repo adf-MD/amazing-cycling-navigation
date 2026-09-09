@@ -11,9 +11,26 @@ import type { RefObject } from "react";
 import type { LibraryRoute, PlannedRoute } from "../../domain/types.ts";
 import {
   collectTagSuggestions,
+  countRoutesByTagIdentity,
   tagIdentityKey,
   tagsEqualByIdentity,
 } from "../../domain/routeTags.ts";
+import { RouteTagManager } from "./RouteTagManager.tsx";
+import {
+  reconcileTagLifecycle,
+  type PendingTagLifecycle,
+} from "./tagLifecycleReconciliation.ts";
+import {
+  describeDeleteConfirmation,
+  describeMergeConfirmation,
+  describeTagLifecycleSuccess,
+  type TagLifecycleConfirmation,
+} from "./tagLifecycleMessages.ts";
+import {
+  resolveEffectiveSourceKey,
+  resolveTagLifecycleTarget,
+  findTagSpelling,
+} from "./tagLifecycleTarget.ts";
 import { exportRouteToGpx } from "../../gpx/exportGpx.ts";
 import type { GpxImportResult } from "../../gpx/importGpx.ts";
 import type { GpxImportNotice } from "../../gpx/parseGpx.ts";
@@ -28,12 +45,14 @@ import {
   saveRouteLibraryPreferences,
 } from "../../storage/routeLibraryPreferencesRepository.ts";
 import {
+  applyRouteTagLifecycle,
   deleteRoute,
   listRoutes,
   pinRoute,
   renameRoute,
   unpinRoute,
   updateRouteTags,
+  type RouteTagLifecycleOperation,
 } from "../../storage/routesRepository.ts";
 import { downloadTextFile } from "../shared/downloadTextFile.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
@@ -124,6 +143,47 @@ export function RouteLibrary({
   const [selectedTagFilters, setSelectedTagFilters] = useState<ReadonlySet<string>>(
     new Set(),
   );
+  // The global tag manager (backlog item 100 stage 4A).
+  const [isTagManagerOpen, setIsTagManagerOpen] = useState(false);
+  const [tagManagerSourceKey, setTagManagerSourceKey] = useState("");
+  const [tagManagerNewName, setTagManagerNewName] = useState("");
+  const [tagLifecycleConfirm, setTagLifecycleConfirm] = useState<{
+    operation: RouteTagLifecycleOperation;
+    copy: TagLifecycleConfirmation;
+  } | null>(null);
+  const [tagLifecycleError, setTagLifecycleError] = useState<string | null>(null);
+  const [tagLifecycleStatus, setTagLifecycleStatus] = useState<string | null>(null);
+  const [tagManagerHint, setTagManagerHint] = useState<string | null>(null);
+  // Drives only the visible disabled/"Applying…" UI; isTagLifecycleBusyRef
+  // below is the correctness guard, mirroring RouteListItem's own
+  // isSavingTags/isSavingTagsRef split.
+  const [isTagLifecycleBusy, setIsTagLifecycleBusy] = useState(false);
+  const isTagLifecycleBusyRef = useRef(false);
+  // ONE marker for both the tag-filter follow and the manager's own
+  // completion, because both wait on exactly the same two signals: the
+  // write settling, and the live-query corpus reflecting it. See
+  // tagLifecycleReconciliation.ts.
+  const [pendingTagLifecycle, setPendingTagLifecycle] =
+    useState<PendingTagLifecycle | null>(null);
+  // Never focuses during rendering: the render-time adjustment only
+  // records where focus must go, and a post-commit effect performs it.
+  const [pendingFocusHandoff, setPendingFocusHandoff] = useState<{
+    target: "select" | "search" | "rename" | "delete";
+    id: number;
+  } | null>(null);
+  // The one-at-a-time admission state, reported upward by each card.
+  const [inlineEditorRouteIds, setInlineEditorRouteIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const [busyTagSaveRouteIds, setBusyTagSaveRouteIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const [dismissInlineEditorsToken, setDismissInlineEditorsToken] = useState(0);
+  const manageTagsButtonRef = useRef<HTMLButtonElement>(null);
+  const tagManagerSelectRef = useRef<HTMLSelectElement>(null);
+  const tagManagerRenameButtonRef = useRef<HTMLButtonElement>(null);
+  const tagManagerDeleteButtonRef = useRef<HTMLButtonElement>(null);
+  const tagManagerCloseButtonRef = useRef<HTMLButtonElement>(null);
   const [tagFiltersHydrated, setTagFiltersHydrated] = useState(false);
   const tagFilterLabelId = useId();
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -218,16 +278,68 @@ export function RouteLibrary({
   // fires again once a genuinely new identity goes stale, not on every
   // unrelated routes-changing render (a rename, a pin toggle) that would
   // otherwise misfire a reference-equality "did this change" check.
-  const staleTagFilterKeys =
-    tagFiltersHydrated && routes !== undefined
-      ? [...selectedTagFilters].filter((key) => !availableTagIdentityKeys.has(key))
-      : [];
-  if (staleTagFilterKeys.length > 0) {
-    const nextSelectedTagFilters = new Set(selectedTagFilters);
-    for (const key of staleTagFilterKeys) {
-      nextSelectedTagFilters.delete(key);
+  // Backlog item 100 stage 4A moved the pruning above into
+  // tagLifecycleReconciliation.ts, which now ALSO carries a pending global
+  // rename's filter follow and the manager's own completion. They must
+  // share one computation: two render-time blocks each deriving a next
+  // selection from the same stale render scope would clobber one another,
+  // and whichever ran second would win. Stage 3's own filter tests are the
+  // behaviour-preserving safety net for that move.
+  const tagLifecycle = reconcileTagLifecycle({
+    selectedKeys: selectedTagFilters,
+    availableKeys: availableTagIdentityKeys,
+    availableTags: tagSuggestions,
+    pending: pendingTagLifecycle,
+    corpusReady: tagFiltersHydrated && routes !== undefined,
+  });
+  if (tagLifecycle.nextSelectedKeys) {
+    setSelectedTagFilters(tagLifecycle.nextSelectedKeys);
+  }
+  // Both signals have landed, so the result can finally be reported using
+  // the repository's own authoritative count rather than a pre-submit UI
+  // count the corpus may already have invalidated.
+  const settled = tagLifecycle.completed ? pendingTagLifecycle : null;
+  if (settled !== null && settled.outcome.status === "applied") {
+    setTagLifecycleStatus(
+      describeTagLifecycleSuccess(
+        settled.kind === "delete"
+          ? { kind: "delete", sourceTag: settled.sourceSpelling }
+          : {
+              kind: "rename",
+              sourceTag: settled.sourceSpelling,
+              targetTag: settled.targetSpelling ?? settled.sourceSpelling,
+              merged: settled.isMerge,
+            },
+        settled.outcome.sourceRouteCount,
+      ),
+    );
+    setTagManagerNewName("");
+    setTagManagerSourceKey(
+      settled.kind === "rename" && settled.targetKey !== null ? settled.targetKey : "",
+    );
+    // Focus is only RECORDED here; performing it during rendering would
+    // be a DOM side effect in the render phase. The post-commit effect
+    // below carries it out, and only then closes a manager whose last tag
+    // has just gone.
+    // A monotonic id, produced with the updater form because a ref may not
+    // be written during rendering (react-hooks/refs). It lets the effect
+    // below consume each hand-off exactly once without needing a second
+    // state update to clear it.
+    const focusTarget = tagSuggestions.length === 0 ? "search" : "select";
+    setPendingFocusHandoff((previous) => ({
+      target: focusTarget,
+      id: (previous?.id ?? 0) + 1,
+    }));
+    // Phase one of the final-tag transition: the panel is closed here, in
+    // the same render pass, and phase two (the layout effect below)
+    // focuses Search before the browser paints — so focus is never
+    // observably lost even though the panel it was in has gone.
+    if (focusTarget === "search") {
+      setIsTagManagerOpen(false);
     }
-    setSelectedTagFilters(nextSelectedTagFilters);
+  }
+  if (tagLifecycle.clearPending) {
+    setPendingTagLifecycle(null);
   }
 
   // Hydrates the search query from the session-lifetime ref exactly once
@@ -589,6 +701,300 @@ export function RouteLibrary({
     });
   };
 
+  // Backlog item 100 stage 4A. The manager's own tags/counts always come
+  // from the FULL unfiltered corpus (tagSuggestions/routes), never from
+  // viewRoutes: a tag hidden by the current search or filter must still be
+  // manageable, with its true route count.
+  const routeCountsByTagKey = useMemo(
+    () => countRoutesByTagIdentity(routes ?? []),
+    [routes],
+  );
+  // Derived, never stored-and-reconciled, and used for BEHAVIOUR — the
+  // disabled state, the preview and confirmation copy, the target
+  // resolution, and the operation handed to storage. A <select> whose
+  // value matches no option silently shows the first one, so deriving only
+  // the rendered value would leave every other path acting on a stale key
+  // and could arm a destructive action against the wrong tag.
+  const effectiveTagManagerSourceKey = resolveEffectiveSourceKey(
+    tagSuggestions,
+    tagManagerSourceKey,
+  );
+
+  // Resets the manager's transient messages whenever it is opened or
+  // closed, so a stale success or error can never outlive its operation.
+  const closeTagManager = () => {
+    if (isTagLifecycleBusyRef.current) return;
+    setIsTagManagerOpen(false);
+    setTagLifecycleConfirm(null);
+    setTagLifecycleError(null);
+    setTagManagerNewName("");
+    setTagManagerSourceKey("");
+    (manageTagsButtonRef.current ?? headingRef.current)?.focus();
+  };
+
+  // The admission check for opening the manager. A busy tag save, a
+  // running delete, or a BUSY switch prompt each refuse outright: the
+  // manager stays shut and the in-flight interaction is left completely
+  // untouched, with a visible reason rather than a silent no-op. An idle
+  // switch prompt or delete confirmation is cancelled instead, following
+  // handleDeleteRequest's own established preamble.
+  const handleOpenTagManager = () => {
+    if (isTagManagerOpen) {
+      closeTagManager();
+      return;
+    }
+    if (busyTagSaveRouteIds.size > 0) {
+      setTagManagerHint("Finish saving that route's tags first, then manage tags.");
+      return;
+    }
+    if (isDeleting) {
+      setTagManagerHint("Wait for the route deletion to finish, then manage tags.");
+      return;
+    }
+    if (pendingRouteSwitch?.busy) {
+      setTagManagerHint("Wait for the ride switch to finish, then manage tags.");
+      return;
+    }
+    if (pendingRouteSwitch) {
+      pendingRouteSwitch.onCancel();
+    }
+    if (pendingDeleteId !== null) {
+      setPendingDeleteId(null);
+      setDeleteError(null);
+    }
+    setTagManagerHint(null);
+    setTagLifecycleStatus(null);
+    setTagLifecycleError(null);
+    setDismissInlineEditorsToken((token) => token + 1);
+    setIsTagManagerOpen(true);
+  };
+
+  // The reverse admission check, asked synchronously by a card BEFORE it
+  // opens an inline editor — never as a notification afterwards, which
+  // would allow a frame with both interactions on screen.
+  const requestInlineEditorOpen = useCallback(() => {
+    if (isTagLifecycleBusyRef.current) return false;
+    setIsTagManagerOpen(false);
+    setTagLifecycleConfirm(null);
+    return true;
+  }, []);
+
+  const handleInlineEditorOpenChange = useCallback((routeId: string, isOpen: boolean) => {
+    setInlineEditorRouteIds((previous) => {
+      if (previous.has(routeId) === isOpen) return previous;
+      const next = new Set(previous);
+      if (isOpen) next.add(routeId);
+      else next.delete(routeId);
+      return next;
+    });
+  }, []);
+
+  const handleTagsSaveBusyChange = useCallback((routeId: string, isBusy: boolean) => {
+    setBusyTagSaveRouteIds((previous) => {
+      if (previous.has(routeId) === isBusy) return previous;
+      const next = new Set(previous);
+      if (isBusy) next.add(routeId);
+      else next.delete(routeId);
+      return next;
+    });
+  }, []);
+
+  const runTagLifecycle = (
+    operation: RouteTagLifecycleOperation,
+    marker: PendingTagLifecycle,
+  ) => {
+    // Synchronous guard, checked and set before React can re-render —
+    // a state value alone cannot stop two invocations landing in one
+    // batch (RouteListItem's own isSavingTagsRef precedent).
+    if (isTagLifecycleBusyRef.current) return;
+    isTagLifecycleBusyRef.current = true;
+    setIsTagLifecycleBusy(true);
+    setTagLifecycleError(null);
+    setTagLifecycleStatus(null);
+    setTagManagerHint(null);
+    setPendingTagLifecycle(marker);
+
+    // Reference-identity guarded, exactly like handleTagsSave's own
+    // `lastTagsSaveIntentRef.current === intent` clear: a later operation
+    // may legitimately have replaced this marker already.
+    const abandonMarker = () => {
+      setPendingTagLifecycle((current) => (current === marker ? null : current));
+    };
+
+    applyRouteTagLifecycle(operation)
+      .then((outcome) => {
+        isTagLifecycleBusyRef.current = false;
+        setIsTagLifecycleBusy(false);
+        setTagLifecycleConfirm(null);
+        if (outcome.status === "invalid-target") {
+          abandonMarker();
+          setTagLifecycleError("Enter a new name for this tag.");
+          return;
+        }
+        // The write signal. The corpus signal is awaited separately, in
+        // the render-time reconciliation above — a zero-write outcome
+        // settles there immediately, because the corpus will never change
+        // again and waiting for it would hang on "Applying…" forever.
+        setPendingTagLifecycle((current) =>
+          current === marker
+            ? {
+                ...marker,
+                outcome: {
+                  status: "applied",
+                  sourceRouteCount: outcome.sourceRouteCount,
+                  writtenRouteCount: outcome.writtenRouteCount,
+                },
+              }
+            : current,
+        );
+      })
+      .catch((error: unknown) => {
+        isTagLifecycleBusyRef.current = false;
+        setIsTagLifecycleBusy(false);
+        setTagLifecycleConfirm(null);
+        // The transaction aborted, so the corpus is untouched and the
+        // active tag filters must stay exactly as they were.
+        abandonMarker();
+        setTagLifecycleError(
+          operation.kind === "rename"
+            ? "That tag could not be renamed. Try again."
+            : "That tag could not be deleted. Try again.",
+        );
+        requestManagerFocus(operation.kind === "rename" ? "rename" : "delete");
+        logError("route-tag-lifecycle", error);
+      });
+  };
+
+  const buildTagLifecycleMarker = (
+    operation: RouteTagLifecycleOperation,
+    sourceSpelling: string,
+    isMerge: boolean,
+  ): PendingTagLifecycle => ({
+    kind: operation.kind,
+    sourceKey: tagIdentityKey(operation.sourceKey),
+    sourceSpelling,
+    targetKey:
+      operation.kind === "rename" ? tagIdentityKey(operation.targetSpelling) : null,
+    targetSpelling: operation.kind === "rename" ? operation.targetSpelling : null,
+    isMerge,
+    outcome: { status: "pending" },
+  });
+
+  const handleTagRenameRequest = () => {
+    const sourceKey = effectiveTagManagerSourceKey;
+    const sourceSpelling = findTagSpelling(tagSuggestions, sourceKey);
+    if (sourceSpelling === null) return;
+    const { targetSpelling, isMerge } = resolveTagLifecycleTarget(
+      tagSuggestions,
+      sourceKey,
+      tagManagerNewName,
+    );
+    if (targetSpelling === null) {
+      // Deliberately submitted rather than blocked behind a disabled
+      // button: this is a real, reachable message instead of dead code.
+      setTagLifecycleError("Enter a new name for this tag.");
+      return;
+    }
+    const operation: RouteTagLifecycleOperation = {
+      kind: "rename",
+      sourceKey,
+      targetSpelling,
+    };
+    if (!isMerge) {
+      runTagLifecycle(
+        operation,
+        buildTagLifecycleMarker(operation, sourceSpelling, false),
+      );
+      return;
+    }
+    // A rename must never silently become a merge, so the collision is
+    // detected here and routed to an explicit confirmation instead.
+    setTagLifecycleConfirm({
+      operation,
+      copy: describeMergeConfirmation(
+        sourceSpelling,
+        targetSpelling,
+        routeCountsByTagKey.get(sourceKey) ?? 0,
+      ),
+    });
+  };
+
+  const handleTagDeleteRequest = () => {
+    const sourceKey = effectiveTagManagerSourceKey;
+    const sourceSpelling = findTagSpelling(tagSuggestions, sourceKey);
+    if (sourceSpelling === null) return;
+    setTagLifecycleConfirm({
+      operation: { kind: "delete", sourceKey },
+      copy: describeDeleteConfirmation(
+        sourceSpelling,
+        routeCountsByTagKey.get(sourceKey) ?? 0,
+      ),
+    });
+  };
+
+  const handleTagLifecycleConfirm = () => {
+    if (!tagLifecycleConfirm) return;
+    const { operation } = tagLifecycleConfirm;
+    const sourceSpelling =
+      findTagSpelling(tagSuggestions, tagIdentityKey(operation.sourceKey)) ??
+      operation.sourceKey;
+    runTagLifecycle(
+      operation,
+      buildTagLifecycleMarker(operation, sourceSpelling, operation.kind === "rename"),
+    );
+  };
+
+  const handleTagLifecycleCancelConfirm = () => {
+    if (isTagLifecycleBusyRef.current) return;
+    const wasDelete = tagLifecycleConfirm?.operation.kind === "delete";
+    setTagLifecycleConfirm(null);
+    requestManagerFocus(wasDelete ? "delete" : "rename");
+  };
+
+  // Performs the completion focus hand-off AFTER commit — never during
+  // the render-time adjustment above, which must stay free of DOM side
+  // effects. Ref-gated "consume once" via a single combined boolean, the
+  // one shape this project's react-hooks/set-state-in-effect rule exempts.
+  //
+  // Order matters for the final-tag case: Search is focused FIRST and only
+  // then is the manager closed, so focus is never destroyed by the panel
+  // unmounting under it. The panel deliberately stays mounted (its render
+  // condition is isTagManagerOpen, not tagSuggestions.length > 0) until
+  // this runs, which is what makes the live-query-first ordering safe —
+  // the corpus can empty before the write promise settles.
+  const handledFocusHandoffIdRef = useRef(0);
+  useLayoutEffect(() => {
+    if (pendingFocusHandoff === null) return;
+    // The marker is read and consumed INSIDE the effect, never during
+    // rendering, and this effect performs no setState — the same shape as
+    // this file's own pendingPinFocusIdRef effect.
+    if (pendingFocusHandoff.id === handledFocusHandoffIdRef.current) return;
+    handledFocusHandoffIdRef.current = pendingFocusHandoff.id;
+    if (pendingFocusHandoff.target === "search") {
+      searchInputRef.current?.focus();
+      return;
+    }
+    if (pendingFocusHandoff.target === "rename") {
+      tagManagerRenameButtonRef.current?.focus();
+      return;
+    }
+    if (pendingFocusHandoff.target === "delete") {
+      tagManagerDeleteButtonRef.current?.focus();
+      return;
+    }
+    tagManagerSelectRef.current?.focus();
+  }, [pendingFocusHandoff]);
+
+  // Every manager focus move goes through the hand-off above rather than
+  // calling .focus() inline. The confirmation disables the Rename/Delete
+  // buttons while it is open, and a real browser (like jsdom here) simply
+  // ignores .focus() on a disabled element — so focusing in the same
+  // handler that clears the confirmation silently dropped focus to
+  // <body>, because the button is still disabled until React re-renders.
+  const requestManagerFocus = (target: "select" | "search" | "rename" | "delete") => {
+    setPendingFocusHandoff((previous) => ({ target, id: (previous?.id ?? 0) + 1 }));
+  };
+
   const handleClearTagFilters = () => {
     setSelectedTagFilters(new Set());
     tagFilterHeadingRef.current?.focus();
@@ -706,6 +1112,10 @@ export function RouteLibrary({
       }}
       switchPrompt={pendingRouteSwitch?.routeId === route.id ? pendingRouteSwitch : null}
       stickyHeaderRef={stickyHeaderRef}
+      onInlineEditorOpenChange={handleInlineEditorOpenChange}
+      onTagsSaveBusyChange={handleTagsSaveBusyChange}
+      dismissInlineEditorsToken={dismissInlineEditorsToken}
+      requestInlineEditorOpen={requestInlineEditorOpen}
     />
   );
 
@@ -820,7 +1230,66 @@ export function RouteLibrary({
               ) : null}
             </div>
           ) : null}
+          {/* Deliberately OUTSIDE the "Filter by tags" role="group" above:
+              that region is the scoping anchor for the existing chip
+              queries in tests and e2e, and a control inside it would make
+              them ambiguous. */}
+          {tagSuggestions.length > 0 ? (
+            <div className="route-library-field">
+              <button
+                type="button"
+                className="btn-secondary"
+                ref={manageTagsButtonRef}
+                aria-expanded={isTagManagerOpen}
+                onClick={handleOpenTagManager}
+              >
+                Manage tags
+              </button>
+            </div>
+          ) : null}
         </div>
+      ) : null}
+
+      {tagManagerHint ? <p role="status">{tagManagerHint}</p> : null}
+      {/* The success message lives here, outside the panel, so it survives
+          the manager closing after a final-tag deletion. */}
+      {tagLifecycleStatus ? <p role="status">{tagLifecycleStatus}</p> : null}
+
+      {/* Rendered only once no card has an inline interaction open, so the
+          manager and a card editor are never on screen together: opening
+          the manager bumps the dismissal token, the cards close on the
+          next commit, and the panel appears after that. Its own condition
+          is isTagManagerOpen alone — NOT tagSuggestions.length > 0 — so a
+          final-tag deletion can complete and hand focus on before the
+          panel goes. */}
+      {isTagManagerOpen && inlineEditorRouteIds.size === 0 ? (
+        <RouteTagManager
+          tags={tagSuggestions}
+          routeCountsByTagKey={routeCountsByTagKey}
+          sourceKey={effectiveTagManagerSourceKey}
+          newName={tagManagerNewName}
+          isBusy={isTagLifecycleBusy}
+          errorMessage={tagLifecycleError}
+          confirmation={tagLifecycleConfirm?.copy ?? null}
+          onSourceKeyChange={(key) => {
+            setTagManagerSourceKey(key);
+            setTagLifecycleError(null);
+            setTagLifecycleStatus(null);
+          }}
+          onNewNameChange={(value) => {
+            setTagManagerNewName(value);
+            setTagLifecycleError(null);
+          }}
+          onRenameRequest={handleTagRenameRequest}
+          onDeleteRequest={handleTagDeleteRequest}
+          onConfirm={handleTagLifecycleConfirm}
+          onCancelConfirm={handleTagLifecycleCancelConfirm}
+          onClose={closeTagManager}
+          selectRef={tagManagerSelectRef}
+          renameButtonRef={tagManagerRenameButtonRef}
+          deleteButtonRef={tagManagerDeleteButtonRef}
+          closeButtonRef={tagManagerCloseButtonRef}
+        />
       ) : null}
 
       {routes === undefined || preferences === undefined ? (
