@@ -420,10 +420,10 @@ async function instrumentDeliberateScrolls(page: Page) {
     if (holder.__acnScrollByPatched === true) return;
     holder.__acnScrollByPatched = true;
     const original = window.scrollBy.bind(window);
-    window.scrollBy = ((options?: ScrollToOptions) => {
+    window.scrollBy = (options?: ScrollToOptions) => {
       holder.__acnScrollByCalls = (holder.__acnScrollByCalls ?? 0) + 1;
       original(options);
-    }) as typeof window.scrollBy;
+    };
   });
 }
 
