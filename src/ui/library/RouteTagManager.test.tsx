@@ -1,3 +1,4 @@
+import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -123,7 +124,16 @@ describe("RouteTagManager", () => {
     expect(within(panel()).getByLabelText("New name")).toHaveValue("Trail");
   });
 
-  it("labels the confirmation with its own ids and focuses Cancel", () => {
+  // Backlog item 106 moved the confirmation's focus out of this component:
+  // it previously used autoFocus, which cannot carry preventScroll and so
+  // competed with the deliberate end-aligned reveal RouteLibrary now
+  // performs once the viewport settles. This file stays props-only, so it
+  // proves the two REFS a container needs are wired to the right elements;
+  // that focus actually lands on Cancel immediately, with preventScroll,
+  // is proven end-to-end in RouteLibrary.tagManagement.test.tsx.
+  it("labels the confirmation with its own ids and exposes it and its Cancel by ref", () => {
+    const confirmRef = createRef<HTMLDivElement>();
+    const confirmCancelButtonRef = createRef<HTMLButtonElement>();
     renderManager({
       sourceKey: "gravel",
       confirmation: {
@@ -131,18 +141,30 @@ describe("RouteTagManager", () => {
         message: "Gone.",
         confirmLabel: "Delete tag",
       },
+      confirmRef,
+      confirmCancelButtonRef,
     });
     const dialog = screen.getByRole("alertdialog", { name: "Delete the tag “Gravel”?" });
     expect(dialog).toHaveTextContent("Gone.");
-    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(confirmRef.current).toBe(dialog);
+    expect(confirmCancelButtonRef.current).toBe(
+      within(dialog).getByRole("button", { name: "Cancel" }),
+    );
+    // No autoFocus any more: the container decides when focus moves.
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).not.toHaveFocus();
   });
 
   it("cancels the confirmation on Escape", async () => {
     const user = userEvent.setup();
+    const confirmCancelButtonRef = createRef<HTMLButtonElement>();
     const props = renderManager({
       sourceKey: "gravel",
       confirmation: { title: "Delete?", message: "Gone.", confirmLabel: "Delete tag" },
+      confirmCancelButtonRef,
     });
+    // Focus explicitly, as RouteLibrary does on arming — the Escape
+    // handler lives on the dialog, so the key must be pressed from inside.
+    confirmCancelButtonRef.current?.focus();
     await user.keyboard("{Escape}");
     expect(props.onCancelConfirm).toHaveBeenCalledTimes(1);
   });

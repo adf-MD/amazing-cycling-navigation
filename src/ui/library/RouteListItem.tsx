@@ -11,6 +11,7 @@ import {
 import { prefersReducedMotion } from "../../platform/environmentContext.ts";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 import { PinIcon } from "./PinIcon.tsx";
+import { runWhenViewportSettled } from "../shared/viewportSettle.ts";
 import { applyTopRevealScroll } from "./routeCardTopReveal.ts";
 import { isCardAlreadyFullyVisible } from "./routeSwitchCardVisibility.ts";
 
@@ -236,7 +237,27 @@ export function RouteListItem({
   // Cancel/Escape, after the installed-iPhone field test found a card
   // whose top could be left out of view. A manager-driven dismissal leaves
   // the signal false and keeps the plain focus() — see revealCardOnClose.
+  //
+  // Backlog item 106: focus is restored IMMEDIATELY, but the measurement
+  // and scroll wait for runWhenViewportSettled. Measuring in this effect
+  // directly reads geometry that can still be mid-transition — while iOS
+  // Safari dismisses the software keyboard it un-pans the layout viewport
+  // and restores scroll, asynchronously and after React's effects have
+  // run, and applyTopRevealScroll derives its effective top boundary from
+  // visualViewport.offsetTop, so a delta computed then is applied against
+  // the state that follows it. Everything is re-measured inside the
+  // settled callback; nothing is captured here, or the wait would achieve
+  // nothing.
+  //
+  // To be precise about what this does and does not fix: the overshoot
+  // actually reproduced for item 106 was a different mechanism entirely —
+  // the browser jumping to the top when the focused Cancel button was
+  // unmounted mid-event — and handleCancelTags below is what prevents
+  // that. This wait addresses a real but separately demonstrated
+  // vulnerability (proved only against stubbed changing-viewport
+  // geometry), never reproduced on a device.
   useEffect(() => {
+    let cancelSettledReveal: (() => void) | null = null;
     if (isEditingTags) {
       tagInputRef.current?.focus();
     } else if (wasEditingTagsRef.current) {
@@ -244,9 +265,10 @@ export function RouteListItem({
         // preventScroll suppresses the browser's own competing scroll, so
         // exactly one deliberate scroll (below) ever runs for this close.
         tagsButtonRef.current?.focus({ preventScroll: true });
-        const cardEl = cardRef.current;
-        const titleRowEl = titleRowRef.current;
-        if (cardEl && titleRowEl) {
+        cancelSettledReveal = runWhenViewportSettled(() => {
+          const cardEl = cardRef.current;
+          const titleRowEl = titleRowRef.current;
+          if (!cardEl || !titleRowEl) return;
           applyTopRevealScroll(
             {
               top: cardEl.getBoundingClientRect().top,
@@ -254,12 +276,15 @@ export function RouteListItem({
             },
             stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
           );
-        }
+        });
       } else {
         tagsButtonRef.current?.focus();
       }
     }
     wasEditingTagsRef.current = isEditingTags;
+    return () => {
+      cancelSettledReveal?.();
+    };
   }, [isEditingTags, revealCardOnClose, stickyHeaderRef]);
 
   // Reports this card's inline-interaction state upward so RouteLibrary
@@ -542,6 +567,20 @@ export function RouteListItem({
 
   const handleCancelTags = () => {
     if (isSavingTagsRef.current) return;
+    // Move focus to the card itself FIRST, synchronously, before the
+    // editor unmounts (backlog item 106). Cancel/Escape close the editor
+    // inside the very event that the focused Cancel button is handling, so
+    // that button is destroyed while it still holds focus; the browser
+    // then falls back to <body> and scrolls the document to the top. That
+    // is the reported "scrolls farther up than necessary, leaving
+    // avoidable content above the card" — measured in Chromium as a jump
+    // from scrollY 339 straight to 0, with no scroll API call involved.
+    // A successful Save never showed it because its close is asynchronous
+    // (the write/live-query handshake), so nothing is unmounted while
+    // focused. The card element survives the close, so focusing it keeps
+    // focus inside the document and the jump never happens; the close
+    // effect above then moves focus on to the Edit tags button.
+    cardRef.current?.focus({ preventScroll: true });
     // Batched with the close below, so the effect above observes both in
     // the same commit. Set here rather than inferred from isEditingTags
     // going false, which a manager-driven dismissal also does.
@@ -585,6 +624,10 @@ export function RouteListItem({
       className={`route-card stack${switchPrompt ? " route-card--switch-pending" : ""}`}
       data-route-id={route.id}
       ref={cardRef}
+      // Programmatically focusable only (never in the tab order), so
+      // handleCancelTags can park focus here for the single commit in
+      // which the editor unmounts — see its own comment.
+      tabIndex={-1}
     >
       {isRenaming ? (
         <form

@@ -7,6 +7,9 @@ import {
 import { findTagSpelling, resolveTagLifecycleTarget } from "./tagLifecycleTarget.ts";
 
 export interface RouteTagManagerProps {
+  /** Lets the "Manage tags" disclosure point at this panel with
+   * aria-controls while it is open (backlog item 106). */
+  panelId?: string;
   /** Every tag in the FULL unfiltered route corpus, in display order —
    * never the searched or tag-filtered view. */
   tags: readonly string[];
@@ -40,6 +43,15 @@ export interface RouteTagManagerProps {
    * focus hand-off it must not fight with. */
   panelRef?: RefObject<HTMLDivElement | null>;
   headingRef?: RefObject<HTMLHeadingElement | null>;
+  /** The armed confirmation and its Cancel action — backlog item 106.
+   * RouteLibrary focuses Cancel immediately with preventScroll and then,
+   * once the viewport has settled, scrolls the confirmation into view if
+   * its actions would otherwise sit below the fold. Both live here for the
+   * same reason as panelRef/headingRef: this component owns the DOM, while
+   * every decision about when to move focus or scroll stays in
+   * RouteLibrary, so the two can never compete. */
+  confirmRef?: RefObject<HTMLDivElement | null>;
+  confirmCancelButtonRef?: RefObject<HTMLButtonElement | null>;
 }
 
 /**
@@ -69,6 +81,7 @@ export interface RouteTagManagerProps {
  * makes that impossible.
  */
 export function RouteTagManager({
+  panelId,
   tags,
   routeCountsByTagKey,
   sourceKey,
@@ -89,6 +102,8 @@ export function RouteTagManager({
   closeButtonRef,
   panelRef,
   headingRef,
+  confirmRef,
+  confirmCancelButtonRef,
 }: RouteTagManagerProps) {
   const headingId = useId();
   const selectId = useId();
@@ -110,6 +125,7 @@ export function RouteTagManager({
 
   return (
     <div
+      id={panelId}
       className="tag-manager stack"
       role="group"
       aria-labelledby={headingId}
@@ -230,19 +246,26 @@ export function RouteTagManager({
 
           {confirmation ? (
             <div
-              className="route-delete-confirm"
+              className="route-delete-confirm tag-manager-confirm"
               role="alertdialog"
               aria-labelledby={confirmHeadingId}
               aria-describedby={confirmDescriptionId}
               onKeyDown={handleConfirmKeyDown}
+              ref={confirmRef}
             >
               <h3 id={confirmHeadingId}>{confirmation.title}</h3>
               <p id={confirmDescriptionId}>{confirmation.message}</p>
               <div className="route-delete-confirm-actions">
+                {/* Deliberately not autoFocus: item 106 needs this focus
+                    to carry preventScroll, so the browser's own
+                    focus-scroll cannot compete with the end-aligned reveal
+                    RouteLibrary performs once the viewport has settled.
+                    RouteLibrary focuses it immediately on arming — the
+                    dialog is never left focused on its disabled trigger. */}
                 <button
                   type="button"
                   className="btn-secondary"
-                  autoFocus
+                  ref={confirmCancelButtonRef}
                   disabled={isBusy}
                   onClick={onCancelConfirm}
                 >

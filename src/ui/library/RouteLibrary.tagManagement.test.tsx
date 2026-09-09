@@ -79,6 +79,26 @@ function queryManager(): HTMLElement | null {
   return screen.queryByRole("group", { name: "Manage tags" });
 }
 
+/** Expands the filter chooser if collapsed — backlog item 106 made it a
+ * disclosure that starts closed, and opening it also closes an idle
+ * manager, so ordering matters in the tests below. */
+async function expandTagFilters(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  const disclosure = screen.getByRole("button", { name: "Filter by tags" });
+  if (disclosure.getAttribute("aria-expanded") === "true") return;
+  await user.click(disclosure);
+  await waitFor(() => {
+    expect(screen.getByRole("group", { name: "Filter by tags" })).toBeInTheDocument();
+  });
+}
+
+async function clickTagFilter(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+): Promise<void> {
+  await expandTagFilters(user);
+  await user.click(getTagFilterButton(name));
+}
+
 function getTagFilterButton(name: string): HTMLElement {
   return within(screen.getByRole("group", { name: "Filter by tags" })).getByRole(
     "button",
@@ -142,7 +162,9 @@ describe("RouteLibrary — global tag management", () => {
       expect(within(getListItemForName("Alpine Climb")).getByText("Trail")).toBeVisible();
     });
     expect(within(getListItemForName("Zebra Loop")).getByText("Trail")).toBeVisible();
+    await expandTagFilters(user);
     expect(getTagFilterButton("Trail")).toBeInTheDocument();
+    await expandTagFilters(user);
     expect(
       within(screen.getByRole("group", { name: "Filter by tags" })).queryByRole(
         "button",
@@ -177,7 +199,7 @@ describe("RouteLibrary — global tag management", () => {
     // manager deriving its choices from the filtered view would report
     // "Gravel (1 route)".
     await user.type(screen.getByLabelText("Search routes"), "Zebra");
-    await user.click(getTagFilterButton("Road"));
+    await clickTagFilter(user, "Road");
     await waitFor(() => {
       expect(
         screen.queryByRole("button", { name: "Alpine Climb" }),
@@ -212,6 +234,7 @@ describe("RouteLibrary — global tag management", () => {
       ).toBeVisible();
     });
     expect(within(getListItemForName("Zebra Loop")).getByText("Gravel")).toBeVisible();
+    await expandTagFilters(user);
     expect(getTagFilterButton("Gravel")).toBeInTheDocument();
   });
 
@@ -242,6 +265,7 @@ describe("RouteLibrary — global tag management", () => {
     expect(dialog).toHaveTextContent("No route is deleted.");
     await user.click(within(dialog).getByRole("button", { name: "Merge tags" }));
 
+    await expandTagFilters(user);
     await waitFor(() => {
       expect(
         within(screen.getByRole("group", { name: "Filter by tags" })).queryByRole(
@@ -285,6 +309,7 @@ describe("RouteLibrary — global tag management", () => {
     expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Zebra Loop" })).toBeInTheDocument();
     expect(within(getListItemForName("Alpine Climb")).getByText("Road")).toBeVisible();
+    await expandTagFilters(user);
     expect(getTagFilterButton("Road")).toBeInTheDocument();
   });
 
@@ -376,7 +401,7 @@ describe("RouteLibrary — global tag management, write/live-query orderings", (
     await importFixture(user, "Zebra Loop.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
     await tagRoute(user, "Zebra Loop", "Road");
-    await user.click(getTagFilterButton("Gravel"));
+    await clickTagFilter(user, "Gravel");
 
     const write = holdWrite();
     await openManager(user);
@@ -388,23 +413,32 @@ describe("RouteLibrary — global tag management, write/live-query orderings", (
     // the card and in the filter row — but the write promise has not
     // settled yet. Without prune-protection the source selection would be
     // erased here and the follow would have nothing left to follow.
+    // The manager's own option list is built from the full corpus, so it
+    // shows the rename has landed there without depending on a route card
+    // that the (correctly still-active) "Gravel" filter now excludes.
     await waitFor(() => {
-      expect(getTagFilterButton("Trail")).toBeInTheDocument();
+      expect(
+        within(getManager()).getByRole("option", { name: /^Trail/ }),
+      ).toBeInTheDocument();
     });
     // The chip ROW legitimately follows the corpus, so "Gravel" has gone
-    // from it; what must survive is the SELECTION. Clear tag filters only
-    // renders while something is selected, so its presence here proves the
-    // source key was protected rather than pruned — and the target is not
-    // selected yet, because the write signal has not arrived.
+    // from it; what must survive is the SELECTION. Backlog item 106 makes
+    // the chooser refuse to open while a lifecycle operation is in flight,
+    // so the mid-write evidence is the collapsed summary instead — and it
+    // is exactly the same evidence: Clear tag filters and the active count
+    // only render while something is selected, so their presence here
+    // proves the source key was protected rather than pruned.
     expect(screen.getByRole("button", { name: "Clear tag filters" })).toBeInTheDocument();
-    expect(getTagFilterButton("Trail")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("1 filter active")).toBeInTheDocument();
 
     await act(async () => {
       await write.release();
     });
+    await expandTagFilters(user);
     await waitFor(() => {
       expect(getTagFilterButton("Trail")).toHaveAttribute("aria-pressed", "true");
     });
+    await expandTagFilters(user);
     expect(
       within(screen.getByRole("group", { name: "Filter by tags" })).queryByRole(
         "button",
@@ -427,7 +461,7 @@ describe("RouteLibrary — global tag management, write/live-query orderings", (
     await importFixture(user, "Zebra Loop.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
     await tagRoute(user, "Zebra Loop", "Road");
-    await user.click(getTagFilterButton("Gravel"));
+    await clickTagFilter(user, "Gravel");
 
     const live = holdLiveQuery();
     await openManager(user);
@@ -443,6 +477,7 @@ describe("RouteLibrary — global tag management, write/live-query orderings", (
     // along, so a "target is present" test alone would clear the marker
     // right here — and the source removal that follows would then prune
     // the selection instead of carrying it across.
+    await expandTagFilters(user);
     await waitFor(() => {
       expect(getTagFilterButton("Gravel")).toHaveAttribute("aria-pressed", "true");
     });
@@ -450,6 +485,7 @@ describe("RouteLibrary — global tag management, write/live-query orderings", (
     await act(async () => {
       await live.release();
     });
+    await expandTagFilters(user);
     await waitFor(() => {
       expect(
         within(screen.getByRole("group", { name: "Filter by tags" })).queryByRole(
@@ -458,6 +494,7 @@ describe("RouteLibrary — global tag management, write/live-query orderings", (
         ),
       ).not.toBeInTheDocument();
     });
+    await expandTagFilters(user);
     expect(getTagFilterButton("Road")).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -467,8 +504,8 @@ describe("RouteLibrary — global tag management, write/live-query orderings", (
     await importFixture(user, "Alpine Climb.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
     await tagRoute(user, "Alpine Climb", "Road");
-    await user.click(getTagFilterButton("Gravel"));
-    await user.click(getTagFilterButton("Road"));
+    await clickTagFilter(user, "Gravel");
+    await clickTagFilter(user, "Road");
 
     await openManager(user);
     await chooseTag(user, "Gravel (1 route)");
@@ -478,6 +515,7 @@ describe("RouteLibrary — global tag management, write/live-query orderings", (
       within(screen.getByRole("alertdialog")).getByRole("button", { name: "Merge tags" }),
     );
 
+    await expandTagFilters(user);
     await waitFor(() => {
       expect(getTagFilterButton("Road")).toHaveAttribute("aria-pressed", "true");
     });
@@ -495,18 +533,21 @@ describe("RouteLibrary — global tag management, write/live-query orderings", (
     await importFixture(user, "Zebra Loop.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
     await tagRoute(user, "Zebra Loop", "Road");
-    await user.click(getTagFilterButton("Road"));
+    await clickTagFilter(user, "Road");
 
     await openManager(user);
     await chooseTag(user, "Gravel (1 route)");
     await user.type(within(getManager()).getByLabelText("New name"), "Trail");
     await user.click(within(getManager()).getByRole("button", { name: "Rename tag" }));
 
+    await expandTagFilters(user);
     await waitFor(() => {
       expect(getTagFilterButton("Trail")).toBeInTheDocument();
     });
+    await expandTagFilters(user);
     expect(getTagFilterButton("Trail")).toHaveAttribute("aria-pressed", "false");
     // The rider's own unrelated selection is preserved exactly.
+    await expandTagFilters(user);
     expect(getTagFilterButton("Road")).toHaveAttribute("aria-pressed", "true");
     expect(
       screen.queryByRole("button", { name: "Alpine Climb" }),
@@ -519,7 +560,7 @@ describe("RouteLibrary — global tag management, write/live-query orderings", (
     await importFixture(user, "Alpine Climb.gpx");
     await importFixture(user, "Zebra Loop.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
-    await user.click(getTagFilterButton("Gravel"));
+    await clickTagFilter(user, "Gravel");
     expect(screen.queryByRole("button", { name: "Zebra Loop" })).not.toBeInTheDocument();
 
     await openManager(user);
@@ -578,7 +619,7 @@ describe("RouteLibrary — global tag management, failures and the one-at-a-time
     await importFixture(user, "Zebra Loop.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
     await tagRoute(user, "Zebra Loop", "Road");
-    await user.click(getTagFilterButton("Gravel"));
+    await clickTagFilter(user, "Gravel");
     vi.spyOn(routesRepository, "applyRouteTagLifecycle").mockRejectedValueOnce(
       new Error("storage unavailable"),
     );
@@ -595,14 +636,18 @@ describe("RouteLibrary — global tag management, failures and the one-at-a-time
     });
     expect(within(getManager()).getByLabelText("New name")).toHaveValue("Trail");
     // The transaction aborted, so the corpus and the active filters are
-    // exactly as they were.
-    expect(getTagFilterButton("Gravel")).toHaveAttribute("aria-pressed", "true");
+    // exactly as they were. Read from the collapsed summary, not the
+    // chips: expanding the chooser would close the manager (item 106's
+    // mutual exclusion), and this test's whole point is that the manager
+    // stays open with its typed name intact.
+    expect(screen.getByText("1 filter active")).toBeInTheDocument();
     expect(within(getListItemForName("Alpine Climb")).getByText("Gravel")).toBeVisible();
     expect(
       within(getManager()).getByRole("button", { name: "Rename tag" }),
     ).toHaveFocus();
 
     await user.click(within(getManager()).getByRole("button", { name: "Rename tag" }));
+    await expandTagFilters(user);
     await waitFor(() => {
       expect(getTagFilterButton("Trail")).toHaveAttribute("aria-pressed", "true");
     });
@@ -615,7 +660,7 @@ describe("RouteLibrary — global tag management, failures and the one-at-a-time
     await importFixture(user, "Zebra Loop.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
     await tagRoute(user, "Zebra Loop", "Road");
-    await user.click(getTagFilterButton("Gravel"));
+    await clickTagFilter(user, "Gravel");
 
     // The write rejects, but meanwhile something else removes the last use
     // of "Gravel". A reconciler keyed only on "the source has gone" would
@@ -638,6 +683,7 @@ describe("RouteLibrary — global tag management, failures and the one-at-a-time
     await waitFor(() => {
       expect(within(getManager()).getByRole("alert")).toBeInTheDocument();
     });
+    await expandTagFilters(user);
     await waitFor(() => {
       expect(
         within(screen.getByRole("group", { name: "Filter by tags" })).queryByRole(
@@ -646,6 +692,7 @@ describe("RouteLibrary — global tag management, failures and the one-at-a-time
         ),
       ).not.toBeInTheDocument();
     });
+    await expandTagFilters(user);
     expect(
       within(screen.getByRole("group", { name: "Filter by tags" })).queryByRole(
         "button",
@@ -1072,12 +1119,64 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
   const originalScrollBy = window.scrollBy;
   // eslint-disable-next-line @typescript-eslint/unbound-method
   const originalFocus = HTMLElement.prototype.focus;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalRaf = window.requestAnimationFrame;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalCancelRaf = window.cancelAnimationFrame;
+  const originalVisualViewport = window.visualViewport;
 
   afterEach(() => {
     Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
     window.scrollBy = originalScrollBy;
     HTMLElement.prototype.focus = originalFocus;
+    window.requestAnimationFrame = originalRaf;
+    window.cancelAnimationFrame = originalCancelRaf;
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: originalVisualViewport,
+    });
   });
+
+  // Backlog item 106: this reveal now waits for the visible-viewport
+  // geometry to settle, so every scroll assertion below drives frames
+  // deliberately — including the "no scroll" ones, which would otherwise
+  // pass vacuously by asserting before the reveal has measured anything.
+  let frames: { advanceMany: (count: number, from?: number) => void };
+
+  beforeEach(() => {
+    let nextHandle = 1;
+    const pending = new Map<number, FrameRequestCallback>();
+    window.requestAnimationFrame = (callback: FrameRequestCallback) => {
+      const handle = nextHandle++;
+      pending.set(handle, callback);
+      return handle;
+    };
+    window.cancelAnimationFrame = (handle: number) => {
+      pending.delete(handle);
+    };
+    frames = {
+      advanceMany(count: number, from = 0) {
+        for (let index = 0; index < count; index++) {
+          const [entry] = [...pending.entries()];
+          if (!entry) return;
+          const [handle, callback] = entry;
+          pending.delete(handle);
+          callback(from + index * 16);
+        }
+      },
+    };
+  });
+
+  async function settleViewport() {
+    await act(async () => {
+      frames.advanceMany(8);
+      await Promise.resolve();
+    });
+  }
+
+  function stubVisualViewport(value: { offsetTop: number; height: number } | null) {
+    Object.defineProperty(window, "visualViewport", { configurable: true, value });
+  }
 
   function stubRect(overrides: Partial<DOMRect> = {}): DOMRect {
     return {
@@ -1186,7 +1285,11 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
     const selectFocusCall = focusCalls
       .filter((call) => call.target === getSelect())
       .at(-1);
+    // Focus is immediate; only the scroll waits for the viewport.
     expect(selectFocusCall?.options).toEqual({ preventScroll: true });
+    expect(scrollCalls).toHaveLength(0);
+
+    await settleViewport();
     expect(scrollCalls).toHaveLength(1);
     expect(scrollCalls[0]).toEqual(
       expect.objectContaining({
@@ -1194,6 +1297,44 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
         left: 0,
         behavior: "smooth",
       }),
+    );
+  });
+
+  // Backlog item 106. The post-success path now shares the settling
+  // lifecycle, so prove it genuinely uses the SETTLED viewport rather than
+  // merely still passing once frames are flushed: the mid-transition
+  // geometry here would give -348 (-220 - (120 + 8)), the settled one
+  // -228. A rename is typed into the New name field, so this path is as
+  // exposed to an in-flight keyboard dismissal as the card close is.
+  it("computes the panel reveal from the settled viewport, not the mid-transition one", async () => {
+    const user = userEvent.setup();
+    const viewport = { offsetTop: 120, height: 500 };
+    stubVisualViewport(viewport);
+    stubPanelGeometry(hiddenPanelGeometry.panel, hiddenPanelGeometry.heading);
+    const scrollCalls = captureScrollByCalls();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    scrollCalls.length = 0;
+
+    await openManager(user);
+    await chooseTag(user, "Gravel (2 routes)");
+    await user.type(within(getManager()).getByLabelText("New name"), "Trail");
+    await user.click(within(getManager()).getByRole("button", { name: "Rename tag" }));
+    await waitFor(() => {
+      expect(within(getListItemForName("Alpine Climb")).getByText("Trail")).toBeVisible();
+    });
+    expect(scrollCalls).toHaveLength(0);
+
+    // The keyboard dismisses and the page settles between the commit and
+    // the frames — scrollY moves too, which is part of the signature.
+    viewport.offsetTop = 0;
+    viewport.height = 768;
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 40 });
+    await settleViewport();
+
+    expect(scrollCalls).toHaveLength(1);
+    expect(scrollCalls[0]).toEqual(
+      expect.objectContaining({ top: HIDDEN_PANEL_DELTA, left: 0 }),
     );
   });
 
@@ -1212,15 +1353,17 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
     await user.click(
       within(screen.getByRole("alertdialog")).getByRole("button", { name: "Merge tags" }),
     );
+    // Completion is read from the manager's own option list, which comes
+    // from the full corpus: expanding the filter chooser would close the
+    // very panel whose reveal this test measures, and it would be refused
+    // mid-write in any case.
     await waitFor(() => {
       expect(
-        within(screen.getByRole("group", { name: "Filter by tags" })).queryByRole(
-          "button",
-          { name: "Gravel" },
-        ),
+        within(getManager()).queryByRole("option", { name: /^Gravel/ }),
       ).not.toBeInTheDocument();
     });
 
+    await settleViewport();
     expect(scrollCalls).toHaveLength(1);
     expect(scrollCalls[0]).toEqual(
       expect.objectContaining({ top: HIDDEN_PANEL_DELTA, left: 0 }),
@@ -1249,6 +1392,7 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
     // "Road" survives, so the panel is still open — there is something to
     // reveal, unlike the final-tag case below.
     expect(getManager()).toBeInTheDocument();
+    await settleViewport();
     expect(scrollCalls).toHaveLength(1);
     expect(scrollCalls[0]).toEqual(
       expect.objectContaining({ top: HIDDEN_PANEL_DELTA, left: 0 }),
@@ -1282,6 +1426,7 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
       .filter((call) => call.target === getSelect())
       .at(-1);
     expect(selectFocusCall?.options).toEqual({ preventScroll: true });
+    await settleViewport();
     expect(scrollCalls).toHaveLength(0);
   });
 
@@ -1306,6 +1451,7 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
     });
 
     expect(screen.getByLabelText("Search routes")).toHaveFocus();
+    await settleViewport();
     expect(scrollCalls).toHaveLength(0);
   });
 
@@ -1329,6 +1475,7 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
         within(getManager()).getByRole("button", { name: "Delete tag" }),
       ).toHaveFocus();
     });
+    await settleViewport();
     expect(scrollCalls).toHaveLength(0);
 
     await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
@@ -1338,6 +1485,7 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
         within(getManager()).getByRole("button", { name: "Delete tag" }),
       ).toHaveFocus();
     });
+    await settleViewport();
     expect(scrollCalls).toHaveLength(0);
   });
 
@@ -1367,6 +1515,7 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
         within(getManager()).getByRole("button", { name: "Rename tag" }),
       ).toHaveFocus();
     });
+    await settleViewport();
     expect(scrollCalls).toHaveLength(0);
   });
 
@@ -1383,6 +1532,7 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
     await waitFor(() => {
       expect(queryManager()).not.toBeInTheDocument();
     });
+    await settleViewport();
     expect(scrollCalls).toHaveLength(0);
 
     await openManager(user);
@@ -1390,6 +1540,478 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
     await waitFor(() => {
       expect(queryManager()).not.toBeInTheDocument();
     });
+    await settleViewport();
     expect(scrollCalls).toHaveLength(0);
+  });
+});
+
+// Backlog item 106. Opening a Merge/Delete confirmation must bring it into
+// view, or the press can look like it did nothing — the installed-iPhone
+// report on `0.4.20`. Unlike the panel-top reveal above, a confirmation is
+// a whole card whose ACTIONS matter most, so it reuses the established
+// item-95 confirmation-card priority (isCardAlreadyFullyVisible plus an
+// end-aligned scrollIntoView), not the top-prioritising delta path.
+describe("RouteLibrary — Manage tags confirmation reveal (item 106)", () => {
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalScrollBy = window.scrollBy;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalFocus = HTMLElement.prototype.focus;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalScrollIntoView = Element.prototype.scrollIntoView;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalRaf = window.requestAnimationFrame;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalCancelRaf = window.cancelAnimationFrame;
+  const originalVisualViewport = window.visualViewport;
+
+  afterEach(() => {
+    Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    window.scrollBy = originalScrollBy;
+    HTMLElement.prototype.focus = originalFocus;
+    Element.prototype.scrollIntoView = originalScrollIntoView;
+    window.requestAnimationFrame = originalRaf;
+    window.cancelAnimationFrame = originalCancelRaf;
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: originalVisualViewport,
+    });
+  });
+
+  let frames: { advanceMany: (count: number, from?: number) => void };
+
+  beforeEach(() => {
+    let nextHandle = 1;
+    const pending = new Map<number, FrameRequestCallback>();
+    window.requestAnimationFrame = (callback: FrameRequestCallback) => {
+      const handle = nextHandle++;
+      pending.set(handle, callback);
+      return handle;
+    };
+    window.cancelAnimationFrame = (handle: number) => {
+      pending.delete(handle);
+    };
+    frames = {
+      advanceMany(count: number, from = 0) {
+        for (let index = 0; index < count; index++) {
+          const [entry] = [...pending.entries()];
+          if (!entry) return;
+          const [handle, callback] = entry;
+          pending.delete(handle);
+          callback(from + index * 16);
+        }
+      },
+    };
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  async function settleViewport() {
+    await act(async () => {
+      frames.advanceMany(8);
+      await Promise.resolve();
+    });
+  }
+
+  function stubRect(overrides: Partial<DOMRect> = {}): DOMRect {
+    return {
+      top: 0,
+      bottom: 0,
+      left: 0,
+      right: 320,
+      width: 320,
+      height: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => "",
+      ...overrides,
+    };
+  }
+
+  /** Only the confirmation's own rect matters here; everything else gets an
+   * empty rect, which is safely "already visible" and so never scrolls. */
+  function stubConfirmGeometry(confirm: { top: number; bottom: number }) {
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this.classList.contains("route-delete-confirm")) {
+        return stubRect(confirm);
+      }
+      return stubRect();
+    };
+  }
+
+  // Extends past jsdom's default 768px visible bottom — the actions are
+  // below the fold, which is exactly the reported symptom.
+  const offScreenConfirm = { top: 600, bottom: 900 };
+  const visibleConfirm = { top: 200, bottom: 400 };
+
+  function captureScrollIntoViewCalls() {
+    const calls: (boolean | ScrollIntoViewOptions | undefined)[] = [];
+    Element.prototype.scrollIntoView = function (
+      this: Element,
+      options?: boolean | ScrollIntoViewOptions,
+    ) {
+      calls.push(options);
+    };
+    return calls;
+  }
+
+  function captureFocusCalls() {
+    const calls: { target: Element; options: FocusOptions | undefined }[] = [];
+    HTMLElement.prototype.focus = function focus(
+      this: HTMLElement,
+      options?: FocusOptions,
+    ) {
+      calls.push({ target: this, options });
+      originalFocus.call(this, options);
+    };
+    return calls;
+  }
+
+  async function seedTwoTags(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Zebra Loop.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+    await tagRoute(user, "Alpine Climb", "Road");
+    await tagRoute(user, "Zebra Loop", "Gravel");
+  }
+
+  it("scrolls an off-screen delete confirmation into view, end-aligned, after the viewport settles", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    stubConfirmGeometry(offScreenConfirm);
+    const scrollCalls = captureScrollIntoViewCalls();
+
+    await openManager(user);
+    await chooseTag(user, "Gravel (2 routes)");
+    await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+
+    await settleViewport();
+    expect(scrollCalls).toHaveLength(1);
+    expect(scrollCalls[0]).toEqual(
+      expect.objectContaining({ block: "end", behavior: "smooth" }),
+    );
+  });
+
+  it("scrolls an off-screen merge confirmation into view too", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    stubConfirmGeometry(offScreenConfirm);
+    const scrollCalls = captureScrollIntoViewCalls();
+
+    await openManager(user);
+    await chooseTag(user, "Gravel (2 routes)");
+    await user.type(within(getManager()).getByLabelText("New name"), "Road");
+    await user.click(within(getManager()).getByRole("button", { name: "Merge tags" }));
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+
+    await settleViewport();
+    expect(scrollCalls).toHaveLength(1);
+    expect(scrollCalls[0]).toEqual(expect.objectContaining({ block: "end" }));
+  });
+
+  it("focuses the confirmation's Cancel immediately, with preventScroll, before any frame is driven", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    stubConfirmGeometry(offScreenConfirm);
+    const focusCalls = captureFocusCalls();
+
+    await openManager(user);
+    await chooseTag(user, "Gravel (2 routes)");
+    await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
+
+    // No frames driven yet: focus must NOT wait for the settle loop, or an
+    // open alertdialog would be left focused on its now-disabled trigger.
+    const dialog = screen.getByRole("alertdialog");
+    const cancel = within(dialog).getByRole("button", { name: "Cancel" });
+    expect(cancel).toHaveFocus();
+    const cancelFocusCall = focusCalls.filter((call) => call.target === cancel).at(-1);
+    expect(cancelFocusCall?.options).toEqual({ preventScroll: true });
+  });
+
+  it("does not scroll a confirmation that is already fully visible, but still focuses Cancel immediately", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    stubConfirmGeometry(visibleConfirm);
+    const scrollCalls = captureScrollIntoViewCalls();
+
+    await openManager(user);
+    await chooseTag(user, "Gravel (2 routes)");
+    await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
+
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+
+    await settleViewport();
+    expect(scrollCalls).toHaveLength(0);
+  });
+
+  it("still performs no deliberate scroll when the confirmation is cancelled", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    stubConfirmGeometry(offScreenConfirm);
+
+    await openManager(user);
+    await chooseTag(user, "Gravel (2 routes)");
+    const deleteTag = within(getManager()).getByRole("button", { name: "Delete tag" });
+    await user.click(deleteTag);
+    await settleViewport();
+
+    const scrollCalls = captureScrollIntoViewCalls();
+    const scrollByCalls: unknown[] = [];
+    window.scrollBy = (options?: ScrollToOptions | number) => {
+      scrollByCalls.push(options);
+    };
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    });
+    await settleViewport();
+
+    expect(
+      within(getManager()).getByRole("button", { name: "Delete tag" }),
+    ).toHaveFocus();
+    expect(scrollCalls).toHaveLength(0);
+    expect(scrollByCalls).toHaveLength(0);
+  });
+});
+
+// Backlog item 106's third strand: Filter by tags and Manage tags are peer
+// disclosures in their own section, only one open at a time, with the
+// filter chooser collapsed to begin with. Collapsed must never mean
+// invisible: an active filter still shows a count and a real Clear action.
+describe("RouteLibrary — tag-control disclosures (item 106)", () => {
+  async function seedTwoTags(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    await importFixture(user, "Alpine Climb.gpx");
+    await importFixture(user, "Zebra Loop.gpx");
+    await tagRoute(user, "Alpine Climb", "Gravel");
+    await tagRoute(user, "Alpine Climb", "Road");
+    await tagRoute(user, "Zebra Loop", "Gravel");
+  }
+
+  function filterDisclosure(): HTMLElement {
+    return screen.getByRole("button", { name: "Filter by tags" });
+  }
+
+  function manageDisclosure(): HTMLElement {
+    return screen.getByRole("button", { name: "Manage tags" });
+  }
+
+  it("starts collapsed, with no chips rendered and nothing hidden in the tab order", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+
+    expect(filterDisclosure()).toHaveAttribute("aria-expanded", "false");
+    expect(filterDisclosure()).not.toHaveAttribute("aria-controls");
+    expect(
+      screen.queryByRole("group", { name: "Filter by tags" }),
+    ).not.toBeInTheDocument();
+    // Not merely hidden — genuinely absent, so no unreachable control can
+    // sit in the tab order.
+    expect(document.querySelectorAll(".tag-filter-chip")).toHaveLength(0);
+  });
+
+  it("expands to the chip interface and points aria-controls at the panel", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    await user.click(filterDisclosure());
+
+    expect(filterDisclosure()).toHaveAttribute("aria-expanded", "true");
+    const panelId = filterDisclosure().getAttribute("aria-controls");
+    expect(panelId).toBeTruthy();
+    expect(document.getElementById(panelId ?? "")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("group", { name: "Filter by tags" })).getAllByRole(
+        "button",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("keeps the two disclosures mutually exclusive in both directions", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+
+    await user.click(filterDisclosure());
+    expect(filterDisclosure()).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(manageDisclosure());
+    await waitFor(() => {
+      expect(getManager()).toBeInTheDocument();
+    });
+    expect(filterDisclosure()).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("group", { name: "Filter by tags" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(filterDisclosure());
+    await waitFor(() => {
+      expect(queryManager()).not.toBeInTheDocument();
+    });
+    expect(filterDisclosure()).toHaveAttribute("aria-expanded", "true");
+    // Switching to filters must NOT hand focus to the Manage tags button,
+    // which closeTagManager() would have done.
+    expect(filterDisclosure()).toHaveFocus();
+  });
+
+  it("closes an armed but idle confirmation when switching to filters, without stealing focus", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+
+    await openManager(user);
+    await chooseTag(user, "Gravel (2 routes)");
+    await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+
+    await user.click(filterDisclosure());
+    await waitFor(() => {
+      expect(queryManager()).not.toBeInTheDocument();
+    });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(filterDisclosure()).toHaveAttribute("aria-expanded", "true");
+    expect(filterDisclosure()).toHaveFocus();
+  });
+
+  it("refuses to open the filter chooser while a lifecycle operation is busy, leaving the manager open and focus in place", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const realLifecycle = routesRepository.applyRouteTagLifecycle;
+    vi.spyOn(routesRepository, "applyRouteTagLifecycle").mockImplementation(
+      async (operation) => {
+        await gate;
+        return realLifecycle(operation);
+      },
+    );
+
+    await openManager(user);
+    await chooseTag(user, "Gravel (2 routes)");
+    await user.type(within(getManager()).getByLabelText("New name"), "Trail");
+    await user.click(within(getManager()).getByRole("button", { name: "Rename tag" }));
+    await waitFor(() => {
+      expect(within(getManager()).getByRole("status")).toHaveTextContent("Applying…");
+    });
+
+    await user.click(filterDisclosure());
+
+    expect(filterDisclosure()).toHaveAttribute("aria-expanded", "false");
+    expect(getManager()).toBeInTheDocument();
+    expect(filterDisclosure()).toHaveFocus();
+    expect(
+      screen.getByText("Wait for the tag update to finish, then filter by tags."),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      release?.();
+      await gate;
+    });
+  });
+
+  it("leaves the filter chooser exactly as it was when opening the manager is refused", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    await user.click(filterDisclosure());
+    expect(filterDisclosure()).toHaveAttribute("aria-expanded", "true");
+
+    // A tag save in flight refuses the manager outright.
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const realSave = routesRepository.updateRouteTags;
+    vi.spyOn(routesRepository, "updateRouteTags").mockImplementation(async (id, tags) => {
+      await gate;
+      return realSave(id, tags);
+    });
+    const card = within(getListItemForName("Zebra Loop"));
+    await user.click(card.getByRole("button", { name: "Edit tags" }));
+    await user.type(screen.getByLabelText("Add a tag"), "Commute{Enter}");
+    await user.click(screen.getByRole("button", { name: "Save tags" }));
+
+    await user.click(manageDisclosure());
+    expect(
+      screen.getByText("Finish saving that route's tags first, then manage tags."),
+    ).toBeInTheDocument();
+    expect(queryManager()).not.toBeInTheDocument();
+
+    await act(async () => {
+      release?.();
+      await gate;
+    });
+  });
+
+  it("shows an active count and a Clear action while collapsed, and exactly one Clear at a time", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+
+    await clickTagFilter(user, "Gravel");
+    expect(screen.getAllByRole("button", { name: "Clear tag filters" })).toHaveLength(1);
+
+    // Collapse: the selection survives and stays visible.
+    await user.click(filterDisclosure());
+    expect(filterDisclosure()).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("1 filter active")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Clear tag filters" })).toHaveLength(1);
+    // Still genuinely filtering while collapsed.
+    expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+
+    await clickTagFilter(user, "Road");
+    await user.click(filterDisclosure());
+    expect(screen.getByText("2 filters active")).toBeInTheDocument();
+    // AND semantics are unchanged by the disclosure.
+    expect(screen.queryByRole("button", { name: "Zebra Loop" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+  });
+
+  it("returns focus to the Filter by tags disclosure when Clear removes the last filter, collapsed or expanded", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+
+    await clickTagFilter(user, "Gravel");
+    await user.click(screen.getByRole("button", { name: "Clear tag filters" }));
+    expect(filterDisclosure()).toHaveFocus();
+    expect(screen.queryByText("1 filter active")).not.toBeInTheDocument();
+
+    await clickTagFilter(user, "Gravel");
+    await user.click(filterDisclosure());
+    await user.click(screen.getByRole("button", { name: "Clear tag filters" }));
+    expect(filterDisclosure()).toHaveFocus();
+    expect(
+      screen.queryByRole("button", { name: "Clear tag filters" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps focus on the disclosure when the chooser is collapsed from inside it", async () => {
+    const user = userEvent.setup();
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+
+    await expandTagFilters(user);
+    getTagFilterButton("Gravel").focus();
+    expect(getTagFilterButton("Gravel")).toHaveFocus();
+
+    await user.click(filterDisclosure());
+    expect(
+      screen.queryByRole("group", { name: "Filter by tags" }),
+    ).not.toBeInTheDocument();
+    expect(filterDisclosure()).toHaveFocus();
+    expect(document.activeElement).not.toBe(document.body);
   });
 });

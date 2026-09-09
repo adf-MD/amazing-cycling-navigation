@@ -771,6 +771,18 @@ button:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* Reserves breathing room below the global tag manager's own confirmation
+ * when it is scrolled into view (backlog item 106), so the end-aligned
+ * scrollIntoView() doesn't pin its actions flush against the visible
+ * viewport's bottom/safe area. Deliberately scoped to this modifier rather
+ * than the shared .route-delete-confirm base: a route card's own delete
+ * confirmation has no scroll-into-view behaviour to reserve space for, and
+ * the card that contains it already carries item 95's own cushion. Same
+ * value and rationale as .route-card--switch-pending's. */
+.tag-manager-confirm {
+  scroll-margin-bottom: calc(var(--safe-area-inset-bottom) + var(--space-8));
+}
+
 .route-delete-confirm-actions {
   display: flex;
   flex-wrap: wrap;
@@ -859,6 +871,47 @@ button:focus-visible {
  * names rather than sharing the stage-2 ones: an open tag editor's own
  * suggestion button and this region's filter button for the same tag
  * name can be rendered on screen at the same time. */
+/* The tag controls are their own full-width section, not four unrelated
+ * siblings inside the toolbar's generic centred .row (backlog item 106).
+ * The old arrangement vertically centred a short "Manage tags" button
+ * against the much taller filter block, so it aligned with neither that
+ * block's heading nor its chips. */
+.tag-controls-actions {
+  /* stretch, not the .row default of center: the two peers then share one
+   * height whichever of them wraps to two lines first. */
+  align-items: stretch;
+}
+
+.tag-disclosure {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  /* Equal-width peers that share one line whenever their content fits, and
+   * wrap to full width when it cannot — e.g. at 200% text. min-width: 0
+   * lets them shrink below their content width rather than forcing a
+   * horizontal overflow. */
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+}
+
+/* The non-colour open/closed cue, mirroring
+ * .planning-routing-disclosure-chevron's own treatment. Decorative only —
+ * aria-expanded on the button is what assistive technology reads. */
+.tag-disclosure-chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.tag-disclosure[aria-expanded="true"] .tag-disclosure-chevron {
+  transform: rotate(180deg);
+}
+
+.tag-controls-summary {
+  justify-content: space-between;
+}
+
 .tag-filters {
   display: flex;
   flex-wrap: wrap;
@@ -866,16 +919,29 @@ button:focus-visible {
   margin-top: 0.5rem;
 }
 
+/* The check glyph's width is reserved symmetrically, in the chip's own
+ * padding on BOTH sides, and the glyph itself is taken out of flow
+ * (backlog item 106). Previously it sat in flow as a 1em box plus a gap,
+ * always present but empty when unselected, which pushed every unselected
+ * label optically off-centre — visible in the installed-iPhone screenshot.
+ * Reserving rather than removing the space also means a chip never changes
+ * width as it is toggled, so the wrapped rows never reflow under the
+ * finger that just tapped one. */
 .tag-filter-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-12);
+  justify-content: center;
+  padding: var(--space-4) calc(var(--space-12) + 1em + var(--space-4));
   border: 1px solid var(--colour-border);
   border-radius: var(--radius-sm);
   background: var(--colour-bg-elevated);
   color: var(--colour-text);
   overflow-wrap: anywhere;
+}
+
+.tag-filter-label {
+  text-align: center;
 }
 
 /* Never colour alone: the aria-hidden check-mark glyph below is the
@@ -889,8 +955,12 @@ button:focus-visible {
 }
 
 .tag-filter-check {
-  display: inline-block;
+  position: absolute;
+  left: var(--space-12);
+  top: 50%;
+  transform: translateY(-50%);
   width: 1em;
+  text-align: center;
 }
 
 /* The global tag manager panel (backlog item 100 stage 4A). Mirrors

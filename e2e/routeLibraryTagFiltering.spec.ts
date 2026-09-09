@@ -65,6 +65,16 @@ function visibleCardTitles(page: Page) {
 // Scopes a filter-chip lookup to the "Filter by tags" region, since an
 // open card editor's own suggestion button can share the same accessible
 // name as a filter chip.
+/** Expands the filter chooser if collapsed. Backlog item 106 made it a
+ * disclosure that starts closed, and opening it also closes an idle
+ * manager, so ordering matters where both are involved. */
+async function expandTagFilters(page: Page) {
+  const disclosure = page.getByRole("button", { name: "Filter by tags", exact: true });
+  if ((await disclosure.getAttribute("aria-expanded")) === "true") return;
+  await disclosure.click();
+  await expect(page.getByRole("group", { name: "Filter by tags" })).toBeVisible();
+}
+
 function getTagFilterButton(page: Page, name: string) {
   return page
     .getByRole("group", { name: "Filter by tags" })
@@ -123,6 +133,7 @@ test("importing, tagging, filtering (AND semantics), combining with search, clea
 
   // Selecting one tag narrows to the single list of matching routes.
   // "Padding Route 0" matches too and, being pinned, sorts first.
+  await expandTagFilters(page);
   await getTagFilterButton(page, "Gravel").click();
   await expect
     .poll(() => visibleCardTitles(page))
@@ -176,6 +187,31 @@ test("importing, tagging, filtering (AND semantics), combining with search, clea
 
   await page.getByRole("button", { name: "Routes" }).click();
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+  // Backlog item 106: the chooser itself comes back collapsed (a fresh
+  // RouteLibrary mount), but the selection is restored and still filtering
+  // — visible without expanding anything, via the count and Clear row.
+  await expect(page.getByText("1 filter active")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Clear tag filters" })).toBeVisible();
+  // Scroll restoration is asserted BEFORE expanding: clicking the
+  // disclosure scrolls it into view, and it sits near the top of the page.
+  // The target is the saved offset clamped to what the document can
+  // actually reach — the filter chooser now returns collapsed (item 106),
+  // so the page is genuinely shorter than when the offset was captured,
+  // and the browser clamps the restore accordingly. Computed from the live
+  // document rather than hard-coded, so it stays honest if the layout
+  // changes again.
+  await expect
+    .poll(() =>
+      page.evaluate((saved) => {
+        const maxScroll = Math.max(
+          0,
+          document.documentElement.scrollHeight - document.documentElement.clientHeight,
+        );
+        return window.scrollY === Math.min(saved, maxScroll);
+      }, scrollYBeforeOpen),
+    )
+    .toBe(true);
+  await expandTagFilters(page);
   await expect(getTagFilterButton(page, "Gravel")).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -184,7 +220,6 @@ test("importing, tagging, filtering (AND semantics), combining with search, clea
     "aria-pressed",
     "false",
   );
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollYBeforeOpen);
 
   // Editing away the currently-filtered-on tag drops the route out of
   // the active result without trapping the save or losing focus to
@@ -213,6 +248,8 @@ test("importing, tagging, filtering (AND semantics), combining with search, clea
   // tag-filter selection, matching the existing name-search contract.
   await page.reload();
   await expect(page.getByRole("button", { name: "Clear tag filters" })).toHaveCount(0);
+  await expect(page.getByText(/filters? active/)).toHaveCount(0);
+  await expandTagFilters(page);
   await expect(getTagFilterButton(page, "Gravel")).toHaveAttribute(
     "aria-pressed",
     "false",
@@ -274,6 +311,7 @@ test.describe("tag-filter region geometry and accessibility (item 100 stage 3)",
       const viewportWidth = page.viewportSize()?.width;
       if (viewportWidth === undefined) throw new Error("expected a viewport width");
 
+      await expandTagFilters(page);
       const region = page.getByRole("group", { name: "Filter by tags" });
       await expectContainedWithinViewport(region, viewportWidth);
       const chip = region.getByRole("button").first();
@@ -301,6 +339,7 @@ test.describe("tag-filter region geometry and accessibility (item 100 stage 3)",
     }) => {
       await seedFilterableRoutes(page);
 
+      await expandTagFilters(page);
       const region = page.getByRole("group", { name: "Filter by tags" });
       await expectContainedWithinViewport(region, 844);
       const chip = region.getByRole("button").first();
@@ -309,5 +348,148 @@ test.describe("tag-filter region geometry and accessibility (item 100 stage 3)",
       await chip.focus();
       await expect(chip).toBeFocused();
     });
+  });
+});
+
+// Backlog item 106's third strand, proven by real geometry rather than a
+// screenshot: the installed-iPhone screenshot showed "Manage tags"
+// floating beside the much taller filter block (both were siblings in one
+// vertically-centred toolbar .row), and every unselected chip label sitting
+// optically off-centre because an empty check-mark slot occupied real
+// space to its left.
+test.describe("tag-control layout (item 106)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  const ALIGNMENT_TOLERANCE_PX = 2;
+
+  async function seedTaggedRoutes(page: Page) {
+    await page.goto("/");
+    await importRoute(page, "Alpine Climb");
+    await importRoute(page, "Zebra Loop");
+    await tagRoute(page, "Alpine Climb", "Gravel");
+    await tagRoute(page, "Zebra Loop", "Weekend");
+  }
+
+  test("presents Filter by tags and Manage tags as aligned peer disclosures in one row", async ({
+    page,
+  }) => {
+    await seedTaggedRoutes(page);
+
+    const filter = page.getByRole("button", { name: "Filter by tags", exact: true });
+    const manage = page.getByRole("button", { name: "Manage tags", exact: true });
+    await expect(filter).toBeVisible();
+    await expect(manage).toBeVisible();
+
+    const filterBox = await filter.boundingBox();
+    const manageBox = await manage.boundingBox();
+    if (!filterBox || !manageBox)
+      throw new Error("expected both disclosures to be laid out");
+
+    // Peers on one line: same top edge and same height, which the old
+    // "short button vertically centred against a tall block" arrangement
+    // could not satisfy.
+    expect(Math.abs(filterBox.y - manageBox.y)).toBeLessThanOrEqual(
+      ALIGNMENT_TOLERANCE_PX,
+    );
+    expect(Math.abs(filterBox.height - manageBox.height)).toBeLessThanOrEqual(
+      ALIGNMENT_TOLERANCE_PX,
+    );
+    expect(filterBox.height).toBeGreaterThanOrEqual(44);
+    expect(manageBox.height).toBeGreaterThanOrEqual(44);
+
+    // Genuine siblings in one container, not scattered through the toolbar.
+    const shareRow = await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll("button"));
+      const byText = (label: string) =>
+        buttons.find((button) => button.textContent.trim().startsWith(label)) ?? null;
+      const filterButton = byText("Filter by tags");
+      const manageButton = byText("Manage tags");
+      if (!filterButton || !manageButton) return false;
+      return filterButton.parentElement === manageButton.parentElement;
+    });
+    expect(shareRow).toBe(true);
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    );
+    expect(overflow).toBe(false);
+  });
+
+  test("centres an unselected chip's label, and keeps the chip's width unchanged when it is toggled", async ({
+    page,
+  }) => {
+    await seedTaggedRoutes(page);
+    await expandTagFilters(page);
+
+    const chip = getTagFilterButton(page, "Gravel");
+    await expect(chip).toHaveAttribute("aria-pressed", "false");
+
+    const measure = async () =>
+      page.evaluate(() => {
+        const chips = Array.from(document.querySelectorAll(".tag-filter-chip"));
+        const target = chips.find(
+          (element) =>
+            element.querySelector(".tag-filter-label")?.textContent.trim() === "Gravel",
+        );
+        const label = target?.querySelector(".tag-filter-label");
+        if (!target || !label) return null;
+        const chipRect = target.getBoundingClientRect();
+        const labelRect = label.getBoundingClientRect();
+        return {
+          chipCentre: chipRect.left + chipRect.width / 2,
+          labelCentre: labelRect.left + labelRect.width / 2,
+          width: chipRect.width,
+        };
+      });
+
+    const unselected = await measure();
+    if (!unselected) throw new Error("expected the Gravel chip and its label");
+    // The defect this replaces offset the label by roughly half of
+    // (1em + gap) — several CSS pixels — because the empty check slot sat
+    // in flow to its left.
+    expect(Math.abs(unselected.labelCentre - unselected.chipCentre)).toBeLessThanOrEqual(
+      ALIGNMENT_TOLERANCE_PX,
+    );
+
+    await chip.click();
+    await expect(chip).toHaveAttribute("aria-pressed", "true");
+    const selected = await measure();
+    if (!selected) throw new Error("expected the Gravel chip after selection");
+    // Reserving the slot symmetrically rather than removing it means the
+    // chip never changes width as it is toggled, so the wrapped rows never
+    // reflow under the finger that just tapped one.
+    expect(Math.abs(selected.width - unselected.width)).toBeLessThanOrEqual(
+      ALIGNMENT_TOLERANCE_PX,
+    );
+    expect(Math.abs(selected.labelCentre - selected.chipCentre)).toBeLessThanOrEqual(
+      ALIGNMENT_TOLERANCE_PX,
+    );
+  });
+
+  test("keeps the active count and Clear visible while collapsed, and still filters", async ({
+    page,
+  }) => {
+    await seedTaggedRoutes(page);
+    await expandTagFilters(page);
+    await getTagFilterButton(page, "Gravel").click();
+    const filteredTitles = await visibleCardTitles(page);
+
+    await page.getByRole("button", { name: "Filter by tags", exact: true }).click();
+    await expect(page.getByRole("group", { name: "Filter by tags" })).toHaveCount(0);
+    await expect(page.getByText("1 filter active")).toBeVisible();
+    const clear = page.getByRole("button", { name: "Clear tag filters", exact: true });
+    await expect(clear).toBeVisible();
+    const clearBox = await clear.boundingBox();
+    if (!clearBox) throw new Error("expected Clear to be laid out");
+    expect(clearBox.height).toBeGreaterThanOrEqual(44);
+
+    // Collapsed filtering is still filtering.
+    expect(await visibleCardTitles(page)).toEqual(filteredTitles);
+
+    await clear.click();
+    await expect(page.getByText("1 filter active")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Filter by tags", exact: true }),
+    ).toBeFocused();
   });
 });

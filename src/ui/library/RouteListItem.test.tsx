@@ -966,13 +966,78 @@ describe("RouteListItem", () => {
       const originalFocus = HTMLElement.prototype.focus;
       // eslint-disable-next-line @typescript-eslint/unbound-method
       const originalMatchMedia = window.matchMedia;
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const originalRaf = window.requestAnimationFrame;
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const originalCancelRaf = window.cancelAnimationFrame;
+      const originalVisualViewport = window.visualViewport;
 
       afterEach(() => {
         Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
         window.scrollBy = originalScrollBy;
         HTMLElement.prototype.focus = originalFocus;
         window.matchMedia = originalMatchMedia;
+        window.requestAnimationFrame = originalRaf;
+        window.cancelAnimationFrame = originalCancelRaf;
+        Object.defineProperty(window, "visualViewport", {
+          configurable: true,
+          value: originalVisualViewport,
+        });
       });
+
+      // Backlog item 106: the reveal now waits for the visible-viewport
+      // geometry to settle before measuring, so every assertion on a
+      // scrollBy call has to drive animation frames deliberately. A manual
+      // frame clock (rather than jsdom's real 16ms rAF plus waitFor) keeps
+      // the ordering tests below exact: they depend on the viewport
+      // changing at a specific point BETWEEN the commit and the frames.
+      let frames: {
+        advance: (timestamp: number) => boolean;
+        advanceMany: (count: number, from?: number) => void;
+      };
+
+      beforeEach(() => {
+        let nextHandle = 1;
+        const pending = new Map<number, FrameRequestCallback>();
+        window.requestAnimationFrame = (callback: FrameRequestCallback) => {
+          const handle = nextHandle++;
+          pending.set(handle, callback);
+          return handle;
+        };
+        window.cancelAnimationFrame = (handle: number) => {
+          pending.delete(handle);
+        };
+        frames = {
+          advance(timestamp: number) {
+            const [entry] = [...pending.entries()];
+            if (!entry) return false;
+            const [handle, callback] = entry;
+            pending.delete(handle);
+            callback(timestamp);
+            return true;
+          },
+          advanceMany(count: number, from = 0) {
+            for (let index = 0; index < count; index++) {
+              if (!this.advance(from + index * 16)) return;
+            }
+          },
+        };
+      });
+
+      /** Drives enough frames for runWhenViewportSettled to complete. */
+      async function settleViewport() {
+        await act(async () => {
+          frames.advanceMany(8);
+          await Promise.resolve();
+        });
+      }
+
+      function stubVisualViewport(value: { offsetTop: number; height: number } | null) {
+        Object.defineProperty(window, "visualViewport", {
+          configurable: true,
+          value,
+        });
+      }
 
       function stubRect(overrides: Partial<DOMRect> = {}): DOMRect {
         return {
@@ -1069,8 +1134,11 @@ describe("RouteListItem", () => {
         const buttonFocusCall = focusCalls.find(
           (call) => call.target === screen.getByRole("button", { name: "Edit tags" }),
         );
+        // Focus is immediate; only the scroll waits for the viewport.
         expect(buttonFocusCall?.options).toEqual({ preventScroll: true });
+        expect(scrollCalls).toHaveLength(0);
 
+        await settleViewport();
         expect(scrollCalls).toHaveLength(1);
         expect(scrollCalls[0]).toEqual(
           expect.objectContaining({ top: -308, left: 0, behavior: "smooth" }),
@@ -1102,6 +1170,7 @@ describe("RouteListItem", () => {
         });
         await screen.findByRole("button", { name: "Edit tags" });
 
+        await settleViewport();
         expect(scrollCalls).toHaveLength(1);
       });
 
@@ -1121,6 +1190,9 @@ describe("RouteListItem", () => {
         rerenderWithRoute(buildRoute({ tags: ["Gravel"] }));
         await screen.findByRole("button", { name: "Edit tags" });
 
+        // Settled deliberately: without driving the frames this would pass
+        // vacuously, since the reveal has not measured anything yet.
+        await settleViewport();
         expect(scrollCalls).toHaveLength(0);
         const buttonFocusCall = focusCalls.find(
           (call) => call.target === screen.getByRole("button", { name: "Edit tags" }),
@@ -1149,6 +1221,9 @@ describe("RouteListItem", () => {
           (call) => call.target === screen.getByRole("button", { name: "Add tags" }),
         );
         expect(buttonFocusCall?.options).toEqual({ preventScroll: true });
+        expect(scrollCalls).toHaveLength(0);
+
+        await settleViewport();
         expect(scrollCalls).toHaveLength(1);
         expect(scrollCalls[0]).toEqual(
           expect.objectContaining({ top: -308, left: 0, behavior: "smooth" }),
@@ -1169,6 +1244,9 @@ describe("RouteListItem", () => {
           (call) => call.target === screen.getByRole("button", { name: "Add tags" }),
         );
         expect(buttonFocusCall?.options).toEqual({ preventScroll: true });
+        expect(scrollCalls).toHaveLength(0);
+
+        await settleViewport();
         expect(scrollCalls).toHaveLength(1);
         expect(scrollCalls[0]).toEqual(
           expect.objectContaining({ top: -308, left: 0, behavior: "smooth" }),
@@ -1185,6 +1263,133 @@ describe("RouteListItem", () => {
         await openEditor(user);
         await user.click(screen.getByRole("button", { name: "Cancel" }));
 
+        await settleViewport();
+        expect(scrollCalls).toHaveLength(0);
+        const buttonFocusCall = focusCalls.find(
+          (call) => call.target === screen.getByRole("button", { name: "Add tags" }),
+        );
+        expect(buttonFocusCall?.options).toEqual({ preventScroll: true });
+      });
+
+      // Backlog item 106's proven root cause. Cancel/Escape close the
+      // editor inside the very event the focused Cancel button is
+      // handling, so that button is destroyed while focused and the
+      // browser falls back to <body>, scrolling the document to the top —
+      // measured in Chromium as scrollY 339 -> 0 with no scroll API call
+      // involved. Parking focus on the card (which survives the close)
+      // first is what prevents it.
+      it("parks focus on the card, with preventScroll, before the editor unmounts", async () => {
+        const user = userEvent.setup();
+        stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
+        const focusCalls = captureFocusCalls();
+        renderItem({ route: buildRoute({ tags: [] }) });
+
+        await openEditor(user);
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+        const card = document.querySelector("[data-route-id]");
+        const cardIndex = focusCalls.findIndex((call) => call.target === card);
+        const buttonIndex = focusCalls.findIndex(
+          (call) => call.target === screen.getByRole("button", { name: "Add tags" }),
+        );
+        expect(cardIndex).toBeGreaterThanOrEqual(0);
+        expect(focusCalls[cardIndex]?.options).toEqual({ preventScroll: true });
+        // Ordering is the whole point: the card must take focus while the
+        // editor is still mounted, before the close effect moves it on.
+        expect(buttonIndex).toBeGreaterThan(cardIndex);
+      });
+
+      it("parks focus on the card for Escape too", async () => {
+        const user = userEvent.setup();
+        stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
+        const focusCalls = captureFocusCalls();
+        renderItem({ route: buildRoute({ tags: [] }) });
+
+        await openEditor(user);
+        await user.keyboard("{Escape}");
+
+        const card = document.querySelector("[data-route-id]");
+        expect(focusCalls.some((call) => call.target === card)).toBe(true);
+      });
+
+      // Backlog item 106's primary fail-first case, and the one that
+      // matches the installed-iPhone report directly: the geometry read at
+      // the instant the editor collapses says a scroll is needed, but once
+      // the viewport has settled the card's top band is already visible.
+      // Measuring immediately (0.4.20's behaviour) scrolls unnecessarily and
+      // leaves avoidable content above the card; measuring after settlement
+      // correctly does nothing at all.
+      it("does not scroll when the settled viewport shows the card is already visible, though the mid-transition geometry said otherwise", async () => {
+        const user = userEvent.setup();
+        // A keyboard-panned visual viewport: offsetTop 120 raises the
+        // effective top boundary to 128, so the card's top at 100 reads as
+        // hidden even though it is not.
+        const viewport = { offsetTop: 120, height: 500 };
+        stubVisualViewport(viewport);
+        stubCardGeometry(alreadyVisibleGeometry.card, alreadyVisibleGeometry.titleRow);
+        const scrollCalls = captureScrollByCalls();
+        renderItem({ route: buildRoute({ tags: [] }) });
+
+        await openEditor(user);
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+        expect(scrollCalls).toHaveLength(0);
+
+        // The keyboard finishes dismissing between the commit and the
+        // frames — the exact ordering no previous test modelled.
+        viewport.offsetTop = 0;
+        viewport.height = 768;
+        await settleViewport();
+
+        expect(scrollCalls).toHaveLength(0);
+      });
+
+      it("computes the delta from the settled viewport, not the mid-transition one", async () => {
+        const user = userEvent.setup();
+        const viewport = { offsetTop: 120, height: 500 };
+        stubVisualViewport(viewport);
+        stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
+        const scrollCalls = captureScrollByCalls();
+        renderItem({ route: buildRoute({ tags: [] }) });
+
+        await openEditor(user);
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+        viewport.offsetTop = 0;
+        viewport.height = 768;
+        await settleViewport();
+
+        // -308 = card top (-300) minus the settled effective top (0 + 8).
+        // The mid-transition value would have been -428 (-300 - 128), an
+        // overshoot of exactly the pan amount above the header.
+        expect(scrollCalls).toHaveLength(1);
+        expect(scrollCalls[0]).toEqual(
+          expect.objectContaining({ top: -308, left: 0, behavior: "smooth" }),
+        );
+      });
+
+      it("abandons the reveal without scrolling when the viewport never settles", async () => {
+        const user = userEvent.setup();
+        const viewport = { offsetTop: 120, height: 500 };
+        stubVisualViewport(viewport);
+        stubCardGeometry(hiddenTitleGeometry.card, hiddenTitleGeometry.titleRow);
+        const scrollCalls = captureScrollByCalls();
+        const focusCalls = captureFocusCalls();
+        renderItem({ route: buildRoute({ tags: [] }) });
+
+        await openEditor(user);
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+        // Never stabilises, and the elapsed time crosses the safety cap.
+        await act(async () => {
+          for (let index = 0; index < 80; index++) {
+            viewport.offsetTop += 10;
+            frames.advance(index * 20);
+          }
+          await Promise.resolve();
+        });
+
+        // Focus was restored synchronously, so abandoning is safe — and far
+        // safer than scrolling by a delta computed from unstable geometry.
         expect(scrollCalls).toHaveLength(0);
         const buttonFocusCall = focusCalls.find(
           (call) => call.target === screen.getByRole("button", { name: "Add tags" }),
@@ -1204,6 +1409,7 @@ describe("RouteListItem", () => {
         await openEditor(user);
         await user.click(screen.getByRole("button", { name: "Cancel" }));
 
+        await settleViewport();
         expect(scrollCalls).toHaveLength(1);
         expect(scrollCalls[0]).toEqual(
           expect.objectContaining({ left: 0, behavior: "auto" }),
@@ -1228,6 +1434,7 @@ describe("RouteListItem", () => {
         await user.click(screen.getByRole("button", { name: "Save tags" }));
         await screen.findByRole("alert");
 
+        await settleViewport();
         expect(scrollCalls).toHaveLength(0);
 
         // The editor stayed open through the failure, so this is an
@@ -1236,6 +1443,7 @@ describe("RouteListItem", () => {
         // nothing, not that the later Cancel is special.
         await user.click(screen.getByRole("button", { name: "Cancel" }));
         expect(screen.getByRole("button", { name: "Add tags" })).toBeInTheDocument();
+        await settleViewport();
         expect(scrollCalls).toHaveLength(1);
         expect(scrollCalls[0]).toEqual(
           expect.objectContaining({ top: -308, left: 0, behavior: "smooth" }),
@@ -1268,6 +1476,7 @@ describe("RouteListItem", () => {
           (call) => call.target === screen.getByRole("button", { name: "Add tags" }),
         );
         expect(buttonFocusCall?.options).toBeUndefined();
+        await settleViewport();
         expect(scrollCalls).toHaveLength(0);
       });
 
@@ -1293,6 +1502,7 @@ describe("RouteListItem", () => {
         await user.click(screen.getByRole("button", { name: "Save tags" }));
         rerenderWithRoute(saved);
         await screen.findByRole("button", { name: "Edit tags" });
+        await settleViewport();
         expect(scrollCalls).toHaveLength(1);
 
         await openEditor(user, "Edit tags");
@@ -1308,6 +1518,7 @@ describe("RouteListItem", () => {
           )
           .at(-1);
         expect(dismissFocusCall?.options).toBeUndefined();
+        await settleViewport();
         expect(scrollCalls).toHaveLength(1);
       });
 
@@ -1329,6 +1540,7 @@ describe("RouteListItem", () => {
         rerenderWithRoute(buildRoute({ tags: ["Gravel"] }));
         await screen.findByRole("button", { name: "Edit tags" });
 
+        await settleViewport();
         expect(scrollCalls).toHaveLength(1);
         expect(scrollCalls[0]).toEqual(expect.objectContaining({ behavior: "auto" }));
       });

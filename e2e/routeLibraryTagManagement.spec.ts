@@ -66,6 +66,16 @@ function getManager(page: Page) {
   return page.getByRole("group", { name: "Manage tags" });
 }
 
+/** Expands the filter chooser if collapsed. Backlog item 106 made it a
+ * disclosure that starts closed, and opening it also closes an idle
+ * manager, so ordering matters where both are involved. */
+async function expandTagFilters(page: Page) {
+  const disclosure = page.getByRole("button", { name: "Filter by tags", exact: true });
+  if ((await disclosure.getAttribute("aria-expanded")) === "true") return;
+  await disclosure.click();
+  await expect(page.getByRole("group", { name: "Filter by tags" })).toBeVisible();
+}
+
 function getTagFilterButton(page: Page, name: string) {
   return page
     .getByRole("group", { name: "Filter by tags" })
@@ -127,6 +137,7 @@ test("renaming, merging and deleting a tag globally, with filter reconciliation,
   await tagRoute(page, "Coastal Spin", "Road");
 
   // Counts come from the whole corpus, not the currently filtered view.
+  await expandTagFilters(page);
   await getTagFilterButton(page, "Gravel").click();
   await expect(page.getByRole("button", { name: "Coastal Spin" })).toBeHidden();
   await openManager(page);
@@ -143,6 +154,9 @@ test("renaming, merging and deleting a tag globally, with filter reconciliation,
   await getManager(page).getByRole("button", { name: "Rename tag", exact: true }).click();
 
   await expect(page.getByText("Renamed “Gravel” to “Trail” on 2 routes.")).toBeVisible();
+  // Expanding closes the manager (item 106's mutual exclusion); safe here,
+  // since the merge below reopens it after a reload anyway.
+  await expandTagFilters(page);
   await expect(getTagFilterButton(page, "Trail")).toHaveAttribute("aria-pressed", "true");
   await expect(
     page.getByRole("group", { name: "Filter by tags" }).getByRole("button", {
@@ -180,9 +194,10 @@ test("renaming, merging and deleting a tag globally, with filter reconciliation,
     getListItemForName(page, "Alpine Climb").locator(".route-card-tag"),
   ).toHaveCount(1);
   await expect(getListItemForName(page, "Alpine Climb").getByText("Road")).toBeVisible();
-  await expect(
-    page.getByRole("group", { name: "Filter by tags" }).getByRole("button"),
-  ).toHaveCount(1);
+  // Read from the manager's own option list rather than the filter chips:
+  // expanding the chooser would close the manager, which the delete step
+  // below still needs open (item 106).
+  await expect(getManager(page).getByRole("option")).toHaveCount(2);
 
   // Deleting the last remaining tag leaves a coherent empty state with
   // every route still present and focus on a stable control.
@@ -274,6 +289,7 @@ test("a deliberate case-only rename changes the spelling everywhere without crea
     getListItemForName(page, "Alpine Climb").getByText("Gravel"),
   ).toBeVisible();
   await expect(getListItemForName(page, "Zebra Loop").getByText("Gravel")).toBeVisible();
+  await expandTagFilters(page);
   await expect(
     page.getByRole("group", { name: "Filter by tags" }).getByRole("button"),
   ).toHaveCount(1);
@@ -497,7 +513,7 @@ test.describe("Manage tags panel reveal (item 105)", () => {
 
     await instrumentDeliberateScrolls(page);
     await page.keyboard.press("Enter");
-    await expect(getTagFilterButton(page, "Trail")).toBeVisible();
+    await expect(getManager(page).getByRole("option", { name: /^Trail/ })).toBeAttached();
     await waitForScrollToSettle(page);
 
     const after = await measurePanelGeometry(page);
@@ -539,7 +555,7 @@ test.describe("Manage tags panel reveal (item 105)", () => {
 
     await getManager(page).getByRole("button", { name: "Rename tag" }).focus();
     await page.keyboard.press("Enter");
-    await expect(getTagFilterButton(page, "Trail")).toBeVisible();
+    await expect(getManager(page).getByRole("option", { name: /^Trail/ })).toBeAttached();
     await waitForScrollToSettle(page);
 
     const after = await measurePanelGeometry(page);

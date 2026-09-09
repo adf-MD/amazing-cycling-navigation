@@ -2150,6 +2150,29 @@ describe("RouteLibrary — tag filtering", () => {
   // Scopes a filter-chip lookup to the "Filter by tags" region, since an
   // open card editor's own suggestion button can share the same
   // accessible name (e.g. two "Gravel" buttons on screen at once).
+  /** Expands the filter chooser if it is collapsed. Backlog item 106 made
+   * it a disclosure that starts closed, so the chips below only exist once
+   * it has been opened — they are not rendered at all while collapsed, so
+   * nothing unreachable is left in the tab order. */
+  async function expandTagFilters(
+    user: ReturnType<typeof userEvent.setup>,
+  ): Promise<void> {
+    const disclosure = screen.getByRole("button", { name: "Filter by tags" });
+    if (disclosure.getAttribute("aria-expanded") === "true") return;
+    await user.click(disclosure);
+    await waitFor(() => {
+      expect(screen.getByRole("group", { name: "Filter by tags" })).toBeInTheDocument();
+    });
+  }
+
+  async function clickTagFilter(
+    user: ReturnType<typeof userEvent.setup>,
+    name: string,
+  ): Promise<void> {
+    await expandTagFilters(user);
+    await user.click(getTagFilterButton(name));
+  }
+
   function getTagFilterButton(name: string): HTMLElement {
     return within(screen.getByRole("group", { name: "Filter by tags" })).getByRole(
       "button",
@@ -2176,7 +2199,7 @@ describe("RouteLibrary — tag filtering", () => {
     render(<RouteLibrary onOpenRoute={vi.fn()} />);
     await importFixture(user, "Alpine Climb.gpx");
 
-    expect(screen.queryByText("Filter by tags")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Filter by tags" })).toBeNull();
   });
 
   it("selecting a single tag filter narrows the visible list to routes carrying that tag", async () => {
@@ -2186,7 +2209,7 @@ describe("RouteLibrary — tag filtering", () => {
     await importFixture(user, "Zebra Loop.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
 
-    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await clickTagFilter(user, "Gravel");
 
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
@@ -2205,8 +2228,8 @@ describe("RouteLibrary — tag filtering", () => {
     await tagRoute(user, "Gravel Only", "Gravel");
     await tagRoute(user, "Weekend Only", "Weekend");
 
-    await user.click(screen.getByRole("button", { name: "Gravel" }));
-    await user.click(screen.getByRole("button", { name: "Weekend" }));
+    await clickTagFilter(user, "Gravel");
+    await clickTagFilter(user, "Weekend");
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Both Tags" })).toBeInTheDocument();
@@ -2221,7 +2244,8 @@ describe("RouteLibrary — tag filtering", () => {
     await importFixture(user, "Alpine Climb.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
 
-    const chip = screen.getByRole("button", { name: "Gravel" });
+    await expandTagFilters(user);
+    const chip = getTagFilterButton("Gravel");
     expect(chip).toHaveAttribute("aria-pressed", "false");
     expect(chip.className).not.toContain("is-selected");
 
@@ -2251,7 +2275,7 @@ describe("RouteLibrary — tag filtering", () => {
 
     // The suggestion grid adopts the established (first-seen) spelling —
     // "GRAVEL" here, since no prior route established "Gravel" first.
-    await user.click(screen.getByRole("button", { name: "GRAVEL" }));
+    await clickTagFilter(user, "GRAVEL");
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
@@ -2270,7 +2294,7 @@ describe("RouteLibrary — tag filtering", () => {
       expect(screen.getByRole("button", { name: "Alpine Descent" })).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await clickTagFilter(user, "Gravel");
 
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "Alpine Descent" })).toBeNull();
@@ -2283,7 +2307,7 @@ describe("RouteLibrary — tag filtering", () => {
     render(<RouteLibrary onOpenRoute={vi.fn()} />);
     await importFixture(user, "Alpine Climb.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
-    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await clickTagFilter(user, "Gravel");
 
     await user.type(screen.getByLabelText("Search routes"), "Gravel");
 
@@ -2349,7 +2373,7 @@ describe("RouteLibrary — tag filtering", () => {
       ).toHaveAttribute("aria-pressed", "true");
     });
 
-    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await clickTagFilter(user, "Gravel");
     await waitFor(() => {
       expect(getVisibleRouteNames()).toHaveLength(4);
     });
@@ -2381,7 +2405,7 @@ describe("RouteLibrary — tag filtering", () => {
       );
     });
 
-    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await clickTagFilter(user, "Gravel");
 
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "Pinned No Tag" })).toBeNull();
@@ -2397,7 +2421,7 @@ describe("RouteLibrary — tag filtering", () => {
     await tagRoute(user, "Alpine Climb", "Gravel");
     await tagRoute(user, "Zebra Loop", "Weekend");
 
-    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await clickTagFilter(user, "Gravel");
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
     });
@@ -2416,7 +2440,7 @@ describe("RouteLibrary — tag filtering", () => {
 
     expect(screen.queryByRole("button", { name: "Clear tag filters" })).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await clickTagFilter(user, "Gravel");
     await waitFor(() => {
       expect(
         screen.getByRole("button", { name: "Clear tag filters" }),
@@ -2429,7 +2453,7 @@ describe("RouteLibrary — tag filtering", () => {
       expect(screen.getByRole("button", { name: "Zebra Loop" })).toBeInTheDocument();
     });
     expect(screen.queryByRole("button", { name: "Clear tag filters" })).toBeNull();
-    expect(screen.getByText("Filter by tags")).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Filter by tags" })).toHaveFocus();
   });
 
   it("tagging a route through the live editor immediately affects an active filter's result, with no reload", async () => {
@@ -2444,7 +2468,7 @@ describe("RouteLibrary — tag filtering", () => {
     // button entirely.
     await tagRoute(user, "Zebra Loop", "Gravel");
 
-    await user.click(getTagFilterButton("Gravel"));
+    await clickTagFilter(user, "Gravel");
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Zebra Loop" })).toBeInTheDocument();
     });
@@ -2473,8 +2497,8 @@ describe("RouteLibrary — tag filtering", () => {
     await tagRoute(user, "Alpine Climb", "Gravel");
     await tagRoute(user, "Zebra Loop", "Weekend");
 
-    await user.click(screen.getByRole("button", { name: "Gravel" }));
-    await user.click(screen.getByRole("button", { name: "Weekend" }));
+    await clickTagFilter(user, "Gravel");
+    await clickTagFilter(user, "Weekend");
 
     await waitFor(() => {
       expect(screen.getByText("No routes match the selected tags.")).toBeInTheDocument();
@@ -2489,7 +2513,7 @@ describe("RouteLibrary — tag filtering", () => {
     await tagRoute(user, "Zebra Loop", "Weekend");
     await tagRoute(user, "Alpine Climb", "Weekend");
 
-    await user.click(getTagFilterButton("Weekend"));
+    await clickTagFilter(user, "Weekend");
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Zebra Loop" })).toBeInTheDocument();
     });
@@ -2534,8 +2558,8 @@ describe("RouteLibrary — tag filtering", () => {
     await tagRoute(user, "Weekend Only", "Weekend");
     await tagRoute(user, "Gravel Only", "Gravel");
 
-    await user.click(getTagFilterButton("Weekend"));
-    await user.click(getTagFilterButton("Gravel"));
+    await clickTagFilter(user, "Weekend");
+    await clickTagFilter(user, "Gravel");
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
     });
@@ -2568,7 +2592,7 @@ describe("RouteLibrary — tag filtering", () => {
     await importFixture(user, "Alpine Climb.gpx");
     await importFixture(user, "Zebra Loop.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
-    await user.click(getTagFilterButton("Gravel"));
+    await clickTagFilter(user, "Gravel");
     await waitFor(() => {
       expect(
         screen.getByRole("button", { name: "Clear tag filters" }),
@@ -2585,7 +2609,7 @@ describe("RouteLibrary — tag filtering", () => {
     );
 
     await waitFor(() => {
-      expect(screen.queryByText("Filter by tags")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Filter by tags" })).toBeNull();
     });
 
     // Retagging Zebra Loop with the identical spelling later in the same
@@ -2593,8 +2617,10 @@ describe("RouteLibrary — tag filtering", () => {
     // filter — the fresh "Gravel" chip must start unselected.
     await tagRoute(user, "Zebra Loop", "Gravel");
     await waitFor(() => {
-      expect(getTagFilterButton("Gravel")).toHaveAttribute("aria-pressed", "false");
+      expect(screen.getByRole("button", { name: "Filter by tags" })).toBeInTheDocument();
     });
+    await expandTagFilters(user);
+    expect(getTagFilterButton("Gravel")).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Zebra Loop" })).toBeInTheDocument();
   });
 
@@ -2603,7 +2629,7 @@ describe("RouteLibrary — tag filtering", () => {
     render(<RouteLibrary onOpenRoute={vi.fn()} />);
     await importFixture(user, "Alpine Climb.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
-    await user.click(getTagFilterButton("Gravel"));
+    await clickTagFilter(user, "Gravel");
     await waitFor(() => {
       expect(
         screen.getByRole("button", { name: "Clear tag filters" }),
@@ -2619,7 +2645,7 @@ describe("RouteLibrary — tag filtering", () => {
     );
 
     await waitFor(() => {
-      expect(screen.queryByText("Filter by tags")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Filter by tags" })).toBeNull();
     });
     expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
   });
@@ -2643,13 +2669,13 @@ describe("RouteLibrary — tag filtering", () => {
     ).toBeInTheDocument();
 
     // A filter Alpine Climb DOES carry must not cancel the prompt.
-    await user.click(getTagFilterButton("Gravel"));
+    await clickTagFilter(user, "Gravel");
     expect(pendingRouteSwitch.onTargetMissing).not.toHaveBeenCalled();
 
     // Adding a second, AND-combined filter Alpine Climb does NOT carry
     // hides it — the prompt must be reported missing rather than left
     // invisible.
-    await user.click(getTagFilterButton("Weekend"));
+    await clickTagFilter(user, "Weekend");
 
     await waitFor(() => {
       expect(pendingRouteSwitch.onTargetMissing).toHaveBeenCalledWith(alpine.id);
@@ -2672,12 +2698,14 @@ describe("RouteLibrary — tag filtering", () => {
         />,
       );
 
+      // The chooser starts collapsed (item 106), so the restored selection
+      // is first visible as the count/Clear summary — collapsed filtering
+      // is never invisible filtering — and reaches the chip once expanded.
       await waitFor(() => {
-        expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
-          "aria-pressed",
-          "true",
-        );
+        expect(screen.getByText("1 filter active")).toBeInTheDocument();
       });
+      await expandTagFilters(user);
+      expect(getTagFilterButton("Gravel")).toHaveAttribute("aria-pressed", "true");
     });
 
     it("writes a toggled selection through to restoreTagFilterKeysRef", async () => {
@@ -2692,7 +2720,7 @@ describe("RouteLibrary — tag filtering", () => {
       await importFixture(user, "Alpine Climb.gpx");
       await tagRoute(user, "Alpine Climb", "Gravel");
 
-      await user.click(screen.getByRole("button", { name: "Gravel" }));
+      await clickTagFilter(user, "Gravel");
 
       await waitFor(() => {
         expect(restoreTagFilterKeysRef.current).toEqual(["gravel"]);
@@ -2733,11 +2761,11 @@ describe("RouteLibrary — tag filtering", () => {
       releaseRoutes?.();
 
       await waitFor(() => {
-        expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
-          "aria-pressed",
-          "true",
-        );
+        expect(screen.getByText("1 filter active")).toBeInTheDocument();
       });
+      await expandTagFilters(user);
+      expect(getTagFilterButton("Gravel")).toHaveAttribute("aria-pressed", "true");
+      // The restored filter is genuinely applied, collapsed or not.
       expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
       expect(restoreTagFilterKeysRef.current).toEqual(["gravel"]);
     });
@@ -2801,7 +2829,7 @@ describe("RouteLibrary — tag filtering", () => {
         ).toBeInTheDocument();
       });
 
-      await user.click(getTagFilterButton("Weekend"));
+      await clickTagFilter(user, "Weekend");
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
       });
@@ -2866,7 +2894,7 @@ describe("RouteLibrary — tag filtering", () => {
         ).toBeInTheDocument();
       });
 
-      await user.click(getTagFilterButton("Weekend"));
+      await clickTagFilter(user, "Weekend");
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
       });
@@ -2928,7 +2956,7 @@ describe("RouteLibrary — tag filtering", () => {
       });
       await tagRoute(user, "Zebra Loop", "Weekend");
 
-      await user.click(getTagFilterButton("Weekend"));
+      await clickTagFilter(user, "Weekend");
       await waitFor(() => {
         expect(getVisibleRouteNames()).toHaveLength(3);
       });

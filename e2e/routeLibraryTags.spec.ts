@@ -137,6 +137,11 @@ async function measureRevealGeometry(
  * below — sub-pixel layout rounding, not a meaningful placement error. */
 const REVEAL_TOLERANCE_PX = 2;
 
+/** Mirrors routeCardTopReveal.ts's TOP_REVEAL_GAP_PX — the gap the reveal
+ * deliberately leaves between the sticky header and the revealed card, and
+ * therefore the upper bound a correctly-placed card must respect. */
+const TOP_REVEAL_GAP_PX = 8;
+
 /** Polls (never a fixed sleep) until window.scrollY has genuinely stopped
  * changing across several consecutive real animation frames — the reveal's
  * own scrollBy call uses behavior:"smooth" unless reduced motion is
@@ -363,12 +368,29 @@ test("Cancel discards the draft, returns focus to the tags button, and reveals t
   page,
 }) => {
   await page.goto("/");
-  await importRouteWithManyTags(page, "Cancel Target Route", 10, 40);
+  // Fillers FIRST, so most-recent sort puts the target at the TOP with ten
+  // routes below it. That matters: with the target last, collapsing its
+  // editor shrinks the document enough that the browser's own scroll
+  // clamping frames the card by itself and the reveal never runs — the
+  // test would then pass without exercising anything. Content below the
+  // card keeps the occlusion genuine.
+  for (let i = 1; i <= 10; i++) {
+    await importRoute(page, `Reveal Filler ${String(i)}`);
+  }
+  await importRoute(page, "Cancel Target Route");
+  await openTagEditor(page, "Cancel Target Route");
+  const seedInput = page.getByLabel("Add a tag");
+  // Twelve, not forty: the card must stay tall enough for its title to be
+  // occluded, while the editor's collapse must not shrink the document so
+  // much that the browser's scroll clamping moves the card into view by
+  // itself — which would again mean the reveal was never exercised.
+  for (let i = 1; i <= 12; i++) {
+    await seedInput.fill(`tag-${String(i).padStart(3, "0")}`);
+    await seedInput.press("Enter");
+  }
 
   // Save first, so the card is still genuinely TALL after the later Cancel
-  // discards its next draft. Cancelling a card that shrinks back to nothing
-  // would let the browser's own scroll clamping frame the top for us, and
-  // the test would pass without the reveal ever running.
+  // discards its next draft.
   await page.getByRole("button", { name: "Save tags", exact: true }).click();
   const item = getListItemForName(page, "Cancel Target Route");
   await expect(item.getByRole("button", { name: "Edit tags" })).toBeVisible();
@@ -378,10 +400,26 @@ test("Cancel discards the draft, returns focus to the tags button, and reveals t
   await page.getByLabel("Add a tag").fill("discard-me");
   await page.getByRole("button", { name: "Add tag", exact: true }).click();
 
-  // Put Cancel in view explicitly. Playwright would scroll to it anyway on
-  // click, which would silently undo the setup this test depends on.
+  // Put the card's own top under the sticky header while leaving Cancel
+  // reachable. A window scroll, not scrollIntoViewIfNeeded: Playwright's
+  // own scrolling would undo the occlusion this test depends on.
   const cancel = page.getByRole("button", { name: "Cancel", exact: true });
-  await cancel.scrollIntoViewIfNeeded();
+  // Focus FIRST, then scroll, then activate by keyboard: a locator click
+  // would scroll Cancel back into view and silently undo the occlusion.
+  await cancel.focus();
+  await page.evaluate(() => {
+    const header = document.querySelector("header.app-header--sticky");
+    const items = Array.from(document.querySelectorAll("li[data-route-id]"));
+    const card = items.find(
+      (el) =>
+        el.querySelector(".route-card-title, h2")?.textContent.trim() ===
+        "Cancel Target Route",
+    );
+    if (!header || !card) throw new Error("expected a header and the target card");
+    const headerBottom = header.getBoundingClientRect().bottom;
+    const cardTop = card.getBoundingClientRect().top;
+    window.scrollBy({ top: cardTop - (headerBottom - 120), left: 0, behavior: "auto" });
+  });
   await waitForScrollToSettle(page);
 
   const before = await measureRevealGeometry(page, "Cancel Target Route");
@@ -394,7 +432,7 @@ test("Cancel discards the draft, returns focus to the tags button, and reveals t
   expect(before.card.top).toBeLessThan(before.header.bottom);
   const scrollXBefore = before.scrollX;
 
-  await cancel.click();
+  await page.keyboard.press("Enter");
   await expect(item.getByRole("button", { name: "Edit tags" })).toBeVisible();
   await waitForScrollToSettle(page);
 
@@ -402,8 +440,18 @@ test("Cancel discards the draft, returns focus to the tags button, and reveals t
   if (!geometry.header || !geometry.card || !geometry.title) {
     throw new Error("expected header, card and title to all be measurable");
   }
+  // Backlog item 106 adds the UPPER bound. Every earlier assertion here
+  // was one-sided (">= header.bottom - tol"), so a reveal that scrolled
+  // much too far up — the installed-iPhone symptom — passed unnoticed.
+  // Honest limitation: this cannot fail in headless Chromium, which has no
+  // software keyboard and always reports visualViewport.offsetTop === 0.
+  // It is a regression guard; the discriminating evidence is the stubbed
+  // changing-viewport unit test in RouteListItem.test.tsx.
   expect(geometry.card.top).toBeGreaterThanOrEqual(
     geometry.header.bottom - REVEAL_TOLERANCE_PX,
+  );
+  expect(geometry.card.top).toBeLessThanOrEqual(
+    geometry.header.bottom + TOP_REVEAL_GAP_PX + REVEAL_TOLERANCE_PX,
   );
   expect(geometry.title.top).toBeGreaterThanOrEqual(
     geometry.header.bottom - REVEAL_TOLERANCE_PX,
@@ -414,8 +462,8 @@ test("Cancel discards the draft, returns focus to the tags button, and reveals t
   await expect(item.getByRole("button", { name: "Edit tags" })).toBeFocused();
   // Horizontal position is never touched by the reveal.
   expect(geometry.scrollX).toBe(scrollXBefore);
-  // The draft really was discarded: the 40 saved tags, and not the 41st.
-  expect(await item.locator(".route-card-tag").count()).toBe(40);
+  // The draft really was discarded: the 12 saved tags, and not the 13th.
+  expect(await item.locator(".route-card-tag").count()).toBe(12);
 });
 
 test("does not scroll the page when the card is already visible before cancelling tag editing (item 105)", async ({

@@ -232,6 +232,7 @@ test("selecting a tag filter chip narrows the visible list, with the chip meetin
     getListItemForName(page, "Alpine Climb").getByRole("button", { name: "Edit tags" }),
   ).toBeVisible();
 
+  await page.getByRole("button", { name: "Filter by tags", exact: true }).click();
   const chip = page
     .getByRole("group", { name: "Filter by tags" })
     .getByRole("button", { name: "Gravel", exact: true });
@@ -318,6 +319,7 @@ test("globally renaming a tag updates every card and the filter chip, with the m
   await expect(page.getByText("Renamed “Gravel” to “Trail” on 2 routes.")).toBeVisible();
   await expect(getListItemForName(page, "Alpine Climb").getByText("Trail")).toBeVisible();
   await expect(getListItemForName(page, "Zebra Loop").getByText("Trail")).toBeVisible();
+  await page.getByRole("button", { name: "Filter by tags", exact: true }).click();
   await expect(
     page
       .getByRole("group", { name: "Filter by tags" })

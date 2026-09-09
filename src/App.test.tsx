@@ -670,6 +670,33 @@ describe("App — Route Library tag-filter restoration across navigation", () =>
     });
   }
 
+  /** Backlog item 106 made the filter chooser a disclosure that starts
+   * collapsed on every mount — including on a return to Routes, which is a
+   * fresh RouteLibrary mount. The SELECTION is still restored (and still
+   * filtering); only the chooser's own open state is not. */
+  async function expandTagFilters(
+    user: ReturnType<typeof userEvent.setup>,
+  ): Promise<void> {
+    const disclosure = screen.getByRole("button", { name: "Filter by tags" });
+    if (disclosure.getAttribute("aria-expanded") === "true") return;
+    await user.click(disclosure);
+    await waitFor(() => {
+      expect(screen.getByRole("group", { name: "Filter by tags" })).toBeInTheDocument();
+    });
+  }
+
+  async function clickTagFilter(
+    user: ReturnType<typeof userEvent.setup>,
+    name: string,
+  ): Promise<void> {
+    await expandTagFilters(user);
+    await user.click(
+      within(screen.getByRole("group", { name: "Filter by tags" })).getByRole("button", {
+        name,
+      }),
+    );
+  }
+
   it("selecting a tag filter, navigating away, and returning to Routes restores the same filter and narrowed list", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -678,7 +705,7 @@ describe("App — Route Library tag-filter restoration across navigation", () =>
     await importFixture(user, "Zebra Loop.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
 
-    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await clickTagFilter(user, "Gravel");
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
     });
@@ -688,14 +715,20 @@ describe("App — Route Library tag-filter restoration across navigation", () =>
 
     await user.click(screen.getByRole("button", { name: "Routes" }));
 
+    // The chooser comes back collapsed, but the selection is restored and
+    // still filtering — proven first from the collapsed summary, then from
+    // the chip itself once expanded.
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
+      expect(screen.getByText("1 filter active")).toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
+    await expandTagFilters(user);
+    expect(
+      within(screen.getByRole("group", { name: "Filter by tags" })).getByRole("button", {
+        name: "Gravel",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("a full App remount (simulating reload) does not restore the tag-filter selection", async () => {
@@ -704,23 +737,33 @@ describe("App — Route Library tag-filter restoration across navigation", () =>
 
     await importFixture(user, "Alpine Climb.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
-    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await clickTagFilter(user, "Gravel");
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
+      expect(
+        within(screen.getByRole("group", { name: "Filter by tags" })).getByRole(
+          "button",
+          {
+            name: "Gravel",
+          },
+        ),
+      ).toHaveAttribute("aria-pressed", "true");
     });
     first.unmount();
 
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
-        "aria-pressed",
-        "false",
-      );
+      expect(screen.getByRole("button", { name: "Filter by tags" })).toBeInTheDocument();
     });
+    // Nothing restored across a genuine remount: no active-filter summary,
+    // and the chip itself is unpressed once expanded.
+    expect(screen.queryByText("1 filter active")).not.toBeInTheDocument();
+    await expandTagFilters(user);
+    expect(
+      within(screen.getByRole("group", { name: "Filter by tags" })).getByRole("button", {
+        name: "Gravel",
+      }),
+    ).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
   });
 
@@ -739,7 +782,7 @@ describe("App — Route Library tag-filter restoration across navigation", () =>
     });
     expect(screen.getByRole("button", { name: "Alpine Descent" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Gravel" }));
+    await clickTagFilter(user, "Gravel");
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "Alpine Descent" })).toBeNull();
     });
@@ -751,10 +794,13 @@ describe("App — Route Library tag-filter restoration across navigation", () =>
     await waitFor(() => {
       expect(screen.getByLabelText("Search routes")).toHaveValue("alpine");
     });
-    expect(screen.getByRole("button", { name: "Gravel" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(screen.getByText("1 filter active")).toBeInTheDocument();
+    await expandTagFilters(user);
+    expect(
+      within(screen.getByRole("group", { name: "Filter by tags" })).getByRole("button", {
+        name: "Gravel",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Alpine Descent" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();

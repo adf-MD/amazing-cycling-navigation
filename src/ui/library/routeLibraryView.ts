@@ -208,3 +208,14 @@ export function selectRouteLibraryGroups<T extends LibraryRoute>(
   );
   return { pinned, unpinned };
 }
+
+/**
+ * The collapsed filter chooser's active-count copy (backlog item 106).
+ * Collapsed filtering must never be invisible filtering — a route missing
+ * from the list has to have a visible reason — so this pairs with a real
+ * Clear action in the same row. Singular/plural is spelled out rather than
+ * "1 filter(s)", matching this project's other counted copy.
+ */
+export function describeActiveTagFilterCount(count: number): string {
+  return count === 1 ? "1 filter active" : `${String(count)} filters active`;
+}

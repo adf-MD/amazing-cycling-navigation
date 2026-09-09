@@ -15,7 +15,11 @@ import {
   tagIdentityKey,
   tagsEqualByIdentity,
 } from "../../domain/routeTags.ts";
+import { prefersReducedMotion } from "../../platform/environmentContext.ts";
+import { runWhenViewportSettled } from "../shared/viewportSettle.ts";
 import { applyTopRevealScroll } from "./routeCardTopReveal.ts";
+import { isCardAlreadyFullyVisible } from "./routeSwitchCardVisibility.ts";
+import { describeActiveTagFilterCount } from "./routeLibraryView.ts";
 import { RouteTagManager } from "./RouteTagManager.tsx";
 import {
   reconcileTagLifecycle,
@@ -196,8 +200,20 @@ export function RouteLibrary({
   // Measured by the post-success reveal below; see its own comment.
   const tagManagerPanelRef = useRef<HTMLDivElement>(null);
   const tagManagerHeadingRef = useRef<HTMLHeadingElement>(null);
+  // The armed confirmation and its Cancel action (backlog item 106).
+  const tagManagerConfirmRef = useRef<HTMLDivElement>(null);
+  const tagManagerConfirmCancelRef = useRef<HTMLButtonElement>(null);
   const [tagFiltersHydrated, setTagFiltersHydrated] = useState(false);
+  // Backlog item 106. The filter chooser is a disclosure, collapsed on
+  // every mount — deliberately NOT restored across a route-open/return
+  // round trip the way the selections themselves are, so there is one
+  // predictable starting state and no extra session ref. Active filters
+  // stay visible while collapsed through the count and Clear row instead.
+  const [isTagFilterOpen, setIsTagFilterOpen] = useState(false);
   const tagFilterLabelId = useId();
+  const tagFilterPanelId = useId();
+  const tagManagerPanelId = useId();
+  const tagFilterDisclosureRef = useRef<HTMLButtonElement>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -238,7 +254,6 @@ export function RouteLibrary({
   // own doc comment for why the intent is set BEFORE the write starts,
   // not inside its .then().
   const lastTagsSaveIntentRef = useRef<{ id: string; tags: string[] } | null>(null);
-  const tagFilterHeadingRef = useRef<HTMLSpanElement>(null);
   const clearTagFiltersButtonRef = useRef<HTMLButtonElement>(null);
 
   const groups = useMemo(
@@ -494,7 +509,7 @@ export function RouteLibrary({
           (
             target ??
             clearTagFiltersButtonRef.current ??
-            tagFilterHeadingRef.current ??
+            tagFilterDisclosureRef.current ??
             searchInputRef.current
           )?.focus();
         }
@@ -782,6 +797,9 @@ export function RouteLibrary({
     setTagLifecycleStatus(null);
     setTagLifecycleError(null);
     setDismissInlineEditorsToken((token) => token + 1);
+    // Only now, past every refusal above: a refused open must leave the
+    // filter chooser exactly as it was (item 106).
+    setIsTagFilterOpen(false);
     setIsTagManagerOpen(true);
   };
 
@@ -980,40 +998,53 @@ export function RouteLibrary({
   // the corpus can empty before the write promise settles.
   const handledFocusHandoffIdRef = useRef(0);
   useLayoutEffect(() => {
-    if (pendingFocusHandoff === null) return;
+    // Assigned only on the one reveal branch below, and returned as this
+    // effect's cleanup so a pending settle loop can never outlive the
+    // commit that started it (or the component).
+    let cancelSettledReveal: (() => void) | null = null;
+    const cleanUp = () => {
+      cancelSettledReveal?.();
+    };
     // The marker is read and consumed INSIDE the effect, never during
     // rendering, and this effect performs no setState — the same shape as
     // this file's own pendingPinFocusIdRef effect.
-    if (pendingFocusHandoff.id === handledFocusHandoffIdRef.current) return;
+    if (pendingFocusHandoff === null) return cleanUp;
+    if (pendingFocusHandoff.id === handledFocusHandoffIdRef.current) return cleanUp;
     handledFocusHandoffIdRef.current = pendingFocusHandoff.id;
     if (pendingFocusHandoff.target === "search") {
       searchInputRef.current?.focus();
-      return;
+      return cleanUp;
     }
     if (pendingFocusHandoff.target === "rename") {
       tagManagerRenameButtonRef.current?.focus();
-      return;
+      return cleanUp;
     }
     if (pendingFocusHandoff.target === "delete") {
       tagManagerDeleteButtonRef.current?.focus();
-      return;
+      return cleanUp;
     }
     if (!pendingFocusHandoff.reveal) {
       tagManagerSelectRef.current?.focus();
-      return;
+      return cleanUp;
     }
     // Backlog item 105's one reveal transition. preventScroll suppresses
     // the browser's own "scroll nearest into view" for the newly focused
     // select — which knows nothing of the sticky header, and would
     // otherwise compete with (and could override) the deliberate scroll
-    // below. The focus TARGET is unchanged from 0.4.19; only the scroll
-    // that accompanies it is new. Measured here, in the layout effect,
-    // after the confirmation (if any) has already unmounted, so the
-    // geometry is the settled post-operation geometry.
+    // below. The focus TARGET is unchanged from 0.4.19.
+    //
+    // Backlog item 106: focus stays immediate, but the measurement and
+    // scroll now wait for runWhenViewportSettled. This effect no longer
+    // claims to measure "settled post-operation geometry" synchronously —
+    // it cannot. A rename or merge is typed into the New name field, so
+    // this path is just as exposed to an in-flight keyboard dismissal (and
+    // to a confirmation's own end-aligned scroll still animating) as the
+    // card close is. Everything is re-measured inside the callback.
     tagManagerSelectRef.current?.focus({ preventScroll: true });
-    const panelEl = tagManagerPanelRef.current;
-    const headingEl = tagManagerHeadingRef.current;
-    if (panelEl && headingEl) {
+    cancelSettledReveal = runWhenViewportSettled(() => {
+      const panelEl = tagManagerPanelRef.current;
+      const headingEl = tagManagerHeadingRef.current;
+      if (!panelEl || !headingEl) return;
       applyTopRevealScroll(
         {
           top: panelEl.getBoundingClientRect().top,
@@ -1021,8 +1052,57 @@ export function RouteLibrary({
         },
         stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
       );
-    }
+    });
+    return cleanUp;
   }, [pendingFocusHandoff, stickyHeaderRef]);
+
+  // Backlog item 106. An armed Merge/Delete confirmation is appended
+  // beneath the manager's action row, so on a long library it can land
+  // below the fold and the press looks like it did nothing. Unlike the
+  // panel-top reveal above, this is a whole card whose ACTIONS matter
+  // most, so it reuses item 95's established confirmation-card priority —
+  // isCardAlreadyFullyVisible plus an end-aligned scrollIntoView — rather
+  // than the top-prioritising delta path, which would happily leave the
+  // buttons off-screen. Focus is immediate and the scroll alone waits, so
+  // an open alertdialog is never left focused on its now-disabled trigger.
+  useLayoutEffect(() => {
+    let cancelConfirmReveal: (() => void) | null = null;
+    if (tagLifecycleConfirm !== null) {
+      tagManagerConfirmCancelRef.current?.focus({ preventScroll: true });
+      cancelConfirmReveal = runWhenViewportSettled(() => {
+        const confirmEl = tagManagerConfirmRef.current;
+        if (!confirmEl) return;
+        const confirmRect = confirmEl.getBoundingClientRect();
+        const headerBottom =
+          stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0;
+        const bottomCushion =
+          parseFloat(getComputedStyle(confirmEl).scrollMarginBottom) || 0;
+        const visualViewport = window.visualViewport;
+        const visibleTop = visualViewport?.offsetTop ?? 0;
+        const visibleBottom = visualViewport
+          ? visualViewport.offsetTop + visualViewport.height
+          : window.innerHeight;
+        if (
+          isCardAlreadyFullyVisible(
+            confirmRect,
+            headerBottom,
+            bottomCushion,
+            visibleTop,
+            visibleBottom,
+          )
+        ) {
+          return;
+        }
+        confirmEl.scrollIntoView({
+          block: "end",
+          behavior: prefersReducedMotion() ? "auto" : "smooth",
+        });
+      });
+    }
+    return () => {
+      cancelConfirmReveal?.();
+    };
+  }, [tagLifecycleConfirm, stickyHeaderRef]);
 
   // Every manager focus move goes through the hand-off above rather than
   // calling .focus() inline. The confirmation disables the Rename/Delete
@@ -1034,9 +1114,37 @@ export function RouteLibrary({
     setPendingFocusHandoff((previous) => ({ target, id: (previous?.id ?? 0) + 1 }));
   };
 
+  // Focuses the Filter by tags disclosure rather than the old label span,
+  // which no longer exists — and which would in any case be the wrong
+  // target now that Clear can be pressed from the collapsed summary row,
+  // where the expanded panel is not on screen at all (item 106).
   const handleClearTagFilters = () => {
     setSelectedTagFilters(new Set());
-    tagFilterHeadingRef.current?.focus();
+    tagFilterDisclosureRef.current?.focus();
+  };
+
+  // The filter chooser's own admission check, mirroring
+  // handleOpenTagManager's below. Only a genuinely BUSY lifecycle
+  // operation refuses; an idle manager — including one showing an armed
+  // but non-busy confirmation — is simply closed, and that close is
+  // deliberately NOT closeTagManager(), which focuses the Manage tags
+  // button and would steal focus from the disclosure just activated.
+  const handleToggleTagFilters = () => {
+    if (isTagFilterOpen) {
+      setIsTagFilterOpen(false);
+      return;
+    }
+    if (isTagLifecycleBusyRef.current) {
+      setTagManagerHint("Wait for the tag update to finish, then filter by tags.");
+      return;
+    }
+    setTagManagerHint(null);
+    setIsTagManagerOpen(false);
+    setTagLifecycleConfirm(null);
+    setTagLifecycleError(null);
+    setTagManagerNewName("");
+    setTagManagerSourceKey("");
+    setIsTagFilterOpen(true);
   };
 
   const handleDeleteRequest = (id: string) => {
@@ -1226,11 +1334,68 @@ export function RouteLibrary({
               {sortPreferenceError}
             </p>
           ) : null}
-          {tagSuggestions.length > 0 ? (
-            <div className="route-library-field">
-              <span id={tagFilterLabelId} ref={tagFilterHeadingRef} tabIndex={-1}>
-                Filter by tags
+        </div>
+      ) : null}
+
+      {/* Backlog item 106: the tag controls are their own full-width
+          section, no longer four unrelated siblings inside the toolbar's
+          generic centred .row — which left "Manage tags" floating beside
+          the much taller filter block instead of aligning with anything.
+          Both controls are now peer disclosures, and only one of their
+          panels may be open at a time. */}
+      {routes !== undefined && routes.length > 0 && tagSuggestions.length > 0 ? (
+        <div className="tag-controls stack">
+          <div className="row tag-controls-actions">
+            <button
+              type="button"
+              className="btn-secondary tag-disclosure"
+              id={tagFilterLabelId}
+              ref={tagFilterDisclosureRef}
+              aria-expanded={isTagFilterOpen}
+              aria-controls={isTagFilterOpen ? tagFilterPanelId : undefined}
+              onClick={handleToggleTagFilters}
+            >
+              Filter by tags
+              <span aria-hidden="true" className="tag-disclosure-chevron">
+                ▾
               </span>
+            </button>
+            <button
+              type="button"
+              className="btn-secondary tag-disclosure"
+              ref={manageTagsButtonRef}
+              aria-expanded={isTagManagerOpen}
+              aria-controls={isTagManagerOpen ? tagManagerPanelId : undefined}
+              onClick={handleOpenTagManager}
+            >
+              Manage tags
+              <span aria-hidden="true" className="tag-disclosure-chevron">
+                ▾
+              </span>
+            </button>
+          </div>
+          {/* Collapsed filtering must never be invisible filtering: the
+              count and a real Clear action stay on screen. Exactly one
+              Clear ever renders — this one, or the expanded panel's. */}
+          {!isTagFilterOpen && hasActiveTagFilters ? (
+            <div className="row tag-controls-summary">
+              <p className="field-hint">
+                {describeActiveTagFilterCount(selectedTagFilters.size)}
+              </p>
+              <button
+                type="button"
+                className="btn-secondary"
+                ref={clearTagFiltersButtonRef}
+                onClick={handleClearTagFilters}
+              >
+                Clear tag filters
+              </button>
+            </div>
+          ) : null}
+          {/* Chips are not rendered at all while collapsed, rather than
+              hidden — nothing unreachable is ever left in the tab order. */}
+          {isTagFilterOpen ? (
+            <div id={tagFilterPanelId} className="stack">
               <div
                 className="tag-filters"
                 role="group"
@@ -1252,7 +1417,7 @@ export function RouteLibrary({
                       <span aria-hidden="true" className="tag-filter-check">
                         {isSelected ? "✓" : ""}
                       </span>
-                      {tag}
+                      <span className="tag-filter-label">{tag}</span>
                     </button>
                   );
                 })}
@@ -1267,23 +1432,6 @@ export function RouteLibrary({
                   Clear tag filters
                 </button>
               ) : null}
-            </div>
-          ) : null}
-          {/* Deliberately OUTSIDE the "Filter by tags" role="group" above:
-              that region is the scoping anchor for the existing chip
-              queries in tests and e2e, and a control inside it would make
-              them ambiguous. */}
-          {tagSuggestions.length > 0 ? (
-            <div className="route-library-field">
-              <button
-                type="button"
-                className="btn-secondary"
-                ref={manageTagsButtonRef}
-                aria-expanded={isTagManagerOpen}
-                onClick={handleOpenTagManager}
-              >
-                Manage tags
-              </button>
             </div>
           ) : null}
         </div>
@@ -1303,6 +1451,7 @@ export function RouteLibrary({
           panel goes. */}
       {isTagManagerOpen && inlineEditorRouteIds.size === 0 ? (
         <RouteTagManager
+          panelId={tagManagerPanelId}
           tags={tagSuggestions}
           routeCountsByTagKey={routeCountsByTagKey}
           sourceKey={effectiveTagManagerSourceKey}
@@ -1330,6 +1479,8 @@ export function RouteLibrary({
           closeButtonRef={tagManagerCloseButtonRef}
           panelRef={tagManagerPanelRef}
           headingRef={tagManagerHeadingRef}
+          confirmRef={tagManagerConfirmRef}
+          confirmCancelButtonRef={tagManagerConfirmCancelRef}
         />
       ) : null}
 
