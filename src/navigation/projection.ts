@@ -351,6 +351,49 @@ function selectAmongOccurrences(
 }
 
 /**
+ * Backlog item 107. Resolves `primary` — whichever single candidate Turf's
+ * own strict-`<` tie-break happened to return — against every other
+ * geometrically tied occurrence in `range`, preferring route-distance
+ * continuity with `lastMatch`.
+ *
+ * Shared deliberately by BOTH searches in projectFixOntoRoute. Repeated
+ * geometry is ambiguous in exactly the same way whichever search found it,
+ * so an anchor that is still good evidence must not be discarded merely
+ * because the window around it was abandoned. Without this, the whole-route
+ * fallback resolves the tie by ARRAY ORDER, which on an out-and-back or a
+ * closed loop can lock progress onto a distant occurrence of the same
+ * physical place — and, because every accepted match becomes the next fix's
+ * own anchor, keep it there while the rider carries on.
+ *
+ * What this selects is the CONTINUITY-CONSISTENT occurrence, which is not
+ * the same claim as the correct one: on exactly coincident geometry a single
+ * GPS position cannot prove which occurrence the rider occupies, and a rider
+ * who genuinely travelled to the farther identical occurrence stays
+ * ambiguous from route-distance evidence alone.
+ *
+ * `isTied` is returned because the windowed branch needs it for its own
+ * disposition (see isTiedSubEpsilonRegression). A single-occurrence result
+ * is `primary` itself, byte for byte, so ordinary non-repeating geometry is
+ * completely untouched by this.
+ */
+function resolveTiedOccurrences(
+  points: readonly RoutePoint[],
+  range: IndexRange,
+  fixCoordinate: Coordinate,
+  primary: NearestMatch,
+  lastMatch: ProjectionMatch,
+): { match: NearestMatch; isTied: boolean } {
+  const occurrences = findTiedOccurrences(points, range, fixCoordinate, primary);
+  if (occurrences.length <= 1) {
+    return { match: primary, isTied: false };
+  }
+  return {
+    match: selectAmongOccurrences(occurrences, lastMatch) ?? primary,
+    isTied: true,
+  };
+}
+
+/**
  * Backlog item 104 follow-up. Whether `candidate` — the occurrence
  * selectAmongOccurrences actually chose from a set of geometrically tied
  * ones — sits behind `lastMatch` by a positive amount no greater than
@@ -440,18 +483,15 @@ export function projectFixOntoRoute(
       // for the whole window, which silently discards any other exact or
       // near-exact geometric tie (e.g. an out-and-back turnaround's
       // outbound/return occurrences of the same point). Only when more
-      // than one occurrence is found does this differ from today's
-      // single-call result — see findTiedOccurrences/selectAmongOccurrences.
-      const occurrences = findTiedOccurrences(
+      // than one occurrence is found does this differ from a plain
+      // single-call result — see resolveTiedOccurrences.
+      const { match: windowed, isTied } = resolveTiedOccurrences(
         points,
         windowRange,
         fixCoordinate,
         primary,
+        lastMatch,
       );
-      const isTied = occurrences.length > 1;
-      const windowed = isTied
-        ? (selectAmongOccurrences(occurrences, lastMatch) ?? primary)
-        : primary;
 
       if (
         windowed.lateralDistanceMetres <= MAX_ACCEPTABLE_LATERAL_METRES &&
@@ -474,15 +514,33 @@ export function projectFixOntoRoute(
     }
   }
 
-  const wholeRoute = nearestWithinRange(
-    points,
-    { startIndex: 0, endIndex: points.length - 1 },
-    fixCoordinate,
-  );
+  const wholeRouteRange: IndexRange = { startIndex: 0, endIndex: points.length - 1 };
+  const wholeRoute = nearestWithinRange(points, wholeRouteRange, fixCoordinate);
   if (!wholeRoute) {
     return null;
   }
-  // A whole-route reacquire is a fresh lock with no continuity to hold on
-  // to, so it is never an unresolved tied regression.
-  return { ...wholeRoute, reacquired: true, disposition: "resolved" };
+  // Backlog item 107. A reacquire abandons the WINDOW, not the anchor. When
+  // a previous match exists it remains the only evidence available about
+  // which occurrence of a repeated stretch the rider is on, so the same
+  // continuity rule the windowed branch already applies is applied here too
+  // — otherwise Turf's array-order tie-break decides, and a suspension gap
+  // on an out-and-back or a closed loop can jump progress to a distant
+  // identical occurrence (and, since this match becomes the next fix's own
+  // anchor, stay there). With no previous match — a fresh ride, or a
+  // restored row carrying no usable prior fix — there is nothing to be
+  // continuous with, and the whole-route search decides alone exactly as
+  // before.
+  //
+  // The disposition stays "resolved" either way: a reacquire is a fresh
+  // lock, never one of item 104's held sub-epsilon tied regressions.
+  const reacquired = lastMatch
+    ? resolveTiedOccurrences(
+        points,
+        wholeRouteRange,
+        fixCoordinate,
+        wholeRoute,
+        lastMatch,
+      ).match
+    : wholeRoute;
+  return { ...reacquired, reacquired: true, disposition: "resolved" };
 }

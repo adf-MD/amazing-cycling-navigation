@@ -636,4 +636,125 @@ describe("processFix", () => {
       expect(state.lastReliableMatch).toBe(seed);
     });
   });
+
+  // Backlog item 107. A suspension gap leaves the anchor intact but stops
+  // fixes; the first fresh fix can then land far outside the projection
+  // window, which drops to a whole-route search. Before item 107 that
+  // search ignored the anchor, so on an exactly retraced leg it could adopt
+  // the mirrored occurrence as BOTH anchors at once — committed progress
+  // and everything presentation-facing (remaining distance, remaining
+  // ascent, the trusted finish cue) jumping backwards in a single fix, and
+  // then continuing to run backwards as the rider rode on.
+  describe("resuming after a long gap on an exactly coincident return leg (backlog item 107)", () => {
+    const POINTS = OUT_AND_BACK_COINCIDENT_ROUTE_POINTS;
+    const OUTBOUND_VERTEX_INDEX = 60;
+    const RETURN_MIRROR_INDEX = POINTS.length - 1 - OUTBOUND_VERTEX_INDEX;
+    const ambiguousCoordinate = POINTS[OUTBOUND_VERTEX_INDEX]?.coordinate ?? [0, 51];
+    const outboundOccurrenceMetres =
+      POINTS[OUTBOUND_VERTEX_INDEX]?.distanceFromStartMetres ?? 0;
+    const returnOccurrenceMetres =
+      POINTS[RETURN_MIRROR_INDEX]?.distanceFromStartMetres ?? 0;
+    const ANCHOR_METRES = 2500;
+
+    function interpolatedCoordinate(targetDistanceMetres: number): Coordinate {
+      for (let i = 0; i < POINTS.length - 1; i += 1) {
+        const a = POINTS[i];
+        const b = POINTS[i + 1];
+        if (!a || !b) continue;
+        if (
+          targetDistanceMetres >= a.distanceFromStartMetres &&
+          targetDistanceMetres <= b.distanceFromStartMetres
+        ) {
+          const span = b.distanceFromStartMetres - a.distanceFromStartMetres;
+          const fraction =
+            span === 0 ? 0 : (targetDistanceMetres - a.distanceFromStartMetres) / span;
+          return [
+            a.coordinate[0] + fraction * (b.coordinate[0] - a.coordinate[0]),
+            a.coordinate[1] + fraction * (b.coordinate[1] - a.coordinate[1]),
+          ];
+        }
+      }
+      throw new Error(`distance ${String(targetDistanceMetres)} outside fixture range`);
+    }
+
+    /** The state a ride is genuinely in when it is suspended part-way down
+     * the return leg: on-route, both anchors together at the same match. */
+    function seedReturnLegState(): RideNavigationCoreState {
+      let pointIndex = 0;
+      for (let i = 0; i < POINTS.length; i += 1) {
+        if ((POINTS[i]?.distanceFromStartMetres ?? 0) <= ANCHOR_METRES) pointIndex = i;
+      }
+      const match: ProjectionMatch = {
+        pointIndex,
+        distanceFromStartMetres: ANCHOR_METRES,
+      };
+      return {
+        lastMatch: match,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+        lastReliableMatch: match,
+      };
+    }
+
+    it("adopts the return-leg occurrence, not the outbound mirror, on the first fix after the gap", () => {
+      const seeded = seedReturnLegState();
+
+      const result = processFix(POINTS, ambiguousCoordinate, 12, seeded);
+
+      expect(result.projection?.reacquired).toBe(true);
+      expect(result.coreState.lastMatch?.distanceFromStartMetres).toBeCloseTo(
+        returnOccurrenceMetres,
+        3,
+      );
+      expect(result.coreState.lastReliableMatch?.distanceFromStartMetres).toBeCloseTo(
+        returnOccurrenceMetres,
+        3,
+      );
+      // The pre-fix behaviour, stated explicitly so the regression can
+      // never quietly return: the outbound mirror is ~2519 m BEHIND the
+      // anchor, and adopting it is what made the rider's remaining
+      // distance and finish cue jump the wrong way.
+      expect(result.coreState.lastMatch?.distanceFromStartMetres).not.toBeCloseTo(
+        outboundOccurrenceMetres,
+        3,
+      );
+    });
+
+    it("leaves off-route classification exactly as it was, since a reacquired fix is untrusted", () => {
+      const seeded = seedReturnLegState();
+
+      const result = processFix(POINTS, ambiguousCoordinate, 12, seeded);
+
+      // Unchanged contract from offRoute.ts: classifyFix returns
+      // "untrusted" for any reacquire, and nextOffRouteState returns the
+      // previous state object itself — resuming a ride never trips a
+      // warning on its own.
+      expect(result.coreState.offRouteMachineState).toBe(seeded.offRouteMachineState);
+    });
+
+    it("keeps advancing on the return leg over the following fixes, rather than walking backwards down the mirror", () => {
+      let state = seedReturnLegState();
+      state = processFix(POINTS, ambiguousCoordinate, 12, state).coreState;
+
+      let previousMetres = state.lastMatch?.distanceFromStartMetres ?? 0;
+      for (let step = 1; step <= 5; step += 1) {
+        const result = processFix(
+          POINTS,
+          interpolatedCoordinate(returnOccurrenceMetres + step * 20),
+          12,
+          state,
+        );
+        expect(result.projection?.reacquired).toBe(false);
+        const matchedMetres = result.coreState.lastMatch?.distanceFromStartMetres ?? 0;
+        expect(matchedMetres).toBeGreaterThan(previousMetres);
+        previousMetres = matchedMetres;
+        state = result.coreState;
+      }
+
+      expect(previousMetres).toBeCloseTo(returnOccurrenceMetres + 100, 1);
+      expect(state.lastReliableMatch?.distanceFromStartMetres).toBeCloseTo(
+        previousMetres,
+        3,
+      );
+    });
+  });
 });

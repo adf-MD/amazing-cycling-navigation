@@ -479,6 +479,41 @@ describe("toStoredRideState / fromStoredRideState", () => {
         distanceFromStartMetres: 650,
       });
     });
+
+    // Backlog item 107. No production path can write this shape: the
+    // persistence effect returns early while currentFix is null, and a
+    // pause() taken before the first fix writes a null lastFix alongside
+    // the initial (zero) core state. It is reachable only as a legacy or
+    // corrupted row, and the documented fallback is that stored progress
+    // WITHOUT a fix to anchor it is not trusted as a projection anchor —
+    // toStoredRideState writes 0 for "no match", so a bare distance cannot
+    // be told apart from a genuine match at the start line. The next fix
+    // then takes the deterministic no-anchor whole-route branch rather than
+    // reacquiring against invented continuity.
+    it("does not invent a projection anchor from stored progress that has no stored fix", () => {
+      const rowWithProgressButNoFix: StoredRouteRideState = {
+        id: "active",
+        routeId: "route-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        lastFix: null,
+        lastMatchedPointIndex: 42,
+        matchedDistanceFromStartMetres: 1234.5,
+        offRouteMachineState: coreState.offRouteMachineState,
+        lastReliableMatchedPointIndex: 42,
+        lastReliableMatchedDistanceFromStartMetres: 1234.5,
+      };
+
+      const restored = fromStoredRideState(rowWithProgressButNoFix);
+
+      expect(restored.lastFix).toBeNull();
+      expect(restored.core.lastMatch).toBeNull();
+      // lastReliableMatch is presentation-only and keeps its own stored
+      // value; it is never used as a projection anchor.
+      expect(restored.core.lastReliableMatch).toEqual({
+        pointIndex: 42,
+        distanceFromStartMetres: 1234.5,
+      });
+    });
   });
 
   describe("wakeLockDesired", () => {

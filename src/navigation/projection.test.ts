@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   projectFixOntoRoute,
+  WINDOW_RADIUS_METRES,
   LATERAL_TIE_TOLERANCE_METRES,
   CONTINUITY_PREFERENCE_METRES,
   PROGRESS_EPSILON_METRES,
@@ -1076,6 +1077,183 @@ describe("projectFixOntoRoute", () => {
         expect(resolved.disposition).toBe("resolved");
         expect(resolved.distanceFromStartMetres).toBeGreaterThan(SECOND_STEM_START);
       });
+    });
+  });
+
+  // Backlog item 107. When the windowed search is abandoned — a fix too
+  // far laterally, or a genuinely clipped window edge — projectFixOntoRoute
+  // falls through to a whole-route search. Until this item that fallback
+  // discarded `lastMatch` entirely, so the single Turf nearestPointOnLine
+  // call resolved any geometric tie by its own internal strict-`<`
+  // comparison, i.e. by ARRAY ORDER. On a route that retraces or revisits
+  // itself, an ordinary suspension gap could therefore lock progress onto a
+  // distant occurrence of the same physical place and keep it there, since
+  // every following windowed match then tracks the wrong leg.
+  //
+  // These tests assert the CONTINUITY-CONSISTENT occurrence — the one
+  // nearest the prior anchor in route distance — which is this project's
+  // established policy (see selectAmongOccurrences). On exactly coincident
+  // geometry a single GPS position cannot prove which occurrence the rider
+  // actually occupies, so this is deliberately not a claim of ground truth:
+  // a rider who genuinely travelled to the farther identical occurrence
+  // stays inherently ambiguous without evidence this layer does not have.
+  describe("whole-route reacquisition on repeated geometry (backlog item 107)", () => {
+    const COINCIDENT = OUT_AND_BACK_COINCIDENT_ROUTE_POINTS;
+    /** An outbound vertex whose return-leg mirror is BYTE-identical, so
+     * both occurrences project at exactly zero lateral distance and Turf's
+     * own array-order tie-break is deterministic — which is what makes the
+     * pre-fix failure reproducible rather than erratic. Asserted below
+     * rather than assumed, so a fixture change can never quietly turn
+     * these tests into a no-op. */
+    const OUTBOUND_VERTEX_INDEX = 60;
+    const RETURN_MIRROR_INDEX = COINCIDENT.length - 1 - OUTBOUND_VERTEX_INDEX;
+    const sharedCoordinate = COINCIDENT[OUTBOUND_VERTEX_INDEX]?.coordinate ?? [0, 51];
+    const outboundOccurrenceMetres =
+      COINCIDENT[OUTBOUND_VERTEX_INDEX]?.distanceFromStartMetres ?? 0;
+    const returnOccurrenceMetres =
+      COINCIDENT[RETURN_MIRROR_INDEX]?.distanceFromStartMetres ?? 0;
+
+    /** A ProjectionMatch at a given route distance whose pointIndex stays
+     * self-consistent with it. (projectFixOntoRoute reads only the
+     * distance, but an anchor that disagreed with itself would be a
+     * misleading fixture.) */
+    function anchorAtDistance(
+      points: readonly RoutePoint[],
+      distanceMetres: number,
+    ): ProjectionMatch {
+      let pointIndex = 0;
+      for (let i = 0; i < points.length; i += 1) {
+        if ((points[i]?.distanceFromStartMetres ?? 0) <= distanceMetres) pointIndex = i;
+      }
+      return { pointIndex, distanceFromStartMetres: distanceMetres };
+    }
+
+    it("has two byte-identical occurrences of the chosen coordinate, far apart in route distance", () => {
+      const mirrorCoordinate = COINCIDENT[RETURN_MIRROR_INDEX]?.coordinate ?? [0, 52];
+      expect(mirrorCoordinate[0]).toBe(sharedCoordinate[0]);
+      expect(mirrorCoordinate[1]).toBe(sharedCoordinate[1]);
+      expect(returnOccurrenceMetres - outboundOccurrenceMetres).toBeGreaterThan(
+        WINDOW_RADIUS_METRES * 2,
+      );
+    });
+
+    it("chooses the occurrence continuous with the prior anchor after a long forward gap, not the array-first one", () => {
+      // The rider was ~2500 m in, on the return leg, when the app was
+      // suspended; they carried on riding and the first fresh fix lands
+      // ~859 m further along that same leg — far outside the window.
+      const anchorOnReturnLeg = anchorAtDistance(COINCIDENT, 2500);
+
+      const result = expectResult(
+        projectFixOntoRoute(sharedCoordinate, COINCIDENT, anchorOnReturnLeg),
+      );
+
+      // Genuinely the whole-route branch, not an incidental windowed pass.
+      expect(result.reacquired).toBe(true);
+      expect(result.distanceFromStartMetres).toBeCloseTo(returnOccurrenceMetres, 3);
+      expect(result.distanceFromStartMetres).toBeGreaterThan(
+        anchorOnReturnLeg.distanceFromStartMetres,
+      );
+    });
+
+    it("stays on the reacquired occurrence over subsequent fixes instead of running backwards down the mirror", () => {
+      let anchor: ProjectionMatch = anchorAtDistance(COINCIDENT, 2500);
+      const reacquire = expectResult(
+        projectFixOntoRoute(sharedCoordinate, COINCIDENT, anchor),
+      );
+      expect(reacquire.reacquired).toBe(true);
+      anchor = reacquire;
+
+      let previousMetres = reacquire.distanceFromStartMetres;
+      for (let step = 1; step <= 5; step += 1) {
+        const trueDistanceMetres = returnOccurrenceMetres + step * 20;
+        const result = expectResult(
+          projectFixOntoRoute(
+            coordinateAtDistance(COINCIDENT, trueDistanceMetres),
+            COINCIDENT,
+            anchor,
+          ),
+        );
+        // Once locked onto the right occurrence the ordinary windowed
+        // branch takes over again — no repeated reacquire, no oscillation.
+        expect(result.reacquired).toBe(false);
+        expect(result.distanceFromStartMetres).toBeGreaterThan(previousMetres);
+        previousMetres = result.distanceFromStartMetres;
+        anchor = result;
+      }
+      expect(previousMetres).toBeCloseTo(returnOccurrenceMetres + 100, 1);
+    });
+
+    it("resolves a reacquire at a closed loop's shared start/finish to the finish, not back to the start", () => {
+      const totalMetres = CLOSED_LOOP_ROUTE_POINTS.at(-1)?.distanceFromStartMetres ?? 0;
+      const sharedStartFinish = CLOSED_LOOP_ROUTE_POINTS.at(-1)?.coordinate ?? [0, 51];
+      const anchorTwoThirdsRound = anchorAtDistance(CLOSED_LOOP_ROUTE_POINTS, 2500);
+
+      const result = expectResult(
+        projectFixOntoRoute(
+          sharedStartFinish,
+          CLOSED_LOOP_ROUTE_POINTS,
+          anchorTwoThirdsRound,
+        ),
+      );
+
+      expect(result.reacquired).toBe(true);
+      expect(result.distanceFromStartMetres).toBeCloseTo(totalMetres, 3);
+    });
+
+    // The three tests below constrain the correction rather than
+    // reproducing the defect: each already passes against the parent
+    // implementation, and exists so the fix cannot be satisfied by a
+    // cruder rule (always prefer the later occurrence, refuse to reacquire
+    // at all, or clamp progress near the previous match).
+    it("chooses the EARLIER occurrence when that is the continuous one, so the rule is continuity and not 'prefer the later occurrence'", () => {
+      const anchorOnOutboundLeg = anchorAtDistance(COINCIDENT, outboundOccurrenceMetres);
+      const furtherOutboundIndex = 110;
+      const furtherOutbound = COINCIDENT[furtherOutboundIndex]?.coordinate ?? [0, 51];
+      const furtherOutboundMetres =
+        COINCIDENT[furtherOutboundIndex]?.distanceFromStartMetres ?? 0;
+
+      const result = expectResult(
+        projectFixOntoRoute(furtherOutbound, COINCIDENT, anchorOnOutboundLeg),
+      );
+
+      expect(result.reacquired).toBe(true);
+      expect(result.distanceFromStartMetres).toBeCloseTo(furtherOutboundMetres, 3);
+    });
+
+    it("leaves a reacquire with no prior anchor exactly as it was: the whole-route search still decides alone", () => {
+      const result = expectResult(
+        projectFixOntoRoute(sharedCoordinate, COINCIDENT, null),
+      );
+
+      expect(result.reacquired).toBe(true);
+      expect(result.distanceFromStartMetres).toBeCloseTo(outboundOccurrenceMetres, 3);
+      expect(result.disposition).toBe("resolved");
+    });
+
+    it("still reacquires at a genuine relocation onto single-occurrence geometry, rather than trapping progress near the stale anchor", () => {
+      const anchorMidRoute = anchorAtDistance(
+        SELF_INTERSECTING_ROUTE_POINTS,
+        SELF_INTERSECTING_ROUTE_POINTS[25]?.distanceFromStartMetres ?? 0,
+      );
+
+      for (const relocatedIndex of [5, 45]) {
+        const relocated = SELF_INTERSECTING_ROUTE_POINTS[relocatedIndex];
+        if (!relocated) throw new Error("missing fixture point");
+
+        const result = expectResult(
+          projectFixOntoRoute(
+            relocated.coordinate,
+            SELF_INTERSECTING_ROUTE_POINTS,
+            anchorMidRoute,
+          ),
+        );
+
+        expect(result.reacquired).toBe(true);
+        expect(result.distanceFromStartMetres).toBeCloseTo(
+          relocated.distanceFromStartMetres,
+          3,
+        );
+      }
     });
   });
 });

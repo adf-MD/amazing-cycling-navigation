@@ -17,6 +17,7 @@ import {
 } from "../../test/fixtures/outAndBackCoincidentRoute.ts";
 import type { PlannedRoute, RoutePoint } from "../../domain/types.ts";
 import { db, type StoredRideState } from "../../storage/db.ts";
+import { isStoredRouteRideState } from "../../storage/mapping.ts";
 import {
   getActiveRideState,
   setActiveRideState,
@@ -1105,5 +1106,134 @@ describe("useRideNavigation resume mid-hold at walking pace (backlog item 104 fo
     }
 
     expect(previousRemaining).toBeLessThan(remainingAtResume - 20);
+  });
+});
+
+// Backlog item 107. The field observation this covers came from a route
+// ride that had been suspended, with no connectivity, for a substantial
+// period: on return, progress appeared matched to the wrong part of
+// overlapping route geometry. This is deliberately a full production round
+// trip rather than a hand-seeded row — ride out through the real fix path,
+// let the hook's own persistence effect write to real (fake-indexeddb)
+// Dexie, unmount, remount against that same database, resume, and only then
+// deliver the ambiguous fix. Anything less would prove restore → fix, but
+// not persist → restore → fix, which is the boundary the field report
+// crossed.
+describe("useRideNavigation resuming after a long suspension gap on repeated geometry (backlog item 107)", () => {
+  const POINTS = OUT_AND_BACK_COINCIDENT_ROUTE_POINTS;
+  const TOTAL_METRES = POINTS.at(-1)?.distanceFromStartMetres ?? 0;
+
+  const coincidentRoute: PlannedRoute = {
+    ...route,
+    id: "coincident-long-gap-1",
+    points: POINTS,
+    distanceMetres: TOTAL_METRES,
+  };
+
+  /** Ridden to ~140 m onto the exactly retraced return leg. */
+  const RIDDEN_TO_INDEX = 160;
+  /** Stepped in ~42 m fixes. Deliberately not coarser: item 104's
+   * CONTINUITY_PREFERENCE_METRES (30 m) governs the turnaround transfer,
+   * and a stride much beyond that reads a turnaround as an approach wobble
+   * — documented behaviour of that item, not something this one changes. */
+  const FIX_STRIDE = 3;
+  /** An outbound vertex whose return-leg mirror is byte-identical, so the
+   * post-gap fix is genuinely valid for two occurrences ~2519 m apart. */
+  const OUTBOUND_VERTEX_INDEX = 60;
+  const RETURN_MIRROR_INDEX = POINTS.length - 1 - OUTBOUND_VERTEX_INDEX;
+
+  it("resumes onto the return-leg occurrence its own persisted progress is continuous with, not the outbound mirror", async () => {
+    const riddenTo = POINTS[RIDDEN_TO_INDEX];
+    const ambiguous = POINTS[OUTBOUND_VERTEX_INDEX];
+    const returnMirror = POINTS[RETURN_MIRROR_INDEX];
+    if (!riddenTo || !ambiguous || !returnMirror) {
+      throw new Error("fixture missing required points");
+    }
+    expect(ambiguous.coordinate).toEqual(returnMirror.coordinate);
+
+    // 1. Ride out for real, through handleFix/processFix.
+    const outbound = buildFakeGeolocationSource();
+    const riding = renderHook(() =>
+      useRideNavigation(coincidentRoute, { geolocationSource: outbound.source }),
+    );
+    await waitFor(() => {
+      expect(riding.result.current.restorationStatus).toBe("ready");
+    });
+    act(() => {
+      riding.result.current.start();
+    });
+
+    let timestampMs = 1_000;
+    for (let index = 0; index <= RIDDEN_TO_INDEX; index += FIX_STRIDE) {
+      const routePoint = POINTS[index];
+      if (!routePoint) throw new Error("fixture missing point");
+      timestampMs += 5_000;
+      act(() => {
+        outbound.watches[0]?.emitFix(fixAt(routePoint.coordinate, timestampMs));
+      });
+    }
+    timestampMs += 5_000;
+    act(() => {
+      outbound.watches[0]?.emitFix(fixAt(riddenTo.coordinate, timestampMs));
+    });
+
+    expect(
+      expectNumber(riding.result.current.matchedDistanceFromStartMetres),
+    ).toBeCloseTo(riddenTo.distanceFromStartMetres, 3);
+
+    // 2. The hook's own persistence effect must have written that progress.
+    await waitFor(async () => {
+      const stored = await getActiveRideState();
+      if (!stored || !isStoredRouteRideState(stored)) {
+        throw new Error("expected a persisted route ride row");
+      }
+      expect(stored.matchedDistanceFromStartMetres).toBeCloseTo(
+        riddenTo.distanceFromStartMetres,
+        3,
+      );
+    });
+
+    // 3. Suspension: the screen goes away entirely and comes back against
+    //    the same database, exactly as a genuine reload does.
+    riding.unmount();
+
+    const resumedSource = buildFakeGeolocationSource();
+    const resumed = renderHook(() =>
+      useRideNavigation(coincidentRoute, { geolocationSource: resumedSource.source }),
+    );
+    await waitFor(() => {
+      expect(resumed.result.current.restorationStatus).toBe("ready");
+    });
+    expect(resumed.result.current.restoredForThisRoute).toBe(true);
+    expect(
+      expectNumber(resumed.result.current.matchedDistanceFromStartMetres),
+    ).toBeCloseTo(riddenTo.distanceFromStartMetres, 3);
+    expect(resumed.result.current.isStale).toBe(true);
+
+    // 4. Resume, then one fresh fix from ten minutes and ~1.1 km later —
+    //    far outside the projection window, so the whole-route search runs.
+    act(() => {
+      resumed.result.current.start();
+    });
+    act(() => {
+      resumedSource.watches[0]?.emitFix(
+        fixAt(ambiguous.coordinate, timestampMs + 600_000),
+      );
+    });
+
+    // 5. Asserted AT the expected occurrence, not merely "further on" — a
+    //    jump to some other occurrence would satisfy a weaker assertion.
+    expect(
+      expectNumber(resumed.result.current.matchedDistanceFromStartMetres),
+    ).toBeCloseTo(returnMirror.distanceFromStartMetres, 3);
+    expect(expectNumber(resumed.result.current.distanceRemainingMetres)).toBeCloseTo(
+      TOTAL_METRES - returnMirror.distanceFromStartMetres,
+      3,
+    );
+    // The outbound mirror sits ~2519 m behind the restored anchor; adopting
+    // it is what made remaining distance jump the wrong way in the field.
+    expect(
+      expectNumber(resumed.result.current.matchedDistanceFromStartMetres),
+    ).toBeGreaterThan(riddenTo.distanceFromStartMetres);
   });
 });
