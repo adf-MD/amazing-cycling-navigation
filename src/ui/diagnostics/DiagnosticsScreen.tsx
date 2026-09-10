@@ -310,37 +310,97 @@ export function DiagnosticsScreen({
         <details className="settings-disclosure">
           <summary>What HTTP statuses mean</summary>
           <p>
-            Where a response is received, the exact status is shown in the attempts below
-            and in the connection-test result. These are broad categories, not a proven
-            cause:
+            When the routing provider exposes an HTTP response, its status is recorded in
+            Recent routing attempts below. A failed connection test also shows it when the
+            failure carried one; a successful connection test does not repeat it. These
+            are broad categories, not a proven cause:
           </p>
-          <ul>
+          <ul className="diagnostics-status-guide">
             <li>
-              <strong>400, or another 4xx not listed below</strong> — the request was
-              rejected. The status alone does not prove precisely why it was rejected.
+              <strong>Success (2xx)</strong>
+              <ul>
+                <li>
+                  <strong>200</strong> — the normal successful response for a routing
+                  request. HTTP success is not the whole check: ACN still checks that the
+                  response contains usable route data.
+                </li>
+              </ul>
             </li>
             <li>
-              <strong>401 or 403</strong> — the stored key, authorisation or access may
-              have been rejected.
+              <strong>Redirects (3xx)</strong>
+              <ul>
+                <li>
+                  The browser normally follows redirects automatically and records the
+                  final response instead, so an intermediate 3xx status is not normally
+                  shown here.
+                </li>
+              </ul>
             </li>
             <li>
-              <strong>408</strong> — an HTTP server or intermediary returned a timeout
-              response. This is not the same as this application&apos;s own request
-              timeout, or a fetch rejection before an HTTP response was exposed, where no
-              status may be visible at all.
+              <strong>Request or access problems (4xx)</strong>
+              <ul>
+                <li>
+                  <strong>400</strong> — the request was incorrect or could not be
+                  processed.
+                </li>
+                <li>
+                  <strong>401 or 403</strong> — the stored key, authorisation or access
+                  may have been rejected. OpenRouteService can also use 403 for an
+                  exhausted daily allowance, but the status alone does not prove which
+                  cause applies.
+                </li>
+                <li>
+                  <strong>404</strong> — OpenRouteService documents this as either an
+                  unavailable endpoint or a request for which no result or route was
+                  found. The status alone does not say which.
+                </li>
+                <li>
+                  <strong>405</strong> — the request method was not accepted. This is
+                  unexpected during normal ACN use.
+                </li>
+                <li>
+                  <strong>408</strong> — an HTTP server or intermediary returned an
+                  exposed timeout response. This is not the same as ACN&apos;s own request
+                  timeout, or a fetch rejection with no exposed response.
+                </li>
+                <li>
+                  <strong>413</strong> — the request exceeds a size or capacity limit.
+                </li>
+                <li>
+                  <strong>429</strong> — request-rate or quota limiting. Waiting before
+                  retrying, or checking the provider allowance, may help.
+                </li>
+                <li>
+                  <strong>Other 4xx</strong> — the request was rejected, but the exact
+                  reason is not established by the status alone.
+                </li>
+              </ul>
             </li>
             <li>
-              <strong>429</strong> — request-rate or quota limiting. Wait before retrying,
-              or check the provider allowance.
+              <strong>Service problems (5xx)</strong>
+              <ul>
+                <li>
+                  <strong>500</strong> — an unexpected service-side error.
+                </li>
+                <li>
+                  <strong>501</strong> — the service does not support functionality
+                  required by the request.
+                </li>
+                <li>
+                  <strong>Other 5xx, including 502 to 504</strong> — a service, gateway or
+                  upstream failure. Retrying later may help.
+                </li>
+              </ul>
             </li>
             <li>
-              <strong>500 to 599</strong> — a failure on the service side, from this
-              application&apos;s point of view. Retrying later may help.
-            </li>
-            <li>
-              <strong>No status shown</strong> — no HTTP response was exposed to the
-              browser, so no status can say anything about the service. See &quot;Why a
-              fetch can fail before an HTTP response&quot; above.
+              <strong>No HTTP status</strong>
+              <ul>
+                <li>
+                  No HTTP response was exposed to the browser, so no status can say
+                  anything about the service. See &quot;Why a fetch can fail before an
+                  HTTP response&quot; above.
+                </li>
+              </ul>
             </li>
           </ul>
         </details>

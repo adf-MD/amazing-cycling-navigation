@@ -315,7 +315,12 @@ describe("DiagnosticsScreen", () => {
   // does not support (notably: 403 is never presented as a used-up
   // allowance, and 408 is never presented as the provider reporting that
   // *its own* processing took too long).
-  it("explains every HTTP status category in cautious language once its disclosure is opened", async () => {
+  // Backlog item 101 follow-up: the guidance is grouped by status class
+  // as nested native lists — one outer <li> per group carrying a visible
+  // <strong> label and an inner <ul> of code rows. Asserted group by
+  // group, as exact copy, so the deliberately hedged wording cannot drift
+  // into a claim a status alone does not support.
+  it("groups every HTTP status category by class, in cautious language, once its disclosure is opened", async () => {
     const user = userEvent.setup();
     render(<DiagnosticsScreen />);
 
@@ -329,26 +334,75 @@ describe("DiagnosticsScreen", () => {
     await user.click(statusSummary);
     expect(leadIn).toBeVisible();
 
-    const categories = within(statusDisclosure)
-      .getAllByRole("listitem")
-      .map((item) => item.textContent.replace(/\s+/g, " ").trim());
+    // The corrected lead-in: an exposed status is recorded in Recent
+    // routing attempts, a *failed* connection test also shows it, and a
+    // successful one does not repeat it — the connection test's success
+    // result has no HTTP status to show (RoutingProvider returns a
+    // PlannedRoute, which carries none), so this states the real
+    // contract rather than the earlier over-broad claim.
+    const leadInText = leadIn.textContent.replace(/\s+/g, " ").trim();
+    expect(leadInText).toBe(
+      "When the routing provider exposes an HTTP response, its status is recorded in Recent routing attempts below. A failed connection test also shows it when the failure carried one; a successful connection test does not repeat it. These are broad categories, not a proven cause:",
+    );
 
-    expect(categories).toEqual([
-      "400, or another 4xx not listed below — the request was rejected. The status alone does not prove precisely why it was rejected.",
-      "401 or 403 — the stored key, authorisation or access may have been rejected.",
-      "408 — an HTTP server or intermediary returned a timeout response. This is not the same as this application's own request timeout, or a fetch rejection before an HTTP response was exposed, where no status may be visible at all.",
-      "429 — request-rate or quota limiting. Wait before retrying, or check the provider allowance.",
-      "500 to 599 — a failure on the service side, from this application's point of view. Retrying later may help.",
-      'No status shown — no HTTP response was exposed to the browser, so no status can say anything about the service. See "Why a fetch can fail before an HTTP response" above.',
+    const groups = [...statusDisclosure.querySelectorAll(":scope > ul > li")];
+    const groupLabels = groups.map(
+      (group) => group.querySelector(":scope > strong")?.textContent ?? "",
+    );
+    expect(groupLabels).toEqual([
+      "Success (2xx)",
+      "Redirects (3xx)",
+      "Request or access problems (4xx)",
+      "Service problems (5xx)",
+      "No HTTP status",
+    ]);
+
+    const rowsOf = (index: number): string[] => {
+      const group = groups[index];
+      if (!group) throw new Error(`expected a status group at index ${String(index)}`);
+      return [...group.querySelectorAll(":scope > ul > li")].map((row) =>
+        row.textContent.replace(/\s+/g, " ").trim(),
+      );
+    };
+
+    expect(rowsOf(0)).toEqual([
+      "200 — the normal successful response for a routing request. HTTP success is not the whole check: ACN still checks that the response contains usable route data.",
+    ]);
+
+    expect(rowsOf(1)).toEqual([
+      "The browser normally follows redirects automatically and records the final response instead, so an intermediate 3xx status is not normally shown here.",
+    ]);
+
+    expect(rowsOf(2)).toEqual([
+      "400 — the request was incorrect or could not be processed.",
+      "401 or 403 — the stored key, authorisation or access may have been rejected. OpenRouteService can also use 403 for an exhausted daily allowance, but the status alone does not prove which cause applies.",
+      "404 — OpenRouteService documents this as either an unavailable endpoint or a request for which no result or route was found. The status alone does not say which.",
+      "405 — the request method was not accepted. This is unexpected during normal ACN use.",
+      "408 — an HTTP server or intermediary returned an exposed timeout response. This is not the same as ACN's own request timeout, or a fetch rejection with no exposed response.",
+      "413 — the request exceeds a size or capacity limit.",
+      "429 — request-rate or quota limiting. Waiting before retrying, or checking the provider allowance, may help.",
+      "Other 4xx — the request was rejected, but the exact reason is not established by the status alone.",
+    ]);
+
+    expect(rowsOf(3)).toEqual([
+      "500 — an unexpected service-side error.",
+      "501 — the service does not support functionality required by the request.",
+      "Other 5xx, including 502 to 504 — a service, gateway or upstream failure. Retrying later may help.",
+    ]);
+
+    expect(rowsOf(4)).toEqual([
+      'No HTTP response was exposed to the browser, so no status can say anything about the service. See "Why a fetch can fail before an HTTP response" above.',
     ]);
 
     // The qualifiers themselves, called out separately from the exact
     // copy above so their absence is an obvious failure rather than a
-    // buried string difference.
-    expect(categories[0]).toMatch(/does not prove precisely/);
-    expect(categories[1]).toMatch(/may have been rejected/);
-    expect(categories[2]).toMatch(/may be visible/);
-    expect(categories[4]).toMatch(/may help/);
+    // buried string difference. No status is presented as proof of one
+    // exact provider-specific cause.
+    const problems = rowsOf(2);
+    expect(problems[1]).toMatch(/does not prove which cause applies/);
+    expect(problems[2]).toMatch(/does not say which/);
+    expect(problems[7]).toMatch(/not established by the status alone/);
+    expect(rowsOf(3)[2]).toMatch(/may help/);
 
     // Item 101 must complement, never duplicate, the no-response
     // disclosure: the new copy defers to it by title instead of
@@ -393,8 +447,14 @@ describe("DiagnosticsScreen", () => {
 
   // Backlog item 101: the guidance must not cost the reader the exact
   // number. This covers the recent-attempts surface; the connection-test
-  // surface is covered in its own describe below.
-  it("still shows a received response's exact status alongside the open guidance", async () => {
+  // surface is covered in its own describe below. The successful 200 is
+  // the one a rider actually sees after Test routing connection — the
+  // adapter records it here on the success path, and it is the only
+  // place it appears, since the connection test's own success result
+  // carries no HTTP status at all. Both halves pass on the pre-follow-up
+  // implementation (describeRoutingAttempt is unchanged), so this is a
+  // leak guard for the regrouped copy, not fail-first evidence.
+  it("still shows a received response's exact status, success included, alongside the open guidance", async () => {
     const user = userEvent.setup();
     recordRoutingAttempt(
       buildAttempt({
@@ -402,6 +462,14 @@ describe("DiagnosticsScreen", () => {
         responseReceived: true,
         httpStatus: 429,
         category: "rate-limited",
+      }),
+    );
+    recordRoutingAttempt(
+      buildAttempt({
+        timestampIso: "2026-01-01T00:01:00.000Z",
+        responseReceived: true,
+        httpStatus: 200,
+        category: "success",
       }),
     );
 
@@ -412,6 +480,7 @@ describe("DiagnosticsScreen", () => {
     expect(
       screen.getByText("HTTP response received: 429 (rate-limited)"),
     ).toBeInTheDocument();
+    expect(screen.getByText("HTTP response received: 200")).toBeInTheDocument();
   });
 
   it("shows no map imagery attempts recorded this session by default", () => {
@@ -441,7 +510,14 @@ describe("DiagnosticsScreen", () => {
     render(<DiagnosticsScreen />);
 
     expect(screen.getByText(/switched to the plain background/i)).toBeInTheDocument();
-    expect(screen.getByText(/automatically/i)).toBeInTheDocument();
+    // Scoped to the map-imagery row's own wording: item 101's follow-up
+    // added a Routing-diagnostics guidance row that also contains
+    // "automatically", so a bare /automatically/i now matches two
+    // elements. Stricter, not weaker — this still proves the auto-retry
+    // entry renders in plain language.
+    expect(
+      screen.getByText(/retry attempted automatically after resuming or reconnecting/i),
+    ).toBeInTheDocument();
   });
 
   describe("Test routing connection", () => {

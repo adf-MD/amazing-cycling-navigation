@@ -1353,6 +1353,25 @@ button:focus-visible {
   align-items: center;
 }
 
+/* Backlog item 101 follow-up. The HTTP-status guidance is the only
+ * nested list inside a .settings-disclosure, and two levels of the
+ * browser's default 40px list indent are too much here: measured at
+ * 390px with 200% text, they leave a code row just 218px wide inside a
+ * 322px disclosure, at which point the single word "OpenRouteService"
+ * overflows its own row by 79px. A deliberately smaller indent keeps the
+ * group/member hierarchy plainly visible while giving the text room to
+ * wrap; overflow-wrap is the safety net for any one word still longer
+ * than the remaining column, so text breaks rather than being clipped.
+ * Scoped to this list alone — no other disclosure or list is affected. */
+.diagnostics-status-guide,
+.diagnostics-status-guide ul {
+  padding-inline-start: var(--space-16);
+}
+
+.diagnostics-status-guide li {
+  overflow-wrap: break-word;
+}
+
 /* A compact variant of .settings-disclosure for Planning's "Change"
  * trigger specifically (backlog item 48): the closed <summary> alone
  * carries a border+padding box model matching the global button rule, so

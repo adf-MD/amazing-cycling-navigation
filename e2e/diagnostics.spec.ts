@@ -220,16 +220,31 @@ test("explains HTTP statuses in a second, independently operable disclosure", as
   expect(await isOpen(statusDisclosure)).toBe(true);
   expect(await isOpen(fetchDisclosure)).toBe(false);
 
-  const guidance = statusDisclosure.getByRole("listitem");
-  await expect(guidance).toHaveCount(6);
-  await expect(guidance.nth(0)).toContainText("400, or another 4xx not listed below");
-  await expect(guidance.nth(1)).toContainText("401 or 403");
-  await expect(guidance.nth(2)).toContainText(
-    "an HTTP server or intermediary returned a timeout response",
-  );
-  await expect(guidance.nth(3)).toContainText("request-rate or quota limiting");
-  await expect(guidance.nth(4)).toContainText("a failure on the service side");
-  await expect(guidance.nth(5)).toContainText("No status shown");
+  // Item 101 follow-up: the guidance is grouped by status class as
+  // nested native lists. Five group rows, each owning its own inner list.
+  const groups = statusDisclosure.locator(":scope > ul > li");
+  await expect(groups).toHaveCount(5);
+  await expect(groups.locator(":scope > strong")).toHaveText([
+    "Success (2xx)",
+    "Redirects (3xx)",
+    "Request or access problems (4xx)",
+    "Service problems (5xx)",
+    "No HTTP status",
+  ]);
+
+  const rowsOf = (index: number) => groups.nth(index).locator(":scope > ul > li");
+  await expect(rowsOf(0)).toHaveCount(1);
+  await expect(rowsOf(0)).toContainText("the normal successful response");
+  await expect(rowsOf(1)).toHaveCount(1);
+  await expect(rowsOf(1)).toContainText("normally follows redirects automatically");
+  await expect(rowsOf(2)).toHaveCount(8);
+  await expect(rowsOf(2).nth(1)).toContainText("exhausted daily allowance");
+  await expect(rowsOf(2).nth(3)).toContainText("the request method was not accepted");
+  await expect(rowsOf(2).nth(5)).toContainText("a size or capacity limit");
+  await expect(rowsOf(3)).toHaveCount(3);
+  await expect(rowsOf(3).nth(1)).toContainText("does not support functionality");
+  await expect(rowsOf(4)).toHaveCount(1);
+  await expect(rowsOf(4)).toContainText("No HTTP response was exposed to the browser");
 
   // Keyboard: the native summary is focusable and toggles on Enter, then
   // on Space — the browser is where that belongs, not jsdom.
@@ -297,16 +312,41 @@ test.describe("200% text at ordinary phone width", () => {
       expect(isHorizontallyWithin(box, viewportBox)).toBe(true);
     }
 
+    // Every list item — the five group rows and every nested code row.
     const guidance = routingRegion.getByRole("listitem");
-    await expect(guidance).toHaveCount(6);
+    await expect(guidance).toHaveCount(19);
     for (const row of await guidance.all()) {
       const box = await row.boundingBox();
       if (!box) throw new Error("expected a bounding box for a guidance row");
       expect(isHorizontallyWithin(box, viewportBox)).toBe(true);
-      // Wrapped rather than clipped to a single line: at this width and
-      // text size every row is genuinely taller than one line.
-      expect(box.height).toBeGreaterThan(30);
+
+      // Nothing is clipped: no row overflows its own box in either
+      // direction. A short row legitimately occupies a single line, so
+      // asserting a minimum height would prove nothing about wrapping —
+      // this checks the requirement itself instead.
+      const overflow = await row.evaluate((element) => ({
+        horizontal: element.scrollWidth - element.clientWidth,
+        vertical: element.scrollHeight - element.clientHeight,
+      }));
+      expect(overflow.horizontal).toBeLessThanOrEqual(1);
+      expect(overflow.vertical).toBeLessThanOrEqual(1);
     }
+
+    // And a genuinely long row really does wrap onto several lines
+    // rather than being cut off — measured against its own computed font
+    // size, not a hard-coded pixel figure.
+    // Scoped to the nested code rows: a plain listitem filter would also
+    // match the enclosing group <li>, which contains this text too.
+    const longRow = routingRegion
+      .locator("li > ul > li")
+      .filter({ hasText: "exhausted daily allowance" });
+    await expect(longRow).toHaveCount(1);
+    const wrapping = await longRow.evaluate((element) => ({
+      height: element.getBoundingClientRect().height,
+      fontSize: Number.parseFloat(window.getComputedStyle(element).fontSize),
+    }));
+    expect(wrapping.fontSize).toBeGreaterThan(20);
+    expect(wrapping.height).toBeGreaterThan(wrapping.fontSize * 3);
 
     for (const summary of await routingRegion.locator("summary").all()) {
       const box = await summary.boundingBox();
