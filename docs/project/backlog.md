@@ -122,28 +122,6 @@ _Category: Platform compatibility_
 
 ---
 
-<a id="item-101"></a>
-
-## Item 101 — Plain-language HTTP-status guidance in Routing diagnostics
-
-_Category: Routing diagnostics clarity_
-
-101. **Plain-language HTTP-status guidance in Routing diagnostics**
-     - Confirmed current state: Diagnostics already explains why a browser fetch can fail before an HTTP response is exposed, in a disclosure titled "Why a fetch can fail before an HTTP response" (`DiagnosticsScreen.tsx`), covering only the no-response-received ambiguity (a provider outage, a missing CORS header, a DNS/TLS failure, or a local network restriction — indistinguishable from each other). Where a response is received, `describeRoutingAttempt()` (`src/routing/routingDiagnostics.ts`) currently renders only the bare numeric status with no further explanation. This item complements that existing disclosure; it must not duplicate or contradict it.
-     - Add a concise disclosure such as "What HTTP statuses mean", or integrate an equally clear structure after inspecting the existing screen's layout.
-     - Keep the exact observed HTTP code visible, and explain broad, actionable categories in plain language:
-       - 400-class invalid/rejected request;
-       - 401/403 key, authorisation or access rejection;
-       - 408/timeout where actually exposed;
-       - 429 rate/quota limiting;
-       - 500-class provider-side failure;
-       - no exposed status as the existing transport/CORS/DNS/TLS/local-network ambiguity described above.
-     - Do not state a provider-specific cause as certain when a status only supports a likely category. Avoid turning Diagnostics into a general HTTP tutorial.
-     - Preserve API-key redaction and the existing distinction between request construction, fetch invocation, exposed HTTP response and transport failure.
-     - Require copy/accessibility tests and narrow-phone/enlarged-text layout evidence. No routing behaviour or retry policy changes belong here.
-
----
-
 <a id="item-102"></a>
 
 ## Item 102 — Primary-navigation symbol redesign with mock-ups

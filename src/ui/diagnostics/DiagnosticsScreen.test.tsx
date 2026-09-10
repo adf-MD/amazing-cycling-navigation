@@ -7,6 +7,7 @@ import { db } from "../../storage/db.ts";
 import { setActiveRideState } from "../../storage/rideStateRepository.ts";
 import {
   clearRoutingDiagnostics,
+  describeRoutingAttempt,
   recordRoutingAttempt,
   type RoutingAttemptDiagnostic,
 } from "../../routing/routingDiagnostics.ts";
@@ -272,6 +273,147 @@ describe("DiagnosticsScreen", () => {
     expect(explanation).toBeVisible();
   });
 
+  // Backlog item 101. Both Routing disclosures are native <details>, so
+  // "collapsed" and "open" are asserted from the element's own `open`
+  // property rather than by probing an ARIA role — the summaries are
+  // located deterministically by their exact text and their owning
+  // element's tag name is checked explicitly.
+  it("keeps both routing disclosures collapsed by default and operates them independently", async () => {
+    const user = userEvent.setup();
+    render(<DiagnosticsScreen />);
+
+    const fetchSummary = screen.getByText("Why a fetch can fail before an HTTP response");
+    const statusSummary = screen.getByText("What HTTP statuses mean");
+    expect(fetchSummary.tagName).toBe("SUMMARY");
+    expect(statusSummary.tagName).toBe("SUMMARY");
+
+    const fetchDisclosure = fetchSummary.closest<HTMLDetailsElement>("details");
+    const statusDisclosure = statusSummary.closest<HTMLDetailsElement>("details");
+    if (!fetchDisclosure || !statusDisclosure) {
+      throw new Error("expected each summary to live inside a native <details>");
+    }
+    expect(fetchDisclosure).not.toBe(statusDisclosure);
+    expect(fetchDisclosure.open).toBe(false);
+    expect(statusDisclosure.open).toBe(false);
+
+    await user.click(statusSummary);
+    expect(statusDisclosure.open).toBe(true);
+    expect(fetchDisclosure.open).toBe(false);
+    expect(screen.getByText(/missing CORS headers/i)).not.toBeVisible();
+
+    await user.click(fetchSummary);
+    expect(fetchDisclosure.open).toBe(true);
+    expect(statusDisclosure.open).toBe(true);
+
+    await user.click(statusSummary);
+    expect(statusDisclosure.open).toBe(false);
+    expect(fetchDisclosure.open).toBe(true);
+  });
+
+  // Backlog item 101's required categories, asserted as exact copy so the
+  // deliberately hedged wording cannot drift into a claim a status alone
+  // does not support (notably: 403 is never presented as a used-up
+  // allowance, and 408 is never presented as the provider reporting that
+  // *its own* processing took too long).
+  it("explains every HTTP status category in cautious language once its disclosure is opened", async () => {
+    const user = userEvent.setup();
+    render(<DiagnosticsScreen />);
+
+    const statusSummary = screen.getByText("What HTTP statuses mean");
+    const statusDisclosure = statusSummary.closest<HTMLDetailsElement>("details");
+    if (!statusDisclosure) throw new Error("expected a native <details>");
+
+    const leadIn = screen.getByText(/broad categories, not a proven cause/i);
+    expect(leadIn).not.toBeVisible();
+
+    await user.click(statusSummary);
+    expect(leadIn).toBeVisible();
+
+    const categories = within(statusDisclosure)
+      .getAllByRole("listitem")
+      .map((item) => item.textContent.replace(/\s+/g, " ").trim());
+
+    expect(categories).toEqual([
+      "400, or another 4xx not listed below — the request was rejected. The status alone does not prove precisely why it was rejected.",
+      "401 or 403 — the stored key, authorisation or access may have been rejected.",
+      "408 — an HTTP server or intermediary returned a timeout response. This is not the same as this application's own request timeout, or a fetch rejection before an HTTP response was exposed, where no status may be visible at all.",
+      "429 — request-rate or quota limiting. Wait before retrying, or check the provider allowance.",
+      "500 to 599 — a failure on the service side, from this application's point of view. Retrying later may help.",
+      'No status shown — no HTTP response was exposed to the browser, so no status can say anything about the service. See "Why a fetch can fail before an HTTP response" above.',
+    ]);
+
+    // The qualifiers themselves, called out separately from the exact
+    // copy above so their absence is an obvious failure rather than a
+    // buried string difference.
+    expect(categories[0]).toMatch(/does not prove precisely/);
+    expect(categories[1]).toMatch(/may have been rejected/);
+    expect(categories[2]).toMatch(/may be visible/);
+    expect(categories[4]).toMatch(/may help/);
+
+    // Item 101 must complement, never duplicate, the no-response
+    // disclosure: the new copy defers to it by title instead of
+    // re-explaining the CORS/DNS/TLS/local-network ambiguity, which is
+    // also what keeps /missing CORS headers/ a unique query.
+    expect(screen.getAllByText(/missing CORS headers/i)).toHaveLength(1);
+  });
+
+  // Backlog item 101. The disclosure quotes a routing-attempt entry
+  // verbatim; binding it to describeRoutingAttempt's real output stops
+  // the two silently diverging again, as they had before this item (the
+  // prose quoted "Fetch failed before an HTTP response was exposed to the
+  // browser", a string the application never produces).
+  it("quotes the no-response entry that describeRoutingAttempt actually produces", async () => {
+    const user = userEvent.setup();
+    render(<DiagnosticsScreen />);
+
+    const actualEntry = describeRoutingAttempt(
+      buildAttempt({
+        timestampIso: "2026-01-01T00:00:00.000Z",
+        responseReceived: false,
+        category: "transport-failure",
+      }),
+    );
+
+    await user.click(screen.getByText("Why a fetch can fail before an HTTP response"));
+    const explanation = screen.getByText(/missing CORS headers/i);
+
+    expect(explanation).toBeVisible();
+    expect(explanation.textContent.replace(/\s+/g, " ")).toContain(actualEntry);
+
+    // Meaning preserved: all four indistinguishable possibilities, and
+    // the refusal to guess between them, stay exactly as they were.
+    expect(explanation).toHaveTextContent(/provider outage/i);
+    expect(explanation).toHaveTextContent(/missing CORS header/i);
+    expect(explanation).toHaveTextContent(/DNS or TLS failure/i);
+    expect(explanation).toHaveTextContent(/local network restriction/i);
+    expect(explanation).toHaveTextContent(
+      /cannot be told apart from this information alone/i,
+    );
+  });
+
+  // Backlog item 101: the guidance must not cost the reader the exact
+  // number. This covers the recent-attempts surface; the connection-test
+  // surface is covered in its own describe below.
+  it("still shows a received response's exact status alongside the open guidance", async () => {
+    const user = userEvent.setup();
+    recordRoutingAttempt(
+      buildAttempt({
+        timestampIso: "2026-01-01T00:00:00.000Z",
+        responseReceived: true,
+        httpStatus: 429,
+        category: "rate-limited",
+      }),
+    );
+
+    render(<DiagnosticsScreen />);
+
+    await user.click(screen.getByText("What HTTP statuses mean"));
+
+    expect(
+      screen.getByText("HTTP response received: 429 (rate-limited)"),
+    ).toBeInTheDocument();
+  });
+
   it("shows no map imagery attempts recorded this session by default", () => {
     render(<DiagnosticsScreen />);
 
@@ -486,6 +628,99 @@ describe("DiagnosticsScreen", () => {
       expect(textarea.value).toContain("Build:");
       expect(textarea.value).not.toContain("8.681495");
       expect(textarea.value).not.toContain("dummy-test-key");
+    });
+
+    // Backlog item 101: the connection test's own labelled "HTTP status"
+    // row must keep the exact number the provider exposed, unchanged by
+    // the new guidance. No real request is made — the component's
+    // routingProvider prop is the injection seam, and the error carries
+    // responseReceived: true so this is the exposed-response path rather
+    // than a transport failure. Verified to pass on the pre-item
+    // implementation too, so this is a leak guard for the new copy, not
+    // fail-first evidence.
+    it("keeps a received response's exact HTTP status in the connection-test result", async () => {
+      await saveProviderKey("dummy-test-key");
+      const user = userEvent.setup();
+      const routingProvider = fakeRoutingProvider(() =>
+        Promise.reject(
+          new RoutingError({
+            reason: "rate-limited",
+            message: "The routing service is rate limiting requests.",
+            httpStatus: 429,
+            dispatchMarkers: {
+              headersConstructed: true,
+              requestConstructed: true,
+              fetchInvoked: true,
+              fetchReturnedPromise: true,
+              responseReceived: true,
+            },
+          }),
+        ),
+      );
+
+      render(<DiagnosticsScreen routingProvider={routingProvider} />);
+
+      const testButton = await screen.findByRole("button", {
+        name: "Test routing connection",
+      });
+      await waitFor(() => {
+        expect(testButton).toBeEnabled();
+      });
+      await user.click(testButton);
+
+      await waitFor(() => {
+        expect(screen.getByRole("status")).toHaveTextContent(/Failed/);
+      });
+      expect(getDetailValue("HTTP status")).toHaveTextContent("429");
+    });
+
+    // Backlog item 101 leak guard (passes on the pre-item implementation
+    // too): opening the new guidance must not put the stored key or the
+    // fixed test coordinates on screen, and must not change what the
+    // copied report contains. Scoped deliberately to values this path
+    // really carries — the raw request body and raw provider response are
+    // covered by the adapter's own redaction tests, which inject such
+    // sentinels through the adapter, and are not re-claimed here.
+    it("keeps the key and coordinates redacted, and the copied report unchanged, with both disclosures open", async () => {
+      await saveProviderKey("dummy-test-key");
+      const user = userEvent.setup();
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal("navigator", {
+        onLine: true,
+        clipboard: { writeText },
+      });
+      const routingProvider = fakeRoutingProvider(() =>
+        Promise.resolve(buildFakeRoute()),
+      );
+
+      render(<DiagnosticsScreen routingProvider={routingProvider} />);
+
+      const testButton = await screen.findByRole("button", {
+        name: "Test routing connection",
+      });
+      await waitFor(() => {
+        expect(testButton).toBeEnabled();
+      });
+      await user.click(testButton);
+      await waitFor(() => {
+        expect(screen.getByRole("status")).toHaveTextContent(/Succeeded/);
+      });
+
+      await user.click(screen.getByText("Why a fetch can fail before an HTTP response"));
+      await user.click(screen.getByText("What HTTP statuses mean"));
+
+      expect(document.body.textContent).not.toContain("dummy-test-key");
+      expect(screen.queryByText(/8\.681495/)).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Copy diagnostic report" }));
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledTimes(1);
+      });
+      const [report] = writeText.mock.calls[0] as [string];
+      expect(report).not.toContain("dummy-test-key");
+      expect(report).not.toContain("8.681495");
+      expect(report).not.toContain("What HTTP statuses mean");
+      expect(report).not.toContain("request-rate or quota limiting");
     });
   });
 

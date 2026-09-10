@@ -301,11 +301,48 @@ export function DiagnosticsScreen({
           <p>
             Browsers may report a generic fetch failure instead of the real HTTP status
             (for example 502) when the provider&apos;s error response is missing CORS
-            headers — an entry reading &quot;Fetch failed before an HTTP response was
-            exposed to the browser&quot; can mean a provider outage, a missing CORS
-            header, a DNS or TLS failure, or a local network restriction, and cannot be
-            told apart from this information alone.
+            headers — an entry reading &quot;Fetch promise rejected before an HTTP
+            response was exposed&quot; can mean a provider outage, a missing CORS header,
+            a DNS or TLS failure, or a local network restriction, and cannot be told apart
+            from this information alone.
           </p>
+        </details>
+        <details className="settings-disclosure">
+          <summary>What HTTP statuses mean</summary>
+          <p>
+            Where a response is received, the exact status is shown in the attempts below
+            and in the connection-test result. These are broad categories, not a proven
+            cause:
+          </p>
+          <ul>
+            <li>
+              <strong>400, or another 4xx not listed below</strong> — the request was
+              rejected. The status alone does not prove precisely why it was rejected.
+            </li>
+            <li>
+              <strong>401 or 403</strong> — the stored key, authorisation or access may
+              have been rejected.
+            </li>
+            <li>
+              <strong>408</strong> — an HTTP server or intermediary returned a timeout
+              response. This is not the same as this application&apos;s own request
+              timeout, or a fetch rejection before an HTTP response was exposed, where no
+              status may be visible at all.
+            </li>
+            <li>
+              <strong>429</strong> — request-rate or quota limiting. Wait before retrying,
+              or check the provider allowance.
+            </li>
+            <li>
+              <strong>500 to 599</strong> — a failure on the service side, from this
+              application&apos;s point of view. Retrying later may help.
+            </li>
+            <li>
+              <strong>No status shown</strong> — no HTTP response was exposed to the
+              browser, so no status can say anything about the service. See &quot;Why a
+              fetch can fail before an HTTP response&quot; above.
+            </li>
+          </ul>
         </details>
         {recentRoutingAttempts.length === 0 ? (
           <p className="field-hint">No routing attempts recorded this session.</p>

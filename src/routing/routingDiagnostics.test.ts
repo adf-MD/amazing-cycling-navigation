@@ -86,6 +86,33 @@ describe("describeRoutingAttempt", () => {
     ).toBe("HTTP response received: 200");
   });
 
+  // Backlog item 101 leak guard — this already held before that item and
+  // is recorded as a guard, not as fail-first evidence. An HTTP 408 is an
+  // exposed *response* (responseReceived: true, so the status is shown),
+  // whereas this application's own 15s AbortController timeout never
+  // receives one; the Routing disclosure's copy depends on the two
+  // staying structurally distinguishable here.
+  it("distinguishes an exposed HTTP 408 response from this application's own timeout", () => {
+    expect(
+      describeRoutingAttempt(
+        buildDiagnostic({
+          responseReceived: true,
+          httpStatus: 408,
+          category: "provider-error",
+        }),
+      ),
+    ).toBe("HTTP response received: 408 (provider-error)");
+    expect(
+      describeRoutingAttempt(
+        buildDiagnostic({
+          responseReceived: false,
+          httpStatus: undefined,
+          category: "timeout",
+        }),
+      ),
+    ).toBe("Request timed out");
+  });
+
   it("distinguishes offline from a request that timed out", () => {
     expect(
       describeRoutingAttempt(
