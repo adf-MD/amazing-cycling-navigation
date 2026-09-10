@@ -265,6 +265,22 @@ describe("RouteLibrary — global tag management", () => {
     expect(dialog).toHaveTextContent("No route is deleted.");
     await user.click(within(dialog).getByRole("button", { name: "Merge tags" }));
 
+    // The merge is asynchronous, and the library deliberately refuses to
+    // open the tag filters while a lifecycle operation is still running
+    // (item 106's one-at-a-time admission check), answering "Wait for the
+    // tag update to finish, then filter by tags." instead. Waiting for
+    // the manager's own success message — the authoritative completion
+    // signal, exactly as the sibling delete test already does — is what
+    // makes the following expandTagFilters deterministic. Without it the
+    // click lands during the busy window on a slow or loaded machine and
+    // the disclosure never expands; that is how this test failed in a
+    // real GitHub Actions run at commit d3d99f5 while passing locally.
+    await waitFor(() => {
+      expect(
+        screen.getByText("Merged “Gravel” into “Road” on 2 routes."),
+      ).toBeInTheDocument();
+    });
+
     await expandTagFilters(user);
     await waitFor(() => {
       expect(
