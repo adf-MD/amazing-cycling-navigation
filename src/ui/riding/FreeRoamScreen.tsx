@@ -445,6 +445,13 @@ export function FreeRoamScreen({
        * toggle/visibility logic here, just the one always-visible pane. */}
       <div className="ride-content-area ride-content-area--immersive">
         <div className="ride-map-container ride-map-container--immersive">
+          {/* Backlog item 108: imageryCopyContext="free-roam" makes MapView's
+           * own in-map imagery banners say "your position" rather than "the
+           * route". That unhosted path is genuinely reachable, not defensive:
+           * Pause is enabled before the first fix arrives, and pausing then
+           * leaves geolocationStatus "idle" with no retained fix, so
+           * showStatusCard goes false and MapView renders its own banner
+           * again while still mounted. */}
           <MapView
             points={[]}
             currentPosition={nav.currentFix?.coordinate}
@@ -464,6 +471,7 @@ export function FreeRoamScreen({
             }}
             onImageryStatusChange={showStatusCard ? setImageryStatus : undefined}
             imageryRetryCommand={showStatusCard ? imageryRetryCommand : undefined}
+            imageryCopyContext="free-roam"
           />
           {nav.geolocationStatus === "watching" ? (
             <div className="ride-map-zoom-controls">

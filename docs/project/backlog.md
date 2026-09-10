@@ -160,44 +160,6 @@ _Category: Interface and accessibility consistency_
 
 ---
 
-<a id="item-108"></a>
-
-## Item 108 — Relocate active-riding map-imagery status and compact the climb cue
-
-_Category: Riding presentation_
-
-108. **Relocate active-riding map-imagery status and compact the climb cue**
-     - Origin: the installed-iPhone field test of 10 September 2026 — see [`current-status.md`](current-status.md) for the dated report. A screenshot showed the "Climb active" cue and the delayed-map-imagery explanation occupying the same top portion of the map and overlapping one another. **This is an approved implementation slice, not a design candidate.**
-     - The missing base imagery itself was **expected** during the prolonged offline period and is explicitly **not** a separate map-loading defect. Nothing in this item is a report against the imagery pipeline's own correctness; it is about where imagery status is presented and how much of the map the climb cue occupies.
-     - **Approved product behaviour — map-imagery status placement.**
-       - During **both Route riding and Free roam**, all map-imagery status belongs in the existing top riding-status card rather than in an overlay over the map.
-       - A transient slow load may add a compact status-card row explaining that imagery is loading slowly, and that the route and position remain visible.
-       - A retryable or terminal imagery problem should transition that row to the appropriate unavailable state and retain the existing **Retry map imagery** action where retry is meaningful.
-       - Avoid redundantly repeating that the device is offline when the same card already communicates connectivity.
-       - The imagery row disappears when imagery recovers. **Do not add a fixed disappearance timeout** that could conceal a continuing imagery failure.
-       - Suppress **both** the in-map delayed-imagery banner **and** the in-map initial-loading message during active Route riding and Free roam — that is, whenever the screen supplies the external status card. A brief initial load need not immediately create a status-card row at all; the existing grace period is the right mechanism for preventing a flicker, rather than a new timeout.
-       - Planning and other contexts without the riding-status card retain their existing in-map imagery explanation, unchanged.
-       - Route riding may retain the climb cue over the map. Free roam has no climb cue to add.
-     - **Wording must fit its context, and the two contexts differ.** Route riding may say that the route and position remain visible. **Free roam must mention only the position, because no route is active there.** Do not force identical copy through the shared presentation helper when the two contexts genuinely need different wording. Confirmed by direct source inspection during the documentation of this item (a source finding, not a field report): `src/ui/riding/mapImageryRecoveryPresentation.ts`'s `describeMapImageryRecovery` is currently the single copy authority for both cards, and its `tile-error` message — "Map imagery unavailable. The route and your position are still shown." — is therefore already shown in Free roam, where there is no route. Correcting that is in scope for this item.
-     - Confirmed current implementation, recorded as ground truth rather than as a prescribed design:
-       - `src/map/MapView.tsx` renders `.map-status-overlay` inside the map with five mutually exclusive messages: initial loading, the delayed-imagery banner (`map-imagery-delayed-banner`, "Map imagery is taking longer than usual to load. Your route and position are still shown."), the load error, the tiles-unavailable banner and the fallback banner. Only the last three relocate today, gated on `hasExternalImageryPresentation` (which is simply `onImageryStatusChange !== undefined`); the initial-loading and delayed-imagery messages deliberately always stay in the map. That deliberate exclusion is precisely what this item changes, so the existing comments recording the old rationale must be updated rather than left contradicting the code.
-       - `describeMapImageryRecovery` maps the three relocating kinds (`load-error`, `tile-error`, `fallback`) to message, ARIA role and test id, and is consumed by exactly two components — `src/ui/riding/RidingStatusCard.tsx` and `src/ui/riding/FreeRoamStatusCard.tsx` — which each render a `ride-status-card-imagery-row` plus the shared `map-status-retry-button`.
-       - Both cards already carry a `ride-status-card-connectivity` Online/Offline indicator (`ConnectivityIcon` plus text), which is what makes a second "you are offline" statement redundant.
-       - `MapImageryRecoveryStatus` deliberately carries only a `kind` and no message, and `ImageryRetryCommand` is deduplicated by `requestId`; the in-map and status-card retry paths already converge on the same handler.
-       - CSS coupling to check before moving anything: `.map-status-overlay`'s `top: 72px` exists specifically to clear `.ride-climb-cue`'s worst-case height, and `src/index.css` records that reasoning inline. If the overlay no longer appears during riding, that reservation and its comment need revisiting together rather than either being left stale.
-     - **Approved product behaviour — the climb cue's presentation.** The cue currently uses three lines and leaves excessive empty space, while the previous truncating treatment was also undesirable. Require the **outcome**, not one exact CSS arrangement:
-       - preserve "Climb active", the remaining distance and the **View climb** action without truncating meaningful text;
-       - make the cue materially more compact at ordinary supported portrait widths;
-       - allow accessible reflow at enlarged browser text sizes;
-       - avoid covering an unnecessary amount of the route ahead;
-       - do not overlap map controls, attribution, other live notices or the imagery status;
-       - retain usable touch targets and existing climb behaviour.
-     - Confirmed current climb-cue implementation: `src/ui/riding/RidingClimbCue.tsx` renders `.ride-climb-cue` containing `.ride-climb-cue-text` (a `role="status"` `.ride-climb-cue-title` reading "Climb active", and a plain `.ride-climb-cue-detail` carrying the continuously-updating remaining distance) beside a `.ride-climb-cue-action` **View climb** button; it is a sibling of `MapView` inside Riding's own `.ride-map-container`, absolutely positioned `top: 8px` with `left`/`right: 64px` to clear the zoom and camera control clusters. `src/index.css` records that item 82 deliberately **removed** the earlier `overflow: hidden` / `white-space: nowrap` / `text-overflow: ellipsis` combination because it clipped both lines at ordinary phone widths — so reintroducing truncation is a known-rejected direction, not an untried option. Existing Playwright coverage already asserts non-overlap in `e2e/distanceBadges.spec.ts`, `e2e/mapImageryRecovery.spec.ts` and `e2e/ridingClimbView.spec.ts`; extend that evidence rather than replacing it.
-     - Cross-references: item 82 ([`history/items-81-88.md#item-82`](history/items-81-88.md#item-82)) made the cue fully readable and unified the status control; item 83 ([`history/items-81-88.md#item-83`](history/items-81-88.md#item-83)) is what originally relocated the three terminal imagery states into the status card and is the direct precedent for extending that relocation; item 96 ([`history/items-95-99.md#item-96`](history/items-95-99.md#item-96)) owns the slow-imagery grace period referred to above; items 94 and 75 are adjacent. None of them is reopened or weakened by this item, and their outstanding real-device checks in [`current-status.md`](current-status.md) stand unchanged except where this item's own presentation supersedes them.
-     - Physical acceptance on the installed iPhone Home Screen PWA is required, in both Route riding and Free roam, since the observation came from there. Physical Android verification is separately outstanding, as for most recent items.
-
----
-
 <a id="item-109"></a>
 
 ## Item 109 — Prevent the Planning waypoint marker and placement control from colliding

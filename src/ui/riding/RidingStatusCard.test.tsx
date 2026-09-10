@@ -534,3 +534,111 @@ describe("RidingStatusCard", () => {
     );
   });
 });
+
+describe("RidingStatusCard: the transient delayed imagery row (backlog item 108)", () => {
+  it("shows a route-and-position slow-loading row with role=status", () => {
+    render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "delayed" }}
+        onRetryImagery={noop}
+      />,
+    );
+    const row = screen.getByTestId("map-imagery-delayed-banner");
+    expect(row).toHaveAttribute("role", "status");
+    expect(row).toHaveTextContent(
+      "Map imagery is taking longer than usual to load. Your route and position are still shown.",
+    );
+  });
+
+  it("offers no Retry action while imagery is merely slow, and is not escalated to an alert", () => {
+    render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "delayed" }}
+        onRetryImagery={noop}
+      />,
+    );
+    expect(screen.queryByTestId("retry-map-imagery-button")).toBeNull();
+    const row = screen.getByTestId("map-imagery-delayed-banner");
+    expect(row).toHaveClass("ride-status-card-imagery-row--pending");
+    expect(row).not.toHaveClass("ride-status-card-imagery-row--alert");
+  });
+
+  it("never repeats the connectivity state inside the imagery message", () => {
+    render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={false}
+        imageryRecoveryStatus={{ kind: "delayed" }}
+        onRetryImagery={noop}
+      />,
+    );
+    expect(screen.getByText("Offline")).toBeInTheDocument();
+    expect(screen.getByTestId("map-imagery-delayed-banner").textContent).not.toMatch(
+      /offline/i,
+    );
+    expect(screen.getAllByText(/Offline/)).toHaveLength(1);
+  });
+
+  it("replaces the delayed row with a terminal one, restoring Retry, rather than showing both", () => {
+    const { rerender } = render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "delayed" }}
+        onRetryImagery={noop}
+      />,
+    );
+    expect(screen.queryByTestId("retry-map-imagery-button")).toBeNull();
+
+    rerender(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "load-error" }}
+        onRetryImagery={noop}
+      />,
+    );
+
+    expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+    expect(document.querySelectorAll(".ride-status-card-imagery-row")).toHaveLength(1);
+    expect(screen.getByTestId("retry-map-imagery-button")).toBeInTheDocument();
+  });
+
+  it("leaves no imagery row behind once imagery recovers", () => {
+    const { rerender } = render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "delayed" }}
+        onRetryImagery={noop}
+      />,
+    );
+    rerender(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
+      />,
+    );
+    expect(document.querySelector(".ride-status-card-imagery-row")).toBeNull();
+  });
+});

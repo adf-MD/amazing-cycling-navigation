@@ -3772,7 +3772,12 @@ describe("MapView", () => {
   // instead of MapView's in-map overlay, without touching item 67's retry/
   // episode/camera-preservation machinery itself.
   describe("backlog item 83: external imagery-recovery presentation seam", () => {
-    it("suppresses the in-map tiles-unavailable banner when onImageryStatusChange is supplied, while the transient loading/delayed states remain", () => {
+    // Backlog item 108 inverted the second half of this test. It used to
+    // assert that the transient loading/delayed states "remain" in-map when
+    // a host is present — precisely the behaviour item 108 removes, since
+    // the whole point is that an active Riding/free-roam map shows NO
+    // imagery message at all. The tile-error half is unchanged.
+    it("suppresses every in-map imagery message when onImageryStatusChange is supplied, including the transient loading and delayed states (backlog item 108)", () => {
       vi.useFakeTimers();
       try {
         const mock = createMockMapFactory();
@@ -3785,7 +3790,7 @@ describe("MapView", () => {
           />,
         );
 
-        expect(screen.getByTestId("map-loading")).toBeInTheDocument();
+        expect(screen.queryByTestId("map-loading")).toBeNull();
 
         mock.triggerStyleLoaded();
         expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
@@ -3793,7 +3798,10 @@ describe("MapView", () => {
         act(() => {
           vi.advanceTimersByTime(2_000);
         });
-        expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+        // The grace period still elapses and is still reported outwards —
+        // only the in-map rendering is suppressed.
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+        expect(onImageryStatusChange).toHaveBeenCalledWith({ kind: "delayed" });
 
         mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
         expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
@@ -4060,6 +4068,303 @@ describe("MapView", () => {
 
       expect(onImageryStatusChange).toHaveBeenCalledWith({ kind: "tile-error" });
       expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+    });
+  });
+
+  describe("backlog item 108: hosted imagery status, including the transient delayed state", () => {
+    /** Drives MapView to the point where item 96's slow-imagery grace has
+     * genuinely elapsed: structurally ready style, no load yet, no tile
+     * error, no fallback. Fake timers must already be installed. */
+    function reachDelayedState(mock: ReturnType<typeof createMockMapFactory>): void {
+      mock.triggerStyleLoaded();
+      act(() => {
+        vi.advanceTimersByTime(2_000);
+      });
+    }
+
+    it("reports nothing at all during the brief pre-grace initial load", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        const onImageryStatusChange = vi.fn();
+        render(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            onImageryStatusChange={onImageryStatusChange}
+          />,
+        );
+
+        mock.triggerStyleLoaded();
+        act(() => {
+          vi.advanceTimersByTime(1_999);
+        });
+
+        // Item 96's existing grace period, not a new timeout, is what keeps
+        // a merely slow load from flickering a row into the status card.
+        expect(onImageryStatusChange).not.toHaveBeenCalledWith({ kind: "delayed" });
+        expect(screen.queryByTestId("map-loading")).toBeNull();
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("reports the delayed kind once the existing grace period elapses", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        const onImageryStatusChange = vi.fn();
+        render(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            onImageryStatusChange={onImageryStatusChange}
+          />,
+        );
+
+        reachDelayedState(mock);
+
+        expect(onImageryStatusChange).toHaveBeenCalledWith({ kind: "delayed" });
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps reporting the delayed state indefinitely, with no fixed disappearance timeout", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        const onImageryStatusChange = vi.fn();
+        render(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            onImageryStatusChange={onImageryStatusChange}
+          />,
+        );
+
+        reachDelayedState(mock);
+        onImageryStatusChange.mockClear();
+
+        // Substantially more simulated time. A fixed disappearance timeout
+        // would conceal a continuing imagery failure, so there must not be
+        // one: the state may only be superseded or cleared by a genuine
+        // change in the map's own imagery state.
+        act(() => {
+          vi.advanceTimersByTime(600_000);
+        });
+
+        expect(onImageryStatusChange).not.toHaveBeenCalledWith(null);
+        expect(onImageryStatusChange).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("clears the delayed state when imagery genuinely finishes loading", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        const onImageryStatusChange = vi.fn();
+        render(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            onImageryStatusChange={onImageryStatusChange}
+          />,
+        );
+
+        reachDelayedState(mock);
+        expect(onImageryStatusChange).toHaveBeenCalledWith({ kind: "delayed" });
+
+        act(() => {
+          mock.triggerLoad();
+        });
+
+        expect(onImageryStatusChange).toHaveBeenLastCalledWith(null);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("replaces the delayed state with a terminal one rather than reporting both", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        const onImageryStatusChange = vi.fn();
+        render(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            onImageryStatusChange={onImageryStatusChange}
+          />,
+        );
+
+        reachDelayedState(mock);
+        expect(onImageryStatusChange).toHaveBeenLastCalledWith({ kind: "delayed" });
+
+        act(() => {
+          mock.triggerError({ message: "tile fetch failed", category: "source-or-tile" });
+        });
+
+        // A single-valued kind by construction: the host is told the new
+        // truth, never told about two simultaneous states.
+        expect(onImageryStatusChange).toHaveBeenLastCalledWith({ kind: "tile-error" });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("moves an already-delayed message straight to a host that attaches mid-episode, with no gap and no duplicate", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        const { rerender } = render(
+          <MapView points={points} mapFactory={mock.factory} />,
+        );
+
+        reachDelayedState(mock);
+        // Unhosted, the map owns it — exactly as Planning still does.
+        expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+
+        const onImageryStatusChange = vi.fn();
+        rerender(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            onImageryStatusChange={onImageryStatusChange}
+          />,
+        );
+
+        // Handed over in the same commit: the map no longer shows it and
+        // the host has been told, so it is never simultaneously in both
+        // places and never momentarily in neither.
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+        expect(onImageryStatusChange).toHaveBeenCalledWith({ kind: "delayed" });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("restores the in-map delayed message when the host detaches while imagery is still delayed", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        const onImageryStatusChange = vi.fn();
+        const { rerender } = render(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            onImageryStatusChange={onImageryStatusChange}
+          />,
+        );
+
+        reachDelayedState(mock);
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+
+        // e.g. a ride ends mid-episode: the screen stops supplying a status
+        // card, so the still-mounted map must take the message back rather
+        // than leaving the rider with no explanation at all.
+        rerender(<MapView points={points} mapFactory={mock.factory} />);
+
+        expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not cancel the grace timer when only the host detaches, so the in-map message still appears on time", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        const onImageryStatusChange = vi.fn();
+        const { rerender } = render(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            onImageryStatusChange={onImageryStatusChange}
+          />,
+        );
+
+        mock.triggerStyleLoaded();
+        act(() => {
+          vi.advanceTimersByTime(1_000);
+        });
+
+        // Detach mid-grace. Only unmounting may cancel the timer — host
+        // detachment must leave it running, because the in-map presentation
+        // now depends on it.
+        rerender(<MapView points={points} mapFactory={mock.factory} />);
+        act(() => {
+          vi.advanceTimersByTime(1_000);
+        });
+
+        expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("reports nothing further once unmounted mid-grace, leaving no pending timer or callback", () => {
+      vi.useFakeTimers();
+      try {
+        const mock = createMockMapFactory();
+        const onImageryStatusChange = vi.fn();
+        const { unmount } = render(
+          <MapView
+            points={points}
+            mapFactory={mock.factory}
+            onImageryStatusChange={onImageryStatusChange}
+          />,
+        );
+
+        mock.triggerStyleLoaded();
+        act(() => {
+          vi.advanceTimersByTime(1_000);
+        });
+        onImageryStatusChange.mockClear();
+
+        unmount();
+        act(() => {
+          vi.advanceTimersByTime(10_000);
+        });
+
+        expect(onImageryStatusChange).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("uses position-only in-map copy when imageryCopyContext is free-roam, and route copy by default", () => {
+      const freeRoamMock = createMockMapFactory();
+      const { unmount } = render(
+        <MapView
+          points={points}
+          mapFactory={freeRoamMock.factory}
+          imageryCopyContext="free-roam"
+        />,
+      );
+      freeRoamMock.triggerError({
+        message: "tile fetch failed",
+        category: "source-or-tile",
+      });
+      expect(screen.getByTestId("tiles-unavailable-banner")).toHaveTextContent(
+        "Map imagery unavailable. Your position is still shown.",
+      );
+      unmount();
+
+      const defaultMock = createMockMapFactory();
+      render(<MapView points={points} mapFactory={defaultMock.factory} />);
+      defaultMock.triggerError({
+        message: "tile fetch failed",
+        category: "source-or-tile",
+      });
+      expect(screen.getByTestId("tiles-unavailable-banner")).toHaveTextContent(
+        "Map imagery unavailable. The route and your position are still shown.",
+      );
     });
   });
 

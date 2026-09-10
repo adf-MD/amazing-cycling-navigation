@@ -7,7 +7,7 @@ import {
 } from "../shared/routeSummary.ts";
 import { formatGpsStatusLine } from "./rideStatusText.ts";
 import { ConnectivityIcon } from "./ConnectivityIcon.tsx";
-import { describeMapImageryRecovery } from "./mapImageryRecoveryPresentation.ts";
+import { describeMapImageryRecovery } from "../../map/mapImageryRecoveryPresentation.ts";
 import {
   RidingWakeLockControl,
   type RidingWakeLockControlProps,
@@ -114,8 +114,12 @@ export function RidingStatusCard({
       ? "GPS error"
       : "Waiting for a GPS fix…";
   const topRole = liveStatus?.offRouteLevel === "off-route" ? "alert" : "status";
+  // Backlog item 108: "route-riding" is a truthful capability statement —
+  // active Route riding really does keep drawing the route and the rider's
+  // position while imagery is missing. Free roam passes "free-roam" to the
+  // same table instead; the mapping itself is never duplicated.
   const imageryRecoveryPresentation = imageryRecoveryStatus
-    ? describeMapImageryRecovery(imageryRecoveryStatus.kind)
+    ? describeMapImageryRecovery(imageryRecoveryStatus.kind, "route-riding")
     : null;
 
   return (
@@ -172,17 +176,27 @@ export function RidingStatusCard({
             imageryRecoveryPresentation.role === "alert"
               ? " ride-status-card-imagery-row--alert"
               : ""
+          }${
+            imageryRecoveryPresentation.retryable
+              ? ""
+              : " ride-status-card-imagery-row--pending"
           }`}
         >
           <span>{imageryRecoveryPresentation.message}</span>
-          <button
-            type="button"
-            onClick={onRetryImagery}
-            data-testid="retry-map-imagery-button"
-            className="map-status-retry-button"
-          >
-            Retry map imagery
-          </button>
+          {/* Backlog item 108: the transient "delayed" kind is deliberately
+           * non-actionable — imagery is still in flight, so a Retry would
+           * only restart a request that has not failed. The three terminal
+           * kinds keep the Retry action item 83 gave them, unchanged. */}
+          {imageryRecoveryPresentation.retryable ? (
+            <button
+              type="button"
+              onClick={onRetryImagery}
+              data-testid="retry-map-imagery-button"
+              className="map-status-retry-button"
+            >
+              Retry map imagery
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>

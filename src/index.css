@@ -458,22 +458,32 @@ button:focus-visible {
  * MapView's own status/error banners (map-loading, map-imagery-delayed-
  * banner, map-load-error, tiles-unavailable-banner, map-fallback-banner)
  * — confirmed structurally mutually exclusive with each other, so this
- * box only ever holds one message at a time. top:72px (not the 8px every
- * other top-row overlay uses) is deliberate headroom clearing
- * .ride-climb-cue's own worst-case rendered height (two lines of text
- * plus var(--space-8) vertical padding, roughly 50-64px depending on
- * platform font metrics) with a margin, since .ride-climb-cue resolves
- * against the exact same positioned ancestor (.ride-map-container) and a
- * rural climb correlates with worse cell coverage, making the two
- * co-occurring more likely than chance, not less — see
- * e2e/mapImageryRecovery.spec.ts's own automated non-overlap proof rather
- * than treating this offset as verified by inspection alone. left/right:
- * 64px mirrors .planning-map-status-overlay's/.ride-climb-cue's own
- * established 48px-button-column-plus-two-8px-insets arithmetic, so this
- * never collides with the zoom or camera/orientation control clusters on
- * any of Planning/Riding/free roam. First-pass, reasoned values, not yet
- * real-device verified — see CLAUDE.md's own item 23/53 precedent for
- * this same humility about exact pixel placement.
+ * box only ever holds one message at a time.
+ *
+ * top:72px (not the 8px every other top-row overlay uses) was originally
+ * headroom clearing .ride-climb-cue's own worst-case rendered height.
+ * Backlog item 108 retired that coupling: during active Route riding and
+ * free roam — the only states in which a climb cue can exist at all — the
+ * screen's own status card hosts every imagery message and this box now
+ * renders nothing whatsoever, so the two can no longer co-occur and the
+ * cue's height no longer constrains this offset. (The old comment also
+ * mis-stated that height as "two lines plus var(--space-8) padding", which
+ * item 82 had already changed.)
+ *
+ * The 72px VALUE is nonetheless deliberately unchanged, for a different and
+ * still-live reason: the contexts that do still render this box are
+ * Planning and Riding's own pre-ride overview, and Planning's separate
+ * .planning-map-status-overlay occupies exactly top:8px/left:64px/right:64px
+ * inside the same map container. Moving this box to 8px would stack the two
+ * overlays on an identical rectangle. Anyone revisiting the value must test
+ * Planning's own context, not merely Riding's.
+ *
+ * left/right: 64px mirrors .planning-map-status-overlay's own established
+ * 48px-button-column-plus-two-8px-insets arithmetic, so this never collides
+ * with the zoom or camera/orientation control clusters on any of
+ * Planning/Riding/free roam. Reasoned values, not real-device verified —
+ * see CLAUDE.md's own item 23/53 precedent for this same humility about
+ * exact pixel placement.
  *
  * pointer-events:none is essential, not cosmetic: unlike every other
  * top-row overlay here (which sits beside the map's own tappable centre),
@@ -1841,6 +1851,15 @@ button:focus-visible {
   color: var(--colour-danger);
 }
 
+/* Backlog item 108: the transient slow-imagery row. Muted, and carrying no
+ * Retry action, so a load that is merely taking a while never reads like
+ * the terminal "imagery unavailable" states beside it. Never colour alone —
+ * the wording ("taking longer than usual to load" versus "unavailable") and
+ * the absence of the Retry button are the primary distinctions. */
+.ride-status-card-imagery-row--pending {
+  color: var(--colour-text-muted);
+}
+
 /* The geolocation-error inline alert panel (message + Try again). */
 .ride-alert-panel {
   display: flex;
@@ -2022,22 +2041,51 @@ button:focus-visible {
  * slot with .ride-map-paused-toast above (a manual gesture pausing Follow
  * can genuinely co-occur with an active climb) — this avoids needing a
  * fragile pixel-offset stack against a transient sibling entirely. The
- * 64px side insets mirror .planning-map-status-overlay's own established
- * arithmetic (48px .ride-map-control button column + 8px inset + 8px
- * overlay inset), which applies identically here since Riding's own
+ * 64px left inset and the matching 128px max-width mirror
+ * .planning-map-status-overlay's own established arithmetic (48px
+ * .ride-map-control button column + 8px inset + 8px overlay inset) on both
+ * sides, which applies identically here since Riding's own
  * .ride-map-zoom-controls/.ride-map-camera-controls use the same 48px
- * button convention. First-pass, reasoned values, not yet real-device
- * verified — see CLAUDE.md's own item 23/53 precedent for this same
- * humility about exact pixel placement. */
+ * button convention.
+ *
+ * backlog item 108: this used to be `right: 64px`, which pinned the box to
+ * the FULL control-safe span whatever it held. Measured on the project's
+ * standard 390x844 portrait viewport (map 358px wide, so a 230px span):
+ * the text block was 206px wide holding at most 120px of content, and the
+ * View climb action — 112.5px, and never shrinkable, since 120 + 4 + 112.5
+ * already exceeds the 206px of usable inner width — was pushed onto its own
+ * line by the flex-wrap safety net item 82 added believing it would rarely
+ * fire. It fired on every render at phone portrait: that is the reported
+ * "three lines plus excessive empty space", and the cue reached 91px tall,
+ * within a few pixels of .map-status-overlay's own 72px offset.
+ *
+ * The fix removes the WASTED WIDTH rather than shrinking anything: the
+ * column direction below states outright what flex-wrap was already
+ * producing here, and dropping `right` lets the box shrink-to-fit its own
+ * content (max-content = the wider of the two text lines, plus padding).
+ * Measured result at 390x844: 230px wide -> 144px, at an unchanged 91px
+ * tall, so roughly 37% less of the route ahead is covered while every
+ * character of "Climb active" and the remaining distance stays on its own
+ * unwrapped line at full size. Deliberately NOT done: any font-size
+ * reduction, any truncation, any change to the action's 44px touch target,
+ * and any artificial height reduction — the height is pinned by that touch
+ * target and is left exactly as it was.
+ *
+ * Placing the action BESIDE the text at phone portrait was measured to be
+ * impossible within those constraints, not merely undesirable: 120px of
+ * text + 112.5px of button + padding needs ~245px inside a box whose
+ * control-safe maximum is 246px and whose comfortable span is 230px. See
+ * e2e/ridingClimbView.spec.ts for the width and non-intersection proof
+ * rather than treating these numbers as verified by inspection alone. */
 .ride-climb-cue {
   position: absolute;
   top: 8px;
   left: 64px;
-  right: 64px;
+  max-width: calc(100% - 128px);
   z-index: 5;
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--space-4);
   padding: var(--space-4) var(--space-12);
   border-radius: var(--radius-md);
@@ -2045,8 +2093,11 @@ button:focus-visible {
   box-shadow: var(--shadow-sm);
 }
 
+/* min-width: 0 stays load-bearing: at enlarged text the cue clamps to its
+ * max-width above and these lines must wrap inside it rather than force the
+ * box wider (backlog items 82, 108). */
 .ride-climb-cue-text {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
 }
 
@@ -2073,13 +2124,17 @@ button:focus-visible {
 }
 
 /* backlog item 82: a tighter horizontal-padding variant of .btn-primary
- * for the climb cue's own View climb action, reclaiming width for the
- * text column above. flex-shrink:0 and white-space:nowrap keep the
- * button's own short label from itself wrapping unpredictably; .ride-
- * climb-cue's own flex-wrap lets the button drop to its own line below
- * the text instead, if the row is ever too narrow to hold both — proven
- * by e2e/ridingClimbView.spec.ts at phone width, short landscape and
- * 200% text, not merely assumed safe. */
+ * for the climb cue's own View climb action. flex-shrink:0 and
+ * white-space:nowrap keep the button's own short label from itself
+ * wrapping unpredictably. Item 82 originally paired this with a flex-wrap
+ * safety net on .ride-climb-cue, expecting the button to drop below the
+ * text only at extreme widths; measurement for item 108 showed it did so
+ * at every supported phone-portrait width, so the cue now simply states
+ * that column arrangement directly (see its own comment above). The
+ * button keeps the global button rule's 44px minimum touch target and, via
+ * align-items: stretch, spans the cue's inner width — proven by
+ * e2e/ridingClimbView.spec.ts at phone width, short landscape and 200%
+ * text, not merely assumed safe. */
 .ride-climb-cue-action {
   flex-shrink: 0;
   white-space: nowrap;

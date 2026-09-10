@@ -21,6 +21,11 @@ import {
 } from "./mapAdapter.ts";
 import { recordMapAttempt, type MapDiagnosticCategory } from "./mapDiagnostics.ts";
 import {
+  describeMapImageryRecovery,
+  type MapImageryPresentationContext,
+  type MapImageryStatusKind,
+} from "./mapImageryRecoveryPresentation.ts";
+import {
   buildRouteArrowIconBitmap,
   ROUTE_ARROW_ICON_ID,
   ROUTE_ARROW_ICON_PIXEL_RATIO,
@@ -477,22 +482,30 @@ export interface RouteFeatureOverlay {
   onSelectRouteFeature: (id: string) => void;
 }
 
-/** The three MapView-owned imagery states that are both terminal (never
- * silently self-heals from waiting alone, unlike the transient "imagery
- * delayed" banner) and retryable (each currently pairs with a "Retry map
- * imagery" action): loadState==="load-error" (fatal — even the local
- * fallback failed), tileErrorMessage!==null (a post-load tile failure),
- * and usingFallbackStyle&&ready (showing the plain local fallback).
+/** The MapView-owned imagery states a host may be asked to present. Three
+ * are terminal (never silently self-heal from waiting alone) and retryable:
+ * loadState==="load-error" (fatal — even the local fallback failed),
+ * tileErrorMessage!==null (a post-load tile failure), and
+ * usingFallbackStyle&&ready (showing the plain local fallback).
+ *
+ * Backlog item 108 added a fourth, "delayed" — the transient, non-retryable
+ * slow-imagery state item 96 already gates behind its own presentation
+ * grace period. Item 83's original note that the transient states are
+ * "deliberately never represented here" no longer holds, and has been
+ * rewritten rather than left contradicting the code: during active Route
+ * riding and free roam the status card, not the map, is where every
+ * imagery message belongs, so the delayed state has to be able to reach it.
+ * MapView's own brief initial "Loading map…" phase is still not a member —
+ * item 108's own state table asks for no status-card row at all during it,
+ * so a kind for it would exist only to be ignored.
+ *
  * Reported via onImageryStatusChange only while that prop is supplied —
- * null means none of the three is active right now. The two transient,
- * non-retryable states (initial loading and "imagery delayed") are
- * deliberately never represented here; they always stay in MapView's own
- * in-map overlay regardless of onImageryStatusChange. Carries no message
- * text, error object, URL or provider detail — the receiving UI owns its
- * own copy per kind (see mapImageryRecoveryPresentation.ts), so a raw
- * MapLibre error can never leak into a rider-facing component. */
+ * null means none of the four is active right now. Carries no message text,
+ * error object, URL or provider detail — copy per kind lives in
+ * mapImageryRecoveryPresentation.ts, so a raw MapLibre error can never leak
+ * into a rider-facing component. */
 export interface MapImageryRecoveryStatus {
-  kind: "load-error" | "tile-error" | "fallback";
+  kind: MapImageryStatusKind;
 }
 
 /** An explicit "retry map imagery" command — mirrors OrientNorthCameraTarget
@@ -646,17 +659,39 @@ export interface MapViewProps {
    * (the default) leaves both the macro and selected-feature sources
    * empty. See RouteFeatureOverlay's own doc comment. */
   routeFeatureOverlay?: RouteFeatureOverlay;
-  /** Backlog item 83: when supplied, MapView suppresses its own in-overlay
+  /** Backlog item 83, extended by item 108: when supplied, MapView
+   * suppresses EVERY one of its own in-overlay imagery messages — the three
    * terminal/retryable states (map-load-error / tiles-unavailable-banner /
-   * map-fallback-banner) and reports them here instead, so an active
-   * Riding/free-roam status card can render the same explanation and Retry
-   * action in its own chrome rather than over the route. The transient,
-   * non-retryable states (initial "Loading map…" and "imagery delayed")
-   * are unaffected and always keep rendering in-map, external or not.
+   * map-fallback-banner) and, since item 108, the two transient ones
+   * (map-loading and map-imagery-delayed-banner) too — and reports what it
+   * can express as a kind here instead, so an active Riding/free-roam
+   * status card renders the whole explanation in its own chrome rather than
+   * over the route. Item 83's original note that the transient states
+   * "always keep rendering in-map, external or not" is exactly what item
+   * 108 changed, and has been rewritten rather than left stale.
+   *
+   * The brief initial "Loading map…" phase is suppressed but deliberately
+   * NOT reported: item 108's state table asks for no status-card row during
+   * it, and item 96's existing grace period — not a new timeout — is what
+   * keeps a merely slow load from flickering a row into the card.
+   *
    * Omitted (the default) preserves every existing caller's behaviour
    * unchanged, including Planning and Riding's own pre-ride/no-status-card
    * render — a deliberate per-render opt-in, not a per-screen constant. */
   onImageryStatusChange?: (status: MapImageryRecoveryStatus | null) => void;
+  /** Backlog item 108: which surrounding navigation content this map is
+   * actually showing, so the in-map imagery copy can be truthful about it.
+   * Defaults to "route-riding", which is correct for Planning, the pre-ride
+   * overview and active Route riding alike (each really does have a route
+   * on screen). FreeRoamScreen passes "free-roam", because free roam has no
+   * route — its own status card fixes the hosted copy, and this fixes the
+   * genuinely reachable UNHOSTED case: free roam's Pause control is enabled
+   * before the first fix arrives, and pausing there leaves geolocationStatus
+   * "idle" with no retained fix, so showStatusCard goes false while MapView
+   * stays mounted and renders its own banner again. Same single copy table
+   * as the status cards (mapImageryRecoveryPresentation.ts), never a second
+   * mapping. */
+  imageryCopyContext?: MapImageryPresentationContext;
   /** Backlog item 83: see ImageryRetryCommand. Deliberately NOT gated on
    * styleStructurallyReady inside MapView (unlike every other *Target prop
    * above) — the two states this exists to retry (a terminal load-error,
@@ -719,6 +754,7 @@ export function MapView({
   activeDirectionOverlay,
   routeFeatureOverlay,
   onImageryStatusChange,
+  imageryCopyContext = "route-riding",
   imageryRetryCommand = null,
   onRecoveryFramingEligible,
 }: MapViewProps) {
@@ -1039,10 +1075,19 @@ export function MapView({
   // render-time reset above).
   const slowImageryNoticeVisible =
     slowImageryNoticeEligible && elapsedForRetryToken === retryToken;
-  // Backlog item 83: one source of truth for "which terminal, retryable
-  // imagery state is active right now", reused by both the JSX suppression
-  // below and the external reporting effect further down, so the two can
-  // never disagree about mutual exclusivity.
+  // Backlog item 83: one source of truth for "which imagery state is active
+  // right now", reused by both the JSX suppression below and the external
+  // reporting effect further down, so the two can never disagree about
+  // mutual exclusivity.
+  //
+  // Backlog item 108 appended "delayed" at the LOWEST priority, derived from
+  // the existing slowImageryNoticeVisible above — deliberately not from a
+  // second timer, a second eligibility rule or a re-derivation of item 96's
+  // conditions. slowImageryNoticeEligible already requires !ready,
+  // !usingFallbackStyle and tileErrorMessage === null, so "delayed" is
+  // mutually exclusive with tile-error and fallback by construction; the
+  // load-error branch stays first regardless, so a fatal failure can never
+  // be masked by a still-pending grace timer.
   const currentImageryStatusKind: MapImageryRecoveryStatus["kind"] | "none" =
     loadState === "load-error"
       ? "load-error"
@@ -1050,7 +1095,9 @@ export function MapView({
         ? "tile-error"
         : usingFallbackStyle && ready
           ? "fallback"
-          : "none";
+          : slowImageryNoticeVisible
+            ? "delayed"
+            : "none";
   const hasExternalImageryPresentation = onImageryStatusChange !== undefined;
 
   useEffect(() => {
@@ -2443,29 +2490,36 @@ export function MapView({
           combination of loadState/styleStructurallyReady/ready/
           usingFallbackStyle/tileErrorMessage), so at most one ever
           renders here at once. Contained within the map (never resizes
-          the fixed Riding shell), positioned to clear every known
-          sibling control cluster and .ride-climb-cue — see
-          .map-status-overlay's own CSS comment for the exact offset
-          rationale. Rider-facing text is always concise and
-          non-technical; the raw MapLibre error message is still passed
-          to logError/recordMapAttempt above, so full detail remains in
-          local Diagnostics. */}
+          the fixed Riding shell) — see .map-status-overlay's own CSS
+          comment for the offset rationale. Rider-facing text is always
+          concise and non-technical; the raw MapLibre error message is
+          still passed to logError/recordMapAttempt above, so full detail
+          remains in local Diagnostics.
+
+          Backlog item 108: EVERY branch below is now suppressed while an
+          external host owns imagery presentation, so during active Route
+          riding and free roam this box renders nothing at all. Copy for
+          the four expressible kinds comes from the same
+          describeMapImageryRecovery table the status cards use, so the
+          in-map and hosted wordings cannot drift, and free roam's
+          route-free copy needed no second mapping. */}
       <div className="map-status-overlay">
-        {loadState === "loading" && !styleStructurallyReady ? (
+        {loadState === "loading" &&
+        !styleStructurallyReady &&
+        !hasExternalImageryPresentation ? (
           <div role="status" data-testid="map-loading" className="map-status-message">
             {loadTimedOut
               ? "Map is taking longer than expected to load."
               : "Loading map…"}
           </div>
         ) : null}
-        {slowImageryNoticeVisible ? (
+        {slowImageryNoticeVisible && !hasExternalImageryPresentation ? (
           <div
             role="status"
             data-testid="map-imagery-delayed-banner"
             className="map-status-message"
           >
-            Map imagery is taking longer than usual to load. Your route and position are
-            still shown.
+            {describeMapImageryRecovery("delayed", imageryCopyContext).message}
           </div>
         ) : null}
         {/* Backlog item 83: each of these three terminal, retryable states
@@ -2480,14 +2534,16 @@ export function MapView({
             "does not create a retry loop from repeated errors on the
             fallback map itself" test above), and these three conditions
             must keep rendering independently exactly as before to avoid
-            silently hiding a banner that used to show. */}
+            silently hiding a banner that used to show. Item 108 added the
+            same clause to the two transient messages above, but left this
+            independence exactly as item 83 established it. */}
         {loadState === "load-error" && !hasExternalImageryPresentation ? (
           <div
             role="alert"
             data-testid="map-load-error"
             className="map-status-message map-status-message--alert"
           >
-            Map failed to load. Check your connection and try again.
+            {describeMapImageryRecovery("load-error", imageryCopyContext).message}
             <button
               type="button"
               onClick={handleRetryImagery}
@@ -2504,7 +2560,7 @@ export function MapView({
             data-testid="tiles-unavailable-banner"
             className="map-status-message"
           >
-            Map imagery unavailable. The route and your position are still shown.
+            {describeMapImageryRecovery("tile-error", imageryCopyContext).message}
             <button
               type="button"
               onClick={handleRetryImagery}
@@ -2521,7 +2577,7 @@ export function MapView({
             data-testid="map-fallback-banner"
             className="map-status-message"
           >
-            Map imagery unavailable — showing your route on a plain background.
+            {describeMapImageryRecovery("fallback", imageryCopyContext).message}
             <button
               type="button"
               onClick={handleRetryImagery}

@@ -27,6 +27,15 @@ const ERROR: GeolocationError = {
 function buildStubMapFactory(): {
   factory: MapFactory;
   triggerLoad: () => void;
+  /** Backlog item 108: fires style.load alone, WITHOUT the subsequent
+   * load — the structurally-ready-but-imagery-incomplete state item 96's
+   * grace period gates, and the only way to reach the "delayed" kind. */
+  triggerStyleLoaded: () => void;
+  /** Backlog item 108: how many times the factory has genuinely built a
+   * map. A "Retry map imagery" press recreates the map, so this replaces
+   * the old map-loading-banner proxy, which item 108 suppresses during an
+   * active session. */
+  mapConstructionCount: () => number;
   /** Backlog item 83: mirrors RidingScreen.test.tsx's identical helper —
    * fires a post-load-shaped tile error against whichever map instance
    * was constructed most recently. */
@@ -61,7 +70,9 @@ function buildStubMapFactory(): {
     | undefined;
   const setCameraSpy = vi.fn();
   const changeZoomBySpy = vi.fn();
+  let constructionCount = 0;
   const factory: MapFactory = () => {
+    constructionCount += 1;
     const map: MapLibreLike = {
       onLoad: (listener) => {
         loadListener = listener;
@@ -114,6 +125,8 @@ function buildStubMapFactory(): {
       styleLoadedListener?.();
       loadListener?.();
     },
+    triggerStyleLoaded: () => styleLoadedListener?.(),
+    mapConstructionCount: () => constructionCount,
     triggerTileError: () => errorListener?.(),
     triggerSourceData: (info) => sourceDataListener?.(info),
     triggerUserCameraInteraction: () => userCameraInteractionListener?.(),
@@ -301,10 +314,19 @@ describe("FreeRoamScreen", () => {
         name: "Retry map imagery",
       });
 
+      const constructionsBeforeRetry = map.mapConstructionCount();
       await user.click(retryButton);
 
-      expect(await screen.findByTestId("map-loading")).toBeInTheDocument();
+      // Backlog item 108 replaced this test's old proxy for "a genuine
+      // retry happened" — the in-map map-loading banner — because an
+      // active free-roam session now suppresses every in-map imagery
+      // message. Counting real map constructions proves the same thing
+      // more directly, and the suppression itself is asserted below.
+      await waitFor(() => {
+        expect(map.mapConstructionCount()).toBeGreaterThan(constructionsBeforeRetry);
+      });
       expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+      expect(screen.queryByTestId("map-loading")).toBeNull();
 
       act(() => {
         map.triggerLoad();
@@ -657,5 +679,142 @@ describe("FreeRoamScreen", () => {
       unmount();
       expect(onRidingActiveChange).toHaveBeenLastCalledWith(false);
     });
+  });
+});
+
+describe("FreeRoamScreen: hosted imagery status and route-free copy (backlog item 108)", () => {
+  it("shows the slow-imagery row in the status card, with position-only wording and nothing over the map", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const fake = buildFakeGeolocationSource();
+      const map = buildStubMapFactory();
+      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      act(() => {
+        fake.watches[0]?.emitFix(SAMPLE_FIX);
+      });
+
+      act(() => {
+        map.triggerStyleLoaded();
+      });
+      act(() => {
+        vi.advanceTimersByTime(1_999);
+      });
+      expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+
+      const row = await screen.findByTestId("map-imagery-delayed-banner");
+      expect(row.closest(".ride-status-card")).not.toBeNull();
+      expect(row.closest(".map-status-overlay")).toBeNull();
+      expect(row).toHaveTextContent(
+        "Map imagery is taking longer than usual to load. Your position is still shown.",
+      );
+      expect(row.textContent).not.toMatch(/route/i);
+      expect(screen.queryByTestId("retry-map-imagery-button")).toBeNull();
+      expect(
+        screen.getByTestId("map-container").querySelector(".map-status-message"),
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the slow-imagery row while imagery stays delayed, with no fixed disappearance timeout", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const fake = buildFakeGeolocationSource();
+      const map = buildStubMapFactory();
+      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      act(() => {
+        fake.watches[0]?.emitFix(SAMPLE_FIX);
+      });
+      act(() => {
+        map.triggerStyleLoaded();
+      });
+      act(() => {
+        vi.advanceTimersByTime(2_000);
+      });
+      const row = await screen.findByTestId("map-imagery-delayed-banner");
+      // Anchored to the hosted row specifically — the in-map banner reuses
+      // this same test id, so without this the assertions below would also
+      // be satisfied by the pre-item-108 in-map presentation.
+      expect(row.closest(".ride-status-card")).not.toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(600_000);
+      });
+      const persisted = screen.getByTestId("map-imagery-delayed-banner");
+      expect(persisted.closest(".ride-status-card")).not.toBeNull();
+      expect(screen.getAllByTestId("map-imagery-delayed-banner")).toHaveLength(1);
+
+      act(() => {
+        map.triggerLoad();
+      });
+      await waitFor(() => {
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+      });
+      expect(document.querySelector(".ride-status-card-imagery-row")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("uses position-only wording for a mid-session tile error, never claiming a route", () => {
+    const fake = buildFakeGeolocationSource();
+    const map = buildStubMapFactory();
+    render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+    act(() => {
+      fake.watches[0]?.emitFix(SAMPLE_FIX);
+    });
+    act(() => {
+      map.triggerLoad();
+    });
+    act(() => {
+      map.triggerTileError();
+    });
+
+    const banner = screen.getByTestId("tiles-unavailable-banner");
+    expect(banner).toHaveTextContent(
+      "Map imagery unavailable. Your position is still shown.",
+    );
+    expect(banner.textContent).not.toMatch(/route/i);
+  });
+
+  // The UNHOSTED path is genuinely reachable in free roam, which is why
+  // MapView needs imageryCopyContext at all rather than the status card
+  // alone being corrected: Pause is enabled before the first fix arrives,
+  // and pausing then leaves geolocationStatus "idle" with no retained fix,
+  // so showStatusCard goes false while MapView stays mounted.
+  it("keeps position-only wording when the status card is absent, after pausing before any fix arrives", async () => {
+    const user = userEvent.setup();
+    const fake = buildFakeGeolocationSource();
+    const map = buildStubMapFactory();
+    render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+
+    // No fix has ever arrived, so pausing leaves the card with nothing to
+    // show and it unmounts entirely.
+    await user.click(screen.getByRole("button", { name: "Pause" }));
+    await waitFor(() => {
+      expect(document.querySelector(".ride-status-card")).toBeNull();
+    });
+
+    act(() => {
+      map.triggerLoad();
+    });
+    act(() => {
+      map.triggerTileError();
+    });
+
+    const banner = await screen.findByTestId("tiles-unavailable-banner");
+    // Back inside the map, because there is no host to relocate it to...
+    expect(banner.closest(".map-status-overlay")).not.toBeNull();
+    expect(banner.closest(".ride-status-card")).toBeNull();
+    // ...but still truthful about what free roam actually shows.
+    expect(banner).toHaveTextContent(
+      "Map imagery unavailable. Your position is still shown.",
+    );
+    expect(banner.textContent).not.toMatch(/route/i);
   });
 });

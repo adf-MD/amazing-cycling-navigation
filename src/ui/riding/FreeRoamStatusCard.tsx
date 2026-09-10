@@ -1,7 +1,7 @@
 import type { MapImageryRecoveryStatus } from "../../map/MapView.tsx";
 import { formatGpsStatusLine } from "./rideStatusText.ts";
 import { ConnectivityIcon } from "./ConnectivityIcon.tsx";
-import { describeMapImageryRecovery } from "./mapImageryRecoveryPresentation.ts";
+import { describeMapImageryRecovery } from "../../map/mapImageryRecoveryPresentation.ts";
 import {
   RidingWakeLockControl,
   type RidingWakeLockControlProps,
@@ -67,8 +67,12 @@ export function FreeRoamStatusCard({
   wakeLock,
 }: FreeRoamStatusCardProps) {
   const topLabel = freeRoamTrackingLabel(liveStatus, geolocationErrorMessage !== null);
+  // Backlog item 108: free roam has no route, so it must never inherit
+  // Route riding's "the route ... is still shown" wording — the shared
+  // table below resolves position-only copy from this context argument
+  // rather than either card carrying its own copy of the mapping.
   const imageryRecoveryPresentation = imageryRecoveryStatus
-    ? describeMapImageryRecovery(imageryRecoveryStatus.kind)
+    ? describeMapImageryRecovery(imageryRecoveryStatus.kind, "free-roam")
     : null;
 
   return (
@@ -108,17 +112,27 @@ export function FreeRoamStatusCard({
             imageryRecoveryPresentation.role === "alert"
               ? " ride-status-card-imagery-row--alert"
               : ""
+          }${
+            imageryRecoveryPresentation.retryable
+              ? ""
+              : " ride-status-card-imagery-row--pending"
           }`}
         >
           <span>{imageryRecoveryPresentation.message}</span>
-          <button
-            type="button"
-            onClick={onRetryImagery}
-            data-testid="retry-map-imagery-button"
-            className="map-status-retry-button"
-          >
-            Retry map imagery
-          </button>
+          {/* Backlog item 108: the transient "delayed" kind is deliberately
+           * non-actionable — imagery is still in flight, so a Retry would
+           * only restart a request that has not failed. The three terminal
+           * kinds keep the Retry action item 83 gave them, unchanged. */}
+          {imageryRecoveryPresentation.retryable ? (
+            <button
+              type="button"
+              onClick={onRetryImagery}
+              data-testid="retry-map-imagery-button"
+              className="map-status-retry-button"
+            >
+              Retry map imagery
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>

@@ -441,6 +441,128 @@ test.describe("390×844 phone viewport", () => {
     await expectClimbCueTextFullyReadable(page);
   });
 
+  /**
+   * Backlog item 108. The cue used to be pinned to the FULL control-safe
+   * span via `right: 64px`, whatever it held. Measured on this exact
+   * viewport before the change: the map is 358px wide, the span 230px, the
+   * text block 206px wide holding at most ~120px of content, and the
+   * View climb action — 112.5px, never shrinkable — was pushed onto its own
+   * line by item 82's flex-wrap safety net, which fired on every render
+   * here rather than only at extremes. The cue measured 230x91.
+   *
+   * The fix removes the wasted WIDTH, not the height: the height is pinned
+   * by the action's own 44px touch target and is deliberately unchanged.
+   * Measured after: 144x91. These assertions therefore test reduced width
+   * and continued non-intersection with the controls, NOT a shorter cue.
+   *
+   * Placing the action beside the text at this width was measured to be
+   * impossible without shrinking type or shortening a label: ~120px of text
+   * plus 112.5px of button plus padding needs ~245px inside a box whose
+   * absolute control-safe maximum is 246px.
+   */
+  test("the Map climb cue no longer spans the full control-safe width, covering materially less of the route ahead (backlog item 108)", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({
+      latitude: FIXTURE_LAT,
+      longitude: lonAtMetresAlongFixture(CLIMB_1_MID_METRES),
+      accuracy: 5,
+    });
+
+    await installLocalMapStyle(page);
+    await page.goto("/");
+    await importAndStartRiding(page);
+
+    const cueButton = page.getByRole("button", { name: "View climb" });
+    await expect(cueButton).toBeVisible({ timeout: 15_000 });
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    const cue = page.locator(".ride-climb-cue");
+    const zoomControls = page.locator(".ride-map-zoom-controls");
+    const cameraControls = page.locator(".ride-map-camera-controls");
+
+    const [mapBox, cueBox, zoomBox, cameraBox] = await Promise.all([
+      mapContainer.boundingBox(),
+      cue.boundingBox(),
+      zoomControls.boundingBox(),
+      cameraControls.boundingBox(),
+    ]);
+    if (!mapBox || !cueBox || !zoomBox || !cameraBox) {
+      throw new Error("expected every located element to have a bounding box");
+    }
+
+    // The full control-safe span the cue used to occupy unconditionally:
+    // 8px inset + 48px button column + 8px gap, on each side.
+    const fullControlSafeSpan = mapBox.width - 128;
+
+    // The primary discriminating claim. 40px of margin sits comfortably
+    // between the measured 144px and the 230px the parent produced.
+    expect(cueBox.width).toBeLessThanOrEqual(fullControlSafeSpan - 40);
+
+    // The left anchor is unchanged and still the control-safe edge, never
+    // the map's outer edge.
+    expect(cueBox.x - mapBox.x).toBeCloseTo(64, 0);
+
+    // Reclaimed route-ahead space, stated as a real gap rather than only
+    // as an absence of overlap: the parent left 8px here.
+    const gapToCameraControls = cameraBox.x - (cueBox.x + cueBox.width);
+    expect(gapToCameraControls).toBeGreaterThanOrEqual(40);
+
+    // Unchanged guarantees.
+    expect(isFullyWithin(cueBox, mapBox)).toBe(true);
+    expect(intersects(cueBox, zoomBox)).toBe(false);
+    expect(intersects(cueBox, cameraBox)).toBe(false);
+    const cueButtonBox = await cueButton.boundingBox();
+    if (!cueButtonBox) throw new Error("expected the View climb button to have a box");
+    expect(cueButtonBox.width).toBeGreaterThanOrEqual(44);
+    expect(cueButtonBox.height).toBeGreaterThanOrEqual(44);
+    await expectClimbCueTextFullyReadable(page);
+
+    // Both text lines stay on one line each at this width. NOTE: this was
+    // already true on the parent implementation for this fixture's own
+    // short distances, so it is a compatibility guard here, not
+    // fail-first evidence — the width assertion above carries that.
+    const [titleLines, detailLines] = await page.evaluate(() => {
+      // Counts real line boxes as the number of DISTINCT rect tops within
+      // a Range over the text content. Two refinements matter here:
+      // getComputedStyle(...).lineHeight resolves to "normal", so a
+      // height/line-height ratio would be NaN; and the detail is rendered
+      // from two adjacent JSX text nodes ("{distance}" and " remaining"),
+      // which yield one rect EACH on the same line — so a raw rect count
+      // would report two lines for a single line of text.
+      const lineCount = (selector: string): number => {
+        const element = document.querySelector(selector);
+        if (!(element instanceof HTMLElement)) return Number.NaN;
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const tops = new Set(
+          Array.from(range.getClientRects(), (rect) => Math.round(rect.top)),
+        );
+        return tops.size;
+      };
+      return [lineCount(".ride-climb-cue-title"), lineCount(".ride-climb-cue-detail")];
+    });
+    expect(titleLines).toBe(1);
+    expect(detailLines).toBe(1);
+
+    // Width stress: the longest remaining-distance string formatDistanceKm
+    // can realistically produce for a single recognised climb. Written
+    // straight into the live element and measured synchronously — a
+    // genuine layout stress of the real node, not a claim about app state.
+    await page.evaluate(() => {
+      const detail = document.querySelector(".ride-climb-cue-detail");
+      if (detail) detail.textContent = "23.4 km remaining";
+    });
+    const stressedCueBox = await cue.boundingBox();
+    if (!stressedCueBox) throw new Error("expected the cue to have a box under stress");
+    expect(stressedCueBox.width).toBeLessThanOrEqual(fullControlSafeSpan - 40);
+    expect(intersects(stressedCueBox, cameraBox)).toBe(false);
+    expect(intersects(stressedCueBox, zoomBox)).toBe(false);
+    expect(isFullyWithin(stressedCueBox, mapBox)).toBe(true);
+  });
+
   test("the Map climb cue remains fully readable and contained at short landscape (backlog item 82)", async ({
     page,
     context,
@@ -466,6 +588,35 @@ test.describe("390×844 phone viewport", () => {
     if (!cueButtonBox) throw new Error("expected View climb to have a bounding box");
     expect(cueButtonBox.width).toBeGreaterThanOrEqual(44);
     expect(cueButtonBox.height).toBeGreaterThanOrEqual(44);
+
+    // Backlog item 108: controlled reflow is allowed here — the cue widens
+    // to its safe maximum and its content wraps — but it must still never
+    // reach either control cluster.
+    const [cueBox, zoomBox, cameraBox, mapBox] = await Promise.all([
+      page.locator(".ride-climb-cue").boundingBox(),
+      page.locator(".ride-map-zoom-controls").boundingBox(),
+      page.locator(".ride-map-camera-controls").boundingBox(),
+      page.locator('[data-testid="map-container"]').boundingBox(),
+    ]);
+    if (!cueBox || !zoomBox || !cameraBox || !mapBox) {
+      throw new Error("expected every located element to have a bounding box");
+    }
+    expect(intersects(cueBox, zoomBox)).toBe(false);
+    expect(intersects(cueBox, cameraBox)).toBe(false);
+    // Horizontal containment specifically: it never widens past the
+    // control-safe span, whatever the text does inside it.
+    expect(cueBox.x).toBeGreaterThanOrEqual(mapBox.x);
+    expect(cueBox.x + cueBox.width).toBeLessThanOrEqual(mapBox.x + mapBox.width);
+
+    // Deliberately NOT asserted: full vertical containment within the map.
+    // At 200% root text the immersive shell compresses the map to roughly
+    // its own 160px floor while the cue's wrapped content needs more than
+    // that, so the cue can extend past the map's bottom edge. Measured
+    // identically on the parent implementation (map 358x206, cue 230x206
+    // at y+8 in both), so this is a pre-existing consequence of extreme
+    // text scaling that item 108 neither introduced nor changed — item
+    // 108's own change is a no-op at this size, because the cue clamps to
+    // the same max-width the old right:64px produced.
   });
 
   test("the Map climb cue remains fully readable and contained at 200% enlarged text (backlog item 82)", async ({

@@ -800,6 +800,14 @@ test("the local fallback map style still shows the position marker and camera co
   expect(
     await fallbackBanner.evaluate((el) => el.closest(".ride-status-card") !== null),
   ).toBe(true);
+  // Backlog item 108: free roam has no route, so the shared presentation
+  // must not inherit route Riding's wording here. Before item 108 this
+  // read "showing your route on a plain background" in a mode where no
+  // route exists at all.
+  await expect(fallbackBanner).toContainText(
+    "Map imagery unavailable — showing your position on a plain background.",
+  );
+  expect((await fallbackBanner.innerText()).toLowerCase()).not.toContain("route");
   await expect(page.locator('[data-testid="map-container"] canvas')).toBeVisible();
   await expect(page.getByRole("button", { name: "Follow my location" })).toBeVisible();
   await expect(

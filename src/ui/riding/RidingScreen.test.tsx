@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RidingScreen } from "./RidingScreen.tsx";
 import { db, type StoredRideState } from "../../storage/db.ts";
@@ -189,6 +189,11 @@ function buildStubGeolocationSource(): {
 }
 
 function buildStubMapFactory(): {
+  /** Backlog item 108: how many times the factory has genuinely built a
+   * map. A "Retry map imagery" press recreates it, so this replaces the
+   * old map-loading-banner proxy, which item 108 suppresses during an
+   * active ride. */
+  mapConstructionCount: () => number;
   factory: MapFactory;
   triggerLoad: () => void;
   /** Fires only "style.load", never "load" — lets a test independently
@@ -237,7 +242,9 @@ function buildStubMapFactory(): {
   const changeZoomBySpy = vi.fn();
   const setGeoJsonSourceDataSpy = vi.fn();
   const setDistanceBadgesSpy = vi.fn();
+  let constructionCount = 0;
   const factory: MapFactory = () => {
+    constructionCount += 1;
     const map: MapLibreLike = {
       onLoad: (listener) => {
         loadListener = listener;
@@ -286,6 +293,7 @@ function buildStubMapFactory(): {
   };
   return {
     factory,
+    mapConstructionCount: () => constructionCount,
     triggerLoad: () => {
       // Real MapLibre always fires "style.load" strictly before "load" —
       // mirror that here so route/position data (now gated on style
@@ -4803,14 +4811,21 @@ describe("RidingScreen", () => {
         name: "Retry map imagery",
       });
 
+      const constructionsBeforeRetry = map.mapConstructionCount();
       await user.click(retryButton);
 
-      // The retry recreates the map — the fresh attach's own transient
-      // loading state appears in-map (never suppressed) while the old
-      // terminal row clears, exactly like the map-owned banner already
-      // does on a manual retry.
-      expect(await screen.findByTestId("map-loading")).toBeInTheDocument();
+      // The retry recreates the map and the old terminal row clears.
+      // Backlog item 108 replaced this test's previous proxy for the
+      // recreation — the in-map map-loading banner — because an active
+      // ride now suppresses every in-map imagery message and hosts them
+      // in the status card instead. Counting genuine map constructions
+      // proves the same thing more directly; the suppression itself is
+      // asserted immediately below.
+      await waitFor(() => {
+        expect(map.mapConstructionCount()).toBeGreaterThan(constructionsBeforeRetry);
+      });
       expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
+      expect(screen.queryByTestId("map-loading")).toBeNull();
 
       // The fresh attempt succeeds cleanly, with no further pan/zoom or
       // other action needed to keep the row clear.
@@ -4851,6 +4866,120 @@ describe("RidingScreen", () => {
       await waitFor(() => {
         expect(screen.queryByTestId("tiles-unavailable-banner")).toBeNull();
       });
+    });
+
+    // Backlog item 108: the transient slow-imagery state now belongs in the
+    // status card too, not over the route. Fake timers drive item 96's
+    // existing 2-second grace period — deliberately not a new timeout.
+    it("shows the slow-imagery row in the status card, and nothing over the map, once the grace period elapses mid-ride", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        const stub = buildStubGeolocationSource();
+        const map = buildStubMapFactory();
+        render(
+          <RidingScreen
+            route={route}
+            geolocationSource={stub.source}
+            mapFactory={map.factory}
+          />,
+        );
+
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+        stub.emitFix({
+          coordinate: pointAt(3),
+          accuracyMetres: 6,
+          timestampMs: 1000,
+          speedMetresPerSecond: null,
+          headingDegrees: null,
+        });
+        await screen.findByText("On route");
+
+        // Structurally ready, but imagery has not finished arriving.
+        act(() => {
+          map.triggerStyleLoaded();
+        });
+        act(() => {
+          vi.advanceTimersByTime(1_999);
+        });
+        expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+
+        act(() => {
+          vi.advanceTimersByTime(1);
+        });
+
+        const row = await screen.findByTestId("map-imagery-delayed-banner");
+        expect(row.closest(".ride-status-card")).not.toBeNull();
+        expect(row.closest(".map-status-overlay")).toBeNull();
+        expect(row).toHaveTextContent(
+          "Map imagery is taking longer than usual to load. Your route and position are still shown.",
+        );
+        // Non-actionable while imagery is merely slow.
+        expect(screen.queryByTestId("retry-map-imagery-button")).toBeNull();
+        // Nothing whatsoever is left over the route.
+        expect(
+          screen.getByTestId("map-container").querySelector(".map-status-message"),
+        ).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps the slow-imagery row for as long as imagery stays delayed, then clears it on genuine recovery", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        const stub = buildStubGeolocationSource();
+        const map = buildStubMapFactory();
+        render(
+          <RidingScreen
+            route={route}
+            geolocationSource={stub.source}
+            mapFactory={map.factory}
+          />,
+        );
+
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+        stub.emitFix({
+          coordinate: pointAt(3),
+          accuracyMetres: 6,
+          timestampMs: 1000,
+          speedMetresPerSecond: null,
+          headingDegrees: null,
+        });
+        await screen.findByText("On route");
+
+        act(() => {
+          map.triggerStyleLoaded();
+        });
+        act(() => {
+          vi.advanceTimersByTime(2_000);
+        });
+        const row = await screen.findByTestId("map-imagery-delayed-banner");
+        // Anchored to the hosted row specifically. The in-map banner reuses
+        // this same test id, so without this the assertions below would
+        // also be satisfied by the pre-item-108 in-map presentation.
+        expect(row.closest(".ride-status-card")).not.toBeNull();
+
+        // No fixed disappearance timeout may conceal a continuing problem.
+        act(() => {
+          vi.advanceTimersByTime(600_000);
+        });
+        const persisted = screen.getByTestId("map-imagery-delayed-banner");
+        expect(persisted).toBeInTheDocument();
+        expect(persisted.closest(".ride-status-card")).not.toBeNull();
+        expect(screen.getAllByTestId("map-imagery-delayed-banner")).toHaveLength(1);
+
+        act(() => {
+          map.triggerLoad();
+        });
+        await waitFor(() => {
+          expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+        });
+        expect(document.querySelector(".ride-status-card-imagery-row")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("keeps the tiles-unavailable banner inside the map's own overlay before Start riding, when there is no status card to host it", async () => {

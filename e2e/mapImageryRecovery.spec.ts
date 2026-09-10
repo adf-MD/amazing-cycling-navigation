@@ -945,35 +945,28 @@ test("being offline alone, with no genuine tile/style failure, never shows a map
 // is), and the notice clearing once imagery genuinely completes. Kept as
 // one test rather than several, since later steps depend on state
 // established by earlier ones within the same held-tiles episode.
-test("route Riding: shows route/position immediately while imagery is held, delays the slow-imagery notice by its grace period (timed from map-loading's removal), and clears it once imagery is released", async ({
+/**
+ * Backlog item 108 split the previous single route-Riding test in two.
+ *
+ * The grace-period TIMING now lives in the Planning test below, because
+ * during an active ride there is no longer any in-map map-loading element
+ * to anchor a measurement to — item 108 suppresses every in-map imagery
+ * message once a status card hosts them. (The old anchor was in any case
+ * weaker than its name implied: the MutationObserver recorded "map-loading
+ * removed" on the very first mutation after navigation, while the app was
+ * still on the Routes screen with no map mounted at all. The Planning test
+ * below waits until map-loading has genuinely been SEEN before arming the
+ * removal timestamp, so it measures what this always claimed to.)
+ *
+ * This test keeps the placement, persistence and clearing behaviour, which
+ * is what item 108 actually changed.
+ */
+test("route Riding: shows route/position immediately while imagery is held, and hosts the slow-imagery notice in the status card rather than over the map", async ({
   page,
   context,
 }) => {
   await context.grantPermissions(["geolocation"]);
   await context.setGeolocation({ ...ROUTE_START, accuracy: 5 });
-
-  await page.addInitScript(() => {
-    const timestamps = {
-      mapLoadingRemovedAt: null as number | null,
-      bannerAttachedAt: null as number | null,
-    };
-    (
-      window as unknown as { __e2eGraceTimestamps: typeof timestamps }
-    ).__e2eGraceTimestamps = timestamps;
-    const observer = new MutationObserver(() => {
-      if (timestamps.mapLoadingRemovedAt === null) {
-        if (!document.querySelector('[data-testid="map-loading"]')) {
-          timestamps.mapLoadingRemovedAt = performance.now();
-        }
-      }
-      if (timestamps.bannerAttachedAt === null) {
-        if (document.querySelector('[data-testid="map-imagery-delayed-banner"]')) {
-          timestamps.bannerAttachedAt = performance.now();
-        }
-      }
-    });
-    observer.observe(document, { childList: true, subtree: true });
-  });
 
   const tiles = await installLocalMapStyleWithTileSource(page);
   tiles.holdTiles();
@@ -989,8 +982,7 @@ test("route Riding: shows route/position immediately while imagery is held, dela
     const mapContainer = page.locator('[data-testid="map-container"]');
 
     // Immediate overlays: structural readiness already lets route/
-    // position render, well before full imagery — independently of the
-    // slow-imagery notice's own timing, proven below.
+    // position render, well before full imagery.
     await expect(mapContainer).toHaveAttribute("data-route-loaded", "true");
     const coordinateCount = await mapContainer.getAttribute(
       "data-route-coordinate-count",
@@ -999,24 +991,127 @@ test("route Riding: shows route/position immediately while imagery is held, dela
     await expect(mapContainer).toHaveAttribute("data-map-ready", "false");
 
     const banner = page.getByTestId("map-imagery-delayed-banner");
-    // Still within grace shortly after structural readiness.
-    await expect(banner).not.toBeAttached();
-    // Waits for the notice to genuinely appear — a real wall-clock
-    // interval, not asserted against an exact millisecond boundary here
-    // (that is MapView.test.tsx's fake-timer suite's job).
     await expect(banner).toBeAttached({ timeout: 6_000 });
+
+    // The whole point of item 108: it is in the status card, and there is
+    // nothing at all left inside the map's own overlay.
+    expect(await banner.evaluate((el) => el.closest(".ride-status-card") !== null)).toBe(
+      true,
+    );
+    expect(
+      await banner.evaluate((el) => el.closest(".map-status-overlay") !== null),
+    ).toBe(false);
+    await expect(banner).toHaveText(
+      "Map imagery is taking longer than usual to load. Your route and position are still shown.",
+    );
+    expect(await page.locator(".map-status-overlay .map-status-message").count()).toBe(0);
+    // Slow is not a failure: no Retry is offered while imagery is still
+    // arriving, and the row is not escalated to an alert.
+    await expect(page.getByTestId("retry-map-imagery-button")).toHaveCount(0);
+    expect(await banner.getAttribute("role")).toBe("status");
+
+    // No fixed disappearance timeout may conceal a continuing problem.
+    // Sampled repeatedly across a window well beyond any plausible
+    // timeout, rather than stopping at the first successful observation.
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 4_000) {
+      await expect(banner).toBeAttached();
+      await page.waitForTimeout(400);
+    }
+
+    await tiles.releaseTiles();
+
+    await waitForMapFullyLoaded(mapContainer);
+    await expect(banner).not.toBeAttached();
+    expect(await page.locator(".ride-status-card-imagery-row").count()).toBe(0);
+  } finally {
+    await tiles.releaseTiles();
+  }
+});
+
+/**
+ * Backlog item 108 compatibility guard AND the relocated item-96 timing
+ * proof. Planning supplies no status card, so it keeps MapView's own
+ * in-map presentation — the initial "Loading map…" message, the delayed
+ * banner and the terminal banners alike — completely unchanged. That makes
+ * it the right place to measure the grace period, because map-loading's
+ * own removal genuinely corresponds to structural readiness here.
+ */
+test("Planning: keeps the slow-imagery notice inside the map and delays it by the grace period, measured from map-loading's own removal", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ ...ROUTE_START, accuracy: 5 });
+
+  await page.addInitScript(() => {
+    const timestamps = {
+      mapLoadingSeen: false,
+      mapLoadingRemovedAt: null as number | null,
+      bannerAttachedAt: null as number | null,
+    };
+    (
+      window as unknown as { __e2eGraceTimestamps: typeof timestamps }
+    ).__e2eGraceTimestamps = timestamps;
+    const observer = new MutationObserver(() => {
+      const loadingPresent =
+        document.querySelector('[data-testid="map-loading"]') !== null;
+      if (loadingPresent) {
+        timestamps.mapLoadingSeen = true;
+      } else if (timestamps.mapLoadingSeen && timestamps.mapLoadingRemovedAt === null) {
+        // Only armed once the element has genuinely been observed, so the
+        // pre-map screens can never satisfy this by simply not having one.
+        timestamps.mapLoadingRemovedAt = performance.now();
+      }
+      if (
+        timestamps.bannerAttachedAt === null &&
+        document.querySelector('[data-testid="map-imagery-delayed-banner"]')
+      ) {
+        timestamps.bannerAttachedAt = performance.now();
+      }
+    });
+    observer.observe(document, { childList: true, subtree: true });
+  });
+
+  const tiles = await installLocalMapStyleWithTileSource(page);
+  tiles.holdTiles();
+
+  await page.goto("/");
+  try {
+    await page.getByRole("button", { name: "Plan" }).click();
+    await expect.poll(() => tiles.heldTileRequestCount()).toBeGreaterThan(0);
+
+    const banner = page.getByTestId("map-imagery-delayed-banner");
+    await expect(banner).toBeAttached({ timeout: 6_000 });
+
+    // Unchanged by item 108: still the map's own overlay, never a card.
+    expect(
+      await banner.evaluate((el) => el.closest(".map-status-overlay") !== null),
+    ).toBe(true);
+    expect(await banner.evaluate((el) => el.closest(".ride-status-card") !== null)).toBe(
+      false,
+    );
+    // Planning genuinely has a route being planned, so it keeps the
+    // route-and-position wording.
+    await expect(banner).toHaveText(
+      "Map imagery is taking longer than usual to load. Your route and position are still shown.",
+    );
 
     const timestamps = await page.evaluate(
       () =>
         (
           window as unknown as {
             __e2eGraceTimestamps: {
+              mapLoadingSeen: boolean;
               mapLoadingRemovedAt: number | null;
               bannerAttachedAt: number | null;
             };
           }
         ).__e2eGraceTimestamps,
     );
+    // Proves the anchor was genuinely armed by a real in-map loading
+    // message, which is itself the Planning compatibility claim.
+    expect(timestamps.mapLoadingSeen).toBe(true);
     expect(timestamps.mapLoadingRemovedAt).not.toBeNull();
     expect(timestamps.bannerAttachedAt).not.toBeNull();
     const graceDurationMs =
@@ -1029,8 +1124,52 @@ test("route Riding: shows route/position immediately while imagery is held, dela
     expect(graceDurationMs).toBeLessThan(5_000);
 
     await tiles.releaseTiles();
+    await waitForMapFullyLoaded(page.locator('[data-testid="map-container"]'));
+    await expect(banner).not.toBeAttached();
+  } finally {
+    await tiles.releaseTiles();
+  }
+});
 
-    await waitForMapFullyLoaded(mapContainer);
+/**
+ * Backlog item 108: free roam hosts imagery status in its own card too,
+ * and must never claim a route it does not have.
+ */
+test("free roam: hosts the slow-imagery notice in the status card, with position-only wording and nothing over the map", async ({
+  page,
+  context,
+}) => {
+  const tiles = await installLocalMapStyleWithTileSource(page);
+  tiles.holdTiles();
+
+  try {
+    await startFreeRoam(page, context);
+
+    await expect.poll(() => tiles.heldTileRequestCount()).toBeGreaterThan(0);
+
+    const banner = page.getByTestId("map-imagery-delayed-banner");
+    await expect(banner).toBeAttached({ timeout: 6_000 });
+
+    expect(await banner.evaluate((el) => el.closest(".ride-status-card") !== null)).toBe(
+      true,
+    );
+    expect(
+      await banner.evaluate((el) => el.closest(".map-status-overlay") !== null),
+    ).toBe(false);
+    await expect(banner).toHaveText(
+      "Map imagery is taking longer than usual to load. Your position is still shown.",
+    );
+    // Free roam has no route, so the copy must not mention one.
+    expect((await banner.innerText()).toLowerCase()).not.toContain("route");
+    expect(await page.locator(".map-status-overlay .map-status-message").count()).toBe(0);
+    await expect(page.getByTestId("retry-map-imagery-button")).toHaveCount(0);
+
+    // Connectivity stays a separate, single statement.
+    await expect(page.locator(".ride-status-card-connectivity")).toHaveCount(1);
+    expect((await banner.innerText()).toLowerCase()).not.toContain("offline");
+
+    await tiles.releaseTiles();
+    await waitForMapFullyLoaded(page.locator('[data-testid="map-container"]'));
     await expect(banner).not.toBeAttached();
   } finally {
     await tiles.releaseTiles();

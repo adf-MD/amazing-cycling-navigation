@@ -207,8 +207,11 @@ describe("FreeRoamStatusCard", () => {
     );
     const row = screen.getByTestId("tiles-unavailable-banner");
     expect(row).toHaveAttribute("role", "status");
+    // Backlog item 108 corrected this string. Free roam has no route, so
+    // item 83's shared route wording was simply untrue here — this
+    // assertion previously encoded that defect.
     expect(row).toHaveTextContent(
-      "Map imagery unavailable. The route and your position are still shown.",
+      "Map imagery unavailable. Your position is still shown.",
     );
   });
 
@@ -348,5 +351,148 @@ describe("FreeRoamStatusCard", () => {
       1,
     );
     expect(screen.getAllByTestId("tiles-unavailable-banner")).toHaveLength(1);
+  });
+});
+
+describe("FreeRoamStatusCard: the transient delayed imagery row (backlog item 108)", () => {
+  it("shows a position-only slow-loading row, never claiming a route it does not have", () => {
+    render(
+      <FreeRoamStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "delayed" }}
+        onRetryImagery={noop}
+      />,
+    );
+    const row = screen.getByTestId("map-imagery-delayed-banner");
+    expect(row).toHaveAttribute("role", "status");
+    expect(row).toHaveTextContent(
+      "Map imagery is taking longer than usual to load. Your position is still shown.",
+    );
+    expect(row.textContent).not.toMatch(/route/i);
+  });
+
+  it("offers no Retry action while imagery is merely slow, and marks the row as pending rather than alarming", () => {
+    render(
+      <FreeRoamStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "delayed" }}
+        onRetryImagery={noop}
+      />,
+    );
+    expect(screen.queryByTestId("retry-map-imagery-button")).toBeNull();
+    const row = screen.getByTestId("map-imagery-delayed-banner");
+    expect(row).toHaveClass("ride-status-card-imagery-row--pending");
+    expect(row).not.toHaveClass("ride-status-card-imagery-row--alert");
+  });
+
+  it("never repeats the connectivity state inside the imagery message", () => {
+    render(
+      <FreeRoamStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={false}
+        imageryRecoveryStatus={{ kind: "delayed" }}
+        onRetryImagery={noop}
+      />,
+    );
+    // The card's own indicator is the single place connectivity is stated.
+    expect(screen.getByText("Offline")).toBeInTheDocument();
+    const row = screen.getByTestId("map-imagery-delayed-banner");
+    expect(row.textContent).not.toMatch(/offline/i);
+    expect(screen.getAllByText(/Offline/)).toHaveLength(1);
+  });
+
+  it("replaces the delayed row with a terminal one rather than showing both", () => {
+    const { rerender } = render(
+      <FreeRoamStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "delayed" }}
+        onRetryImagery={noop}
+      />,
+    );
+    expect(screen.getByTestId("map-imagery-delayed-banner")).toBeInTheDocument();
+
+    rerender(
+      <FreeRoamStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "tile-error" }}
+        onRetryImagery={noop}
+      />,
+    );
+
+    expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+    expect(screen.getAllByTestId("tiles-unavailable-banner")).toHaveLength(1);
+    // Retry returns as soon as it is meaningful again.
+    expect(screen.getByTestId("retry-map-imagery-button")).toBeInTheDocument();
+  });
+
+  it("leaves no imagery row behind once imagery recovers", () => {
+    const { rerender } = render(
+      <FreeRoamStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "delayed" }}
+        onRetryImagery={noop}
+      />,
+    );
+    rerender(
+      <FreeRoamStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
+      />,
+    );
+    expect(screen.queryByTestId("map-imagery-delayed-banner")).toBeNull();
+    expect(document.querySelector(".ride-status-card-imagery-row")).toBeNull();
+  });
+
+  it("uses position-only wording for the two other route-shaped kinds as well", () => {
+    const { rerender } = render(
+      <FreeRoamStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "fallback" }}
+        onRetryImagery={noop}
+      />,
+    );
+    expect(screen.getByTestId("map-fallback-banner")).toHaveTextContent(
+      "Map imagery unavailable — showing your position on a plain background.",
+    );
+
+    rerender(
+      <FreeRoamStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "load-error" }}
+        onRetryImagery={noop}
+      />,
+    );
+    // The terminal load-error message names neither a route nor a position,
+    // so it is deliberately identical in both modes.
+    expect(screen.getByTestId("map-load-error")).toHaveTextContent(
+      "Map failed to load. Check your connection and try again.",
+    );
   });
 });
