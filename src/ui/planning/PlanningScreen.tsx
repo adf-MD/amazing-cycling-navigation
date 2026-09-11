@@ -60,7 +60,9 @@ import { getPlanningPreferences } from "../../storage/planningPreferencesReposit
 import { saveRoute } from "../../storage/routesRepository.ts";
 import type { EditCopyOperation } from "../../storage/mapping.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
+import { CrosshairIcon } from "../shared/CrosshairIcon.tsx";
 import { NorthArrowIcon } from "../shared/NorthArrowIcon.tsx";
+import { ZoomIcon } from "../shared/ZoomIcon.tsx";
 import { downloadTextFile } from "../shared/downloadTextFile.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { describeProviderKeyStatus } from "../settings/providerKeyStatus.ts";
@@ -1753,7 +1755,7 @@ export function PlanningScreen({
             onClick={handleZoomIn}
             aria-label="Zoom in"
           >
-            +
+            <ZoomIcon direction="in" />
           </button>
           <button
             type="button"
@@ -1761,7 +1763,7 @@ export function PlanningScreen({
             onClick={handleZoomOut}
             aria-label="Zoom out"
           >
-            −
+            <ZoomIcon direction="out" />
           </button>
         </div>
         <div className="planning-map-controls">
@@ -1772,7 +1774,7 @@ export function PlanningScreen({
             disabled={locateStatus === "locating"}
             aria-label="Locate me"
           >
-            {locateStatus === "locating" ? "Locating…" : "⌖"}
+            {locateStatus === "locating" ? "Locating…" : <CrosshairIcon />}
           </button>
           <button
             type="button"
@@ -1781,7 +1783,10 @@ export function PlanningScreen({
             aria-label="North-up, top-down view"
             aria-pressed={isNorthUpTopDown}
           >
-            <NorthArrowIcon bearingDegrees={settledOrientation?.bearingDegrees ?? null} />
+            <NorthArrowIcon
+              bearingDegrees={settledOrientation?.bearingDegrees ?? null}
+              isPressed={isNorthUpTopDown}
+            />
           </button>
         </div>
         <div className="planning-map-status-overlay">

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 import { NorthArrowIcon } from "./NorthArrowIcon.tsx";
+import { DART_PATH, NORTH_LETTER_PATH } from "./northArrowGeometry.ts";
 
 /** The rendered glyph, located the same way a screen-level test would —
  * by role-independent structure rather than a test id, since the icon is
@@ -111,8 +112,122 @@ describe("NorthArrowIcon", () => {
   });
 
   it("renders at the default size, overridable for a different control", () => {
-    expect(renderArrow(0)).toHaveAttribute("width", "22");
+    // 38px, not item 110's original 22px: the upright letter must fit the
+    // largest disc inside the dart, which is what the box size buys.
+    expect(renderArrow(0)).toHaveAttribute("width", "38");
+    expect(renderArrow(0)).toHaveAttribute("height", "38");
     const { container } = render(<NorthArrowIcon bearingDegrees={0} sizePx={30} />);
     expect(container.querySelector("svg")).toHaveAttribute("width", "30");
+  });
+  // ---- item 110 presentation follow-up ----
+
+  /** The two drawn shapes, located by role in the markup rather than by
+   * index, so a reordering cannot silently swap what is asserted. */
+  function shapesOf(bearingDegrees: number | null, isPressed = false) {
+    const { container } = render(
+      <NorthArrowIcon bearingDegrees={bearingDegrees} isPressed={isPressed} />,
+    );
+    const svg = container.querySelector("svg");
+    const dart = container.querySelector(`path[d="${DART_PATH}"]`);
+    const letter = container.querySelector(`path[d="${NORTH_LETTER_PATH}"]`);
+    if (!svg || !dart || !letter) {
+      throw new Error("expected the icon to render both the dart and the letter");
+    }
+    const letterGroup = letter.parentElement;
+    if (letterGroup?.tagName.toLowerCase() !== "g") {
+      throw new Error("expected the letter to sit in its own <g>");
+    }
+    return { svg, dart, letter, letterGroup };
+  }
+
+  describe("the upright N (item 110 presentation follow-up)", () => {
+    it("keeps the shipped dart silhouette exactly", () => {
+      // Asserted against the literal shape, not against the constant the
+      // component draws from — comparing a constant with itself would
+      // follow any edit to it and catch nothing. The follow-up may
+      // enlarge and annotate the pointer; it may not reshape it.
+      expect(shapesOf(0).dart).toHaveAttribute("d", "M12 3 L19 20.5 L12 16 L5 20.5 Z");
+    });
+
+    it("draws the letter, rather than setting it as text", () => {
+      const { svg, letter } = shapesOf(0);
+      // Text would be font-dependent — the very inconsistency this
+      // follow-up removes — and would also show up as button text.
+      expect(letter.tagName.toLowerCase()).toBe("path");
+      expect(svg.querySelector("text")).toBeNull();
+      expect(svg.textContent).toBe("");
+    });
+
+    it("counter-rotates the letter so it stays upright as the dart turns", () => {
+      for (const bearing of [45, 90, 137, 180, 270, 359]) {
+        const { svg, letterGroup } = shapesOf(bearing);
+        // The outer svg still carries item 110's own rotation, unchanged...
+        expect(svg.style.transform).toBe(`rotate(-${String(bearing)}deg)`);
+        // ...and the group cancels it about the identical centre.
+        expect(letterGroup).toHaveAttribute(
+          "transform",
+          `rotate(${String(bearing)} 12 12)`,
+        );
+      }
+    });
+
+    it("normalises a negative bearing into the same cancelling pair", () => {
+      const { svg, letterGroup } = shapesOf(-90);
+      expect(svg.style.transform).toBe("rotate(-270deg)");
+      expect(letterGroup).toHaveAttribute("transform", "rotate(270 12 12)");
+    });
+
+    it("applies no rotation at all when the bearing is unknown or north-up", () => {
+      for (const bearing of [0, null, Number.NaN]) {
+        const { svg, letterGroup } = shapesOf(bearing);
+        expect(svg.style.transform).toBe("rotate(0deg)");
+        expect(letterGroup).toHaveAttribute("transform", "rotate(0 12 12)");
+      }
+    });
+
+    it("inverts the colour pairing with the control's pressed state", () => {
+      // Idle: dark pointer (currentColor) with a light letter.
+      const idle = shapesOf(0, false);
+      expect(idle.svg).toHaveAttribute("fill", "currentColor");
+      expect(idle.letter).toHaveAttribute("fill", "var(--colour-bg)");
+
+      // Pressed: the control paints white on accent, so the pointer
+      // becomes light and the letter takes the accent.
+      const pressed = shapesOf(0, true);
+      expect(pressed.svg).toHaveAttribute("fill", "currentColor");
+      expect(pressed.letter).toHaveAttribute("fill", "var(--colour-accent)");
+    });
+
+    it("resolves its own colours, so no call site passes one", () => {
+      // The component takes a semantic flag only. Guards against the
+      // three screens drifting apart on colour.
+      const pressed = shapesOf(0, true);
+      const idle = shapesOf(0, false);
+      expect(pressed.letter.getAttribute("fill")).not.toBe(
+        idle.letter.getAttribute("fill"),
+      );
+    });
+
+    it("gives the letter no background shape of its own", () => {
+      const { svg, letterGroup } = shapesOf(90);
+      // No badge, disc or halo: the letter's group holds exactly the
+      // one letter path and nothing else.
+      expect(letterGroup.children).toHaveLength(1);
+      expect(svg.querySelectorAll("circle")).toHaveLength(0);
+      expect(svg.querySelectorAll("rect")).toHaveLength(0);
+    });
+
+    it("stays a single svg, which the browser locators depend on", () => {
+      const { container } = render(<NorthArrowIcon bearingDegrees={90} />);
+      expect(container.querySelectorAll("svg")).toHaveLength(1);
+    });
+
+    it("defaults to not pressed, so existing call sites keep the idle pairing", () => {
+      const { container } = render(<NorthArrowIcon bearingDegrees={0} />);
+      expect(container.querySelector(`path[d="${NORTH_LETTER_PATH}"]`)).toHaveAttribute(
+        "fill",
+        "var(--colour-bg)",
+      );
+    });
   });
 });

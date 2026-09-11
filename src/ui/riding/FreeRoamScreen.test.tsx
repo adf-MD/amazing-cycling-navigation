@@ -3,6 +3,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import userEvent from "@testing-library/user-event";
 import { FreeRoamScreen } from "./FreeRoamScreen.tsx";
+import { NORTH_LETTER_PATH } from "../shared/northArrowGeometry.ts";
 import { FOLLOW_PITCH_DEGREES, NAVIGATION_ZOOM } from "./rideCamera.ts";
 import { db } from "../../storage/db.ts";
 import type { Coordinate } from "../../domain/types.ts";
@@ -143,6 +144,19 @@ beforeEach(async () => {
 afterEach(() => {
   vi.unstubAllGlobals();
 });
+
+/** Item 110's presentation follow-up replaced the "+"/"−" text
+ * characters with a shared drawn ZoomIcon, matched by construction. The
+ * glyph check becomes: a drawn icon is present, and no bare text
+ * character is left behind in the control. */
+function expectDrawnZoomGlyphs(zoomIn: HTMLElement, zoomOut: HTMLElement): void {
+  for (const button of [zoomIn, zoomOut]) {
+    expect(button.querySelector("svg")).not.toBeNull();
+    expect(button).toHaveTextContent("");
+  }
+  expect(zoomIn).not.toHaveTextContent("+");
+  expect(zoomOut).not.toHaveTextContent("−");
+}
 
 describe("FreeRoamScreen", () => {
   it("auto-starts exactly one GPS watch on mount, with no idle panel/Start button", () => {
@@ -504,6 +518,88 @@ describe("FreeRoamScreen", () => {
     });
   });
 
+  // Item 110 presentation follow-up: all four of free roam's map controls
+  // now draw their symbols.
+  describe("drawn control symbols (item 110 presentation follow-up)", () => {
+    function renderFreeRoam() {
+      const fake = buildFakeGeolocationSource();
+      const map = buildStubMapFactory();
+      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      map.triggerLoad();
+      return { map, fake };
+    }
+
+    it("shows the pending wording, not the crosshair, before the first fix", () => {
+      renderFreeRoam();
+
+      // Free roam opens already following but with no fix yet, so the
+      // Follow control legitimately renders its pending word instead of
+      // a glyph. Asserted explicitly so the four-symbol check below
+      // cannot quietly pass on a half-rendered screen.
+      const followButton = screen.getByRole("button", { name: "Follow my location" });
+      expect(followButton).toHaveTextContent("Waiting…");
+      expect(followButton.querySelector("svg")).toBeNull();
+    });
+
+    it("draws all four symbols, leaving no text glyph behind", () => {
+      const { fake } = renderFreeRoam();
+      act(() => {
+        fake.watches[0]?.emitFix(SAMPLE_FIX);
+      });
+
+      for (const name of [
+        "Zoom in",
+        "Zoom out",
+        "Follow my location",
+        "North-up, top-down view",
+      ]) {
+        const button = screen.getByRole("button", { name });
+        expect(button.querySelector("svg")).not.toBeNull();
+        expect(button).toHaveTextContent("");
+      }
+    });
+
+    it("keeps every accessible name and both pressed semantics", () => {
+      renderFreeRoam();
+
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(
+        screen.getByRole("button", { name: "North-up, top-down view" }),
+      ).toHaveAttribute("aria-pressed", "false");
+      for (const name of ["Zoom in", "Zoom out"]) {
+        expect(
+          screen.getByRole("button", { name }).getAttribute("aria-pressed"),
+        ).toBeNull();
+      }
+    });
+
+    it("hands the north arrow the control's own pressed state", async () => {
+      const user = userEvent.setup();
+      const { map } = renderFreeRoam();
+      const northUp = screen.getByRole("button", { name: "North-up, top-down view" });
+      const letter = () => northUp.querySelector(`path[d="${NORTH_LETTER_PATH}"]`);
+
+      expect(letter()).toHaveAttribute("fill", "var(--colour-bg)");
+
+      await user.click(northUp);
+      act(() => {
+        map.triggerCameraSettled({
+          coordinate: [0, 51],
+          zoom: 16,
+          bearingDegrees: 0,
+          pitchDegrees: 0,
+        });
+      });
+      await waitFor(() => {
+        expect(northUp).toHaveAttribute("aria-pressed", "true");
+      });
+      expect(letter()).toHaveAttribute("fill", "var(--colour-accent)");
+    });
+  });
+
   describe("Zoom controls (backlog item 53)", () => {
     it("render with correct accessible names and glyphs (free roam has no idle state to hide behind)", () => {
       const fake = buildFakeGeolocationSource();
@@ -516,8 +612,7 @@ describe("FreeRoamScreen", () => {
 
       const zoomInButton = screen.getByRole("button", { name: "Zoom in" });
       const zoomOutButton = screen.getByRole("button", { name: "Zoom out" });
-      expect(zoomInButton).toHaveTextContent("+");
-      expect(zoomOutButton).toHaveTextContent("−");
+      expectDrawnZoomGlyphs(zoomInButton, zoomOutButton);
     });
 
     // Zoom is pressed before any GPS fix is ever emitted: mode is

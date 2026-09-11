@@ -2129,6 +2129,30 @@ test.describe("north-pointing orientation indicator (backlog item 110)", () => {
     });
   }
 
+  /** The union of everything the control actually paints, in page
+   * coordinates. Child SVG elements report their painted geometry through
+   * getBoundingClientRect, ancestor transforms included — which is what
+   * makes this meaningful for a rotated glyph, where the <svg> element's
+   * own box is mostly empty space and grows with the angle. */
+  async function paintedInkExtent(button: Locator): Promise<Box> {
+    return button.evaluate((element) => {
+      const rects = [...element.querySelectorAll("path, circle")].map((shape) =>
+        shape.getBoundingClientRect(),
+      );
+      if (rects.length === 0) {
+        throw new Error("expected the control to paint at least one shape");
+      }
+      const left = Math.min(...rects.map((r) => r.left));
+      const top = Math.min(...rects.map((r) => r.top));
+      return {
+        x: left,
+        y: top,
+        width: Math.max(...rects.map((r) => r.right)) - left,
+        height: Math.max(...rects.map((r) => r.bottom)) - top,
+      };
+    });
+  }
+
   /** The shortest signed distance between two angles, so 359 and -1
    * compare as one degree apart rather than 360. */
   function angularDifferenceDegrees(a: number, b: number): number {
@@ -2345,9 +2369,22 @@ test.describe("north-pointing orientation indicator (backlog item 110)", () => {
       throw new Error("expected the control, its glyph and its neighbours to lay out");
     }
 
-    // A real touch target, unchanged by swapping the glyph in.
-    expect(buttonBox.width).toBeGreaterThanOrEqual(44);
-    expect(buttonBox.height).toBeGreaterThanOrEqual(44);
+    // A real touch target, unchanged by swapping the glyph in. Asserted
+    // as the exact 48px the follow-up is required to preserve, not merely
+    // as "at least 44": enlarging the control instead of its symbol would
+    // satisfy a minimum while breaking the actual contract.
+    expect(buttonBox.width).toBe(48);
+    expect(buttonBox.height).toBe(48);
+    for (const control of [
+      page.getByRole("button", { name: "Locate me" }),
+      page.getByRole("button", { name: "Zoom in" }),
+      page.getByRole("button", { name: "Zoom out" }),
+    ]) {
+      const box = await control.boundingBox();
+      if (!box) throw new Error("expected every Planning map control to lay out");
+      expect(box.width).toBe(48);
+      expect(box.height).toBe(48);
+    }
     expect(isFullyWithin(buttonBox, mapBox)).toBe(true);
     expect(isFullyWithin(arrowBox, buttonBox)).toBe(true);
 
@@ -2390,6 +2427,253 @@ test.describe("north-pointing orientation indicator (backlog item 110)", () => {
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
   });
 
+  /**
+   * The composited colour at a set of offsets from the control's centre,
+   * read back from a real screenshot of the button.
+   *
+   * The offsets are deliberately rotation-invariant. Every point within
+   * 5.29px of the centre lies inside the dart at any bearing (that is the
+   * inradius the icon size was chosen against), while the upright letter
+   * reaches only 2.99px horizontally and 3.40px vertically. PROBE_RADIUS_PX
+   * sits between the two with about a pixel of margin on each side, so the
+   * axial probes are always pointer and the centre is always letter, at
+   * every bearing and with no per-angle bookkeeping. Sampled at a 3x
+   * device scale — the same ratio the installed iPhone renders at — so a
+   * one-pixel CSS margin is three real pixels rather than a coin toss
+   * against antialiasing.
+   */
+  async function sampleControlColours(
+    button: Locator,
+    offsets: readonly (readonly [number, number])[],
+  ): Promise<string[]> {
+    const shot = (await button.screenshot()).toString("base64");
+    return button.evaluate(
+      async (element, { pngBase64, points }) => {
+        const box = element.getBoundingClientRect();
+        const image = new Image();
+        await new Promise<void>((resolve, reject) => {
+          image.onload = () => {
+            resolve();
+          };
+          image.onerror = () => {
+            reject(new Error("could not decode the control screenshot"));
+          };
+          image.src = `data:image/png;base64,${pngBase64}`;
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("no 2d context");
+        context.drawImage(image, 0, 0);
+        const scale = image.width / box.width;
+        const median = (values: number[]) =>
+          [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] ?? 0;
+        return points.map(([dx, dy]) => {
+          const x = Math.round((box.width / 2 + dx) * scale);
+          const y = Math.round((box.height / 2 + dy) * scale);
+          // The per-channel median of a 3x3 device-pixel block, not a
+          // single pixel. At this device scale that block spans a third
+          // of a CSS pixel, so it cannot stray onto a neighbouring
+          // feature — but it does discard the one antialiased pixel a
+          // probe can land on when it sits about a pixel from an edge.
+          // A better measurement, not a looser match.
+          const red: number[] = [];
+          const green: number[] = [];
+          const blue: number[] = [];
+          for (let ox = -1; ox <= 1; ox++) {
+            for (let oy = -1; oy <= 1; oy++) {
+              const pixel = context.getImageData(x + ox, y + oy, 1, 1).data;
+              red.push(pixel[0]);
+              green.push(pixel[1]);
+              blue.push(pixel[2]);
+            }
+          }
+          return [red, green, blue].map((values) => String(median(values))).join(",");
+        });
+      },
+      { pngBase64: shot, points: offsets.map(([x, y]) => [x, y] as [number, number]) },
+    );
+  }
+
+  /** The rotation actually composited onto an SVG child, ancestor CSS
+   * transforms included. A screen CTM of the form [a 0 0 d] carries no
+   * rotation at all, which is the letter's whole contract. */
+  async function screenRotationOf(shape: Locator): Promise<{ b: number; c: number }> {
+    return shape.evaluate((element) => {
+      const matrix = (element as SVGGraphicsElement).getScreenCTM();
+      if (!matrix) throw new Error("expected a screen CTM");
+      return { b: matrix.b, c: matrix.c };
+    });
+  }
+
+  /** Between the upright letter's reach (2.99px across, 3.40px down) and
+   * the dart's 5.29px inradius — about a pixel clear of each. */
+  const PROBE_RADIUS_PX = 4.2;
+
+  /** The centre of one of the letter's two vertical stems: 1.50px wide
+   * and full height, so it survives antialiasing at any device scale.
+   * Deliberately NOT the glyph's centre, which is its diagonal — the
+   * thinnest part of the letter, measured at roughly 1.15px across, which
+   * blends almost entirely into the pointer behind it and would make this
+   * probe read the pointer's own colour. */
+  const STEM_OFFSET_PX = 2.24;
+
+  test.describe("composited letter separation", () => {
+    // The installed iPhone renders at 3x; sampling there too means an
+    // antialiased edge spans real pixels rather than swallowing the margin.
+    test.use({ deviceScaleFactor: 3 });
+
+    test("the north control's letter stays upright and clear of the pointer at every representative bearing, in both colour states", async ({
+      page,
+    }) => {
+      const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+      const { mapContainer, northUpButton } = await openPlanning(page);
+      const letter = northUpButton.locator("svg g path");
+
+      // Four points that are always dart, plus the centre which is always
+      // letter — see sampleControlColours for why these hold at any angle.
+      /** Two points always on the letter's ink, then four always on the
+       * pointer around it. Both sets are rotation-invariant: the letter
+       * is fixed upright, and every point inside the dart's 5.29px
+       * inradius stays inside the dart at any bearing. */
+      const letterProbes = [
+        [-STEM_OFFSET_PX, 0],
+        [STEM_OFFSET_PX, 0],
+      ] as const;
+      const pointerProbes = [
+        [-PROBE_RADIUS_PX, 0],
+        [PROBE_RADIUS_PX, 0],
+        [0, -PROBE_RADIUS_PX],
+        [0, PROBE_RADIUS_PX],
+      ] as const;
+      const probes = [...letterProbes, ...pointerProbes];
+
+      /** The control's own two token colours, as the browser resolves
+       * them. Asserting the samples against THESE, rather than merely
+       * against each other, is what makes the probe discriminating: an
+       * absent letter would still leave the centre "different from" a
+       * surround that had fallen off the pointer altogether. */
+      async function expectedColours(): Promise<{ pointer: string; letter: string }> {
+        return northUpButton.evaluate((element) => {
+          const style = getComputedStyle(element);
+          const toTriple = (value: string) => {
+            const parts = /(\d+),\s*(\d+),\s*(\d+)/.exec(value);
+            if (!parts) throw new Error(`unparsed colour ${value}`);
+            return `${parts[1]},${parts[2]},${parts[3]}`;
+          };
+          // The pointer is filled with currentColor; the letter is filled
+          // with whatever the button paints behind it.
+          return {
+            pointer: toTriple(style.color),
+            letter: toTriple(style.backgroundColor),
+          };
+        });
+      }
+
+      /**
+       * A sample must read decisively as one of the control's two
+       * colours rather than the other.
+       *
+       * Stated as a ratio rather than an absolute tolerance on purpose.
+       * The letter clears the pointer's edge by about a pixel — that is
+       * the whole design, and it is what the 360-degree geometry sweep
+       * proves exactly — so a probe placed to be safely inside the
+       * pointer still catches part of an antialiased edge ramp. An
+       * absolute threshold would then be measuring the browser's
+       * antialiasing rather than the separation. This measures the
+       * separation itself, and stays brutally discriminating: the two
+       * colours are 239 levels apart, so a letter that vanished, rotated
+       * away or lost its inverse fill reads as the wrong colour by an
+       * enormous margin.
+       */
+      function expectReadsAs(
+        actual: string,
+        expected: string,
+        other: string,
+        what: string,
+      ): void {
+        const distance = (a: string, b: string) => {
+          const left = a.split(",").map(Number);
+          const right = b.split(",").map(Number);
+          return Math.hypot(left[0] - right[0], left[1] - right[1], left[2] - right[2]);
+        };
+        const toExpected = distance(actual, expected);
+        const toOther = distance(actual, other);
+        expect(
+          toOther,
+          `${what}: sampled ${actual}, which is nearer ${other} than ${expected}`,
+        ).toBeGreaterThan(toExpected * 2);
+      }
+
+      // Pressed state first: a fresh Planning map settles north-up, so the
+      // control is pressed and paints its accent letter on a white pointer.
+      await expect(northUpButton).toHaveAttribute("aria-pressed", "true");
+      const pressedColours = await expectedColours();
+      const pressedSamples = await sampleControlColours(northUpButton, probes);
+      for (const sample of pressedSamples.slice(0, letterProbes.length)) {
+        expectReadsAs(
+          sample,
+          pressedColours.letter,
+          pressedColours.pointer,
+          "pressed letter",
+        );
+      }
+      for (const sample of pressedSamples.slice(letterProbes.length)) {
+        expectReadsAs(
+          sample,
+          pressedColours.pointer,
+          pressedColours.letter,
+          "pressed pointer",
+        );
+      }
+      expect(pressedColours.letter).not.toBe(pressedColours.pointer);
+
+      // Then a sweep of representative bearings in the idle state.
+      for (let press = 1; press <= 12; press++) {
+        await rotateBy(page, mapContainer, 1);
+        const bearing = Number.parseFloat(
+          (await mapContainer.getAttribute("data-camera-bearing")) ?? "0",
+        );
+        if (bearing === 0) continue;
+
+        // Upright: no rotation survives onto the letter, however far the
+        // pointer has turned.
+        const { b, c } = await screenRotationOf(letter);
+        expect(Math.abs(b), `letter rotated at ${String(bearing)}deg`).toBeLessThan(
+          0.001,
+        );
+        expect(Math.abs(c), `letter rotated at ${String(bearing)}deg`).toBeLessThan(
+          0.001,
+        );
+
+        // And still legibly separated: the letter reads as the letter
+        // colour, and every point a pixel beyond it reads as the pointer.
+        const idle = await expectedColours();
+        const samples = await sampleControlColours(northUpButton, probes);
+        for (const sample of samples.slice(0, letterProbes.length)) {
+          expectReadsAs(
+            sample,
+            idle.letter,
+            idle.pointer,
+            `letter at ${String(bearing)}deg`,
+          );
+        }
+        for (const sample of samples.slice(letterProbes.length)) {
+          expectReadsAs(
+            sample,
+            idle.pointer,
+            idle.letter,
+            `pointer at ${String(bearing)}deg`,
+          );
+        }
+        expect(idle.letter).not.toBe(idle.pointer);
+      }
+
+      expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    });
+  });
+
   test("at 200% browser text the control stays contained and adds no horizontal overflow of its own", async ({
     page,
   }) => {
@@ -2402,10 +2686,9 @@ test.describe("north-pointing orientation indicator (backlog item 110)", () => {
     await rotateBy(page, mapContainer, 3);
 
     const buttonBox = await northUpButton.boundingBox();
-    const arrowBox = await arrow.boundingBox();
     const mapBox = await mapContainer.boundingBox();
-    if (!buttonBox || !arrowBox || !mapBox) {
-      throw new Error("expected the control and its glyph to lay out at 200% text");
+    if (!buttonBox || !mapBox) {
+      throw new Error("expected the control to lay out at 200% text");
     }
 
     // The glyph is sized in px, not em, so enlarged text must not burst
@@ -2413,7 +2696,17 @@ test.describe("north-pointing orientation indicator (backlog item 110)", () => {
     expect(buttonBox.width).toBeGreaterThanOrEqual(44);
     expect(buttonBox.height).toBeGreaterThanOrEqual(44);
     expect(isFullyWithin(buttonBox, mapBox)).toBe(true);
-    expect(isFullyWithin(arrowBox, buttonBox)).toBe(true);
+
+    // Containment is measured on what the control actually PAINTS, not on
+    // the <svg> element's box. Since item 110's follow-up the icon box is
+    // larger than the artwork inside it and carries a rotation, so the
+    // element's axis-aligned box grows with the angle (a 38px square at
+    // 45 degrees measures 53.7px) while the ink never leaves a circle of
+    // radius 17.4px about the centre. The element box would therefore
+    // report a false overflow; the ink is the real invariant, and this is
+    // a stricter check than the one it replaces, not a looser one.
+    const ink = await paintedInkExtent(northUpButton);
+    expect(isFullyWithin(ink, buttonBox)).toBe(true);
     expect(Math.abs(await paintedRotationDegrees(arrow))).toBeGreaterThan(1);
 
     // A whole-document scrollWidth check at 200% trips on this app

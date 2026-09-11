@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RidingScreen } from "./RidingScreen.tsx";
+import { NORTH_LETTER_PATH } from "../shared/northArrowGeometry.ts";
 import { db, type StoredRideState } from "../../storage/db.ts";
 import * as planningDraftRepository from "../../storage/planningDraftRepository.ts";
 import { getDraft, saveDraft } from "../../storage/planningDraftRepository.ts";
@@ -326,6 +327,30 @@ beforeEach(async () => {
   await db.planningDrafts.clear();
   await db.planningPreferences.clear();
 });
+
+/** The crosshair the Follow/Locate controls render in place of their
+ * pending wording. Item 110's presentation follow-up made it a drawn
+ * CrosshairIcon rather than a text character, so "the glyph is showing"
+ * is now "an svg is present and the pending word is gone" — which is a
+ * strictly stronger signal than the text check it replaces, not a
+ * weaker one. */
+function expectShowingCrosshair(button: HTMLElement, pendingWord: string): void {
+  expect(button.querySelector("svg")).not.toBeNull();
+  expect(button).not.toHaveTextContent(pendingWord);
+}
+
+/** Item 110's presentation follow-up replaced the "+"/"−" text
+ * characters with a shared drawn ZoomIcon, matched by construction. The
+ * glyph check becomes: a drawn icon is present, and no bare text
+ * character is left behind in the control. */
+function expectDrawnZoomGlyphs(zoomIn: HTMLElement, zoomOut: HTMLElement): void {
+  for (const button of [zoomIn, zoomOut]) {
+    expect(button.querySelector("svg")).not.toBeNull();
+    expect(button).toHaveTextContent("");
+  }
+  expect(zoomIn).not.toHaveTextContent("+");
+  expect(zoomOut).not.toHaveTextContent("−");
+}
 
 describe("RidingScreen", () => {
   it("never requests a geolocation watch before the user taps Start riding", () => {
@@ -5056,7 +5081,7 @@ describe("RidingScreen", () => {
         );
       });
       const followButton = screen.getByRole("button", { name: "Follow my location" });
-      expect(followButton).toHaveTextContent("⌖");
+      expectShowingCrosshair(followButton, "Waiting…");
       expect(followButton).toHaveAttribute("aria-pressed", "true");
     });
 
@@ -5101,12 +5126,17 @@ describe("RidingScreen", () => {
       // strictly after the fix has already been fully processed" from
       // "style ready lands in the very same commit as the fix", which is
       // a materially different ordering covered by its own sibling test
-      // below. The Follow button's text flips from "Waiting…" to "⌖" in
+      // below. The Follow button swaps "Waiting…" for its crosshair in
       // the exact same reducer transition that produces the real
       // command, so it's a faithful, already-established signal that the
-      // cascade has genuinely finished.
+      // cascade has genuinely finished. (Item 110's presentation
+      // follow-up made that crosshair a drawn icon rather than a text
+      // character; the signal is the same transition, asserted on the
+      // rendered glyph instead of on text.)
       const followButton = screen.getByRole("button", { name: "Follow my location" });
-      await waitFor(() => expect(followButton).toHaveTextContent("⌖"));
+      await waitFor(() => {
+        expectShowingCrosshair(followButton, "Waiting…");
+      });
       expect(map.setCameraSpy).not.toHaveBeenCalled();
       expect(map.fitBoundsSpy).not.toHaveBeenCalled();
 
@@ -5187,7 +5217,7 @@ describe("RidingScreen", () => {
       });
       expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
       const followButton = screen.getByRole("button", { name: "Follow my location" });
-      expect(followButton).toHaveTextContent("⌖");
+      expectShowingCrosshair(followButton, "Waiting…");
       expect(followButton).toHaveAttribute("aria-pressed", "true");
       // Pinned as a NAMED, explicit finding rather than left to pass
       // silently: this specific ordering does produce one spurious
@@ -5258,7 +5288,7 @@ describe("RidingScreen", () => {
       });
 
       const followButton = screen.getByRole("button", { name: "Follow my location" });
-      expect(followButton).toHaveTextContent("⌖");
+      expectShowingCrosshair(followButton, "Waiting…");
       expect(followButton).toHaveAttribute("aria-pressed", "true");
       expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
     });
@@ -5994,6 +6024,119 @@ describe("RidingScreen", () => {
       });
     });
 
+    // Item 110 presentation follow-up: all four of Riding's map controls
+    // now draw their symbols.
+    describe("drawn control symbols (item 110 presentation follow-up)", () => {
+      /** A followed ride with the camera controls on screen. Local to
+       * this block rather than shared with the sibling arrow suite, so
+       * neither can quietly change the other's setup. */
+      async function startFollowedRide(): Promise<{
+        map: ReturnType<typeof buildStubMapFactory>;
+        northUpButton: HTMLElement;
+      }> {
+        const user = userEvent.setup();
+        const stub = buildStubGeolocationSource();
+        const map = buildStubMapFactory();
+        render(
+          <RidingScreen
+            route={route}
+            geolocationSource={stub.source}
+            mapFactory={map.factory}
+          />,
+        );
+        map.triggerLoad();
+
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+        stub.emitFix({
+          coordinate: pointAt(0),
+          accuracyMetres: 5,
+          timestampMs: 1000,
+          speedMetresPerSecond: 5,
+          headingDegrees: 90,
+        });
+        await waitFor(() => {
+          expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+        });
+
+        return {
+          map,
+          northUpButton: screen.getByRole("button", {
+            name: "North-up, top-down view",
+          }),
+        };
+      }
+
+      it("draws all four symbols, leaving no text glyph behind", async () => {
+        const { northUpButton } = await startFollowedRide();
+
+        const buttons = [
+          screen.getByRole("button", { name: "Zoom in" }),
+          screen.getByRole("button", { name: "Zoom out" }),
+          screen.getByRole("button", { name: "Follow my location" }),
+          northUpButton,
+        ];
+        for (const button of buttons) {
+          expect(button.querySelector("svg")).not.toBeNull();
+          expect(button).toHaveTextContent("");
+        }
+      });
+
+      it("keeps every accessible name and both pressed semantics", async () => {
+        const { northUpButton } = await startFollowedRide();
+
+        expect(northUpButton).toHaveAttribute("aria-pressed", "false");
+        expect(
+          screen.getByRole("button", { name: "Follow my location" }),
+        ).toHaveAttribute("aria-pressed", "true");
+        // Zoom is an action pair, not a toggle.
+        for (const name of ["Zoom in", "Zoom out"]) {
+          expect(
+            screen.getByRole("button", { name }).getAttribute("aria-pressed"),
+          ).toBeNull();
+        }
+      });
+
+      it("hands the north arrow the control's own pressed state", async () => {
+        const user = userEvent.setup();
+        const { map, northUpButton } = await startFollowedRide();
+        const letterIn = (button: HTMLElement) =>
+          button.querySelector(`path[d="${NORTH_LETTER_PATH}"]`);
+
+        expect(letterIn(northUpButton)).toHaveAttribute("fill", "var(--colour-bg)");
+
+        await user.click(northUpButton);
+        map.triggerCameraSettled({
+          coordinate: pointAt(0),
+          zoom: 16,
+          bearingDegrees: 0,
+          pitchDegrees: 0,
+        });
+        await waitFor(() => {
+          expect(northUpButton).toHaveAttribute("aria-pressed", "true");
+        });
+        expect(letterIn(northUpButton)).toHaveAttribute("fill", "var(--colour-accent)");
+      });
+
+      it("still shows the pending wording instead of the crosshair while awaiting a fix", async () => {
+        const stub = buildStubGeolocationSource();
+        const map = buildStubMapFactory();
+        const user = userEvent.setup();
+        render(
+          <RidingScreen
+            route={route}
+            geolocationSource={stub.source}
+            mapFactory={map.factory}
+          />,
+        );
+        map.triggerLoad();
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+
+        const followButton = screen.getByRole("button", { name: "Follow my location" });
+        expect(followButton).toHaveTextContent("Waiting…");
+        expect(followButton.querySelector("svg")).toBeNull();
+      });
+    });
+
     it("after north-up, later fixes update the position marker and navigation state but never move, rotate or tilt the camera", async () => {
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
@@ -6620,8 +6763,7 @@ describe("RidingScreen", () => {
 
       const zoomInButton = screen.getByRole("button", { name: "Zoom in" });
       const zoomOutButton = screen.getByRole("button", { name: "Zoom out" });
-      expect(zoomInButton).toHaveTextContent("+");
-      expect(zoomOutButton).toHaveTextContent("−");
+      expectDrawnZoomGlyphs(zoomInButton, zoomOutButton);
     });
 
     // Zoom is pressed before any GPS fix is ever emitted: mode is

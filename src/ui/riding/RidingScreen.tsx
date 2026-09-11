@@ -60,7 +60,9 @@ import type { StoredCameraState } from "../../storage/mapping.ts";
 import { ClimbCategoriesDisclosure } from "../shared/ClimbCategoriesDisclosure.tsx";
 import { ClimbLocalGradientDisclosure } from "../shared/ClimbLocalGradientDisclosure.tsx";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
+import { CrosshairIcon } from "../shared/CrosshairIcon.tsx";
 import { NorthArrowIcon } from "../shared/NorthArrowIcon.tsx";
+import { ZoomIcon } from "../shared/ZoomIcon.tsx";
 import {
   ElevationChart,
   type ElevationChartSelectedRange,
@@ -1922,7 +1924,7 @@ export function RidingScreen({
                 aria-label="Zoom in"
                 className="ride-map-control ride-map-control--zoom"
               >
-                +
+                <ZoomIcon direction="in" />
               </button>
               <button
                 type="button"
@@ -1930,7 +1932,7 @@ export function RidingScreen({
                 aria-label="Zoom out"
                 className="ride-map-control ride-map-control--zoom"
               >
-                −
+                <ZoomIcon direction="out" />
               </button>
             </div>
           ) : null}
@@ -1945,7 +1947,10 @@ export function RidingScreen({
                   camera.isNorthUpTopDown ? " is-pressed" : ""
                 }`}
               >
-                <NorthArrowIcon bearingDegrees={camera.liveCameraBearingDegrees} />
+                <NorthArrowIcon
+                  bearingDegrees={camera.liveCameraBearingDegrees}
+                  isPressed={camera.isNorthUpTopDown}
+                />
               </button>
               <button
                 type="button"
@@ -1956,9 +1961,11 @@ export function RidingScreen({
                   camera.mode === "following" ? " is-pressed" : ""
                 }`}
               >
-                {camera.mode === "following" && camera.awaitingFreshFix
-                  ? "Waiting…"
-                  : "⌖"}
+                {camera.mode === "following" && camera.awaitingFreshFix ? (
+                  "Waiting…"
+                ) : (
+                  <CrosshairIcon />
+                )}
               </button>
             </div>
           ) : null}

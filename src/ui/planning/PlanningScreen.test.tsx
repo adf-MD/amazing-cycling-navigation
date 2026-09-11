@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PlanningScreen } from "./PlanningScreen.tsx";
+import { NORTH_LETTER_PATH } from "../shared/northArrowGeometry.ts";
 import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
 import type { MapErrorCategory, MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
@@ -498,6 +499,17 @@ beforeEach(async () => {
   await db.planningPreferences.clear();
   await db.routes.clear();
 });
+
+/** The crosshair the Follow/Locate controls render in place of their
+ * pending wording. Item 110's presentation follow-up made it a drawn
+ * CrosshairIcon rather than a text character, so "the glyph is showing"
+ * is now "an svg is present and the pending word is gone" — which is a
+ * strictly stronger signal than the text check it replaces, not a
+ * weaker one. */
+function expectShowingCrosshair(button: HTMLElement, pendingWord: string): void {
+  expect(button.querySelector("svg")).not.toBeNull();
+  expect(button).not.toHaveTextContent(pendingWord);
+}
 
 describe("PlanningScreen", () => {
   it("has one primary heading and the visible major section headings", () => {
@@ -1123,7 +1135,7 @@ describe("PlanningScreen", () => {
 
       const locateButton = await screen.findByRole("button", { name: "Locate me" });
       expect(locateButton).toBeEnabled();
-      expect(locateButton).toHaveTextContent("⌖");
+      expectShowingCrosshair(locateButton, "Locating…");
     });
 
     it("fits the same 50 × 50 km box even with existing waypoints present, unlike the automatic path", async () => {
@@ -1198,7 +1210,7 @@ describe("PlanningScreen", () => {
       await waitFor(() => {
         expect(locateButton).toBeEnabled();
       });
-      expect(locateButton).toHaveTextContent("⌖");
+      expectShowingCrosshair(locateButton, "Locating…");
     });
 
     it("shows a failure message on a null result, with Locate me remaining as the retry path", async () => {
@@ -1870,6 +1882,71 @@ describe("PlanningScreen", () => {
     // Asserting the rendered glyph's own transform (rather than any state
     // variable) is what makes these fail against the parent, where the
     // control's whole visual content is the static letter "N".
+    // Item 110 presentation follow-up: every one of Planning's four map
+    // controls now draws its symbol, so none of them carries a bare text
+    // character any more.
+    describe("drawn control symbols (item 110 presentation follow-up)", () => {
+      function controls() {
+        return {
+          zoomIn: screen.getByRole("button", { name: "Zoom in" }),
+          zoomOut: screen.getByRole("button", { name: "Zoom out" }),
+          locate: screen.getByRole("button", { name: "Locate me" }),
+          northUp: screen.getByRole("button", { name: "North-up, top-down view" }),
+        };
+      }
+
+      it("draws all four symbols, leaving no text glyph behind", () => {
+        const map = createMockMapFactory();
+        render(
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+        );
+        map.triggerLoad();
+
+        for (const button of Object.values(controls())) {
+          expect(button.querySelector("svg")).not.toBeNull();
+          expect(button).toHaveTextContent("");
+        }
+      });
+
+      it("keeps every accessible name and the north-up pressed semantics", () => {
+        const map = createMockMapFactory();
+        render(
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+        );
+        map.triggerLoad();
+        map.triggerCameraSettled([0, 51], { bearingDegrees: 0, pitchDegrees: 0 });
+
+        const { northUp, locate } = controls();
+        expect(northUp).toHaveAttribute("aria-pressed", "true");
+        // Locate me is a one-shot action, not a toggle — it never had
+        // aria-pressed and must not gain one.
+        expect(locate.getAttribute("aria-pressed")).toBeNull();
+        expect(locate).toBeEnabled();
+      });
+
+      it("hands the north arrow the control's own pressed state", () => {
+        const map = createMockMapFactory();
+        render(
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+        );
+        map.triggerLoad();
+
+        const letterIn = (button: HTMLElement) =>
+          button.querySelector(`path[d="${NORTH_LETTER_PATH}"]`);
+
+        map.triggerCameraSettled([0, 51], { bearingDegrees: 90, pitchDegrees: 0 });
+        expect(controls().northUp).toHaveAttribute("aria-pressed", "false");
+        expect(letterIn(controls().northUp)).toHaveAttribute("fill", "var(--colour-bg)");
+
+        map.triggerCameraSettled([0, 51], { bearingDegrees: 0, pitchDegrees: 0 });
+        expect(controls().northUp).toHaveAttribute("aria-pressed", "true");
+        expect(letterIn(controls().northUp)).toHaveAttribute(
+          "fill",
+          "var(--colour-accent)",
+        );
+      });
+    });
+
     describe("north-pointing arrow (backlog item 110)", () => {
       function arrowIn(button: HTMLElement): SVGSVGElement {
         const svg = button.querySelector("svg");
@@ -2067,7 +2144,10 @@ describe("PlanningScreen", () => {
       await user.click(await screen.findByRole("button", { name: "Zoom in" }));
 
       expect(requestApproximateLocation).toHaveBeenCalledTimes(1);
-      expect(screen.getByRole("button", { name: "Locate me" })).toHaveTextContent("⌖");
+      expectShowingCrosshair(
+        screen.getByRole("button", { name: "Locate me" }),
+        "Locating…",
+      );
     });
 
     it("a zoom press before the fresh-session location resolves prevents the fresh-session box-fit once it later resolves", async () => {

@@ -1,4 +1,10 @@
 import { toDisplayBearingDegrees } from "../../navigation/bearing.ts";
+import {
+  DART_PATH,
+  NORTH_ARROW_SIZE_PX,
+  NORTH_LETTER_PATH,
+  ROTATION_CENTRE,
+} from "./northArrowGeometry.ts";
 
 export interface NorthArrowIconProps {
   /**
@@ -14,10 +20,19 @@ export interface NorthArrowIconProps {
    * hidden — the control must never flicker in and out of existence.
    */
   bearingDegrees: number | null;
+  /**
+   * Whether the hosting control is currently in its pressed state.
+   *
+   * A semantic flag, deliberately not a colour: the two established
+   * tokens are resolved inside this component so all three screens
+   * cannot drift apart, and no call site ever passes a colour string or
+   * a CSS-variable expression of its own.
+   */
+  isPressed?: boolean;
   sizePx?: number;
 }
 
-const DEFAULT_SIZE_PX = 22;
+const DEFAULT_SIZE_PX = NORTH_ARROW_SIZE_PX;
 
 /**
  * The north-pointing arrow shared by all three north-up map controls —
@@ -55,6 +70,7 @@ const DEFAULT_SIZE_PX = 22;
  */
 export function NorthArrowIcon({
   bearingDegrees,
+  isPressed = false,
   sizePx = DEFAULT_SIZE_PX,
 }: NorthArrowIconProps) {
   // A final defensive boundary, not the first: the camera hooks already
@@ -66,6 +82,13 @@ export function NorthArrowIcon({
     bearingDegrees === null ? null : toDisplayBearingDegrees(bearingDegrees);
   const rotationDegrees =
     normalisedBearingDegrees === null ? 0 : -normalisedBearingDegrees;
+  const [centreX, centreY] = ROTATION_CENTRE;
+  // The letter is a hole punched in the pointer, so it takes the colour
+  // the button is painting behind it: the ordinary surface when idle, the
+  // accent when pressed. That is what produces the inverse pairing —
+  // dark pointer with a light letter, light pointer with an accent one —
+  // with no second colour rule and no badge, disc or halo behind it.
+  const letterFill = isPressed ? "var(--colour-accent)" : "var(--colour-bg)";
 
   return (
     <svg
@@ -87,8 +110,21 @@ export function NorthArrowIcon({
        * to the viewBox centre the default transform-origin rotates
        * about. Filled rather than stroked so it stays legible both as
        * dark-on-light and, when the control is pressed, as white on the
-       * accent background. */}
-      <path d="M12 3 L19 20.5 L12 16 L5 20.5 Z" />
+       * accent background. The silhouette is item 110's, unchanged. */}
+      <path d={DART_PATH} />
+      {/* The upright N. The <svg> above already carries the CSS
+       * rotate(-bearing), so this group's rotate(+bearing) about the very
+       * same centre cancels it exactly and leaves the letter upright
+       * while the pointer turns beneath it. Keeping both rotations inside
+       * one <svg> matters: the north-up button is located in Playwright
+       * with a strict-mode locator("svg"), which a second nested <svg>
+       * would break with a locator error rather than a failed
+       * assertion. */}
+      <g
+        transform={`rotate(${String(-rotationDegrees)} ${String(centreX)} ${String(centreY)})`}
+      >
+        <path d={NORTH_LETTER_PATH} fill={letterFill} />
+      </g>
     </svg>
   );
 }

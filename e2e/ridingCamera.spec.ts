@@ -335,7 +335,12 @@ test("Riding: a fresh Start whose first fix arrives well before the map style be
     .poll(() => mapContainer.getAttribute("data-camera-zoom"), { timeout: 15_000 })
     .toBe("16");
   await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).toBe("35");
-  await expect(followButton).toContainText("⌖");
+  // The Follow control swaps its pending wording for the crosshair in the
+  // same transition that produces the real command. Item 110's
+  // presentation follow-up made that crosshair a drawn icon rather than a
+  // text character, so the same signal is now read off the rendered glyph.
+  await expect(followButton.locator("svg")).toBeVisible();
+  await expect(followButton).not.toContainText("Waiting…");
   await expect(followButton).toHaveAttribute("aria-pressed", "true");
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
@@ -632,4 +637,153 @@ test("Riding: the north-up control's arrow points at north on a rotated, followe
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
+});
+
+/** The union of everything a control actually paints, in page
+ * coordinates — the meaningful containment measure now that the north
+ * icon's own element box is larger than its artwork and rotates with the
+ * bearing. Duplicated locally per this repo's no-shared-e2e-helpers
+ * convention. */
+async function paintedInkExtent(button: Locator): Promise<{
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}> {
+  return button.evaluate((element) => {
+    const rects = [...element.querySelectorAll("path, circle")].map((shape) =>
+      shape.getBoundingClientRect(),
+    );
+    if (rects.length === 0) {
+      throw new Error("expected the control to paint at least one shape");
+    }
+    const left = Math.min(...rects.map((r) => r.left));
+    const top = Math.min(...rects.map((r) => r.top));
+    return {
+      x: left,
+      y: top,
+      width: Math.max(...rects.map((r) => r.right)) - left,
+      height: Math.max(...rects.map((r) => r.bottom)) - top,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------
+// Item 110 presentation follow-up — one representative integration state
+// for route Riding: all four controls draw their symbols, every existing
+// action still works, and the painted glyphs stay inside their buttons at
+// the supported portrait width and at 200% browser text.
+// ---------------------------------------------------------------------
+test.describe("drawn map control symbols (item 110 follow-up)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("Riding: all four controls draw their symbols, keep their actions, and stay contained", async ({
+    page,
+    context,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation(ROUTE_START);
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+    await page.goto("/");
+    await startRiding(page);
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    const controls = {
+      "Zoom in": page.getByRole("button", { name: "Zoom in" }),
+      "Zoom out": page.getByRole("button", { name: "Zoom out" }),
+      "Follow my location": page.getByRole("button", { name: "Follow my location" }),
+      "North-up, top-down view": page.getByRole("button", {
+        name: "North-up, top-down view",
+      }),
+    };
+    await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).toBe("35");
+
+    // Every symbol is drawn, and no control is left carrying a bare text
+    // character in place of one.
+    for (const [name, control] of Object.entries(controls)) {
+      await expect(control.locator("svg"), name).toBeVisible();
+      await expect(control, name).toHaveText("");
+    }
+
+    // Painted glyphs stay inside their own buttons at 390px.
+    for (const [name, control] of Object.entries(controls)) {
+      const buttonBox = await control.boundingBox();
+      if (!buttonBox) throw new Error(`expected ${name} to lay out`);
+      // The exact size the follow-up must preserve, not merely the 44px
+      // minimum: growing the control instead of its symbol would pass a
+      // minimum while breaking the contract.
+      expect(buttonBox.width, name).toBe(48);
+      expect(buttonBox.height, name).toBe(48);
+      const ink = await paintedInkExtent(control);
+      expect(
+        ink.x >= buttonBox.x &&
+          ink.y >= buttonBox.y &&
+          ink.x + ink.width <= buttonBox.x + buttonBox.width &&
+          ink.y + ink.height <= buttonBox.y + buttonBox.height,
+        `${name} paints outside its own button`,
+      ).toBe(true);
+    }
+
+    // The existing actions are untouched. Zoom steps the camera...
+    const zoomBefore = Number.parseFloat(
+      (await mapContainer.getAttribute("data-camera-zoom")) ?? "0",
+    );
+    await controls["Zoom out"].click();
+    await expect
+      .poll(async () =>
+        Number.parseFloat((await mapContainer.getAttribute("data-camera-zoom")) ?? "0"),
+      )
+      .toBeLessThan(zoomBefore);
+
+    // ...north-up reorients without recentring...
+    await controls["North-up, top-down view"].click();
+    await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
+    await expect(mapContainer).toHaveAttribute("data-camera-pitch", "0");
+    await expect(controls["North-up, top-down view"]).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // ...and Follow resumes the travel-up camera.
+    await controls["Follow my location"].click();
+    await expect(controls["Follow my location"]).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).toBe("35");
+
+    // The map is still pannable immediately outside the controls.
+    const canvas = mapContainer.locator("canvas");
+    await canvas.focus();
+    const centreBefore = await mapContainer.getAttribute("data-camera-center");
+    await page.keyboard.press("ArrowRight");
+    await expect
+      .poll(() => mapContainer.getAttribute("data-camera-center"))
+      .not.toBe(centreBefore);
+
+    // And at 200% browser text the glyphs are still inside their buttons,
+    // because they are sized in px rather than em.
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "200%";
+    });
+    for (const [name, control] of Object.entries(controls)) {
+      const buttonBox = await control.boundingBox();
+      if (!buttonBox) throw new Error(`expected ${name} to lay out at 200% text`);
+      expect(buttonBox.width, name).toBeGreaterThanOrEqual(44);
+      const ink = await paintedInkExtent(control);
+      expect(
+        ink.x >= buttonBox.x && ink.x + ink.width <= buttonBox.x + buttonBox.width,
+        `${name} paints outside its own button at 200% text`,
+      ).toBe(true);
+    }
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
 });

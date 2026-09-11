@@ -13,7 +13,9 @@ import { useOnlineStatus } from "../../platform/onlineStatus.ts";
 import { isWakeLockSupported, type WakeLockSource } from "../../platform/wakeLock.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
+import { CrosshairIcon } from "../shared/CrosshairIcon.tsx";
 import { NorthArrowIcon } from "../shared/NorthArrowIcon.tsx";
+import { ZoomIcon } from "../shared/ZoomIcon.tsx";
 import { FreeRoamStatusCard } from "./FreeRoamStatusCard.tsx";
 import { RidingImmersiveHeader } from "./RidingImmersiveHeader.tsx";
 import { useFreeRoamCamera } from "./useFreeRoamCamera.ts";
@@ -482,7 +484,7 @@ export function FreeRoamScreen({
                 aria-label="Zoom in"
                 className="ride-map-control ride-map-control--zoom"
               >
-                +
+                <ZoomIcon direction="in" />
               </button>
               <button
                 type="button"
@@ -490,7 +492,7 @@ export function FreeRoamScreen({
                 aria-label="Zoom out"
                 className="ride-map-control ride-map-control--zoom"
               >
-                −
+                <ZoomIcon direction="out" />
               </button>
             </div>
           ) : null}
@@ -505,7 +507,10 @@ export function FreeRoamScreen({
                   camera.isNorthUpTopDown ? " is-pressed" : ""
                 }`}
               >
-                <NorthArrowIcon bearingDegrees={camera.liveCameraBearingDegrees} />
+                <NorthArrowIcon
+                  bearingDegrees={camera.liveCameraBearingDegrees}
+                  isPressed={camera.isNorthUpTopDown}
+                />
               </button>
               <button
                 type="button"
@@ -516,9 +521,11 @@ export function FreeRoamScreen({
                   camera.mode === "following" ? " is-pressed" : ""
                 }`}
               >
-                {camera.mode === "following" && camera.awaitingFreshFix
-                  ? "Waiting…"
-                  : "⌖"}
+                {camera.mode === "following" && camera.awaitingFreshFix ? (
+                  "Waiting…"
+                ) : (
+                  <CrosshairIcon />
+                )}
               </button>
             </div>
           ) : null}

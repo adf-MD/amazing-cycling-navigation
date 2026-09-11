@@ -1177,3 +1177,124 @@ test("Free roam: the north-up control's arrow points at north on a rotated map",
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
+
+/** The union of everything a control actually paints, in page
+ * coordinates — the meaningful containment measure now that the north
+ * icon's own element box is larger than its artwork and rotates with the
+ * bearing. Duplicated locally per this repo's no-shared-e2e-helpers
+ * convention. */
+async function paintedInkExtent(button: Locator): Promise<{
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}> {
+  return button.evaluate((element) => {
+    const rects = [...element.querySelectorAll("path, circle")].map((shape) =>
+      shape.getBoundingClientRect(),
+    );
+    if (rects.length === 0) {
+      throw new Error("expected the control to paint at least one shape");
+    }
+    const left = Math.min(...rects.map((r) => r.left));
+    const top = Math.min(...rects.map((r) => r.top));
+    return {
+      x: left,
+      y: top,
+      width: Math.max(...rects.map((r) => r.right)) - left,
+      height: Math.max(...rects.map((r) => r.bottom)) - top,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------
+// Item 110 presentation follow-up — one representative integration state
+// for free roam, whose control markup is byte-identical to route Riding's
+// and is asserted to stay so at the unit level.
+// ---------------------------------------------------------------------
+test.describe("drawn map control symbols (item 110 follow-up)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("Free roam: all four controls draw their symbols, keep their actions, and stay contained", async ({
+    page,
+    context,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+    await startFreeRoam(page, context);
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    const controls = {
+      "Zoom in": page.getByRole("button", { name: "Zoom in" }),
+      "Zoom out": page.getByRole("button", { name: "Zoom out" }),
+      "Follow my location": page.getByRole("button", { name: "Follow my location" }),
+      "North-up, top-down view": page.getByRole("button", {
+        name: "North-up, top-down view",
+      }),
+    };
+    // The Follow control legitimately shows its pending wording until a
+    // fix lands, so wait for the crosshair rather than assume it.
+    await expect(controls["Follow my location"].locator("svg")).toBeVisible();
+
+    for (const [name, control] of Object.entries(controls)) {
+      await expect(control.locator("svg"), name).toBeVisible();
+      await expect(control, name).toHaveText("");
+
+      const buttonBox = await control.boundingBox();
+      if (!buttonBox) throw new Error(`expected ${name} to lay out`);
+      // The exact size the follow-up must preserve, not merely the 44px
+      // minimum.
+      expect(buttonBox.width, name).toBe(48);
+      expect(buttonBox.height, name).toBe(48);
+      const ink = await paintedInkExtent(control);
+      expect(
+        ink.x >= buttonBox.x &&
+          ink.y >= buttonBox.y &&
+          ink.x + ink.width <= buttonBox.x + buttonBox.width &&
+          ink.y + ink.height <= buttonBox.y + buttonBox.height,
+        `${name} paints outside its own button`,
+      ).toBe(true);
+    }
+
+    // Existing actions, untouched.
+    const zoomBefore = Number.parseFloat(
+      (await mapContainer.getAttribute("data-camera-zoom")) ?? "0",
+    );
+    await controls["Zoom in"].click();
+    await expect
+      .poll(async () =>
+        Number.parseFloat((await mapContainer.getAttribute("data-camera-zoom")) ?? "0"),
+      )
+      .toBeGreaterThan(zoomBefore);
+
+    await controls["North-up, top-down view"].click();
+    await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
+    await expect(controls["North-up, top-down view"]).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await controls["Follow my location"].click();
+    await expect(controls["Follow my location"]).toHaveAttribute("aria-pressed", "true");
+
+    // The map is still pannable immediately outside the controls.
+    const canvas = mapContainer.locator("canvas");
+    await canvas.focus();
+    const centreBefore = await mapContainer.getAttribute("data-camera-center");
+    await page.keyboard.press("ArrowRight");
+    await expect
+      .poll(() => mapContainer.getAttribute("data-camera-center"))
+      .not.toBe(centreBefore);
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
+});

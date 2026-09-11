@@ -114,3 +114,53 @@ Two are worth carrying forward. **Control 5 did not discriminate by geometry**, 
 - The presentation bearing is quantised to whole degrees. This is deliberate and imperceptible, but it means the arrow is not a sub-degree-accurate instrument and must not be treated as one.
 - The `e2e` convention proof and all browser coverage ran in Chromium and Chromium-emulated `android-chrome`. `webkit-smoke` could not launch locally (missing system libraries — an environment limitation covered by CI, not an application failure).
 - **No physical iPhone or Android verification is claimed.** See [`../current-status.md`](../current-status.md) for the required stationary, portrait checklist.
+
+### Presentation follow-up (11 September 2026, `0.4.28`)
+
+**Why.** The installed-iPhone check of `0.4.27` was positive on everything it exercised — the map rotated, the indicator updated once the gesture was released, and the control's tap action behaved. What it showed instead was that the four circular 48px map controls were not legible enough, nor distinct enough from one another. This is an acceptance-driven presentation follow-up to item 110, not a new backlog item, and it changes no behaviour at all.
+
+**The visual invariant implemented.**
+
+- The pointer's silhouette is item 110's, byte-for-byte: `M12 3 L19 20.5 L12 16 L5 20.5 Z`. It is now rendered in a **38px** box rather than 22px, so the artwork measures **22.2 × 27.7px** inside the unchanged 48px button.
+- A drawn upright **`N`** sits at the rotation centre, ink **6.0 × 6.8px**, with **+0.76px of clearance from the pointer's edge at every bearing**.
+- The letter stays upright while the pointer turns: the `<svg>` keeps item 110's own `transform: rotate(-bearing)` and the letter sits in a `<g transform="rotate(+bearing 12 12)">` that cancels it about the identical centre.
+- Inverse colour, with the two tokens resolved **inside** the component from a semantic `isPressed` flag, so the three screens pass state and never a colour: dark pointer with a light `N` when idle, light pointer with an accent `N` when pressed. No badge, disc or halo.
+- `CrosshairIcon` (22 × 22px, 2px stroke) and `ZoomIcon` (24 × 24px, `direction: "in" | "out"`) replace the `⌖`, `+` and `−` **text characters**. Those were rendered by whichever font in the system stack happened to carry them — one on an installed iPhone, another in CI — which is why their size and weight had never been consistent. The zoom pair is matched by construction: the minus is the horizontal bar, the plus is that same bar plus an identical vertical one.
+
+**Why 38px, when 26px was proposed first.** Because the letter is upright and centred, it is invariant under the pointer's rotation while the pointer is not. It must therefore fit the largest **disc** centred on the rotation point that lies inside the dart — **radius 3.3425 units**, set by the two slanted edges (the notch edge gives 3.3647). A first measurement taken at 0° only suggested 26px, then 32px, would work. Both are wrong: measured against the disc, a ~10px letter has **−1.23px** of clearance at 26px and **−0.39px** at 32px, i.e. it would clip the pointer at some bearings. 38px with a 9.4px letter is the first pairing that clears at every bearing while keeping the artwork comfortably inside the button. `northArrowGeometry.test.ts` keeps both rejected sizes as executable evidence.
+
+**Fail-first evidence**, taken against `b85c7f3` with the three screens and `NorthArrowIcon.tsx` reverted to their parent content and the new modules left in place so the test files could load:
+
+| Group                                                  | Against `b85c7f3`                        |
+| ------------------------------------------------------ | ---------------------------------------- |
+| `NorthArrowIcon.test.tsx`                              | **10 failed**, 12 passed                 |
+| The three screens' "drawn control symbols"             | **6 failed**, 5 passed                   |
+| Browser: shared north component separation/uprightness | **failed**                               |
+| Browser: Riding integration                            | **failed**                               |
+| Browser: Free roam integration                         | **failed**                               |
+| `northArrowGeometry.test.ts`                           | 10 passed — pure data, new coverage      |
+| `CrosshairIcon.test.tsx`, `ZoomIcon.test.tsx`          | 15 passed — new components, new coverage |
+| Existing item 110 browser suite                        | 4 passed — compatibility guards          |
+
+The passing screen tests are the compatibility half and are named as such: accessible names, both pressed semantics, and the pending `"Waiting…"`/`"Locating…"` wording are contracts this follow-up must **not** change, so they pass on the parent by design.
+
+**Negative controls.** All seven were applied, measured and reverted. **Two did not discriminate at first, and both exposed a real gap rather than test noise:**
+
+| #   | Control                                   | Result                                      |
+| --- | ----------------------------------------- | ------------------------------------------- |
+| 1   | Remove the `N`                            | 12 failed (unit); browser separation failed |
+| 2   | Drop the counter-rotation                 | 2 failed (unit); browser uprightness failed |
+| 3   | Reverse the counter-rotation              | 2 failed                                    |
+| 4   | Restore the old crosshair size            | 2 failed                                    |
+| 5   | Restore the old `+`/`−` size              | 1 failed                                    |
+| 6   | Enlarge the button instead of its symbol  | **passed at first** — fixed, then failed    |
+| 7   | Replace the pointer with a different icon | **passed at first** — fixed, then 3 failed  |
+
+Control 7 passed because the silhouette assertion compared the rendered path against the **same exported constant the component draws from** — a constant asserted to equal itself follows any edit to it and catches nothing. The shape is now pinned to a literal, with a second test proving the vertex list used by the containment proof still matches the path actually drawn. Control 6 passed because nothing anywhere asserted the button's **exact** size; every existing guard asserts `>= 44px`, which a 64px button satisfies while breaking this item's contract. All three screens now pin 48 × 48px exactly.
+
+**Two measurement findings worth carrying forward.**
+
+1. **A rotated element's bounding box is not its artwork.** `isFullyWithin(arrowBox, buttonBox)` began failing at 200% text — not because anything overflowed, but because a 38px square rotated 45° has a 53.7px axis-aligned box while the ink never leaves a 17.4px radius. Measured at 24.6°: element box 50.5px against a 48px button, ink 31.8 × 34.5px with at least 6.4px clear on every side. Containment is now measured on painted extent via the child shapes' own client rects, which is stricter than what it replaced.
+2. **The letter's centre is the worst place to sample it.** The `N`'s centre is its diagonal — about 1.15px across, the thinnest part of the glyph — which antialiases almost entirely into the pointer behind it. The composited probe samples the two **stems** (1.50px wide, full height) instead, and states its result as a ratio rather than an absolute tolerance, because the design's whole margin is about one pixel and an absolute threshold would be measuring the browser's antialiasing rather than the separation.
+
+**Limitations.** The 360-degree sweep proves containment exactly, but it **cannot** prove uprightness: a centred rectangle's footprint stays inside a rotation-invariant disc at any angle, so dropping or reversing the counter-rotation still passes it. Uprightness is proved separately, by the `<g>`'s transform and by the letter's composited `getScreenCTM()` carrying no rotation. The browser matrix is deliberately not a full pixel proof on every screen at every bearing: the shared component is proved once at representative bearings in both colour states, and each screen gets one representative integration state plus its existing action and containment checks. **No physical iPhone or Android verification of the revised symbols is claimed** — see [`../current-status.md`](../current-status.md).

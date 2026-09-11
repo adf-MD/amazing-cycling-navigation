@@ -2003,13 +2003,23 @@ button:focus-visible {
 
 /* Deliberately no font-weight here — the original inline Follow-location
  * button never set one (only North-up did), so it inherits normal
- * weight; a blanket weight on .ride-map-control would silently bold it. */
+ * weight; a blanket weight on .ride-map-control would silently bold it.
+ * The font-size is still load-bearing after the item 110 presentation
+ * follow-up: the crosshair itself is now a drawn CrosshairIcon, but this
+ * button still renders the word "Waiting…" as text in its place while a
+ * following camera awaits its first fresh fix, and 0.75rem is what keeps
+ * that word inside the 48px circle. */
 .ride-map-control--follow {
   font-size: 0.75rem;
 }
 
-/* backlog item 53's Zoom in/out buttons — same plain bold-glyph styling
- * as north-up's "N", since both are single-character icons. */
+/* backlog item 53's Zoom in/out buttons. The item 110 presentation
+ * follow-up replaced their "+"/"−" text characters with a shared drawn
+ * ZoomIcon, so the font sizing below no longer paints anything — it is
+ * kept because these buttons still inherit the shared control shape and
+ * removing it would be an unrelated change to a rule several bounding-box
+ * assertions sit on. (It formerly read "same styling as north-up's N";
+ * that letter stopped being text in item 110 itself.) */
 .ride-map-control--zoom {
   font-size: 1rem;
   font-weight: 700;
