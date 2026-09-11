@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence. Items 87–92 were added by the [release-readiness audit](release-readiness-audit.md) (item 86); items 87–92 have since been completed. Items 107–113 were added by the installed-iPhone field test of 10 September 2026 (see [current-status.md](current-status.md) for the dated evidence) and are all scheduled ahead of items 102 and 103, which keep their numbers; the authoritative execution order lives in the root [`CLAUDE.md`](../../CLAUDE.md)'s queue index and is deliberately not duplicated here.
+Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence. Items 87–92 were added by the [release-readiness audit](release-readiness-audit.md) (item 86); items 87–92 have since been completed. Items 107–113 were added by the installed-iPhone field test of 10 September 2026 (see [current-status.md](current-status.md) for the dated evidence) and are all scheduled ahead of items 102 and 103, which keep their numbers; the authoritative execution order lives in the root [`CLAUDE.md`](../../CLAUDE.md)'s queue index and is deliberately not duplicated here. Item 114 was added on 11 September 2026 from item 109's own Chromium verification work rather than from that field test, and is likewise scheduled ahead of items 102 and 103.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Entries through item 93 reproduce their original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this). Items 94 and later are new post-0.4.0 specifications authored directly into this file, following the same structure and conventions.
 
@@ -277,3 +277,42 @@ _Category: Internationalisation_
        - British spelling remains this project's rule for the English strings, per the root [`CLAUDE.md`](../../CLAUDE.md)'s interface and accessibility requirements. Localisation does not relax that.
      - Treat the string audit and the internationalisation boundary as compatibility-sensitive work in the sense the root `CLAUDE.md` uses: user-facing copy is asserted directly by a large body of Vitest and Playwright tests, so a migration that changes how a string is produced will move test expectations across the suite and must be staged accordingly rather than attempted in one pass.
      - Physical acceptance on the installed iPhone Home Screen PWA is required for whatever ships, in both languages. Physical Android verification is separately outstanding, as for most recent items.
+
+---
+
+<a id="item-114"></a>
+
+## Item 114 — Prevent Planning attribution and placement-control overlap at 200% browser text
+
+_Category: Interface and accessibility consistency_
+
+114. **Prevent Planning attribution and placement-control overlap at 200% browser text**
+     - Origin: item 109's own Chromium layout verification at a 200% root text size, 11 September 2026 — **not** the 10 September 2026 installed-iPhone field test, and **not** an installed-iPhone observation. See [`current-status.md`](current-status.md) for the ledger entry.
+     - **This is a confirmed automated accessibility and containment defect.** At 200% browser text, `.map-attribution` wraps to approximately **62.25 px** high, which lifts its top edge above the placement control's fixed `bottom: 44px` and overlaps `.planning-crosshair-callout`'s border box by approximately **26.25 px**.
+     - **Treat both figures as measurements taken from the tested fixture, not as universal CSS constants.** Re-measure against live layout before designing a correction; do not encode either number as a threshold.
+     - **It is not an item-109 regression, and item 109 is not reopened.** The same overlap was measured against the item-109 **parent** (commit `27fa0c8`), before the new 4px marker-isolation halo existed — and a box-shadow never affects layout in any case. Item 109 therefore neither introduced nor changed this. Its waypoint-marker layering correction remains valid and is now **physically accepted on the installed iPhone** (11 September 2026, deployed `0.4.26`); see item 109 ([`history/items-104-NN.md#item-109`](history/items-104-NN.md#item-109)), which is the work during which this pre-existing defect was measured and deliberately left alone.
+     - **This is automated browser-text scaling, not iOS Dynamic Type or iOS Larger Text.** ACN has no Dynamic Type opt-in, so the iOS Larger Text setting does not resize this application at all and cannot serve as the acceptance mechanism. **No corresponding physical-device failure is claimed.**
+     - Required outcome — at the project's supported 200% browser-text condition, the eventual implementation must ensure that:
+       - Planning attribution and the placement control **do not overlap**;
+       - attribution remains **fully visible, legible and operable**;
+       - required attribution content is **never hidden, clipped or removed**;
+       - the Add, Move and Insert-after callout wording remains **fully visible and operable**, for the longest label `describeCrosshairAction` can render;
+       - item 109's **4 px marker-isolation band remains effective**;
+       - **waypoint-marker and distance-badge stacking remains unchanged** unless separately justified — item 84's coupled pair still must not be changed in isolation;
+       - the placement control **retains its touch target**;
+       - **map gestures remain available outside visible controls**;
+       - the fix introduces **no large invisible interaction-blocking layer**;
+       - ordinary **390 px portrait presentation remains unchanged or demonstrably equivalent**;
+       - the **narrowest supported portrait layout has no horizontal document overflow**;
+       - Planning **imagery/status overlays and map controls remain clear of both elements**.
+     - **The implementation must inspect responsive placement, wrapping and the reserved map-control areas before selecting a correction.** No particular offset, z-index, font reduction or relocation is prescribed here, deliberately.
+     - Explicitly rejected directions, none of which is an acceptable correction:
+       - hiding, shortening or clipping legally required attribution;
+       - reducing text size merely to fit;
+       - ellipsis;
+       - removing item 109's isolation band;
+       - moving geographic waypoint coordinates;
+       - relying on landscape;
+       - treating unsupported iOS Larger Text as the acceptance mechanism.
+     - Evidence required when this is implemented: **fail-first browser geometry at 200%**, demonstrating the overlap before the correction and its absence after, plus **ordinary-size compatibility controls** proving the 390 px portrait presentation is unchanged or demonstrably equivalent.
+     - Physical acceptance on the installed iPhone Home Screen PWA is required for whatever ships. Physical Android verification is separately outstanding, as for most recent items.
