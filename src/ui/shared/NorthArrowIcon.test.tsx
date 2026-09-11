@@ -112,10 +112,12 @@ describe("NorthArrowIcon", () => {
   });
 
   it("renders at the default size, overridable for a different control", () => {
-    // 38px, not item 110's original 22px: the upright letter must fit the
-    // largest disc inside the dart, which is what the box size buys.
-    expect(renderArrow(0)).toHaveAttribute("width", "38");
-    expect(renderArrow(0)).toHaveAttribute("height", "38");
+    // 42px. The upright letter must fit the largest disc inside the dart,
+    // which is what the box size buys; the second follow-up enlarged it
+    // again so the artwork reads less fragile without reaching the
+    // button's border.
+    expect(renderArrow(0)).toHaveAttribute("width", "42");
+    expect(renderArrow(0)).toHaveAttribute("height", "42");
     const { container } = render(<NorthArrowIcon bearingDegrees={0} sizePx={30} />);
     expect(container.querySelector("svg")).toHaveAttribute("width", "30");
   });

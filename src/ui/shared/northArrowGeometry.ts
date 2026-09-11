@@ -63,17 +63,33 @@ export const NORTH_LETTER_CORNERS: readonly (readonly [number, number])[] = [
 ];
 
 /**
- * The rendered size of the whole icon box. 38px, not the 22px item 110
- * shipped and not the 26px first proposed: the letter stays upright while
- * the dart turns under it, so it is invariant under that rotation and
- * must fit the largest disc centred on ROTATION_CENTRE that lies inside
- * the dart — radius 3.3425 units, set by the two slanted edges. At 26px
- * that disc leaves the letter -1.23px of clearance and at 32px -0.39px,
- * i.e. it would clip the dart at some bearings. 38px yields +0.76px at
- * every bearing, which northArrowGeometry.test.ts sweeps degree by
- * degree. The hosting button stays 48px throughout.
+ * The rendered size of the whole icon box.
+ *
+ * Two separate clearances govern it, and both are swept degree by degree
+ * in northArrowGeometry.test.ts rather than sampled:
+ *
+ * 1. **The letter inside the dart.** It stays upright while the dart
+ *    turns under it, so it is invariant under that rotation and must fit
+ *    the largest disc centred on ROTATION_CENTRE that lies inside the
+ *    dart — radius 3.3425 units, set by the two slanted edges. At 26px
+ *    that disc leaves the letter -1.23px and at 32px -0.39px, i.e. it
+ *    would clip the dart at some bearings; 38px gave +0.76px and 42px
+ *    gives **+0.84px** at every bearing.
+ * 2. **The dart inside the button.** The artwork's farthest point is a
+ *    wing, 11.0114 units from the rotation centre, so its radial distance
+ *    is the same at every bearing. At 42px that is 19.27px against the
+ *    button's 22px inner border edge (48px wide, `box-sizing: border-box`,
+ *    2px border), leaving **2.73px** — or 4.73px while pressed, when the
+ *    border is dropped.
+ *
+ * 42px rather than 38px because the pointer still read as slightly
+ * fragile on the installed iPhone at 38px. It is the whole icon that
+ * scales: the dart path and the letter path are both untouched, so their
+ * relationship to each other and to the button is preserved exactly and
+ * only the multiplier changes. The hosting button stays 48px throughout,
+ * and the icon's own square box must stay within its 44px content box.
  */
-export const NORTH_ARROW_SIZE_PX = 38;
+export const NORTH_ARROW_SIZE_PX = 42;
 
 /** Rotates a point clockwise by `degrees` about ROTATION_CENTRE, matching
  * SVG's own `rotate(a cx cy)` convention (positive is clockwise, because

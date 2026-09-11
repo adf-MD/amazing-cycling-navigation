@@ -733,6 +733,15 @@ test.describe("drawn map control symbols (item 110 follow-up)", () => {
       ).toBe(true);
     }
 
+    // Compatibility guard: this screen already used the standard order
+    // before Planning was aligned to it, and must keep it.
+    const clusterLabels = await page
+      .locator(".ride-map-camera-controls")
+      .evaluate((cluster) =>
+        [...cluster.querySelectorAll("button")].map((b) => b.getAttribute("aria-label")),
+      );
+    expect(clusterLabels).toEqual(["North-up, top-down view", "Follow my location"]);
+
     // The existing actions are untouched. Zoom steps the camera...
     const zoomBefore = Number.parseFloat(
       (await mapContainer.getAttribute("data-camera-zoom")) ?? "0",

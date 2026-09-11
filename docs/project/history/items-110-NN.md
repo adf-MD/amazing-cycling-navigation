@@ -164,3 +164,57 @@ Control 7 passed because the silhouette assertion compared the rendered path aga
 2. **The letter's centre is the worst place to sample it.** The `N`'s centre is its diagonal — about 1.15px across, the thinnest part of the glyph — which antialiases almost entirely into the pointer behind it. The composited probe samples the two **stems** (1.50px wide, full height) instead, and states its result as a ratio rather than an absolute tolerance, because the design's whole margin is about one pixel and an absolute threshold would be measuring the browser's antialiasing rather than the separation.
 
 **Limitations.** The 360-degree sweep proves containment exactly, but it **cannot** prove uprightness: a centred rectangle's footprint stays inside a rotation-invariant disc at any angle, so dropping or reversing the counter-rotation still passes it. Uprightness is proved separately, by the `<g>`'s transform and by the letter's composited `getScreenCTM()` carrying no rotation. The browser matrix is deliberately not a full pixel proof on every screen at every bearing: the shared component is proved once at representative bearings in both colour states, and each screen gets one representative integration state plus its existing action and containment checks. **No physical iPhone or Android verification of the revised symbols is claimed** — see [`../current-status.md`](../current-status.md).
+
+### Second presentation follow-up (11 September 2026, `0.4.29`)
+
+**Why.** `0.4.28` was exercised on the installed iPhone and every check actually performed passed — in Planning, in free roam, and in route riding **stationary on a test route**. Two refinements came out of that session: the north pointer was attractive and legible but still looked **slightly fragile**, and **Planning reversed** the vertical control order used by the other two screens.
+
+**What shipped.** Two changes, nothing else.
+
+1. **The north artwork grows from 38px to 42px.** One constant — `NORTH_ARROW_SIZE_PX` — which is already the sole source of `NorthArrowIcon`'s default size. `DART_PATH` and `NORTH_LETTER_PATH` are byte-for-byte unchanged, so the whole icon scales together and every internal relationship is preserved exactly; nothing was nudged independently to reach a preferred number.
+2. **One right-hand control order on every map: North-up first, Location/Follow second.** Route riding and free roam already did this (`RidingScreen.tsx` North-up before Follow, `FreeRoamScreen.tsx` likewise) and were left untouched. Planning's two buttons were swapped **in the DOM**, not with CSS — no `order`, no `column-reverse` — so sequential keyboard and assistive-technology navigation matches what is on screen rather than merely looking as though it does. There is no `tabIndex` anywhere on these screens, so DOM order alone governs focus order.
+
+**The geometry, recomputed from the shipped constants rather than copied.**
+
+|                                                                    | 38px            | **42px**            |
+| ------------------------------------------------------------------ | --------------- | ------------------- |
+| Dart artwork                                                       | 22.17 × 27.71px | **24.50 × 30.62px** |
+| Farthest dart vertex → inside of button border (radial, unpressed) | 4.565px         | **2.730px**         |
+| Same, pressed (border dropped, radius 24px)                        | 6.565px         | **4.730px**         |
+| `N` clearance inside the rotation-invariant disc, every bearing    | +0.760px        | **+0.840px**        |
+| `N` ink                                                            | 5.985 × 6.808px | **6.615 × 7.525px** |
+
+The farthest point of the artwork is a **wing**, 11.0114 units from the rotation centre — not the apex. Because the dart turns about that exact centre, its radial clearance from the circular button's border is **identical at every bearing**, which the new sweep asserts as well as measures. The button's inner border edge is a 22px-radius circle: 48px wide, `box-sizing: border-box` globally, 2px border.
+
+**Fail-first evidence against `12333c8`, classified honestly.**
+
+_Genuine fail-first_ — cannot pass on the parent:
+
+| Contract                                           | Against `12333c8`                                                      |
+| -------------------------------------------------- | ---------------------------------------------------------------------- |
+| The svg renders at 42px, and the `N`'s ink follows | **4 failed** (`NorthArrowIcon.test.tsx`, `northArrowGeometry.test.ts`) |
+| Planning's DOM order is North-up then Locate me    | **failed**                                                             |
+| Planning's visual order matches the DOM            | **failed** (browser)                                                   |
+| Planning's sequential keyboard order matches       | **failed** (browser)                                                   |
+
+_Compatibility guards_ — these already passed at `12333c8` and are regression protection, **not** evidence of new behaviour: the button is exactly 48px; the dart stays inside the border at every bearing; route riding and free roam already used the standard order (both confirmed passing on the parent); and `DART_PATH`, `NORTH_LETTER_PATH`, every handler, camera behaviour and the `Locating…` / `Waiting…` fallbacks are unchanged.
+
+**A forward-looking guard that deliberately cannot fail today.** `e2e/planning.spec.ts`'s composited probe used pixel constants derived for the 38px box (`PROBE_RADIUS_PX = 4.2`, `STEM_OFFSET_PX = 2.24`). They are _correct at 38px_, so a runtime-scaled replacement cannot honestly fail on the parent. Its value was demonstrated the other way round — by restoring the stale constants **against the new 42px build** and measuring what degrades: the probe's vertical margin from the letter collapses from **0.80px to 0.44px** (about 1.3 device pixels at the 3× sampling scale, against an antialiased edge), and the stem probe sits 0.24px off the true stem centre. The test still passed, which is precisely why this is filed as a regression guard rather than as evidence. The offsets are now viewBox-unit fractions multiplied by the svg's _rendered_ width, so every margin is preserved in proportion at any size and the constants cannot go stale again.
+
+**Negative controls.** Six were applied, measured and reverted. **One exposed a real gap and one was my own badly-built control** — both reported rather than quietly re-run:
+
+| #   | Control                                       | Result                                               |
+| --- | --------------------------------------------- | ---------------------------------------------------- |
+| 1   | Restore the 38px size                         | 4 failed                                             |
+| 2   | Enlarge the button along with the icon        | failed (browser)                                     |
+| 3   | Change the `N` path rather than only scaling  | **passed at first** — fixed, then 2 failed           |
+| 3b  | Change the dart path rather than only scaling | 3 failed                                             |
+| 4   | Swap visually with CSS, DOM order unchanged   | **passed at first** — control was wrong, then failed |
+| 5   | Reorder the DOM, leave visual order contrary  | failed (browser)                                     |
+| 6   | Remove `Locating…` / `Waiting…`               | 1 failed / 4 failed                                  |
+
+Control 3 passed because **nothing pinned `NORTH_LETTER_PATH`**, and — the worse half — nothing checked that `NORTH_LETTER_BOUNDS` actually described the path being drawn. The containment sweep works off the bounds while the component draws the path, so the two could drift and the proof would keep passing while the letter clipped. Both are now closed: the letter is pinned to a literal, and a second test parses the path's own commands and ties its extents to the bounds. This is the same class of gap as the previous slice's self-referential `DART_PATH` assertion.
+
+Control 4 passed for a different reason entirely: the control itself was faulty. It inserted `flex-direction: column-reverse` _above_ the rule's own `flex-direction: column`, which overrode it, so nothing actually changed. Rebuilt to replace the declaration rather than precede it, it fails on the visual-order assertion (north at y=332.78 against locate at y=276.78). **The test was never weak; the control was.**
+
+**Limitations.** The `0.4.28` field result covers only what was exercised: `Waiting…` was **not observed** (transient, and it did not fail), and route riding was checked **stationary** — the route was never actively followed. Neither the 42px presentation nor Planning's reordered controls has any physical verification; both carry automated evidence only. Physical Android remains separately outstanding. The one element-box containment assertion left in the suite (`planning.spec.ts`'s 390px check) is safe at 42px only because it measures at bearing 0 — a rotated 42px square spans 59.4px, against 53.7px at 38px — and everything rotated is measured on painted ink instead.

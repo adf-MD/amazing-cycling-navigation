@@ -529,6 +529,20 @@ describe("FreeRoamScreen", () => {
       return { map, fake };
     }
 
+    // Compatibility guard, not new evidence: free roam already put
+    // North-up above Follow before the item 110 second follow-up.
+    it("already renders North-up before Follow, and keeps doing so", () => {
+      renderFreeRoam();
+
+      const cluster = document.querySelector(".ride-map-camera-controls");
+      if (!(cluster instanceof HTMLElement)) {
+        throw new Error("expected the free roam camera cluster to render");
+      }
+      expect(
+        [...cluster.querySelectorAll("button")].map((b) => b.getAttribute("aria-label")),
+      ).toEqual(["North-up, top-down view", "Follow my location"]);
+    });
+
     it("shows the pending wording, not the crosshair, before the first fix", () => {
       renderFreeRoam();
 

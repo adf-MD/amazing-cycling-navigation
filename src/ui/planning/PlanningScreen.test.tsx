@@ -1885,6 +1885,75 @@ describe("PlanningScreen", () => {
     // Item 110 presentation follow-up: every one of Planning's four map
     // controls now draws its symbol, so none of them carries a bare text
     // character any more.
+    // Item 110 second follow-up: the right-hand cluster uses one order on
+    // every map — North-up first, Location/Follow second. Planning was the
+    // odd one out.
+    describe("right-hand control order (item 110 second follow-up)", () => {
+      function rightHandCluster(): HTMLElement {
+        const cluster = document.querySelector(".planning-map-controls");
+        if (!(cluster instanceof HTMLElement)) {
+          throw new Error("expected the Planning right-hand control cluster to render");
+        }
+        return cluster;
+      }
+
+      it("renders North-up before Locate me in the DOM", () => {
+        const map = createMockMapFactory();
+        render(
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+        );
+        map.triggerLoad();
+
+        const labels = [...rightHandCluster().querySelectorAll("button")].map((button) =>
+          button.getAttribute("aria-label"),
+        );
+        expect(labels).toEqual(["North-up, top-down view", "Locate me"]);
+      });
+
+      // DOM order is the whole mechanism here: there is no tabIndex
+      // anywhere on this screen, so sequential focus follows markup order
+      // and nothing else. Asserting the order of the focusable buttons is
+      // therefore asserting the keyboard order.
+      it("puts North-up first in sequential focus order", () => {
+        const map = createMockMapFactory();
+        render(
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+        );
+        map.triggerLoad();
+
+        const cluster = rightHandCluster();
+        const buttons = [...cluster.querySelectorAll("button")];
+        for (const button of buttons) {
+          expect(button.getAttribute("tabindex")).toBeNull();
+        }
+        const [first, second] = buttons;
+        if (!first || !second) {
+          throw new Error("expected both right-hand controls to render");
+        }
+        expect(first.getAttribute("aria-label")).toBe("North-up, top-down view");
+        expect(second.getAttribute("aria-label")).toBe("Locate me");
+        expect(
+          first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+      });
+
+      it("leaves the zoom cluster's own order alone", () => {
+        const map = createMockMapFactory();
+        render(
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+        );
+        map.triggerLoad();
+
+        const zoom = document.querySelector(".planning-map-zoom-controls");
+        if (!(zoom instanceof HTMLElement)) {
+          throw new Error("expected the Planning zoom cluster to render");
+        }
+        expect(
+          [...zoom.querySelectorAll("button")].map((b) => b.getAttribute("aria-label")),
+        ).toEqual(["Zoom in", "Zoom out"]);
+      });
+    });
+
     describe("drawn control symbols (item 110 presentation follow-up)", () => {
       function controls() {
         return {

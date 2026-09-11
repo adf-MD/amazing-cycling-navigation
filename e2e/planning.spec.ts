@@ -1280,7 +1280,7 @@ test.describe("phone viewport", () => {
     // Backlog item 52: the new top-left Zoom in/out cluster is a real
     // ≥44×44px touch target, fully inside the map, with a genuine gap
     // between the two buttons and no intersection with the top-right
-    // Locate-me/North-up cluster or the attribution.
+    // North-up/Locate-me cluster or the attribution.
     const zoomInButton = page.getByRole("button", { name: "Zoom in" });
     const zoomOutButton = page.getByRole("button", { name: "Zoom out" });
     const [zoomInBox, zoomOutBox] = await Promise.all([
@@ -2432,14 +2432,14 @@ test.describe("north-pointing orientation indicator (backlog item 110)", () => {
    * read back from a real screenshot of the button.
    *
    * The offsets are deliberately rotation-invariant. Every point within
-   * 5.29px of the centre lies inside the dart at any bearing (that is the
-   * inradius the icon size was chosen against), while the upright letter
-   * reaches only 2.99px horizontally and 3.40px vertically. PROBE_RADIUS_PX
-   * sits between the two with about a pixel of margin on each side, so the
-   * axial probes are always pointer and the centre is always letter, at
-   * every bearing and with no per-angle bookkeeping. Sampled at a 3x
-   * device scale — the same ratio the installed iPhone renders at — so a
-   * one-pixel CSS margin is three real pixels rather than a coin toss
+   * the dart's inradius of the centre lies inside the dart at any bearing,
+   * while the upright letter reaches less far on both axes; the probe
+   * radius sits between the two, so the axial probes are always pointer
+   * and the stems are always letter, at every bearing and with no
+   * per-angle bookkeeping. All of it is expressed in viewBox units and
+   * scaled by the rendered size, so it holds at any icon size. Sampled at
+   * a 3x device scale — the same ratio the installed iPhone renders at —
+   * so a one-pixel CSS margin is three real pixels rather than a coin toss
    * against antialiasing.
    */
   async function sampleControlColours(
@@ -2507,17 +2507,42 @@ test.describe("north-pointing orientation indicator (backlog item 110)", () => {
     });
   }
 
-  /** Between the upright letter's reach (2.99px across, 3.40px down) and
-   * the dart's 5.29px inradius — about a pixel clear of each. */
-  const PROBE_RADIUS_PX = 4.2;
+  /**
+   * The probe offsets, in the icon's own viewBox units rather than in
+   * pixels.
+   *
+   * They were pixel constants until the icon grew from 38px to 42px, at
+   * which point they silently detuned: the letter's reach grows with the
+   * box, so a fixed 4.2px probe that had cleared the letter by 0.79px
+   * vertically at 38px clears it by only 0.44px at 42px — about 1.3
+   * device pixels at this scale, against an antialiased edge. Expressed
+   * as units and multiplied by the svg's *rendered* width below, every
+   * margin is preserved in proportion at any size, and these cannot go
+   * stale again.
+   *
+   * PROBE_RADIUS sits between the upright letter's reach (1.89 units
+   * across, 2.15 down) and the dart's 3.3425-unit inradius.
+   */
+  const PROBE_RADIUS_UNITS = 2.6526;
 
-  /** The centre of one of the letter's two vertical stems: 1.50px wide
-   * and full height, so it survives antialiasing at any device scale.
-   * Deliberately NOT the glyph's centre, which is its diagonal — the
-   * thinnest part of the letter, measured at roughly 1.15px across, which
+  /** The centre of one of the letter's two vertical stems — 0.95 units
+   * wide and full height, so it survives antialiasing at any device
+   * scale. Deliberately NOT the glyph's centre, which is its diagonal:
+   * the thinnest part of the letter, roughly 0.73 units across, which
    * blends almost entirely into the pointer behind it and would make this
    * probe read the pointer's own colour. */
-  const STEM_OFFSET_PX = 2.24;
+  const STEM_OFFSET_UNITS = 1.4147;
+
+  const ICON_VIEWBOX_UNITS = 24;
+
+  /** The icon's rendered size, read from the element rather than assumed,
+   * so the offsets above convert to pixels at whatever size ships. */
+  async function iconPixelsPerUnit(arrow: Locator): Promise<number> {
+    const width = await arrow.evaluate(
+      (element) => element.getBoundingClientRect().width,
+    );
+    return width / ICON_VIEWBOX_UNITS;
+  }
 
   test.describe("composited letter separation", () => {
     // The installed iPhone renders at 3x; sampling there too means an
@@ -2529,23 +2554,26 @@ test.describe("north-pointing orientation indicator (backlog item 110)", () => {
     }) => {
       const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
       const { mapContainer, northUpButton } = await openPlanning(page);
+      const arrow = northUpButton.locator("svg");
       const letter = northUpButton.locator("svg g path");
 
-      // Four points that are always dart, plus the centre which is always
-      // letter — see sampleControlColours for why these hold at any angle.
       /** Two points always on the letter's ink, then four always on the
        * pointer around it. Both sets are rotation-invariant: the letter
-       * is fixed upright, and every point inside the dart's 5.29px
-       * inradius stays inside the dart at any bearing. */
+       * is fixed upright, and every point inside the dart's inradius
+       * stays inside the dart at any bearing. Scaled from the icon's
+       * rendered size, so they hold whatever that size is. */
+      const pxPerUnit = await iconPixelsPerUnit(arrow);
+      const stemOffsetPx = STEM_OFFSET_UNITS * pxPerUnit;
+      const probeRadiusPx = PROBE_RADIUS_UNITS * pxPerUnit;
       const letterProbes = [
-        [-STEM_OFFSET_PX, 0],
-        [STEM_OFFSET_PX, 0],
+        [-stemOffsetPx, 0],
+        [stemOffsetPx, 0],
       ] as const;
       const pointerProbes = [
-        [-PROBE_RADIUS_PX, 0],
-        [PROBE_RADIUS_PX, 0],
-        [0, -PROBE_RADIUS_PX],
-        [0, PROBE_RADIUS_PX],
+        [-probeRadiusPx, 0],
+        [probeRadiusPx, 0],
+        [0, -probeRadiusPx],
+        [0, probeRadiusPx],
       ] as const;
       const probes = [...letterProbes, ...pointerProbes];
 
@@ -2674,6 +2702,52 @@ test.describe("north-pointing orientation indicator (backlog item 110)", () => {
     });
   });
 
+  test("the right-hand controls read North-up then Locate me, in the DOM, on screen and to the keyboard", async ({
+    page,
+  }) => {
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+    const { northUpButton } = await openPlanning(page);
+    const locateButton = page.getByRole("button", { name: "Locate me" });
+    await expect(locateButton).toBeVisible();
+
+    // 1. DOM order — the markup itself, not a CSS arrangement of it.
+    const domLabels = await page
+      .locator(".planning-map-controls")
+      .evaluate((cluster) =>
+        [...cluster.querySelectorAll("button")].map((b) => b.getAttribute("aria-label")),
+      );
+    expect(domLabels).toEqual(["North-up, top-down view", "Locate me"]);
+
+    // 2. Visual order — and it must agree with the DOM, which is the
+    // whole point. Nothing may reorder them in CSS.
+    const northBox = await northUpButton.boundingBox();
+    const locateBox = await locateButton.boundingBox();
+    if (!northBox || !locateBox) {
+      throw new Error("expected both right-hand controls to lay out");
+    }
+    expect(northBox.y).toBeLessThan(locateBox.y);
+    expect(northBox.y + northBox.height).toBeLessThanOrEqual(locateBox.y);
+    const cssOrder = await page.locator(".planning-map-controls").evaluate((cluster) => {
+      const container = getComputedStyle(cluster);
+      return {
+        flexDirection: container.flexDirection,
+        childOrders: [...cluster.querySelectorAll("button")].map(
+          (b) => getComputedStyle(b).order,
+        ),
+      };
+    });
+    expect(cssOrder.flexDirection).toBe("column");
+    expect(cssOrder.childOrders).toEqual(["0", "0"]);
+
+    // 3. Keyboard order — sequential focus, driven by real Tab presses.
+    await northUpButton.focus();
+    await expect(northUpButton).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(locateButton).toBeFocused();
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  });
+
   test("at 200% browser text the control stays contained and adds no horizontal overflow of its own", async ({
     page,
   }) => {
@@ -2700,9 +2774,9 @@ test.describe("north-pointing orientation indicator (backlog item 110)", () => {
     // Containment is measured on what the control actually PAINTS, not on
     // the <svg> element's box. Since item 110's follow-up the icon box is
     // larger than the artwork inside it and carries a rotation, so the
-    // element's axis-aligned box grows with the angle (a 38px square at
-    // 45 degrees measures 53.7px) while the ink never leaves a circle of
-    // radius 17.4px about the centre. The element box would therefore
+    // element's axis-aligned box grows with the angle (a 42px square at
+    // 45 degrees measures 59.4px) while the ink never leaves a circle of
+    // radius 19.3px about the centre. The element box would therefore
     // report a false overflow; the ink is the real invariant, and this is
     // a stricter check than the one it replaces, not a looser one.
     const ink = await paintedInkExtent(northUpButton);

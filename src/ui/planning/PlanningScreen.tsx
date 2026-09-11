@@ -1767,15 +1767,13 @@ export function PlanningScreen({
           </button>
         </div>
         <div className="planning-map-controls">
-          <button
-            type="button"
-            className="planning-map-control"
-            onClick={handleLocateMe}
-            disabled={locateStatus === "locating"}
-            aria-label="Locate me"
-          >
-            {locateStatus === "locating" ? "Locating…" : <CrosshairIcon />}
-          </button>
+          {/* North-up first, Locate me second — the one right-hand order
+           * used on every map (item 110's second follow-up). Route riding
+           * and free roam already did this; Planning was the odd one out.
+           * The order is expressed in the DOM, never with CSS `order`, so
+           * that sequential keyboard and assistive-technology navigation
+           * matches what is on screen rather than merely looking as if it
+           * does. */}
           <button
             type="button"
             className={`planning-map-control${isNorthUpTopDown ? " is-pressed" : ""}`}
@@ -1787,6 +1785,15 @@ export function PlanningScreen({
               bearingDegrees={settledOrientation?.bearingDegrees ?? null}
               isPressed={isNorthUpTopDown}
             />
+          </button>
+          <button
+            type="button"
+            className="planning-map-control"
+            onClick={handleLocateMe}
+            disabled={locateStatus === "locating"}
+            aria-label="Locate me"
+          >
+            {locateStatus === "locating" ? "Locating…" : <CrosshairIcon />}
           </button>
         </div>
         <div className="planning-map-status-overlay">

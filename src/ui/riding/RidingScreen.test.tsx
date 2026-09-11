@@ -6066,6 +6066,23 @@ describe("RidingScreen", () => {
         };
       }
 
+      // Compatibility guard, not new evidence: route riding already put
+      // North-up above Follow before the item 110 second follow-up, and
+      // must keep doing so now that Planning has been aligned to it.
+      it("already renders North-up before Follow, and keeps doing so", async () => {
+        await startFollowedRide();
+
+        const cluster = document.querySelector(".ride-map-camera-controls");
+        if (!(cluster instanceof HTMLElement)) {
+          throw new Error("expected the Riding camera cluster to render");
+        }
+        expect(
+          [...cluster.querySelectorAll("button")].map((b) =>
+            b.getAttribute("aria-label"),
+          ),
+        ).toEqual(["North-up, top-down view", "Follow my location"]);
+      });
+
       it("draws all four symbols, leaving no text glyph behind", async () => {
         const { northUpButton } = await startFollowedRide();
 

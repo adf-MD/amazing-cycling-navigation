@@ -995,7 +995,8 @@ button:focus-visible {
   width: 100%;
 }
 
-/* Planning's own two map controls (Locate me, north-up) — top-right,
+/* Planning's own two map controls (north-up, then Locate me — the one
+ * right-hand order used on every map, item 110's second follow-up) — top-right,
  * clear of the centred crosshair, the bottom-centre "Add waypoint here"
  * button, and .map-attribution's bottom-left corner. Riding/free-roam's
  * own equivalent North-up/Follow cluster (RidingScreen.tsx/
@@ -1037,7 +1038,7 @@ button:focus-visible {
 /* Overrides the global `button` rule's new horizontal padding: this is a
  * fixed 48px circular icon button, so extra padding would enlarge it into
  * an oval and risk e2e/layout.spec.ts's bounding-box assertions for the
- * Locate-me/North-up/Follow-location controls. Every other property this
+ * North-up/Locate-me/Follow-location controls. Every other property this
  * class needs (border/background/colour/font) is already fully specified
  * above, so padding is the only property that needs reasserting here. */
 .planning-map-control {
@@ -1045,7 +1046,7 @@ button:focus-visible {
 }
 
 /* Planning's Zoom in/out cluster (backlog item 52) — top-left, mirroring
- * .planning-map-controls' top-right Locate-me/North-up cluster exactly but
+ * .planning-map-controls' top-right North-up/Locate-me cluster exactly but
  * reflected onto the opposite corner, so the two clusters can never be
  * mistaken for one group and never overlap regardless of viewport width.
  * Reuses .planning-map-control for individual button shape/size (48px
