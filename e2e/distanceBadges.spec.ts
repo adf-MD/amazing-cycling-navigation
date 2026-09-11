@@ -1253,10 +1253,16 @@ test.describe("Planning", () => {
     // intervening stacking context (haveStackingSafeAncestry) — see the
     // coincident-waypoint test above for the same caveat and why it
     // matters (a naive comparison can be right for the wrong reason).
+    // .planning-crosshair-callout joined this list with backlog item 109,
+    // which gave it the z-index it had always lacked. Before that it sat
+    // at z-index: auto and a badge painted straight over it, exactly as a
+    // waypoint marker did — so on that parent this entry fails outright
+    // (Number("auto") is NaN).
     const overlaySelectors = [
       ".map-attribution",
       ".planning-map-controls",
       ".planning-map-zoom-controls",
+      ".planning-crosshair-callout",
     ];
     for (const selector of overlaySelectors) {
       const overlay = page.locator(selector).first();

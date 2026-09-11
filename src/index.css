@@ -1083,12 +1083,54 @@ button:focus-visible {
  * untouched at the exact centre; this is purely the action control, never
  * the placement point. bottom:44 clears .map-attribution's bottom-left
  * corner on narrow phone widths, where a centred button would otherwise
- * sit underneath it. */
+ * sit underneath it.
+ *
+ * z-index (backlog item 109): this control was the only piece of Planning
+ * map chrome with no z-index of its own. Being position:absolute with a
+ * transform it was already its own stacking context, but at level 0 — CSS
+ * 2.1 Appendix E's step 6 — while .planning-waypoint-marker (z-index: 2)
+ * and .distance-badge-marker (z-index: 1) reach step 7, and nothing
+ * between them establishes an intervening stacking context
+ * (.planning-map-container, MapView's own root div, .maplibregl-map and
+ * .maplibregl-canvas-container are all positioned with z-index: auto). So
+ * a marker painted straight over this button's text and border regardless
+ * of DOM order, which is exactly the reported field defect.
+ *
+ * 3, deliberately, and not 5: it is strictly above BOTH item-84 marker
+ * values without touching either of them (that pair is explicitly coupled
+ * — see .planning-waypoint-marker), and strictly below the 5 every other
+ * map overlay uses (.planning-map-controls, .planning-map-zoom-controls,
+ * .planning-map-status-overlay, .map-attribution, .map-status-overlay).
+ * Joining that 5 tier would instead have made painting order fall back to
+ * DOM order within it, silently lifting this button above .map-attribution
+ * and .map-status-overlay, which are DOM-earlier because they live inside
+ * MapView — a relationship mapImageryRecovery.spec.ts depends on. Every
+ * existing pairwise relationship is therefore unchanged; only
+ * marker-versus-control is corrected.
+ *
+ * The box-shadow is a 4px opaque isolation band in this control's own
+ * background colour, not decoration for its own sake: stacking alone
+ * stops a marker painting ACROSS the control, but a marker whose centre
+ * lands on the button's edge would still protrude right up against the
+ * border and read as a badge attached to it. The band is part of the
+ * button's own box decoration, so it paints at the same z-index with no
+ * extra element, no wrapper and no layout change — and because a
+ * box-shadow is never hit-testable, the map stays reachable immediately
+ * outside the button rather than gaining an invisible blocking layer.
+ *
+ * No max-width is needed here and none was added: an absolutely
+ * positioned, shrink-to-fit box with left:50% and no right can never grow
+ * past the remaining half of .planning-map-container, so the longest
+ * reachable label ("Insert after waypoint N") wraps rather than
+ * overflowing — measured at 390px as 179px wide at ordinary text and
+ * 180.3px at 200% browser text, both fully contained. */
 .planning-crosshair-callout {
   position: absolute;
   bottom: 44px;
   left: 50%;
   transform: translateX(-50%);
+  z-index: 3;
+  box-shadow: 0 0 0 var(--space-4) var(--colour-bg);
 }
 
 /* Planning's numbered waypoint markers — plain DOM elements (see

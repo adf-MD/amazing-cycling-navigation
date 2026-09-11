@@ -160,32 +160,6 @@ _Category: Interface and accessibility consistency_
 
 ---
 
-<a id="item-109"></a>
-
-## Item 109 — Prevent the Planning waypoint marker and placement control from colliding
-
-_Category: Planning presentation_
-
-109. **Prevent the Planning waypoint marker and placement control from colliding**
-     - Origin: the installed-iPhone field test of 10 September 2026 — see [`current-status.md`](current-status.md) for the dated report. A screenshot shows the numbered waypoint marker or badge visually sitting on the upper edge of the "Add waypoint here" control. **This is a confirmed presentation defect**, not a suspicion.
-     - The future slice should prevent the waypoint marker and the placement action from visually colliding, while preserving:
-       - the actual waypoint coordinate;
-       - waypoint numbering;
-       - the map interaction and placement workflow;
-       - accessible control labelling and touch-target size;
-       - normal behaviour at supported portrait widths and enlarged browser text.
-     - **Do not assert a particular z-index, offset or DOM fix before the implementation inspects the cause.** The values below are recorded as the current state to start from, not as a diagnosis and not as a prescription.
-     - Confirmed current geometry, from direct source inspection:
-       - The placement control is a plain `<button type="button" className="planning-crosshair-callout">` rendered inline in `src/ui/planning/PlanningScreen.tsx`, absolutely positioned inside `.planning-map-container` at `bottom: 44px; left: 50%; transform: translateX(-50%)` — the `44px` chosen to clear `.map-attribution`'s bottom-left corner. It sets **no** `z-index` of its own.
-       - The numbered marker is a plain DOM element built by `src/map/waypointMarkerElement.ts` (`createWaypointMarkerElement` / `renderWaypointMarkerElement`) from specs produced by `src/map/planningLayer.ts`'s `buildWaypointMarkerSpecs`, styled by `.planning-waypoint-marker` with `z-index: 2`, `pointer-events: none`, and a 26 px base size that shrinks to 20 px and then 16 px through the `data-marker-zoom-band` `regional` and `overview` bands.
-       - The surrounding overlay clusters — `.planning-map-controls`, `.planning-map-zoom-controls` and `.planning-map-status-overlay` — all sit at `z-index: 5`.
-       - `src/index.css` records that `.planning-waypoint-marker`'s `z-index: 2` is deliberately paired with `.distance-badge-marker`'s own positive value, with an explicit instruction not to change either in isolation. That pairing came out of item 84's real, measured badge-visibility regression, so a naive stacking change here is not obviously safe and must be checked against the distance badges as well.
-       - The control's label is dynamic — `src/ui/planning/planningInteractionMode.ts`'s `describeCrosshairAction` produces "Add waypoint here", "Move the start here" / "Move waypoint N here", or "Insert after …" — so any fix must hold for the longest label the control can render, not only the default one.
-     - Cross-reference item 84 ([`history/items-81-88.md#item-84`](history/items-81-88.md#item-84)) for the paired stacking rationale and for this project's established visual paint-proof methodology (region-based pixel coverage plus ancestry checks), which is the appropriate standard of evidence for a change of this kind. Nothing here reopens item 84.
-     - Physical acceptance on the installed iPhone Home Screen PWA is required, since the observation came from there. Physical Android verification is separately outstanding, as for most recent items.
-
----
-
 <a id="item-110"></a>
 
 ## Item 110 — North-pointing orientation indicator on the north-up control
