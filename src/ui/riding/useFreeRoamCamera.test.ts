@@ -22,6 +22,179 @@ const STALE_FIX: GeolocationFix = {
 };
 
 describe("useFreeRoamCamera", () => {
+  // Backlog item 110 — the free-roam twin of useRideCamera's own suite.
+  // Free roam already exposed persistableLastReliableBearingDegrees, but
+  // that is the retained TRAVEL bearing, not the map's orientation; only
+  // this new field describes where the map is actually pointing.
+  describe("liveCameraBearingDegrees (backlog item 110)", () => {
+    it("is null before the camera has ever settled or been commanded", () => {
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: null,
+          isStale: false,
+          restoredCameraState: null,
+          restoredLastReliableBearingDegrees: null,
+        }),
+      );
+
+      expect(result.current.liveCameraBearingDegrees).toBeNull();
+    });
+
+    it("tracks the settled bearing while FOLLOWING, and is not the persistence value", () => {
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: FRESH_FIX,
+          isStale: false,
+          restoredCameraState: null,
+          restoredLastReliableBearingDegrees: null,
+        }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      act(() => {
+        result.current.reportCameraSettled(
+          [0, 51],
+          NAVIGATION_ZOOM,
+          137,
+          FOLLOW_PITCH_DEGREES,
+          true,
+        );
+      });
+
+      expect(result.current.mode).toBe("following");
+      expect(result.current.liveCameraBearingDegrees).toBe(137);
+      expect(result.current.persistableCameraState.bearingDegrees).toBe(0);
+    });
+
+    it("normalises MapLibre's own signed readback into the command's domain", () => {
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: FRESH_FIX,
+          isStale: false,
+          restoredCameraState: null,
+          restoredLastReliableBearingDegrees: null,
+        }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      act(() => {
+        result.current.reportCameraSettled([0, 51], NAVIGATION_ZOOM, -90, 0, true);
+      });
+
+      expect(result.current.liveCameraBearingDegrees).toBe(270);
+    });
+
+    it("does not re-render when an equivalent bearing settles again", () => {
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: FRESH_FIX,
+          isStale: false,
+          restoredCameraState: null,
+          restoredLastReliableBearingDegrees: null,
+        }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      act(() => {
+        result.current.reportCameraSettled([0, 51], NAVIGATION_ZOOM, 13, 0, true);
+      });
+      const settled = result.current;
+
+      act(() => {
+        result.current.reportCameraSettled([0, 51], NAVIGATION_ZOOM, 373, 0, true);
+      });
+
+      expect(result.current).toBe(settled);
+      expect(result.current.liveCameraBearingDegrees).toBe(13);
+    });
+
+    it("retains the previous value, and the same state object, for a non-finite reading", () => {
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: FRESH_FIX,
+          isStale: false,
+          restoredCameraState: null,
+          restoredLastReliableBearingDegrees: null,
+        }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      act(() => {
+        result.current.reportCameraSettled([0, 51], NAVIGATION_ZOOM, 42, 0, true);
+      });
+      const settled = result.current;
+
+      act(() => {
+        result.current.reportCameraSettled([0, 51], NAVIGATION_ZOOM, Number.NaN, 0, true);
+      });
+
+      expect(result.current.liveCameraBearingDegrees).toBe(42);
+      expect(result.current).toBe(settled);
+    });
+
+    it("returns to north immediately on a Northwards press, before any settle", () => {
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: FRESH_FIX,
+          isStale: false,
+          restoredCameraState: null,
+          restoredLastReliableBearingDegrees: null,
+        }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      act(() => {
+        result.current.reportCameraSettled(
+          [0, 51],
+          NAVIGATION_ZOOM,
+          212,
+          FOLLOW_PITCH_DEGREES,
+          true,
+        );
+      });
+      expect(result.current.liveCameraBearingDegrees).toBe(212);
+
+      act(() => {
+        result.current.requestNorthUp();
+      });
+
+      expect(result.current.liveCameraBearingDegrees).toBe(0);
+      expect(result.current.isNorthUpTopDown).toBe(false);
+    });
+
+    it("seeds a restored, still-rotated free camera before its first settle", () => {
+      const restoredFree: StoredCameraState = {
+        mode: "free",
+        coordinate: [-1.2, 53.4],
+        zoom: 13.5,
+        bearingDegrees: 128,
+        pitchDegrees: 22,
+      };
+      const { result } = renderHook(() =>
+        useFreeRoamCamera({
+          currentFix: null,
+          isStale: false,
+          restoredCameraState: restoredFree,
+          restoredLastReliableBearingDegrees: null,
+        }),
+      );
+
+      expect(result.current.mode).toBe("free");
+      expect(result.current.liveCameraBearingDegrees).toBe(128);
+      expect(result.current.isNorthUpTopDown).toBe(false);
+    });
+  });
+
   it("issues no camera target and starts in overview mode before anything happens", () => {
     const { result } = renderHook(() =>
       useFreeRoamCamera({

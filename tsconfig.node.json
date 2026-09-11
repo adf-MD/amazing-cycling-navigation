@@ -25,6 +25,7 @@
     "vite.buildId.test.ts",
     "vite.csp.ts",
     "vite.csp.test.ts",
+    "sensorFreeSource.test.ts",
     "playwright.config.ts",
     "e2e"
   ]

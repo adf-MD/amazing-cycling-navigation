@@ -19,6 +19,41 @@ export function normaliseBearingDegrees(degrees: number): number {
 }
 
 /**
+ * A bearing reduced to the single canonical form used for on-screen
+ * orientation (backlog item 110) — whole-degree and in [0, 360) — or null
+ * when the input is not a usable bearing at all.
+ *
+ * Three jobs, deliberately in one place rather than at each call site:
+ *
+ * 1. **One domain.** MapLibre's own `getBearing()` reports a *signed*
+ *    value: its `setBearing` does `wrap(bearing, -180, 180)` before
+ *    storing radians, so "due west" reads back as `-90`. A
+ *    `RideCameraCommand.bearingDegrees`, by contrast, is contractually
+ *    [0, 360) and reports `270` for the same orientation. Both feed the
+ *    same presentation field, so they must be made directly comparable
+ *    before they are ever compared.
+ * 2. **Reference stability.** That same degrees -> radians -> degrees round
+ *    trip returns a neighbouring float for a byte-identical commanded
+ *    bearing, which would silently defeat an exact `===` no-op guard and
+ *    turn every free settle into a re-render. Rounding to whole degrees
+ *    removes that entirely. Sub-degree precision is not observable on the
+ *    control anyway: 1 degree is roughly 0.2px at the arrow's radius.
+ * 3. **A representable "unknown".** `normaliseBearingDegrees(NaN)` is
+ *    `NaN`, and `rotate(NaNdeg)` is an invalid CSS declaration browsers
+ *    drop silently — an unrotated arrow with no clue why. Persisted
+ *    camera rows are restored with `?? 0`, which does not catch a
+ *    structured-cloned NaN, so this boundary must reject it explicitly.
+ *
+ * Both wraps are needed: 359.7 rounds to 360, which is 0.
+ */
+export function toDisplayBearingDegrees(degrees: number): number | null {
+  if (!Number.isFinite(degrees)) {
+    return null;
+  }
+  return normaliseBearingDegrees(Math.round(normaliseBearingDegrees(degrees)));
+}
+
+/**
  * Initial (forward) geographic bearing from `from` to `to`, in degrees,
  * normalised into [0, 360). Standard atan2-based forward-azimuth formula.
  */

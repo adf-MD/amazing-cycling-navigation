@@ -160,33 +160,6 @@ _Category: Interface and accessibility consistency_
 
 ---
 
-<a id="item-110"></a>
-
-## Item 110 — North-pointing orientation indicator on the north-up control
-
-_Category: Map camera controls_
-
-110. **North-pointing orientation indicator on the north-up control**
-     - Origin: the installed-iPhone field test of 10 September 2026 — see [`current-status.md`](current-status.md) for the dated report. The rider wants to know **where north lies relative to the currently rotated map**. They explicitly do **not** need another indication of their direction of travel.
-     - Proposed behaviour, approved as the item's contract:
-       - replace or augment the static `N` presentation with a clear arrow that points towards geographic north relative to the screen;
-       - derive it from the map's **existing bearing**, not from continuous compass or heading-sensor tracking;
-       - retain the control's existing north-up/reset action;
-       - when the map is north-up, the arrow points upwards;
-       - provide an accessible name that describes the **action**, not merely the icon;
-       - do **not** add a rider-heading arrow or any continuous travel-direction feature;
-       - verify that the implementation does not introduce a new battery-intensive sensor subscription.
-     - **The implementation slice must first inspect the current map-bearing and north-up contracts, then use the smallest change consistent with them.** The findings below are the starting point for that inspection, not a design.
-     - Confirmed current implementation:
-       - Three sites render a literal `N` character with `aria-label="North-up, top-down view"` and `aria-pressed={isNorthUpTopDown}` — `src/ui/riding/RidingScreen.tsx` (`.ride-map-control--north-up`, inside `.ride-map-camera-controls`), `src/ui/riding/FreeRoamScreen.tsx` (byte-identical structure), and `src/ui/planning/PlanningScreen.tsx` (`.planning-map-control`). There is no SVG, glyph or rotation transform anywhere in the control today.
-       - Bearing availability **differs by screen** and is the crux of the inspection. Planning already holds a live `settledOrientation.bearingDegrees`, set from `MapView`'s `onCameraSettled` callback, and derives `isNorthUpTopDown` from it against a 0.5° tolerance. Riding and Free roam receive the same `settled.bearingDegrees` in their own `onCameraSettled` handlers but pass it straight into `useRideCamera` / `useFreeRoamCamera`, which expose only `isNorthUpTopDown` plus a `persistableCameraState.bearingDegrees` that is hard-coded to `0` outside `free` mode — so no continuous bearing currently reaches the Riding or Free roam control. `MapView`'s own `cameraOrientation` state and its `data-camera-bearing` attribute are documented as diagnostic only and are deliberately not passed up; the map adapter deliberately exposes no `getBearing()` on its interface.
-       - **Open implementation question, to be decided deliberately rather than assumed:** `onCameraSettled` fires on settle, so whether the arrow tracks continuously through a rotate gesture or only updates once the camera settles is a real choice with different plumbing costs. Decide it explicitly and record the reasoning; do not silently pick one.
-       - Baseline for the "no new sensor subscription" check: an exhaustive repository-wide search finds **no** `deviceorientation`, `DeviceOrientationEvent`, `AbsoluteOrientationSensor` or compass code anywhere in `src/`, `e2e/` or `docs/` today, and no orientation permission request. The only heading-like value in the system is `GeolocationFix.headingDegrees`, which `src/storage/mapping.ts` deliberately restores as `null`. Any new subscription would therefore be a genuinely new capability and is not approved by this item.
-     - Cross-reference the durable Riding rule on repeat Northwards/Follow presses and the `requestId`-based camera deduplication described in the root [`CLAUDE.md`](../../CLAUDE.md): the reset action's existing semantics must survive intact, including a second press after an intervening manual rotation. Item 66 ([`current-status.md#item-66`](current-status.md#item-66)) remains a monitored camera observation and is neither reopened nor addressed by this item.
-     - Physical acceptance on the installed iPhone Home Screen PWA is required, covering Riding, Free roam and Planning. Physical Android verification is separately outstanding, as for most recent items.
-
----
-
 <a id="item-111"></a>
 
 ## Item 111 — Contextual tag-filter counts in the Route Library
@@ -214,7 +187,7 @@ _Category: Route Library organisation_
      - Two decisions the implementation plan must settle explicitly **before** choosing markup, recorded here as open rather than pre-decided:
        - whether the prospective count also respects the active name search, given that the existing pipeline applies both the name filter and the tag filter;
        - exactly what "where semantically safe" means for disabling an `aria-pressed` toggle, given that a disabled control cannot be operated at all.
-     - Carry this project's own hard-won focus caution into the disabled-state decision above: a browser ignores `.focus()` on a disabled element, and jsdom never auto-blurs an element that becomes disabled, so a focused chip that becomes disabled by a live update would strand focus. Items 105 and 106 ([`history/items-104-NN.md#item-105`](history/items-104-NN.md#item-105), [`history/items-104-NN.md#item-106`](history/items-104-NN.md#item-106)) are the precedent, item 106's root cause having been a focused control unmounted mid-event.
+     - Carry this project's own hard-won focus caution into the disabled-state decision above: a browser ignores `.focus()` on a disabled element, and jsdom never auto-blurs an element that becomes disabled, so a focused chip that becomes disabled by a live update would strand focus. Items 105 and 106 ([`history/items-104-109.md#item-105`](history/items-104-109.md#item-105), [`history/items-104-109.md#item-106`](history/items-104-109.md#item-106)) are the precedent, item 106's root cause having been a focused control unmounted mid-event.
      - Do not change tag identity or normalisation, the storage lifecycle transaction, filter reconciliation, or any other item 100 stage 1–4A behaviour. This is a presentation and derivation slice.
      - Cross-references: item 100 stages 3 and 4A ([`history/items-100-103.md#item-100`](history/items-100-103.md#item-100)) for the filter and lifecycle contracts; item 106 for the current control layout, which this item must preserve; item 99 ([`history/items-95-99.md#item-99`](history/items-95-99.md#item-99)) for the adjacent sorting control. Item 100 stage 4B is closed and is **not** reopened by this item.
      - Physical acceptance on the installed iPhone Home Screen PWA is required. Physical Android verification is separately outstanding, as for most recent items.
@@ -290,7 +263,7 @@ _Category: Interface and accessibility consistency_
      - Origin: item 109's own Chromium layout verification at a 200% root text size, 11 September 2026 — **not** the 10 September 2026 installed-iPhone field test, and **not** an installed-iPhone observation. See [`current-status.md`](current-status.md) for the ledger entry.
      - **This is a confirmed automated accessibility and containment defect.** At 200% browser text, `.map-attribution` wraps to approximately **62.25 px** high, which lifts its top edge above the placement control's fixed `bottom: 44px` and overlaps `.planning-crosshair-callout`'s border box by approximately **26.25 px**.
      - **Treat both figures as measurements taken from the tested fixture, not as universal CSS constants.** Re-measure against live layout before designing a correction; do not encode either number as a threshold.
-     - **It is not an item-109 regression, and item 109 is not reopened.** The same overlap was measured against the item-109 **parent** (commit `27fa0c8`), before the new 4px marker-isolation halo existed — and a box-shadow never affects layout in any case. Item 109 therefore neither introduced nor changed this. Its waypoint-marker layering correction remains valid and is now **physically accepted on the installed iPhone** (11 September 2026, deployed `0.4.26`); see item 109 ([`history/items-104-NN.md#item-109`](history/items-104-NN.md#item-109)), which is the work during which this pre-existing defect was measured and deliberately left alone.
+     - **It is not an item-109 regression, and item 109 is not reopened.** The same overlap was measured against the item-109 **parent** (commit `27fa0c8`), before the new 4px marker-isolation halo existed — and a box-shadow never affects layout in any case. Item 109 therefore neither introduced nor changed this. Its waypoint-marker layering correction remains valid and is now **physically accepted on the installed iPhone** (11 September 2026, deployed `0.4.26`); see item 109 ([`history/items-104-109.md#item-109`](history/items-104-109.md#item-109)), which is the work during which this pre-existing defect was measured and deliberately left alone.
      - **This is automated browser-text scaling, not iOS Dynamic Type or iOS Larger Text.** ACN has no Dynamic Type opt-in, so the iOS Larger Text setting does not resize this application at all and cannot serve as the acceptance mechanism. **No corresponding physical-device failure is claimed.**
      - Required outcome — at the project's supported 200% browser-text condition, the eventual implementation must ensure that:
        - Planning attribution and the placement control **do not overlap**;

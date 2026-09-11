@@ -60,6 +60,7 @@ import type { StoredCameraState } from "../../storage/mapping.ts";
 import { ClimbCategoriesDisclosure } from "../shared/ClimbCategoriesDisclosure.tsx";
 import { ClimbLocalGradientDisclosure } from "../shared/ClimbLocalGradientDisclosure.tsx";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
+import { NorthArrowIcon } from "../shared/NorthArrowIcon.tsx";
 import {
   ElevationChart,
   type ElevationChartSelectedRange,
@@ -1944,7 +1945,7 @@ export function RidingScreen({
                   camera.isNorthUpTopDown ? " is-pressed" : ""
                 }`}
               >
-                N
+                <NorthArrowIcon bearingDegrees={camera.liveCameraBearingDegrees} />
               </button>
               <button
                 type="button"

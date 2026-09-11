@@ -1865,6 +1865,119 @@ describe("PlanningScreen", () => {
         followOffset: false,
       });
     });
+    // Backlog item 110. Planning already held a live settled bearing, so
+    // the only question here is whether the control actually presents it.
+    // Asserting the rendered glyph's own transform (rather than any state
+    // variable) is what makes these fail against the parent, where the
+    // control's whole visual content is the static letter "N".
+    describe("north-pointing arrow (backlog item 110)", () => {
+      function arrowIn(button: HTMLElement): SVGSVGElement {
+        const svg = button.querySelector("svg");
+        if (!svg) {
+          throw new Error("expected the north-up control to render an arrow glyph");
+        }
+        return svg;
+      }
+
+      it("shows no static N as the control's visual content", () => {
+        const map = createMockMapFactory();
+        render(
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+        );
+        map.triggerLoad();
+
+        const northUpButton = screen.getByRole("button", {
+          name: "North-up, top-down view",
+        });
+        expect(northUpButton).toHaveTextContent("");
+        expect(arrowIn(northUpButton)).toBeInTheDocument();
+      });
+
+      it("points the arrow towards north once a rotated camera settles", () => {
+        const map = createMockMapFactory();
+        render(
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+        );
+        map.triggerLoad();
+
+        const northUpButton = screen.getByRole("button", {
+          name: "North-up, top-down view",
+        });
+        map.triggerCameraSettled([0, 51], { bearingDegrees: 90, pitchDegrees: 0 });
+
+        expect(arrowIn(northUpButton).style.transform).toBe("rotate(-90deg)");
+        expect(northUpButton).toHaveAttribute("aria-pressed", "false");
+      });
+
+      it("returns the arrow to up when the camera settles north-up again", () => {
+        const map = createMockMapFactory();
+        render(
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+        );
+        map.triggerLoad();
+
+        const northUpButton = screen.getByRole("button", {
+          name: "North-up, top-down view",
+        });
+        map.triggerCameraSettled([0, 51], { bearingDegrees: 212, pitchDegrees: 0 });
+        expect(arrowIn(northUpButton).style.transform).toBe("rotate(-212deg)");
+
+        map.triggerCameraSettled([0, 51], { bearingDegrees: 0, pitchDegrees: 0 });
+
+        // No stale bearing left behind by the reset.
+        expect(arrowIn(northUpButton).style.transform).toBe("rotate(0deg)");
+        expect(northUpButton).toHaveAttribute("aria-pressed", "true");
+      });
+
+      it("points up before the camera has ever settled, rather than vanishing", () => {
+        const map = createMockMapFactory();
+        render(
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+        );
+        map.triggerLoad();
+
+        const northUpButton = screen.getByRole("button", {
+          name: "North-up, top-down view",
+        });
+        expect(arrowIn(northUpButton).style.transform).toBe("rotate(0deg)");
+      });
+
+      it("keeps the rotation on the glyph, never on the button (negative control 5)", () => {
+        const map = createMockMapFactory();
+        render(
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+        );
+        map.triggerLoad();
+
+        const northUpButton = screen.getByRole("button", {
+          name: "North-up, top-down view",
+        });
+        map.triggerCameraSettled([0, 51], { bearingDegrees: 90, pitchDegrees: 0 });
+
+        // A 48px circular control is rotationally symmetric, so both
+        // halves must be asserted or moving the transform onto the button
+        // would pass unnoticed.
+        expect(northUpButton.style.transform).toBe("");
+        expect(arrowIn(northUpButton).style.transform).toBe("rotate(-90deg)");
+      });
+
+      it("still invokes the existing north-up camera action when pressed", async () => {
+        const user = userEvent.setup();
+        const map = createMockMapFactory();
+        render(
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+        );
+        map.triggerLoad();
+
+        map.triggerCameraSettled([0, 51], { bearingDegrees: 90, pitchDegrees: 0 });
+        await user.click(screen.getByRole("button", { name: "North-up, top-down view" }));
+
+        expect(map.setCameraSpy).toHaveBeenCalledWith(null, null, 0, 0, {
+          animate: true,
+          followOffset: false,
+        });
+      });
+    });
   });
 
   describe("Zoom controls", () => {

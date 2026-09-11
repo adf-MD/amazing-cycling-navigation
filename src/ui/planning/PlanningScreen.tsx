@@ -60,6 +60,7 @@ import { getPlanningPreferences } from "../../storage/planningPreferencesReposit
 import { saveRoute } from "../../storage/routesRepository.ts";
 import type { EditCopyOperation } from "../../storage/mapping.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
+import { NorthArrowIcon } from "../shared/NorthArrowIcon.tsx";
 import { downloadTextFile } from "../shared/downloadTextFile.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { describeProviderKeyStatus } from "../settings/providerKeyStatus.ts";
@@ -1780,7 +1781,7 @@ export function PlanningScreen({
             aria-label="North-up, top-down view"
             aria-pressed={isNorthUpTopDown}
           >
-            N
+            <NorthArrowIcon bearingDegrees={settledOrientation?.bearingDegrees ?? null} />
           </button>
         </div>
         <div className="planning-map-status-overlay">

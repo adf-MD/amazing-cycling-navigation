@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import type { Coordinate, RoutePoint } from "../../domain/types.ts";
 import type { GeolocationFix } from "../../platform/geolocation.ts";
 import { generateId } from "../../platform/idGenerator.ts";
-import { routeTangentBearingDegrees } from "../../navigation/bearing.ts";
+import {
+  routeTangentBearingDegrees,
+  toDisplayBearingDegrees,
+} from "../../navigation/bearing.ts";
 import type { OffRouteLevel } from "../../navigation/types.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
 import type { ZoomCameraTarget } from "../../map/MapView.tsx";
@@ -74,6 +77,26 @@ interface HookState {
    * a new route ("route-opened") or an overview-mode restore — both of
    * which legitimately want a fresh fit. */
   hasActionableCameraTarget: boolean;
+  /** Presentation only (backlog item 110): the map's last-known bearing,
+   * already whole-degree and [0, 360)-normalised, retained in EVERY
+   * camera mode — unlike freeCameraPosition above, which is cleared the
+   * moment mode leaves "free". That difference is the entire point.
+   * While "following" the camera is deliberately rotated to the travel
+   * bearing (selectTravelBearingDegrees), which is exactly when the
+   * north-up control's arrow has something worth saying, and exactly the
+   * case no pre-existing field retained. null before the camera has ever
+   * settled or been commanded, and again on a return to "overview",
+   * whose fit always resets bearing to 0 (mapAdapter.ts's fitBounds).
+   *
+   * Deliberately NOT persisted, and never to be collapsed into
+   * freeCameraPosition.bearingDegrees or persistableCameraState: this
+   * value is optimistic (set from a command before the map has finished
+   * easing) and quantised to whole degrees, while persistence and
+   * isNorthUpTopDown's exact-equality test are neither, and must stay
+   * neither. See persistableLastReliableBearingDegrees in
+   * useFreeRoamCamera.ts for the same separation drawn for a different
+   * reason. */
+  liveCameraBearingDegrees: number | null;
 }
 
 const INITIAL_HOOK_STATE: HookState = {
@@ -82,6 +105,7 @@ const INITIAL_HOOK_STATE: HookState = {
   toastToken: 0,
   freeCameraPosition: null,
   hasActionableCameraTarget: false,
+  liveCameraBearingDegrees: null,
 };
 
 function hookReducer(state: HookState, event: HookEvent): HookState {
@@ -99,17 +123,42 @@ function hookReducer(state: HookState, event: HookEvent): HookState {
       zoom: event.zoom,
       hasAppliedCameraCommand: event.hasAppliedCameraCommand,
     }).state;
+    // Backlog item 110. Normalised HERE, at the reducer boundary, rather
+    // than left raw for the icon to sort out later: MapLibre's own
+    // getBearing() reports a signed [-180, 180) value that round-trips
+    // through radians, so without this both "-90 vs 270" and one ULP of
+    // float drift would read as a genuine change and cost a re-render on
+    // every ordinary settle. A non-finite reading is rejected outright
+    // and the previous value retained, so a stream of invalid events
+    // cannot produce repeated state updates either. Deliberately NOT
+    // gated on hasAppliedCameraCommand, unlike the follow-zoom
+    // reconciliation above: that guard stops a settle which is not ours
+    // from corrupting a chosen zoom, whereas this is a plain readback of
+    // the map's real current bearing, which is true of the map whatever
+    // caused the settle.
+    const liveCameraBearingDegrees =
+      toDisplayBearingDegrees(event.bearingDegrees) ?? state.liveCameraBearingDegrees;
     if (state.camera.mode !== "free") {
-      return zoomReconciled === state.camera
+      // Still reference-stable when genuinely nothing changed — the
+      // ordinary moveend while following a straight road, where the
+      // commanded bearing is dead-banded and the normalised readback is
+      // therefore identical settle after settle — so this does not add a
+      // re-render per fix.
+      return zoomReconciled === state.camera &&
+        liveCameraBearingDegrees === state.liveCameraBearingDegrees
         ? state
-        : { ...state, camera: zoomReconciled };
+        : { ...state, camera: zoomReconciled, liveCameraBearingDegrees };
     }
     return {
       ...state,
       camera: zoomReconciled,
+      liveCameraBearingDegrees,
       freeCameraPosition: {
         coordinate: event.coordinate,
         zoom: event.zoom,
+        // Deliberately the RAW event value, not the normalised one above:
+        // this feeds persistence and isNorthUpTopDown's exact-equality
+        // test, both of which must stay byte-unchanged by item 110.
         bearingDegrees: event.bearingDegrees,
         pitchDegrees: event.pitchDegrees,
       },
@@ -140,6 +189,26 @@ function hookReducer(state: HookState, event: HookEvent): HookState {
       nextMode === "overview"
         ? false
         : state.hasActionableCameraTarget || nextCameraTarget !== null,
+    // Backlog item 110. Gated on a command specifically, not on the event
+    // type: a command is the honest signal that the map is genuinely
+    // about to be moved to this exact bearing, so the arrow leads the
+    // ease rather than lagging a whole moveend behind it — which is what
+    // makes a north-up press snap the arrow upright on press, and what
+    // seeds a restored, still-rotated free camera before its first
+    // settle. Self-correcting either way: the settle that follows
+    // overwrites this with the map's real readback. Normalised through
+    // the same boundary as the settle path so the two stay comparable,
+    // and falling back to the previous value rather than to null should a
+    // restored row ever carry a non-finite bearing.
+    liveCameraBearingDegrees: transition.command
+      ? (toDisplayBearingDegrees(transition.command.bearingDegrees) ??
+        state.liveCameraBearingDegrees)
+      : nextMode === "overview"
+        ? // route-opened, or an overview restore: MapView re-fits the
+          // whole route and fitBounds resets bearing to 0 explicitly, so
+          // any previously held value is now a lie.
+          null
+        : state.liveCameraBearingDegrees,
   };
 }
 
@@ -226,10 +295,20 @@ export interface UseRideCameraResult {
    * actually completes, and clears the moment a manual rotate/pitch
    * gesture is observed. */
   isNorthUpTopDown: boolean;
+  /** Presentation only (backlog item 110) — the map's current bearing for
+   * the north-up control's north-pointing arrow, whole-degree and
+   * [0, 360)-normalised, available in every camera mode. Never a
+   * substitute for persistableCameraState.bearingDegrees, which is
+   * deliberately fixed at 0 outside "free" mode and would show a
+   * permanent, false "north is up" for a whole followed ride. See
+   * HookState's own field for the full separation. */
+  liveCameraBearingDegrees: number | null;
   /** Reports the camera's resting position after any move (user or
-   * programmatic) settles — only actually retained while mode is "free",
-   * so a suspended free-panned/north-up ride can be restored later. Safe
-   * (and expected) to call for programmatic moves too; it's a no-op then. */
+   * programmatic) settles. The position itself is only retained while
+   * mode is "free", so a suspended free-panned/north-up ride can be
+   * restored later; the bearing alone is also kept for presentation in
+   * every mode (see liveCameraBearingDegrees). Safe (and expected) to
+   * call for programmatic moves too. */
   reportCameraSettled: (
     coordinate: Coordinate,
     zoom: number,
@@ -573,6 +652,7 @@ export function useRideCamera({
     zoomTarget,
     requestZoom,
     isNorthUpTopDown,
+    liveCameraBearingDegrees: state.liveCameraBearingDegrees,
     reportCameraSettled,
     persistableCameraState,
     resetCamera,

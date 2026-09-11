@@ -503,3 +503,133 @@ test("Riding: zoom while followed persists across a later GPS fix, storage, relo
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
+
+// ---------------------------------------------------------------------
+// Backlog item 110 — the north-up control's north-pointing arrow.
+//
+// Riding's load-bearing case is a FOLLOWING camera: it is deliberately
+// rotated to the travel bearing, and before this item no field retained a
+// bearing in that mode at all (freeCameraPosition is cleared the moment
+// mode leaves "free", and persistableCameraState.bearingDegrees is
+// hard-coded to 0). Driving the arrow from that persistence value would
+// have shown a permanent, false "north is up" for an entire ride, so
+// these assert the painted glyph at a rotated, followed camera
+// specifically.
+// ---------------------------------------------------------------------
+
+/** The rotation the arrow is actually painted with, recovered from the
+ * composited matrix rather than the inline style string. Duplicated from
+ * planning.spec.ts per this repo's no-shared-e2e-helpers convention. */
+async function paintedRotationDegrees(locator: Locator): Promise<number> {
+  return locator.evaluate((element) => {
+    const { transform } = getComputedStyle(element);
+    if (transform === "none") return 0;
+    const values = transform
+      .slice(transform.indexOf("(") + 1, transform.lastIndexOf(")"))
+      .split(",")
+      .map((value) => Number.parseFloat(value));
+    // matrix(a, b, c, d, e, f): for a pure rotation a = cos, b = sin.
+    if (values.length < 2) {
+      throw new Error(`could not parse a rotation from "${transform}"`);
+    }
+    return (Math.atan2(values[1], values[0]) * 180) / Math.PI;
+  });
+}
+
+function angularDifferenceDegrees(a: number, b: number): number {
+  return Math.abs((((a - b + 180) % 360) + 360) % 360) - 180;
+}
+
+test("Riding: the north-up control's arrow points at north on a rotated, followed camera", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation(ROUTE_START);
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await page.goto("/");
+  await startRiding(page);
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  const northButton = page.getByRole("button", { name: "North-up, top-down view" });
+  await expect(northButton).toBeVisible();
+  const arrow = northButton.locator("svg");
+
+  // The old static letter is gone; the control's visual content is a
+  // glyph that is invisible to assistive technology, while the button
+  // keeps its own accessible name and pressed state.
+  await expect(arrow).toBeVisible();
+  await expect(northButton).toHaveText("");
+  await expect(arrow).toHaveAttribute("aria-hidden", "true");
+
+  // Wait for the travel-up follow to genuinely land: pitch 35 is this
+  // repo's canonical "following has settled" signal.
+  await expect.poll(() => mapContainer.getAttribute("data-camera-pitch")).toBe("35");
+  await expect(page.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  // The fixture route's FIRST leg runs due north, so a followed camera at
+  // the start is genuinely north-up and would prove nothing here. Move
+  // the rider onto the route's eastward leg, where the travel bearing the
+  // camera follows is a real, non-zero rotation.
+  await context.setGeolocation({ latitude: 51.5036, longitude: -0.0982 });
+  await expect
+    .poll(async () =>
+      Math.abs(
+        Number.parseFloat(
+          (await mapContainer.getAttribute("data-camera-bearing")) ?? "0",
+        ),
+      ),
+    )
+    .toBeGreaterThan(1);
+
+  const followedBearing = Number.parseFloat(
+    (await mapContainer.getAttribute("data-camera-bearing")) ?? "0",
+  );
+  // Still genuinely following, and now travel-up rather than north-up —
+  // precisely the state in which the hard-coded persistence bearing of 0
+  // would be wrong.
+  await expect(page.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(Math.abs(followedBearing)).toBeGreaterThan(1);
+
+  await expect
+    .poll(
+      async () =>
+        angularDifferenceDegrees(await paintedRotationDegrees(arrow), -followedBearing) <
+        1,
+    )
+    .toBe(true);
+  await expect(northButton).toHaveAttribute("aria-pressed", "false");
+
+  // Item 110 negative control 5 — a 48px circular button is rotationally
+  // symmetric, so both halves must be asserted.
+  expect(
+    await northButton.evaluate((element) => getComputedStyle(element).transform),
+  ).toBe("none");
+
+  // Pressing the control still performs its existing action, and leaves
+  // no stale bearing behind.
+  await northButton.click();
+  await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
+  await expect(mapContainer).toHaveAttribute("data-camera-pitch", "0");
+  await expect(northButton).toHaveAttribute("aria-pressed", "true");
+  expect(await paintedRotationDegrees(arrow)).toBeCloseTo(0, 5);
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});

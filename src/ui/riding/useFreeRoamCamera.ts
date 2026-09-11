@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import type { Coordinate } from "../../domain/types.ts";
 import type { GeolocationFix } from "../../platform/geolocation.ts";
 import { generateId } from "../../platform/idGenerator.ts";
+import { toDisplayBearingDegrees } from "../../navigation/bearing.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
 import type { ZoomCameraTarget } from "../../map/MapView.tsx";
 import {
@@ -51,6 +52,12 @@ interface HookState {
   cameraTarget: RideCameraCommand | null;
   toastToken: number;
   freeCameraPosition: FreeCameraPosition | null;
+  /** Mirrors useRideCamera.ts's own identically-named field (backlog item
+   * 110) — presentation only, whole-degree and [0, 360)-normalised,
+   * retained in every camera mode rather than only while "free", and
+   * never persisted or confused with persistableCameraState. See that
+   * hook's own doc comment for the full reasoning. */
+  liveCameraBearingDegrees: number | null;
 }
 
 const INITIAL_HOOK_STATE: HookState = {
@@ -58,6 +65,7 @@ const INITIAL_HOOK_STATE: HookState = {
   cameraTarget: null,
   toastToken: 0,
   freeCameraPosition: null,
+  liveCameraBearingDegrees: null,
 };
 
 // Adapted from useRideCamera.ts's own private hookReducer — orchestration
@@ -80,17 +88,28 @@ function hookReducer(state: HookState, event: HookEvent): HookState {
       zoom: event.zoom,
       hasAppliedCameraCommand: event.hasAppliedCameraCommand,
     }).state;
+    // Backlog item 110 — mirrors useRideCamera.ts's own identical
+    // reducer-boundary normalisation; see its comment for why MapLibre's
+    // signed, radian-round-tripped getBearing() makes this necessary
+    // rather than merely tidy.
+    const liveCameraBearingDegrees =
+      toDisplayBearingDegrees(event.bearingDegrees) ?? state.liveCameraBearingDegrees;
     if (state.camera.mode !== "free") {
-      return zoomReconciled === state.camera
+      return zoomReconciled === state.camera &&
+        liveCameraBearingDegrees === state.liveCameraBearingDegrees
         ? state
-        : { ...state, camera: zoomReconciled };
+        : { ...state, camera: zoomReconciled, liveCameraBearingDegrees };
     }
     return {
       ...state,
       camera: zoomReconciled,
+      liveCameraBearingDegrees,
       freeCameraPosition: {
         coordinate: event.coordinate,
         zoom: event.zoom,
+        // Deliberately the RAW event value — persistence and
+        // isNorthUpTopDown's exact-equality test both read it and must
+        // stay byte-unchanged by item 110.
         bearingDegrees: event.bearingDegrees,
         pitchDegrees: event.pitchDegrees,
       },
@@ -117,6 +136,15 @@ function hookReducer(state: HookState, event: HookEvent): HookState {
         : nextMode === "free"
           ? state.freeCameraPosition
           : null,
+    // Backlog item 110 — mirrors useRideCamera.ts's own identical rule:
+    // optimistic from a real command, cleared on a return to overview,
+    // otherwise retained. See that hook for the full reasoning.
+    liveCameraBearingDegrees: transition.command
+      ? (toDisplayBearingDegrees(transition.command.bearingDegrees) ??
+        state.liveCameraBearingDegrees)
+      : nextMode === "overview"
+        ? null
+        : state.liveCameraBearingDegrees,
   };
 }
 
@@ -170,6 +198,15 @@ export interface UseFreeRoamCameraResult {
    * including its backlog item 65 update. */
   requestZoom: (delta: number) => void;
   isNorthUpTopDown: boolean;
+  /** Presentation only (backlog item 110) — the map's current bearing for
+   * the north-up control's north-pointing arrow, whole-degree and
+   * [0, 360)-normalised, available in every camera mode. Distinct from
+   * BOTH neighbours below: persistableCameraState.bearingDegrees is
+   * deliberately fixed at 0 outside "free" mode, and
+   * persistableLastReliableBearingDegrees is the reducer's retained
+   * *travel* bearing, not the map's actual orientation. Only this one
+   * describes where the map is currently pointing. */
+  liveCameraBearingDegrees: number | null;
   reportCameraSettled: (
     coordinate: Coordinate,
     zoom: number,
@@ -457,6 +494,7 @@ export function useFreeRoamCamera({
     zoomTarget,
     requestZoom,
     isNorthUpTopDown,
+    liveCameraBearingDegrees: state.liveCameraBearingDegrees,
     reportCameraSettled,
     persistableCameraState,
     persistableLastReliableBearingDegrees: state.camera.lastCommandedBearingDegrees,

@@ -24,6 +24,192 @@ const BASE_OPTIONS: UseRideCameraOptions = {
 };
 
 describe("useRideCamera", () => {
+  // Backlog item 110: the north-up control's north-pointing arrow needs
+  // the map's CURRENT bearing, in every camera mode. Before this item the
+  // hook kept one only while "free" (freeCameraPosition, cleared the
+  // moment mode leaves "free") and exposed none at all, which is exactly
+  // backwards: "following" is when the camera is genuinely rotated.
+  describe("liveCameraBearingDegrees (backlog item 110)", () => {
+    it("is null before the camera has ever settled or been commanded", () => {
+      const { result } = renderHook(() => useRideCamera(BASE_OPTIONS));
+
+      expect(result.current.liveCameraBearingDegrees).toBeNull();
+    });
+
+    it("tracks the settled bearing while FOLLOWING, where no field retained one before", () => {
+      const { result } = renderHook(() =>
+        useRideCamera({ ...BASE_OPTIONS, currentFix: FRESH_FIX, isStale: false }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      act(() => {
+        result.current.reportCameraSettled(
+          [0, 51],
+          NAVIGATION_ZOOM,
+          137,
+          FOLLOW_PITCH_DEGREES,
+          true,
+        );
+      });
+
+      expect(result.current.mode).toBe("following");
+      expect(result.current.liveCameraBearingDegrees).toBe(137);
+      // The value the persistence field would have offered instead — the
+      // trap this item must not fall into.
+      expect(result.current.persistableCameraState.bearingDegrees).toBe(0);
+    });
+
+    it("normalises MapLibre's own signed readback into the command's domain", () => {
+      const { result } = renderHook(() =>
+        useRideCamera({ ...BASE_OPTIONS, currentFix: FRESH_FIX, isStale: false }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      act(() => {
+        result.current.reportCameraSettled([0, 51], NAVIGATION_ZOOM, -90, 0, true);
+      });
+
+      expect(result.current.liveCameraBearingDegrees).toBe(270);
+    });
+
+    it("retains the previous value, and the same state object, for a non-finite reading", () => {
+      const { result } = renderHook(() =>
+        useRideCamera({ ...BASE_OPTIONS, currentFix: FRESH_FIX, isStale: false }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      act(() => {
+        result.current.reportCameraSettled([0, 51], NAVIGATION_ZOOM, 42, 0, true);
+      });
+      const settled = result.current;
+
+      act(() => {
+        result.current.reportCameraSettled([0, 51], NAVIGATION_ZOOM, Number.NaN, 0, true);
+      });
+
+      expect(result.current.liveCameraBearingDegrees).toBe(42);
+      // No re-render at all: an invalid event must not be able to produce
+      // repeated state updates.
+      expect(result.current).toBe(settled);
+    });
+
+    // Reference stability is the property that keeps this free. MapLibre
+    // stores bearing as radians, so a byte-identical commanded bearing
+    // reads back as a neighbouring float; without normalisation at the
+    // reducer boundary every ordinary moveend while following would cost
+    // a re-render.
+    it("does not re-render when an equivalent bearing settles again", () => {
+      const { result } = renderHook(() =>
+        useRideCamera({ ...BASE_OPTIONS, currentFix: FRESH_FIX, isStale: false }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      act(() => {
+        result.current.reportCameraSettled([0, 51], NAVIGATION_ZOOM, 13, 0, true);
+      });
+      const settled = result.current;
+
+      act(() => {
+        result.current.reportCameraSettled(
+          [0, 51],
+          NAVIGATION_ZOOM,
+          (((13 * Math.PI) / 180) * 180) / Math.PI,
+          0,
+          true,
+        );
+      });
+      expect(result.current).toBe(settled);
+
+      act(() => {
+        result.current.reportCameraSettled([0, 51], NAVIGATION_ZOOM, 373, 0, true);
+      });
+      expect(result.current).toBe(settled);
+
+      act(() => {
+        result.current.reportCameraSettled([0, 51], NAVIGATION_ZOOM, -347, 0, true);
+      });
+      expect(result.current).toBe(settled);
+      expect(result.current.liveCameraBearingDegrees).toBe(13);
+    });
+
+    it("returns to north immediately on a Northwards press, before any settle", () => {
+      const { result } = renderHook(() =>
+        useRideCamera({ ...BASE_OPTIONS, currentFix: FRESH_FIX, isStale: false }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      act(() => {
+        result.current.reportCameraSettled(
+          [0, 51],
+          NAVIGATION_ZOOM,
+          212,
+          FOLLOW_PITCH_DEGREES,
+          true,
+        );
+      });
+      expect(result.current.liveCameraBearingDegrees).toBe(212);
+
+      act(() => {
+        result.current.requestNorthUp();
+      });
+
+      // No stale bearing left behind by the mode transition, and the
+      // arrow is upright before the ease has even finished.
+      expect(result.current.liveCameraBearingDegrees).toBe(0);
+      // ...while the pressed state still waits for the real readback.
+      expect(result.current.isNorthUpTopDown).toBe(false);
+    });
+
+    it("clears to null when the camera returns to overview", () => {
+      const { result } = renderHook(() =>
+        useRideCamera({ ...BASE_OPTIONS, currentFix: FRESH_FIX, isStale: false }),
+      );
+
+      act(() => {
+        result.current.requestFollow();
+      });
+      act(() => {
+        result.current.reportCameraSettled([0, 51], NAVIGATION_ZOOM, 212, 0, true);
+      });
+      act(() => {
+        result.current.resetCamera();
+      });
+
+      expect(result.current.mode).toBe("overview");
+      expect(result.current.liveCameraBearingDegrees).toBeNull();
+    });
+
+    // The restored-rotated-camera case: the arrow must be right on the
+    // very first render, not only once the rider next touches the map.
+    it("seeds a restored, still-rotated free camera before its first settle", () => {
+      const restoredCameraState: StoredCameraState = {
+        mode: "free",
+        coordinate: [0.2, 51.2],
+        zoom: 14,
+        bearingDegrees: 210,
+        pitchDegrees: 0,
+      };
+
+      const { result } = renderHook(() =>
+        useRideCamera({ ...BASE_OPTIONS, restoredCameraState }),
+      );
+
+      expect(result.current.mode).toBe("free");
+      expect(result.current.liveCameraBearingDegrees).toBe(210);
+      expect(result.current.isNorthUpTopDown).toBe(false);
+    });
+  });
+
   it("issues no camera target and starts in overview mode before anything happens", () => {
     const { result } = renderHook(() => useRideCamera(BASE_OPTIONS));
 

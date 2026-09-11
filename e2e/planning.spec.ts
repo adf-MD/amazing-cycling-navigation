@@ -2094,3 +2094,343 @@ test.describe("phone viewport", () => {
     expect(consoleErrors).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------
+// Backlog item 110 — the north-up control's north-pointing arrow.
+//
+// This block carries the item's own empirical proof of the bearing sign.
+// Nothing in the repository previously asserted the relationship between
+// a MapLibre bearing and a screen rotation, so it is established here
+// against the real map and real projection rather than assumed from a
+// table: two waypoints whose north/south relationship is proved from
+// their STORED coordinates, then measured on screen after a rotation.
+// ---------------------------------------------------------------------
+test.describe("north-pointing orientation indicator (backlog item 110)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  /** The rotation the arrow is actually painted with, recovered from the
+   * composited matrix rather than from the inline style string: the
+   * declaration could be present and still be overridden, invalid, or
+   * dropped. `matrix(a, b, c, d, e, f)` for a pure rotation has
+   * a = cos, b = sin, so atan2(b, a) is the applied angle. */
+  async function paintedRotationDegrees(locator: Locator): Promise<number> {
+    return locator.evaluate((element) => {
+      const { transform } = getComputedStyle(element);
+      if (transform === "none") return 0;
+      const values = transform
+        .slice(transform.indexOf("(") + 1, transform.lastIndexOf(")"))
+        .split(",")
+        .map((value) => Number.parseFloat(value));
+      // matrix(a, b, c, d, e, f): for a pure rotation a = cos, b = sin.
+      if (values.length < 2) {
+        throw new Error(`could not parse a rotation from "${transform}"`);
+      }
+      return (Math.atan2(values[1], values[0]) * 180) / Math.PI;
+    });
+  }
+
+  /** The shortest signed distance between two angles, so 359 and -1
+   * compare as one degree apart rather than 360. */
+  function angularDifferenceDegrees(a: number, b: number): number {
+    return Math.abs((((a - b + 180) % 360) + 360) % 360) - 180;
+  }
+
+  async function readStoredWaypoints(
+    page: Page,
+  ): Promise<{ longitude: number; latitude: number }[]> {
+    return page.evaluate(
+      () =>
+        new Promise<{ longitude: number; latitude: number }[]>((resolve, reject) => {
+          const openRequest = indexedDB.open("amazing-cycling-navigation");
+          openRequest.onerror = () => {
+            reject(new Error("could not open the application database"));
+          };
+          openRequest.onsuccess = () => {
+            const database = openRequest.result;
+            const store = database
+              .transaction("planningDrafts", "readonly")
+              .objectStore("planningDrafts");
+            const getRequest = store.get("draft");
+            getRequest.onsuccess = () => {
+              const row = getRequest.result as
+                { waypoints?: { coordinate: [number, number] }[] } | undefined;
+              database.close();
+              resolve(
+                (row?.waypoints ?? []).map((waypoint) => ({
+                  longitude: waypoint.coordinate[0],
+                  latitude: waypoint.coordinate[1],
+                })),
+              );
+            };
+            getRequest.onerror = () => {
+              database.close();
+              reject(new Error("could not read the planning draft"));
+            };
+          };
+        }),
+    );
+  }
+
+  async function openPlanning(page: Page) {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Plan" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    const northUpButton = page.getByRole("button", {
+      name: "North-up, top-down view",
+    });
+    await expect(northUpButton).toBeVisible();
+    return { mapContainer, northUpButton, arrow: northUpButton.locator("svg") };
+  }
+
+  /** Rotates via MapLibre's own built-in KeyboardHandler, exactly as this
+   * file's existing establishManualRotationAndPitch does — a genuine
+   * trusted gesture through the map's ordinary ease pipeline, and never
+   * the CI-flaky DragRotateHandler (future-backlog item 21). */
+  async function rotateBy(
+    page: Page,
+    mapContainer: Locator,
+    presses: number,
+  ): Promise<number> {
+    const canvas = mapContainer.locator("canvas");
+    await canvas.focus();
+    for (let press = 0; press < presses; press++) {
+      const before = await mapContainer.getAttribute("data-camera-bearing");
+      await page.keyboard.press("Shift+ArrowRight");
+      await expect
+        .poll(() => mapContainer.getAttribute("data-camera-bearing"))
+        .not.toBe(before);
+    }
+    const settled = await mapContainer.getAttribute("data-camera-bearing");
+    return Number.parseFloat(settled ?? "0");
+  }
+
+  test("the arrow points at geographic north, proved against the map's own projection", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+    const { mapContainer, arrow } = await openPlanning(page);
+
+    // Waypoint 1 at the settled centre, then pan up the screen and place
+    // waypoint 2. Panning "up" is NOT taken as evidence of anything: the
+    // north/south relationship is asserted from the stored coordinates
+    // below.
+    const addWaypoint = page.getByRole("button", { name: "Add waypoint here" });
+    await expect(addWaypoint).toBeEnabled();
+    await addWaypoint.click();
+    await expect(page.locator(".planning-waypoint-marker")).toHaveCount(1);
+
+    const canvas = mapContainer.locator("canvas");
+    await canvas.focus();
+    const centreBefore = await mapContainer.getAttribute("data-camera-center");
+    await page.keyboard.press("ArrowUp");
+    await expect
+      .poll(() => mapContainer.getAttribute("data-camera-center"))
+      .not.toBe(centreBefore);
+    await expect(addWaypoint).toBeEnabled();
+    await addWaypoint.click();
+    await expect(page.locator(".planning-waypoint-marker")).toHaveCount(2);
+
+    // The premise, asserted rather than assumed.
+    const waypoints = await expect
+      .poll(async () => await readStoredWaypoints(page))
+      .toHaveLength(2)
+      .then(() => readStoredWaypoints(page));
+    if (waypoints.length !== 2) {
+      throw new Error("expected exactly two waypoints to have been stored");
+    }
+    const south = waypoints[0];
+    const north = waypoints[1];
+    expect(north.latitude).toBeGreaterThan(south.latitude);
+    expect(Math.abs(north.longitude - south.longitude)).toBeLessThan(1e-6);
+
+    // With the map north-up, the northern waypoint paints above the
+    // southern one and the arrow points up.
+    const markers = page.locator(".planning-waypoint-marker");
+    const upBoxes = await Promise.all([
+      markers.nth(0).boundingBox(),
+      markers.nth(1).boundingBox(),
+    ]);
+    const [southUp, northUp] = upBoxes;
+    if (!southUp || !northUp) {
+      throw new Error("expected both waypoint markers to lay out");
+    }
+    expect(northUp.y).toBeLessThan(southUp.y);
+    expect(await paintedRotationDegrees(arrow)).toBeCloseTo(0, 5);
+
+    // Now rotate to a genuinely non-zero bearing and re-measure. A
+    // positive MapLibre bearing means that compass direction is drawn at
+    // the top, so north must swing to the LEFT — which is what fixes the
+    // transform's sign, empirically.
+    const bearing = await rotateBy(page, mapContainer, 6);
+    expect(Math.abs(bearing)).toBeGreaterThan(1);
+
+    const rotatedBoxes = await Promise.all([
+      markers.nth(0).boundingBox(),
+      markers.nth(1).boundingBox(),
+    ]);
+    const [southRotated, northRotated] = rotatedBoxes;
+    if (!southRotated || !northRotated) {
+      throw new Error("expected both waypoint markers to lay out after rotation");
+    }
+    // The item's own recorded convention evidence, printed so the run log
+    // carries the measured numbers rather than only a pass.
+    console.log(
+      `[item-110-convention] bearing=${String(bearing)} ` +
+        `northMarker=(${String(Math.round(northRotated.x))},${String(Math.round(northRotated.y))}) ` +
+        `southMarker=(${String(Math.round(southRotated.x))},${String(Math.round(southRotated.y))}) ` +
+        `arrowRotation=${String(await paintedRotationDegrees(arrow))}`,
+    );
+    expect(northRotated.x).toBeLessThan(southRotated.x);
+
+    // And the arrow agrees with the map: it is painted at exactly the
+    // negation of the settled bearing, which is the direction the two
+    // markers just demonstrated geographically.
+    const painted = await paintedRotationDegrees(arrow);
+    expect(angularDifferenceDegrees(painted, -bearing)).toBeLessThan(1);
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test("pressing the control returns the map to north-up and the arrow to up", async ({
+    page,
+  }) => {
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+    const { mapContainer, northUpButton, arrow } = await openPlanning(page);
+
+    const bearing = await rotateBy(page, mapContainer, 4);
+    expect(Math.abs(bearing)).toBeGreaterThan(1);
+    expect(Math.abs(await paintedRotationDegrees(arrow))).toBeGreaterThan(1);
+    await expect(northUpButton).toHaveAttribute("aria-pressed", "false");
+
+    await northUpButton.click();
+
+    await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
+    await expect(northUpButton).toHaveAttribute("aria-pressed", "true");
+    expect(await paintedRotationDegrees(arrow)).toBeCloseTo(0, 5);
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  });
+
+  test("the control shows a rotating glyph rather than a static N, without moving or resizing the button", async ({
+    page,
+  }) => {
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+    const { mapContainer, northUpButton, arrow } = await openPlanning(page);
+
+    // The visual content is a glyph, not the old literal letter.
+    await expect(arrow).toBeVisible();
+    await expect(northUpButton).toHaveText("");
+    await expect(arrow).toHaveAttribute("aria-hidden", "true");
+    // The accessible name and toggle semantics are unchanged. A fresh
+    // Planning map settles north-up, so the control starts pressed.
+    await expect(northUpButton).toHaveAttribute("aria-pressed", "true");
+
+    const buttonBox = await northUpButton.boundingBox();
+    const arrowBox = await arrow.boundingBox();
+    const mapBox = await mapContainer.boundingBox();
+    const locateBox = await page.getByRole("button", { name: "Locate me" }).boundingBox();
+    const zoomInBox = await page.getByRole("button", { name: "Zoom in" }).boundingBox();
+    const zoomOutBox = await page.getByRole("button", { name: "Zoom out" }).boundingBox();
+    if (!buttonBox || !arrowBox || !mapBox || !locateBox || !zoomInBox || !zoomOutBox) {
+      throw new Error("expected the control, its glyph and its neighbours to lay out");
+    }
+
+    // A real touch target, unchanged by swapping the glyph in.
+    expect(buttonBox.width).toBeGreaterThanOrEqual(44);
+    expect(buttonBox.height).toBeGreaterThanOrEqual(44);
+    expect(isFullyWithin(buttonBox, mapBox)).toBe(true);
+    expect(isFullyWithin(arrowBox, buttonBox)).toBe(true);
+
+    // The glyph is centred in its control — the one thing a block-level
+    // svg inside a button could plausibly get wrong.
+    expect(
+      Math.abs(arrowBox.x + arrowBox.width / 2 - (buttonBox.x + buttonBox.width / 2)),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(arrowBox.y + arrowBox.height / 2 - (buttonBox.y + buttonBox.height / 2)),
+    ).toBeLessThanOrEqual(1);
+
+    // No collision with the neighbouring map controls.
+    expect(intersects(buttonBox, locateBox)).toBe(false);
+    expect(intersects(buttonBox, zoomInBox)).toBe(false);
+    expect(intersects(buttonBox, zoomOutBox)).toBe(false);
+
+    // Item 110 negative control 5. A 48px circular button is rotationally
+    // symmetric, so its box alone cannot tell "the glyph rotated" from
+    // "the whole button rotated". Assert both halves.
+    await rotateBy(page, mapContainer, 3);
+    await expect(northUpButton).toHaveAttribute("aria-pressed", "false");
+    expect(Math.abs(await paintedRotationDegrees(arrow))).toBeGreaterThan(1);
+    expect(
+      await northUpButton.evaluate((element) => getComputedStyle(element).transform),
+    ).toBe("none");
+
+    // Rotating the glyph must not have disturbed the control's own box.
+    const buttonBoxAfter = await northUpButton.boundingBox();
+    if (!buttonBoxAfter) {
+      throw new Error("expected the control to still lay out after rotation");
+    }
+    expect(Math.abs(buttonBoxAfter.width - buttonBox.width)).toBeLessThan(0.5);
+    expect(Math.abs(buttonBoxAfter.height - buttonBox.height)).toBeLessThan(0.5);
+    expect(Math.abs(buttonBoxAfter.x - buttonBox.x)).toBeLessThan(0.5);
+
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(390);
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  });
+
+  test("at 200% browser text the control stays contained and adds no horizontal overflow of its own", async ({
+    page,
+  }) => {
+    const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+    const { mapContainer, northUpButton, arrow } = await openPlanning(page);
+
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "200%";
+    });
+    await rotateBy(page, mapContainer, 3);
+
+    const buttonBox = await northUpButton.boundingBox();
+    const arrowBox = await arrow.boundingBox();
+    const mapBox = await mapContainer.boundingBox();
+    if (!buttonBox || !arrowBox || !mapBox) {
+      throw new Error("expected the control and its glyph to lay out at 200% text");
+    }
+
+    // The glyph is sized in px, not em, so enlarged text must not burst
+    // the control out of the map or shrink it below a usable target.
+    expect(buttonBox.width).toBeGreaterThanOrEqual(44);
+    expect(buttonBox.height).toBeGreaterThanOrEqual(44);
+    expect(isFullyWithin(buttonBox, mapBox)).toBe(true);
+    expect(isFullyWithin(arrowBox, buttonBox)).toBe(true);
+    expect(Math.abs(await paintedRotationDegrees(arrow))).toBeGreaterThan(1);
+
+    // A whole-document scrollWidth check at 200% trips on this app
+    // shell's own pre-existing, unrelated primary-navigation overflow —
+    // already documented in routeLibraryTags.spec.ts and
+    // planningPlacementControlLayering.spec.ts. The honest, load-bearing
+    // assertion is that this control contributes nothing to it.
+    const overflow = await northUpButton.evaluate((element) => {
+      const withControl = document.documentElement.scrollWidth;
+      const original = element.style.display;
+      element.style.display = "none";
+      const withoutControl = document.documentElement.scrollWidth;
+      element.style.display = original;
+      return { withControl, withoutControl };
+    });
+    expect(overflow.withControl).toBe(overflow.withoutControl);
+
+    expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  });
+});

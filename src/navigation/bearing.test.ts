@@ -4,6 +4,7 @@ import {
   normaliseBearingDegrees,
   routeTangentBearingDegrees,
   shortestAngularDifferenceDegrees,
+  toDisplayBearingDegrees,
 } from "./bearing.ts";
 import { buildRoutePointsFromWaypoints } from "../test/fixtures/routeGeometry.ts";
 import type { RoutePoint } from "../domain/types.ts";
@@ -42,6 +43,74 @@ describe("normaliseBearingDegrees", () => {
 
   it("wraps a negative bearing", () => {
     expect(normaliseBearingDegrees(-10)).toBe(350);
+  });
+});
+
+describe("toDisplayBearingDegrees", () => {
+  // Backlog item 110. These are the exact cardinal cases the north-up
+  // control's arrow is specified against — 0 up, 90 left, 180 down,
+  // 270/-90 right — expressed here in the one canonical domain the
+  // presentation layer is allowed to see.
+  it("leaves the cardinal bearings in [0, 360)", () => {
+    expect(toDisplayBearingDegrees(0)).toBe(0);
+    expect(toDisplayBearingDegrees(90)).toBe(90);
+    expect(toDisplayBearingDegrees(180)).toBe(180);
+    expect(toDisplayBearingDegrees(270)).toBe(270);
+  });
+
+  // MapLibre's own getBearing() reports a signed [-180, 180) value (its
+  // setBearing wraps before converting to radians), while a
+  // RideCameraCommand reports [0, 360) for the same orientation. Both
+  // reach this boundary, so they must come out identical.
+  it("maps MapLibre's signed readback onto the same value as a command", () => {
+    expect(toDisplayBearingDegrees(-90)).toBe(270);
+    expect(toDisplayBearingDegrees(-90)).toBe(toDisplayBearingDegrees(270));
+    expect(toDisplayBearingDegrees(-180)).toBe(180);
+    expect(toDisplayBearingDegrees(-1)).toBe(359);
+  });
+
+  it("wraps values at or beyond one full revolution", () => {
+    expect(toDisplayBearingDegrees(360)).toBe(0);
+    expect(toDisplayBearingDegrees(370)).toBe(10);
+    expect(toDisplayBearingDegrees(725)).toBe(5);
+    expect(toDisplayBearingDegrees(-725)).toBe(355);
+  });
+
+  // Rounding happens inside the wrap, so a bearing just short of a full
+  // revolution must come out as 0 rather than 360.
+  it("rounds to whole degrees, wrapping again if rounding reaches 360", () => {
+    expect(toDisplayBearingDegrees(44.4)).toBe(44);
+    expect(toDisplayBearingDegrees(44.6)).toBe(45);
+    expect(toDisplayBearingDegrees(359.7)).toBe(0);
+    expect(toDisplayBearingDegrees(-0.2)).toBe(0);
+  });
+
+  // The reason the rounding exists at all: MapLibre stores bearing as
+  // radians, so a byte-identical commanded bearing reads back as a
+  // neighbouring float. Without quantisation an exact equality guard
+  // would treat that as a real change on every single settle.
+  it("collapses a degrees-radians-degrees round trip to one value", () => {
+    // 13 is one of the 105 whole degrees in [0, 360) that do not survive
+    // MapLibre's own degrees -> radians -> degrees storage exactly, so an
+    // exact equality guard on the raw readback really would see a change
+    // where the map did not move at all.
+    const commanded = 13;
+    const roundTripped = (((commanded * Math.PI) / 180) * 180) / Math.PI;
+    expect(roundTripped).not.toBe(commanded);
+    expect(toDisplayBearingDegrees(roundTripped)).toBe(
+      toDisplayBearingDegrees(commanded),
+    );
+  });
+
+  // normaliseBearingDegrees propagates NaN, and rotate(NaNdeg) is an
+  // invalid CSS declaration browsers drop silently. A restored camera row
+  // is only defended with `?? 0`, which does not catch a structured-cloned
+  // NaN, so this boundary must reject it explicitly.
+  it("returns null for a non-finite bearing rather than propagating NaN", () => {
+    expect(toDisplayBearingDegrees(Number.NaN)).toBeNull();
+    expect(toDisplayBearingDegrees(Number.POSITIVE_INFINITY)).toBeNull();
+    expect(toDisplayBearingDegrees(Number.NEGATIVE_INFINITY)).toBeNull();
+    expect(Number.isNaN(normaliseBearingDegrees(Number.NaN))).toBe(true);
   });
 });
 

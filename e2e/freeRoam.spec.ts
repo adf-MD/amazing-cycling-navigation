@@ -1088,3 +1088,92 @@ test.describe("390px phone viewport", () => {
     await expect(page.getByRole("button", { name: "Resume free roam" })).toBeVisible();
   });
 });
+
+// ---------------------------------------------------------------------
+// Backlog item 110 — the north-up control's north-pointing arrow.
+//
+// Free roam has no route geometry, and Playwright's own geolocation
+// emulation supplies neither heading nor speed, so a stationary followed
+// free-roam camera genuinely settles north-up here. The rotation is
+// therefore established by a real manual gesture — which is also the
+// rider's own way of rotating this screen's map.
+// ---------------------------------------------------------------------
+
+/** The rotation the arrow is actually painted with, recovered from the
+ * composited matrix rather than the inline style string. Duplicated from
+ * planning.spec.ts per this repo's no-shared-e2e-helpers convention. */
+async function paintedRotationDegrees(locator: Locator): Promise<number> {
+  return locator.evaluate((element) => {
+    const { transform } = getComputedStyle(element);
+    if (transform === "none") return 0;
+    const values = transform
+      .slice(transform.indexOf("(") + 1, transform.lastIndexOf(")"))
+      .split(",")
+      .map((value) => Number.parseFloat(value));
+    // matrix(a, b, c, d, e, f): for a pure rotation a = cos, b = sin.
+    if (values.length < 2) {
+      throw new Error(`could not parse a rotation from "${transform}"`);
+    }
+    return (Math.atan2(values[1], values[0]) * 180) / Math.PI;
+  });
+}
+
+function angularDifferenceDegrees(a: number, b: number): number {
+  return Math.abs((((a - b + 180) % 360) + 360) % 360) - 180;
+}
+
+test("Free roam: the north-up control's arrow points at north on a rotated map", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  await startFreeRoam(page, context);
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  const northUp = page.getByRole("button", { name: "North-up, top-down view" });
+  await expect(northUp).toBeVisible();
+  const arrow = northUp.locator("svg");
+
+  // The old static letter is gone, and the glyph stays invisible to
+  // assistive technology while the button keeps its own accessible name.
+  await expect(arrow).toBeVisible();
+  await expect(northUp).toHaveText("");
+  await expect(arrow).toHaveAttribute("aria-hidden", "true");
+
+  await establishManualRotation(page, mapContainer);
+  const bearing = Number.parseFloat(
+    (await mapContainer.getAttribute("data-camera-bearing")) ?? "0",
+  );
+  expect(Math.abs(bearing)).toBeGreaterThan(1);
+
+  await expect
+    .poll(
+      async () =>
+        angularDifferenceDegrees(await paintedRotationDegrees(arrow), -bearing) < 1,
+    )
+    .toBe(true);
+
+  // Item 110 negative control 5 — a 48px circular button is rotationally
+  // symmetric, so both halves must be asserted.
+  expect(await northUp.evaluate((element) => getComputedStyle(element).transform)).toBe(
+    "none",
+  );
+
+  // The existing action still works, and leaves no stale bearing behind.
+  await northUp.click();
+  await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
+  await expect(northUp).toHaveAttribute("aria-pressed", "true");
+  expect(await paintedRotationDegrees(arrow)).toBeCloseTo(0, 5);
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});

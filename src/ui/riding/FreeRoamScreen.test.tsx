@@ -380,6 +380,130 @@ describe("FreeRoamScreen", () => {
     expect(followButton).toHaveAttribute("aria-pressed", "true");
   });
 
+  // Backlog item 110 — free roam's twin of RidingScreen's own suite. Free
+  // roam starts already following, so a rotated followed camera is its
+  // ordinary case, and it is exactly the mode in which no pre-existing
+  // field retained a map bearing.
+  describe("north-pointing arrow (backlog item 110)", () => {
+    function arrowIn(button: HTMLElement): SVGSVGElement {
+      const svg = button.querySelector("svg");
+      if (!svg) {
+        throw new Error("expected the north-up control to render an arrow glyph");
+      }
+      return svg;
+    }
+
+    function renderFreeRoam() {
+      const fake = buildFakeGeolocationSource();
+      const map = buildStubMapFactory();
+      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      map.triggerLoad();
+      return {
+        map,
+        northUpButton: screen.getByRole("button", {
+          name: "North-up, top-down view",
+        }),
+      };
+    }
+
+    it("shows no static N as the control's visual content", () => {
+      const { northUpButton } = renderFreeRoam();
+
+      expect(northUpButton).toHaveTextContent("");
+      expect(arrowIn(northUpButton)).toBeInTheDocument();
+    });
+
+    it("points the arrow towards north at a rotated, followed camera", async () => {
+      const { map, northUpButton } = renderFreeRoam();
+
+      act(() => {
+        map.triggerCameraSettled({
+          coordinate: [0, 51],
+          zoom: 16,
+          bearingDegrees: 90,
+          pitchDegrees: 35,
+        });
+      });
+
+      await waitFor(() => {
+        expect(arrowIn(northUpButton).style.transform).toBe("rotate(-90deg)");
+      });
+      expect(screen.getByRole("button", { name: "Follow my location" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(northUpButton).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("normalises MapLibre's own signed bearing readback", async () => {
+      const { map, northUpButton } = renderFreeRoam();
+
+      act(() => {
+        map.triggerCameraSettled({
+          coordinate: [0, 51],
+          zoom: 16,
+          bearingDegrees: -90,
+          pitchDegrees: 35,
+        });
+      });
+
+      await waitFor(() => {
+        expect(arrowIn(northUpButton).style.transform).toBe("rotate(-270deg)");
+      });
+    });
+
+    it("returns the arrow to up once the camera settles north-up, leaving no stale bearing", async () => {
+      const user = userEvent.setup();
+      const { map, northUpButton } = renderFreeRoam();
+
+      act(() => {
+        map.triggerCameraSettled({
+          coordinate: [0, 51],
+          zoom: 16,
+          bearingDegrees: 212,
+          pitchDegrees: 35,
+        });
+      });
+      await waitFor(() => {
+        expect(arrowIn(northUpButton).style.transform).toBe("rotate(-212deg)");
+      });
+
+      await user.click(northUpButton);
+      expect(arrowIn(northUpButton).style.transform).toBe("rotate(0deg)");
+
+      act(() => {
+        map.triggerCameraSettled({
+          coordinate: [0, 51],
+          zoom: 16,
+          bearingDegrees: 0,
+          pitchDegrees: 0,
+        });
+      });
+      await waitFor(() => {
+        expect(northUpButton).toHaveAttribute("aria-pressed", "true");
+      });
+      expect(arrowIn(northUpButton).style.transform).toBe("rotate(0deg)");
+    });
+
+    it("keeps the rotation on the glyph, never on the button (negative control 5)", async () => {
+      const { map, northUpButton } = renderFreeRoam();
+
+      act(() => {
+        map.triggerCameraSettled({
+          coordinate: [0, 51],
+          zoom: 16,
+          bearingDegrees: 90,
+          pitchDegrees: 35,
+        });
+      });
+
+      await waitFor(() => {
+        expect(arrowIn(northUpButton).style.transform).toBe("rotate(-90deg)");
+      });
+      expect(northUpButton.style.transform).toBe("");
+    });
+  });
+
   describe("Zoom controls (backlog item 53)", () => {
     it("render with correct accessible names and glyphs (free roam has no idle state to hide behind)", () => {
       const fake = buildFakeGeolocationSource();

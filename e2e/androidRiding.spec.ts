@@ -100,9 +100,36 @@ test("shows the route, follows the GPS fix, and keeps camera controls operable, 
   await expect(northButton).toBeVisible();
   await expect(followButton).toHaveAttribute("aria-pressed", "true");
 
+  // Backlog item 110: the control's visual content is a north-pointing
+  // glyph rather than the old static letter, hidden from assistive
+  // technology, with the button's own accessible name and pressed state
+  // unchanged. Proven here under Android device emulation too, since this
+  // is a touch-target and rendering change as much as a behavioural one.
+  const northArrow = northButton.locator("svg");
+  await expect(northArrow).toBeVisible();
+  await expect(northButton).toHaveText("");
+  await expect(northArrow).toHaveAttribute("aria-hidden", "true");
+  const northButtonBox = await northButton.boundingBox();
+  const northArrowBox = await northArrow.boundingBox();
+  if (!northButtonBox || !northArrowBox) {
+    throw new Error("expected the north-up control and its glyph to lay out");
+  }
+  expect(northButtonBox.width).toBeGreaterThanOrEqual(44);
+  expect(northButtonBox.height).toBeGreaterThanOrEqual(44);
+  expect(northArrowBox.width).toBeLessThanOrEqual(northButtonBox.width);
+  expect(northArrowBox.height).toBeLessThanOrEqual(northButtonBox.height);
+
   await northButton.click();
   await expect(mapContainer).toHaveAttribute("data-camera-bearing", "0");
   await expect(northButton).toHaveAttribute("aria-pressed", "true");
+  // North-up, so the arrow points straight up and the rotation is the
+  // identity — never a stale angle left over from before the press.
+  expect(
+    await northArrow.evaluate((element) => getComputedStyle(element).transform),
+  ).toBe("matrix(1, 0, 0, 1, 0, 0)");
+  expect(
+    await northButton.evaluate((element) => getComputedStyle(element).transform),
+  ).toBe("none");
 
   // The global nav header is genuinely absent the instant geolocation is
   // genuinely watching (backlog item 55, superseding the old "static"

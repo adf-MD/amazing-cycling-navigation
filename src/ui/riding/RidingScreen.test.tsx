@@ -5832,6 +5832,168 @@ describe("RidingScreen", () => {
       });
     });
 
+    // Backlog item 110. The load-bearing case for Riding is a FOLLOWING
+    // camera: it is deliberately rotated to the travel bearing, and
+    // before this item no field retained a bearing in that mode at all —
+    // freeCameraPosition is cleared the moment mode leaves "free", and
+    // persistableCameraState.bearingDegrees is hard-coded to 0. Feeding
+    // the control from that persistence value would show a permanent,
+    // false "north is up" for a whole ride, so these assert the rendered
+    // glyph at a rotated, followed camera specifically.
+    describe("north-pointing arrow (backlog item 110)", () => {
+      function arrowIn(button: HTMLElement): SVGSVGElement {
+        const svg = button.querySelector("svg");
+        if (!svg) {
+          throw new Error("expected the north-up control to render an arrow glyph");
+        }
+        return svg;
+      }
+
+      async function startFollowedRide(): Promise<{
+        map: ReturnType<typeof buildStubMapFactory>;
+        northUpButton: HTMLElement;
+      }> {
+        const user = userEvent.setup();
+        const stub = buildStubGeolocationSource();
+        const map = buildStubMapFactory();
+        render(
+          <RidingScreen
+            route={route}
+            geolocationSource={stub.source}
+            mapFactory={map.factory}
+          />,
+        );
+        map.triggerLoad();
+
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+        stub.emitFix({
+          coordinate: pointAt(0),
+          accuracyMetres: 5,
+          timestampMs: 1000,
+          speedMetresPerSecond: 5,
+          headingDegrees: 90,
+        });
+        await waitFor(() => {
+          expect(map.setCameraSpy).toHaveBeenCalledTimes(1);
+        });
+
+        return {
+          map,
+          northUpButton: screen.getByRole("button", {
+            name: "North-up, top-down view",
+          }),
+        };
+      }
+
+      it("shows no static N as the control's visual content", async () => {
+        const { northUpButton } = await startFollowedRide();
+
+        expect(northUpButton).toHaveTextContent("");
+        expect(arrowIn(northUpButton)).toBeInTheDocument();
+      });
+
+      it("points the arrow towards north at a rotated, followed camera", async () => {
+        const { map, northUpButton } = await startFollowedRide();
+
+        map.triggerCameraSettled({
+          coordinate: pointAt(0),
+          zoom: 16,
+          bearingDegrees: 90,
+          pitchDegrees: 35,
+        });
+
+        await waitFor(() => {
+          expect(arrowIn(northUpButton).style.transform).toBe("rotate(-90deg)");
+        });
+        // Still following, so the control is correctly not pressed — the
+        // arrow is reporting the map's orientation, not the control's state.
+        expect(northUpButton).toHaveAttribute("aria-pressed", "false");
+        expect(
+          screen.getByRole("button", { name: "Follow my location" }),
+        ).toHaveAttribute("aria-pressed", "true");
+      });
+
+      it("normalises MapLibre's own signed bearing readback", async () => {
+        const { map, northUpButton } = await startFollowedRide();
+
+        map.triggerCameraSettled({
+          coordinate: pointAt(0),
+          zoom: 16,
+          bearingDegrees: -90,
+          pitchDegrees: 35,
+        });
+
+        await waitFor(() => {
+          expect(arrowIn(northUpButton).style.transform).toBe("rotate(-270deg)");
+        });
+      });
+
+      it("returns the arrow to up once the camera settles north-up, leaving no stale bearing", async () => {
+        const user = userEvent.setup();
+        const { map, northUpButton } = await startFollowedRide();
+
+        map.triggerCameraSettled({
+          coordinate: pointAt(0),
+          zoom: 16,
+          bearingDegrees: 212,
+          pitchDegrees: 35,
+        });
+        await waitFor(() => {
+          expect(arrowIn(northUpButton).style.transform).toBe("rotate(-212deg)");
+        });
+
+        await user.click(northUpButton);
+
+        // Upright the instant the command is issued, and still upright
+        // after the real readback confirms it.
+        expect(arrowIn(northUpButton).style.transform).toBe("rotate(0deg)");
+        map.triggerCameraSettled({
+          coordinate: pointAt(0),
+          zoom: 16,
+          bearingDegrees: 0,
+          pitchDegrees: 0,
+        });
+        await waitFor(() => {
+          expect(northUpButton).toHaveAttribute("aria-pressed", "true");
+        });
+        expect(arrowIn(northUpButton).style.transform).toBe("rotate(0deg)");
+      });
+
+      it("keeps the rotation on the glyph, never on the button (negative control 5)", async () => {
+        const { map, northUpButton } = await startFollowedRide();
+
+        map.triggerCameraSettled({
+          coordinate: pointAt(0),
+          zoom: 16,
+          bearingDegrees: 90,
+          pitchDegrees: 35,
+        });
+
+        await waitFor(() => {
+          expect(arrowIn(northUpButton).style.transform).toBe("rotate(-90deg)");
+        });
+        expect(northUpButton.style.transform).toBe("");
+      });
+
+      it("still invokes the existing north-up camera action when pressed", async () => {
+        const user = userEvent.setup();
+        const { map, northUpButton } = await startFollowedRide();
+
+        map.triggerCameraSettled({
+          coordinate: pointAt(0),
+          zoom: 16,
+          bearingDegrees: 90,
+          pitchDegrees: 35,
+        });
+        await user.click(northUpButton);
+
+        expect(map.setCameraSpy).toHaveBeenLastCalledWith(null, null, 0, 0, {
+          animate: true,
+          followOffset: false,
+        });
+      });
+    });
+
     it("after north-up, later fixes update the position marker and navigation state but never move, rotate or tilt the camera", async () => {
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();

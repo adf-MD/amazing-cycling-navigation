@@ -13,6 +13,7 @@ import { useOnlineStatus } from "../../platform/onlineStatus.ts";
 import { isWakeLockSupported, type WakeLockSource } from "../../platform/wakeLock.ts";
 import type { StoredCameraState } from "../../storage/mapping.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
+import { NorthArrowIcon } from "../shared/NorthArrowIcon.tsx";
 import { FreeRoamStatusCard } from "./FreeRoamStatusCard.tsx";
 import { RidingImmersiveHeader } from "./RidingImmersiveHeader.tsx";
 import { useFreeRoamCamera } from "./useFreeRoamCamera.ts";
@@ -504,7 +505,7 @@ export function FreeRoamScreen({
                   camera.isNorthUpTopDown ? " is-pressed" : ""
                 }`}
               >
-                N
+                <NorthArrowIcon bearingDegrees={camera.liveCameraBearingDegrees} />
               </button>
               <button
                 type="button"
