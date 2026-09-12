@@ -1,7 +1,14 @@
 import { expect, test } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 import { readActiveRideStateRow } from "./support/rideStateDb.ts";
+
+// installLocalMapStyle's own doc comment requires this: requests handled by
+// the app's service worker never reach page.route()'s interception. Measured
+// separately during item 32's investigation — adding it alone changed the
+// completion flake's rate but did not remove it, so it is a harness-contract
+// correction, not the flake's cause.
+test.use({ serviceWorkers: "block" });
 
 // Proves backlog item 55 (Immersive active-Riding shell and Pause
 // lifecycle): while route Riding or free roam is genuinely GPS-tracking,
@@ -26,6 +33,65 @@ const ROUTE_START_LON = -0.1;
 const METRES_PER_DEGREE_LON = 1000 / 0.0144303623099218;
 const ROUTE_LENGTH_METRES = 1000;
 const ROUTE_SEGMENTS = 10;
+/** See ridingFinishAndEnd.spec.ts's identically-named constant: the
+ * confirming finish fix sits a few metres past the route's final coordinate
+ * rather than repeating the previous one, so the per-fix acknowledgement
+ * below has an unambiguous coordinate to match. Still inside
+ * ROUTE_COMPLETION_ENDPOINT_BASE_RADIUS_METRES (25 m), and the projection
+ * clamps to the final point, so remaining distance stays at 0 m. */
+const ROUTE_PAST_FINISH_METRES = ROUTE_LENGTH_METRES + 5;
+
+interface ObservedFix {
+  longitude: number;
+  timestampMs: number;
+}
+
+async function readPersistedLastFix(page: Page): Promise<ObservedFix | null> {
+  const row = await readActiveRideStateRow(page);
+  const lastFix = row?.lastFix as
+    { coordinate: [number, number]; timestampMs: number } | null | undefined;
+  if (lastFix === null || lastFix === undefined) return null;
+  return { longitude: lastFix.coordinate[0], timestampMs: lastFix.timestampMs };
+}
+
+/**
+ * Backlog item 32. Issues one synthetic fix and waits until the app has
+ * genuinely committed it, proved by the persisted rideState row that
+ * useRideNavigation.ts rewrites on every accepted fix. Duplicated from
+ * ridingFinishAndEnd.spec.ts per this repo's no-shared-e2e-helpers
+ * convention; see that file's own copy for the measured evidence — with two
+ * overrides issued back to back, every watchPosition callback was delivered
+ * but React coalesced the pair, so one fix never reached a committed render
+ * and the completion tracker never observed it. The comment below this
+ * helper's call sites used to assert that each override "must be
+ * individually processed"; this is what actually enforces it.
+ *
+ * The persisted row is a causal fence, not proof that the completion reducer
+ * accepted the fix — the assertions after each call prove that layer.
+ */
+async function setGeolocationAndAwaitFix(
+  page: Page,
+  context: BrowserContext,
+  longitude: number,
+  previous: ObservedFix | null,
+): Promise<ObservedFix> {
+  await context.setGeolocation({ latitude: ROUTE_LAT, longitude });
+  await expect
+    .poll(
+      async () => {
+        const observed = await readPersistedLastFix(page);
+        if (observed === null) return false;
+        if (Math.abs(observed.longitude - longitude) > 1e-12) return false;
+        return previous?.timestampMs !== observed.timestampMs;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+  const observed = await readPersistedLastFix(page);
+  if (observed === null)
+    throw new Error("expected a persisted fix after acknowledgement");
+  return observed;
+}
 
 function lonAtMetres(distanceMetres: number): number {
   return ROUTE_START_LON + distanceMetres / METRES_PER_DEGREE_LON;
@@ -426,27 +492,41 @@ test("Finish ride restores the normal app shell exactly like Pause and End ride 
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
   await expect(immersiveHeaderLocator(page)).toBeVisible();
 
-  // Two consecutive interior fixes (arming), then two consecutive fixes at
-  // the finish (confirming) — mirrors ridingFinishAndEnd.spec.ts's own
-  // established completion-arming sequence, including waiting for each
-  // fix's own observable effect before issuing the next (each
-  // context.setGeolocation call must be individually processed — issuing
-  // several back-to-back with no wait between them risks the app only
-  // ever observing the last one).
-  await context.setGeolocation({ latitude: ROUTE_LAT, longitude: lonAtMetres(400) });
+  // Two consecutive interior fixes (arming), then two at the finish
+  // (confirming) — mirrors ridingFinishAndEnd.spec.ts's own established
+  // completion-arming sequence. Backlog item 32: each override is now
+  // genuinely acknowledged before the next is issued. The previous version
+  // of this comment claimed that already, but relied on `On route` (visible
+  // from the ride's first fix) and on instantly-passing `toBeHidden()`
+  // negatives, neither of which delays anything.
+  const armingOne = await setGeolocationAndAwaitFix(
+    page,
+    context,
+    lonAtMetres(400),
+    null,
+  );
   await expect(page.getByText("On route")).toBeVisible();
-  await context.setGeolocation({ latitude: ROUTE_LAT, longitude: lonAtMetres(420) });
+  const armingTwo = await setGeolocationAndAwaitFix(
+    page,
+    context,
+    lonAtMetres(420),
+    armingOne,
+  );
   await expect(page.getByText("Route complete")).toBeHidden();
-  await context.setGeolocation({
-    latitude: ROUTE_LAT,
-    longitude: lonAtMetres(ROUTE_LENGTH_METRES),
-  });
+  const finishOne = await setGeolocationAndAwaitFix(
+    page,
+    context,
+    lonAtMetres(ROUTE_LENGTH_METRES),
+    armingTwo,
+  );
   await expect(page.getByText("0.0 km · 0 m ascent")).toBeVisible();
   await expect(page.getByText("Route complete")).toBeHidden();
-  await context.setGeolocation({
-    latitude: ROUTE_LAT,
-    longitude: lonAtMetres(ROUTE_LENGTH_METRES),
-  });
+  await setGeolocationAndAwaitFix(
+    page,
+    context,
+    lonAtMetres(ROUTE_PAST_FINISH_METRES),
+    finishOne,
+  );
   await expect(page.getByText("Route complete")).toBeVisible();
   const finishButton = page.getByRole("button", { name: "Finish ride" });
   await expect(finishButton).toBeVisible();

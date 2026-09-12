@@ -1,7 +1,15 @@
 import { expect, test } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 import { readActiveRideStateRow } from "./support/rideStateDb.ts";
+
+// installLocalMapStyle's own doc comment requires this: requests handled by
+// the app's service worker never reach page.route()'s interception, so
+// without it the tile-style interception this spec relies on is not
+// guaranteed to apply. Measured separately during item 32's investigation:
+// adding it alone changed the completion flake's rate but did not remove it,
+// so it is a harness-contract correction here, not the flake's cause.
+test.use({ serviceWorkers: "block" });
 
 const ROUTE_LAT = 51.5;
 const ROUTE_START_LON = -0.1;
@@ -11,6 +19,15 @@ const ROUTE_START_LON = -0.1;
 const METRES_PER_DEGREE_LON = 1000 / 0.0144303623099218;
 const ROUTE_LENGTH_METRES = 1000;
 const ROUTE_SEGMENTS = 10;
+/** The confirming finish fix, deliberately a few metres PAST the route's own
+ * final coordinate rather than identical to the preceding one — matching the
+ * closed-loop test's established pattern below, and giving the per-fix
+ * acknowledgement an unambiguous coordinate to match. Still completion
+ * eligible by both of rideCompletion.ts's gates: 5 m is far inside
+ * ROUTE_COMPLETION_ENDPOINT_BASE_RADIUS_METRES (25 m), and the projection
+ * clamps to the final point so reliable progress stays at the route total,
+ * i.e. 0 m remaining against a 50 m threshold. */
+const ROUTE_PAST_FINISH_METRES = ROUTE_LENGTH_METRES + 5;
 
 function lonAtMetres(distanceMetres: number): number {
   return ROUTE_START_LON + distanceMetres / METRES_PER_DEGREE_LON;
@@ -24,6 +41,65 @@ function lonAtMetres(distanceMetres: number): number {
 // assertions already in place above.
 async function waitForClearedRideState(page: Page): Promise<void> {
   await expect.poll(() => readActiveRideStateRow(page), { timeout: 10_000 }).toBeNull();
+}
+
+interface ObservedFix {
+  longitude: number;
+  timestampMs: number;
+}
+
+async function readPersistedLastFix(page: Page): Promise<ObservedFix | null> {
+  const row = await readActiveRideStateRow(page);
+  const lastFix = row?.lastFix as
+    { coordinate: [number, number]; timestampMs: number } | null | undefined;
+  if (lastFix === null || lastFix === undefined) return null;
+  return { longitude: lastFix.coordinate[0], timestampMs: lastFix.timestampMs };
+}
+
+/**
+ * Backlog item 32. Issues one synthetic fix and does not return until the app
+ * has genuinely COMMITTED it — proved by the persisted rideState row, which
+ * useRideNavigation.ts rewrites from a render effect on every accepted fix.
+ *
+ * This exists because the alternative barriers are not barriers at all. A
+ * negative `toBeHidden()` passes instantly, and `On route` is already visible
+ * from the ride's very first fix, so neither delays the next override.
+ * Measured in the pinned Playwright container during item 32's investigation:
+ * with the 400 m and 420 m overrides issued back to back that way, all five
+ * watchPosition callbacks were delivered every time, but in 8 of 40 runs only
+ * FOUR reached a committed render — React coalesced the pair and the 420 m fix
+ * was superseded before any render observed it. Since that was the second
+ * arming fix, the ride never armed, the finish fix was then evaluated while
+ * unarmed and reset the arming streak, and `Route complete` never appeared.
+ *
+ * The persisted row is a causal fence proving the fix reached committed app
+ * state; it deliberately does not claim the completion reducer accepted it —
+ * the assertions that follow each call are what prove that layer.
+ */
+async function setGeolocationAndAwaitFix(
+  page: Page,
+  context: BrowserContext,
+  longitude: number,
+  previous: ObservedFix | null,
+): Promise<ObservedFix> {
+  await context.setGeolocation({ latitude: ROUTE_LAT, longitude });
+  await expect
+    .poll(
+      async () => {
+        const observed = await readPersistedLastFix(page);
+        if (observed === null) return false;
+        if (Math.abs(observed.longitude - longitude) > 1e-12) return false;
+        // A distinct coordinate is the primary match; the timestamp guard
+        // additionally rejects a stale row left by an earlier identical fix.
+        return previous?.timestampMs !== observed.timestampMs;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+  const observed = await readPersistedLastFix(page);
+  if (observed === null)
+    throw new Error("expected a persisted fix after acknowledgement");
+  return observed;
 }
 
 /** A simple, straight, densely-sampled GPX track — deliberately independent
@@ -371,24 +447,38 @@ test("conservatively confirms route completion only after consecutive fixes, and
   // arming-specific unit/component coverage; this e2e path proves the same
   // real geolocation-driven progression arms and then completes correctly
   // end-to-end, without needing a third deliberate arming step.
-  await context.setGeolocation({ latitude: ROUTE_LAT, longitude: lonAtMetres(400) });
+  const armingOne = await setGeolocationAndAwaitFix(
+    page,
+    context,
+    lonAtMetres(400),
+    null,
+  );
   await expect(page.getByText("On route")).toBeVisible();
-  await context.setGeolocation({ latitude: ROUTE_LAT, longitude: lonAtMetres(420) });
+  const armingTwo = await setGeolocationAndAwaitFix(
+    page,
+    context,
+    lonAtMetres(420),
+    armingOne,
+  );
   await expect(page.getByText("Route complete")).toBeHidden();
 
   // A single fix at the finish is not enough on its own.
-  await context.setGeolocation({
-    latitude: ROUTE_LAT,
-    longitude: lonAtMetres(ROUTE_LENGTH_METRES),
-  });
+  const finishOne = await setGeolocationAndAwaitFix(
+    page,
+    context,
+    lonAtMetres(ROUTE_LENGTH_METRES),
+    armingTwo,
+  );
   await expect(page.getByText("0.0 km · 0 m ascent")).toBeVisible();
   await expect(page.getByText("Route complete")).toBeHidden();
 
   // A second consecutive fix at the finish confirms completion.
-  await context.setGeolocation({
-    latitude: ROUTE_LAT,
-    longitude: lonAtMetres(ROUTE_LENGTH_METRES),
-  });
+  await setGeolocationAndAwaitFix(
+    page,
+    context,
+    lonAtMetres(ROUTE_PAST_FINISH_METRES),
+    finishOne,
+  );
   await expect(page.getByText("Route complete")).toBeVisible();
 
   // Nothing was cleared merely by showing the panel — the rider can still
