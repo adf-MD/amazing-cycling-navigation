@@ -619,13 +619,152 @@ test("on a long Routes list, selecting a lower route while another is paused exp
   expect(consoleErrors).toEqual([]);
 });
 
-/** Shared setup for the item 95 follow-up's ordinary-motion tests below:
+/**
+ * Backlog item 95's interaction-safety invariant, measured rather than
+ * assumed: once the route-switch prompt's actions are available to
+ * activate, they must not still be moving because of the prompt's own
+ * reveal scroll.
+ *
+ * Installed BEFORE the prompt is opened, deliberately. A recorder started
+ * after `toBeVisible()` — let alone after Playwright's own actionability
+ * wait, which waits for the element to stop moving — would miss exactly
+ * the frames that matter: the first ones, in which the actions are
+ * painted and hit-testable but the reveal has not finished moving them.
+ *
+ * Samples every animation frame, so it measures what the browser is about
+ * to paint, and stops at the first button activation, so the window it
+ * covers is precisely "actionable and touchable".
+ */
+async function installActionGeometryRecorder(page: Page, recordMs: number) {
+  await page.evaluate((limitMs) => {
+    const w = window as unknown as { __e2eActionGeometry?: unknown };
+    const start = performance.now();
+    const recorder = {
+      frames: [] as {
+        t: number;
+        actions: { label: string; top: number; left: number }[];
+      }[],
+      clickAt: null as number | null,
+      activatedLabel: null as string | null,
+      done: false,
+    };
+    w.__e2eActionGeometry = recorder;
+
+    // Scoped to buttons INSIDE the prompt, which matters: the click that
+    // OPENS the prompt is itself a button (the route card's title), so an
+    // unscoped listener would record that one, stop the loop before the
+    // dialog existed, and leave this test vacuously measuring nothing.
+    const onClick = (event: MouseEvent) => {
+      const target = event.target;
+      const button = target instanceof Element ? target.closest("button") : null;
+      const inPrompt = button?.closest('[role="alertdialog"]') ?? null;
+      if (recorder.activatedLabel === null && button && inPrompt) {
+        recorder.activatedLabel = button.textContent.trim();
+        recorder.clickAt = performance.now() - start;
+      }
+    };
+    document.addEventListener("click", onClick, { capture: true });
+
+    const tick = () => {
+      const now = performance.now() - start;
+      const dialog = document.querySelector('[role="alertdialog"]');
+      if (dialog) {
+        recorder.frames.push({
+          t: now,
+          actions: [...dialog.querySelectorAll("button")].map((button) => {
+            const rect = button.getBoundingClientRect();
+            return { label: button.textContent.trim(), top: rect.top, left: rect.left };
+          }),
+        });
+      }
+      if (now < limitMs && recorder.clickAt === null) {
+        requestAnimationFrame(tick);
+      } else {
+        recorder.done = true;
+        document.removeEventListener("click", onClick, { capture: true });
+      }
+    };
+    requestAnimationFrame(tick);
+  }, recordMs);
+}
+
+interface ActionGeometryRecording {
+  frames: { t: number; actions: { label: string; top: number; left: number }[] }[];
+  clickAt: number | null;
+  activatedLabel: string | null;
+}
+
+async function readActionGeometry(page: Page): Promise<ActionGeometryRecording> {
+  return page.evaluate(
+    () =>
+      (window as unknown as { __e2eActionGeometry: ActionGeometryRecording })
+        .__e2eActionGeometry,
+  );
+}
+
+const ACTION_GEOMETRY_RECORD_MS = 4000;
+/** Sub-pixel drift is not a hazard; a whole pixel of movement between the
+ * frame a rider sees and the frame their tap lands in already is. */
+const ACTION_STABLE_TOLERANCE_PX = 1;
+/** Guards against a vacuous pass: an empty or single-frame recording would
+ * satisfy any stability check trivially. */
+const MIN_ACTIONABLE_FRAMES = 3;
+
+/**
+ * Asserts the invariant over every frame in which the prompt's actions
+ * existed, up to and including the activation. Each action is tracked by
+ * its own label, so a control that moves only one of the three still
+ * fails.
+ */
+function expectStableActionGeometry(
+  recorded: ActionGeometryRecording,
+  expectedLabel: string,
+) {
+  const clickAt = recorded.clickAt;
+  expect(clickAt).not.toBeNull();
+  const actionableFrames = recorded.frames.filter(
+    (frame) => frame.actions.length > 0 && frame.t <= (clickAt ?? 0),
+  );
+  expect(actionableFrames.length).toBeGreaterThanOrEqual(MIN_ACTIONABLE_FRAMES);
+
+  const firstByLabel = new Map<string, { top: number; left: number }>();
+  const drift: string[] = [];
+  for (const frame of actionableFrames) {
+    for (const action of frame.actions) {
+      const first = firstByLabel.get(action.label);
+      if (!first) {
+        firstByLabel.set(action.label, { top: action.top, left: action.left });
+        continue;
+      }
+      const dTop = Math.abs(action.top - first.top);
+      const dLeft = Math.abs(action.left - first.left);
+      if (dTop > ACTION_STABLE_TOLERANCE_PX || dLeft > ACTION_STABLE_TOLERANCE_PX) {
+        drift.push(
+          `${action.label} moved ${dTop.toFixed(1)}px vertically / ` +
+            `${dLeft.toFixed(1)}px horizontally by t=${frame.t.toFixed(0)}ms`,
+        );
+      }
+    }
+  }
+  expect(drift).toEqual([]);
+  // Proves the pointer reached the control it was aimed at. Before the
+  // correction a real CI run aimed at "Return to paused ride" and
+  // activated "End and switch", one row above, ending a ride the rider
+  // meant to resume — so a future mis-target must name the control it hit
+  // rather than surfacing as a missing destination heading.
+  expect(recorded.activatedLabel).toBe(expectedLabel);
+}
+
+/** Shared setup for the item 95 interaction-safety tests below:
  * establishes route A as unfinished, reloads, and builds a long enough
  * Routes list (route B plus 8 fillers, most-recent-first sort) that
  * opening B's card genuinely requires scrolling — mirrors the long-list
  * fixture the reduced-motion test above uses, but deliberately WITHOUT
- * emulating reduced motion, so the real animated smooth-scroll path is
- * exercised rather than avoided. */
+ * emulating reduced motion. That is still the point of these tests: the
+ * reveal must be immediate at the DEFAULT motion preference too, not only
+ * for riders who have opted out of animation. Before the item 95
+ * interaction-safety correction this path animated, which is exactly the
+ * hazard the geometry recorder below now measures. */
 async function setupOrdinaryMotionLongList(
   page: Page,
   context: BrowserContext,
@@ -651,7 +790,7 @@ async function setupOrdinaryMotionLongList(
   return { routeAName, routeBName, routeARowBefore, routeBCard };
 }
 
-test("Return activated during a genuine ordinary-motion scroll leaves Pre-Ride at a stable top, and Routes-return restoration is unaffected (item 95 follow-up)", async ({
+test("Return activated as soon as the switch prompt is actionable: the prompt's actions never move under the pointer, Route A's Pre-Ride opens at a stable top, and Routes-return restoration is unaffected (item 95 interaction-safety correction)", async ({
   page,
   context,
 }, testInfo) => {
@@ -667,6 +806,12 @@ test("Return activated during a genuine ordinary-motion scroll leaves Pre-Ride a
   const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
   const { routeAName, routeBName, routeARowBefore, routeBCard } =
     await setupOrdinaryMotionLongList(page, context, "ordinary-motion");
+
+  // Started BEFORE the prompt exists, so it captures the very first frame
+  // in which the actions are painted and hit-testable. This ordering is
+  // load-bearing: the hazard lives in those first frames, and a recorder
+  // installed after the prompt is visible cannot see them.
+  await installActionGeometryRecorder(page, ACTION_GEOMETRY_RECORD_MS);
 
   await page.getByRole("button", { name: routeBName, exact: true }).click();
   const dialog = routeBCard.getByRole("alertdialog");
@@ -736,16 +881,24 @@ test("Return activated during a genuine ordinary-motion scroll leaves Pre-Ride a
     { routeAName, recordMs: RECORD_MS },
   );
 
-  // force:true skips Playwright's normal actionability wait (which would
-  // wait for the target to become "stable" first, likely absorbing
-  // exactly the race window this test needs to hit) while still
-  // dispatching a real, trusted, CDP-level mouse click at a position
-  // measured immediately before dispatch — not a coordinate snapshot
-  // taken earlier, which proved unreliable here: with a still-scrolling
-  // page, a boundingBox() measured even a short time before the click
-  // could go stale enough that the click landed on a different button
-  // ("End and switch", one row above) instead of "Return to paused ride".
-  await returnButton.click({ force: true, noWaitAfter: true });
+  // A genuine Playwright pointer click, with real actionability and real
+  // browser hit-testing — deliberately NOT force:true, and deliberately
+  // not a synthetic element.click(). The previous forced click existed to
+  // beat the reveal animation, and a real CI run proved it could not: the
+  // coordinate was measured against one layout and dispatched against
+  // another, so a pointer aimed at "Return to paused ride" activated
+  // "End and switch", one row above, and Route B opened. Suppressing that
+  // with a synthetic DOM click would have hidden a hazard a rider faces
+  // too. Production now reveals the prompt immediately and before paint
+  // instead, so there is nothing left to race and an ordinary click is
+  // both safe and the honest thing to test.
+  await returnButton.click();
+
+  // Asserted BEFORE the destination heading: the invariant this item
+  // corrects is about the actions holding still while activatable, and a
+  // failure should say which control was hit rather than only that a
+  // heading never appeared.
+  expectStableActionGeometry(await readActionGeometry(page), "Return to paused ride");
 
   await expect(page.getByRole("heading", { name: routeAName })).toBeVisible();
   await expect(page.getByRole("button", { name: "Resume ride" })).toBeVisible();
@@ -780,13 +933,14 @@ test("Return activated during a genuine ordinary-motion scroll leaves Pre-Ride a
       ).__e2eScrollRecorder,
   );
 
-  // Honest, non-blocking observational evidence: whether the card's own
-  // item-95 scroll animation was still genuinely moving in the samples
-  // immediately preceding the Return click. Reported via a test
-  // annotation, not hard-asserted — Chromium's own smooth-scroll
-  // cancellation semantics may already have settled it by this point
-  // regardless of what this fix does, and that is an honest, useful
-  // result in itself, not a failure of this test.
+  // Retained, but its meaning has changed with the item 95
+  // interaction-safety correction: the prompt's reveal is now immediate
+  // and pre-paint, so there is no longer an ordinary-motion animation for
+  // this to observe and `motionObservedBeforeReturn` is expected to be
+  // false. It stays as an annotation rather than an assertion because
+  // unrelated scrolling (the rider's own, or Chromium's scroll anchoring)
+  // can still legitimately move the page here. The invariant itself is
+  // asserted by expectStableActionGeometry above, not by this.
   const clickAt = recorded.clickAt;
   const samplesBeforeClick =
     clickAt === null ? [] : recorded.samples.filter((sample) => sample.t <= clickAt);
@@ -840,6 +994,66 @@ test("Return activated during a genuine ordinary-motion scroll leaves Pre-Ride a
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
 
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+/**
+ * The useLayoutEffect half of the item 95 interaction-safety correction,
+ * isolated and proved rather than assumed.
+ *
+ * At ordinary speed React's passive effects already land before the next
+ * paint in this flow, so useEffect and useLayoutEffect are
+ * indistinguishable here: a control that swaps them passes every other
+ * test in this file. Under a 20x CPU throttle — a fair model of a
+ * mid-range phone doing something else — they are emphatically not. The
+ * passive effect then lands AFTER a paint, and the prompt's actions are
+ * visible and tappable a measured 242px from where they finally settle.
+ * That is a frame a rider can genuinely touch, so the pre-paint guarantee
+ * is asserted here.
+ *
+ * Deliberately narrow: it proves the invariant and that Return still
+ * reaches Route A, and leaves the scroll-settling, persistence and
+ * restoration contracts to the unthrottled test above. Throttling is
+ * applied only after the fixture is built, and released before the test
+ * ends.
+ */
+test("the switch prompt's actions are already settled in the first frame a rider can touch, even on a heavily throttled device (item 95 interaction-safety correction)", async ({
+  page,
+  context,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+  const { routeAName, routeBName, routeBCard } = await setupOrdinaryMotionLongList(
+    page,
+    context,
+    "throttled-reveal",
+  );
+
+  const cpuThrottle = await context.newCDPSession(page);
+  await cpuThrottle.send("Emulation.setCPUThrottlingRate", { rate: 20 });
+  await installActionGeometryRecorder(page, ACTION_GEOMETRY_RECORD_MS);
+
+  await page.getByRole("button", { name: routeBName, exact: true }).click();
+  const dialog = routeBCard.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+  const returnButton = dialog.getByRole("button", { name: "Return to paused ride" });
+  await expect(returnButton).toBeVisible();
+
+  await returnButton.click();
+
+  expectStableActionGeometry(await readActionGeometry(page), "Return to paused ride");
+  await expect(page.getByRole("heading", { name: routeAName })).toBeVisible();
+
+  await cpuThrottle.send("Emulation.setCPUThrottlingRate", { rate: 1 });
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
@@ -945,7 +1159,7 @@ test("Return activated after the initial item 95 scroll has fully settled still 
   expect(consoleErrors).toEqual([]);
 });
 
-test("End and switch activated during a genuine ordinary-motion scroll also leaves the new screen at a stable top (item 95 follow-up, shared transition boundary)", async ({
+test("End and switch activated as soon as the switch prompt is actionable: the prompt's actions never move under the pointer and the new screen opens at a stable top (item 95 interaction-safety correction, shared transition boundary)", async ({
   page,
   context,
 }) => {
@@ -965,21 +1179,25 @@ test("End and switch activated during a genuine ordinary-motion scroll also leav
     "end-and-switch",
   );
 
+  // Installed before the prompt exists, for the same reason as the Return
+  // test above.
+  await installActionGeometryRecorder(page, ACTION_GEOMETRY_RECORD_MS);
+
   await page.getByRole("button", { name: routeBName, exact: true }).click();
   const dialog = routeBCard.getByRole("alertdialog");
   await expect(dialog).toBeVisible();
   const confirmButton = dialog.getByRole("button", { name: "End and switch" });
   await expect(confirmButton).toBeVisible();
 
-  // force:true, mirroring the Return test above: skips Playwright's
-  // stability wait while still dispatching a real, trusted click measured
-  // immediately before firing, not a coordinate snapshot that could go
-  // stale while the page is still scrolling. This fix's busy-gate and
-  // reassertion loop are both shared by confirmPendingSwitch ("clearing")
-  // via the same RouteListItem effect and openRideTarget path, so the
-  // shared boundary needs its own, if minimal, real-browser proof rather
-  // than being assumed correct from code-sharing alone.
-  await confirmButton.click({ force: true, noWaitAfter: true });
+  // An ordinary pointer click, mirroring the Return test above: the
+  // reveal is immediate and pre-paint, so there is no animation to beat.
+  // The busy-gate and reassertion loop are shared by confirmPendingSwitch
+  // ("clearing") through the same RouteListItem effect and openRideTarget
+  // path, so this boundary keeps its own real-browser proof rather than
+  // being assumed correct from code-sharing alone.
+  await confirmButton.click();
+
+  expectStableActionGeometry(await readActionGeometry(page), "End and switch");
 
   await expect(page.getByRole("heading", { name: routeBName })).toBeVisible();
   await expect(page.getByRole("button", { name: "Start riding" })).toBeVisible();

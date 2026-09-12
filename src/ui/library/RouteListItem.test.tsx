@@ -1875,8 +1875,10 @@ describe("RouteListItem", () => {
         const card = document.querySelector(`[data-route-id="${route.id}"]`);
         expect(calls[0]?.target).toBe(card);
         expect(calls[0]?.target).not.toBe(screen.getByRole("alertdialog"));
+        // "auto" since the item 95 interaction-safety correction — see the
+        // per-preference test below for why the reveal is never animated.
         expect(calls[0]?.options).toEqual(
-          expect.objectContaining({ block: "end", behavior: "smooth" }),
+          expect.objectContaining({ block: "end", behavior: "auto" }),
         );
       });
 
@@ -1975,10 +1977,23 @@ describe("RouteListItem", () => {
         expect(calls).toHaveLength(1);
       });
 
-      it("uses immediate (auto) behaviour under prefers-reduced-motion, and smooth otherwise", () => {
+      // Backlog item 95 interaction-safety correction: the reveal is
+      // immediate under BOTH motion preferences, not smooth for riders who
+      // have not opted out. A smooth scroll keeps `End and switch`,
+      // `Return to paused ride` and `Cancel` moving for hundreds of
+      // milliseconds after they become activatable, and a CI trace proved
+      // a pointer aimed at Return landing on End and switch because of it.
+      // Asserted for each preference separately rather than once with a
+      // stubbed matcher, so a reintroduced prefersReducedMotion() branch
+      // fails here instead of passing on whichever case happened to be
+      // stubbed.
+      it.each([
+        ["prefers-reduced-motion: reduce", true],
+        ["no motion preference", false],
+      ])("uses immediate (auto) behaviour under %s", (_label, prefersReduce) => {
         Element.prototype.getBoundingClientRect = () => stubRect();
         window.matchMedia = ((query: string) => ({
-          matches: query === "(prefers-reduced-motion: reduce)",
+          matches: prefersReduce && query === "(prefers-reduced-motion: reduce)",
         })) as typeof window.matchMedia;
         const calls = captureScrollCalls();
 

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, RefObject, SubmitEvent } from "react";
 import type { LibraryRoute, PlannedRoute } from "../../domain/types.ts";
 import {
@@ -8,7 +8,6 @@ import {
   tagIdentityKey,
   tagsEqualByIdentity,
 } from "../../domain/routeTags.ts";
-import { prefersReducedMotion } from "../../platform/environmentContext.ts";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 import { PinIcon } from "./PinIcon.tsx";
 import { runWhenViewportSettled } from "../shared/viewportSettle.ts";
@@ -401,7 +400,30 @@ export function RouteListItem({
   // isCardAlreadyFullyVisible), and otherwise end-aligns so the card's own
   // bottom — where the prompt's actions live — is prioritised over its
   // top when the card is too tall to show both at once.
-  useEffect(() => {
+  //
+  // SAFETY INVARIANT (item 95 correction): once this prompt's actions are
+  // available to activate, they must not still be moving because of the
+  // prompt's own reveal scroll. `End and switch`, `Return to paused ride`
+  // and `Cancel` sit one row apart and have very different, irreversible
+  // consequences, so a control that drifts under a finger already
+  // travelling towards it can end a ride the rider meant to resume. A CI
+  // trace proved exactly that: a pointer aimed at `Return to paused ride`
+  // landed on `End and switch` because the reveal was still animating.
+  //
+  // Two things enforce it together, and neither is sufficient alone:
+  //
+  // - useLayoutEffect, not useEffect. A passive effect runs AFTER paint,
+  //   so the actions could be painted — and hit-testable — at one
+  //   position and then moved. This runs after DOM layout but before the
+  //   browser paints the prompt, so the first frame the rider can see or
+  //   touch is already the settled one.
+  // - behavior: "auto" unconditionally, not just under reduced motion. A
+  //   smooth scroll keeps moving the actions for hundreds of milliseconds
+  //   after they are interactive, which is the hazard itself. There is no
+  //   `scroll-behavior` declaration anywhere in index.css, so "auto" is
+  //   genuinely immediate rather than being re-animated by CSS. The minor
+  //   animation is deliberately traded away for stable controls.
+  useLayoutEffect(() => {
     if (!switchPrompt) {
       lastSwitchMessageRef.current = null;
       return;
@@ -441,10 +463,7 @@ export function RouteListItem({
     ) {
       return;
     }
-    cardEl.scrollIntoView({
-      block: "end",
-      behavior: prefersReducedMotion() ? "auto" : "smooth",
-    });
+    cardEl.scrollIntoView({ block: "end", behavior: "auto" });
   }, [switchPrompt, stickyHeaderRef]);
 
   const openRename = () => {
