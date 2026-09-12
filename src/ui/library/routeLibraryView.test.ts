@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { LibraryRoute, PlannedRoute } from "../../domain/types.ts";
 import {
+  describeProspectiveTagFilterCount,
   filterRoutesByName,
   filterRoutesByTags,
   isPinnedRoute,
   normalizeSearchText,
+  selectProspectiveTagFilterCounts,
   selectRouteLibraryGroups,
   sortRoutesForLibrary,
+  tagFilterCountSlotDigits,
 } from "./routeLibraryView.ts";
 
 const NO_TAG_FILTERS = new Set<string>();
@@ -569,5 +572,207 @@ describe("selectRouteLibraryGroups", () => {
     const result = selectRouteLibraryGroups(routes, "", "name-asc", new Set(["gravel"]));
 
     expect(result.unpinned.map((r) => r.id)).toEqual(["a", "b"]);
+  });
+});
+
+// Backlog item 111: contextual ("if I added this tag too") tag-filter
+// counts. The two open semantics the backlog entry recorded are settled
+// here in tests, not only in prose: the count DOES respect the active
+// name search, and a candidate that survives nowhere is absent from the
+// map rather than present as 0.
+describe("selectProspectiveTagFilterCounts", () => {
+  // Deliberately mixes pinned and unpinned, two spellings of one identity
+  // on a single route, and a route with no tags at all.
+  const corpus = [
+    buildRoute("a", "Alpine Climb", undefined, { tags: ["Gravel", "Long"] }),
+    buildRoute("b", "Zebra Loop", undefined, {
+      tags: ["Gravel", "Weekend"],
+      pinnedAt: "2026-01-02T00:00:00.000Z",
+    }),
+    buildRoute("c", "Coastal Ride", undefined, { tags: ["Weekend"] }),
+    buildRoute("d", "Untagged Ride", undefined, {}),
+  ];
+
+  function asObject(counts: ReadonlyMap<string, number>): Record<string, number> {
+    return Object.fromEntries(counts);
+  }
+
+  it("returns an empty map for an empty corpus", () => {
+    expect(asObject(selectProspectiveTagFilterCounts([], "", NO_TAG_FILTERS))).toEqual(
+      {},
+    );
+  });
+
+  it("counts every tag's own routes when nothing is selected", () => {
+    expect(
+      asObject(selectProspectiveTagFilterCounts(corpus, "", NO_TAG_FILTERS)),
+    ).toEqual({ gravel: 2, long: 1, weekend: 2 });
+  });
+
+  it("narrows every candidate to the intersection with one selected filter", () => {
+    // Gravel selected -> routes a and b remain, so Long (a) is 1 and
+    // Weekend (b) is 1. Gravel itself is absent: it is already applied.
+    expect(
+      asObject(selectProspectiveTagFilterCounts(corpus, "", new Set(["gravel"]))),
+    ).toEqual({ long: 1, weekend: 1 });
+  });
+
+  it("applies AND, not OR, across several selected filters", () => {
+    // Gravel AND Weekend -> only route b. Under OR the base set would be
+    // a, b and c, and Long would wrongly report 1.
+    expect(
+      asObject(
+        selectProspectiveTagFilterCounts(corpus, "", new Set(["gravel", "weekend"])),
+      ),
+    ).toEqual({});
+  });
+
+  it("omits a candidate that would leave no routes, rather than reporting it as zero", () => {
+    const counts = selectProspectiveTagFilterCounts(corpus, "", new Set(["long"]));
+    // Long selected -> only route a, which carries Gravel but not Weekend.
+    expect(counts.get("gravel")).toBe(1);
+    expect(counts.has("weekend")).toBe(false);
+    expect(counts.get("weekend") ?? 0).toBe(0);
+  });
+
+  it("leaves every candidate at zero once the selection itself matches nothing", () => {
+    const counts = selectProspectiveTagFilterCounts(
+      corpus,
+      "",
+      new Set(["long", "weekend"]),
+    );
+    expect(asObject(counts)).toEqual({});
+    expect(counts.get("gravel") ?? 0).toBe(0);
+  });
+
+  it("respects the active name search", () => {
+    // "loop" matches Zebra Loop alone, so Gravel and Weekend drop to 1
+    // and Long — carried only by Alpine Climb — disappears entirely.
+    expect(
+      asObject(selectProspectiveTagFilterCounts(corpus, "loop", NO_TAG_FILTERS)),
+    ).toEqual({ gravel: 1, weekend: 1 });
+  });
+
+  it("drives every candidate to zero when the name search matches nothing", () => {
+    expect(
+      asObject(selectProspectiveTagFilterCounts(corpus, "no such route", NO_TAG_FILTERS)),
+    ).toEqual({});
+  });
+
+  it("uses the existing name-search normalisation rather than a plain substring match", () => {
+    // A bare `name.includes(query)` fails both of these: the stored name
+    // is capitalised and carries a diacritic, while the query is neither.
+    const routes = [buildRoute("a", "Hütte Loop", undefined, { tags: ["Gravel"] })];
+    expect(
+      asObject(selectProspectiveTagFilterCounts(routes, "hutte", NO_TAG_FILTERS)),
+    ).toEqual({ gravel: 1 });
+  });
+
+  it("matches tags by identity across case and whitespace spelling variants", () => {
+    const routes = [
+      buildRoute("a", "Alpine Climb", undefined, { tags: ["  GRAVEL  Path", "Long"] }),
+      buildRoute("b", "Zebra Loop", undefined, { tags: ["gravel path"] }),
+    ];
+    expect(
+      asObject(selectProspectiveTagFilterCounts(routes, "", NO_TAG_FILTERS)),
+    ).toEqual({
+      "gravel path": 2,
+      long: 1,
+    });
+    expect(
+      asObject(selectProspectiveTagFilterCounts(routes, "", new Set(["gravel path"]))),
+    ).toEqual({ long: 1 });
+  });
+
+  it("counts routes, never tag occurrences", () => {
+    // One route listing two spellings of one identity must count once.
+    const routes = [
+      buildRoute("a", "Alpine Climb", undefined, { tags: ["Gravel", "GRAVEL"] }),
+    ];
+    expect(
+      asObject(selectProspectiveTagFilterCounts(routes, "", NO_TAG_FILTERS)),
+    ).toEqual({
+      gravel: 1,
+    });
+  });
+
+  it("counts pinned and unpinned routes equally", () => {
+    const routes = [
+      buildRoute("a", "Alpine Climb", undefined, {
+        tags: ["Gravel"],
+        pinnedAt: "2026-01-02T00:00:00.000Z",
+      }),
+      buildRoute("b", "Zebra Loop", undefined, { tags: ["Gravel"], pinnedAt: null }),
+      buildRoute("c", "Coastal Ride", undefined, { tags: ["Gravel"] }),
+    ];
+    expect(
+      selectProspectiveTagFilterCounts(routes, "", NO_TAG_FILTERS).get("gravel"),
+    ).toBe(3);
+  });
+
+  it("never reports a prospective count for an already-selected tag", () => {
+    const counts = selectProspectiveTagFilterCounts(corpus, "", new Set(["gravel"]));
+    expect(counts.has("gravel")).toBe(false);
+  });
+
+  it("agrees with the real view pipeline for every candidate", () => {
+    // The oracle: whatever the rider would actually see. Also pins the
+    // irrelevance of sort order and pin grouping to membership.
+    const selected = new Set(["gravel"]);
+    const counts = selectProspectiveTagFilterCounts(corpus, "", selected);
+    for (const candidate of ["long", "weekend"]) {
+      const groups = selectRouteLibraryGroups(
+        corpus,
+        "",
+        "name-asc",
+        new Set([...selected, candidate]),
+      );
+      expect(counts.get(candidate) ?? 0).toBe(
+        groups.pinned.length + groups.unpinned.length,
+      );
+    }
+  });
+
+  it("never mutates the routes array or the selected-key set", () => {
+    const routes = [...corpus];
+    const selected = new Set(["gravel"]);
+    selectProspectiveTagFilterCounts(routes, "loop", selected);
+    expect(routes).toEqual(corpus);
+    expect([...selected]).toEqual(["gravel"]);
+  });
+});
+
+describe("describeProspectiveTagFilterCount", () => {
+  it("spells out unavailability rather than saying '0 routes'", () => {
+    expect(describeProspectiveTagFilterCount(0)).toBe("No routes would remain");
+  });
+
+  it("uses the singular for exactly one route", () => {
+    expect(describeProspectiveTagFilterCount(1)).toBe("1 route would remain");
+  });
+
+  it("uses the plural beyond one", () => {
+    expect(describeProspectiveTagFilterCount(2)).toBe("2 routes would remain");
+    expect(describeProspectiveTagFilterCount(1234)).toBe("1234 routes would remain");
+  });
+});
+
+describe("tagFilterCountSlotDigits", () => {
+  it("reserves one digit for an empty or single-digit corpus", () => {
+    expect(tagFilterCountSlotDigits(0)).toBe(1);
+    expect(tagFilterCountSlotDigits(1)).toBe(1);
+    expect(tagFilterCountSlotDigits(9)).toBe(1);
+  });
+
+  it("grows on each power-of-ten boundary, with no upper cap", () => {
+    expect(tagFilterCountSlotDigits(10)).toBe(2);
+    expect(tagFilterCountSlotDigits(99)).toBe(2);
+    expect(tagFilterCountSlotDigits(100)).toBe(3);
+    expect(tagFilterCountSlotDigits(999)).toBe(3);
+    // Deliberately past the three digits it would be tempting to assume:
+    // nothing in this application caps the library at 999 routes.
+    expect(tagFilterCountSlotDigits(1000)).toBe(4);
+    expect(tagFilterCountSlotDigits(9999)).toBe(4);
+    expect(tagFilterCountSlotDigits(10_000)).toBe(5);
   });
 });

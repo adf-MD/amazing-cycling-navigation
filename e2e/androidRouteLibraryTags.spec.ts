@@ -335,3 +335,63 @@ test("globally renaming a tag updates every card and the filter chip, with the m
 
   expect(consoleErrors).toEqual([]);
 });
+
+// Backlog item 111, kept to this file's own deliberately narrower
+// charter: the derivation, AND recalculation, accessible description,
+// focus retention, wrapping and enlarged-text contract are all proven in
+// routeLibraryTagFiltering.spec.ts and the unit/integration suites. What
+// is proven here is that the visible count and the zero-result no-op
+// still behave under mobile viewport/touch/UA emulation, reusing this
+// file's own tagRouteFor helper rather than duplicating that contract.
+//
+// This is Chromium with a Pixel 7 preset — emulation, never physical
+// Android acceptance.
+test("shows a prospective count on each unselected chip and refuses a zero-result tap", async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    consoleErrors.push(error.message);
+  });
+
+  await page.goto("/");
+  await importRoute(page, "Alpine Climb");
+  await importRoute(page, "Zebra Loop");
+  await tagRouteFor(page, "Alpine Climb", "Gravel");
+  await tagRouteFor(page, "Zebra Loop", "Weekend");
+
+  await page.getByRole("button", { name: "Filter by tags", exact: true }).click();
+  const group = page.getByRole("group", { name: "Filter by tags" });
+  const gravel = group.getByRole("button", { name: "Gravel", exact: true });
+  const weekend = group.getByRole("button", { name: "Weekend", exact: true });
+
+  await expect(gravel.locator(".tag-filter-count")).toHaveText("1");
+  await expect(weekend.locator(".tag-filter-count")).toHaveText("1");
+
+  await gravel.click();
+  // Gravel AND Weekend share no route, so Weekend becomes unavailable.
+  await expect(weekend.locator(".tag-filter-count")).toHaveText("0");
+  await expect(weekend).toHaveAttribute("aria-disabled", "true");
+  const weekendBox = await weekend.boundingBox();
+  if (!weekendBox) throw new Error("expected the unavailable chip to stay laid out");
+  expect(weekendBox.width).toBeGreaterThanOrEqual(44);
+  expect(weekendBox.height).toBeGreaterThanOrEqual(44);
+
+  // A real tap on the unavailable chip does nothing. `force` bypasses
+  // Playwright's own actionability check, which already honours
+  // aria-disabled and would otherwise refuse the tap outright.
+  await weekend.click({ force: true });
+  await expect(weekend).toHaveAttribute("aria-pressed", "false");
+  await expect(getListItemForName(page, "Alpine Climb")).toBeVisible();
+  await expect(getListItemForName(page, "Zebra Loop")).toHaveCount(0);
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(overflow).toBe(false);
+
+  expect(consoleErrors).toEqual([]);
+});

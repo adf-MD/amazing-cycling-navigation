@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { RefObject } from "react";
+import type { CSSProperties, KeyboardEvent, RefObject } from "react";
 import type { LibraryRoute, PlannedRoute } from "../../domain/types.ts";
 import {
   collectTagSuggestions,
@@ -19,7 +19,12 @@ import { prefersReducedMotion } from "../../platform/environmentContext.ts";
 import { runWhenViewportSettled } from "../shared/viewportSettle.ts";
 import { applyTopRevealScroll } from "./routeCardTopReveal.ts";
 import { isCardAlreadyFullyVisible } from "./routeSwitchCardVisibility.ts";
-import { describeActiveTagFilterCount } from "./routeLibraryView.ts";
+import {
+  describeActiveTagFilterCount,
+  describeProspectiveTagFilterCount,
+  selectProspectiveTagFilterCounts,
+  tagFilterCountSlotDigits,
+} from "./routeLibraryView.ts";
 import { RouteTagManager } from "./RouteTagManager.tsx";
 import {
   reconcileTagLifecycle,
@@ -212,6 +217,7 @@ export function RouteLibrary({
   const [isTagFilterOpen, setIsTagFilterOpen] = useState(false);
   const tagFilterLabelId = useId();
   const tagFilterPanelId = useId();
+  const tagFilterCountIdPrefix = useId();
   const tagManagerPanelId = useId();
   const tagFilterDisclosureRef = useRef<HTMLButtonElement>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -740,6 +746,37 @@ export function RouteLibrary({
     () => countRoutesByTagIdentity(routes ?? []),
     [routes],
   );
+
+  // Backlog item 111, and deliberately NOT the memo above. These are
+  // prospective counts: for each unselected tag, how many routes would
+  // remain if it were added to the current selection — so they are scoped
+  // to the active name search and the already-selected tag identities,
+  // where the manager's counts are unconditionally whole-corpus. The two
+  // answer different questions and must never be substituted for one
+  // another.
+  //
+  // Computed unconditionally rather than gated on isTagFilterOpen: the
+  // work is one pass over the current result set, and deriving it only
+  // while open would make "collapse, change something, reopen" a cache
+  // question it has no reason to be. `routes` is the live query, so an
+  // import, delete, rename, retag or global tag-lifecycle operation
+  // recomputes this for free.
+  const prospectiveTagFilterCounts = useMemo(
+    () => selectProspectiveTagFilterCounts(routes ?? [], searchQuery, selectedTagFilters),
+    [routes, searchQuery, selectedTagFilters],
+  );
+
+  // How wide the chip's count slot has to be reserved — see
+  // tagFilterCountSlotDigits for why this is derived from the corpus size
+  // rather than from the largest count currently on screen.
+  const tagFilterCountDigits = tagFilterCountSlotDigits(routes?.length ?? 0);
+  // React's CSSProperties carries no index signature for custom
+  // properties, so this is typed through an explicit intersection rather
+  // than forced with a cast — this project keeps unchecked casts out of
+  // typed boundaries.
+  const tagFilterCountSlotStyle: CSSProperties & Record<`--${string}`, string> = {
+    "--tag-filter-count-digits": String(tagFilterCountDigits),
+  };
   // Derived, never stored-and-reconciled, and used for BEHAVIOUR — the
   // disabled state, the preview and confirmation copy, the target
   // resolution, and the operation handed to storage. A <select> whose
@@ -1400,25 +1437,96 @@ export function RouteLibrary({
                 className="tag-filters"
                 role="group"
                 aria-labelledby={tagFilterLabelId}
+                /* The project's first inline CSS custom property, and
+                   deliberately so: the slot width depends on how many
+                   routes are saved, which is data no static class can
+                   know. Set once on the group and inherited by every
+                   chip. */
+                style={tagFilterCountSlotStyle}
               >
-                {tagSuggestions.map((tag) => {
+                {tagSuggestions.map((tag, index) => {
                   const key = tagIdentityKey(tag);
                   const isSelected = selectedTagFilters.has(key);
+                  // Absent means zero: the chips come from the full
+                  // unfiltered corpus while the counts come from the
+                  // narrowed result set, so a candidate that survives
+                  // nowhere simply has no entry.
+                  const count = prospectiveTagFilterCounts.get(key) ?? 0;
+                  const isUnavailable = !isSelected && count === 0;
+                  // Indexed, never keyed by tag identity: an identity key
+                  // may contain spaces, and aria-describedby is a
+                  // space-separated list of ID references.
+                  const descriptionId = `${tagFilterCountIdPrefix}-${String(index)}`;
                   return (
                     <button
                       key={key}
                       type="button"
-                      className={`tag-filter-chip${isSelected ? " is-selected" : ""}`}
+                      className={`tag-filter-chip${isSelected ? " is-selected" : ""}${
+                        isUnavailable ? " is-unavailable" : ""
+                      }`}
                       aria-pressed={isSelected}
+                      // Never the native `disabled` attribute. A chip can
+                      // become unavailable while it holds focus — a live
+                      // corpus update, or simply typing in the search
+                      // field — and a browser refuses .focus() on a
+                      // disabled element while jsdom never reproduces the
+                      // resulting blur. aria-disabled leaves the chip
+                      // focusable and in the tab order, so focus is
+                      // neither stranded nor silently lost, and no focus
+                      // hand-off is needed: the chip just stays focused.
+                      aria-disabled={isUnavailable ? true : undefined}
+                      aria-describedby={isSelected ? undefined : descriptionId}
                       onClick={() => {
+                        // aria-disabled does not prevent activation on
+                        // its own; this is what makes it a no-op, for
+                        // pointer, Enter and Space alike (a native button
+                        // synthesises click for both keys).
+                        if (isUnavailable) return;
                         handleToggleTagFilter(tag);
+                      }}
+                      onKeyDown={(event: KeyboardEvent<HTMLButtonElement>) => {
+                        // Belt and braces over the click guard above, and
+                        // it earns its place for Space specifically:
+                        // without preventDefault the page would still
+                        // scroll on a chip that does nothing.
+                        if (!isUnavailable) return;
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                        }
                       }}
                     >
                       <span aria-hidden="true" className="tag-filter-check">
                         {isSelected ? "✓" : ""}
                       </span>
                       <span className="tag-filter-label">{tag}</span>
+                      {/* aria-hidden so the chip's accessible name stays
+                          the tag itself — voice control and this
+                          project's own name-exact queries both depend on
+                          that. The number reaches assistive technology
+                          through the description below instead. */}
+                      {isSelected ? null : (
+                        <span aria-hidden="true" className="tag-filter-count">
+                          {count}
+                        </span>
+                      )}
                     </button>
+                  );
+                })}
+              </div>
+              {/* Outside every button, so none of this joins a chip's
+                  accessible name. .visually-hidden is position: absolute,
+                  so this wrapper is neither a flex nor a grid item and
+                  adds no layout of its own. */}
+              <div className="visually-hidden">
+                {tagSuggestions.map((tag, index) => {
+                  const key = tagIdentityKey(tag);
+                  if (selectedTagFilters.has(key)) return null;
+                  return (
+                    <span key={key} id={`${tagFilterCountIdPrefix}-${String(index)}`}>
+                      {describeProspectiveTagFilterCount(
+                        prospectiveTagFilterCounts.get(key) ?? 0,
+                      )}
+                    </span>
                   );
                 })}
               </div>

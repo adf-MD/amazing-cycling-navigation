@@ -1,6 +1,7 @@
 import type { LibraryRoute, PlannedRoute } from "../../domain/types.ts";
-import { tagIdentityKey } from "../../domain/routeTags.ts";
+import { countRoutesByTagIdentity, tagIdentityKey } from "../../domain/routeTags.ts";
 import type { RouteLibrarySortOrder } from "../../storage/mapping.ts";
+import { formatRouteCount } from "./routeCountCopy.ts";
 
 // Pinned to en-GB rather than the runtime default (see
 // providerKeyStatus.ts's DATE_TIME_FORMATTER for the same convention) so
@@ -207,6 +208,99 @@ export function selectRouteLibraryGroups<T extends LibraryRoute>(
     sortOrder,
   );
   return { pinned, unpinned };
+}
+
+/**
+ * The prospective ("if I added this tag too") route count for every
+ * UNSELECTED tag identity — backlog item 111's contextual tag-filter
+ * counts. Returned as identity key -> route count, for chips to read.
+ *
+ * The whole calculation is a composition of the three helpers this
+ * module and domain/routeTags.ts already own, deliberately rather than a
+ * second interpretation of search, identity or AND:
+ *
+ *   1. filterRoutesByName applies the ACTIVE NAME SEARCH, with exactly
+ *      the normalisation the visible list uses (see normalizeSearchText —
+ *      NFD plus combining-mark stripping, which is NOT tag identity's own
+ *      NFC rule). A search that matches nothing therefore drives every
+ *      prospective count to zero, which is the honest answer.
+ *   2. filterRoutesByTags narrows to the CURRENT selection under the same
+ *      AND semantics and the same tagIdentityKey matching the list uses.
+ *   3. countRoutesByTagIdentity tallies ROUTES (never occurrences) per
+ *      identity over what is left.
+ *
+ * One pass answers every candidate, and that is a property of AND rather
+ * than an optimisation: because AND-narrowing is monotone, the routes
+ * matching `selected ∪ {candidate}` are exactly the routes matching
+ * `selected` that also carry `candidate` — so a candidate's tally WITHIN
+ * the already-narrowed set IS its prospective count. Running
+ * selectRouteLibraryGroups once per candidate would compute the same
+ * numbers while also partitioning and sorting, neither of which can
+ * change membership.
+ *
+ * Every selected key is removed from the result, so a selected chip can
+ * never be handed a prospective count at all: its meaning is removal, not
+ * "what would happen if added". (Its entry would otherwise equal the
+ * whole current result size, since it is already applied.)
+ *
+ * A candidate that survives nowhere is simply ABSENT from the map rather
+ * than present as 0 — the tag list comes from the full unfiltered corpus
+ * while this map comes from the narrowed subset, so absence is the normal
+ * representation of a zero-result candidate and the caller resolves it
+ * with `?? 0`.
+ *
+ * Pinned and unpinned routes contribute identically (there is no pin
+ * logic here at all), and sort order is irrelevant to membership.
+ * Nothing passed in is mutated.
+ */
+export function selectProspectiveTagFilterCounts(
+  routes: readonly LibraryRoute[],
+  query: string,
+  selectedTagKeys: ReadonlySet<string>,
+): Map<string, number> {
+  const counts = countRoutesByTagIdentity(
+    filterRoutesByTags(filterRoutesByName(routes, query), selectedTagKeys),
+  );
+  for (const key of selectedTagKeys) {
+    counts.delete(key);
+  }
+  return counts;
+}
+
+/**
+ * How many digits the filter chips must reserve for a prospective count
+ * (backlog item 111), given the size of the FULL route corpus.
+ *
+ * The corpus size, not the largest count currently on screen, and that is
+ * the whole point: a prospective count can never exceed the number of
+ * saved routes, so this is a genuine upper bound that is ALSO stable
+ * across every search and tag-filter change. Sizing the slot from the
+ * visible maximum instead would reflow every chip row each time the
+ * rider typed a character. It changes only when routes are added or
+ * removed, and then only across a power-of-ten boundary.
+ *
+ * There is no 999-route cap anywhere in this application, so the answer
+ * is derived rather than assumed.
+ */
+export function tagFilterCountSlotDigits(routeCount: number): number {
+  return String(routeCount).length;
+}
+
+/**
+ * An unselected filter chip's accessible description (backlog item 111):
+ * what adding that tag to the current selection would leave. The chip's
+ * accessible NAME stays the tag itself — voice control, this project's
+ * own group-scoped test queries and four e2e specs all address a chip by
+ * exactly that — so the number is carried as a description instead of
+ * being appended to the name.
+ *
+ * Zero is spelled out rather than rendered as "0 routes would remain":
+ * the visible chip already shows a literal 0, and this is the string that
+ * has to make the unavailability unmistakable when read aloud.
+ */
+export function describeProspectiveTagFilterCount(count: number): string {
+  if (count === 0) return "No routes would remain";
+  return `${formatRouteCount(count)} would remain`;
 }
 
 /**

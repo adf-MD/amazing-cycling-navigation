@@ -4,15 +4,15 @@
  * project's curly-quote house style are directly unit-testable — both are
  * exactly the kind of detail a DOM-level test tends to wave through.
  *
- * Every count here is the repository's own authoritative
- * `sourceRouteCount`, never a pre-submit UI count.
+ * Every count in THIS module is the repository's own authoritative
+ * `sourceRouteCount`, never a pre-submit UI count. That claim is about
+ * these messages alone. The shared `formatRouteCount` it used to define
+ * moved to routeCountCopy.ts when backlog item 111 needed the same
+ * pluralisation for a derived UI count, and that formatter deliberately
+ * carries no such claim of its own.
  */
 
-/** "1 route" / "3 routes" — the app has no shared pluralisation helper,
- * and this is the only place that needs one. */
-export function formatRouteCount(count: number): string {
-  return count === 1 ? "1 route" : `${String(count)} routes`;
-}
+import { formatRouteCount } from "./routeCountCopy.ts";
 
 function quote(tag: string): string {
   return `“${tag}”`;

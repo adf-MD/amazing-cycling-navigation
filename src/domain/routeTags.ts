@@ -173,12 +173,28 @@ export function applyTagRemoval(tags: unknown, sourceKey: string): string[] {
   );
 }
 
-/** How many ROUTES (never occurrences) carry each tag identity across the
- * whole corpus, keyed by tagIdentityKey (backlog item 100 stage 4A) — the
- * counts the global tag manager shows beside each tag. Takes the same
- * minimal structural type as collectTagSuggestions, and reuses
- * normalizeRouteTags per route so a route listing two spellings of one
- * identity still counts once. */
+/** How many ROUTES (never occurrences) carry each tag identity in THE
+ * SUPPLIED ROUTE COLLECTION, keyed by tagIdentityKey (backlog item 100
+ * stage 4A). Takes the same minimal structural type as
+ * collectTagSuggestions, and reuses normalizeRouteTags per route so a
+ * route listing two spellings of one identity still counts once.
+ *
+ * The scope is the caller's choice, and the two callers choose
+ * differently on purpose:
+ *
+ * - The global tag manager deliberately supplies the FULL UNFILTERED
+ *   corpus, so a tag hidden by the current search or tag filter is still
+ *   manageable with its true route count.
+ * - Backlog item 111's prospective tag-filter counts supply the CURRENT
+ *   RESULT SET instead (name-searched, then narrowed by the selected tag
+ *   identities). Because AND-narrowing is monotone, a candidate tag's
+ *   count within that already-narrowed set is exactly the number of
+ *   routes that would remain were it added to the selection — so one
+ *   pass answers every candidate at once. See
+ *   ui/library/routeLibraryView.ts's selectProspectiveTagFilterCounts.
+ *
+ * A tag absent from the supplied collection is simply absent from the
+ * returned map; it is never reported as a zero entry. */
 export function countRoutesByTagIdentity(
   routes: readonly { tags: readonly string[] }[],
 ): Map<string, number> {

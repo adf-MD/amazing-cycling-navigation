@@ -2489,16 +2489,52 @@ describe("RouteLibrary — tag filtering", () => {
     expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
   });
 
-  it("tag-only no-match copy is shown when only a tag filter excludes every route", async () => {
+  // Backlog item 111 changed how this state is REACHED, not whether it
+  // exists: a chip whose prospective count is zero can no longer be
+  // tapped, so two filters can never be combined into an empty result by
+  // pressing them. The state still arises the way it does in real use —
+  // a live retag pulling the last shared route out from under an
+  // already-valid selection — and that is what this now constructs. The
+  // copy under test is unchanged.
+  it("tag-only no-match copy is shown when a live retag leaves an active tag filter excluding every route", async () => {
     const user = userEvent.setup();
     render(<RouteLibrary onOpenRoute={vi.fn()} />);
     await importFixture(user, "Alpine Climb.gpx");
     await importFixture(user, "Zebra Loop.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
+    await openTagEditor(user, "Alpine Climb", "Edit tags");
+    await user.type(screen.getByLabelText("Add a tag"), "Weekend{Enter}");
+    await user.click(
+      within(getListItemForName("Alpine Climb")).getByRole("button", {
+        name: "Save tags",
+      }),
+    );
+    await waitFor(() => {
+      expect(
+        within(getListItemForName("Alpine Climb")).getByRole("button", {
+          name: "Edit tags",
+        }),
+      ).toBeInTheDocument();
+    });
     await tagRoute(user, "Zebra Loop", "Weekend");
 
+    // Both selections are legitimate while Alpine Climb carries both.
     await clickTagFilter(user, "Gravel");
     await clickTagFilter(user, "Weekend");
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+    });
+
+    // Now take Weekend off Alpine Climb. Neither key is pruned — Gravel
+    // still lives on Alpine Climb and Weekend on Zebra Loop — so the
+    // selection survives and its intersection becomes empty.
+    await openTagEditor(user, "Alpine Climb", "Edit tags");
+    await toggleSuggestion(user, "Alpine Climb", "Weekend");
+    await user.click(
+      within(getListItemForName("Alpine Climb")).getByRole("button", {
+        name: "Save tags",
+      }),
+    );
 
     await waitFor(() => {
       expect(screen.getByText("No routes match the selected tags.")).toBeInTheDocument();
@@ -2656,7 +2692,25 @@ describe("RouteLibrary — tag filtering", () => {
     await importFixture(user, "Alpine Climb.gpx");
     await importFixture(user, "Zebra Loop.gpx");
     await tagRoute(user, "Alpine Climb", "Gravel");
-    await tagRoute(user, "Zebra Loop", "Weekend");
+    // Zebra Loop carries BOTH, so selecting Weekend below leaves it
+    // visible: a chip that would empty the list is no longer operable at
+    // all (backlog item 111), and this test is about hiding the prompt's
+    // own target, not about emptying the library.
+    await tagRoute(user, "Zebra Loop", "Gravel");
+    await openTagEditor(user, "Zebra Loop", "Edit tags");
+    await user.type(screen.getByLabelText("Add a tag"), "Weekend{Enter}");
+    await user.click(
+      within(getListItemForName("Zebra Loop")).getByRole("button", {
+        name: "Save tags",
+      }),
+    );
+    await waitFor(() => {
+      expect(
+        within(getListItemForName("Zebra Loop")).getByRole("button", {
+          name: "Edit tags",
+        }),
+      ).toBeInTheDocument();
+    });
     const routes = await routesRepository.listRoutes();
     const alpine = routes.find((route) => route.name === "Alpine Climb");
     if (!alpine) throw new Error("Alpine Climb not found");
@@ -3022,6 +3076,371 @@ describe("RouteLibrary — tag filtering", () => {
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Coastal Ride" })).toHaveFocus();
       });
+    });
+  });
+
+  // Backlog item 111: contextual tag-filter counts. Real fake-indexeddb
+  // storage, real tag editor, real live queries throughout — same harness
+  // as the rest of this describe.
+  describe("contextual prospective counts (item 111)", () => {
+    async function tagRouteWith(
+      user: ReturnType<typeof userEvent.setup>,
+      routeName: string,
+      tags: readonly string[],
+    ) {
+      const trigger = within(getListItemForName(routeName)).queryByRole("button", {
+        name: "Add tags",
+      })
+        ? "Add tags"
+        : "Edit tags";
+      await openTagEditor(user, routeName, trigger);
+      const input = screen.getByLabelText("Add a tag");
+      for (const tag of tags) {
+        await user.type(input, `${tag}{Enter}`);
+      }
+      await user.click(screen.getByRole("button", { name: "Save tags" }));
+      await waitFor(() => {
+        expect(
+          within(getListItemForName(routeName)).getByRole("button", {
+            name: "Edit tags",
+          }),
+        ).toBeInTheDocument();
+      });
+    }
+
+    /** Alpine Climb: Gravel + Long. Zebra Loop: Gravel + Weekend.
+     * Coastal Ride: Weekend. So with nothing selected the counts are
+     * Gravel 2, Long 1, Weekend 2; with Gravel selected they are Long 1
+     * and Weekend 1; and with Gravel AND Long selected, Weekend is 0. */
+    async function seedThreeRoutes(user: ReturnType<typeof userEvent.setup>) {
+      const view = render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+      await importFixture(user, "Coastal Ride.gpx");
+      await tagRouteWith(user, "Alpine Climb", ["Gravel", "Long"]);
+      await tagRouteWith(user, "Zebra Loop", ["Gravel", "Weekend"]);
+      await tagRouteWith(user, "Coastal Ride", ["Weekend"]);
+      return view;
+    }
+
+    function chipCount(name: string): string | null {
+      return (
+        getTagFilterButton(name).querySelector(".tag-filter-count")?.textContent ?? null
+      );
+    }
+
+    function chipDescription(name: string): string | null {
+      const id = getTagFilterButton(name).getAttribute("aria-describedby");
+      if (id === null) return null;
+      return document.getElementById(id)?.textContent ?? null;
+    }
+
+    function visibleRouteNames(): string[] {
+      return [...document.querySelectorAll(".route-card-title")].map(
+        (element) => element.textContent,
+      );
+    }
+
+    it("shows a count on every unselected chip only once the chooser is expanded", async () => {
+      const user = userEvent.setup();
+      await seedThreeRoutes(user);
+
+      // Collapsed: no chips exist at all, so no counts can leak.
+      expect(document.querySelectorAll(".tag-filter-count")).toHaveLength(0);
+
+      await expandTagFilters(user);
+      expect(chipCount("Gravel")).toBe("2");
+      expect(chipCount("Long")).toBe("1");
+      expect(chipCount("Weekend")).toBe("2");
+      expect(chipDescription("Gravel")).toBe("2 routes would remain");
+      expect(chipDescription("Long")).toBe("1 route would remain");
+
+      await user.click(screen.getByRole("button", { name: "Filter by tags" }));
+      await waitFor(() => {
+        expect(document.querySelectorAll(".tag-filter-count")).toHaveLength(0);
+      });
+    });
+
+    it("recalculates every other chip's count the moment one tag is selected", async () => {
+      const user = userEvent.setup();
+      await seedThreeRoutes(user);
+      await clickTagFilter(user, "Gravel");
+
+      await waitFor(() => {
+        expect(chipCount("Long")).toBe("1");
+      });
+      expect(chipCount("Weekend")).toBe("1");
+      expect(chipDescription("Weekend")).toBe("1 route would remain");
+    });
+
+    it("follows AND semantics when a second tag is added", async () => {
+      const user = userEvent.setup();
+      await seedThreeRoutes(user);
+      await clickTagFilter(user, "Gravel");
+      await user.click(getTagFilterButton("Long"));
+
+      // Gravel AND Long is Alpine Climb alone, which carries no Weekend
+      // tag. Under OR this would read 2.
+      await waitFor(() => {
+        expect(chipCount("Weekend")).toBe("0");
+      });
+    });
+
+    it("gives a selected chip its pressed state and no count, and still removes the filter", async () => {
+      const user = userEvent.setup();
+      await seedThreeRoutes(user);
+      await clickTagFilter(user, "Gravel");
+
+      const gravel = getTagFilterButton("Gravel");
+      await waitFor(() => {
+        expect(gravel).toHaveAttribute("aria-pressed", "true");
+      });
+      expect(gravel.className).toContain("is-selected");
+      // A selected tag's meaning is removal, not "what if I added it".
+      expect(chipCount("Gravel")).toBeNull();
+      expect(gravel.getAttribute("aria-describedby")).toBeNull();
+      expect(gravel.getAttribute("aria-disabled")).toBeNull();
+
+      await user.click(gravel);
+      await waitFor(() => {
+        expect(getTagFilterButton("Gravel")).toHaveAttribute("aria-pressed", "false");
+      });
+      expect(chipCount("Gravel")).toBe("2");
+    });
+
+    it("marks a zero-result chip aria-disabled and subdued, keeping its name and explaining why", async () => {
+      const user = userEvent.setup();
+      await seedThreeRoutes(user);
+      await clickTagFilter(user, "Gravel");
+      await user.click(getTagFilterButton("Long"));
+
+      await waitFor(() => {
+        expect(getTagFilterButton("Weekend")).toHaveAttribute("aria-disabled", "true");
+      });
+      const weekend = getTagFilterButton("Weekend");
+      // The accessible name is still the bare tag: getTagFilterButton
+      // itself resolves by exact name, so reaching this line proves it.
+      expect(weekend.className).toContain("is-unavailable");
+      expect(weekend).not.toHaveAttribute("disabled");
+      expect(chipCount("Weekend")).toBe("0");
+      expect(chipDescription("Weekend")).toBe("No routes would remain");
+    });
+
+    it("makes pointer and keyboard activation of a zero-result chip a no-op", async () => {
+      const user = userEvent.setup();
+      await seedThreeRoutes(user);
+      await clickTagFilter(user, "Gravel");
+      await user.click(getTagFilterButton("Long"));
+      await waitFor(() => {
+        expect(getTagFilterButton("Weekend")).toHaveAttribute("aria-disabled", "true");
+      });
+      expect(visibleRouteNames()).toEqual(["Alpine Climb"]);
+
+      await user.click(getTagFilterButton("Weekend"));
+      getTagFilterButton("Weekend").focus();
+      await user.keyboard("{Enter}");
+      await user.keyboard(" ");
+
+      // Nothing moved: not the chip, not the selection, not the list.
+      expect(getTagFilterButton("Weekend")).toHaveAttribute("aria-pressed", "false");
+      expect(getTagFilterButton("Gravel")).toHaveAttribute("aria-pressed", "true");
+      expect(getTagFilterButton("Long")).toHaveAttribute("aria-pressed", "true");
+      expect(visibleRouteNames()).toEqual(["Alpine Climb"]);
+    });
+
+    it("never disables a selected chip, so an empty result is always recoverable", async () => {
+      const user = userEvent.setup();
+      await seedThreeRoutes(user);
+      await clickTagFilter(user, "Gravel");
+      await user.click(getTagFilterButton("Long"));
+
+      // An empty result can never be reached by TAPPING a zero-result
+      // chip — that is exactly what this item prevents — so it is reached
+      // the way a rider really would: a search that the current tag
+      // selection cannot satisfy.
+      await user.type(screen.getByLabelText("Search routes"), "zebra");
+      await waitFor(() => {
+        expect(
+          screen.getByText("No routes match “zebra” and the selected tags."),
+        ).toBeInTheDocument();
+      });
+
+      // Both selected chips stay fully operable with nothing on screen,
+      // so the rider is never trapped.
+      for (const name of ["Gravel", "Long"]) {
+        const chip = getTagFilterButton(name);
+        expect(chip).toHaveAttribute("aria-pressed", "true");
+        expect(chip.getAttribute("aria-disabled")).toBeNull();
+        expect(chip).not.toHaveAttribute("disabled");
+      }
+      expect(
+        screen.getByRole("button", { name: "Clear tag filters" }),
+      ).toBeInTheDocument();
+
+      // Removing one recovers a result without touching the search.
+      await user.click(getTagFilterButton("Long"));
+      await waitFor(() => {
+        expect(visibleRouteNames()).toEqual(["Zebra Loop"]);
+      });
+    });
+
+    it("keeps exactly one Clear tag filters action, working from expanded and collapsed", async () => {
+      const user = userEvent.setup();
+      await seedThreeRoutes(user);
+      await clickTagFilter(user, "Gravel");
+
+      await waitFor(() => {
+        expect(screen.getAllByRole("button", { name: "Clear tag filters" })).toHaveLength(
+          1,
+        );
+      });
+      await user.click(screen.getByRole("button", { name: "Clear tag filters" }));
+      await waitFor(() => {
+        expect(screen.queryByRole("button", { name: "Clear tag filters" })).toBeNull();
+      });
+
+      // Again, this time clearing from the collapsed summary row.
+      await clickTagFilter(user, "Gravel");
+      await user.click(screen.getByRole("button", { name: "Filter by tags" }));
+      await waitFor(() => {
+        expect(screen.getByText("1 filter active")).toBeInTheDocument();
+      });
+      expect(screen.getAllByRole("button", { name: "Clear tag filters" })).toHaveLength(
+        1,
+      );
+      await user.click(screen.getByRole("button", { name: "Clear tag filters" }));
+      await waitFor(() => {
+        expect(visibleRouteNames()).toHaveLength(3);
+      });
+    });
+
+    it("recalculates counts from the active name search", async () => {
+      const user = userEvent.setup();
+      await seedThreeRoutes(user);
+      await expandTagFilters(user);
+
+      await user.type(screen.getByLabelText("Search routes"), "loop");
+      // "loop" matches Zebra Loop alone: Gravel and Weekend fall to 1 and
+      // Long, carried only by Alpine Climb, becomes unavailable.
+      await waitFor(() => {
+        expect(chipCount("Gravel")).toBe("1");
+      });
+      expect(chipCount("Weekend")).toBe("1");
+      expect(chipCount("Long")).toBe("0");
+      expect(getTagFilterButton("Long")).toHaveAttribute("aria-disabled", "true");
+
+      await user.clear(screen.getByLabelText("Search routes"));
+      await waitFor(() => {
+        expect(chipCount("Long")).toBe("1");
+      });
+      expect(getTagFilterButton("Long").getAttribute("aria-disabled")).toBeNull();
+    });
+
+    it("recalculates from a live tag update without closing the chooser or dropping the selection", async () => {
+      const user = userEvent.setup();
+      await seedThreeRoutes(user);
+      await clickTagFilter(user, "Gravel");
+      await waitFor(() => {
+        expect(chipCount("Weekend")).toBe("1");
+      });
+
+      // Give Alpine Climb the Weekend tag too, through the real editor.
+      await tagRouteWith(user, "Alpine Climb", ["Weekend"]);
+
+      await waitFor(() => {
+        expect(chipCount("Weekend")).toBe("2");
+      });
+      // The chooser is still open and Gravel is still selected.
+      expect(screen.getByRole("button", { name: "Filter by tags" })).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      );
+      expect(getTagFilterButton("Gravel")).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("leaves the tag manager's own counts whole-corpus", async () => {
+      const user = userEvent.setup();
+      await seedThreeRoutes(user);
+      await clickTagFilter(user, "Gravel");
+      await waitFor(() => {
+        expect(chipCount("Weekend")).toBe("1");
+      });
+
+      await user.click(screen.getByRole("button", { name: "Manage tags" }));
+      const select = await screen.findByLabelText("Tag to manage");
+      // Weekend's prospective count under the active Gravel filter is 1,
+      // but the manager must still offer its true corpus-wide count.
+      expect(
+        within(select).getByRole("option", { name: "Weekend (2 routes)" }),
+      ).toBeInTheDocument();
+      expect(
+        within(select).getByRole("option", { name: "Gravel (2 routes)" }),
+      ).toBeInTheDocument();
+    });
+
+    it("shows current counts, not stale ones, after collapsing and reopening", async () => {
+      const user = userEvent.setup();
+      await seedThreeRoutes(user);
+      await expandTagFilters(user);
+      expect(chipCount("Weekend")).toBe("2");
+
+      await user.click(screen.getByRole("button", { name: "Filter by tags" }));
+      await waitFor(() => {
+        expect(document.querySelectorAll(".tag-filter-count")).toHaveLength(0);
+      });
+      // Change the corpus while the chooser is shut.
+      await tagRouteWith(user, "Alpine Climb", ["Weekend"]);
+
+      await expandTagFilters(user);
+      expect(chipCount("Weekend")).toBe("3");
+    });
+
+    it("reserves the count slot from the corpus size, not from the largest visible count", async () => {
+      const user = userEvent.setup();
+      await seedThreeRoutes(user);
+      await expandTagFilters(user);
+
+      const group = screen.getByRole("group", { name: "Filter by tags" });
+      expect(group.style.getPropertyValue("--tag-filter-count-digits")).toBe("1");
+
+      // Narrowing the results drops every count, but the reserved slot
+      // must not move — otherwise every chip row would reflow as the
+      // rider typed.
+      await user.type(screen.getByLabelText("Search routes"), "loop");
+      await waitFor(() => {
+        expect(chipCount("Long")).toBe("0");
+      });
+      expect(
+        screen
+          .getByRole("group", { name: "Filter by tags" })
+          .style.getPropertyValue("--tag-filter-count-digits"),
+      ).toBe("1");
+    });
+
+    it("still starts collapsed after a route is opened and returned from, then shows fresh counts", async () => {
+      const user = userEvent.setup();
+      const seed = await seedThreeRoutes(user);
+      const restoreTagFilterKeysRef = { current: [] as readonly string[] };
+      seed.unmount();
+
+      // The route-open/return round trip: RouteLibrary unmounts and
+      // remounts, with App owning the restored selection.
+      render(
+        <RouteLibrary
+          onOpenRoute={vi.fn()}
+          restoreTagFilterKeysRef={restoreTagFilterKeysRef}
+        />,
+      );
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Filter by tags" })).toHaveAttribute(
+          "aria-expanded",
+          "false",
+        );
+      });
+      expect(document.querySelectorAll(".tag-filter-count")).toHaveLength(0);
+
+      await expandTagFilters(user);
+      expect(chipCount("Gravel")).toBe("2");
     });
   });
 });

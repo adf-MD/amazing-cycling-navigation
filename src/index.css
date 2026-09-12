@@ -937,12 +937,35 @@ button:focus-visible {
  * Reserving rather than removing the space also means a chip never changes
  * width as it is toggled, so the wrapped rows never reflow under the
  * finger that just tapped one. */
+/* Backlog item 111 widened the reserved slot from a bare 1em to hold
+ * EITHER the check glyph or an unselected chip's prospective route count,
+ * whichever is wider — one shared width, so the padding above stays
+ * symmetric and both item 106 invariants survive unchanged: the label
+ * stays optically centred, and a chip's width does not change as it is
+ * toggled (the count disappears on selection, but its slot does not).
+ *
+ * --tag-filter-count-digits is set inline on .tag-filters from the live
+ * corpus size — see RouteLibrary.tsx, which explains why the corpus and
+ * not the largest visible count. There is no 999-route cap anywhere in
+ * this app, so the slot has to grow correctly at any digit length rather
+ * than being sized for an assumed maximum.
+ *
+ * The per-digit figure is MEASURED against the real rendered count, not
+ * estimated: a 0.75rem tabular-nums digit in this font stack advances
+ * 7.640625px at a 16px root, i.e. 0.4775rem, so 0.48rem per digit plus
+ * 0.2rem of breathing room keeps roughly 3px of slack at every digit
+ * length instead of a slack that shrinks as the corpus grows. It is
+ * expressed in rem, matching the count's own rem font-size, so the two
+ * scale together under enlarged browser text. max() keeps the check
+ * glyph's original 1em floor intact for small corpora, so a one- or
+ * two-digit library renders exactly the chips item 106 shipped. */
 .tag-filter-chip {
+  --tag-filter-slot: max(1em, calc(var(--tag-filter-count-digits, 1) * 0.48rem + 0.2rem));
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-4) calc(var(--space-12) + 1em + var(--space-4));
+  padding: var(--space-4) calc(var(--space-12) + var(--tag-filter-slot) + var(--space-4));
   border: 1px solid var(--colour-border);
   border-radius: var(--radius-sm);
   background: var(--colour-bg-elevated);
@@ -952,6 +975,44 @@ button:focus-visible {
 
 .tag-filter-label {
   text-align: center;
+}
+
+/* The mirror image of .tag-filter-check below: same reserved width, same
+ * out-of-flow treatment, opposite side. Out of flow is what keeps a long
+ * wrapping label from ever colliding with it — the label's own box stops
+ * at the chip's padding edge, and the count lives inside that padding.
+ * aria-hidden in the markup, so it never joins the chip's accessible
+ * name; assistive technology reads the count from the chip's
+ * aria-describedby target instead. */
+.tag-filter-count {
+  position: absolute;
+  right: var(--space-12);
+  top: 50%;
+  transform: translateY(-50%);
+  width: var(--tag-filter-slot);
+  text-align: center;
+  font-size: 0.75rem;
+  /* Equal digit advances, so the measured slot above holds for every
+   * value rather than only for the widest-looking digits. */
+  font-variant-numeric: tabular-nums;
+  color: var(--colour-text-muted);
+}
+
+/* A candidate that would leave nothing. Never colour alone: the visible
+ * 0 is the primary cue and is what the count slot already shows, the
+ * dashed border is a second non-colour cue, and the recessed surface is
+ * only the third. Both foreground colours stay well clear of WCAG AA
+ * against their own surface in light and dark alike (measured: 7.3:1 and
+ * 9.5:1 for --colour-text-muted on --colour-bg).
+ *
+ * There is deliberately no `disabled` attribute and therefore no
+ * `button:disabled` opacity here — see RouteLibrary.tsx for why the chip
+ * stays focusable — so the global button:focus-visible ring applies to
+ * an unavailable chip exactly as it does to any other. */
+.tag-filter-chip.is-unavailable {
+  border-style: dashed;
+  background: var(--colour-bg);
+  color: var(--colour-text-muted);
 }
 
 /* Never colour alone: the aria-hidden check-mark glyph below is the
@@ -969,7 +1030,7 @@ button:focus-visible {
   left: var(--space-12);
   top: 50%;
   transform: translateY(-50%);
-  width: 1em;
+  width: var(--tag-filter-slot);
   text-align: center;
 }
 

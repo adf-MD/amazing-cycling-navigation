@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence. Items 87–92 were added by the [release-readiness audit](release-readiness-audit.md) (item 86); items 87–92 have since been completed. Items 107–113 were added by the installed-iPhone field test of 10 September 2026 (see [current-status.md](current-status.md) for the dated evidence) and are all scheduled ahead of items 102 and 103, which keep their numbers; the authoritative execution order lives in the root [`CLAUDE.md`](../../CLAUDE.md)'s queue index and is deliberately not duplicated here. Item 114 was added on 11 September 2026 from item 109's own Chromium verification work rather than from that field test, and is likewise scheduled ahead of items 102 and 103.
+Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence. Items 87–92 were added by the [release-readiness audit](release-readiness-audit.md) (item 86); items 87–92 have since been completed. Items 107–113 were added by the installed-iPhone field test of 10 September 2026 (see [current-status.md](current-status.md) for the dated evidence) and are all scheduled ahead of items 102 and 103, which keep their numbers; the authoritative execution order lives in the root [`CLAUDE.md`](../../CLAUDE.md)'s queue index and is deliberately not duplicated here. Items 107, 108, 109, 110 and 111 of that group have since been completed and their full specifications have moved to [`history/`](history/README.md), so only items 112 and 113 remain below. Item 114 was added on 11 September 2026 from item 109's own Chromium verification work rather than from that field test, and is likewise scheduled ahead of items 102 and 103.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Entries through item 93 reproduce their original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this). Items 94 and later are new post-0.4.0 specifications authored directly into this file, following the same structure and conventions.
 
@@ -157,40 +157,6 @@ _Category: Interface and accessibility consistency_
      - Split implementation into small component or pattern slices after the audit. Do not mechanically restyle every screen in one commit.
      - Coordinate with item 102 so the navigation choice and broader visual vocabulary converge, but do not make every item technically dependent on a complete application redesign.
      - No settings behaviour, routing preference semantics, persistence or navigation structure changes belong to this visual item.
-
----
-
-<a id="item-111"></a>
-
-## Item 111 — Contextual tag-filter counts in the Route Library
-
-_Category: Route Library organisation_
-
-111. **Contextual tag-filter counts in the Route Library**
-     - Origin: the installed-iPhone field test of 10 September 2026 — see [`current-status.md`](current-status.md) for the dated report. As the number of tags grows, the filter chooser should help the rider understand which additional filters would still produce routes. Approved as an enhancement.
-     - Approved semantics:
-       - for every **unselected** tag, show the prospective number of routes that would remain if that tag were added to the current selection;
-       - use the Route Library's existing multi-tag combination semantics rather than silently changing them;
-       - visually subdue and, where semantically safe, disable an unselected tag whose prospective result count is zero;
-       - do not rely on colour alone to communicate zero availability;
-       - keep selected tags operable so they can always be removed;
-       - update counts immediately when filters, routes or route tags change;
-       - preserve the existing collapsed chooser, active-filter summary, Clear action and tag-management behaviour;
-       - test empty, single-filter, multiple-filter, zero-result and live-update cases;
-       - consider both ordinary portrait use and long labels without making the filter area permanently overwhelming.
-     - **The implementation plan must confirm the existing filter semantics and accessible disabled-state behaviour before choosing the precise markup.** The findings below are that confirmation's starting point, not the markup decision.
-     - Confirmed current implementation:
-       - `src/ui/library/routeLibraryView.ts`'s `filterRoutesByTags` implements **AND** — a route must carry every selected tag — matching by `tagIdentityKey` identity rather than display spelling, with an empty selection matching everything through a vacuous `.every()`. `selectRouteLibraryGroups(routes, query, sortOrder, tagKeys)` composes the whole view in the order name filter → tag filter → pinned/unpinned partition → sort.
-       - Chips are native `<button type="button" aria-pressed>` elements with class `tag-filter-chip` (`is-selected` when pressed), containing an absolutely positioned `.tag-filter-check` tick and a `.tag-filter-label`. They are rendered **only while the chooser disclosure is open**, deliberately, so nothing unreachable stays in the tab order. The collapsed summary comes from `describeActiveTagFilterCount` ("1 filter active" / "N filters active") beside a Clear tag filters button, and exactly one Clear ever renders.
-       - The available-tag list comes from `collectTagSuggestions` over the **full unfiltered** live-query result, never from the currently filtered view.
-       - **A per-tag count already exists and is a genuine reuse candidate:** `src/domain/routeTags.ts`'s `countRoutesByTagIdentity` counts routes (not occurrences) by tag identity, and is computed in `RouteLibrary.tsx` against the whole corpus purely to label the Manage-tags `<option>` entries. A _prospective_ count under the current selection is a different question, so confirm deliberately whether that function extends cleanly or whether a sibling is the honest answer — do not assume either.
-     - Two decisions the implementation plan must settle explicitly **before** choosing markup, recorded here as open rather than pre-decided:
-       - whether the prospective count also respects the active name search, given that the existing pipeline applies both the name filter and the tag filter;
-       - exactly what "where semantically safe" means for disabling an `aria-pressed` toggle, given that a disabled control cannot be operated at all.
-     - Carry this project's own hard-won focus caution into the disabled-state decision above: a browser ignores `.focus()` on a disabled element, and jsdom never auto-blurs an element that becomes disabled, so a focused chip that becomes disabled by a live update would strand focus. Items 105 and 106 ([`history/items-104-109.md#item-105`](history/items-104-109.md#item-105), [`history/items-104-109.md#item-106`](history/items-104-109.md#item-106)) are the precedent, item 106's root cause having been a focused control unmounted mid-event.
-     - Do not change tag identity or normalisation, the storage lifecycle transaction, filter reconciliation, or any other item 100 stage 1–4A behaviour. This is a presentation and derivation slice.
-     - Cross-references: item 100 stages 3 and 4A ([`history/items-100-103.md#item-100`](history/items-100-103.md#item-100)) for the filter and lifecycle contracts; item 106 for the current control layout, which this item must preserve; item 99 ([`history/items-95-99.md#item-99`](history/items-95-99.md#item-99)) for the adjacent sorting control. Item 100 stage 4B is closed and is **not** reopened by this item.
-     - Physical acceptance on the installed iPhone Home Screen PWA is required. Physical Android verification is separately outstanding, as for most recent items.
 
 ---
 

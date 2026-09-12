@@ -493,3 +493,411 @@ test.describe("tag-control layout (item 106)", () => {
     ).toBeFocused();
   });
 });
+
+// Backlog item 111: contextual prospective counts on unselected filter
+// chips. Own local helpers throughout, per this file's own convention.
+test.describe("contextual tag-filter counts (item 111)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  const COUNT_TOLERANCE_PX = 1;
+
+  /** Alpine Climb: Gravel + Long. Zebra Loop: Gravel + Weekend. So with
+   * nothing selected Gravel reads 2, Long 1 and Weekend 1; with Gravel
+   * and Long both selected, Weekend falls to 0. */
+  async function seedCountableRoutes(page: Page) {
+    await page.goto("/");
+    await importRoute(page, "Alpine Climb");
+    await importRoute(page, "Zebra Loop");
+    await tagRoute(page, "Alpine Climb", "Gravel");
+    await addTagToTagged(page, "Alpine Climb", "Long");
+    await tagRoute(page, "Zebra Loop", "Gravel");
+    await addTagToTagged(page, "Zebra Loop", "Weekend");
+  }
+
+  async function addTagToTagged(page: Page, routeName: string, tag: string) {
+    await openTagEditor(page, routeName, "Edit tags");
+    const tagInput = page.getByLabel("Add a tag");
+    await tagInput.fill(tag);
+    await tagInput.press("Enter");
+    await page.getByRole("button", { name: "Save tags", exact: true }).click();
+    await expect(
+      getListItemForName(page, routeName).getByRole("button", { name: "Edit tags" }),
+    ).toBeVisible();
+  }
+
+  function chipCount(page: Page, name: string) {
+    return getTagFilterButton(page, name).locator(".tag-filter-count");
+  }
+
+  /** The chip's accessible description, resolved through the real
+   * aria-describedby reference rather than by guessing at an id. */
+  async function chipDescription(page: Page, name: string): Promise<string | null> {
+    return getTagFilterButton(page, name).evaluate((chip) => {
+      const id = chip.getAttribute("aria-describedby");
+      if (id === null) return null;
+      return document.getElementById(id)?.textContent ?? null;
+    });
+  }
+
+  /** Sets the search field the way a live corpus update would reach the
+   * chips: through React's own onChange, WITHOUT moving focus. Typing
+   * would put focus in the field, which is precisely what the focus test
+   * below must not do. */
+  async function setSearchWithoutFocusing(page: Page, value: string) {
+    await page.evaluate((next) => {
+      const input = document.querySelector<HTMLInputElement>("#route-library-search");
+      if (!input) throw new Error("expected the search field");
+      // React installs its own `value` accessor on the node for change
+      // tracking, and an ordinary assignment updates that tracker, so React
+      // then treats the following event as "no change" and ignores it.
+      // Redefining the node's own property back to the prototype accessor
+      // removes the shim, so the assignment below genuinely reaches React.
+      // Done with the whole descriptor rather than by extracting its setter
+      // and re-binding it, which would be an unbound method reference.
+      const descriptor = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      );
+      if (!descriptor) throw new Error("expected a native value descriptor");
+      Object.defineProperty(input, "value", descriptor);
+      input.value = next;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }, value);
+  }
+
+  test("shows a correct count on every unselected chip, and recalculates under AND as filters are added", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => {
+      consoleErrors.push(error.message);
+    });
+
+    await seedCountableRoutes(page);
+    await expandTagFilters(page);
+
+    await expect(chipCount(page, "Gravel")).toHaveText("2");
+    await expect(chipCount(page, "Long")).toHaveText("1");
+    await expect(chipCount(page, "Weekend")).toHaveText("1");
+    expect(await chipDescription(page, "Gravel")).toBe("2 routes would remain");
+    expect(await chipDescription(page, "Long")).toBe("1 route would remain");
+
+    await getTagFilterButton(page, "Gravel").click();
+    // A selected chip's meaning is removal, so it carries no prospective
+    // count and no description at all.
+    await expect(chipCount(page, "Gravel")).toHaveCount(0);
+    expect(await chipDescription(page, "Gravel")).toBeNull();
+    await expect(chipCount(page, "Long")).toHaveText("1");
+    await expect(chipCount(page, "Weekend")).toHaveText("1");
+
+    await getTagFilterButton(page, "Long").click();
+    // Gravel AND Long is Alpine Climb alone, which carries no Weekend.
+    await expect(chipCount(page, "Weekend")).toHaveText("0");
+    expect(await visibleCardTitles(page)).toEqual(["Alpine Climb"]);
+
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test("a chip that becomes zero-result while focused keeps focus, refuses click, Enter and Space, and recovers", async ({
+    page,
+  }) => {
+    await seedCountableRoutes(page);
+    await expandTagFilters(page);
+
+    const weekend = getTagFilterButton(page, "Weekend");
+    await weekend.focus();
+    await expect(weekend).toBeFocused();
+    await expect(weekend).not.toHaveAttribute("aria-disabled", "true");
+
+    // A real, focus-preserving change of the count: the rider's search is
+    // updated underneath a chip that already has keyboard focus.
+    await setSearchWithoutFocusing(page, "alpine");
+    await expect(chipCount(page, "Weekend")).toHaveText("0");
+
+    // The whole reason this is aria-disabled rather than `disabled`.
+    await expect(weekend).toBeFocused();
+    await expect(weekend).toHaveAttribute("aria-disabled", "true");
+    expect(await weekend.evaluate((chip) => chip.hasAttribute("disabled"))).toBe(false);
+    expect(await chipDescription(page, "Weekend")).toBe("No routes would remain");
+    const titlesBefore = await visibleCardTitles(page);
+
+    // `force: true`, and the reason is itself evidence. Playwright's own
+    // actionability check treats aria-disabled="true" as not enabled and
+    // refuses an ordinary click outright — so the semantics reach a real
+    // tool, not just a screen reader. What still has to be proved is that
+    // a rider who taps anyway gets nothing, which needs the check
+    // bypassed. The keyboard goes through page.keyboard for the same
+    // reason: locator.press() would be refused too, and the chip already
+    // holds focus.
+    await weekend.click({ force: true });
+    await expect(weekend).toHaveAttribute("aria-pressed", "false");
+    await page.keyboard.press("Enter");
+    await expect(weekend).toHaveAttribute("aria-pressed", "false");
+    const scrollBefore = await page.evaluate(() => window.scrollY);
+    await page.keyboard.press(" ");
+    await expect(weekend).toHaveAttribute("aria-pressed", "false");
+    // Space must not scroll the page on a chip that does nothing.
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
+    expect(await visibleCardTitles(page)).toEqual(titlesBefore);
+    await expect(weekend).toBeFocused();
+
+    // Restoring the condition makes it operable again, still focused.
+    await setSearchWithoutFocusing(page, "");
+    await expect(chipCount(page, "Weekend")).toHaveText("1");
+    await expect(weekend).not.toHaveAttribute("aria-disabled", "true");
+    await expect(weekend).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(weekend).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("keeps counts clear of labels and ticks, chips at full size, and the region contained at 390x844", async ({
+    page,
+  }) => {
+    await seedCountableRoutes(page);
+    await expandTagFilters(page);
+
+    const viewportWidth = page.viewportSize()?.width;
+    if (viewportWidth === undefined) throw new Error("expected a viewport width");
+
+    const region = page.getByRole("group", { name: "Filter by tags" });
+    await expectContainedWithinViewport(region, viewportWidth);
+
+    for (const name of ["Gravel", "Long", "Weekend"]) {
+      const chip = getTagFilterButton(page, name);
+      await expectAtLeastTouchTarget(chip);
+      await expectContainedWithinViewport(chip, viewportWidth);
+      await expect(chipCount(page, name)).toBeVisible();
+    }
+
+    // Select one so a tick and a count are on screen at the same time,
+    // then prove no pair of boxes overlaps anywhere in the region.
+    await getTagFilterButton(page, "Gravel").click();
+    await expect(chipCount(page, "Gravel")).toHaveCount(0);
+
+    const overlaps = await page.evaluate((tolerance) => {
+      const problems: string[] = [];
+      for (const chip of document.querySelectorAll(".tag-filter-chip")) {
+        const label = chip.querySelector(".tag-filter-label");
+        const count = chip.querySelector(".tag-filter-count");
+        const check = chip.querySelector(".tag-filter-check");
+        const chipBox = chip.getBoundingClientRect();
+        if (!label) continue;
+        const labelBox = label.getBoundingClientRect();
+        if (count) {
+          const countBox = count.getBoundingClientRect();
+          if (countBox.left < labelBox.right - tolerance) {
+            problems.push(`count overlaps label on ${label.textContent}`);
+          }
+          if (countBox.right > chipBox.right) {
+            problems.push(`count escapes chip on ${label.textContent}`);
+          }
+          if (check) {
+            const checkBox = check.getBoundingClientRect();
+            if (countBox.left < checkBox.right) {
+              problems.push(`count overlaps tick on ${label.textContent}`);
+            }
+          }
+        }
+      }
+      return problems;
+    }, COUNT_TOLERANCE_PX);
+    expect(overlaps).toEqual([]);
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    );
+    expect(overflow).toBe(false);
+  });
+
+  test("wraps a long label around the count without clipping either", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await importRoute(page, "A very long multi word route name for wrapping");
+    await tagRoute(
+      page,
+      "A very long multi word route name for wrapping",
+      "A rather long descriptive tag for wrap testing",
+    );
+    await expandTagFilters(page);
+
+    const viewportWidth = page.viewportSize()?.width;
+    if (viewportWidth === undefined) throw new Error("expected a viewport width");
+
+    const chip = getTagFilterButton(
+      page,
+      "A rather long descriptive tag for wrap testing",
+    );
+    await expectContainedWithinViewport(chip, viewportWidth);
+    await expectAtLeastTouchTarget(chip);
+    await expect(chip.locator(".tag-filter-count")).toHaveText("1");
+
+    const measured = await chip.evaluate((element) => {
+      const label = element.querySelector(".tag-filter-label");
+      const count = element.querySelector(".tag-filter-count");
+      if (!label || !count) return null;
+      const chipBox = element.getBoundingClientRect();
+      const labelBox = label.getBoundingClientRect();
+      const countBox = count.getBoundingClientRect();
+      // scrollWidth is an integer and is never smaller than the
+      // element's own box, so it cannot measure real text width or any
+      // remaining slack. A Range over the text can.
+      const textWidth = (element: Element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return range.getBoundingClientRect().width;
+      };
+      return {
+        wrapped: labelBox.height > parseFloat(getComputedStyle(label).fontSize) * 1.6,
+        labelClipped: textWidth(label) > labelBox.width + 1,
+        countClipped: textWidth(count) > countBox.width + 1,
+        countInsideChip: countBox.right <= chipBox.right && countBox.left >= chipBox.left,
+        countClearOfLabel: countBox.left >= labelBox.right - 1,
+      };
+    });
+    if (!measured) throw new Error("expected the chip's label and count");
+    // The label genuinely wraps at this width rather than overflowing.
+    expect(measured.wrapped).toBe(true);
+    expect(measured.labelClipped).toBe(false);
+    expect(measured.countClipped).toBe(false);
+    expect(measured.countInsideChip).toBe(true);
+    expect(measured.countClearOfLabel).toBe(true);
+  });
+
+  test("reserves the count slot from the corpus size and keeps a four-digit count contained", async ({
+    page,
+  }) => {
+    await seedCountableRoutes(page);
+    await expandTagFilters(page);
+
+    const region = page.getByRole("group", { name: "Filter by tags" });
+    // Two saved routes, so one digit is reserved.
+    await expect(region).toHaveAttribute("style", /--tag-filter-count-digits:\s*1/);
+
+    // A four-digit corpus cannot be seeded through the real Import GPX
+    // control in a browser test, so the CSS contract is proved by driving
+    // the same custom property the component sets, with a real four-digit
+    // string in the count. The DERIVATION of the digit count itself is
+    // proved exhaustively in routeLibraryView.test.ts's
+    // tagFilterCountSlotDigits suite, including 1000 and 10000.
+    const measured = await page.evaluate(() => {
+      const group = document.querySelector<HTMLElement>(".tag-filters");
+      const chip = document.querySelector<HTMLElement>(".tag-filter-chip");
+      const count = chip?.querySelector<HTMLElement>(".tag-filter-count");
+      const label = chip?.querySelector<HTMLElement>(".tag-filter-label");
+      if (!group || !chip || !count || !label) return null;
+      const narrow = chip.getBoundingClientRect().width;
+      group.style.setProperty("--tag-filter-count-digits", "4");
+      count.textContent = "1234";
+      const chipBox = chip.getBoundingClientRect();
+      const countBox = count.getBoundingClientRect();
+      const labelBox = label.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(count);
+      const digitsWidth = range.getBoundingClientRect().width;
+      return {
+        widened: chipBox.width > narrow,
+        clipped: digitsWidth > countBox.width + 1,
+        insideChip: countBox.right <= chipBox.right,
+        clearOfLabel: countBox.left >= labelBox.right - 1,
+        slack: countBox.width - digitsWidth,
+      };
+    });
+    if (!measured) throw new Error("expected a chip with a label and a count");
+    expect(measured.widened).toBe(true);
+    expect(measured.clipped).toBe(false);
+    expect(measured.insideChip).toBe(true);
+    expect(measured.clearOfLabel).toBe(true);
+    // Real headroom at four digits, not a value that only just fits.
+    expect(measured.slack).toBeGreaterThan(1);
+  });
+
+  test("keeps Manage tags and the collapsed summary working unchanged alongside the counts", async ({
+    page,
+  }) => {
+    await seedCountableRoutes(page);
+    await expandTagFilters(page);
+    await getTagFilterButton(page, "Gravel").click();
+
+    // Exactly one Clear, and the collapsed summary is untouched.
+    await expect(
+      page.getByRole("button", { name: "Clear tag filters", exact: true }),
+    ).toHaveCount(1);
+    await page.getByRole("button", { name: "Filter by tags", exact: true }).click();
+    await expect(page.getByText("1 filter active")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Clear tag filters", exact: true }),
+    ).toHaveCount(1);
+    await expect(page.locator(".tag-filter-count")).toHaveCount(0);
+
+    // The manager's counts stay whole-corpus: Weekend reads 2 prospectively
+    // nowhere, but the manager must still offer its true corpus count.
+    await page.getByRole("button", { name: "Manage tags", exact: true }).click();
+    const manager = page.getByRole("group", { name: "Manage tags" });
+    await expect(manager).toBeVisible();
+    await expect(manager.getByLabel("Tag to manage")).toContainText("Gravel (2 routes)");
+    await expect(manager.getByLabel("Tag to manage")).toContainText("Weekend (1 route)");
+    await manager.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(manager).toHaveCount(0);
+  });
+
+  test.describe("200% text at ordinary phone width", () => {
+    test("the longest realistic tag and count stay contained, wrapped and full size", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await importRoute(page, "A very long multi word route name for wrapping");
+      await tagRoute(
+        page,
+        "A very long multi word route name for wrapping",
+        "A rather long descriptive tag for wrap testing",
+      );
+
+      await page.evaluate(() => {
+        document.documentElement.style.fontSize = "200%";
+      });
+
+      const viewportWidth = page.viewportSize()?.width;
+      if (viewportWidth === undefined) throw new Error("expected a viewport width");
+
+      await expandTagFilters(page);
+      const region = page.getByRole("group", { name: "Filter by tags" });
+      await expectContainedWithinViewport(region, viewportWidth);
+
+      const chip = getTagFilterButton(
+        page,
+        "A rather long descriptive tag for wrap testing",
+      );
+      await expectContainedWithinViewport(chip, viewportWidth);
+      await expectAtLeastTouchTarget(chip);
+      const count = chip.locator(".tag-filter-count");
+      await expect(count).toBeVisible();
+      await expectContainedWithinViewport(count, viewportWidth);
+
+      const measured = await chip.evaluate((element) => {
+        const label = element.querySelector(".tag-filter-label");
+        const countElement = element.querySelector(".tag-filter-count");
+        if (!label || !countElement) return null;
+        const countBox = countElement.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(countElement);
+        return {
+          countClipped: range.getBoundingClientRect().width > countBox.width + 1,
+          clearOfLabel: countBox.left >= label.getBoundingClientRect().right - 1,
+        };
+      });
+      if (!measured) throw new Error("expected the chip's label and count");
+      expect(measured.countClipped).toBe(false);
+      expect(measured.clearOfLabel).toBe(true);
+
+      // A whole-document overflow check here would also trip on this app
+      // shell's own pre-existing, unrelated primary-navigation overflow
+      // at 200% text — the scoped containment checks above are what this
+      // item actually governs. This is browser-text evidence, never iOS
+      // Dynamic Type acceptance.
+    });
+  });
+});
