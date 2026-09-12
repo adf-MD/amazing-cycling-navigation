@@ -331,7 +331,13 @@ The three that pass are **preservation guards, not fail-first evidence**, and ar
 
 **Its first deployment run was blocked, by something else.** CI run `34714031877` for this commit failed its End-to-end job on `e2e/rideSessionSwitchGuard.spec.ts`'s item-95 follow-up, so Deploy was skipped and `0.4.32` never reached the device; item 111 reached the installed PWA as part of `0.4.33` instead. **No causation is attributed to item 111**, which did not touch that spec — the retained trace traced the failure to the switch prompt's animated reveal moving a consequential action under the pointer, corrected under item 95. Equally, nothing here claims item 111 did not shift timing; the evidence simply does not address that.
 
-**Installed-iPhone acceptance is outstanding**, and its stationary portrait checks are on the consolidated checklist in [`../current-status.md`](../current-status.md). Physical Android remains outstanding for this item as for every other.
+### Installed-iPhone acceptance (12 September 2026, `0.4.33`)
+
+Item 111 shipped in `0.4.32`, but that build never reached the device — its deployment run was blocked, as recorded above — so it was exercised as part of deployed `0.4.33` (application commit `2ad5dc7`). The user ran the stationary portrait checks on the installed iPhone Home Screen PWA and reported: "The stationary checks are successful."
+
+This is **broad product-level acceptance of item 111's intended behaviour**: the expanded tag-filter chooser showed sensible prospective route counts; the counts updated as further tags were AND-selected and as the route-name search was typed into; a chip with a zero result displayed `0`, read as unavailable without colour being its only cue, and did nothing when tapped; selected chips stayed removable; collapsing and reopening the chooser behaved correctly; and the ordinary portrait presentation was clear and usable.
+
+**It is not a claim that every automated boundary was recreated by hand.** No systematic VoiceOver audit and no keyboard-only iPhone interaction were performed; no Unicode tag-identity or count-width boundary was exercised; and no four-digit route count existed to exercise. The automated evidence for all of those stands in the Implementation account above and is **not** relabelled as physical evidence. **Physical Android verification remains separately outstanding**, as for most recent items. The full ledger, including exactly what the acceptance does and does not assert, is [`../current-status.md`](../current-status.md).
 
 ---
 
