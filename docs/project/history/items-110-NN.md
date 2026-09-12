@@ -317,7 +317,7 @@ Control 6 passed because at 390px the row is not tight enough for a shrinkable b
 **Limitations, stated precisely.**
 
 - **Local WebKit could not be run at all** in the development environment, for the missing-system-library reason above; every browser measurement here is Chromium (and the `android-chrome` Chromium-emulated project). CI's own `webkit-smoke` project covers `smoke.spec.ts` only and does not exercise any of this geometry. The `14ch` floor's headroom is the deliberate mitigation, not a substitute for a measurement.
-- **At 200% root text nothing about the cue changed**, by design. Pairwise non-intersection with the attribution and the paused toast is asserted **only** in the height-qualified lower-right branch. The over-constrained coexistence at 200% is a **preserved pre-existing limitation** — neither introduced nor fixed by item 115 — and the 200% test asserts what is genuinely achievable there instead: that the top placement is in force, that the cue is horizontally contained and its text untruncated, and that `View climb` remains operable, measured as the part of the action actually on screen (52px of its 56px, against a 44px floor) plus a real click that switches the view. **No claim is made that no map content is obscured at that text size.**
+- **At 200% root text the cue keeps its top placement**, by design — but see the two follow-up sections below: the top inset was subsequently reduced to 0 at severely constrained map heights, because the ordinary 8px inset was pushing the action below the 44px floor in CI's container. Pairwise non-intersection with the attribution and the paused toast is asserted **only** in the height-qualified lower-right branch. That over-constrained coexistence at 200% is a **preserved pre-existing limitation**, neither introduced nor fixed by item 115, and **no claim is made that no map content is obscured at that text size**. (This bullet originally quoted "52px of its 56px" from a development-host measurement; the pinned container measures the same build differently, which is what the next section is about.)
 - The repository's own `e2e/ridingClimbView.spec.ts` comment for the short-landscape test previously attributed 200%-portrait numbers ("map 358x206, cue 230x206") to short landscape. That was already wrong before this item and is corrected here with the measured landscape values (map 812×160, cue 144×91, contained in practice); the non-assertion itself is kept rather than tightened, because landscape is explicitly not an acceptance-tested orientation for this project.
 - **Item 115 carries automated evidence only** until it is checked on the installed iPhone. Physical Android verification remains separately outstanding.
 
@@ -331,7 +331,9 @@ The first push of this item (`cf5e6e6`, `0.4.30`) **failed CI** — the `End-to-
 
 **The clipping is pre-existing, and that was measured rather than assumed.** The parent commit `3767d6e` was built in a worktree and probed in the same container: map **358x174**, cue **230x190** at the map's own y+8, action **206x62**, **42px** of it visible, 24px of cue overflowing — **byte-identical to the item 115 build**. Item 115 does not engage its lower-right placement at that size, so this is exactly the behaviour item 57's placement has always had at extreme text scaling.
 
-**What changed, and what deliberately did not.** The assertion was replaced, not relaxed away, with claims that are environment-independent and still meaningful: the action's top edge sits well inside the map, the only thing clipping it is the map's own bottom edge (the clipped amount is strictly less than the cue's total overflow), a real click still switches the view, and — the regression guard that matters — the constrained branch really is the unchanged base rule (`cue.x - map.x ≈ 64`, width still clamped to the control-safe span). **The 2px shortfall against the 44px touch-target floor at 200% root text was not silently fixed**: closing it would mean altering the base placement, which this item deliberately leaves alone, and enlarged browser text is explicitly not an acceptance requirement for this project. It is recorded here and in [`current-status.md`](../current-status.md) as a pre-existing limitation for a later decision, and no new item number has been invented for it.
+**What `7bee475` changed — and what it got wrong.** That commit rewrote the assertion to describe the clipping instead of rejecting it: the action's top edge inside the map, the clipped amount being less than the cue's total overflow, a real click still switching the view, plus a guard that the constrained branch is the base rule. It then recorded the 42px as a pre-existing limitation "for a later decision", on the stated ground that enlarged browser text is not an acceptance requirement for this project.
+
+**That ground was wrong, and the conclusion with it.** [`current-status.md`](../current-status.md)'s own reading note already establishes the opposite: ACN has **no iOS Dynamic Type opt-in**, so the system Larger Text setting does not resize the application at all, and **the automated 200% root-font-size Playwright coverage IS this project's enlarged-text evidence**. Shipping `0.4.30` with the action below the 44px floor at the one text condition the project actually tests was therefore not a deferrable observation, and `clippedActionHeight < cueOverflowPastMapBottom` was a weak proxy besides — it follows largely from the action sitting above the cue's bottom edge and would pass with almost the whole button clipped. A successful Playwright click proves some clickable area survives, not that an adequate target is exposed. See the next section for the correction.
 
 **A negative control that had to be rebuilt, reported rather than quietly re-run.** Lowering the `@container` threshold to 6rem was meant to prove the new guards catch the lower-right branch leaking into the constrained case. It failed only the short-landscape test — because 6rem at 200% root text is 192px, still above the container's 174px map, so **the control never reached the case it was aimed at**. Rebuilt at 4rem (128px at 200% text) it does: the 200% test then fails on `cue.y - map.y` with `Expected: 8, Received: -64`. Same class of mistake as item 110's control 4 — the test was fine, the control was wrong.
 
@@ -340,3 +342,69 @@ The first push of this item (`cf5e6e6`, `0.4.30`) **failed CI** — the `End-to-
 **One unrelated failure was seen and diagnosed, not re-run into submission.** During the post-fix sweep, `src/gpx/parseAcnExtension.test.ts`'s "rejects when the manoeuvre count exceeds MAX_ACN_MANOEUVRES" timed out at 22.7s against Vitest's 20s per-test limit. It is unrelated to item 115: `git diff 3767d6e..HEAD -- src/gpx/` is empty, so the file and everything it exercises are byte-identical to the parent, and the failure is a timeout rather than an assertion. Measured in isolation the file takes 15.3s of test time, nearly all of it that one test building a document with more than `MAX_ACN_MANOEUVRES` manoeuvres — about 30% of headroom against the limit, which concurrent CPU load (several Playwright containers, in this case) is enough to consume. It passed in isolation and in a full-suite run with no competing load, and had already passed twice earlier in the same session. Recorded here as a pre-existing, load-sensitive slow test rather than given a ledger entry or quietly re-run.
 
 **The process lesson, worth carrying forward.** Host-green is not CI-green for anything whose geometry depends on text metrics. The host and the pinned container disagreed by 32px of map height at 200% text on an unchanged build. Any future change that asserts pixel relationships involving rendered text should be run in `mcr.microsoft.com/playwright:v1.61.1-noble` before pushing — it is a single `docker run` against the working tree and takes about a minute for the whole suite.
+
+### Corrective follow-up: keeping the enlarged-text action fully exposed (`0.4.31`)
+
+`0.4.30` deployed carrying the 42px shortfall. This follow-up restores the project's 44px automated enlarged-text contract in production CSS rather than in the test.
+
+**The correction, one rule.** A second container query, written after the lower-right one:
+
+```css
+@container ride-map-overlay (max-height: 7rem) {
+  .ride-climb-cue {
+    top: 0;
+  }
+}
+```
+
+At a map height that cannot afford the ordinary 8px top inset, the inset is given back. **Nothing shrinks** — not the action, not the text, not `.map-attribution` — the placement stays the top one item 57 chose, the 14rem lower-right eligibility contract is untouched, and there is no JavaScript.
+
+**Both the inset and the threshold were measured, not chosen.** Candidate insets, at 390x844 and 200% root text in `mcr.microsoft.com/playwright:v1.61.1-noble`, action 206x62:
+
+| top inset       | visible action | against the 44px floor              |
+| --------------- | -------------- | ----------------------------------- |
+| 8px (`7bee475`) | 206x**42**     | **−2, fails**                       |
+| 4px             | 206x**46**     | +2 — too close to be worth shipping |
+| **0**           | 206x**50**     | **+6**                              |
+
+`0` was taken: it is the smallest possible inset and the only candidate with real headroom. On the development host the same rule exposes all **56px** of the action. Removing the cue's block padding was available as a further 4px and was **not** taken — it changes the visual treatment, and measurement showed it was not needed.
+
+The `7rem` threshold is derived from the cue's own height, which is roughly 5.7–6.0rem at any text size, so it reads as "the map is no taller than about the cue itself". At 200% text that is 224px, comfortably above the container's 174px map, so it fires; at short landscape (map 160px at 100% text) it is 112px, so it does not, and that already-contained case keeps its 8px inset. It is strictly below 14rem, so the two queries are mutually exclusive by construction and the lower-right placement can never engage at 200%.
+
+**Investigation, before any CSS changed.** `7bee475` was measured in both environments. Ordinary 390x844 at 100% text: lower-right branch in both (map 358x514 host / 358x518 container, cue right inset 8px, action fully visible). At 200%: constrained top branch in both (cue top inset 8px, left inset 64px), action horizontally unconstrained (the full 206px intersects the map), and the only clipping ancestor cutting it is `.ride-map-container--immersive`'s own `overflow: hidden`. `document.elementFromPoint` at the centre of the visible area resolved to the action itself, so nothing covers it. The imagery row is untouched throughout.
+
+**The restored test contract.** The test is renamed to what it actually guarantees — _"the Map climb cue remains readable with a fully exposed action at 200% enlarged text"_ — and now computes the real intersection of the action box with the map box, requiring **both** dimensions to be at least 44px:
+
+```ts
+visibleWidth = Math.min(buttonRight, mapRight) - Math.max(buttonLeft, mapLeft);
+visibleHeight = Math.min(buttonBottom, mapBottom) - Math.max(buttonTop, mapTop);
+```
+
+The weak `clippedActionHeight < cueOverflowPastMapBottom` proxy is gone. The measured map, cue, button and intersection geometry is embedded in each assertion's failure message, so a future environment difference is diagnosable without editing the test first — which is exactly what the original assertion cost. Hit-testability is proved at the centre of the **visible** area with `document.elementFromPoint(...).closest("button")` and a real `page.mouse.click` at that point, deliberately not `locator.click`, which would aim at the whole element's centre including the clipped part. The retained guards are exact rather than informal: still the constrained branch, `0 ≤ cue.y − map.y ≤ 8`, `cue.x − map.x ≈ 64` and `width ≤ map.width − 128` (which together already prove at least 64px of clearance on both sides, so no separate right-inset assertion is needed), horizontal containment, untruncated text, and the action's own box at ≥44x44.
+
+**Fail-first against `7bee475`, in the pinned container.** The restored assertion fails there with exactly the reproduced result, and the new diagnostics carry the whole geometry:
+
+```
+visible action height below the 44px floor: {"mapBox":{...,"width":358,"height":174},
+"cueBox":{...,"width":230,"height":190},"cueButtonBox":{...,"width":206,"height":62},
+"visibleWidth":206,"visibleHeight":42}
+Expected: >= 44   Received: 42
+```
+
+The other eight tests in the file pass on `7bee475` and are **compatibility guards**, not fail-first evidence.
+
+**Negative controls — all five discriminated.** Each applied, measured in the container and reverted:
+
+| #   | Control                                                                 | Result   |
+| --- | ----------------------------------------------------------------------- | -------- |
+| 1   | Remove the new constrained-height query                                 | 1 failed |
+| 2   | Restore the 8px inset inside it                                         | 1 failed |
+| 3   | Force the lower-right branch at 200% (14rem → 4rem)                     | 2 failed |
+| 4   | Widen the new query so it matches at ordinary height too (7rem → 40rem) | 5 failed |
+| 5   | Shrink the action itself instead of exposing it                         | 5 failed |
+
+Control 4 is why the new block is written **after** the lower-right one: a threshold edit that made the two overlap is caught by the ordinary placement tests rather than silently preferred.
+
+**An unrelated failure, diagnosed again rather than re-run into green.** The full container suite showed one failure in `e2e/ridingFinishAndEnd.spec.ts`'s "conservatively confirms route completion only after consecutive fixes" — item 32's own named test and its own `toBeVisible` timeout. This change touches only `src/index.css` and `e2e/ridingClimbView.spec.ts`; the spec passes 4/4 in isolation in the same container, and the identical suite had passed 345/345 twice earlier the same day. Recorded as a further dated sighting under item 32 in [`current-status.md`](../current-status.md), with its own "ordinary load" trigger noted honestly rather than quietly absorbed. Its timeout was not touched.
+
+**Verification.** The focused enlarged-text test passes three consecutive times in the pinned container; the whole of `ridingClimbView.spec.ts` passes 9/9 there; the full suite passes across all three Playwright projects, `webkit-smoke` included — that container run remains the only WebKit evidence, since local WebKit cannot be launched in this development environment at all.

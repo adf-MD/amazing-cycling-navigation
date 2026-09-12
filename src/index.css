@@ -2334,6 +2334,48 @@ button:focus-visible {
   }
 }
 
+/* backlog item 115 follow-up: keep the action exposed when the map is too
+ * short for the ordinary top inset.
+ *
+ * CI found this, and the measurement is the whole justification. At 390x844
+ * with 200% root text the immersive map compresses to 358x174 in the pinned
+ * Playwright container (358x206 on the development host, which is why a host
+ * run did not catch it), while the cue grows to 230x190. The cue therefore
+ * overflows the map's own overflow:hidden edge, and the 8px top inset above
+ * is what pushes the View climb action across it: only 42px of its 62px
+ * stayed inside the map, against this project's 44px touch-target floor.
+ * Measured identically on the pre-item-115 parent, so the clipping is
+ * pre-existing — but the automated 200% root-text coverage IS this project's
+ * enlarged-text evidence (ACN has no iOS Dynamic Type opt-in), so leaving it
+ * under the floor was not acceptable.
+ *
+ * The correction is the smallest one available: at a map height that cannot
+ * afford the inset, give the inset back. Nothing shrinks — not the action,
+ * not the text, not .map-attribution — and the placement stays the top one
+ * item 57 chose.
+ *
+ * The 7rem threshold is derived, not picked. The cue is roughly 5.7-6.0rem
+ * tall at any text size, so "the map is no taller than about the cue itself"
+ * is around 7rem. At 200% text that is 224px, comfortably above the
+ * container's 174px map, so this fires; at short landscape (map 160px at
+ * 100% text) it is 112px, so it does not, and that already-contained case
+ * keeps its 8px inset. It is strictly below the lower-right branch's 14rem,
+ * so the two queries are mutually exclusive by construction and the
+ * lower-right placement can never engage at 200%. Written AFTER that block
+ * so a threshold edit that made them overlap would be caught by the ordinary
+ * placement tests rather than silently preferred.
+ *
+ * The attribution and paused-toast over-constraint at a 174px map is a
+ * separate, still-unresolved limitation: this rule is only about exposing
+ * the minimum action target, and claims nothing about every overlay being
+ * mutually non-intersecting at that size. See e2e/ridingClimbView.spec.ts
+ * for the measured before/after. */
+@container ride-map-overlay (max-height: 7rem) {
+  .ride-climb-cue {
+    top: 0;
+  }
+}
+
 /* min-width: 0 stays load-bearing: at enlarged text the cue clamps to its
  * max-width above and these lines must wrap inside it rather than force the
  * box wider (backlog items 82, 108). */

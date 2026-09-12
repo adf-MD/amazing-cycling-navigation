@@ -1161,7 +1161,7 @@ test.describe("390×844 phone viewport", () => {
     // cue keeps item 57's top placement here.
   });
 
-  test("the Map climb cue remains fully readable and contained at 200% enlarged text (backlog item 82)", async ({
+  test("the Map climb cue remains readable with a fully exposed action at 200% enlarged text (backlog items 82, 115)", async ({
     page,
     context,
   }) => {
@@ -1194,24 +1194,36 @@ test.describe("390×844 phone viewport", () => {
     expect(cueButtonBox.height).toBeGreaterThanOrEqual(44);
 
     /*
-     * Backlog item 115: what is and is not guaranteed at this text size.
+     * Backlog item 115: what this size does and does not guarantee.
      *
-     * The immersive map compresses to roughly 358x206 here while the cue,
-     * .map-attribution (two wrapped lines) and .ride-map-paused-toast all
-     * grow with the text. The bottom of the map is genuinely
-     * over-constrained at that size — no arrangement clears all three — so
-     * item 115's lower-right placement deliberately does NOT engage, and the
-     * cue keeps item 57's proven top placement. Pairwise non-intersection
-     * with the attribution and the toast is therefore asserted only in the
-     * height-qualified lower-right branch (see this file's own item 115
-     * tests), never here: the residual overlap at 200% is a preserved
-     * pre-existing limitation, neither introduced nor fixed by item 115, and
-     * shrinking the attribution to manufacture room was explicitly rejected
-     * because it must stay legible and compliant.
+     * The immersive map compresses hard here — to 358x174 in CI's pinned
+     * Playwright container and 358x206 on the development host — while the
+     * cue, .map-attribution (two wrapped lines) and .ride-map-paused-toast
+     * all grow with the text. The bottom of the map is genuinely
+     * over-constrained at that size, so item 115's lower-right placement
+     * deliberately does NOT engage and the cue keeps item 57's top
+     * placement. Pairwise non-intersection with the attribution and the
+     * toast is therefore asserted only in the height-qualified lower-right
+     * branch (see this file's own item 115 tests) and never here: that
+     * over-constraint is a preserved limitation, and shrinking the
+     * attribution to manufacture room was explicitly rejected because it
+     * must stay legible and compliant.
      *
-     * What IS required here: the top placement really is in force, the cue
-     * is horizontally contained, its text is readable, and View climb stays
-     * genuinely operable.
+     * What IS required, and what this test exists for: the ACTION must stay
+     * a real touch target. CI caught it not being one — only 42px of the
+     * 62px View climb action stayed inside the map's overflow:hidden box,
+     * against this project's 44px floor, because the ordinary 8px top inset
+     * pushed the cue that much further past the map's bottom edge. The
+     * pre-item-115 parent measured identically, so the clipping was
+     * pre-existing rather than introduced here; but the automated 200%
+     * root-text coverage IS this project's enlarged-text evidence (ACN has
+     * no iOS Dynamic Type opt-in — see current-status.md's own note), so
+     * leaving the action under the floor was not acceptable. The correction
+     * gives the inset back at these heights: see the
+     * `@container ride-map-overlay (max-height: 7rem)` rule in
+     * src/index.css. Measured candidates in the container, 200% root text:
+     * 8px inset -> 42px visible, 4px -> 46px, 0 -> 50px. 0 was taken as the
+     * smallest rule with real headroom; on the host it exposes all 56px.
      */
     const mapContainer = page.locator('[data-testid="map-container"]');
     const cue = page.locator(".ride-climb-cue");
@@ -1222,54 +1234,73 @@ test.describe("390×844 phone viewport", () => {
     if (!mapBox || !cueBox) {
       throw new Error("expected the map and the cue to have bounding boxes");
     }
-    expect(mapBox.height).toBeLessThan(BOTTOM_PLACEMENT_MIN_MAP_HEIGHT_PX);
-    expect(cueBox.y - mapBox.y).toBeCloseTo(MAP_OVERLAY_INSET_PX, 0);
 
-    // Horizontal containment, and no document-level horizontal overflow —
-    // both already covered by expectClimbCueTextFullyReadable's own
-    // scrollWidth check, restated here as geometry.
+    // Still the constrained branch, and still top-positioned — the inset may
+    // be reduced to 0 by the correction above, never grown or bottom-anchored.
+    expect(mapBox.height).toBeLessThan(BOTTOM_PLACEMENT_MIN_MAP_HEIGHT_PX);
+    expect(cueBox.y - mapBox.y).toBeGreaterThanOrEqual(0);
+    expect(cueBox.y - mapBox.y).toBeLessThanOrEqual(MAP_OVERLAY_INSET_PX);
+
+    // Still the base rule's own horizontal geometry, not the lower-right
+    // branch's. These two together prove at least 64px of clearance on BOTH
+    // sides, so no separate right-inset assertion is needed.
+    expect(cueBox.x - mapBox.x).toBeCloseTo(64, 0);
+    expect(cueBox.width).toBeLessThanOrEqual(mapBox.width - 128);
     expect(cueBox.x).toBeGreaterThanOrEqual(mapBox.x);
     expect(cueBox.x + cueBox.width).toBeLessThanOrEqual(mapBox.x + mapBox.width);
 
-    /*
-     * Operability, stated as what is actually true rather than as a pixel
-     * count that turns out to be environment-dependent.
-     *
-     * A first version of this test asserted that at least 44px of the action
-     * remained inside the map. That passed on the development host and
-     * FAILED in CI's pinned Playwright container (Expected >= 44, Received
-     * 42), because the container's own fonts make the immersive header and
-     * status card taller: measured at 390x844 and 200% root text, the map is
-     * 358x174 there against 358x206 on the host, so more of the cue is
-     * clipped by the map's overflow: hidden. Measuring the PARENT commit in
-     * the same container returned byte-identical numbers — map 358x174, cue
-     * 230x190 at the map's own y+8, action 206x62, 42px of it visible — so
-     * the clipping is entirely pre-existing and item 115 neither introduced
-     * nor changed it. It is recorded as a limitation rather than asserted
-     * away or quietly fixed: closing those last 2px would mean altering the
-     * base placement, which this item deliberately leaves alone.
-     *
-     * What is asserted instead is environment-independent: the action's top
-     * edge sits well inside the map, the ONLY thing clipping it is the map's
-     * own bottom edge, and a real click still switches the view.
-     */
-    expect(cueButtonBox.y).toBeGreaterThan(mapBox.y);
-    expect(cueButtonBox.y).toBeLessThan(mapBox.y + mapBox.height);
-    const clippedActionHeight =
-      cueButtonBox.y + cueButtonBox.height - (mapBox.y + mapBox.height);
-    const cueOverflowPastMapBottom =
-      cueBox.y + cueBox.height - (mapBox.y + mapBox.height);
-    expect(clippedActionHeight).toBeLessThan(cueOverflowPastMapBottom);
-    await cueButton.click();
+    // The accessibility contract this test exists for: the part of the
+    // action actually inside the map is itself a real touch target. The
+    // action's own box being >=44x44 (asserted above) is not enough — the
+    // map's overflow:hidden is what CI caught cutting it below the floor.
+    const visibleWidth =
+      Math.min(cueButtonBox.x + cueButtonBox.width, mapBox.x + mapBox.width) -
+      Math.max(cueButtonBox.x, mapBox.x);
+    const visibleHeight =
+      Math.min(cueButtonBox.y + cueButtonBox.height, mapBox.y + mapBox.height) -
+      Math.max(cueButtonBox.y, mapBox.y);
+    // Carried into the failure message so a future environment difference is
+    // diagnosable without first editing this test — which is exactly what
+    // the original 44px assertion cost when the container disagreed.
+    const geometry = JSON.stringify({
+      mapBox,
+      cueBox,
+      cueButtonBox,
+      visibleWidth,
+      visibleHeight,
+    });
+    expect(
+      visibleWidth,
+      `visible action width below the 44px floor: ${geometry}`,
+    ).toBeGreaterThanOrEqual(44);
+    expect(
+      visibleHeight,
+      `visible action height below the 44px floor: ${geometry}`,
+    ).toBeGreaterThanOrEqual(44);
+
+    // ...and that exposed area is genuinely hit-testable: nothing overlays
+    // it, and a real pointer press at its centre works. Deliberately
+    // page.mouse.click at the computed point rather than locator.click,
+    // which would aim at the whole element's centre — including the clipped
+    // part. closest("button") so this survives future nested artwork inside
+    // the action.
+    const probePoint = {
+      x: Math.max(cueButtonBox.x, mapBox.x) + visibleWidth / 2,
+      y: Math.max(cueButtonBox.y, mapBox.y) + visibleHeight / 2,
+    };
+    const hitLabel = await page.evaluate(({ x, y }) => {
+      const element = document.elementFromPoint(x, y);
+      const button = element?.closest("button");
+      return button ? button.textContent.trim() : null;
+    }, probePoint);
+    expect(hitLabel, `nothing hit-testable at ${JSON.stringify(probePoint)}`).toBe(
+      "View climb",
+    );
+
+    await page.mouse.click(probePoint.x, probePoint.y);
     await expect(
       page.getByRole("button", { name: "Profile", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
-
-    // The regression guard that matters here: the constrained branch really
-    // is the unchanged base rule. If the lower-right @container rule ever
-    // leaked into it, both of these would fail.
-    expect(cueBox.x - mapBox.x).toBeCloseTo(64, 0);
-    expect(cueBox.width).toBeLessThanOrEqual(mapBox.width - 128);
   });
 
   test("the Profile climb-preview card and the restructured active-progress card fit at phone width and enlarged text, with no document scroll, and the selected Climb button's ring sits flush with the group's right edge in the four-button state (backlog items 76, 80)", async ({
