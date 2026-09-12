@@ -408,3 +408,73 @@ Control 4 is why the new block is written **after** the lower-right one: a thres
 **An unrelated failure, diagnosed again rather than re-run into green.** The full container suite showed one failure in `e2e/ridingFinishAndEnd.spec.ts`'s "conservatively confirms route completion only after consecutive fixes" — item 32's own named test and its own `toBeVisible` timeout. This change touches only `src/index.css` and `e2e/ridingClimbView.spec.ts`; the spec passes 4/4 in isolation in the same container, and the identical suite had passed 345/345 twice earlier the same day. Recorded as a further dated sighting under item 32 in [`current-status.md`](../current-status.md), with its own "ordinary load" trigger noted honestly rather than quietly absorbed. Its timeout was not touched.
 
 **Verification.** The focused enlarged-text test passes three consecutive times in the pinned container; the whole of `ridingClimbView.spec.ts` passes 9/9 there; the full suite passes across all three Playwright projects, `webkit-smoke` included — that container run remains the only WebKit evidence, since local WebKit cannot be launched in this development environment at all.
+
+---
+
+<a id="item-116"></a>
+
+## Item 116 — Retain Playwright failure evidence — done
+
+_Category: Verification / test-infrastructure hardening_
+
+116. **Retain Playwright failure evidence — done**
+     - Origin: item 32's bounded investigation of 12 September 2026 ([`current-status.md#item-32`](../current-status.md#item-32)). That investigation had to build its own instrumentation from scratch, because this repository retained **nothing** from a failed run: `playwright.config.ts`'s `use` block was only `baseURL`, so `trace`, `screenshot` and `video` were all at their `off` defaults; the reporter is `list`; and the workflow uploaded no artefacts. Four months of item 32 sightings had been diagnosed from reporter text alone.
+     - Approved outcome, stated as an outcome rather than one exact configuration: traces retained for failed tests only; screenshots captured for failed tests only; no video by default; the E2E GitHub Actions job uploads the relevant `test-results/` contents **when it fails**; passing runs retain and upload nothing unnecessary; short (seven-day) artefact retention; no HTML reporter unless inspection establishes a concrete benefit; no production behaviour change; no application version bump.
+     - Constraints: keep it small — no new reporting framework, dependency, retry policy or external service.
+     - Item 116 requires **no physical-device acceptance**: it changes only test infrastructure and CI, and nothing about the deployed application's bytes or behaviour.
+
+### Implementation account (12 September 2026, no version bump)
+
+**What shipped, in two files.** `playwright.config.ts` gained `screenshot: "only-on-failure"` unconditionally and `trace: process.env.CI ? "retain-on-failure" : "off"`. `.github/workflows/deploy-pages.yml` gained an `id: e2e` on its test step and one failure-path upload step. Nothing else: no retries, no video, no HTML reporter, no dependency, no lockfile change, no production source or CSS, and `package.json` stays at `0.4.31` — matching this repository's established precedent for test-only slices (items 21/30/44/45, and item 86's own explicit statement that there is nothing for a version number to mark when the deployed bytes are unchanged).
+
+**Values verified against the installed package, not assumed.** `@playwright/test`, `playwright` and `playwright-core` are all `1.61.1`, and the real test types live at `node_modules/playwright/types/test.d.ts` (`playwright-core/types/test.d.ts` does not exist in this version). `TraceMode` includes `'retain-on-failure'`; `ScreenshotMode` includes `'only-on-failure'`. The two unions are **not** interchangeable — `'only-on-failure'` is invalid for `trace` and `'retain-on-failure'` is invalid for `screenshot`. `on-first-retry` was excluded on evidence rather than preference: its own doc comment records that it captures only on a retry, and this repository runs at `retries: 0`, so it would capture nothing at all; adding retries purely to make a trace mode work would have hidden the very flakiness a trace exists to explain.
+
+**Why the trace is scoped to CI — the measurement that changed the design.** The slice was planned with both settings unconditional. Measured in the pinned container, interleaved against unmodified `aa84a6f`, no artificial contention:
+
+| configuration      | 36 workers (default)                | `--workers=4`      |
+| ------------------ | ----------------------------------- | ------------------ |
+| baseline `aa84a6f` | 58.7 s / 59.4 s / 58.9 s            | 240.9 s            |
+| trace + screenshot | 72.5 s / 72.4 s / 72.4 s — **+23%** | 308.3 s — **+28%** |
+| screenshot only    | 61.1 s / 61.4 s — **+4%**           | —                  |
+
+`retain-on-failure` records a trace for _every_ run and discards the passing ones, so the cost is paid on every passing test. It is consistent at both concurrencies, which rules out contention as the explanation: it is a genuine per-test recording cost. Screenshot capture is nearly free because `only-on-failure` captures nothing while a test is passing.
+
+The decision rested on an asymmetry rather than on cost alone. A **local** failure leaves `test-results/` on disk and can simply be re-run with `npm run e2e -- --trace retain-on-failure` (that CLI override was confirmed present in the installed 1.61.1 CLI, and is exactly how item 32's own instrumentation runs were done). A **CI** failure has no second chance: the container is discarded when the job ends, and the failure may not reproduce locally at all — which is precisely the situation item 115's CI failure and item 32's sighting both created. CI therefore pays the recording cost and ordinary local runs do not.
+
+**The E2E job's timeout was deliberately not raised.** Its two most recent successful runs took **668 s and 678 s** against `timeout-minutes: 20`. Roughly a quarter more on the test-running portion still leaves comfortable headroom. If that job later approaches the limit it should be optimised or sharded; granting it a bigger budget pre-emptively would only hide the growth.
+
+**A stability claim that the evidence does not support, withdrawn.** At 36 workers the three tracing runs each lost a test (344/343/344), which looked like tracing destabilising the suite. Three things refute that reading. At `--workers=4` baseline and tracing lost exactly one test each (344 both). The unmodified `aa84a6f` baseline, run three more times at 36 workers under `CI=1`, went 345/345/**344**, so across six baseline runs in total **two** lost a test. And every failure named a _different_ test — `rideSessionSwitchGuard.spec.ts:654` and `:948`, `mapImageryRecovery.spec.ts:315` — which is item 32's own documented observation that this contention-sensitive class is broader than the one test that item names. The sample cannot separate a tracing effect from that background rate, so **no such attribution is made**. Worth recording alongside it: the configuration actually shipped for local runs, screenshot-only, was the most stable observed at 345/345 across three runs.
+
+**The one CI-branch full-suite run did itself fail — and demonstrated the point of the item.** Run locally with `CI=1` at 36 workers (far heavier than CI's own ~2 workers on a 4-vCPU runner), it lost `rideSessionSwitchGuard.spec.ts:948` and, because the trace branch was active, left a complete `trace.zip`, `test-failed-1.png` and `error-context.md` behind. The error context alone gave the assertion, the locator and a full ARIA snapshot of the page at failure — `Start riding` never appeared — without any re-instrumentation. That is precisely the diagnostic position item 32's investigation did not have.
+
+**Storage, measured.** A passing full-suite run leaves **12 K** in `test-results/` (`.last-run.json` only). One captured failure costs about **1.5 MB** on the CI branch — `trace.zip` 1.4 MB, `test-failed-1.png` 56 K, `error-context.md` 16 K — and **84 K** on the local branch, where the trace is absent. `error-context.md` is Playwright's own default and was already being written before this item.
+
+**The workflow step.**
+
+```yaml
+- name: Upload Playwright failure evidence
+  if: ${{ failure() && steps.e2e.conclusion == 'failure' }}
+  uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+  with:
+    name: playwright-failures-${{ github.run_id }}-${{ github.run_attempt }}
+    path: test-results/
+    if-no-files-found: ignore
+    retention-days: 7
+```
+
+`failure()` is false on cancellation, and `steps.e2e.conclusion == 'failure'` narrows it to the E2E step itself, so an earlier failure (toolchain check, `npm ci`, build) cannot upload an empty directory. `if-no-files-found: ignore` is not cosmetic — the default is `warn`, and a missing directory must never obscure the real test failure. Only `test-results/` is uploaded: never `dist/`, `node_modules/`, the repository root or unrelated logs. The step exists in the `e2e` job alone; `verify`, `deploy` and `deploy`'s `needs: [verify, e2e]` gate are untouched, and **no `permissions:` block gained anything** — `upload-artifact` uses the Actions runtime token, not `GITHUB_TOKEN`, which its README at that exact commit confirms.
+
+**Pin provenance.** `actions/upload-artifact` was resolved live twice — once while scoping, once immediately before editing — both times `v7.0.1` / `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`, matching item 88's own documented practice and this repository's v7-generation pins. Its `action.yml` at that commit confirms the four inputs used. Dependabot's existing `github-actions` entry picks the new `uses:` up automatically, so `.github/dependabot.yml` needed no change.
+
+**Security and privacy inspection — the gate on enabling the upload.** A deliberate one-assertion failure was induced in `e2e/planning.spec.ts`, chosen because it is the richest sensitive path: it types the routing API key into Settings and exercises the mocked OpenRouteService adapter. The produced `trace.zip`, `test-failed-1.png` and `error-context.md` were then inspected — all 81 files, including the trace's network log, event log and 75 DOM/resource snapshots.
+
+- **Zero real environment-secret values were found.** The search used the _actual values_ of environment variables whose names match key/token/secret/password/credential/auth/session/cookie/private and are at least eight characters — three such variables existed; none of their values appears in any artefact. No value was printed at any point, here or in the logs.
+- The **synthetic** `dummy-e2e-key` does appear, in the trace's network log (the mocked request's authorisation header), the trace event log and one DOM snapshot. It is the fixed literal every spec uses; no real key exists in CI, because the key is user-supplied at runtime and, per root `CLAUDE.md`, never baked into the bundle, tests or Actions configuration.
+- **The screenshot exposes no key.** The failure occurs on the Planning screen, so the Settings field is not in frame, and that input is `type="password"` by default. One nuance worth carrying forward: masking protects the _screenshot_, not the trace — a trace DOM snapshot serialises an input's value, so a **local** trace taken after a developer entered their own real key would contain it. `test-results` is gitignored, local traces are never committed, and only CI artefacts are uploaded.
+- Hosts appearing in the trace: `localhost:4173`, plus `api.heigit.org` and `tiles.openfreemap.org`, both intercepted by the suite's own mocks. No unexpected destination.
+
+The probe was then removed and `e2e/planning.spec.ts` proved byte-identical to its pre-probe state by sha256 and by `git diff --exit-code`.
+
+**Evidence and controls.** Against the shipped configuration: with `CI=1` (as GitHub Actions sets) the controlled failure produces `trace.zip`, `test-failed-1.png` and `error-context.md`; without it, the same failure produces the screenshot and error context but no trace; and `npm run e2e -- --trace retain-on-failure` restores the trace locally on demand. The trace is genuinely inspectable, not merely present — 287 + 8 + 106 events parsed with **0 unparseable**, 48 frame snapshots, 66 screencast frames, 75 resources. (`show-trace` needs a GUI, so no interactive claim is made.) Two controls discriminate independently: removing the screenshot setting leaves the trace but no PNG; forcing the trace off leaves the PNG but no trace.
+
+**What could not be proved honestly, and is not claimed.** GitHub's failure-only upload branch cannot be exercised without pushing a deliberately failing commit, which was not done. **A green CI run is not evidence that the upload step ran.** The step was instead validated structurally by parsing the workflow YAML and asserting every property of it — the step exists in `e2e` only, the condition carries both `failure()` and the step-conclusion guard, the action is SHA-pinned with a version comment, the four inputs are exact, `deploy.needs` is unchanged and no permissions widened — alongside Prettier, which does format `.github/` in this repository. `actionlint` is not installed here and was deliberately **not** fetched: introducing an unverified binary for an optional check would be a worse trade than the parse plus source review.

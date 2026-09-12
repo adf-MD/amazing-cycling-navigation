@@ -130,7 +130,29 @@ jobs:
         run: npm run build
 
       - name: End-to-end test suite
+        id: e2e
         run: npm run e2e
+
+      # Backlog item 116. Playwright writes a trace, a screenshot and an
+      # error context for a failed test only (see playwright.config.ts), and
+      # the container's filesystem is discarded when the job ends — so
+      # without this step a CI-only failure leaves nothing but reporter text,
+      # which is exactly what made item 32 expensive to diagnose. Scoped to
+      # the E2E step's own failure: failure() is false on cancellation, and
+      # the conclusion check keeps an earlier step's failure (toolchain,
+      # npm ci, build) from uploading an empty directory. if-no-files-found:
+      # ignore so a missing directory can never mask the real test failure.
+      # Only test-results/ is uploaded — never dist/, node_modules/ or the
+      # repository root. No permissions are needed: upload-artifact uses the
+      # Actions runtime token, not GITHUB_TOKEN.
+      - name: Upload Playwright failure evidence
+        if: ${{ failure() && steps.e2e.conclusion == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-failures-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   deploy:
     name: Deploy
