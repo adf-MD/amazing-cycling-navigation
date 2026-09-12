@@ -1,7 +1,10 @@
 import { expect, test } from "@playwright/test";
 import type { BrowserContext, Locator, Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
-import { installLocalMapStyleWithTileSource } from "./support/localMapStyle.ts";
+import {
+  forceMapStyleFailure,
+  installLocalMapStyleWithTileSource,
+} from "./support/localMapStyle.ts";
 import type { TileFailureController } from "./support/localMapStyle.ts";
 
 // Proves backlog item 67 (non-blocking map-imagery failure and genuine
@@ -898,6 +901,352 @@ test.describe("390px phone viewport", () => {
       expect(retryBox.width).toBeLessThan(155);
       expect(retryBox.height).toBeGreaterThanOrEqual(44);
     }
+  });
+
+  /**
+   * Backlog item 115. A retryable imagery row used to put Retry map imagery
+   * on a wrapped line of its own at ordinary phone portrait, which is what
+   * made the status card taller than it needed to be in the field report.
+   * These assertions describe the ROW's own geometry, not its CSS: message
+   * left, action right, and — the load-bearing part — a row whose height is
+   * governed by its taller child rather than by the sum of the two.
+   */
+  const readImageryRowLayout = async (
+    page: Page,
+    testId: string,
+  ): Promise<{
+    row: Box;
+    message: Box;
+    button: Box;
+    card: Box;
+    buttonLabelLines: number;
+    rowContentWidth: number;
+    rowContentLeft: number;
+    rowGap: number;
+    buttonIntrinsicWidth: number;
+  }> => {
+    const row = page.getByTestId(testId);
+    const message = row.locator(".ride-status-card-imagery-message");
+    const button = row.getByTestId("retry-map-imagery-button");
+    const [rowBox, messageBox, buttonBox, cardBox] = await Promise.all([
+      row.boundingBox(),
+      message.boundingBox(),
+      button.boundingBox(),
+      page.locator(".ride-status-card").boundingBox(),
+    ]);
+    if (!rowBox || !messageBox || !buttonBox || !cardBox) {
+      throw new Error("expected the imagery row, its parts and the card to have boxes");
+    }
+    // Counts the label's real line boxes as DISTINCT rect tops within a
+    // Range over its contents — getComputedStyle(...).lineHeight resolves to
+    // "normal" here, so a height ratio would be NaN.
+    const buttonLabelLines = await button.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return new Set(Array.from(range.getClientRects(), (rect) => Math.round(rect.top)))
+        .size;
+    });
+    // The row's own content box and gap, read from computed style rather
+    // than restated as literals, so nothing here silently encodes the
+    // stylesheet's border, padding or --space-8 values.
+    const rowMetrics = await row.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const box = element.getBoundingClientRect();
+      const borderLeft = Number.parseFloat(style.borderLeftWidth);
+      const paddingLeft = Number.parseFloat(style.paddingLeft);
+      return {
+        contentWidth:
+          box.width - borderLeft - paddingLeft - Number.parseFloat(style.paddingRight),
+        contentLeft: box.left + borderLeft + paddingLeft,
+        gap: Number.parseFloat(style.rowGap),
+      };
+    });
+    // The width the action would take if the row's own flex distribution
+    // could not touch it: a detached clone, in place, sized to its own
+    // content. Measured rather than derived, so that "neither squeezed nor
+    // stretched" below is a real comparison and not a restated constant.
+    const buttonIntrinsicWidth = await button.evaluate((element) => {
+      const clone = element.cloneNode(true) as HTMLElement;
+      clone.style.position = "absolute";
+      clone.style.visibility = "hidden";
+      clone.style.width = "max-content";
+      clone.style.flex = "none";
+      element.parentElement?.appendChild(clone);
+      const width = clone.getBoundingClientRect().width;
+      clone.remove();
+      return width;
+    });
+    return {
+      row: rowBox,
+      message: messageBox,
+      button: buttonBox,
+      card: cardBox,
+      buttonLabelLines,
+      rowContentWidth: rowMetrics.contentWidth,
+      rowContentLeft: rowMetrics.contentLeft,
+      rowGap: rowMetrics.gap,
+      buttonIntrinsicWidth,
+    };
+  };
+
+  const expectSideBySideImageryRow = (
+    layout: Awaited<ReturnType<typeof readImageryRowLayout>>,
+  ): void => {
+    // Message precedes the action horizontally, with no overlap.
+    expect(layout.message.x + layout.message.width).toBeLessThanOrEqual(layout.button.x);
+    // ...and they share the row: their vertical ranges genuinely overlap.
+    expect(layout.message.y).toBeLessThan(layout.button.y + layout.button.height);
+    expect(layout.button.y).toBeLessThan(layout.message.y + layout.message.height);
+    // The vertical saving, made load-bearing: the row is as tall as its
+    // taller child, NOT the stacked message + gap + button the parent
+    // produced. The gap is read from the row's own computed style.
+    const tallerChild = Math.max(layout.message.height, layout.button.height);
+    expect(layout.row.height).toBeCloseTo(tallerChild, 0);
+    expect(layout.row.height).toBeLessThan(
+      layout.message.height + layout.rowGap + layout.button.height,
+    );
+    // The action keeps its full label on one line and a real touch target.
+    expect(layout.buttonLabelLines).toBe(1);
+    expect(layout.button.width).toBeGreaterThanOrEqual(44);
+    expect(layout.button.height).toBeGreaterThanOrEqual(44);
+    // ...and it is exactly as wide as its own label needs: the row's flex
+    // distribution neither squeezes it (which would eventually wrap or clip
+    // the label) nor stretches it into the text's space. A non-shrinking,
+    // non-growing action is what makes the message the flexible column.
+    expect(layout.button.width).toBeCloseTo(layout.buttonIntrinsicWidth, 0);
+    // The text column is flexible and left-aligned, and not squeezed to a
+    // sliver: it keeps at least a third of the row's own content width.
+    expect(layout.message.x).toBeCloseTo(layout.rowContentLeft, 0);
+    expect(layout.message.width).toBeGreaterThan(layout.rowContentWidth / 3);
+    // Everything stays inside the row.
+    expect(isFullyWithin(layout.message, layout.row)).toBe(true);
+    expect(isFullyWithin(layout.button, layout.row)).toBe(true);
+  };
+
+  test("route Riding: the retryable imagery message and Retry read as one row at ordinary phone portrait, and Retry still recovers (backlog item 115)", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ ...ROUTE_START, accuracy: 5 });
+
+    const tiles = await installLocalMapStyleWithTileSource(page);
+
+    await page.goto("/");
+    await importAndStartRiding(page);
+    await expect.poll(() => tiles.requestCount()).toBeGreaterThan(0);
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    await waitForMapFullyLoaded(mapContainer);
+
+    const zoomIn = page.getByRole("button", { name: "Zoom in" });
+    await triggerFreshTileFailure(tiles, () => zoomIn.click());
+    const banner = page.getByTestId("tiles-unavailable-banner");
+    await expect(banner).toBeVisible({ timeout: 15_000 });
+    // The representative terminal Route-riding wording from the field
+    // report, asserted so the layout below is measured against the real
+    // string rather than a shorter one.
+    await expect(banner.locator(".ride-status-card-imagery-message")).toHaveText(
+      "Map imagery unavailable. The route and your position are still shown.",
+    );
+
+    const layout = await readImageryRowLayout(page, "tiles-unavailable-banner");
+    expectSideBySideImageryRow(layout);
+    expect(isFullyWithin(layout.row, layout.card)).toBe(true);
+
+    // No horizontal overflow at this width.
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(391);
+    // Item 108's rule is untouched: nothing duplicated over the map.
+    expect(await page.locator(".map-status-overlay .map-status-message").count()).toBe(0);
+
+    // Retry still drives the existing path, and recovery removes the row.
+    const requestsBefore = tiles.requestCount();
+    tiles.succeedTiles();
+    await banner.getByTestId("retry-map-imagery-button").click();
+    await expect.poll(() => tiles.requestCount()).toBeGreaterThan(requestsBefore);
+    await expect(banner).not.toBeAttached({ timeout: 15_000 });
+    expect(await page.locator(".ride-status-card-imagery-row").count()).toBe(0);
+  });
+
+  test("free roam: the same one-row layout applies, with its own position-only wording (backlog item 115)", async ({
+    page,
+    context,
+  }) => {
+    const tiles = await installLocalMapStyleWithTileSource(page);
+
+    await startFreeRoam(page, context);
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    await expect.poll(() => tiles.requestCount()).toBeGreaterThan(0);
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    await waitForMapFullyLoaded(mapContainer);
+
+    const zoomIn = page.getByRole("button", { name: "Zoom in" });
+    await triggerFreshTileFailure(tiles, () => zoomIn.click());
+    const banner = page.getByTestId("tiles-unavailable-banner");
+    await expect(banner).toBeVisible({ timeout: 15_000 });
+    const message = banner.locator(".ride-status-card-imagery-message");
+    await expect(message).toHaveText(
+      "Map imagery unavailable. Your position is still shown.",
+    );
+    expect((await message.innerText()).toLowerCase()).not.toContain("route");
+
+    expectSideBySideImageryRow(
+      await readImageryRowLayout(page, "tiles-unavailable-banner"),
+    );
+    expect(await page.locator(".map-status-overlay .map-status-message").count()).toBe(0);
+  });
+
+  test("the imagery row reverts to the stacked arrangement at 200% text, without overflow or a wrapped label (backlog item 115)", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ ...ROUTE_START, accuracy: 5 });
+
+    const tiles = await installLocalMapStyleWithTileSource(page);
+
+    await page.goto("/");
+    await importAndStartRiding(page);
+    await expect.poll(() => tiles.requestCount()).toBeGreaterThan(0);
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    await waitForMapFullyLoaded(mapContainer);
+
+    await triggerFreshTileFailure(tiles, () =>
+      page.getByRole("button", { name: "Zoom in" }).click(),
+    );
+    await expect(page.getByTestId("tiles-unavailable-banner")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // The established convention for simulating a large Dynamic-Type-style
+    // zoom, since OS-level text scaling cannot be emulated here.
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "200%";
+    });
+
+    const layout = await readImageryRowLayout(page, "tiles-unavailable-banner");
+    // Stacked: the action is genuinely below the message, not beside it.
+    expect(layout.button.y).toBeGreaterThanOrEqual(
+      layout.message.y + layout.message.height,
+    );
+    // The message takes the full content width once it is alone on its line.
+    expect(layout.message.width).toBeCloseTo(layout.rowContentWidth, 0);
+    // Nothing clipped, nothing overflowing, and the label is still one line
+    // — the button is allowed to be wide here, just not to wrap or to push
+    // the row past the viewport.
+    expect(layout.buttonLabelLines).toBe(1);
+    expect(layout.button.width).toBeLessThanOrEqual(layout.rowContentWidth);
+    expect(layout.button.width).toBeCloseTo(layout.buttonIntrinsicWidth, 0);
+    expect(isFullyWithin(layout.message, layout.row)).toBe(true);
+    expect(isFullyWithin(layout.button, layout.row)).toBe(true);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(391);
+  });
+
+  test("the non-retryable delayed imagery message keeps the full row width and reserves no action column (backlog item 115)", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ ...ROUTE_START, accuracy: 5 });
+
+    const tiles = await installLocalMapStyleWithTileSource(page);
+    tiles.holdTiles();
+
+    await page.goto("/");
+    try {
+      await importAndStartRiding(page);
+      await expect.poll(() => tiles.heldTileRequestCount()).toBeGreaterThan(0);
+
+      const banner = page.getByTestId("map-imagery-delayed-banner");
+      await expect(banner).toBeAttached({ timeout: 6_000 });
+      await expect(page.getByTestId("retry-map-imagery-button")).toHaveCount(0);
+
+      const message = banner.locator(".ride-status-card-imagery-message");
+      const [rowBox, messageBox] = await Promise.all([
+        banner.boundingBox(),
+        message.boundingBox(),
+      ]);
+      if (!rowBox || !messageBox) {
+        throw new Error("expected the delayed row and its message to have boxes");
+      }
+      const rowContentWidth = await banner.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return (
+          element.getBoundingClientRect().width -
+          Number.parseFloat(style.borderLeftWidth) -
+          Number.parseFloat(style.paddingLeft) -
+          Number.parseFloat(style.paddingRight)
+        );
+      });
+      // The single flex item grows to the whole row: no empty column is
+      // held back for an action this state deliberately does not have.
+      expect(messageBox.width).toBeCloseTo(rowContentWidth, 0);
+      expect(rowBox.height).toBeCloseTo(messageBox.height, 0);
+    } finally {
+      await tiles.releaseTiles();
+    }
+  });
+
+  test("Planning keeps its in-map retry action beneath its own message, unaffected by the status-card row layout (backlog item 115)", async ({
+    page,
+  }) => {
+    await forceMapStyleFailure(page);
+    await page.goto("/");
+    await page.getByRole("button", { name: "Plan", exact: true }).click();
+
+    const banner = page.getByTestId("map-fallback-banner");
+    await expect(banner).toBeVisible({ timeout: 15_000 });
+    // Planning has no status card, so this stays inside MapView's own
+    // overlay — the precondition for the geometry below.
+    expect(
+      await banner.evaluate((el) => el.closest(".map-status-overlay") !== null),
+    ).toBe(true);
+    expect(await page.locator(".ride-status-card").count()).toBe(0);
+
+    const retryButton = page.getByTestId("retry-map-imagery-button");
+    const [bannerBox, retryBox] = await Promise.all([
+      banner.boundingBox(),
+      retryButton.boundingBox(),
+    ]);
+    if (!bannerBox || !retryBox) {
+      throw new Error("expected the Planning banner and its retry button to have boxes");
+    }
+    const probe = await banner.evaluate((element) => {
+      const textNode = element.firstChild;
+      const range = document.createRange();
+      if (textNode) range.selectNode(textNode);
+      const tops = Array.from(range.getClientRects(), (rect) => rect.top);
+      const button = element.querySelector("button");
+      const buttonStyle = button ? getComputedStyle(button) : null;
+      const elementStyle = getComputedStyle(element);
+      return {
+        lastTextLineTop: tops.length > 0 ? Math.max(...tops) : Number.NaN,
+        contentLeft:
+          element.getBoundingClientRect().left +
+          Number.parseFloat(elementStyle.borderLeftWidth) +
+          Number.parseFloat(elementStyle.paddingLeft),
+        marginTop: buttonStyle?.marginTop ?? "",
+        whiteSpace: buttonStyle?.whiteSpace ?? "",
+        maxWidth: buttonStyle?.maxWidth ?? "",
+      };
+    });
+    // The action starts a line of its own, beneath the message's last line,
+    // exactly as it did before item 115.
+    expect(retryBox.y).toBeGreaterThan(probe.lastTextLineTop);
+    expect(retryBox.x).toBeCloseTo(probe.contentLeft, 0);
+    expect(isFullyWithin(retryBox, bannerBox)).toBe(true);
+    // And none of the status-card row's own overrides reached it: this is
+    // what makes scoping them to .ride-status-card-imagery-row load-bearing
+    // rather than incidental.
+    expect(probe.marginTop).toBe("4px");
+    expect(probe.whiteSpace).toBe("normal");
+    expect(probe.maxWidth).toBe("none");
   });
 });
 

@@ -95,4 +95,28 @@ describe("RidingClimbCue", () => {
     expect(button.tagName).toBe("BUTTON");
     expect(button).toHaveAttribute("type", "button");
   });
+
+  // Backlog item 115. The slot carries no content, role or behaviour — it
+  // exists only so that .ride-climb-cue has a CSS size container to query,
+  // which is what gates the lower-right placement on the map having room
+  // for it (see .ride-climb-cue-slot in src/index.css). A structural guard,
+  // not a behavioural claim: the geometry itself is proven in
+  // e2e/ridingClimbView.spec.ts, in a real browser.
+  it("wraps the cue in a positioning slot that adds no role, label or extra text", () => {
+    const { container } = render(
+      <RidingClimbCue metrics={buildMetrics()} onViewClimb={vi.fn()} />,
+    );
+
+    const slot = container.querySelector(".ride-climb-cue-slot");
+    expect(slot).not.toBeNull();
+    expect(slot?.getAttribute("role")).toBeNull();
+    expect(slot?.getAttribute("aria-label")).toBeNull();
+
+    const cue = container.querySelector(".ride-climb-cue");
+    expect(cue).not.toBeNull();
+    expect(cue?.parentElement).toBe(slot);
+    expect(slot?.children).toHaveLength(1);
+    // Exactly the same visible text as before the wrapper existed.
+    expect(slot?.textContent).toBe("Climb active1.8 km remainingView climb");
+  });
 });

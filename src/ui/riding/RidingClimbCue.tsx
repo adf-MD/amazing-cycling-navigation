@@ -31,25 +31,36 @@ export interface RidingClimbCueProps {
  * The title/detail text wraps rather than truncates at ordinary phone
  * sizes (backlog item 82) — see `.ride-climb-cue-action`/`.ride-climb-cue`
  * in `src/index.css` for the accompanying width/height budget.
+ *
+ * Backlog item 115 adds the `.ride-climb-cue-slot` wrapper. It is purely a
+ * positioning concern and carries no content, no role and no behaviour: it
+ * spans the whole map (`inset: 0`, `pointer-events: none`) so that it can
+ * act as a CSS *size container* the cue itself queries, which is how the
+ * lower-right placement is enabled only when the map is genuinely tall
+ * enough to hold the cue, the attribution and the paused-Follow toast
+ * without collision. See `.ride-climb-cue-slot` in `src/index.css` for the
+ * derivation and for why the base placement is deliberately unchanged.
  */
 export function RidingClimbCue({ metrics, onViewClimb }: RidingClimbCueProps) {
   return (
-    <div className="ride-climb-cue">
-      <div className="ride-climb-cue-text">
-        <p role="status" className="ride-climb-cue-title">
-          Climb active
-        </p>
-        <p className="ride-climb-cue-detail">
-          {formatDistanceKm(metrics.distanceRemainingMetres)} remaining
-        </p>
+    <div className="ride-climb-cue-slot">
+      <div className="ride-climb-cue">
+        <div className="ride-climb-cue-text">
+          <p role="status" className="ride-climb-cue-title">
+            Climb active
+          </p>
+          <p className="ride-climb-cue-detail">
+            {formatDistanceKm(metrics.distanceRemainingMetres)} remaining
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn-primary ride-climb-cue-action"
+          onClick={onViewClimb}
+        >
+          View climb
+        </button>
       </div>
-      <button
-        type="button"
-        className="btn-primary ride-climb-cue-action"
-        onClick={onViewClimb}
-      >
-        View climb
-      </button>
     </div>
   );
 }

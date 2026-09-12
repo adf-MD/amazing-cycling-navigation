@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
+import { inflateSync as zlibInflateSync } from "node:zlib";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 
 // Requests handled by the app's own service worker never reach
@@ -57,6 +58,248 @@ function intersects(a: Box, b: Box): boolean {
     a.y < b.y + b.height &&
     a.y + a.height > b.y
   );
+}
+
+/** Every riding map overlay uses this same inset from the map's own edges
+ * (see .ride-map-zoom-controls/.ride-map-camera-controls/.map-attribution
+ * and, for backlog item 115, .ride-climb-cue's own right inset). */
+const MAP_OVERLAY_INSET_PX = 8;
+
+/** Backlog item 115: how much clear space either side of the PAINTED route
+ * ahead the cue must leave. Deliberately wider than the route's own painted
+ * line and its direction-arrow glyphs together (measured as a ~40px band on
+ * this fixture), so that "clear of the route ahead" means genuine glancing
+ * room rather than merely not touching the ink. */
+const ROUTE_CORRIDOR_SAFETY_BAND_PX = 24;
+
+/** Backlog item 115: mirrors the `@container ride-map-overlay
+ * (min-height: 14rem)` condition in src/index.css at the 16px root font
+ * size these tests run at. Only ever used to DERIVE viewport heights that
+ * land comfortably either side of it — never asserted against on its own,
+ * which would merely restate the constant. */
+const BOTTOM_PLACEMENT_MIN_MAP_HEIGHT_PX = 14 * 16;
+
+/** Comfortably clear of the threshold in both directions, so neither
+ * straddling case is decided by a subpixel rounding difference. */
+const THRESHOLD_STRADDLE_MARGIN_PX = 36;
+
+/** Minimal, dependency-free PNG decoder for 8-bit, non-interlaced RGB
+ * (colour type 2) or RGBA (colour type 6) — the two formats a Playwright
+ * screenshot buffer actually uses. Copied from the proven precedent in
+ * distanceBadges.spec.ts/ridingSelectedFeatureSummary.spec.ts rather than
+ * imported, per this repo's no-shared-e2e-helpers-across-specs convention. */
+function decodePng(buf: Buffer): {
+  width: number;
+  height: number;
+  pixels: Buffer;
+  bytesPerPixel: number;
+} {
+  if (buf.readUInt32BE(0) !== 0x89504e47) throw new Error("not a PNG");
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  const idatChunks: Buffer[] = [];
+  while (offset < buf.length) {
+    const len = buf.readUInt32BE(offset);
+    const type = buf.toString("ascii", offset + 4, offset + 8);
+    const data = buf.subarray(offset + 8, offset + 8 + len);
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data.readUInt8(8);
+      colorType = data.readUInt8(9);
+    } else if (type === "IDAT") {
+      idatChunks.push(data);
+    } else if (type === "IEND") {
+      break;
+    }
+    offset += 12 + len;
+  }
+  if (bitDepth !== 8 || (colorType !== 2 && colorType !== 6)) {
+    throw new Error(
+      `unsupported PNG format bitDepth=${String(bitDepth)} colorType=${String(colorType)}`,
+    );
+  }
+  const raw = zlibInflateSync(Buffer.concat(idatChunks));
+  const bytesPerPixel = colorType === 6 ? 4 : 3;
+  const stride = width * bytesPerPixel;
+  const pixels = Buffer.alloc(height * stride);
+  let rawOffset = 0;
+  for (let y = 0; y < height; y += 1) {
+    const filterType = raw[rawOffset];
+    rawOffset += 1;
+    const rowStart = y * stride;
+    const prevRowStart = (y - 1) * stride;
+    for (let x = 0; x < stride; x += 1) {
+      const rawByte = raw[rawOffset + x];
+      const a = x >= bytesPerPixel ? pixels[rowStart + x - bytesPerPixel] : 0;
+      const b = y > 0 ? pixels[prevRowStart + x] : 0;
+      const c =
+        y > 0 && x >= bytesPerPixel ? pixels[prevRowStart + x - bytesPerPixel] : 0;
+      let value: number;
+      switch (filterType) {
+        case 0:
+          value = rawByte;
+          break;
+        case 1:
+          value = (rawByte + a) & 0xff;
+          break;
+        case 2:
+          value = (rawByte + b) & 0xff;
+          break;
+        case 3:
+          value = (rawByte + Math.floor((a + b) / 2)) & 0xff;
+          break;
+        case 4: {
+          const p = a + b - c;
+          const pa = Math.abs(p - a);
+          const pb = Math.abs(p - b);
+          const pc = Math.abs(p - c);
+          const predictor = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+          value = (rawByte + predictor) & 0xff;
+          break;
+        }
+        default:
+          throw new Error(`unsupported filter type ${String(filterType)}`);
+      }
+      pixels[rowStart + x] = value;
+    }
+    rawOffset += stride;
+  }
+  return { width, height, pixels, bytesPerPixel };
+}
+
+type DecodedImage = ReturnType<typeof decodePng>;
+
+function pixelAt(img: DecodedImage, x: number, y: number): [number, number, number] {
+  const idx = y * img.width * img.bytesPerPixel + x * img.bytesPerPixel;
+  return [img.pixels[idx], img.pixels[idx + 1], img.pixels[idx + 2]];
+}
+
+/**
+ * Backlog item 115. Captures the map's own PAINTED content with every DOM
+ * overlay temporarily hidden, so that what is measured afterwards is the
+ * MapLibre canvas alone — the route line, its direction arrows and the
+ * rider's position marker — and never the very chrome whose placement is
+ * under test. Mirrors distanceBadges.spec.ts's own visible/hidden crop
+ * pairing. Restores visibility before returning, whatever happens.
+ */
+async function captureMapPaint(
+  page: Page,
+  mapContainer: Locator,
+): Promise<{ image: DecodedImage; scale: number; origin: { x: number; y: number } }> {
+  const mapBox = await mapContainer.boundingBox();
+  if (!mapBox) throw new Error("expected the map container to have a bounding box");
+  const OVERLAY_SELECTORS = [
+    // Both the slot and the cue itself, so that a build in which the cue is
+    // NOT wrapped (any earlier implementation this test is measured
+    // against) is captured just as cleanly.
+    ".ride-climb-cue-slot",
+    ".ride-climb-cue",
+    ".ride-map-zoom-controls",
+    ".ride-map-camera-controls",
+    ".ride-map-paused-toast",
+    ".map-attribution",
+    ".map-status-overlay",
+  ];
+  await page.evaluate((selectors) => {
+    for (const selector of selectors) {
+      for (const element of document.querySelectorAll<HTMLElement>(selector)) {
+        element.style.visibility = "hidden";
+      }
+    }
+  }, OVERLAY_SELECTORS);
+  try {
+    const shot = await page.screenshot({ clip: mapBox });
+    const image = decodePng(shot);
+    return {
+      image,
+      scale: image.width / mapBox.width,
+      origin: { x: mapBox.x, y: mapBox.y },
+    };
+  } finally {
+    await page.evaluate((selectors) => {
+      for (const selector of selectors) {
+        for (const element of document.querySelectorAll<HTMLElement>(selector)) {
+          element.style.visibility = "";
+        }
+      }
+    }, OVERLAY_SELECTORS);
+  }
+}
+
+/** The most frequent colour in a decoded image. The specs in this file
+ * serve a sourceless local style, so the map's own backdrop is a single
+ * flat colour — reading it off the image itself avoids hard-coding either
+ * the style's or the palette's own values anywhere. */
+function modalColour(img: DecodedImage): [number, number, number] {
+  const counts = new Map<number, number>();
+  for (let y = 0; y < img.height; y += 1) {
+    for (let x = 0; x < img.width; x += 1) {
+      const [r, g, b] = pixelAt(img, x, y);
+      const key = (r << 16) | (g << 8) | b;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  let bestKey = 0;
+  let bestCount = -1;
+  for (const [key, count] of counts) {
+    if (count > bestCount) {
+      bestKey = key;
+      bestCount = count;
+    }
+  }
+  return [(bestKey >> 16) & 0xff, (bestKey >> 8) & 0xff, bestKey & 0xff];
+}
+
+function colourDistance(
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+): number {
+  return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]);
+}
+
+/** A bounding box over every pixel the predicate accepts, expressed in page
+ * CSS pixels. Returns null when nothing matched, so callers can assert that
+ * their probe genuinely found something rather than silently proving
+ * nothing. */
+function paintedExtent(
+  capture: { image: DecodedImage; scale: number; origin: { x: number; y: number } },
+  region: { x0: number; y0: number; x1: number; y1: number },
+  accept: (rgb: [number, number, number]) => boolean,
+): { box: Box; pixelCount: number } | null {
+  const { image, scale, origin } = capture;
+  const px0 = Math.max(0, Math.floor(region.x0 * scale));
+  const py0 = Math.max(0, Math.floor(region.y0 * scale));
+  const px1 = Math.min(image.width - 1, Math.ceil(region.x1 * scale));
+  const py1 = Math.min(image.height - 1, Math.ceil(region.y1 * scale));
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let pixelCount = 0;
+  for (let y = py0; y <= py1; y += 1) {
+    for (let x = px0; x <= px1; x += 1) {
+      if (!accept(pixelAt(image, x, y))) continue;
+      pixelCount += 1;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (pixelCount === 0) return null;
+  return {
+    pixelCount,
+    box: {
+      x: origin.x + minX / scale,
+      y: origin.y + minY / scale,
+      width: (maxX - minX + 1) / scale,
+      height: (maxY - minY + 1) / scale,
+    },
+  };
 }
 
 /**
@@ -459,6 +702,11 @@ test.describe("390×844 phone viewport", () => {
    * impossible without shrinking type or shortening a label: ~120px of text
    * plus 112.5px of button plus padding needs ~245px inside a box whose
    * absolute control-safe maximum is 246px.
+   *
+   * Backlog item 115 kept every one of item 108's claims and moved the box
+   * to the map's lower right, so the two anchor-specific assertions below
+   * changed with it; see this file's own item 115 tests for the placement
+   * proof itself.
    */
   test("the Map climb cue no longer spans the full control-safe width, covering materially less of the route ahead (backlog item 108)", async ({
     page,
@@ -501,14 +749,23 @@ test.describe("390×844 phone viewport", () => {
     // between the measured 144px and the 230px the parent produced.
     expect(cueBox.width).toBeLessThanOrEqual(fullControlSafeSpan - 40);
 
-    // The left anchor is unchanged and still the control-safe edge, never
-    // the map's outer edge.
-    expect(cueBox.x - mapBox.x).toBeCloseTo(64, 0);
+    // Backlog item 115 moved the anchor from the control-safe LEFT edge to
+    // the map's own right inset; the item 108 width claim above is
+    // unaffected, since the box still shrink-to-fits its own content. The
+    // two assertions this replaces (a 64px left offset, and a horizontal
+    // gap to the top-right camera cluster) described the old top placement
+    // and are no longer meaningful: the cue and that cluster now sit at
+    // opposite ends of the map and share no rows at all.
+    expect(mapBox.x + mapBox.width - (cueBox.x + cueBox.width)).toBeCloseTo(
+      MAP_OVERLAY_INSET_PX,
+      0,
+    );
 
-    // Reclaimed route-ahead space, stated as a real gap rather than only
-    // as an absence of overlap: the parent left 8px here.
-    const gapToCameraControls = cameraBox.x - (cueBox.x + cueBox.width);
-    expect(gapToCameraControls).toBeGreaterThanOrEqual(40);
+    // Reclaimed route-ahead space, stated as a real clearance rather than
+    // only as an absence of overlap: the cue's top edge now sits well below
+    // the camera cluster's bottom edge, where the parent shared its row.
+    const verticalGapToCameraControls = cueBox.y - (cameraBox.y + cameraBox.height);
+    expect(verticalGapToCameraControls).toBeGreaterThanOrEqual(40);
 
     // Unchanged guarantees.
     expect(isFullyWithin(cueBox, mapBox)).toBe(true);
@@ -563,6 +820,285 @@ test.describe("390×844 phone viewport", () => {
     expect(isFullyWithin(stressedCueBox, mapBox)).toBe(true);
   });
 
+  /**
+   * Backlog item 115. A bicycle field test reported that the top-centre cue
+   * covered the route ahead. These assertions are about the PAINTED map, not
+   * about CSS: the route ahead and the rider's marker are both located in a
+   * screenshot of the canvas taken with every DOM overlay hidden, so nothing
+   * here can be satisfied by the cue accidentally measuring itself.
+   *
+   * The corridor is derived from the route's own projection rather than from
+   * a fixed fraction of the map. That distinction matters: at this viewport
+   * the map is 358px wide and the cue 144px, so a naive "middle third"
+   * corridor would intersect a perfectly acceptable lower-right cue and
+   * reject the approved design. What the rider actually needs clear is the
+   * painted route between them and the map's far edge, plus glancing room.
+   */
+  test("the Map climb cue sits in the map's lower right, clear of the painted route ahead and the rider's own marker (backlog item 115)", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({
+      latitude: FIXTURE_LAT,
+      longitude: lonAtMetresAlongFixture(CLIMB_1_MID_METRES),
+      accuracy: 5,
+    });
+
+    await installLocalMapStyle(page);
+    await page.goto("/");
+    await importAndStartRiding(page);
+
+    const cueButton = page.getByRole("button", { name: "View climb" });
+    await expect(cueButton).toBeVisible({ timeout: 15_000 });
+
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    const cue = page.locator(".ride-climb-cue");
+    const [mapBox, cueBox] = await Promise.all([
+      mapContainer.boundingBox(),
+      cue.boundingBox(),
+    ]);
+    if (!mapBox || !cueBox) {
+      throw new Error("expected the map and the cue to have bounding boxes");
+    }
+
+    // Lower right, and genuinely inset from both of those edges rather than
+    // flush against them.
+    expect(mapBox.x + mapBox.width - (cueBox.x + cueBox.width)).toBeCloseTo(
+      MAP_OVERLAY_INSET_PX,
+      0,
+    );
+    const insetFromMapBottom = mapBox.y + mapBox.height - (cueBox.y + cueBox.height);
+    expect(insetFromMapBottom).toBeGreaterThanOrEqual(MAP_OVERLAY_INSET_PX);
+    // In the map's lower half and its right half — the quadrant nearest the
+    // Profile control below the map.
+    expect(cueBox.y).toBeGreaterThan(mapBox.y + mapBox.height / 2);
+    expect(cueBox.x).toBeGreaterThan(mapBox.x + mapBox.width / 2);
+    expect(isFullyWithin(cueBox, mapBox)).toBe(true);
+
+    const capture = await captureMapPaint(page, mapContainer);
+    const background = modalColour(capture.image);
+
+    // The rider's marker, located by paint but only within the region the
+    // following camera actually anchors it to — the middle of the map,
+    // biased below centre for look-ahead (see mapAdapter.ts's documented
+    // follow offset). Searching the whole canvas would happily accept any
+    // other blue ink as "the rider".
+    const anchorRegion = {
+      x0: mapBox.width / 2 - 60,
+      x1: mapBox.width / 2 + 60,
+      y0: mapBox.height / 2,
+      y1: mapBox.height / 2 + 120,
+    };
+    const marker = paintedExtent(
+      capture,
+      anchorRegion,
+      ([r, g, b]) => b > 150 && b - r > 80 && b - g > 40,
+    );
+    expect(
+      marker,
+      "expected the rider's position marker to be painted at the follow anchor",
+    ).not.toBeNull();
+    if (!marker) throw new Error("unreachable");
+    expect(marker.pixelCount).toBeGreaterThan(40);
+    expect(intersects(marker.box, cueBox)).toBe(false);
+
+    // The route AHEAD: painted, non-background map ink strictly above the
+    // rider's marker. "Above" is the forward direction because the following
+    // camera rotates to travel-up, from the route's own tangent — and that
+    // is not assumed here: the assertions below require the located ink to
+    // form a narrow band genuinely running from near the map's top edge down
+    // to the rider, which is only true of a route projected ahead of them.
+    // If the camera were north-up instead, the route would cross the map
+    // horizontally and neither assertion could hold.
+    const routeAhead = paintedExtent(
+      capture,
+      { x0: 0, x1: mapBox.width, y0: 0, y1: marker.box.y - mapBox.y },
+      (rgb) => colourDistance(rgb, background) > 24,
+    );
+    expect(
+      routeAhead,
+      "expected the route ahead to be painted above the rider",
+    ).not.toBeNull();
+    if (!routeAhead) throw new Error("unreachable");
+    // A genuine located projection, not a stray pixel: it spans most of the
+    // distance between the map's top edge and the rider.
+    const availableAhead = marker.box.y - mapBox.y;
+    expect(routeAhead.box.height).toBeGreaterThan(availableAhead * 0.7);
+    // ...and it is a route-shaped band, not the whole map.
+    expect(routeAhead.box.width).toBeLessThan(mapBox.width / 2);
+
+    const corridor: Box = {
+      x: routeAhead.box.x - ROUTE_CORRIDOR_SAFETY_BAND_PX,
+      y: routeAhead.box.y - ROUTE_CORRIDOR_SAFETY_BAND_PX,
+      width: routeAhead.box.width + 2 * ROUTE_CORRIDOR_SAFETY_BAND_PX,
+      height: routeAhead.box.height + 2 * ROUTE_CORRIDOR_SAFETY_BAND_PX,
+    };
+    expect(intersects(cueBox, corridor)).toBe(false);
+
+    // The action still does its one job.
+    await cueButton.click();
+    await expect(
+      page.getByRole("button", { name: "Profile", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("region", { name: /Climb/ }).first()).toBeVisible();
+  });
+
+  /**
+   * Backlog item 115. A manual gesture pausing Follow can genuinely co-occur
+   * with an active climb, and .ride-map-paused-toast is bottom-centred — so
+   * moving the cue to the bottom right created a collision that had to be
+   * resolved by shifting the CUE, never by moving the toast (which appears
+   * on free roam too) and never by z-index alone, which would leave one of
+   * the two messages unreadable.
+   */
+  test("an active climb cue and the Follow-paused toast coexist without intersecting (backlog item 115)", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({
+      latitude: FIXTURE_LAT,
+      longitude: lonAtMetresAlongFixture(CLIMB_1_MID_METRES),
+      accuracy: 5,
+    });
+
+    await installLocalMapStyle(page);
+    await page.goto("/");
+    await importAndStartRiding(page);
+
+    const cue = page.locator(".ride-climb-cue");
+    await expect(page.getByRole("button", { name: "View climb" })).toBeVisible({
+      timeout: 15_000,
+    });
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    const cueBoxBefore = await cue.boundingBox();
+    if (!cueBoxBefore) throw new Error("expected the cue to have a bounding box");
+
+    // A real, trusted MapLibre keyboard gesture — not a synthetic pointer
+    // drag — mirroring ridingCamera.spec.ts's own convention.
+    const centreBefore = await mapContainer.getAttribute("data-camera-center");
+    await mapContainer.locator("canvas").focus();
+    await page.keyboard.press("ArrowRight");
+    await expect
+      .poll(() => mapContainer.getAttribute("data-camera-center"))
+      .not.toBe(centreBefore);
+
+    const toast = page.getByText("Map follow paused.");
+    await expect(toast).toBeVisible();
+    // Neither message is hidden to resolve the collision.
+    await expect(cue).toBeVisible();
+
+    const [mapBox, cueBox, toastBox, attributionBox] = await Promise.all([
+      mapContainer.boundingBox(),
+      cue.boundingBox(),
+      toast.boundingBox(),
+      page.locator(".map-attribution").boundingBox(),
+    ]);
+    if (!mapBox || !cueBox || !toastBox || !attributionBox) {
+      throw new Error("expected every located element to have a bounding box");
+    }
+
+    expect(intersects(cueBox, toastBox)).toBe(false);
+    expect(intersects(cueBox, attributionBox)).toBe(false);
+    // The cue moved UP to clear the toast; the toast kept its own position.
+    expect(cueBox.y).toBeLessThan(cueBoxBefore.y);
+    expect(toastBox.y + toastBox.height).toBeCloseTo(
+      mapBox.y + mapBox.height - MAP_OVERLAY_INSET_PX,
+      0,
+    );
+    // A normal design-token gap, not a hairline.
+    expect(toastBox.y - (cueBox.y + cueBox.height)).toBeGreaterThanOrEqual(8);
+    // Still right-aligned, still contained.
+    expect(mapBox.x + mapBox.width - (cueBox.x + cueBox.width)).toBeCloseTo(
+      MAP_OVERLAY_INSET_PX,
+      0,
+    );
+    expect(isFullyWithin(cueBox, mapBox)).toBe(true);
+    await expectClimbCueTextFullyReadable(page);
+  });
+
+  /**
+   * Backlog item 115. The lower-right placement is an enhancement gated on
+   * the map having room for it; below that it falls back to item 57's proven
+   * top placement rather than manufacturing a collision with the
+   * attribution and the paused-Follow toast. Both sides of the threshold are
+   * exercised comfortably clear of it, and the viewport heights are DERIVED
+   * from a live measurement of how much of the screen the map actually gets,
+   * so this proves the flip rather than restating the CSS constant.
+   */
+  test("the lower-right placement applies only when the map is tall enough, falling back to the top placement below that (backlog item 115)", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({
+      latitude: FIXTURE_LAT,
+      longitude: lonAtMetresAlongFixture(CLIMB_1_MID_METRES),
+      accuracy: 5,
+    });
+
+    await installLocalMapStyle(page);
+    await page.goto("/");
+    await importAndStartRiding(page);
+
+    const cue = page.locator(".ride-climb-cue");
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    await expect(page.getByRole("button", { name: "View climb" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const viewport = page.viewportSize();
+    if (!viewport) throw new Error("expected a fixed viewport size");
+    const baselineMapBox = await mapContainer.boundingBox();
+    if (!baselineMapBox) throw new Error("expected the map container to have a box");
+    // Everything the immersive shell spends on chrome above and below the
+    // map, measured rather than assumed.
+    const nonMapChromeHeight = viewport.height - baselineMapBox.height;
+
+    const placementFor = async (
+      targetMapHeight: number,
+    ): Promise<{ mapHeight: number; anchoredToBottom: boolean }> => {
+      await page.setViewportSize({
+        width: viewport.width,
+        height: Math.round(nonMapChromeHeight + targetMapHeight),
+      });
+      await expect
+        .poll(async () => (await mapContainer.boundingBox())?.height ?? 0)
+        .toBeCloseTo(targetMapHeight, 0);
+      const [mapBox, cueBox] = await Promise.all([
+        mapContainer.boundingBox(),
+        cue.boundingBox(),
+      ]);
+      if (!mapBox || !cueBox) throw new Error("expected boxes after the resize");
+      const topInset = cueBox.y - mapBox.y;
+      const bottomInset = mapBox.y + mapBox.height - (cueBox.y + cueBox.height);
+      return { mapHeight: mapBox.height, anchoredToBottom: bottomInset < topInset };
+    };
+
+    const tall = await placementFor(
+      BOTTOM_PLACEMENT_MIN_MAP_HEIGHT_PX + THRESHOLD_STRADDLE_MARGIN_PX,
+    );
+    expect(tall.mapHeight).toBeGreaterThan(BOTTOM_PLACEMENT_MIN_MAP_HEIGHT_PX);
+    expect(tall.anchoredToBottom).toBe(true);
+
+    const short = await placementFor(
+      BOTTOM_PLACEMENT_MIN_MAP_HEIGHT_PX - THRESHOLD_STRADDLE_MARGIN_PX,
+    );
+    expect(short.mapHeight).toBeLessThan(BOTTOM_PLACEMENT_MIN_MAP_HEIGHT_PX);
+    expect(short.anchoredToBottom).toBe(false);
+
+    // Whichever branch applies, the cue stays readable and its action stays
+    // a real touch target.
+    await expectClimbCueTextFullyReadable(page);
+    const cueButtonBox = await page
+      .getByRole("button", { name: "View climb" })
+      .boundingBox();
+    if (!cueButtonBox) throw new Error("expected the View climb button to have a box");
+    expect(cueButtonBox.width).toBeGreaterThanOrEqual(44);
+    expect(cueButtonBox.height).toBeGreaterThanOrEqual(44);
+  });
+
   test("the Map climb cue remains fully readable and contained at short landscape (backlog item 82)", async ({
     page,
     context,
@@ -609,14 +1145,20 @@ test.describe("390×844 phone viewport", () => {
     expect(cueBox.x + cueBox.width).toBeLessThanOrEqual(mapBox.x + mapBox.width);
 
     // Deliberately NOT asserted: full vertical containment within the map.
-    // At 200% root text the immersive shell compresses the map to roughly
-    // its own 160px floor while the cue's wrapped content needs more than
-    // that, so the cue can extend past the map's bottom edge. Measured
-    // identically on the parent implementation (map 358x206, cue 230x206
-    // at y+8 in both), so this is a pre-existing consequence of extreme
-    // text scaling that item 108 neither introduced nor changed — item
-    // 108's own change is a no-op at this size, because the cue clamps to
-    // the same max-width the old right:64px produced.
+    // The immersive shell compresses the map to its own 160px floor at this
+    // viewport, and the cue's wrapped content can need more than that.
+    //
+    // Backlog item 115 corrected this comment, which previously attributed
+    // its own numbers ("map 358x206, cue 230x206") to 200% ROOT TEXT — those
+    // belong to the 200% portrait case in the next test, not to short
+    // landscape. Measured here at 844x390: map 812x160, cue 144x91 at the
+    // map's own y+8, i.e. contained in practice. The non-assertion is kept
+    // rather than tightened because landscape is explicitly not an
+    // acceptance-tested orientation for this project, so nothing should
+    // come to depend on its exact geometry. Item 115 also leaves the
+    // placement itself untouched at this size: the map's 160px height is
+    // below the height at which the lower-right placement engages, so the
+    // cue keeps item 57's top placement here.
   });
 
   test("the Map climb cue remains fully readable and contained at 200% enlarged text (backlog item 82)", async ({
@@ -650,6 +1192,56 @@ test.describe("390×844 phone viewport", () => {
     if (!cueButtonBox) throw new Error("expected View climb to have a bounding box");
     expect(cueButtonBox.width).toBeGreaterThanOrEqual(44);
     expect(cueButtonBox.height).toBeGreaterThanOrEqual(44);
+
+    /*
+     * Backlog item 115: what is and is not guaranteed at this text size.
+     *
+     * The immersive map compresses to roughly 358x206 here while the cue,
+     * .map-attribution (two wrapped lines) and .ride-map-paused-toast all
+     * grow with the text. The bottom of the map is genuinely
+     * over-constrained at that size — no arrangement clears all three — so
+     * item 115's lower-right placement deliberately does NOT engage, and the
+     * cue keeps item 57's proven top placement. Pairwise non-intersection
+     * with the attribution and the toast is therefore asserted only in the
+     * height-qualified lower-right branch (see this file's own item 115
+     * tests), never here: the residual overlap at 200% is a preserved
+     * pre-existing limitation, neither introduced nor fixed by item 115, and
+     * shrinking the attribution to manufacture room was explicitly rejected
+     * because it must stay legible and compliant.
+     *
+     * What IS required here: the top placement really is in force, the cue
+     * is horizontally contained, its text is readable, and View climb stays
+     * genuinely operable.
+     */
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    const cue = page.locator(".ride-climb-cue");
+    const [mapBox, cueBox] = await Promise.all([
+      mapContainer.boundingBox(),
+      cue.boundingBox(),
+    ]);
+    if (!mapBox || !cueBox) {
+      throw new Error("expected the map and the cue to have bounding boxes");
+    }
+    expect(mapBox.height).toBeLessThan(BOTTOM_PLACEMENT_MIN_MAP_HEIGHT_PX);
+    expect(cueBox.y - mapBox.y).toBeCloseTo(MAP_OVERLAY_INSET_PX, 0);
+
+    // Horizontal containment, and no document-level horizontal overflow —
+    // both already covered by expectClimbCueTextFullyReadable's own
+    // scrollWidth check, restated here as geometry.
+    expect(cueBox.x).toBeGreaterThanOrEqual(mapBox.x);
+    expect(cueBox.x + cueBox.width).toBeLessThanOrEqual(mapBox.x + mapBox.width);
+
+    // Operable, stated as the part of the action that is actually on screen
+    // rather than as whole-box containment the map's own overflow: hidden
+    // cannot deliver at this size.
+    const visibleActionHeight =
+      Math.min(cueButtonBox.y + cueButtonBox.height, mapBox.y + mapBox.height) -
+      cueButtonBox.y;
+    expect(visibleActionHeight).toBeGreaterThanOrEqual(44);
+    await cueButton.click();
+    await expect(
+      page.getByRole("button", { name: "Profile", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   test("the Profile climb-preview card and the restructured active-progress card fit at phone width and enlarged text, with no document scroll, and the selected Climb button's ring sits flush with the group's right edge in the four-button state (backlog items 76, 80)", async ({

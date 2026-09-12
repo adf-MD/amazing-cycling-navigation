@@ -442,6 +442,56 @@ describe("RidingStatusCard", () => {
     expect(row).not.toHaveClass("ride-status-card-imagery-row--alert");
   });
 
+  // Backlog item 115. The row's own DOM contract, which the compact
+  // side-by-side layout rests on: the message is an addressable element
+  // that precedes the action in DOM and reading order, so the visual order
+  // and the reading order cannot drift apart. A structural guard — the
+  // geometry is proven in a real browser in e2e/mapImageryRecovery.spec.ts.
+  it("renders the imagery message as a classed element before the retry action in DOM order", () => {
+    render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "tile-error" }}
+        onRetryImagery={noop}
+      />,
+    );
+
+    const row = screen.getByTestId("tiles-unavailable-banner");
+    const message = row.querySelector(".ride-status-card-imagery-message");
+    const button = screen.getByTestId("retry-map-imagery-button");
+    expect(message).not.toBeNull();
+    expect(message).toHaveTextContent(
+      "Map imagery unavailable. The route and your position are still shown.",
+    );
+    expect(row.children[0]).toBe(message);
+    expect(row.children[1]).toBe(button);
+    if (!message) throw new Error("expected the imagery message element");
+    expect(
+      message.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("gives the non-retryable delayed row a message element and no action at all", () => {
+    render(
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={{ kind: "delayed" }}
+        onRetryImagery={noop}
+      />,
+    );
+
+    const row = screen.getByTestId("map-imagery-delayed-banner");
+    expect(row.querySelector(".ride-status-card-imagery-message")).not.toBeNull();
+    expect(row.children).toHaveLength(1);
+    expect(screen.queryByTestId("retry-map-imagery-button")).toBeNull();
+  });
+
   it("shows the fallback imagery row with role=status and the expected message", () => {
     render(
       <RidingStatusCard

@@ -1997,13 +1997,18 @@ export function RidingScreen({
            * map container is unconditionally mounted (including for the
            * idle pre-ride preview), so a resumable session with stale
            * climb state must not show the cue before Resume riding is
-           * pressed. Positioned top-centre (not bottom, alongside the
-           * existing bottom-centre paused-follow toast and bottom-left
-           * attribution) so it never needs pixel-offset coordination with
-           * a transient sibling; the 64px side insets mirror
-           * .planning-map-status-overlay's own arithmetic for clearing a
-           * 48px .ride-map-control column plus its own 8px inset (see
-           * .ride-climb-cue's own CSS comment). */}
+           * pressed.
+           *
+           * Placement is entirely a CSS concern and lives with
+           * .ride-climb-cue/.ride-climb-cue-slot in src/index.css. In
+           * summary (backlog item 115): the base placement stays the
+           * top-centre one item 57 chose, and a lower-right placement —
+           * out of the route-ahead corridor, and nearer the Profile
+           * control below the map — is applied only when the map is tall
+           * enough for the cue, .map-attribution and the bottom-centre
+           * .ride-map-paused-toast below to coexist without collision.
+           * The toast must stay DOM-earlier than this cue for the rule
+           * that separates the two to match. */}
           {nav.geolocationStatus !== "idle" &&
           activeView === "map" &&
           effectiveElevationView.kind === "climb" &&

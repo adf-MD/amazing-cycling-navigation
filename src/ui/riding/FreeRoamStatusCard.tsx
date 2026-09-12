@@ -118,7 +118,9 @@ export function FreeRoamStatusCard({
               : " ride-status-card-imagery-row--pending"
           }`}
         >
-          <span>{imageryRecoveryPresentation.message}</span>
+          <span className="ride-status-card-imagery-message">
+            {imageryRecoveryPresentation.message}
+          </span>
           {/* Backlog item 108: the transient "delayed" kind is deliberately
            * non-actionable — imagery is still in flight, so a Retry would
            * only restart a request that has not failed. The three terminal
