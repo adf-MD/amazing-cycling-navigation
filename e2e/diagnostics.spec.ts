@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { readSavedRouteId, writeActiveRideStateRow } from "./support/rideStateDb.ts";
 
 interface Box {
   x: number;
@@ -381,4 +384,144 @@ test.describe("200% text at ordinary phone width", () => {
     );
     expect(regionOverflow).toBeLessThanOrEqual(1);
   });
+});
+
+/**
+ * Backlog item 117. The Status screen's `Active session` row used to render
+ * the stored route's raw identifier; it now shows the route's own name.
+ *
+ * Seeded through the repository's real seams rather than by mocking the
+ * storage boundary that caused the problem: the route is imported through
+ * the ordinary GPX flow, its id is read back from IndexedDB, and a
+ * route-backed session row is written to the same real database. Starting
+ * an actual ride would work too, but it needs a map and it hides the
+ * navigation behind the immersive shell — neither of which this file's
+ * setup has, or needs.
+ */
+const FIXTURE_GPX_PATH = fileURLToPath(
+  new URL("./fixtures/smoke-route.gpx", import.meta.url),
+);
+
+async function importRouteNamed(page: Page, routeName: string): Promise<string> {
+  const gpx = await readFile(FIXTURE_GPX_PATH, "utf-8");
+  await page.getByLabel("Import GPX file").setInputFiles({
+    name: `${routeName}.gpx`,
+    mimeType: "application/gpx+xml",
+    buffer: Buffer.from(gpx),
+  });
+  await expect(page.getByRole("button", { name: routeName, exact: true })).toBeVisible();
+  const routeId = await readSavedRouteId(page, routeName);
+  expect(routeId).not.toBeNull();
+  if (routeId === null) throw new Error("expected the imported route to have an id");
+  return routeId;
+}
+
+async function seedRouteSession(page: Page, routeName: string): Promise<string> {
+  const routeId = await importRouteNamed(page, routeName);
+  await writeActiveRideStateRow(page, {
+    id: "active",
+    routeId,
+    startedAt: "2026-01-01T08:00:00.000Z",
+    lastFix: null,
+    lastMatchedPointIndex: 0,
+    matchedDistanceFromStartMetres: 0,
+    offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+  });
+  return routeId;
+}
+
+function activeSessionValue(page: Page) {
+  return page
+    .getByText("Active session", { exact: true })
+    .locator("xpath=following-sibling::dd[1]");
+}
+
+async function openStatus(page: Page) {
+  await page.getByRole("button", { name: "Status", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Status", level: 1 })).toBeVisible();
+}
+
+test("shows an active route-backed session by name, never by its identifier", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const routeId = await seedRouteSession(page, "Evening loop");
+
+  await openStatus(page);
+
+  await expect(activeSessionValue(page)).toHaveText("Evening loop");
+  // The identifier must not appear anywhere on the screen, not merely in
+  // this row — and not transiently while the name resolves either.
+  expect(await page.locator("body").innerText()).not.toContain(routeId);
+});
+
+test("falls back honestly when the session's route has been deleted", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const routeId = await seedRouteSession(page, "Evening loop");
+  // Through the real delete flow, which deliberately does not clear the
+  // active ride state — so the dangling reference this asserts against is
+  // the one a rider can actually produce.
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Delete route" })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Evening loop", exact: true }),
+  ).toHaveCount(0);
+
+  await openStatus(page);
+
+  await expect(activeSessionValue(page)).toHaveText("Route unavailable");
+  expect(await page.locator("body").innerText()).not.toContain(routeId);
+});
+
+test.describe("long route names in the Active session row (backlog item 117)", () => {
+  // Removing the monospace treatment must not remove the wrapping a long
+  // name needs. Both an ordinary multi-word name and an unbroken compound
+  // of the kind German produces, at ordinary and 200% root text.
+  const LONG_WORDS = "A very long multi word route name that has to wrap somewhere";
+  const LONG_COMPOUND = "Donaudampfschiffahrtsgesellschaftskapitaensmuetzenhalterstrasse";
+
+  for (const [label, routeName] of [
+    ["an ordinary long name", LONG_WORDS],
+    ["an unbroken compound", LONG_COMPOUND],
+  ] as const) {
+    for (const rootTextSize of ["100%", "200%"] as const) {
+      test(`${label} stays contained and unclipped at ${rootTextSize} text`, async ({
+        page,
+      }) => {
+        await page.goto("/");
+        await seedRouteSession(page, routeName);
+        await openStatus(page);
+        await expect(activeSessionValue(page)).toHaveText(routeName);
+
+        await page.evaluate((size) => {
+          document.documentElement.style.fontSize = size;
+        }, rootTextSize);
+
+        const measured = await activeSessionValue(page).evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          return {
+            right: rect.right,
+            textRight: range.getBoundingClientRect().right,
+            selfOverflow: element.scrollWidth - element.clientWidth,
+            documentOverflow:
+              document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            text: element.textContent,
+          };
+        });
+
+        // The whole name is present — wrapped, never truncated or ellipsised.
+        expect(measured.text).toBe(routeName);
+        expect(measured.selfOverflow).toBeLessThanOrEqual(1);
+        expect(measured.textRight).toBeLessThanOrEqual(measured.right + 1);
+        expect(measured.documentOverflow).toBeLessThanOrEqual(0);
+      });
+    }
+  }
 });

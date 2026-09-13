@@ -25,19 +25,12 @@ import { useStorageHealth } from "../../storage/storageHealth.ts";
 import { isStoredRouteRideState } from "../../storage/mapping.ts";
 import { getActiveRideState } from "../../storage/rideStateRepository.ts";
 import { getProviderKey } from "../../storage/providerKeyRepository.ts";
-import type { StoredRideState } from "../../storage/db.ts";
+import { getRoute } from "../../storage/routesRepository.ts";
+import {
+  describeActiveSession,
+  type ResolvedActiveRoute,
+} from "./activeSessionSummary.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
-
-/** Resolves the stored active session to a displayable value for either
- * kind: a route ride's own route id, or "Free roam" for a session that has
- * no route id at all (backlog item 42). The field was labelled "Active
- * route" until backlog item 112 renamed it "Active session", which is what
- * this has always actually returned — a free-roam session is neither a
- * route nor "None". */
-function describeActiveRideStateSummary(rideState: StoredRideState | undefined): string {
-  if (!rideState) return "None";
-  return isStoredRouteRideState(rideState) ? rideState.routeId : "Free roam";
-}
 
 const SERVICE_WORKER_LABEL: Record<ServiceWorkerStatus, string> = {
   unsupported: "Not supported by this browser",
@@ -118,6 +111,23 @@ export function DiagnosticsScreen({
 
   const rideStateQuery = useCallback(() => getActiveRideState(), []);
   const rideState = useLiveQuery(rideStateQuery);
+
+  // Backlog item 117. The stored session carries only a routeId, so the
+  // name is resolved here rather than duplicated into ride-state
+  // persistence. A live query, not a one-shot read, so a rename in Routes
+  // updates this row by itself; the querier is keyed on the id, so changing
+  // session resubscribes. See activeSessionSummary.ts for why the result
+  // carries the id it was resolved for.
+  const activeRouteId =
+    rideState && isStoredRouteRideState(rideState) ? rideState.routeId : undefined;
+  const activeRouteQuery = useCallback(async (): Promise<
+    ResolvedActiveRoute | undefined
+  > => {
+    if (activeRouteId === undefined) return undefined;
+    const route = await getRoute(activeRouteId);
+    return { routeId: activeRouteId, name: route?.name ?? null };
+  }, [activeRouteId]);
+  const resolvedActiveRoute = useLiveQuery(activeRouteQuery);
 
   const keyQuery = useCallback(() => getProviderKey(), []);
   const key = useLiveQuery(keyQuery);
@@ -261,8 +271,8 @@ export function DiagnosticsScreen({
 
           <div className="diagnostics-definition-item">
             <dt className="diagnostics-label">Active session</dt>
-            <dd className="diagnostics-value diagnostics-value--mono">
-              {describeActiveRideStateSummary(rideState)}
+            <dd className="diagnostics-value">
+              {describeActiveSession(rideState, resolvedActiveRoute)}
             </dd>
           </div>
         </dl>

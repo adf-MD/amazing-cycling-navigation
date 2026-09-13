@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
+import { readSavedRouteId, writeActiveRideStateRow } from "./support/rideStateDb.ts";
 
 // Proves the "mobile layout baseline" requirement of CLAUDE.md backlog
 // item 25 at a representative Android phone viewport/UA/touch context
@@ -127,4 +129,55 @@ test("no horizontal overflow, sticky header, and usable touch targets across the
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
+});
+
+/**
+ * Backlog item 117 under Android emulation. The Chromium coverage lives in
+ * diagnostics.spec.ts; this is the one place that makes a
+ * "Chromium-emulated Android" claim true for the Status screen's route-name
+ * presentation rather than inheriting it. Seeded through the real GPX
+ * import plus a real IndexedDB session row — no map is built, so this test
+ * needs no local map style of its own.
+ */
+test("Status shows an active route-backed session by name, not by its identifier", async ({
+  page,
+}) => {
+  // Imported under a multi-word name, so the assertion contrasts a genuine
+  // rider-facing name against the UUID this row used to show.
+  const routeName = "Evening loop";
+  await page.goto("/");
+  await page.getByLabel("Import GPX file").setInputFiles({
+    name: `${routeName}.gpx`,
+    mimeType: "application/gpx+xml",
+    buffer: Buffer.from(await readFile(FIXTURE_GPX_PATH, "utf-8")),
+  });
+  await expect(page.getByRole("button", { name: routeName, exact: true })).toBeVisible();
+
+  const routeId = await readSavedRouteId(page, routeName);
+  expect(routeId).not.toBeNull();
+  if (routeId === null) throw new Error("expected the imported route to have an id");
+
+  await writeActiveRideStateRow(page, {
+    id: "active",
+    routeId,
+    startedAt: "2026-01-01T08:00:00.000Z",
+    lastFix: null,
+    lastMatchedPointIndex: 0,
+    matchedDistanceFromStartMetres: 0,
+    offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+  });
+
+  await page.getByRole("button", { name: "Status", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Status", level: 1 })).toBeVisible();
+
+  const sessionValue = page
+    .getByText("Active session", { exact: true })
+    .locator("xpath=following-sibling::dd[1]");
+  await expect(sessionValue).toHaveText(routeName);
+  expect(await page.locator("body").innerText()).not.toContain(routeId);
+
+  const widths = await readScrollWidths(page);
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error("expected the android-chrome project to set a viewport");
+  expect(widths.documentWidth).toBeLessThanOrEqual(viewport.width);
 });

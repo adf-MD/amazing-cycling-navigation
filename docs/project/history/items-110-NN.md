@@ -1,6 +1,6 @@
 # Completed backlog items 110–
 
-This file continues the 100– numeric range and opens at item 110. It was started when item 110 was completed: adding it to what was then `items-104-NN.md` would have taken that file to 163,015 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md), so that file was closed at item 109 and renamed [`items-104-109.md`](items-104-109.md) instead of growing unbounded. No existing entry was moved, shortened or rewritten by that split — only the filename changed, plus the inbound links that pointed at it. Stable item numbers never change regardless of which file their text lives in: item 110 held the highest number in the project when this file was opened and was nevertheless completed ahead of items 102 and 103, which remain pending. The file now holds items 110, 111, 112, 115 and 116, so its contents are not contiguous — items 111 and 112 were both completed after items 115 and 116 and are filed in numeric order regardless, since a number is an identifier and never a schedule.
+This file continues the 100– numeric range and opens at item 110. It was started when item 110 was completed: adding it to what was then `items-104-NN.md` would have taken that file to 163,015 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md), so that file was closed at item 109 and renamed [`items-104-109.md`](items-104-109.md) instead of growing unbounded. No existing entry was moved, shortened or rewritten by that split — only the filename changed, plus the inbound links that pointed at it. Stable item numbers never change regardless of which file their text lives in: item 110 held the highest number in the project when this file was opened and was nevertheless completed ahead of items 102 and 103, which remain pending. The file now holds items 110, 111, 112, 115, 116 and 117, so its contents are not contiguous — items 111 and 112 were both completed after items 115 and 116 and are filed in numeric order regardless, since a number is an identifier and never a schedule.
 
 **These are historical accounts of what shipped and why, at the time each was recorded.** Where later work has changed or superseded a detail described here, current source and tests are authoritative — but the rationale, rejected alternatives and real regressions documented here are preserved rather than edited to match the present state. See root [`CLAUDE.md`](../../../CLAUDE.md) for the required reading order before implementing anything.
 
@@ -694,3 +694,95 @@ The probe was then removed and `e2e/planning.spec.ts` proved byte-identical to i
 **What could not be proved honestly, and is not claimed.** GitHub's failure-only upload branch cannot be exercised without pushing a deliberately failing commit, which was not done. **A green CI run is not evidence that the upload step ran.** The step was instead validated structurally by parsing the workflow YAML and asserting every property of it — the step exists in `e2e` only, the condition carries both `failure()` and the step-conclusion guard, the action is SHA-pinned with a version comment, the four inputs are exact, `deploy.needs` is unchanged and no permissions widened — alongside Prettier, which does format `.github/` in this repository. `actionlint` is not installed here and was deliberately **not** fetched: introducing an unverified binary for an optional check would be a worse trade than the parse plus source review.
 
 **First real failure-path use (12 September 2026) — and it worked, discharging the limitation above.** Item 111's first deployment run (CI run `34714031877`) failed its End-to-end job, and this item's `if: failure() && steps.e2e.conclusion == 'failure'` upload fired on exactly the right condition, producing `playwright-failures-34714031877-1` (862,907 bytes) holding precisely `trace.zip`, `test-failed-1.png` and `error-context.md` for the one failed test — nothing else, and nothing from the passing job. That artefact identified the **wrongly activated control**: Playwright's retained log named the resolved locator and the dispatched coordinate `{x: 141.87, y: 553}`, and the ARIA snapshot showed which screen the click actually produced. Without it the failure read as a bare "heading not found" and the diagnosis would have been a guess between five hypotheses; with it, a real production interaction-safety defect was found and corrected under item 95. One practical limitation observed at the same time, and not a defect in this item: downloading the artefact needs an authenticated GitHub client, so an environment with no `gh` and no token gets `401` on the artefact endpoint and `403` on the job-log endpoint, and the artefact has to be supplied by hand.
+
+---
+
+<a id="item-117"></a>
+
+## Item 117 — Show the active session's route name instead of its internal identifier — done
+
+_Category: Rider-facing presentation_
+
+117. **Show the active session's route name instead of its internal identifier — done**
+     - Origin: the installed-iPhone session of 13 September 2026, during item 112's own acceptance — see [`current-status.md`](../current-status.md) for the dated report. Item 112's information architecture and its `Active session` label were accepted; this value was not. **It is a pre-existing presentation problem that acceptance uncovered, not an item 112 regression, and item 112 is not reopened.**
+     - **Confirmed current behaviour.** `describeActiveRideStateSummary` in `src/ui/diagnostics/DiagnosticsScreen.tsx` returns `rideState.routeId` verbatim for a route-backed session, so Status renders the opaque internal identifier. `StoredRouteRideState` (`src/storage/db.ts`) stores only `routeId` and never a route name.
+     - Required outcome — for a route-backed active session, the visible `Active session` value must show the route's **human-readable name**, and:
+       - `None` (no session) and `Free roam` keep their existing values;
+       - an ordinary route-backed session shows the **route name alone**, with no `Route:` prefix unless an existing UI convention discovered in source makes one necessary;
+       - the row must **never** expose the full opaque identifier, temporarily or permanently, including while a name is being resolved;
+       - duplicate route names are acceptable as visible presentation, since route identity stays internal — **do not append an identifier to disambiguate them**.
+     - **Missing-route fallback.** A stale or deleted route reference must not crash Status and must not fall back to the identifier. Use concise, honest wording consistent with the repository's existing terminology. **Do not silently show `None`** — a route-backed session still exists. If name resolution has an observable loading phase, use a stable non-identifier placeholder rather than flickering the raw id.
+     - **Constraints.** Prefer the existing reactive storage/query mechanisms. **No schema migration**, and do not duplicate a route name into active-session persistence merely to render this row if the existing route record can be resolved safely. No network request, storage write, routing change or session-state mutation belongs here. Preserve the raw route identity in application state, and in any existing copied diagnostic report that already contains it — but do not add it to that report solely for this slice.
+     - Evidence required: a route-backed session showing its name; the identifier absent from the rendered screen; `None` and `Free roam` unchanged; a missing route producing the fallback without crashing; the connection-test, status-grid and copied-report behaviour intact; no storage write introduced by the display lookup; and browser evidence under Chromium and the existing Android-emulation path, seeded through the repository's normal test seams rather than by mocking the storage boundary that caused the problem.
+     - Physical acceptance on the installed iPhone Home Screen PWA is required for whatever ships. Physical Android verification is separately outstanding, as for most recent items.
+
+### Implementation account (13 September 2026, `0.4.35`)
+
+**Confirmed cause, from source rather than inference.** `StoredRouteRideState` (`src/storage/db.ts`) persists only a `routeId` and never a route name, and `describeActiveRideStateSummary` returned that id verbatim — so the row showed the identifier because nothing ever resolved it, not because a name was unavailable. `getRoute(id)` already existed in `src/storage/routesRepository.ts`, so the fix needed **no new storage API, no schema change, no write, no name duplicated into session persistence and no new dependency**.
+
+**What shipped.** A second live query beside the two `DiagnosticsScreen` already had, keyed on the active route id:
+
+```ts
+const activeRouteId =
+  rideState && isStoredRouteRideState(rideState) ? rideState.routeId : undefined;
+const activeRouteQuery = useCallback(async () => {
+  if (activeRouteId === undefined) return undefined;
+  const route = await getRoute(activeRouteId);
+  return { routeId: activeRouteId, name: route?.name ?? null };
+}, [activeRouteId]);
+```
+
+and a pure `describeActiveSession(rideState, resolvedRoute)` in the new `src/ui/diagnostics/activeSessionSummary.ts`.
+
+**Why the result carries the id it was resolved for.** `useLiveQuery` resubscribes when its querier's identity changes but **does not reset the value it already holds**, so between one session being replaced and the new lookup resolving, the hook still returns the _previous_ route's result. Tagging the result and comparing it against the current session's id is what turns that into a placeholder instead of the wrong route's name. It also removes the hook's usual loading-versus-absent ambiguity: because the querier always produces an object once a route id exists, `undefined` here means **only** "still resolving", and `name: null` means "looked up, no such route".
+
+| State                                 | Rendered              |
+| ------------------------------------- | --------------------- |
+| no session                            | `None`                |
+| free roam                             | `Free roam`           |
+| unrecognised stored `kind`            | `Session unavailable` |
+| resolved, id matches, name present    | the trimmed name      |
+| resolved, id matches, absent or blank | `Route unavailable`   |
+| resolving, or a superseded result     | `Checking…`           |
+
+**`Route unavailable`, not the longer existing phrase.** A dangling `routeId` is genuinely reachable — no delete path calls `clearActiveRideState`, so deleting a route leaves the session pointing at nothing. `RidingLauncher.tsx` and `App.tsx` already word that condition as "no longer in your library", but that is card prose; this screen's own register is short sentence-case noun phrases (`None`, `Unavailable`, `Not applicable yet`), and the value sits in a definition grid. `Checking…` is likewise this screen's own existing word, from the storage estimate. A blank-name guard is included because storage never validates `name` while the screen has an explicit "never blank" contract.
+
+**A misstatement corrected rather than merely noted.** `isStoredRouteRideState` and `isStoredFreeRoamRideState` are **both** false for a stored `kind` this build does not recognise, and the old two-way branch therefore called such a session `Free roam`. `getActiveRideState` is a raw `db.rideState.get` with no parsing, so a row written by a newer build genuinely reaches this screen — there is no invariant making it unreachable. It now reads `Session unavailable`, which is honest, and is tested.
+
+**The monospace treatment is gone from this row.** `.diagnostics-value--mono` documented itself as reserved for "the two build-ID/route-UUID-shaped values (Build, Active route)"; with the identifier gone, proportional type is right for a name and `Build` is the only remaining mono value, so the comment was corrected too. The wrapping a long name needs does **not** come from that class — it comes from `.diagnostics-value`'s `overflow-wrap: anywhere` and `.diagnostics-definition-item`'s `min-width: 0`, both untouched — but that was **measured rather than assumed**: four browser cases cover an ordinary long multi-word name and an unbroken 62-character compound of the kind German produces, at 390px portrait and at both ordinary and 200% root text, asserting the full name is present, the value does not overflow its own box, its painted text stays inside it, and the document gains no horizontal overflow.
+
+**What is deliberately untouched.** The copied diagnostic report contains **no route id** — `formatDiagnosticsReportHeader` emits only `App version` and `Build`, and `formatConnectionTestReport` never receives ride state — so nothing was added to it, per the item's own instruction not to introduce the identifier there. The raw id remains in application state. No network request, storage write, routing change or session-state mutation was introduced.
+
+#### Evidence
+
+**Fail-first.** Five component tests were written and run against the unchanged production code first, each failing for its intended reason. The existing fixture at `DiagnosticsScreen.test.tsx` that asserted `route-42` had **never had a matching `db.routes` row**, so it had always been the deleted-route case dressed up as an identifier assertion; it is now the fallback test. That file previously had no saved-route seeding and no free-roam test at all.
+
+**Negative controls.**
+
+| Control                                     | Result                                                             |
+| ------------------------------------------- | ------------------------------------------------------------------ |
+| Render the route identifier again           | 8 tests fail                                                       |
+| Resolve the wrong route (`listRoutes()[0]`) | 1 test fails — **but only after the fixture was fixed**; see below |
+| Return `None` for a missing route           | 3 tests fail                                                       |
+| Drop the `routeId`-match guard              | 1 test fails                                                       |
+| Write to storage while displaying           | 3 tests fail                                                       |
+
+**One control initially did not discriminate, and that is worth recording.** The wrong-route control passed 44/44 at first: the decoy route had an _earlier_ `createdAt` than the session's route, and `listRoutes()` orders by `createdAt` descending, so `listRoutes()[0]` happened to return the correct route anyway. The decoy now sorts first, and the control fails as it should. A second route that cannot be selected by accident is what makes "resolves _this session's_ route" a real assertion rather than "resolves _a_ route".
+
+**The sixth listed control is not applicable**, and is recorded as such rather than substituted: it asked for removing preservation of the identifier from an existing copied diagnostic report, and no route id has ever been in that report.
+
+**The superseded-result guard is tested as a pure function**, not by racing a component re-render — `describeActiveSession` is given a resolved result whose `routeId` does not match the current session's, and must return the placeholder. **The rename-reactivity test passes by virtue of Dexie's `liveQuery` rather than by anything this item wrote**; it is kept as a genuine regression guard, since a one-shot read would break it, and is labelled here so it is not mistaken for evidence of new machinery.
+
+**Browser evidence** seeds through the repository's real seams rather than mocking the storage boundary that caused the problem: the route is imported through the ordinary GPX flow, its id is read back from IndexedDB with `readSavedRouteId`, and a route-backed session row is written to the same real database with `writeActiveRideStateRow`. `e2e/diagnostics.spec.ts` covers Chromium — the name shown, the identifier absent from the whole rendered page, the deleted-route fallback through the **real** delete flow, and the four long-name containment cases — and `e2e/androidMobileLayout.spec.ts` covers the Chromium-emulated Android path. Starting an actual ride was deliberately avoided: it needs a map and hides the navigation behind the immersive shell.
+
+**Verification.** `corepack npm run lint`, `corepack npx tsc -b --noEmit`, the full `corepack npm test`, and `corepack npm run build` all clean, with the full Playwright suite run in the pinned CI container including the `webkit-smoke` project. `corepack npm run format:check` ran last. Local npm resolves to the pinned `11.16.0`; local Node is `v24.13.0` against `.nvmrc`'s `24.18.0` and the container's own Node is `v24.17.0` — CI enforces both and is authoritative.
+
+**Limitations, stated plainly.** Automated evidence only. **No installed-iPhone and no physical-Android verification is claimed**; the checklist below has not been run. The long-name evidence is browser-text scaling, never iOS Dynamic Type acceptance, and the German-compound case is a representative unbroken string, not a localisation result — item 113 still owns localisation. Duplicate route names render identically by design, since route identity stays internal and the item forbids disambiguating them with an identifier.
+
+#### Installed-iPhone acceptance checklist — not yet run
+
+Stationary, portrait, on the installed Home Screen PWA, with `Status` open:
+
+- with no ride in progress, `Active session` reads `None`;
+- during free roam, it reads `Free roam`;
+- with a route-backed session, it reads that route's own name, and no long opaque identifier appears anywhere on the screen.

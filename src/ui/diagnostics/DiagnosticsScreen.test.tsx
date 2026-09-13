@@ -5,6 +5,7 @@ import pkg from "../../../package.json" with { type: "json" };
 import { DiagnosticsScreen } from "./DiagnosticsScreen.tsx";
 import { db } from "../../storage/db.ts";
 import { setActiveRideState } from "../../storage/rideStateRepository.ts";
+import { renameRoute } from "../../storage/routesRepository.ts";
 import {
   clearRoutingDiagnostics,
   describeRoutingAttempt,
@@ -70,6 +71,40 @@ function buildAttempt(
     fetchInvoked: true,
     fetchReturnedPromise: true,
     ...overrides,
+  };
+}
+
+const SESSION_ROUTE_ID = "3f9c2a10-9b7e-4c21-8f6d-5a1e0c7b4d83";
+
+function buildSessionRoute(overrides: Partial<PlannedRoute> = {}): PlannedRoute {
+  return {
+    id: SESSION_ROUTE_ID,
+    name: "Evening loop",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    points: [],
+    manoeuvres: [],
+    distanceMetres: 0,
+    ascentMetres: null,
+    descentMetres: null,
+    warnings: [],
+    source: { kind: "gpx-import" },
+    ...overrides,
+  };
+}
+
+function buildRouteSession(routeId = SESSION_ROUTE_ID) {
+  return {
+    id: "active" as const,
+    routeId,
+    startedAt: "2026-01-01T08:00:00.000Z",
+    lastFix: {
+      coordinate: [-1.5, 53.8] as [number, number],
+      accuracyMetres: 6,
+      timestampMs: 1000,
+    },
+    lastMatchedPointIndex: 0,
+    matchedDistanceFromStartMetres: 0,
+    offRouteMachineState: { level: "on-route" as const, candidateLevel: null, streak: 0 },
   };
 }
 
@@ -184,7 +219,7 @@ describe("DiagnosticsScreen", () => {
     });
   });
 
-  it("shows the last known fix accuracy/age and active route id from a persisted ride state", async () => {
+  it("shows the last known fix accuracy/age from a persisted ride state, and the route fallback when its route is gone", async () => {
     const fixedClock: Clock = { now: () => 60_000 };
     await setActiveRideState({
       id: "active",
@@ -203,7 +238,105 @@ describe("DiagnosticsScreen", () => {
       expect(getDetailValue("Last known fix accuracy")).toHaveTextContent("±9 m");
     });
     expect(getDetailValue("Last known fix age")).toHaveTextContent("30s ago");
-    expect(getDetailValue("Active session")).toHaveTextContent("route-42");
+
+    // This fixture has never had a matching db.routes row, so it is the
+    // deleted/stale-reference case. Backlog item 117: it must not fall back
+    // to the identifier, and must not silently read "None" — a route-backed
+    // session still exists.
+    await waitFor(() => {
+      expect(getDetailValue("Active session")).toHaveTextContent("Route unavailable");
+    });
+    expect(document.body.textContent).not.toContain("route-42");
+  });
+
+  describe("Active session (backlog item 117)", () => {
+    it("shows the route's own name, never its internal identifier", async () => {
+      // A second, decoy route that sorts FIRST under listRoutes()' own
+      // createdAt-descending order, so an implementation resolving "some
+      // route" rather than "this session's route" cannot accidentally pass.
+      await db.routes.put(
+        buildSessionRoute({
+          id: "0f0e0d0c-0b0a-4908-8706-050403020100",
+          name: "Someone else's route",
+          createdAt: "2027-01-01T00:00:00.000Z",
+        }),
+      );
+      await db.routes.put(buildSessionRoute());
+      await setActiveRideState(buildRouteSession());
+
+      render(<DiagnosticsScreen />);
+
+      await waitFor(() => {
+        expect(getDetailValue("Active session")).toHaveTextContent("Evening loop");
+      });
+      expect(getDetailValue("Active session")).not.toHaveTextContent(
+        "Someone else's route",
+      );
+      expect(document.body.textContent).not.toContain(SESSION_ROUTE_ID);
+    });
+
+    it("shows Free roam for a free-roam session", async () => {
+      await setActiveRideState({
+        id: "active",
+        kind: "free-roam",
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: null,
+      });
+
+      render(<DiagnosticsScreen />);
+
+      await waitFor(() => {
+        expect(getDetailValue("Active session")).toHaveTextContent("Free roam");
+      });
+    });
+
+    it("does not claim a session of an unrecognised kind is free roam", async () => {
+      // getActiveRideState is a raw db.rideState.get with no parsing, so a
+      // row written by a newer build genuinely reaches this screen.
+      await db.rideState.put({
+        ...buildRouteSession(),
+        kind: "some-future-kind",
+      });
+
+      render(<DiagnosticsScreen />);
+
+      await waitFor(() => {
+        expect(getDetailValue("Active session")).toHaveTextContent("Session unavailable");
+      });
+      expect(getDetailValue("Active session")).not.toHaveTextContent("Free roam");
+      expect(document.body.textContent).not.toContain(SESSION_ROUTE_ID);
+    });
+
+    it("follows a rename without leaving the previous name on screen", async () => {
+      await db.routes.put(buildSessionRoute());
+      await setActiveRideState(buildRouteSession());
+
+      render(<DiagnosticsScreen />);
+      await waitFor(() => {
+        expect(getDetailValue("Active session")).toHaveTextContent("Evening loop");
+      });
+
+      await renameRoute(SESSION_ROUTE_ID, "Morning loop");
+
+      await waitFor(() => {
+        expect(getDetailValue("Active session")).toHaveTextContent("Morning loop");
+      });
+    });
+
+    it("resolves the name without writing anything back to storage", async () => {
+      await db.routes.put(buildSessionRoute());
+      await setActiveRideState(buildRouteSession());
+      const routesPut = vi.spyOn(db.routes, "put");
+      const rideStatePut = vi.spyOn(db.rideState, "put");
+
+      render(<DiagnosticsScreen />);
+
+      await waitFor(() => {
+        expect(getDetailValue("Active session")).toHaveTextContent("Evening loop");
+      });
+      expect(routesPut).not.toHaveBeenCalled();
+      expect(rideStatePut).not.toHaveBeenCalled();
+    });
   });
 
   it("shows no routing attempts recorded this session by default", () => {

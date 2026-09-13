@@ -3352,9 +3352,13 @@ button:focus-visible {
   overflow-wrap: anywhere;
 }
 
-/* Reserved for the two build-ID/route-UUID-shaped values on this screen
- * (Build, Active route) — not a general-purpose text treatment. The
- * app's first monospace font-family use. */
+/* Reserved for the one build-ID-shaped value on this screen (Build) — not
+ * a general-purpose text treatment. The app's first monospace font-family
+ * use. Active session carried this too until backlog item 117 replaced its
+ * raw route identifier with the route's own name: proportional type is
+ * right for a human-readable name, and the wrapping that long names need
+ * already comes from .diagnostics-value's overflow-wrap and
+ * .diagnostics-definition-item's min-width, not from this class. */
 .diagnostics-value--mono {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   font-size: 0.9rem;
