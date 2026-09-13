@@ -423,15 +423,15 @@ The last two close the loop: the 27px is precisely what the demotion removes, an
 
 **Limitations, stated plainly.** This was written before any device evidence existed; installed-iPhone acceptance has since been recorded below, and **no physical-Android verification is claimed**. The 200%-root-text measurements are browser-text evidence, never iOS Dynamic Type acceptance — ACN has no Dynamic Type opt-in. The WebKit evidence is desktop WebKit in a container, not installed-iPhone Safari. `docs/project/current-status.md`'s dated "Diagnostics and Settings: layout, wrapping, disclosures and touch targets are satisfactory" entry predates this restructure and is annotated there rather than rewritten.
 
-#### Installed-iPhone acceptance (13 September 2026): broad acceptance, with one clause outstanding
+#### Installed-iPhone acceptance (13 September 2026): complete
 
 The user exercised this presentation on the installed iPhone Home Screen PWA in portrait and accepted the intended changes broadly — the renamed `Status` destination and screen, and Settings' `Preferences`/`Explanations` grouping over its four panels. **No app version or build was read from Status on the device**, so nothing here asserts which build was under test; the deployed context (`0.4.34`, commit `64ae976`) is recorded separately. The full ledger, including exactly what the session does and does not assert, is [`../current-status.md`](../current-status.md), which stays authoritative.
 
 The same session rejected one value this item did **not** introduce: for a route-backed session the `Active session` row exposed an opaque internal identifier. That is filed as item 117 — a pre-existing presentation problem uncovered by this acceptance, not a regression here, and item 112 is not reopened. A separate bottom-overscroll observation from the same session is recorded in the ledger as non-actionable, with no item allocated.
 
-**Not accepted, and still outstanding**, stationary, portrait, default text:
+**The one outstanding clause was closed later the same day**, in a second installed-iPhone report: the user removed the OpenRouteService key on the device and confirmed that `Test routing connection` is disabled without a key, with everything else in that checklist positive. **Item 112's installed-iPhone acceptance is therefore complete**, and it no longer appears on the open checklist. As with the first session, no app version or build was read from the device; the deployed context at the time (`0.4.35`, commit `e52e9a8`) is recorded separately in the ledger.
 
-- with no key saved, the missing-key hint names Settings and `Test routing connection` is visibly disabled — the session's device had a key configured, so this could not be exercised.
+That second report also found the **Delete key** confirmation reading as visually separate from the OpenRouteService card. That is **item 118**, and it is emphatically **not** a regression here: `<ConfirmDialog>` was the last child of `<section className="screen">`, outside every panel, in this item's parent `2eca824` (the OpenRouteService `.panel` closes at line 388, the dialog opens at line 475) exactly as in this item's own `64ae976` (403 and 498). This item wrapped the panels in `.settings-group` sections and demoted their headings; it never changed the visual containment. Item 112 is not reopened.
 
 **Accepted in that session**, recorded here for completeness:
 
@@ -777,12 +777,15 @@ and a pure `describeActiveSession(rideState, resolvedRoute)` in the new `src/ui/
 
 **Verification.** `corepack npm run lint`, `corepack npx tsc -b --noEmit`, the full `corepack npm test`, and `corepack npm run build` all clean, with the full Playwright suite run in the pinned CI container including the `webkit-smoke` project. `corepack npm run format:check` ran last. Local npm resolves to the pinned `11.16.0`; local Node is `v24.13.0` against `.nvmrc`'s `24.18.0` and the container's own Node is `v24.17.0` — CI enforces both and is authoritative.
 
-**Limitations, stated plainly.** Automated evidence only. **No installed-iPhone and no physical-Android verification is claimed**; the checklist below has not been run. The long-name evidence is browser-text scaling, never iOS Dynamic Type acceptance, and the German-compound case is a representative unbroken string, not a localisation result — item 113 still owns localisation. Duplicate route names render identically by design, since route identity stays internal and the item forbids disambiguating them with an identifier.
+**Limitations, stated plainly.** This was written before any device evidence existed; installed-iPhone acceptance has since been recorded below, and **no physical-Android verification is claimed**. The long-name evidence is browser-text scaling, never iOS Dynamic Type acceptance, and the German-compound case is a representative unbroken string, not a localisation result — item 113 still owns localisation. Duplicate route names render identically by design, since route identity stays internal and the item forbids disambiguating them with an identifier.
 
-#### Installed-iPhone acceptance checklist — not yet run
+#### Installed-iPhone acceptance (13 September 2026): complete, at product level
 
-Stationary, portrait, on the installed Home Screen PWA, with `Status` open:
+Stationary, portrait, on the installed Home Screen PWA, with `Status` open, all four checks were reported positive:
 
 - with no ride in progress, `Active session` reads `None`;
 - during free roam, it reads `Free roam`;
-- with a route-backed session, it reads that route's own name, and no long opaque identifier appears anywhere on the screen.
+- with a route-backed session, it reads that route's own name, and no long opaque identifier appears anywhere on the screen;
+- a long route name wraps without clipping or horizontal scrolling.
+
+**No app version or build was read from Status on the device**, so nothing here asserts which build was under test; the deployed context (`0.4.35`, commit `e52e9a8`) is recorded separately. This is **broad product-level acceptance** of the intended presentation, never a hand-recreation of every automated branch. In particular it does **not** assert the deleted-route `Route unavailable` fallback, the unrecognised-stored-kind `Session unavailable` fallback, or the resolution-tagging that stops a previous route's name rendering briefly after a session change — the automated evidence for those stands unchanged above and is not relabelled as physical. No VoiceOver audit, no iOS Dynamic Type result and no physical-Android result are claimed. The ledger, [`../current-status.md`](../current-status.md), stays authoritative.

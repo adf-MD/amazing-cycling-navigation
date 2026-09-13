@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence. Items 87–92 were added by the [release-readiness audit](release-readiness-audit.md) (item 86); items 87–92 have since been completed. Items 107–113 were added by the installed-iPhone field test of 10 September 2026 (see [current-status.md](current-status.md) for the dated evidence) and are all scheduled ahead of items 102 and 103, which keep their numbers; the authoritative execution order lives in the root [`CLAUDE.md`](../../CLAUDE.md)'s queue index and is deliberately not duplicated here. Items 107, 108, 109, 110, 111 and 112 of that group have since been completed and their full specifications have moved to [`history/`](history/README.md), so only item 113 remains below. Item 114 was added on 11 September 2026 from item 109's own Chromium verification work rather than from that field test, and is likewise scheduled ahead of items 102 and 103. Item 117 was added on 13 September 2026 from the installed-iPhone session that accepted item 112, which rejected the opaque route identifier that session's `Active session` row exposed, and has since been completed and moved to [`history/`](history/README.md).
+Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence. Items 87–92 were added by the [release-readiness audit](release-readiness-audit.md) (item 86); items 87–92 have since been completed. Items 107–113 were added by the installed-iPhone field test of 10 September 2026 (see [current-status.md](current-status.md) for the dated evidence) and are all scheduled ahead of items 102 and 103, which keep their numbers; the authoritative execution order lives in the root [`CLAUDE.md`](../../CLAUDE.md)'s queue index and is deliberately not duplicated here. Items 107, 108, 109, 110, 111 and 112 of that group have since been completed and their full specifications have moved to [`history/`](history/README.md), so only item 113 remains below. Item 114 was added on 11 September 2026 from item 109's own Chromium verification work rather than from that field test, and is likewise scheduled ahead of items 102 and 103. Item 117 was added on 13 September 2026 from the installed-iPhone session that accepted item 112, which rejected the opaque route identifier that session's `Active session` row exposed, and has since been completed and moved to [`history/`](history/README.md). Item 118 was added on 13 September 2026 from a second installed-iPhone report the same day, and item 119 from the repository investigation that established item 118's ownership; both are scheduled ahead of items 102 and 103.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Entries through item 93 reproduce their original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this). Items 94 and later are new post-0.4.0 specifications authored directly into this file, following the same structure and conventions.
 
@@ -228,3 +228,58 @@ _Category: Interface and accessibility consistency_
        - treating unsupported iOS Larger Text as the acceptance mechanism.
      - Evidence required when this is implemented: **fail-first browser geometry at 200%**, demonstrating the overlap before the correction and its absence after, plus **ordinary-size compatibility controls** proving the 390 px portrait presentation is unchanged or demonstrably equivalent.
      - Physical acceptance on the installed iPhone Home Screen PWA is required for whatever ships. Physical Android verification is separately outstanding, as for most recent items.
+
+---
+
+<a id="item-118"></a>
+
+## Item 118 — Keep OpenRouteService key-deletion confirmation inside its Settings card
+
+_Category: Interface and accessibility consistency_
+
+118. **Keep OpenRouteService key-deletion confirmation inside its Settings card**
+     - Origin: the second installed-iPhone report of 13 September 2026, during which item 117 was accepted and item 112's residual missing-key check was closed. See [`current-status.md`](current-status.md) for the dated evidence.
+     - **Observed:** activating **Delete key** produces a confirmation that appears visually separate from the OpenRouteService card, rather than reading as part of it.
+     - **This is not an item 112 regression, and item 112 is not reopened.** Ownership was established from source across three commits before a number was allocated. `<ConfirmDialog>` is the last child of `<section className="screen">` — outside every panel — in item 112's parent `2eca824` (the OpenRouteService `.panel` closes at line 388, the dialog opens at line 475), in item 112's own `64ae976` (403 and 498) and in current `e52e9a8`, where `git diff 64ae976 e52e9a8 -- src/ui/settings/SettingsScreen.tsx` is empty. Item 112 wrapped the four panels in two `.settings-group` sections and demoted their headings to `h3`; **it never changed the visual containment**, which was equally absent before and after. Acceptance merely exposed a pre-existing defect. Item 112's own record is [`history/items-110-NN.md#item-112`](history/items-110-NN.md#item-112).
+     - Required outcome — the eventual implementation must ensure that:
+       - **Delete key** remains inside the OpenRouteService card;
+       - activating it **expands that same card** to reveal the confirmation directly beneath the action that opened it;
+       - the confirmation **never appears as a separate peer card or a separate-looking panel**;
+       - nothing is deleted without explicit confirmation;
+       - **Cancel** closes the confirmation, preserves the stored key, and returns focus to **Delete key**;
+       - **Confirm** deletes the key and updates **the same card** to its no-key state;
+       - existing `alertdialog` semantics, accessible naming, keyboard behaviour, Escape behaviour, focus management, storage behaviour and secret-handling contracts remain intact;
+       - the Settings hierarchy introduced by item 112 is **not disturbed**;
+       - no navigation plumbing is added and the Status/Settings architecture is unaltered;
+       - **no deliberate scrolling** is introduced when the confirmation is already visible, while any reveal genuinely needed when it is obscured is preserved.
+     - At 390 px portrait, at **both** ordinary and 200% browser-root text, the result must retain complete confirmation wording, full non-overlapping buttons, at least 44 × 44 px actionable targets, no horizontal document overflow, no clipping or truncation, and a clear relationship between the destructive action and its confirmation. It must also work with the software keyboard visible where applicable.
+     - Explicitly rejected directions, none of which is an acceptable correction:
+       - nesting a second `.panel` inside the card;
+       - duplicating the card background to simulate containment;
+       - hiding borders with fragile overlap;
+       - absolutely positioning the confirmation;
+       - solving containment by class assertion alone rather than by document flow.
+     - Evidence required when this is implemented: **fail-first coverage against the current parent** proving the user-facing defect, kept separate from compatibility guards; role- and relationship-based assertions rather than tests tied only to class names; browser proof that the card **grows naturally** to contain the confirmation; and negative controls covering a restored peer card, a second independent panel treatment inside the card, bypassed confirmation, a destructive Cancel, an unrestored focus, a Confirm that does not remove the key, and a regressed 200%-text containment.
+     - **This is automated browser-text scaling, not iOS Dynamic Type or iOS Larger Text.** ACN has no Dynamic Type opt-in, so the iOS Larger Text setting does not resize this application at all and cannot serve as the acceptance mechanism.
+     - Physical acceptance on the installed iPhone Home Screen PWA is required for whatever ships. Physical Android verification is separately outstanding, as for most recent items.
+
+---
+
+<a id="item-119"></a>
+
+## Item 119 — Unique confirmation-dialog titles and truthful overlapping-dialog semantics
+
+_Category: Interface and accessibility consistency_
+
+119. **Unique confirmation-dialog titles and truthful overlapping-dialog semantics**
+     - Origin: the repository investigation that established item 118's ownership, 13 September 2026 — **not** an installed-iPhone observation, and **not** field evidence. See [`current-status.md`](current-status.md) for the dated record.
+     - **This is a confirmed accessibility defect, reproduced in this repository, not a monitored reliability observation.** `ui/shared/ConfirmDialog.tsx` hardcodes `aria-labelledby="confirm-dialog-title"` on a fixed element id. `App.tsx` renders the page-level ride-switch `ConfirmDialog` above and outside the screen switch, and navigating away from Routes deliberately does not clear `pendingRideSwitch` — the documented fallback so a mid-prompt navigation does not make the prompt vanish silently. Arming a switch from a route card, navigating to Settings and opening **Delete key** therefore puts **two** elements carrying that id in one document. Measured in a real render: two `alertdialog`s, two nodes with that id reading `Switch to "Route B"?` and `Delete OpenRouteService key`, and **both dialogs resolving their accessible name to `Switch to "Route B"?`** — so the key-deletion confirmation is announced as the ride-switch prompt.
+     - **It is not an item 118 regression, and item 118 is not reopened.** The same hardcoded id and the same reachable path exist before item 118; item 118 changes where the Settings confirmation renders, not how it is named.
+     - Scope approved for the eventual implementation:
+       - **unique dialog-title ids**, so no two simultaneously rendered confirmations can share one, and each dialog resolves to its own accessible name;
+       - **truthful modal semantics** — `ConfirmDialog` asserts `aria-modal="true"` while nothing behind it is inert and the primary navigation stays live, which the two in-card precedents (`RouteListItem.tsx`, `RouteTagManager.tsx`) deliberately omit;
+       - the **overlapping-dialog lifecycle** — whether two confirmations should ever be open at once, and if not, which one yields.
+     - **The implementation must survey every `ConfirmDialog` call site before choosing a correction**, since a change here reaches riding-critical dialogs: `App.tsx`, `PlanningScreen.tsx`, `RidingScreen.tsx` (two), `FreeRoamScreen.tsx` and `RidingLauncher.tsx`, plus Settings. No particular mechanism — `useId()`, a required prop, a focus trap, or a single-dialog policy — is prescribed here, deliberately.
+     - Explicitly rejected directions: removing the documented page-level fallback that keeps a mid-navigation prompt visible; suppressing one dialog merely to make the duplicate id unreachable without addressing naming; and asserting modality that the implementation does not actually enforce.
+     - Evidence required when this is implemented: a **fail-first test rendering the real overlapping path** and asserting each dialog's own accessible name, plus compatibility guards proving the six existing call sites are unchanged.
+     - Physical acceptance on the installed iPhone Home Screen PWA is required for whatever ships, including a VoiceOver check that each confirmation announces its own title. Physical Android verification is separately outstanding, as for most recent items.
