@@ -781,6 +781,23 @@ button:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* Backlog item 118's Settings key-deletion confirmation, which sits inside
+ * the OpenRouteService card and so titles itself an h4 beneath that card's
+ * own h3. Deliberately a separate rule rather than widening the selector
+ * above to :is(h2, h3, h4): RouteTagManager renders an h3 in here and has
+ * never been styled by it, so widening would silently restyle the Routes
+ * screen. Both declarations are load-bearing. The UA margin for h4 is
+ * 1.33em — 42.6px above the title at a 32px root, inside a box whose own
+ * padding is 24px there. And .route-delete-confirm is a flex item of the
+ * panel's .stack, so without overflow-wrap its min-width: auto lets the
+ * unbreakable word "OpenRouteService" push the panel's min-content width
+ * past the viewport — the same mechanism item 112 measured as 27px of
+ * document overflow. */
+.route-delete-confirm h4 {
+  margin: 0 0 0.25rem;
+  overflow-wrap: anywhere;
+}
+
 /* Reserves breathing room below the global tag manager's own confirmation
  * when it is scrolled into view (backlog item 106), so the end-aligned
  * scrollIntoView() doesn't pin its actions flush against the visible

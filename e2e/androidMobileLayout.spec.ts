@@ -181,3 +181,54 @@ test("Status shows an active route-backed session by name, not by its identifier
   if (!viewport) throw new Error("expected the android-chrome project to set a viewport");
   expect(widths.documentWidth).toBeLessThanOrEqual(viewport.width);
 });
+
+// Backlog item 118, at the Pixel-7 preset and at 200% root text — the
+// enlarged-text condition this project treats as its accessibility
+// evidence, since ACN has no iOS Dynamic Type opt-in. Chromium emulation,
+// never a substitute for a physical Android device.
+test("the Settings key-deletion confirmation stays inside its card at 200% text", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByLabel("OpenRouteService API key").fill("dummy-e2e-key");
+  await page.getByRole("button", { name: "Save on this device" }).click();
+  await expect(
+    page.getByText(/key saved on this device, not yet verified/i),
+  ).toBeVisible();
+
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+  await page.getByRole("button", { name: "Delete key" }).click();
+
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+  expect(
+    await dialog.evaluate((element) =>
+      element.closest("section[aria-labelledby]")?.getAttribute("aria-labelledby"),
+    ),
+  ).toBe("ors-settings-heading");
+
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error("expected the android-chrome project to set a viewport");
+  const widths = await readScrollWidths(page);
+  expect(widths.documentWidth).toBeLessThanOrEqual(viewport.width);
+  expect(widths.bodyWidth).toBeLessThanOrEqual(viewport.width);
+
+  const cardBox = await page
+    .getByRole("region", { name: "OpenRouteService" })
+    .boundingBox();
+  const dialogBox = await dialog.boundingBox();
+  if (!cardBox || !dialogBox) throw new Error("expected boxes for the card and dialog");
+  expect(dialogBox.x).toBeGreaterThanOrEqual(cardBox.x);
+  expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+
+  for (const name of ["Cancel", "Delete"]) {
+    const box = await dialog.getByRole("button", { name, exact: true }).boundingBox();
+    if (!box) throw new Error(`expected a bounding box for ${name}`);
+    expect(box.height).toBeGreaterThanOrEqual(TOUCH_TARGET_MIN_PX);
+    expect(box.width).toBeGreaterThanOrEqual(TOUCH_TARGET_MIN_PX);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+  }
+});

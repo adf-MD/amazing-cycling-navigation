@@ -122,4 +122,38 @@ describe("ConfirmDialog", () => {
     await user.click(cancelButton);
     expect(onCancel).not.toHaveBeenCalled();
   });
+
+  it("titles the dialog at level 2 by default, which is what every existing caller renders", () => {
+    render(
+      <ConfirmDialog
+        open
+        title="Delete route"
+        message="Are you sure?"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Delete route", level: 2 }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the title at the requested level, still naming the dialog (backlog item 118)", () => {
+    render(
+      <ConfirmDialog
+        open
+        headingLevel={4}
+        title="Delete route"
+        message="Are you sure?"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Delete route", level: 4 }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toHaveAccessibleName("Delete route");
+  });
 });

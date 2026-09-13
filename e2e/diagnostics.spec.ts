@@ -207,6 +207,43 @@ test("labels the session row Active session and points a missing key at Settings
   ).toBeDisabled();
 });
 
+// Backlog item 118 moved the key-deletion confirmation inside the
+// OpenRouteService card. This crosses the two screens to prove the storage
+// seam is genuinely unchanged by that move: a key deleted through the real
+// Settings interaction still disables this test and restores its hint.
+// The button is deliberately never clicked — see this file's header note.
+test("a key deleted through the real Settings confirmation disables the routing test again", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByLabel("OpenRouteService API key").fill("dummy-e2e-key");
+  await page.getByRole("button", { name: "Save on this device" }).click();
+  await expect(
+    page.getByText(/key saved on this device, not yet verified/i),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Status", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Test routing connection" }),
+  ).toBeEnabled();
+  await expect(page.getByText(/No OpenRouteService key configured/)).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Delete key" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByText("No key configured")).toBeVisible();
+
+  await page.getByRole("button", { name: "Status", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Test routing connection" }),
+  ).toBeDisabled();
+  await expect(page.getByText(/No OpenRouteService key configured/)).toContainText(
+    "Settings",
+  );
+});
+
 test("explains HTTP statuses in a second, independently operable disclosure", async ({
   page,
 }) => {

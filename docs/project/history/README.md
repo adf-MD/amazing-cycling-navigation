@@ -4,7 +4,7 @@ The complete shipped implementation record, split into bounded files. See [`../R
 
 ## Completed backlog items
 
-Twelve files, each covering a contiguous range of item numbers in ascending order (pending/monitored/ledger items originally interleaved among these have moved to [`../backlog.md`](../backlog.md) or [`../current-status.md`](../current-status.md) instead — see each file's own intro for exactly which numbers it holds):
+Thirteen files, each covering a contiguous range of item numbers in ascending order (pending/monitored/ledger items originally interleaved among these have moved to [`../backlog.md`](../backlog.md) or [`../current-status.md`](../current-status.md) instead — see each file's own intro for exactly which numbers it holds):
 
 - [`items-06-29.md`](items-06-29.md)
 - [`items-30-38.md`](items-30-38.md)
@@ -17,7 +17,8 @@ Twelve files, each covering a contiguous range of item numbers in ascending orde
 - [`items-95-99.md`](items-95-99.md)
 - [`items-100-103.md`](items-100-103.md) — opens the 100– range and closes at item 103; holds items 100 and 101, with 102 and 103 reserved for when they are completed
 - [`items-104-109.md`](items-104-109.md) — continues the 100– range and closes at item 109; holds items 104, 105, 106, 107, 108 and 109, with 104 having been implemented ahead of items 100–103 (see each file's own intro)
-- [`items-110-NN.md`](items-110-NN.md) — continues the 100– range; holds items 110, 111, 112, 115, 116 and 117, all completed ahead of the still-pending items 102 and 103
+- [`items-110-117.md`](items-110-117.md) — continues the 100– range; holds items 110, 111, 112, 115, 116 and 117, all completed ahead of the still-pending items 102 and 103; closed at item 117 when adding item 118 would have taken it to 162,614 characters
+- [`items-118-NN.md`](items-118-NN.md) — continues the 100– range; holds item 118, completed ahead of the still-pending items 102, 103, 113, 114 and 119
 
 When a new item is completed, append it to whichever of these files its number naturally continues (in ascending numeric order). If that would push a file past roughly 150,000 characters, start a new range file (e.g. `items-74-NN.md`) instead of letting an existing file grow unbounded, and add it to the list above.
 

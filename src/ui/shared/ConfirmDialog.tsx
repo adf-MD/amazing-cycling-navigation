@@ -17,7 +17,21 @@ export interface ConfirmDialogProps {
    * both existing callers, so their behaviour is unchanged. */
   confirmDisabled?: boolean;
   cancelDisabled?: boolean;
+  /** Heading level for the dialog's own title (backlog item 118). Defaults
+   * to 2, which is what every caller rendered before this prop existed, so
+   * a page-level dialog beneath a single h1 is unchanged. A caller that
+   * renders this dialog *inside* a card supplies the level below that
+   * card's own heading instead: Settings' OpenRouteService card is an h3
+   * (backlog item 112), so its key-deletion confirmation is an h4. Without
+   * this the title would take the UA default 1.5em — larger than
+   * .screen-title's own clamped size — and would read as a new top-level
+   * section rather than as part of the card it belongs to. */
+  headingLevel?: 2 | 3 | 4;
 }
+
+/** Keeps the rendered tag a real JSX intrinsic rather than a computed
+ * string, so nothing here widens to ElementType or needs a cast. */
+const TITLE_TAGS = { 2: "h2", 3: "h3", 4: "h4" } as const;
 
 /**
  * The app's shared, reusable confirmation pattern — a non-modal (in DOM
@@ -39,10 +53,13 @@ export function ConfirmDialog({
   onCancel,
   confirmDisabled,
   cancelDisabled,
+  headingLevel = 2,
 }: ConfirmDialogProps) {
   if (!open) {
     return null;
   }
+
+  const Title = TITLE_TAGS[headingLevel];
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
@@ -58,7 +75,7 @@ export function ConfirmDialog({
       className="route-delete-confirm"
       onKeyDown={handleKeyDown}
     >
-      <h2 id="confirm-dialog-title">{title}</h2>
+      <Title id="confirm-dialog-title">{title}</Title>
       <p>{message}</p>
       <div className="route-delete-confirm-actions">
         <button

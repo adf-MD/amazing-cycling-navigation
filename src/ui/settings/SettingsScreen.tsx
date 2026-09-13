@@ -71,8 +71,25 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
   const [draftKey, setDraftKey] = useState("");
   const [keyVisible, setKeyVisible] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState(false);
+  // Backlog item 118. The armed delete confirmation is bound to the exact
+  // stored key it was armed for, never a bare boolean: `key` comes from a
+  // live query, so another tab can delete or replace it while this one
+  // holds the confirmation open. savedAt is the row's own version marker —
+  // saveProviderKey rewrites it on every save, a Replace included — so a
+  // mismatch means "the key you armed this against is gone", and the
+  // derived pendingDelete below disarms rather than letting Confirm delete
+  // a key the rider never saw it armed against. Deliberately savedAt and
+  // not the key itself: an identity token must never put the secret into
+  // component state. Two saves inside one millisecond would be
+  // indistinguishable here, which is a narrower race than the last-write-
+  // wins one the storage row already has.
+  const [armedDeleteSavedAt, setArmedDeleteSavedAt] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // The trigger to restore focus to when the confirmation is cancelled, and
+  // the card's own heading to move focus to once a deletion has actually
+  // succeeded and unmounted that trigger — see handleConfirmDelete.
+  const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const cardHeadingRef = useRef<HTMLHeadingElement>(null);
 
   // avoidFerriesByDefault/profileByDefault are undefined both while the
   // live query is still loading and when no preferences row has ever been
@@ -114,6 +131,13 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
     setDraftKey("");
     setKeyVisible(false);
     setSaveError(null);
+    // Resolves an open confirmation rather than letting it survive,
+    // invisible, behind the replace form — the stored key is unchanged at
+    // this point, so the identity binding above would still match and the
+    // confirmation would reappear on Cancel. Mirrors RouteListItem's own
+    // openRename/handlePinClick precedent: an open alertdialog is never
+    // silently moved aside instead of being resolved.
+    setArmedDeleteSavedAt(null);
     setIsEditing(true);
   };
 
@@ -124,10 +148,23 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
   };
 
   const handleConfirmDelete = () => {
-    setPendingDelete(false);
-    deleteProviderKey().catch((error: unknown) => {
-      logError("settings-delete-key", error);
-    });
+    setArmedDeleteSavedAt(null);
+    deleteProviderKey()
+      .then(() => {
+        // Only on a genuine success. Confirming unmounts the Delete key
+        // button that focus would otherwise return to, so focus would fall
+        // to <body>; the card's own heading names where the rider is and,
+        // unlike the key field revealed beside it, raises no software
+        // keyboard straight after a destructive action. The heading is
+        // mounted regardless of when the live query re-emits, so this does
+        // not race the re-render. A rejected deletion deliberately keeps
+        // the pre-item-118 behaviour exactly: logged, nothing shown, no
+        // focus moved.
+        cardHeadingRef.current?.focus();
+      })
+      .catch((error: unknown) => {
+        logError("settings-delete-key", error);
+      });
   };
 
   /**
@@ -190,6 +227,11 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
   // ambiguity is accepted rather than adding a second loading concept.
   const showForm = !key || isEditing;
   const status = describeProviderKeyStatus(key, verification, now);
+  // Derived, never stored: if the armed key has since been deleted or
+  // replaced — in this tab or another — this is false on the very next
+  // render, with no effect and no cleanup path to get wrong.
+  const pendingDelete =
+    armedDeleteSavedAt !== null && key?.savedAt === armedDeleteSavedAt;
 
   return (
     <section className="screen" aria-label="Settings">
@@ -300,7 +342,9 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
         </section>
 
         <section className="panel stack" aria-labelledby="ors-settings-heading">
-          <h3 id="ors-settings-heading">OpenRouteService</h3>
+          <h3 id="ors-settings-heading" tabIndex={-1} ref={cardHeadingRef}>
+            OpenRouteService
+          </h3>
           <p>
             Road-bike route planning uses your own free key from{" "}
             <a href="https://account.heigit.org/signup" target="_blank" rel="noreferrer">
@@ -375,13 +419,43 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
                 <button
                   type="button"
                   className="btn-danger"
+                  ref={deleteButtonRef}
                   onClick={() => {
-                    setPendingDelete(true);
+                    // key is narrowed to defined here: this branch only
+                    // renders when showForm is false, i.e. !key is false.
+                    setArmedDeleteSavedAt(key.savedAt);
                   }}
                 >
                   Delete key
                 </button>
               </div>
+
+              {/* Backlog item 118. The confirmation belongs to this card,
+                  immediately beneath the action that opened it, and grows
+                  it in ordinary document flow — it was previously the last
+                  child of the whole screen, so it painted below every
+                  panel and, because Cancel carries autoFocus, opening it
+                  scrolled the viewport to the bottom of Settings. h4 keeps
+                  item 112's outline monotonic beneath this card's own h3.
+                  No scroll of its own: the trigger is by definition just
+                  above it, and autoFocus's native "scroll only if needed"
+                  is all the reveal this ever requires. */}
+              <ConfirmDialog
+                open={pendingDelete}
+                headingLevel={4}
+                title="Delete OpenRouteService key"
+                message="This removes your saved key from this device. Route planning will be unavailable until you enter a key again. Any routes you have already saved remain fully usable without it."
+                confirmLabel="Delete"
+                onConfirm={handleConfirmDelete}
+                onCancel={() => {
+                  setArmedDeleteSavedAt(null);
+                  // Synchronously, inside the handler: the Delete key
+                  // button is still mounted here, so focus leaves the
+                  // dialog before React commits its unmount. Mirrors
+                  // RouteListItem.handleCancelDelete.
+                  deleteButtonRef.current?.focus();
+                }}
+              />
             </div>
           )}
 
@@ -494,17 +568,6 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
           </details>
         </section>
       </section>
-
-      <ConfirmDialog
-        open={pendingDelete}
-        title="Delete OpenRouteService key"
-        message="This removes your saved key from this device. Route planning will be unavailable until you enter a key again. Any routes you have already saved remain fully usable without it."
-        confirmLabel="Delete"
-        onConfirm={handleConfirmDelete}
-        onCancel={() => {
-          setPendingDelete(false);
-        }}
-      />
     </section>
   );
 }

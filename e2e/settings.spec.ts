@@ -39,6 +39,39 @@ async function setRootTextSize(page: Page, size: string) {
   }, size);
 }
 
+// Backlog item 118. Never a real key — a fixed dummy string, exactly as
+// planning.spec.ts does.
+const DUMMY_KEY = "dummy-e2e-key";
+
+async function saveKey(page: Page) {
+  await page.getByLabel("OpenRouteService API key").fill(DUMMY_KEY);
+  await page.getByRole("button", { name: "Save on this device" }).click();
+  await expect(
+    page.getByText(/key saved on this device, not yet verified/i),
+  ).toBeVisible();
+}
+
+function openRouteServiceCard(page: Page) {
+  return page.getByRole("region", { name: "OpenRouteService" });
+}
+
+/** Document coordinates, deliberately: the confirmation's Cancel button
+ * carries autoFocus, so the viewport can move between measurements and
+ * viewport-relative rects would not be comparable across them. */
+function documentBox(locator: Locator) {
+  return locator.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      top: rect.top + window.scrollY,
+      bottom: rect.bottom + window.scrollY,
+      left: rect.left + window.scrollX,
+      right: rect.right + window.scrollX,
+      width: rect.width,
+      height: rect.height,
+    };
+  });
+}
+
 test("groups the four panels under Preferences and Explanations, in that order", async ({
   page,
 }) => {
@@ -169,4 +202,203 @@ test("the group headings read as a level above their panels, not the same level"
   await expect(
     page.getByRole("heading", { level: 2, name: "Route planning", exact: true }),
   ).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------------
+// Backlog item 118 — the key-deletion confirmation is contained by the
+// OpenRouteService card. Before this item <ConfirmDialog> was the last
+// child of <section className="screen">, a peer of both group sections,
+// so it painted below every panel.
+// ---------------------------------------------------------------------
+
+test("the delete confirmation opens inside the OpenRouteService card and grows it, rather than appearing as another card", async ({
+  page,
+}) => {
+  await openSettings(page);
+  await saveKey(page);
+
+  const card = openRouteServiceCard(page);
+  const disclosure = card.getByText("How the key and route data are used");
+  const regionsBefore = await page.getByRole("region").count();
+  const panelsBefore = await page.locator("section.panel").count();
+  const cardBefore = await documentBox(card);
+  const disclosureBefore = await documentBox(disclosure);
+
+  await page.getByRole("button", { name: "Delete key" }).click();
+
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+  await expect(page.getByRole("alertdialog")).toHaveCount(1);
+  await expect(card.getByRole("alertdialog")).toHaveCount(1);
+
+  // The nearest owning section is this very card — a relationship, so a
+  // peer rendered elsewhere fails regardless of how it is classed.
+  expect(
+    await dialog.evaluate((element) =>
+      element.closest("section[aria-labelledby]")?.getAttribute("aria-labelledby"),
+    ),
+  ).toBe("ors-settings-heading");
+
+  const cardAfter = await documentBox(card);
+  const dialogBox = await documentBox(dialog);
+  const disclosureAfter = await documentBox(disclosure);
+  const deleteBox = await documentBox(page.getByRole("button", { name: "Delete key" }));
+
+  // Contained on all four edges by the card's own border box.
+  expect(dialogBox.top).toBeGreaterThanOrEqual(cardAfter.top);
+  expect(dialogBox.bottom).toBeLessThanOrEqual(cardAfter.bottom);
+  expect(dialogBox.left).toBeGreaterThanOrEqual(cardAfter.left);
+  expect(dialogBox.right).toBeLessThanOrEqual(cardAfter.right);
+
+  // Directly beneath the action that opened it. The gap is .stack's 16px
+  // plus .route-delete-confirm's own 0.5rem margin — 24px at ordinary
+  // text. Before this item the same gap spanned the rest of the card, the
+  // whole Explanations group and both of its panels.
+  expect(dialogBox.top).toBeGreaterThan(deleteBox.bottom);
+  expect(dialogBox.top - deleteBox.bottom).toBeLessThanOrEqual(48);
+
+  // The card grew in ordinary flow to hold it, and the content below it
+  // moved down by at least as much. Absolute positioning or an overlap
+  // hack would leave both unchanged.
+  expect(cardAfter.height - cardBefore.height).toBeGreaterThanOrEqual(dialogBox.height);
+  expect(disclosureAfter.top - disclosureBefore.top).toBeGreaterThanOrEqual(
+    dialogBox.height,
+  );
+
+  // No new card, by role first. The class count is supporting evidence
+  // only — a peer rendered as a bare <div> would not move it either way.
+  await expect(page.getByRole("region")).toHaveCount(regionsBefore);
+  await expect(page.locator("section.panel")).toHaveCount(panelsBefore);
+
+  // ...and it does not read as a second surface: identical background to
+  // the card, no elevation of its own, and in normal flow.
+  const surface = await dialog.evaluate((element) => {
+    const card = element.closest("section.panel");
+    if (!card) throw new Error("expected the dialog to sit inside a panel card");
+    const dialogStyle = getComputedStyle(element);
+    return {
+      dialogBackground: dialogStyle.backgroundColor,
+      cardBackground: getComputedStyle(card).backgroundColor,
+      position: dialogStyle.position,
+      shadowed: [...card.querySelectorAll("*")].filter(
+        (node) => getComputedStyle(node).boxShadow !== "none",
+      ).length,
+    };
+  });
+  expect(surface.dialogBackground).toBe(surface.cardBackground);
+  expect(surface.position).toBe("static");
+  expect(surface.shadowed).toBe(0);
+});
+
+test("Cancel keeps the key and returns focus to Delete key; Confirm removes it and the same card shows the no-key state", async ({
+  page,
+}) => {
+  await openSettings(page);
+  await saveKey(page);
+
+  const card = openRouteServiceCard(page);
+  await page.getByRole("button", { name: "Delete key" }).click();
+  await expect(page.getByRole("alertdialog")).toBeVisible();
+
+  // Clicking rather than dispatching is itself the proof that the sticky
+  // header does not cover the action: Playwright's actionability check
+  // fails on pointer interception.
+  await page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(
+    page.getByText(/key saved on this device, not yet verified/i),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Delete key" })).toBeFocused();
+
+  await page.getByRole("button", { name: "Delete key" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(card.getByText("No key configured")).toBeVisible();
+  await expect(card.getByLabel("OpenRouteService API key")).toBeVisible();
+});
+
+test("the confirmation keeps item 112's heading outline while it is open", async ({
+  page,
+}) => {
+  await openSettings(page);
+  await saveKey(page);
+  await page.getByRole("button", { name: "Delete key" }).click();
+  await expect(page.getByRole("alertdialog")).toBeVisible();
+
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+  await expect(page.getByRole("heading", { level: 2 })).toHaveCount(2);
+  await expect(page.getByRole("heading", { level: 3 })).toHaveCount(4);
+  await expect(page.getByRole("heading", { level: 4 })).toHaveCount(1);
+  await expect(page.getByRole("alertdialog")).toHaveAccessibleName(
+    "Delete OpenRouteService key",
+  );
+});
+
+test("the open confirmation stays contained and operable at ordinary and 200% text", async ({
+  page,
+}) => {
+  await openSettings(page);
+  await saveKey(page);
+
+  for (const rootSize of ["100%", "200%"]) {
+    await setRootTextSize(page, rootSize);
+    await page.getByRole("button", { name: "Delete key" }).click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toBeVisible();
+
+    expect(await documentOverflow(page), rootSize).toBeLessThanOrEqual(0);
+
+    const card = await documentBox(openRouteServiceCard(page));
+    const dialogBox = await documentBox(dialog);
+    expect(dialogBox.left, rootSize).toBeGreaterThanOrEqual(card.left);
+    expect(dialogBox.right, rootSize).toBeLessThanOrEqual(card.right);
+    expect(dialogBox.bottom, rootSize).toBeLessThanOrEqual(card.bottom);
+
+    // Nothing overflows the confirmation's own padding box either.
+    const selfOverflow = await dialog.evaluate(
+      (element) => element.scrollWidth - element.clientWidth,
+    );
+    expect(selfOverflow, rootSize).toBeLessThanOrEqual(1);
+
+    // The complete wording is present and its painted extent — not its
+    // box — stays inside the viewport, so nothing is clipped.
+    for (const part of [
+      dialog.getByRole("heading", { level: 4 }),
+      dialog.getByText(/This removes your saved key from this device/),
+    ]) {
+      await expect(part).toBeVisible();
+      const textRight = await part.evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return range.getBoundingClientRect().right;
+      });
+      expect(textRight, rootSize).toBeLessThanOrEqual(VIEWPORT_WIDTH + 1);
+    }
+
+    // Both actions stay full, tappable and non-overlapping. Deliberately
+    // no assertion that they share a row: at 200% the pair measures close
+    // enough to the available width that either outcome is legitimate,
+    // and .route-delete-confirm-actions wraps.
+    const cancel = dialog.getByRole("button", { name: "Cancel" });
+    const confirm = dialog.getByRole("button", { name: "Delete" });
+    const cancelBox = await documentBox(cancel);
+    const confirmBox = await documentBox(confirm);
+    for (const box of [cancelBox, confirmBox]) {
+      expect(box.height, rootSize).toBeGreaterThanOrEqual(44);
+      expect(box.width, rootSize).toBeGreaterThanOrEqual(44);
+      expect(box.left, rootSize).toBeGreaterThanOrEqual(-1);
+      expect(box.right, rootSize).toBeLessThanOrEqual(VIEWPORT_WIDTH + 1);
+    }
+    const overlaps =
+      cancelBox.right > confirmBox.left &&
+      confirmBox.right > cancelBox.left &&
+      cancelBox.bottom > confirmBox.top &&
+      confirmBox.bottom > cancelBox.top;
+    expect(overlaps, rootSize).toBe(false);
+
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  }
 });

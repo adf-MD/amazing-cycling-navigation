@@ -4,13 +4,44 @@ import userEvent from "@testing-library/user-event";
 import { SettingsScreen } from "./SettingsScreen.tsx";
 import { db } from "../../storage/db.ts";
 import {
+  deleteProviderKey,
+  getProviderKey,
   recordProviderKeyVerification,
   saveProviderKey,
 } from "../../storage/providerKeyRepository.ts";
+import * as providerKeyRepository from "../../storage/providerKeyRepository.ts";
 import { getPlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
 import type { Clock } from "../../platform/clock.ts";
 
 const DUMMY_KEY = "test-dummy-settings-key-0000";
+const REPLACEMENT_KEY = "test-dummy-settings-key-1111";
+
+/** saveProviderKey stamps savedAt from the wall clock, and backlog item 118
+ * binds the armed delete confirmation to exactly that value. Two saves
+ * inside one millisecond would therefore be indistinguishable, so a test
+ * that needs a genuinely different stored key waits for the clock to move
+ * rather than assuming it has. */
+async function saveKeyWithDistinctTimestamp(apiKey: string) {
+  const previous = (await getProviderKey())?.savedAt;
+  for (;;) {
+    await saveProviderKey(apiKey);
+    if ((await getProviderKey())?.savedAt !== previous) return;
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+}
+
+/** The OpenRouteService card itself — the <section className="panel"> whose
+ * own h3 names it. Every item 118 assertion about containment resolves the
+ * card this way, through its accessible name, never through its class. */
+function openRouteServiceCard() {
+  return screen.getByRole("region", { name: "OpenRouteService" });
+}
+
+async function openDeleteConfirmation(user: ReturnType<typeof userEvent.setup>) {
+  await waitFor(() => screen.getByRole("button", { name: "Delete key" }));
+  await user.click(screen.getByRole("button", { name: "Delete key" }));
+  return screen.getByRole("alertdialog");
+}
 
 function buildFixedClock(startMs: number): Clock {
   return { now: () => startMs };
@@ -117,20 +148,207 @@ describe("SettingsScreen", () => {
     expect(screen.queryByLabelText("OpenRouteService API key")).toBeNull();
   });
 
-  it("deleting the key requires confirmation, then removes it", async () => {
+  it("deleting the key requires confirmation, then removes it — and the same card shows the no-key state", async () => {
     await saveProviderKey(DUMMY_KEY);
     const user = userEvent.setup();
     render(<SettingsScreen />);
-    await waitFor(() => screen.getByRole("button", { name: "Delete key" }));
-
-    await user.click(screen.getByRole("button", { name: "Delete key" }));
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    const card = openRouteServiceCard();
+    await openDeleteConfirmation(user);
 
     await user.click(screen.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
       expect(screen.getByText("No key configured")).toBeInTheDocument();
     });
+    expect(await getProviderKey()).toBeUndefined();
+    // Scoped to the very same card element captured before the deletion —
+    // backlog item 118's "Confirm updates the same card to its no-key
+    // state", asserted by identity rather than by re-querying.
+    expect(within(card).getByText("No key configured")).toBeInTheDocument();
+    expect(within(card).getByLabelText("OpenRouteService API key")).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  // ---------------------------------------------------------------------
+  // Backlog item 118 — the delete confirmation belongs to the
+  // OpenRouteService card, not to the screen. Before this item
+  // <ConfirmDialog> was the last child of <section className="screen">, so
+  // it painted below every panel and, because its Cancel carries autoFocus,
+  // tapping Delete key scrolled the viewport to the bottom of Settings.
+  // ---------------------------------------------------------------------
+
+  it("opens the confirmation inside the OpenRouteService card, directly after the action that opened it", async () => {
+    await saveProviderKey(DUMMY_KEY);
+    const user = userEvent.setup();
+    render(<SettingsScreen />);
+    const dialog = await openDeleteConfirmation(user);
+
+    expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
+    expect(within(openRouteServiceCard()).getByRole("alertdialog")).toBe(dialog);
+    // The nearest owning section is the OpenRouteService card itself — a
+    // relationship assertion, so a peer rendered anywhere else on the
+    // screen fails it however it is classed.
+    expect(dialog.closest("section[aria-labelledby]")).toHaveAttribute(
+      "aria-labelledby",
+      "ors-settings-heading",
+    );
+    // ...and it follows Delete key in reading order rather than preceding it.
+    const deleteButton = screen.getByRole("button", { name: "Delete key" });
+    expect(
+      deleteButton.compareDocumentPosition(dialog) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("titles the confirmation one level below the card, leaving item 112's heading hierarchy intact", async () => {
+    await saveProviderKey(DUMMY_KEY);
+    const user = userEvent.setup();
+    render(<SettingsScreen />);
+    const dialog = await openDeleteConfirmation(user);
+
+    expect(
+      screen.getByRole("heading", { name: "Delete OpenRouteService key", level: 4 }),
+    ).toBeInTheDocument();
+    expect(dialog).toHaveAccessibleName("Delete OpenRouteService key");
+    // Item 112's outline is unchanged while the confirmation is open: an h2
+    // here would read as a third top-level group, an h3 as a sibling of the
+    // card it is supposed to belong to.
+    expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(2);
+    expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(4);
+  });
+
+  it("opening the confirmation deletes nothing and never exposes the key", async () => {
+    await saveProviderKey(DUMMY_KEY);
+    const user = userEvent.setup();
+    render(<SettingsScreen />);
+    await openDeleteConfirmation(user);
+
+    expect((await getProviderKey())?.apiKey).toBe(DUMMY_KEY);
+    expect(screen.getByText(/•••• \(hidden\)/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(DUMMY_KEY);
+  });
+
+  it("Cancel keeps the stored key, closes the confirmation and returns focus to Delete key", async () => {
+    await saveProviderKey(DUMMY_KEY);
+    const user = userEvent.setup();
+    render(<SettingsScreen />);
+    await openDeleteConfirmation(user);
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect((await getProviderKey())?.apiKey).toBe(DUMMY_KEY);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.getByRole("button", { name: "Delete key" })).toHaveFocus();
+  });
+
+  it("Escape behaves exactly as Cancel does, key and focus included", async () => {
+    await saveProviderKey(DUMMY_KEY);
+    const user = userEvent.setup();
+    render(<SettingsScreen />);
+    await openDeleteConfirmation(user);
+
+    await user.keyboard("{Escape}");
+
+    expect((await getProviderKey())?.apiKey).toBe(DUMMY_KEY);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.getByRole("button", { name: "Delete key" })).toHaveFocus();
+  });
+
+  it("a successful deletion moves focus to the card's own heading, not to the document or the key field", async () => {
+    await saveProviderKey(DUMMY_KEY);
+    const user = userEvent.setup();
+    render(<SettingsScreen />);
+    await openDeleteConfirmation(user);
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: "OpenRouteService", level: 3 }),
+      ).toHaveFocus();
+    });
+    // Deliberately not the key input: focusing a text field here would
+    // raise the software keyboard immediately after a destructive action.
+    // findBy, not getBy: the heading is focused in deleteProviderKey's own
+    // .then(), which resolves before the live query has re-emitted and
+    // rendered the form, so a synchronous query races the re-render.
+    expect(await screen.findByLabelText("OpenRouteService API key")).not.toHaveFocus();
+    expect(
+      screen.getByRole("heading", { name: "OpenRouteService", level: 3 }),
+    ).toHaveFocus();
+  });
+
+  it("a failed deletion keeps the key, moves no focus and adds no error presentation", async () => {
+    await saveProviderKey(DUMMY_KEY);
+    vi.spyOn(providerKeyRepository, "deleteProviderKey").mockRejectedValueOnce(
+      new Error("storage unavailable"),
+    );
+    const user = userEvent.setup();
+    render(<SettingsScreen />);
+    await openDeleteConfirmation(user);
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+    });
+    expect((await getProviderKey())?.apiKey).toBe(DUMMY_KEY);
+    expect(
+      screen.getByRole("heading", { name: "OpenRouteService", level: 3 }),
+    ).not.toHaveFocus();
+    // The pre-item-118 behaviour is deliberately unchanged: the failure is
+    // logged, nothing new is shown, and the masked saved-key row remains.
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText(/•••• \(hidden\)/)).toBeInTheDocument();
+  });
+
+  it("Replace key resolves an armed confirmation instead of leaving it armed behind the form", async () => {
+    await saveProviderKey(DUMMY_KEY);
+    const user = userEvent.setup();
+    render(<SettingsScreen />);
+    await openDeleteConfirmation(user);
+
+    await user.click(screen.getByRole("button", { name: "Replace key" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+
+    // ...and cancelling the edit does not bring it back.
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => screen.getByRole("button", { name: "Delete key" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("a key deleted in another tab disarms the confirmation, which cannot resurrect over a newly saved key", async () => {
+    await saveProviderKey(DUMMY_KEY);
+    const user = userEvent.setup();
+    render(<SettingsScreen />);
+    await openDeleteConfirmation(user);
+
+    await deleteProviderKey();
+
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+    });
+    await saveKeyWithDistinctTimestamp(REPLACEMENT_KEY);
+    await waitFor(() => screen.getByRole("button", { name: "Delete key" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect((await getProviderKey())?.apiKey).toBe(REPLACEMENT_KEY);
+  });
+
+  it("a key replaced in another tab disarms the confirmation, which can never delete the replacement", async () => {
+    await saveProviderKey(DUMMY_KEY);
+    const user = userEvent.setup();
+    render(<SettingsScreen />);
+    await openDeleteConfirmation(user);
+
+    await saveKeyWithDistinctTimestamp(REPLACEMENT_KEY);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+    });
+    // The replacement is still there — the armed confirmation was bound to
+    // the key it was armed for, so it disarmed rather than deleting a key
+    // the rider never saw it armed against.
+    expect((await getProviderKey())?.apiKey).toBe(REPLACEMENT_KEY);
+    expect(screen.getByRole("button", { name: "Delete key" })).toBeInTheDocument();
   });
 
   it("shows a rejected-key status message after a failed verification, never concealed in a disclosure", async () => {
