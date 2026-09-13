@@ -224,6 +224,6 @@ npx playwright test --project=android-chrome
     return, confirming the launcher requires an explicit "Resume free
     roam" tap rather than silently resuming; end the session and confirm
     it returns to the empty launcher.
-11. If anything fails, open Diagnostics, note the app version/build and
+11. If anything fails, open Status, note the app version/build and
     any recent redacted errors shown there, and record the exact device
     model and Chrome version alongside the failure.

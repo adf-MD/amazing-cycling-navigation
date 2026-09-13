@@ -8,7 +8,7 @@ interface Box {
   height: number;
 }
 
-// Diagnostics is intentionally allowed to scroll vertically (unlike the
+// Status is intentionally allowed to scroll vertically (unlike the
 // short Routes screen visualFoundation.spec.ts's own isFullyWithin check
 // was written for) — so only horizontal containment is checked here, per
 // this slice's own "no horizontal overflow" requirement.
@@ -73,7 +73,7 @@ test("shows a non-blank storage estimate reaching an OK state, without horizonta
     quota: 500 * 1024 * 1024,
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Diagnostics" }).click();
+  await page.getByRole("button", { name: "Status", exact: true }).click();
 
   const storageValue = storageDetailValue(page);
   await expect(storageValue).toContainText("OK (schema version");
@@ -90,7 +90,7 @@ test("flags exactly-90%-usage as an explicit storage pressure warning", async ({
 }) => {
   await stubStorageEstimate(page, { kind: "resolves", usage: 900, quota: 1000 });
   await page.goto("/");
-  await page.getByRole("button", { name: "Diagnostics" }).click();
+  await page.getByRole("button", { name: "Status", exact: true }).click();
 
   const storageValue = storageDetailValue(page);
   await expect(storageValue).toContainText("(90%)");
@@ -104,7 +104,7 @@ test("falls back to an unavailable estimate without breaking the OK status when 
 }) => {
   await stubStorageEstimate(page, { kind: "rejects" });
   await page.goto("/");
-  await page.getByRole("button", { name: "Diagnostics" }).click();
+  await page.getByRole("button", { name: "Status", exact: true }).click();
 
   const storageValue = storageDetailValue(page);
   await expect(storageValue).toContainText("OK (schema version");
@@ -116,15 +116,13 @@ test("falls back to an unavailable estimate without breaking the OK status when 
   expect(hasNoHorizontalScroll).toBe(true);
 });
 
-test("Diagnostics renders its four sections without horizontal scrolling, with the fetch-failure explanation collapsed by default", async ({
+test("Status renders its four sections without horizontal scrolling, with the fetch-failure explanation collapsed by default", async ({
   page,
 }) => {
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Diagnostics" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Diagnostics", level: 1 }),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Status", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Status", level: 1 })).toBeVisible();
 
   const hasNoHorizontalScroll = await page.evaluate(
     () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
@@ -181,11 +179,36 @@ test("Diagnostics renders its four sections without horizontal scrolling, with t
  * derived role. Deliberately no routing request — see this file's own
  * header note on why one cannot be made here at all.
  */
+// Backlog item 112's two copy corrections on this screen. "Active route" was
+// a documented misnomer — the row already rendered "Free roam" for a
+// free-roam session — and the missing-key hint was a dead end at exactly the
+// moment the screen matters, disabling the test without saying where a key is
+// entered. Copy only: no navigation is wired from here, so the button must
+// still be disabled.
+test("labels the session row Active session and points a missing key at Settings", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Status", exact: true }).click();
+
+  const sessionValue = page
+    .getByText("Active session", { exact: true })
+    .locator("xpath=following-sibling::dd[1]");
+  await expect(sessionValue).toHaveText("None");
+  await expect(page.getByText("Active route", { exact: true })).toHaveCount(0);
+
+  const noKeyHint = page.getByText(/No OpenRouteService key configured/);
+  await expect(noKeyHint).toContainText("Settings");
+  await expect(
+    page.getByRole("button", { name: "Test routing connection" }),
+  ).toBeDisabled();
+});
+
 test("explains HTTP statuses in a second, independently operable disclosure", async ({
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Diagnostics" }).click();
+  await page.getByRole("button", { name: "Status", exact: true }).click();
 
   const routingRegion = page.getByRole("region", { name: "Routing diagnostics" });
   // exact: true throughout — the "No status shown" guidance row quotes
@@ -276,23 +299,21 @@ test.describe("200% text at ordinary phone width", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   /**
-   * Backlog item 101's enlarged-text evidence. Scoped rather than
-   * whole-document: this app shell has a known, unrelated
-   * primary-navigation overflow at 200% text (see
-   * routeLibraryTagFiltering.spec.ts's identical note), so a
-   * document-level assertion here would claim something this item does
-   * not govern. What is asserted instead is that the Routing diagnostics
-   * region has no horizontal overflow of its own, and that both
-   * disclosures and every guidance row stay horizontally within the
-   * viewport. Only <summary> is interactive, so only <summary> carries
-   * the 44px minimum — a <details> wrapper and a non-interactive <li>
-   * are not touch targets.
+   * Backlog item 101's enlarged-text evidence, scoped to the Routing diagnostics region
+   * rather than the whole document because that region is what item 101 governs. This note
+   * used to say a primary-navigation overflow made a document-level assertion impossible;
+   * that attribution was wrong — item 112 measured the navigation's own contribution to
+   * document scrollWidth at 200% text as zero, in Chromium, WebKit and the Pixel-7 preset.
+   * What is asserted is that the region has no horizontal overflow of its own, and that
+   * both disclosures and every guidance row stay horizontally within the viewport. Only
+   * <summary> is interactive, so only <summary> carries the 44px minimum — a <details>
+   * wrapper and a non-interactive <li> are not touch targets.
    */
   test("keeps both routing disclosures readable and horizontally contained at 200% text", async ({
     page,
   }) => {
     await page.goto("/");
-    await page.getByRole("button", { name: "Diagnostics" }).click();
+    await page.getByRole("button", { name: "Status", exact: true }).click();
 
     await page.evaluate(() => {
       document.documentElement.style.fontSize = "200%";

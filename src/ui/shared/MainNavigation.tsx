@@ -17,7 +17,14 @@ const NAV_ITEMS: readonly NavItem[] = [
   { screen: "library", label: "Routes" },
   { screen: "riding", label: "Ride" },
   { screen: "planning", label: "Plan" },
-  { screen: "diagnostics", label: "Diagnostics" },
+  // Backlog item 112: the rider-facing label is "Status" — plainer language
+  // for a non-technical rider, and it accurately covers what the screen holds
+  // (system status, recent errors, routing and imagery attempts, and the one
+  // connection test). The `screen` key stays "diagnostics": it is the internal
+  // identifier that screenTypes.ts, App.tsx's render switch and NavIcon's
+  // glyph lookup all key off, and nothing about the rename is meant to reach
+  // them, the src/ui/diagnostics/ directory, or the diagnostics-* CSS.
+  { screen: "diagnostics", label: "Status" },
   { screen: "settings", label: "Settings" },
 ];
 

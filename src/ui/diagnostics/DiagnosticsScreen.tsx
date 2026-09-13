@@ -28,12 +28,12 @@ import { getProviderKey } from "../../storage/providerKeyRepository.ts";
 import type { StoredRideState } from "../../storage/db.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 
-/** "Active route" is a slight misnomer once a free-roam session (backlog
- * item 42, which has no route id at all) can also be the stored active
- * session — kept as the field label since it's still the common case, but
- * this resolves a genuinely useful value for either kind rather than
- * failing to compile against the union or silently showing "None" for an
- * active free-roam session. */
+/** Resolves the stored active session to a displayable value for either
+ * kind: a route ride's own route id, or "Free roam" for a session that has
+ * no route id at all (backlog item 42). The field was labelled "Active
+ * route" until backlog item 112 renamed it "Active session", which is what
+ * this has always actually returned — a free-roam session is neither a
+ * route nor "None". */
 function describeActiveRideStateSummary(rideState: StoredRideState | undefined): string {
   if (!rideState) return "None";
   return isStoredRouteRideState(rideState) ? rideState.routeId : "Free roam";
@@ -162,8 +162,8 @@ export function DiagnosticsScreen({
   const fixAgeMs = rideState?.lastFix ? now - rideState.lastFix.timestampMs : null;
 
   return (
-    <section className="screen diagnostics-screen" aria-label="Diagnostics">
-      <h1 className="screen-title">Diagnostics</h1>
+    <section className="screen diagnostics-screen" aria-label="Status">
+      <h1 className="screen-title">Status</h1>
 
       <section
         className="panel stack diagnostics-section"
@@ -260,7 +260,7 @@ export function DiagnosticsScreen({
           </div>
 
           <div className="diagnostics-definition-item">
-            <dt className="diagnostics-label">Active route</dt>
+            <dt className="diagnostics-label">Active session</dt>
             <dd className="diagnostics-value diagnostics-value--mono">
               {describeActiveRideStateSummary(rideState)}
             </dd>
@@ -422,7 +422,9 @@ export function DiagnosticsScreen({
           rather than any route you&apos;ve planned, and uses one API request.
         </p>
         {!hasKey ? (
-          <p className="field-hint">No OpenRouteService key configured.</p>
+          <p className="field-hint">
+            No OpenRouteService key configured. Add one in Settings to enable this test.
+          </p>
         ) : null}
         <button
           type="button"

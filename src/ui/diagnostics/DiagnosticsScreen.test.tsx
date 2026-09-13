@@ -126,7 +126,7 @@ describe("DiagnosticsScreen", () => {
       "Not applicable yet",
     );
     expect(getDetailValue("Last known fix age")).toHaveTextContent("Not applicable yet");
-    expect(getDetailValue("Active route")).toHaveTextContent("None");
+    expect(getDetailValue("Active session")).toHaveTextContent("None");
     expect(screen.getByText(/no errors recorded this session/i)).toBeInTheDocument();
 
     await waitFor(() => {
@@ -138,9 +138,13 @@ describe("DiagnosticsScreen", () => {
     render(<DiagnosticsScreen />);
 
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    // Backlog item 112: the rider-facing name is Status. The component,
+    // its directory, its CSS classes and its section ids all keep the
+    // internal "diagnostics" spelling deliberately.
+    expect(screen.getByRole("heading", { level: 1, name: "Status" })).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 1, name: "Diagnostics" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("heading", { level: 1, name: "Diagnostics" }),
+    ).not.toBeInTheDocument();
 
     expect(
       screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent),
@@ -199,7 +203,7 @@ describe("DiagnosticsScreen", () => {
       expect(getDetailValue("Last known fix accuracy")).toHaveTextContent("±9 m");
     });
     expect(getDetailValue("Last known fix age")).toHaveTextContent("30s ago");
-    expect(getDetailValue("Active route")).toHaveTextContent("route-42");
+    expect(getDetailValue("Active session")).toHaveTextContent("route-42");
   });
 
   it("shows no routing attempts recorded this session by default", () => {
@@ -526,6 +530,20 @@ describe("DiagnosticsScreen", () => {
 
       expect(screen.getByText(/uses one API request/i)).toBeInTheDocument();
       expect(screen.getByText(/no openrouteservice key configured/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Test routing connection" }),
+      ).toBeDisabled();
+    });
+
+    // Backlog item 112. Without this the screen is a dead end at exactly the
+    // moment it is most needed: the test is disabled, the reason is stated,
+    // and nothing says where a key is entered. Copy only — no navigation is
+    // wired from here, so the button must still be disabled.
+    it("points at Settings for the missing key, while leaving the test disabled", () => {
+      render(<DiagnosticsScreen />);
+
+      const hint = screen.getByText(/no openrouteservice key configured/i);
+      expect(hint).toHaveTextContent(/settings/i);
       expect(
         screen.getByRole("button", { name: "Test routing connection" }),
       ).toBeDisabled();

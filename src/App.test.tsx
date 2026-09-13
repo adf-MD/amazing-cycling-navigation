@@ -9,7 +9,7 @@ import * as rideStateRepository from "./storage/rideStateRepository.ts";
 import * as routesRepository from "./storage/routesRepository.ts";
 import { trackWithElevationGpx } from "./test/fixtures/gpx.ts";
 
-// Several tests below navigate to Diagnostics, mounting the real
+// Several tests below navigate to Status, mounting the real
 // DiagnosticsScreen, whose inline isMapRenderingSupported() call would
 // otherwise hit jsdom's unimplemented WebGL context and log a warning —
 // mirrors DiagnosticsScreen.test.tsx's own identical stub (see that
@@ -90,7 +90,7 @@ describe("App", () => {
 
     const destinations: [string, string][] = [
       ["Routes", "Routes"],
-      ["Diagnostics", "Diagnostics"],
+      ["Status", "Status"],
       ["Settings", "Settings"],
     ];
 
@@ -297,7 +297,7 @@ describe("App — document scroll around Ride content", () => {
     await user.click(screen.getByRole("button", { name: "Route A" }));
     expect(scrollToSpy).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole("button", { name: "Diagnostics" }));
+    await user.click(screen.getByRole("button", { name: "Status" }));
     await user.click(screen.getByRole("button", { name: "Ride" }));
 
     expect(screen.getByRole("heading", { name: "Route A" })).toBeInTheDocument();
@@ -394,7 +394,7 @@ describe("App — immersive Riding shell", () => {
   it("keeps the header sticky on every top-level screen reachable without GPS, including the empty Ride state", async () => {
     const user = userEvent.setup();
     render(<App />);
-    for (const label of ["Ride", "Diagnostics", "Settings", "Routes"]) {
+    for (const label of ["Ride", "Status", "Settings", "Routes"]) {
       await user.click(screen.getByRole("button", { name: label }));
       expect(stickyHeader()).toHaveClass("app-header--sticky");
     }
@@ -414,7 +414,7 @@ describe("App — immersive Riding shell", () => {
   it("renders exactly one <nav aria-label='Main'>, regardless of screen", async () => {
     const user = userEvent.setup();
     render(<App />);
-    for (const label of ["Ride", "Diagnostics", "Settings", "Routes"]) {
+    for (const label of ["Ride", "Status", "Settings", "Routes"]) {
       await user.click(screen.getByRole("button", { name: label }));
       expect(screen.getAllByRole("navigation", { name: "Main" })).toHaveLength(1);
     }
@@ -578,8 +578,8 @@ describe("App — Route Library search restoration across navigation", () => {
       expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
     });
 
-    await user.click(screen.getByRole("button", { name: "Diagnostics" }));
-    expect(screen.getByRole("heading", { name: "Diagnostics" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Status" }));
+    expect(screen.getByRole("heading", { name: "Status" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Routes" }));
 
@@ -710,8 +710,8 @@ describe("App — Route Library tag-filter restoration across navigation", () =>
       expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
     });
 
-    await user.click(screen.getByRole("button", { name: "Diagnostics" }));
-    expect(screen.getByRole("heading", { name: "Diagnostics" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Status" }));
+    expect(screen.getByRole("heading", { name: "Status" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Routes" }));
 
@@ -788,7 +788,7 @@ describe("App — Route Library tag-filter restoration across navigation", () =>
     });
     expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Diagnostics" }));
+    await user.click(screen.getByRole("button", { name: "Status" }));
     await user.click(screen.getByRole("button", { name: "Routes" }));
 
     await waitFor(() => {
@@ -2550,9 +2550,9 @@ describe("App — Ride switch guard (item 73)", () => {
 
     // The sticky nav stays clickable throughout — this prompt is
     // deliberately not a true modal.
-    await user.click(screen.getByRole("button", { name: "Diagnostics" }));
+    await user.click(screen.getByRole("button", { name: "Status" }));
 
-    expect(screen.getByRole("heading", { name: "Diagnostics" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Status" })).toBeInTheDocument();
     const dialog = screen.getByRole("alertdialog");
     // The generic wording, never the named-route inline copy — this is
     // the page-level ConfirmDialog, not the inline card presentation.

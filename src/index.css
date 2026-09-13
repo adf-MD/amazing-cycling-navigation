@@ -1450,6 +1450,21 @@ button:focus-visible {
   color: var(--colour-danger);
 }
 
+/* Backlog item 112's two Settings group headings ("Preferences",
+ * "Explanations"), which sit outside the panel cards one level above them.
+ * Measured rather than assumed: with no rule at all they take the UA
+ * default 1.5em (24px), while .screen-title's own clamp resolves to about
+ * 21.5px at 390px — so the group label outsized the page title, which is
+ * the opposite of the hierarchy this item exists to create. Sized between
+ * that h1 and the panels' own h3 (1.17em, ~18.7px), with the UA block
+ * margins removed so the surrounding .screen/.stack 16px gaps alone
+ * control spacing instead of stacking on top of them. Deliberately the
+ * only CSS this item adds; the broader typography audit is item 103. */
+.settings-group > h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
 /* The "How the key and route data are used" disclosure — kept small and
  * bordered so it reads as a deliberate, closed-by-default panel rather
  * than plain trailing paragraphs. */

@@ -55,7 +55,7 @@ test("no horizontal overflow, sticky header, and usable touch targets across the
 
   // Every MainNavigation destination: usable touch target, sticky header,
   // no horizontal overflow.
-  for (const label of ["Routes", "Ride", "Plan", "Diagnostics", "Settings"]) {
+  for (const label of ["Routes", "Ride", "Plan", "Status", "Settings"]) {
     const navButton = page.getByRole("button", { name: label });
     const box = await navButton.boundingBox();
     if (!box)
@@ -75,7 +75,7 @@ test("no horizontal overflow, sticky header, and usable touch targets across the
     // that makes a "Chromium-emulated Android" evidence claim true rather
     // than inherited boilerplate. Requires the real numeric branch, not
     // merely the disappearance of "Checking storage estimate…".
-    if (label === "Diagnostics") {
+    if (label === "Status") {
       const storageValue = page
         .getByText("Storage", { exact: true })
         .locator("xpath=following-sibling::dd[1]");

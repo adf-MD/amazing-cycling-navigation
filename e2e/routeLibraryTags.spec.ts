@@ -547,12 +547,11 @@ test.describe("tag editor geometry and accessibility (item 100 stage 2)", () => 
       );
       await expectAtLeastTouchTarget(page.getByRole("button", { name: "Cancel" }));
 
-      // A whole-document overflow check here would also trip on this app
-      // shell's own pre-existing, unrelated primary-navigation overflow at
-      // 200% text (confirmed present identically with no tag editor open at
-      // all — see routeLibrarySearchSort.spec.ts's own item-99-follow-up
-      // comment) — the scoped containment checks above are what this item
-      // actually governs.
+      // The scoped containment checks above are what this item actually governs, rather
+      // than a whole-document check. The earlier primary-navigation attribution here was
+      // wrong: item 112 measured the navigation's own contribution to document scrollWidth
+      // at 200% text as zero, in Chromium, WebKit and the Pixel-7 preset. See item 112's
+      // history entry.
     });
 
     test("a successful Save tags still reveals the card's top and title below the sticky header (item 100 follow-up)", async ({

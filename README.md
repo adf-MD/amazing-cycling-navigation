@@ -230,7 +230,7 @@ One-time setup: push this repository to GitHub, then under **Settings → Pages 
 deployment → Source**, select **GitHub Actions**. The workflow already targets the correct base
 path (`/amazing-cycling-navigation/`).
 
-To confirm an installed PWA has picked up a given deployment, compare its Diagnostics screen's
+To confirm an installed PWA has picked up a given deployment, compare its Status screen's
 **Build** field (the deployed commit's short SHA) against the corresponding successful workflow
 run in the Actions tab — useful since a service worker update can otherwise lag behind what's
 actually live.

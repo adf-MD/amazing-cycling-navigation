@@ -1,6 +1,6 @@
 # Completed backlog items 110–
 
-This file continues the 100– numeric range and opens at item 110. It was started when item 110 was completed: adding it to what was then `items-104-NN.md` would have taken that file to 163,015 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md), so that file was closed at item 109 and renamed [`items-104-109.md`](items-104-109.md) instead of growing unbounded. No existing entry was moved, shortened or rewritten by that split — only the filename changed, plus the inbound links that pointed at it. Stable item numbers never change regardless of which file their text lives in: item 110 held the highest number in the project when this file was opened and was nevertheless completed ahead of items 102 and 103, which remain pending. The file now holds items 110, 111, 115 and 116, so its contents are not contiguous — item 111 was completed after items 115 and 116 and is filed in numeric order regardless, since a number is an identifier and never a schedule.
+This file continues the 100– numeric range and opens at item 110. It was started when item 110 was completed: adding it to what was then `items-104-NN.md` would have taken that file to 163,015 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md), so that file was closed at item 109 and renamed [`items-104-109.md`](items-104-109.md) instead of growing unbounded. No existing entry was moved, shortened or rewritten by that split — only the filename changed, plus the inbound links that pointed at it. Stable item numbers never change regardless of which file their text lives in: item 110 held the highest number in the project when this file was opened and was nevertheless completed ahead of items 102 and 103, which remain pending. The file now holds items 110, 111, 112, 115 and 116, so its contents are not contiguous — items 111 and 112 were both completed after items 115 and 116 and are filed in numeric order regardless, since a number is an identifier and never a schedule.
 
 **These are historical accounts of what shipped and why, at the time each was recorded.** Where later work has changed or superseded a detail described here, current source and tests are authoritative — but the rationale, rejected alternatives and real regressions documented here are preserved rather than edited to match the present state. See root [`CLAUDE.md`](../../../CLAUDE.md) for the required reading order before implementing anything.
 
@@ -338,6 +338,101 @@ Item 111 shipped in `0.4.32`, but that build never reached the device — its de
 This is **broad product-level acceptance of item 111's intended behaviour**: the expanded tag-filter chooser showed sensible prospective route counts; the counts updated as further tags were AND-selected and as the route-name search was typed into; a chip with a zero result displayed `0`, read as unavailable without colour being its only cue, and did nothing when tapped; selected chips stayed removable; collapsing and reopening the chooser behaved correctly; and the ordinary portrait presentation was clear and usable.
 
 **It is not a claim that every automated boundary was recreated by hand.** No systematic VoiceOver audit and no keyboard-only iPhone interaction were performed; no Unicode tag-identity or count-width boundary was exercised; and no four-digit route count existed to exercise. The automated evidence for all of those stands in the Implementation account above and is **not** relabelled as physical evidence. **Physical Android verification remains separately outstanding**, as for most recent items. The full ledger, including exactly what the acceptance does and does not assert, is [`../current-status.md`](../current-status.md).
+
+---
+
+<a id="item-112"></a>
+
+## Item 112 — Diagnostics and Settings information-architecture review — done
+
+_Category: Information architecture_
+
+112. **Diagnostics and Settings information-architecture review — done**
+     - Origin: the installed-iPhone field test of 10 September 2026 — see [`current-status.md`](../current-status.md) for the dated report. The current division between Diagnostics and Settings may mix explanatory material, status information and configurable properties in ways that are not always intuitive. Much of Diagnostics remains useful and **should not be discarded merely because the application matures**.
+     - **This item is not approval to merge the tabs, and the name "Properties" is not approved.** Nothing in this entry pre-commits to a merger, to that name, or to removing diagnostics that remain useful. A staged, decision-gated review is what is approved.
+     - Stages, in order, each completed before the next begins:
+       1. **Inventory** the content and actions currently owned by Diagnostics and Settings.
+       2. **Classify** each as configuration, live status, troubleshooting, technical explanation or recovery action.
+       3. **Evaluate** whether the screens should remain separate, be regrouped, or share a clearer parent structure.
+       4. **Recommend** plain-language terminology and navigation that remains understandable to non-technical riders.
+       5. **Return the recommendation for product approval** before making any broad navigation or naming change.
+       6. **After approval**, implement and verify the agreed structure — and do so before item 102.
+     - Confirmed current contents, recorded to seed stage 1 rather than to pre-empt stage 2's classification:
+       - **Diagnostics** (`src/ui/diagnostics/DiagnosticsScreen.tsx`): a _System status_ definition grid — app version, build id, network, service-worker state, storage health plus the item 92 estimate line and high-pressure warning, map-rendering support, geolocation permission, last known fix accuracy, last known fix age, active route; _Recent errors_; _Routing diagnostics_ — the "Why a fetch can fail before an HTTP response" disclosure, item 101's "What HTTP statuses mean" disclosure, the recent-attempts list, the "Test routing connection" action with its result definition grid (stage, error, safe reason code, HTTP status, construction/fetch/response flags, secure context, service-worker facts, installed/standalone display) and the "Copy diagnostic report" action with its manual-copy textarea fallback; and _Recent map imagery attempts_.
+       - **Settings** (`src/ui/settings/SettingsScreen.tsx`): an offline banner; _Route planning_ — the default cycling profile button group, the "Avoid ferries by default" checkbox, saving/error status, and the "How recalculation works" disclosure; _OpenRouteService_ — the sign-up link, key status, the save/replace/delete key lifecycle with its confirmation dialogue, and the "How the key and route data are used" disclosure; _Elevation and climbs_ — the "How climbs are classified" and "Local gradient colours" disclosures, including the shared band legends; _Riding_ — a "Screen on" disclosure that is **explanatory text only**, the actual toggle having lived in the Riding status card since item 82.
+       - A classification tension is already visible from that inventory and is worth stating plainly at stage 2: only three genuinely configurable properties exist in the whole application (default cycling profile, avoid ferries by default, and the OpenRouteService API key), while both screens carry substantial explanation and live status around them.
+       - Primary navigation today offers five destinations in this order: Routes, Ride, Plan, Diagnostics, Settings (`src/ui/shared/MainNavigation.tsx`).
+     - Constraints that survive any restructuring: the diagnostics screen's existing local-only, redacted character (no analytics, no external error reporting, no logged coordinates or keys); the API key remaining user-supplied and local; and British spelling in all user-facing text.
+     - Cross-references: item 101 ([`items-100-103.md#item-101`](items-100-103.md#item-101)) for the newest Diagnostics content, item 92 ([`items-89-94.md#item-92`](items-89-94.md#item-92)) for the storage-health signal, item 82 for why the "Screen on" control and its explanation live in different places, and item 102 as adjacent but independent — a navigation-symbol redesign is not a navigation-structure decision, and neither item approves the other's scope.
+     - Physical acceptance on the installed iPhone Home Screen PWA is required for whatever structure is eventually approved. Physical Android verification is separately outstanding, as for most recent items.
+
+### Implementation account (13 September 2026, `0.4.34`)
+
+**The approved decision, from stage 5.** The four stages ran in order and the recommendation was put to the user, who approved: keep **two separate destinations**; rename the rider-facing `Diagnostics` to **`Status`** while `Settings` stays; give Settings a two-level hierarchy — **`Preferences`** over Route planning and OpenRouteService, **`Explanations`** over Elevation and climbs and Riding; relabel `Active route` → **`Active session`**; and make the missing-key hint name Settings. Nothing was removed.
+
+**Why not the other two structures.** A **shared parent** was rejected plainly: ACN has no router, no URL and no history integration, and `App.tsx` has no focus management on screen transition at all, so a parent needs either a second navigation layer on every screen or an unbuilt drill-down with a back affordance — and it makes the failure case _worse_, adding a tap to reach urgent-but-infrequent content. A **merge** was rejected on two grounds: `e2e/stickyNavigation.spec.ts` already proves that a fresh load of the diagnostics screen, with no key, no errors and every disclosure collapsed, exceeds one 390×844 viewport, so a merged screen is two or more; and, decisively, **no honest single name exists** for configuration + status + explanation. `Properties` is OS/developer jargon, opaque in English and as "Eigenschaften"; `More` is a leftovers label that would make diagnostics look exactly as expendable as this item warns against. Choosing a word only because it can contain everything is the failure mode the entry names.
+
+**Why `Status`.** It is plain rider-facing language that accurately covers what the screen holds — system status, recent errors, routing and imagery attempts, and the one connection test. It is identical in German, which helps item 113. `Help` would set a how-to expectation the screen cannot meet; `System` is cold and invites "operating system".
+
+**The rename is presentation-deep, deliberately.** Only three rider-facing strings changed: `MainNavigation.tsx`'s `label`, and `DiagnosticsScreen.tsx`'s `aria-label` and `<h1>`. The internal key stays `"diagnostics"` — it is what `screenTypes.ts`, `App.tsx`'s render switch and `NavIcon`'s glyph lookup all key off, and the screen key is never persisted, so no storage or migration question arises. The `src/ui/diagnostics/` directory, `DiagnosticsScreen.tsx`, every `diagnostics-*` CSS class and section id, `mapDiagnostics.ts`, `routingDiagnostics.ts` and `e2e/diagnostics.spec.ts` are all unchanged. The `Routing diagnostics` `h2` and the `Copy diagnostic report` button were **left alone on purpose**: the approved scope names the navigation label and the screen heading only, and five tests locate that region by its accessible name.
+
+**Settings' hierarchy.** Two new `<section className="stack settings-group" aria-labelledby="settings-…-heading">` wrappers carry bare `<h2>`s; the four existing `section.panel.stack` cards are untouched apart from their headings dropping to `<h3>` (ids unchanged). The offline banner stays above both groups. Nothing moved between panels, and nothing moved to Status. A bare `h2` inside a plain `stack` wrapper is the existing convention — `PlanningScreen.tsx`'s "Waypoints" and `RidingClimbSelector.tsx`'s "Recognised climbs" both do it.
+
+**What this fixes, stated as the problem it was.** Settings was four peer `h2` panels of which two carried controls and two carried none, with nothing signalling which. Only **three** configurable properties exist in the whole application — default cycling profile, avoid ferries by default, and the OpenRouteService key — and they were interleaved with four disclosures of pure explanation. The group level makes the screen self-describing: everything a rider can change sits under one word, everything that only says what something means under another, and `Screen on` stops reading as a toggle that failed to render.
+
+#### The 200%-text measurement, which overturned a documented belief
+
+The item was asked to measure primary-navigation containment at 200% root text after the rename, and to file a new backlog item if measurable overflow remained. **Measured in the pinned Playwright container (`v1.61.1-noble`) across Chromium, WebKit and the Pixel-7 preset, on the parent commit `2eca824` — before any change:**
+
+| Screen      | chromium 390 | webkit 390 | android-chrome 412 |
+| ----------- | ------------ | ---------- | ------------------ |
+| Routes      | 0            | 0          | 0                  |
+| Diagnostics | 0            | 0          | 0                  |
+| Settings    | **27**       | **27**     | **6**              |
+| Plan        | 0            | 0          | 0                  |
+
+and the navigation's own contribution, by hide-and-compare (`scrollWidth` with versus without `.main-nav`), was **zero on every screen in every engine**.
+
+**Eight in-repo comments were therefore wrong.** They asserted "a known, unrelated primary-navigation overflow at 200% text"; the only one stating a root cause, `e2e/rideSessionSwitchGuard.spec.ts`, named "a bare `<span>Settings</span>` exceeding the viewport at 200% text, reproduced independently on a plain Routes screen". Routes measures **0**, with an empty library and with a long-named seeded route alike. `.main-nav-button` centres its label (`align-items: center`), so a label wider than its own content box overhangs symmetrically and is absorbed by the header's 8px padding: at 390px the last label's right edge sits **3.55px inside** the viewport (Chromium), 3.58px (WebKit), 5.75px (Pixel 7).
+
+**The real cause was `<h2>OpenRouteService</h2>`** — one unbreakable word at 1.5em of a 32px root: 384px of text inside a 324px content box, 60px of internal overflow, propagating to the panel (+44) and the document (+27). **Demoting the panel headings to `h3` removed it**: re-measured after the change, every screen reads **0** in all three engines. That makes the demotion load-bearing rather than cosmetic, and `e2e/settings.spec.ts` guards it.
+
+**No new backlog item was filed**, and that is the measurement's verdict, not a scoping convenience: there is no residual navigation overflow to own. The eight comments were corrected in place to state what was measured, with their tests' own assertions left exactly as they were. **What is not claimed:** that the belief was never true — an earlier build may well have overflowed, and no archaeology was done — only that it does not reproduce on `2eca824` or on this commit.
+
+#### Evidence
+
+**Fail-first.** The new and amended component tests were written and run against unmodified production code first: **13 failed**, each for its intended reason — no `Status` nav label, no `Status` `h1`, no `Active session` row, no Settings in the missing-key hint, no `Preferences`/`Explanations` regions, and the four panel headings still at level 2.
+
+**Negative controls, all seven discriminating.**
+
+| Control                                             | Result                                                                           |
+| --------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Restore the `Diagnostics` nav label                 | 3 of 6 `MainNavigation.test.tsx` tests fail                                      |
+| Revert `Active session` → `Active route`            | 2 `DiagnosticsScreen.test.tsx` tests fail                                        |
+| Revert the missing-key hint                         | 1 `DiagnosticsScreen.test.tsx` test fails                                        |
+| Flatten Settings to four peer `h2`s                 | 6 `SettingsScreen.test.tsx` tests fail                                           |
+| Move the Riding panel under `Preferences`           | the group-membership test fails, and only that one                               |
+| Flatten Settings, rebuilt, at 200% in the container | `e2e/settings.spec.ts` fails with **`Received: 27`** — the exact baseline figure |
+| Add a sixth navigation destination, rebuilt         | the nav-containment test fails with **`navContributes: 7`**                      |
+
+The last two close the loop: the 27px is precisely what the demotion removes, and the navigation differential genuinely catches a navigation that does overflow, so its passing is evidence rather than vacuity.
+
+**Rendered and inspected, not just asserted** (the amendment that required it). At ordinary text the group heading took the UA default 1.5em — **24px against `.screen-title`'s clamped ~21.45px at 390px**, so the group label outsized the page title. That is a weak hierarchy this item itself introduced, so it was corrected here rather than deferred to item 103: **one scoped rule**, `.settings-group > h2 { margin: 0; font-size: 1.25rem }`, giving a monotonic **21.45 / 20 / 18.72px** across `h1` / group `h2` / panel `h3`, and letting the existing 16px `.screen`/`.stack` gaps control spacing instead of stacking on top of UA block margins. This is the only CSS the item adds. At 200% root text, Chromium and WebKit both render the reorganised screen with no horizontal overflow, no clipped heading and no truncation.
+
+**Verification.** `corepack npm run lint`, `corepack npx tsc -b --noEmit`, `corepack npm test` — **3719/3719 across 171 files** — and `corepack npm run build` all clean. The **full Playwright suite ran in the pinned CI container**: **360/360 passed**, including the `webkit-smoke` project, which cannot launch on this development host at all and so has no local coverage outside the container. `corepack npm run format:check` was run last, and `git diff --check` is clean. Local npm resolves to the pinned `11.16.0`; local Node is `v24.13.0` against `.nvmrc`'s `24.18.0`, and the container's own Node is `v24.17.0` — CI enforces both and is authoritative.
+
+**Limitations, stated plainly.** Automated evidence only. **No installed-iPhone and no physical-Android verification is claimed**; the portrait checklist below has not been run. The 200%-root-text measurements are browser-text evidence, never iOS Dynamic Type acceptance — ACN has no Dynamic Type opt-in. The WebKit evidence is desktop WebKit in a container, not installed-iPhone Safari. `docs/project/current-status.md`'s dated "Diagnostics and Settings: layout, wrapping, disclosures and touch targets are satisfactory" entry predates this restructure and is annotated there rather than rewritten.
+
+#### Installed-iPhone acceptance checklist — not yet run
+
+Stationary, portrait, default text, on the installed Home Screen PWA:
+
+- the primary navigation reads `Routes / Ride / Plan / Status / Settings`, the active destination is recognisable without relying on colour, and every tab stays comfortably tappable with gloves;
+- `Status` opens and every row reads, including `Active session` showing `None`, a route id, or `Free roam` as appropriate;
+- with no key saved, the missing-key hint names Settings and `Test routing connection` is visibly disabled;
+- Settings reads as two groups: `Preferences` above `Route planning` and `OpenRouteService`, `Explanations` above `Elevation and climbs` and `Riding`, with the group labels clearly subordinate to the `Settings` title and clearly above the panel titles;
+- the three configurable properties are reachable without scrolling past explanation, and the key save/replace/delete lifecycle still works;
+- both disclosure groups still open, close and read correctly with no route open.
 
 ---
 

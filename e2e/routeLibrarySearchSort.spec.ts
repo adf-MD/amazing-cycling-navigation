@@ -326,15 +326,14 @@ test.describe("four-option toolbar at enlarged text and short landscape (item 99
     await page.getByLabel("Sort by").selectOption("ascent-desc");
   }
 
-  /** This item's own contract is that "the toolbar and route cards remain
-   * contained with no horizontal page overflow" — a whole-document
-   * scrollWidth check would also trip on this app shell's own pre-existing,
-   * unrelated primary-navigation overflow at 200% text (confirmed present
-   * identically with the ORIGINAL two-option "Most recent" selected too,
-   * so it is not caused by this item's longer labels, and fixing app-shell
-   * navigation chrome is out of this item's scope — see item 103). Scoping
-   * the check to the toolbar and card list directly tests what this item
-   * actually governs, independent of that unrelated pre-existing gap. */
+  /**
+   * This item's own contract is that "the toolbar and route cards remain contained with no
+   * horizontal page overflow", so the check is scoped to the toolbar and card list. This
+   * comment previously justified that scoping by blaming a primary-navigation overflow at
+   * 200% text; that attribution was wrong — item 112 measured the navigation's own
+   * contribution to document scrollWidth at 200% text as zero, in Chromium, WebKit and the
+   * Pixel-7 preset. See item 112's history entry.
+   */
   async function expectContainedWithinViewport(
     locator: ReturnType<Page["locator"]>,
     viewportWidth: number,

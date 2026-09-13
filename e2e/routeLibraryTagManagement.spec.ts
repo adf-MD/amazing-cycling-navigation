@@ -319,11 +319,10 @@ test.describe("390x844 portrait at 200% text", () => {
     await expectAtLeastTouchTarget(
       manager.getByRole("button", { name: "Close", exact: true }),
     );
-    // A whole-document overflow check would also trip on this app shell's
-    // own pre-existing, unrelated primary-navigation overflow at 200% text
-    // (see routeLibrarySearchSort.spec.ts's item-99 note, deferred to item
-    // 103) — the scoped containment checks above are what this item
-    // actually governs.
+    // The scoped containment checks above are what this item actually governs. The earlier
+    // primary-navigation attribution here was wrong: item 112 measured the navigation's
+    // own contribution to document scrollWidth at 200% text as zero, in Chromium, WebKit
+    // and the Pixel-7 preset. See item 112's history entry.
   });
 });
 

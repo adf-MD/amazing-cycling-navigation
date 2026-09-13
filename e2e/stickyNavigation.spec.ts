@@ -131,12 +131,10 @@ test("stays pinned on the pre-ride/Resume screen while scrolled", async ({
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
 });
 
-test("stays pinned on Diagnostics while scrolled", async ({ page }) => {
+test("stays pinned on Status while scrolled", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Diagnostics" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Diagnostics", exact: true }),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Status", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Status", exact: true })).toBeVisible();
 
   const header = headerLocator(page);
   await expect(header).toHaveCSS("position", "sticky");
@@ -144,7 +142,7 @@ test("stays pinned on Diagnostics while scrolled", async ({ page }) => {
   if (!topBox) throw new Error("expected the header to have a bounding box");
 
   const scrollHeight = await page.evaluate(() => document.documentElement.scrollHeight);
-  expect(scrollHeight).toBeGreaterThan(844); // proves Diagnostics is genuinely scrollable here
+  expect(scrollHeight).toBeGreaterThan(844); // proves Status is genuinely scrollable here
 
   await page.evaluate(() => {
     window.scrollTo(0, 400);
@@ -246,12 +244,97 @@ test("every top-level screen other than active Riding renders the header sticky"
   await page.goto("/");
   const header = headerLocator(page);
 
-  for (const label of ["Routes", "Plan", "Diagnostics", "Settings", "Ride"]) {
+  for (const label of ["Routes", "Plan", "Status", "Settings", "Ride"]) {
     await page.getByRole("button", { name: label }).click();
     await expect(header).toHaveCSS("position", "sticky");
   }
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
+});
+
+/**
+ * Backlog item 112. Eight spec files used to carry a comment asserting that
+ * the primary navigation overflowed the document at 200% text — one of them
+ * naming "a bare <span>Settings</span> exceeding the viewport". Measured in
+ * the pinned container across Chromium, WebKit and the Pixel-7 preset, that
+ * was wrong: the navigation contributes exactly zero to the document's
+ * horizontal extent. Labels are centred by `align-items: center`, so a label
+ * wider than its own button content box overhangs symmetrically and is
+ * absorbed by the header's 8px padding.
+ *
+ * Asserted as a differential rather than a bare document check, so it stays
+ * attributable to the navigation regardless of what a screen's content does:
+ * hiding .main-nav must leave document.scrollWidth exactly as it was. It
+ * discriminates — a sixth destination, or a label long enough to push the
+ * row past the viewport, breaks it.
+ */
+test("the primary navigation contributes nothing to horizontal document extent at 200% text", async ({
+  page,
+}) => {
+  await page.goto("/");
+  // The role locator, not this file's own mainNavLocator helper, which is
+  // scoped to the synthetic-safe-area describe below.
+  const nav = page.getByRole("navigation", { name: "Main" });
+  await expect(nav).toBeVisible();
+
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+
+  const measured = await nav.evaluate((navElement) => {
+    const doc = document.documentElement;
+    const withNav = doc.scrollWidth;
+    const original = navElement.style.display;
+    navElement.style.display = "none";
+    const withoutNav = doc.scrollWidth;
+    navElement.style.display = original;
+    const navRect = navElement.getBoundingClientRect();
+    const labels = [...navElement.querySelectorAll(".main-nav-button")].map((button) => {
+      const span = button.querySelector("span");
+      if (!span) throw new Error("expected every nav button to carry a label span");
+      // A Range over the span's contents, not scrollWidth: scrollWidth is an
+      // integer and never smaller than the element's own box, so it cannot
+      // measure painted text extent (item 111's recorded trap).
+      const range = document.createRange();
+      range.selectNodeContents(span);
+      const textRect = range.getBoundingClientRect();
+      const buttonRect = button.getBoundingClientRect();
+      return {
+        text: span.textContent,
+        textLeft: textRect.left,
+        textRight: textRect.right,
+        buttonWidth: buttonRect.width,
+        buttonHeight: buttonRect.height,
+      };
+    });
+    return {
+      navContributes: withNav - withoutNav,
+      navLeft: navRect.left,
+      navRight: navRect.right,
+      clientWidth: doc.clientWidth,
+      labels,
+    };
+  });
+
+  expect(measured.navContributes).toBe(0);
+  expect(measured.navLeft).toBeGreaterThanOrEqual(0);
+  expect(measured.navRight).toBeLessThanOrEqual(measured.clientWidth + 1);
+
+  expect(measured.labels.map((label) => label.text)).toEqual([
+    "Routes",
+    "Ride",
+    "Plan",
+    "Status",
+    "Settings",
+  ]);
+  for (const label of measured.labels) {
+    // Every label's painted text stays inside the viewport even where it
+    // overhangs its own button, and every button keeps its touch target.
+    expect(label.textLeft, label.text).toBeGreaterThanOrEqual(-1);
+    expect(label.textRight, label.text).toBeLessThanOrEqual(measured.clientWidth + 1);
+    expect(label.buttonWidth, label.text).toBeGreaterThanOrEqual(44);
+    expect(label.buttonHeight, label.text).toBeGreaterThanOrEqual(44);
+  }
 });
 
 // CLAUDE.md item 34: a real, confirmed field bug on the deployed iPhone
@@ -385,7 +468,7 @@ test.describe("synthetic safe-area inset (iOS status-bar strip coverage)", () =>
     await page.goto("/");
     const header = headerLocator(page);
 
-    for (const label of ["Routes", "Plan", "Diagnostics", "Settings", "Ride"]) {
+    for (const label of ["Routes", "Plan", "Status", "Settings", "Ride"]) {
       await page.getByRole("button", { name: label }).click();
       await expect(header).toHaveCSS("position", "sticky");
     }

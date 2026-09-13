@@ -1419,13 +1419,14 @@ test("at 200% enlarged text, the inline switch prompt (including the longer Retu
   const dialog = routeBCard.getByRole("alertdialog");
   await expect(dialog).toBeVisible();
 
-  // Scoped to the switch prompt's own card/actions, not the whole
-  // document: a pre-existing, unrelated MainNavigation overflow (a bare
-  // <span>Settings</span> exceeding the viewport at 200% text, reproduced
-  // independently on a plain Routes screen with no route conflict at all)
-  // already fails a document.scrollWidth-wide assertion regardless of this
-  // fix. That's out of this item 73 follow-up's scope — this test proves
-  // the switch prompt itself doesn't add to or worsen it.
+  // Scoped to the switch prompt's own card/actions, not the whole document: this test
+  // proves the prompt itself adds nothing to the document's horizontal extent. It
+  // previously claimed a MainNavigation overflow — "a bare <span>Settings</span> exceeding
+  // the viewport at 200% text" — already failed a document-wide assertion. That was
+  // measurably wrong: item 112 measured the navigation's own contribution to document
+  // scrollWidth at 200% text as zero, in Chromium, WebKit and the Pixel-7 preset, and a
+  // plain Routes screen at 200% has no document overflow at all, with or without seeded
+  // routes. See item 112's history entry.
   //
   // Measured atomically in one evaluate() call (not separate .boundingBox()
   // round trips) so nothing can shift/scroll between reading the card's box

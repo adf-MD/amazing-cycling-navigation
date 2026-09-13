@@ -2783,11 +2783,11 @@ test.describe("north-pointing orientation indicator (backlog item 110)", () => {
     expect(isFullyWithin(ink, buttonBox)).toBe(true);
     expect(Math.abs(await paintedRotationDegrees(arrow))).toBeGreaterThan(1);
 
-    // A whole-document scrollWidth check at 200% trips on this app
-    // shell's own pre-existing, unrelated primary-navigation overflow —
-    // already documented in routeLibraryTags.spec.ts and
-    // planningPlacementControlLayering.spec.ts. The honest, load-bearing
-    // assertion is that this control contributes nothing to it.
+    // The honest, load-bearing assertion is that this control contributes nothing to the
+    // document's own scrollWidth. This used to be framed around a primary-navigation
+    // overflow; that attribution was wrong — item 112 measured the navigation's own
+    // contribution to document scrollWidth at 200% text as zero, in Chromium, WebKit and
+    // the Pixel-7 preset.
     const overflow = await northUpButton.evaluate((element) => {
       const withControl = document.documentElement.scrollWidth;
       const original = element.style.display;

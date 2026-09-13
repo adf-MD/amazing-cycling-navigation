@@ -202,274 +202,297 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
         </p>
       ) : null}
 
-      <section className="panel stack" aria-labelledby="route-planning-heading">
-        <h2 id="route-planning-heading">Route planning</h2>
+      {/* Backlog item 112. Settings was four peer h2 panels of which two
+          carried controls and two carried none, with nothing signalling
+          which. These two groups make the screen self-describing:
+          Preferences is everything a rider can change, Explanations is
+          everything that only says what something means. The panels
+          themselves are untouched cards, demoted to h3 beneath their
+          group. Bare h2s inside a plain `stack` wrapper follow the
+          existing convention (PlanningScreen's "Waypoints",
+          RidingClimbSelector's "Recognised climbs"). */}
+      <section
+        className="stack settings-group"
+        aria-labelledby="settings-preferences-heading"
+      >
+        <h2 id="settings-preferences-heading">Preferences</h2>
 
-        <div className="stack">
-          <p className="setting-row-title" id="default-cycling-profile-heading">
-            Default cycling profile
-          </p>
-          <div
-            role="group"
-            aria-labelledby="default-cycling-profile-heading"
-            className="cycling-profile-group"
-          >
-            {ROUTING_PROFILES.map((metadata) => {
-              const isSelected = profileByDefault === metadata.value;
-              return (
-                <button
-                  key={metadata.value}
-                  type="button"
-                  className={
-                    isSelected
-                      ? "cycling-profile-button is-selected"
-                      : "cycling-profile-button"
-                  }
-                  aria-pressed={isSelected}
-                  disabled={isSavingPreferences}
-                  onClick={() => {
-                    handleChangeDefaultProfile(metadata.value);
-                  }}
-                >
-                  {metadata.label}
-                </button>
-              );
-            })}
-          </div>
-          <p className="field-hint">{describeRoutingProfile(profileByDefault)}</p>
-        </div>
+        <section className="panel stack" aria-labelledby="route-planning-heading">
+          <h3 id="route-planning-heading">Route planning</h3>
 
-        <label className="setting-row" htmlFor="avoid-ferries-default-checkbox">
-          <input
-            id="avoid-ferries-default-checkbox"
-            type="checkbox"
-            className="setting-row-checkbox"
-            // Overrides the otherwise-computed accessible name (which
-            // would concatenate the title AND the hint sentence below,
-            // since both live inside this same <label>) with just the
-            // concise title — the whole row, hint included, still
-            // activates the checkbox on click/tap via the native <label>
-            // wrapping behaviour; aria-label only affects how assistive
-            // technology announces the control's name.
-            aria-label="Avoid ferries by default"
-            checked={avoidFerriesByDefault}
-            disabled={isSavingPreferences}
-            onChange={(event) => {
-              handleToggleAvoidFerriesByDefault(event.target.checked);
-            }}
-          />
-          <span className="setting-row-text">
-            <span className="setting-row-title">Avoid ferries by default</span>
-            <span className="field-hint">Used when a new draft is created.</span>
-          </span>
-        </label>
-        {isSavingPreferences ? (
-          <p role="status" className="field-hint">
-            Saving…
-          </p>
-        ) : null}
-        {preferencesError ? (
-          <p role="alert" className="field-error">
-            {preferencesError}
-          </p>
-        ) : null}
-
-        <details className="settings-disclosure">
-          <summary>How recalculation works</summary>
-          <p>
-            A route is calculated in sections between waypoints. The first calculation
-            uses one routing request per section; later edits normally recalculate only
-            changed sections.
-          </p>
-        </details>
-      </section>
-
-      <section className="panel stack" aria-labelledby="ors-settings-heading">
-        <h2 id="ors-settings-heading">OpenRouteService</h2>
-        <p>
-          Road-bike route planning uses your own free key from{" "}
-          <a href="https://account.heigit.org/signup" target="_blank" rel="noreferrer">
-            HeiGIT — sign up for an OpenRouteService key
-          </a>
-          , obtained from the HeiGIT account dashboard, then pasted below.
-        </p>
-
-        <p role="status" className="status-row">
-          {status.headline}
-        </p>
-
-        {showForm ? (
-          <form onSubmit={handleSave} className="stack">
-            <label htmlFor="ors-key-input">OpenRouteService API key</label>
-            <div className="row">
-              <input
-                id="ors-key-input"
-                type={keyVisible ? "text" : "password"}
-                value={draftKey}
-                autoComplete="off"
-                onChange={(event) => {
-                  setDraftKey(event.target.value);
-                }}
-              />
-              <button
-                type="button"
-                className="btn-secondary"
-                aria-pressed={keyVisible}
-                onClick={() => {
-                  setKeyVisible((visible) => !visible);
-                }}
-              >
-                {keyVisible ? "Hide" : "Reveal"}
-              </button>
+          <div className="stack">
+            <p className="setting-row-title" id="default-cycling-profile-heading">
+              Default cycling profile
+            </p>
+            <div
+              role="group"
+              aria-labelledby="default-cycling-profile-heading"
+              className="cycling-profile-group"
+            >
+              {ROUTING_PROFILES.map((metadata) => {
+                const isSelected = profileByDefault === metadata.value;
+                return (
+                  <button
+                    key={metadata.value}
+                    type="button"
+                    className={
+                      isSelected
+                        ? "cycling-profile-button is-selected"
+                        : "cycling-profile-button"
+                    }
+                    aria-pressed={isSelected}
+                    disabled={isSavingPreferences}
+                    onClick={() => {
+                      handleChangeDefaultProfile(metadata.value);
+                    }}
+                  >
+                    {metadata.label}
+                  </button>
+                );
+              })}
             </div>
-            {saveError ? (
-              <p role="alert" className="field-error">
-                {saveError}
-              </p>
-            ) : null}
-            <div className="row">
-              <button
-                type="submit"
-                className="btn-primary"
-                disabled={draftKey.trim().length === 0}
-              >
-                Save on this device
-              </button>
-              {isEditing && key ? (
+            <p className="field-hint">{describeRoutingProfile(profileByDefault)}</p>
+          </div>
+
+          <label className="setting-row" htmlFor="avoid-ferries-default-checkbox">
+            <input
+              id="avoid-ferries-default-checkbox"
+              type="checkbox"
+              className="setting-row-checkbox"
+              // Overrides the otherwise-computed accessible name (which
+              // would concatenate the title AND the hint sentence below,
+              // since both live inside this same <label>) with just the
+              // concise title — the whole row, hint included, still
+              // activates the checkbox on click/tap via the native <label>
+              // wrapping behaviour; aria-label only affects how assistive
+              // technology announces the control's name.
+              aria-label="Avoid ferries by default"
+              checked={avoidFerriesByDefault}
+              disabled={isSavingPreferences}
+              onChange={(event) => {
+                handleToggleAvoidFerriesByDefault(event.target.checked);
+              }}
+            />
+            <span className="setting-row-text">
+              <span className="setting-row-title">Avoid ferries by default</span>
+              <span className="field-hint">Used when a new draft is created.</span>
+            </span>
+          </label>
+          {isSavingPreferences ? (
+            <p role="status" className="field-hint">
+              Saving…
+            </p>
+          ) : null}
+          {preferencesError ? (
+            <p role="alert" className="field-error">
+              {preferencesError}
+            </p>
+          ) : null}
+
+          <details className="settings-disclosure">
+            <summary>How recalculation works</summary>
+            <p>
+              A route is calculated in sections between waypoints. The first calculation
+              uses one routing request per section; later edits normally recalculate only
+              changed sections.
+            </p>
+          </details>
+        </section>
+
+        <section className="panel stack" aria-labelledby="ors-settings-heading">
+          <h3 id="ors-settings-heading">OpenRouteService</h3>
+          <p>
+            Road-bike route planning uses your own free key from{" "}
+            <a href="https://account.heigit.org/signup" target="_blank" rel="noreferrer">
+              HeiGIT — sign up for an OpenRouteService key
+            </a>
+            , obtained from the HeiGIT account dashboard, then pasted below.
+          </p>
+
+          <p role="status" className="status-row">
+            {status.headline}
+          </p>
+
+          {showForm ? (
+            <form onSubmit={handleSave} className="stack">
+              <label htmlFor="ors-key-input">OpenRouteService API key</label>
+              <div className="row">
+                <input
+                  id="ors-key-input"
+                  type={keyVisible ? "text" : "password"}
+                  value={draftKey}
+                  autoComplete="off"
+                  onChange={(event) => {
+                    setDraftKey(event.target.value);
+                  }}
+                />
                 <button
                   type="button"
                   className="btn-secondary"
-                  onClick={handleCancelEdit}
+                  aria-pressed={keyVisible}
+                  onClick={() => {
+                    setKeyVisible((visible) => !visible);
+                  }}
                 >
-                  Cancel
+                  {keyVisible ? "Hide" : "Reveal"}
                 </button>
+              </div>
+              {saveError ? (
+                <p role="alert" className="field-error">
+                  {saveError}
+                </p>
               ) : null}
+              <div className="row">
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={draftKey.trim().length === 0}
+                >
+                  Save on this device
+                </button>
+                {isEditing && key ? (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={handleCancelEdit}
+                  >
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
+            </form>
+          ) : (
+            <div className="stack">
+              <p className="status-row">Key saved on this device: •••• (hidden)</p>
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={handleStartReplace}
+                >
+                  Replace key
+                </button>
+                <button
+                  type="button"
+                  className="btn-danger"
+                  onClick={() => {
+                    setPendingDelete(true);
+                  }}
+                >
+                  Delete key
+                </button>
+              </div>
             </div>
-          </form>
-        ) : (
-          <div className="stack">
-            <p className="status-row">Key saved on this device: •••• (hidden)</p>
-            <div className="row">
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={handleStartReplace}
-              >
-                Replace key
-              </button>
-              <button
-                type="button"
-                className="btn-danger"
-                onClick={() => {
-                  setPendingDelete(true);
-                }}
-              >
-                Delete key
-              </button>
-            </div>
-          </div>
-        )}
+          )}
 
-        <details className="settings-disclosure">
-          <summary>How the key and route data are used</summary>
-          <p>
-            When you calculate a route in Planning, your key and the waypoints you have
-            placed are sent directly to HeiGIT to compute the route. Your riding GPS
-            location is never sent to HeiGIT.
-          </p>
-          <p>
-            This is <strong>not encrypted</strong>. It is stored on this device only to
-            keep it out of this app&apos;s source code and away from accidental
-            publication — any JavaScript running on this site can still read it. Clearing
-            Safari&apos;s or your browser&apos;s site data for this app removes it, and
-            you will need to enter it again.
-          </p>
-        </details>
+          <details className="settings-disclosure">
+            <summary>How the key and route data are used</summary>
+            <p>
+              When you calculate a route in Planning, your key and the waypoints you have
+              placed are sent directly to HeiGIT to compute the route. Your riding GPS
+              location is never sent to HeiGIT.
+            </p>
+            <p>
+              This is <strong>not encrypted</strong>. It is stored on this device only to
+              keep it out of this app&apos;s source code and away from accidental
+              publication — any JavaScript running on this site can still read it.
+              Clearing Safari&apos;s or your browser&apos;s site data for this app removes
+              it, and you will need to enter it again.
+            </p>
+          </details>
+        </section>
       </section>
 
-      <section className="panel stack" aria-labelledby="elevation-climbs-heading">
-        <h2 id="elevation-climbs-heading">Elevation and climbs</h2>
+      <section
+        className="stack settings-group"
+        aria-labelledby="settings-explanations-heading"
+      >
+        <h2 id="settings-explanations-heading">Explanations</h2>
 
-        <details className="settings-disclosure">
-          <summary>How climbs are classified</summary>
-          <p>
-            Climb score is climb length in metres multiplied by average gradient
-            percentage.
-          </p>
-          <p>
-            A climb is recognised once it is at least{" "}
-            {formatMetres(MIN_FEATURE_LENGTH_METRES)} long, averages at least{" "}
-            {MIN_CLIMB_AVERAGE_GRADIENT_PERCENT}% and reaches a minimum score of{" "}
-            {formatWholeNumber(MIN_CLIMB_SCORE)}.
-          </p>
-          <ul>
-            <li>Uncategorised: below {formatWholeNumber(CLIMB_CATEGORY_4_SCORE)}</li>
-            <li>
-              {CLIMB_CATEGORY_NAMES["category-4"]}:{" "}
-              {formatWholeNumber(CLIMB_CATEGORY_4_SCORE)} to{" "}
-              {formatWholeNumber(CLIMB_CATEGORY_3_SCORE - 1)}
-            </li>
-            <li>
-              {CLIMB_CATEGORY_NAMES["category-3"]}:{" "}
-              {formatWholeNumber(CLIMB_CATEGORY_3_SCORE)} to{" "}
-              {formatWholeNumber(CLIMB_CATEGORY_2_SCORE - 1)}
-            </li>
-            <li>
-              {CLIMB_CATEGORY_NAMES["category-2"]}:{" "}
-              {formatWholeNumber(CLIMB_CATEGORY_2_SCORE)} to{" "}
-              {formatWholeNumber(CLIMB_CATEGORY_1_SCORE - 1)}
-            </li>
-            <li>
-              {CLIMB_CATEGORY_NAMES["category-1"]}:{" "}
-              {formatWholeNumber(CLIMB_CATEGORY_1_SCORE)} to{" "}
-              {formatWholeNumber(CLIMB_CATEGORY_HC_SCORE - 1)}
-            </li>
-            <li>
-              {CLIMB_CATEGORY_NAMES.hc}: {formatWholeNumber(CLIMB_CATEGORY_HC_SCORE)} or
-              more
-            </li>
-          </ul>
-        </details>
+        <section className="panel stack" aria-labelledby="elevation-climbs-heading">
+          <h3 id="elevation-climbs-heading">Elevation and climbs</h3>
 
-        <details className="settings-disclosure">
-          <summary>Local gradient colours</summary>
-          <p>
-            Detailed colours along a route show local gradient, smoothed over
-            approximately 100 m — not a climb&apos;s overall category or a single
-            point&apos;s exact grade.
-          </p>
-          <ClimbGradientBandLegend presentClimbBands={ALL_CLIMB_GRADIENT_BANDS} />
-          <p>
-            A brief flat or descending section within a recognised climb uses the green,
-            below-3% band.
-          </p>
-          <DescentLocalLegend presentDescentLocalKeys={ALL_DESCENT_LOCAL_KEYS} />
-          <p>
-            A recognised descent reuses the same three blues locally; any locally shallow
-            stretch shows the plain route colour instead.
-          </p>
-          <p>
-            Blue intensity reflects gradient steepness only, not surface, bends, traffic
-            or other conditions.
-          </p>
-        </details>
-      </section>
+          <details className="settings-disclosure">
+            <summary>How climbs are classified</summary>
+            <p>
+              Climb score is climb length in metres multiplied by average gradient
+              percentage.
+            </p>
+            <p>
+              A climb is recognised once it is at least{" "}
+              {formatMetres(MIN_FEATURE_LENGTH_METRES)} long, averages at least{" "}
+              {MIN_CLIMB_AVERAGE_GRADIENT_PERCENT}% and reaches a minimum score of{" "}
+              {formatWholeNumber(MIN_CLIMB_SCORE)}.
+            </p>
+            <ul>
+              <li>Uncategorised: below {formatWholeNumber(CLIMB_CATEGORY_4_SCORE)}</li>
+              <li>
+                {CLIMB_CATEGORY_NAMES["category-4"]}:{" "}
+                {formatWholeNumber(CLIMB_CATEGORY_4_SCORE)} to{" "}
+                {formatWholeNumber(CLIMB_CATEGORY_3_SCORE - 1)}
+              </li>
+              <li>
+                {CLIMB_CATEGORY_NAMES["category-3"]}:{" "}
+                {formatWholeNumber(CLIMB_CATEGORY_3_SCORE)} to{" "}
+                {formatWholeNumber(CLIMB_CATEGORY_2_SCORE - 1)}
+              </li>
+              <li>
+                {CLIMB_CATEGORY_NAMES["category-2"]}:{" "}
+                {formatWholeNumber(CLIMB_CATEGORY_2_SCORE)} to{" "}
+                {formatWholeNumber(CLIMB_CATEGORY_1_SCORE - 1)}
+              </li>
+              <li>
+                {CLIMB_CATEGORY_NAMES["category-1"]}:{" "}
+                {formatWholeNumber(CLIMB_CATEGORY_1_SCORE)} to{" "}
+                {formatWholeNumber(CLIMB_CATEGORY_HC_SCORE - 1)}
+              </li>
+              <li>
+                {CLIMB_CATEGORY_NAMES.hc}: {formatWholeNumber(CLIMB_CATEGORY_HC_SCORE)} or
+                more
+              </li>
+            </ul>
+          </details>
 
-      <section className="panel stack" aria-labelledby="riding-heading">
-        <h2 id="riding-heading">Riding</h2>
+          <details className="settings-disclosure">
+            <summary>Local gradient colours</summary>
+            <p>
+              Detailed colours along a route show local gradient, smoothed over
+              approximately 100 m — not a climb&apos;s overall category or a single
+              point&apos;s exact grade.
+            </p>
+            <ClimbGradientBandLegend presentClimbBands={ALL_CLIMB_GRADIENT_BANDS} />
+            <p>
+              A brief flat or descending section within a recognised climb uses the green,
+              below-3% band.
+            </p>
+            <DescentLocalLegend presentDescentLocalKeys={ALL_DESCENT_LOCAL_KEYS} />
+            <p>
+              A recognised descent reuses the same three blues locally; any locally
+              shallow stretch shows the plain route colour instead.
+            </p>
+            <p>
+              Blue intensity reflects gradient steepness only, not surface, bends, traffic
+              or other conditions.
+            </p>
+          </details>
+        </section>
 
-        <details className="settings-disclosure">
-          <summary>Screen on</summary>
-          <p>
-            Keeps the display on while an active Riding or free-roam screen is visible.
-            This may increase battery use.
-          </p>
-          <p>
-            This only applies while that screen is open and visible — it is not background
-            location tracking, and does not guarantee the display can stay on if your
-            browser does not support this feature.
-          </p>
-        </details>
+        <section className="panel stack" aria-labelledby="riding-heading">
+          <h3 id="riding-heading">Riding</h3>
+
+          <details className="settings-disclosure">
+            <summary>Screen on</summary>
+            <p>
+              Keeps the display on while an active Riding or free-roam screen is visible.
+              This may increase battery use.
+            </p>
+            <p>
+              This only applies while that screen is open and visible — it is not
+              background location tracking, and does not guarantee the display can stay on
+              if your browser does not support this feature.
+            </p>
+          </details>
+        </section>
       </section>
 
       <ConfirmDialog

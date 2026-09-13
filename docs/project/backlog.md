@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence. Items 87–92 were added by the [release-readiness audit](release-readiness-audit.md) (item 86); items 87–92 have since been completed. Items 107–113 were added by the installed-iPhone field test of 10 September 2026 (see [current-status.md](current-status.md) for the dated evidence) and are all scheduled ahead of items 102 and 103, which keep their numbers; the authoritative execution order lives in the root [`CLAUDE.md`](../../CLAUDE.md)'s queue index and is deliberately not duplicated here. Items 107, 108, 109, 110 and 111 of that group have since been completed and their full specifications have moved to [`history/`](history/README.md), so only items 112 and 113 remain below. Item 114 was added on 11 September 2026 from item 109's own Chromium verification work rather than from that field test, and is likewise scheduled ahead of items 102 and 103.
+Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence. Items 87–92 were added by the [release-readiness audit](release-readiness-audit.md) (item 86); items 87–92 have since been completed. Items 107–113 were added by the installed-iPhone field test of 10 September 2026 (see [current-status.md](current-status.md) for the dated evidence) and are all scheduled ahead of items 102 and 103, which keep their numbers; the authoritative execution order lives in the root [`CLAUDE.md`](../../CLAUDE.md)'s queue index and is deliberately not duplicated here. Items 107, 108, 109, 110, 111 and 112 of that group have since been completed and their full specifications have moved to [`history/`](history/README.md), so only item 113 remains below. Item 114 was added on 11 September 2026 from item 109's own Chromium verification work rather than from that field test, and is likewise scheduled ahead of items 102 and 103.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Entries through item 93 reproduce their original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this). Items 94 and later are new post-0.4.0 specifications authored directly into this file, following the same structure and conventions.
 
@@ -157,33 +157,6 @@ _Category: Interface and accessibility consistency_
      - Split implementation into small component or pattern slices after the audit. Do not mechanically restyle every screen in one commit.
      - Coordinate with item 102 so the navigation choice and broader visual vocabulary converge, but do not make every item technically dependent on a complete application redesign.
      - No settings behaviour, routing preference semantics, persistence or navigation structure changes belong to this visual item.
-
----
-
-<a id="item-112"></a>
-
-## Item 112 — Diagnostics and Settings information-architecture review
-
-_Category: Information architecture_
-
-112. **Diagnostics and Settings information-architecture review**
-     - Origin: the installed-iPhone field test of 10 September 2026 — see [`current-status.md`](current-status.md) for the dated report. The current division between Diagnostics and Settings may mix explanatory material, status information and configurable properties in ways that are not always intuitive. Much of Diagnostics remains useful and **should not be discarded merely because the application matures**.
-     - **This item is not approval to merge the tabs, and the name "Properties" is not approved.** Nothing in this entry pre-commits to a merger, to that name, or to removing diagnostics that remain useful. A staged, decision-gated review is what is approved.
-     - Stages, in order, each completed before the next begins:
-       1. **Inventory** the content and actions currently owned by Diagnostics and Settings.
-       2. **Classify** each as configuration, live status, troubleshooting, technical explanation or recovery action.
-       3. **Evaluate** whether the screens should remain separate, be regrouped, or share a clearer parent structure.
-       4. **Recommend** plain-language terminology and navigation that remains understandable to non-technical riders.
-       5. **Return the recommendation for product approval** before making any broad navigation or naming change.
-       6. **After approval**, implement and verify the agreed structure — and do so before item 102.
-     - Confirmed current contents, recorded to seed stage 1 rather than to pre-empt stage 2's classification:
-       - **Diagnostics** (`src/ui/diagnostics/DiagnosticsScreen.tsx`): a _System status_ definition grid — app version, build id, network, service-worker state, storage health plus the item 92 estimate line and high-pressure warning, map-rendering support, geolocation permission, last known fix accuracy, last known fix age, active route; _Recent errors_; _Routing diagnostics_ — the "Why a fetch can fail before an HTTP response" disclosure, item 101's "What HTTP statuses mean" disclosure, the recent-attempts list, the "Test routing connection" action with its result definition grid (stage, error, safe reason code, HTTP status, construction/fetch/response flags, secure context, service-worker facts, installed/standalone display) and the "Copy diagnostic report" action with its manual-copy textarea fallback; and _Recent map imagery attempts_.
-       - **Settings** (`src/ui/settings/SettingsScreen.tsx`): an offline banner; _Route planning_ — the default cycling profile button group, the "Avoid ferries by default" checkbox, saving/error status, and the "How recalculation works" disclosure; _OpenRouteService_ — the sign-up link, key status, the save/replace/delete key lifecycle with its confirmation dialogue, and the "How the key and route data are used" disclosure; _Elevation and climbs_ — the "How climbs are classified" and "Local gradient colours" disclosures, including the shared band legends; _Riding_ — a "Screen on" disclosure that is **explanatory text only**, the actual toggle having lived in the Riding status card since item 82.
-       - A classification tension is already visible from that inventory and is worth stating plainly at stage 2: only three genuinely configurable properties exist in the whole application (default cycling profile, avoid ferries by default, and the OpenRouteService API key), while both screens carry substantial explanation and live status around them.
-       - Primary navigation today offers five destinations in this order: Routes, Ride, Plan, Diagnostics, Settings (`src/ui/shared/MainNavigation.tsx`).
-     - Constraints that survive any restructuring: the diagnostics screen's existing local-only, redacted character (no analytics, no external error reporting, no logged coordinates or keys); the API key remaining user-supplied and local; and British spelling in all user-facing text.
-     - Cross-references: item 101 ([`history/items-100-103.md#item-101`](history/items-100-103.md#item-101)) for the newest Diagnostics content, item 92 ([`history/items-89-94.md#item-92`](history/items-89-94.md#item-92)) for the storage-health signal, item 82 for why the "Screen on" control and its explanation live in different places, and item 102 as adjacent but independent — a navigation-symbol redesign is not a navigation-structure decision, and neither item approves the other's scope.
-     - Physical acceptance on the installed iPhone Home Screen PWA is required for whatever structure is eventually approved. Physical Android verification is separately outstanding, as for most recent items.
 
 ---
 

@@ -323,11 +323,12 @@ test.describe("tag-filter region geometry and accessibility (item 100 stage 3)",
       await expectContainedWithinViewport(clearButton, viewportWidth);
       await expectAtLeastTouchTarget(clearButton);
 
-      // A whole-document overflow check here would also trip on this app
-      // shell's own pre-existing, unrelated primary-navigation overflow
-      // at 200% text (see routeLibraryTags.spec.ts's own identical
-      // comment) — the scoped containment checks above are what this
-      // item actually governs.
+      // The scoped containment checks above are what this item actually governs, rather
+      // than a whole-document check. This comment used to justify that by blaming a
+      // primary-navigation overflow at 200% text. That attribution was wrong: item 112
+      // measured the navigation's own contribution to document scrollWidth at 200% text as
+      // zero, in Chromium, WebKit and the Pixel-7 preset. The real cause was a Settings
+      // heading, since corrected — see item 112's history entry.
     });
   });
 
@@ -893,11 +894,11 @@ test.describe("contextual tag-filter counts (item 111)", () => {
       expect(measured.countClipped).toBe(false);
       expect(measured.clearOfLabel).toBe(true);
 
-      // A whole-document overflow check here would also trip on this app
-      // shell's own pre-existing, unrelated primary-navigation overflow
-      // at 200% text — the scoped containment checks above are what this
-      // item actually governs. This is browser-text evidence, never iOS
-      // Dynamic Type acceptance.
+      // The scoped containment checks above are what this item actually governs, rather
+      // than a whole-document check. The earlier primary-navigation attribution here was
+      // wrong: item 112 measured the navigation's own contribution to document scrollWidth
+      // at 200% text as zero, in Chromium, WebKit and the Pixel-7 preset. This is
+      // browser-text evidence, never iOS Dynamic Type acceptance.
     });
   });
 });

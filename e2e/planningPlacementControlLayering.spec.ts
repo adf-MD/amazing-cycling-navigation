@@ -1015,13 +1015,11 @@ test.describe("Planning placement control containment (item 109)", () => {
       expect(intersects(footprint, chromeBox), selector).toBe(false);
     }
 
-    // A whole-document scrollWidth check at 200% trips on this app shell's
-    // own pre-existing, unrelated primary-navigation overflow — confirmed
-    // identically with no Planning map on screen, and already documented
-    // in routeLibraryTags.spec.ts and routeLibrarySearchSort.spec.ts. So
-    // the honest, load-bearing assertion is that this control contributes
-    // nothing to it: hiding the control must leave the document's own
-    // scrollWidth exactly as it was.
+    // The honest, load-bearing assertion is that this control contributes nothing to the
+    // document's own scrollWidth: hiding the control must leave that value exactly as it
+    // was. This used to be framed around a primary-navigation overflow; that attribution
+    // was wrong — item 112 measured the navigation's own contribution to document
+    // scrollWidth at 200% text as zero, in Chromium, WebKit and the Pixel-7 preset.
     const overflow = await callout.evaluate((el) => {
       const withControl = document.documentElement.scrollWidth;
       const original = el.style.display;

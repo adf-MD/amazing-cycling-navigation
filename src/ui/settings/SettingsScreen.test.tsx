@@ -216,11 +216,73 @@ describe("SettingsScreen", () => {
         screen.getByRole("heading", { level: 1, name: "Settings" }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole("heading", { level: 2, name: "Route planning" }),
+        screen.getByRole("heading", { level: 3, name: "Route planning" }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole("heading", { level: 2, name: "OpenRouteService" }),
+        screen.getByRole("heading", { level: 3, name: "OpenRouteService" }),
       ).toBeInTheDocument();
+    });
+
+    // Backlog item 112. Before this, Settings was four peer h2 panels of which
+    // two carried controls and two carried none, with nothing saying which was
+    // which. The group level is what makes the screen self-describing, so it
+    // is asserted by level, by membership and by order rather than by copy.
+    it("groups the four panels under exactly two headings: Preferences, then Explanations", () => {
+      render(<SettingsScreen />);
+
+      expect(
+        screen
+          .getAllByRole("heading", { level: 2 })
+          .map((heading) => heading.textContent),
+      ).toEqual(["Preferences", "Explanations"]);
+    });
+
+    it("puts the two configurable panels under Preferences and the two explanation-only panels under Explanations", () => {
+      render(<SettingsScreen />);
+
+      const preferences = screen.getByRole("region", { name: "Preferences" });
+      expect(
+        within(preferences)
+          .getAllByRole("heading", { level: 3 })
+          .map((heading) => heading.textContent),
+      ).toEqual(["Route planning", "OpenRouteService"]);
+
+      const explanations = screen.getByRole("region", { name: "Explanations" });
+      expect(
+        within(explanations)
+          .getAllByRole("heading", { level: 3 })
+          .map((heading) => heading.textContent),
+      ).toEqual(["Elevation and climbs", "Riding"]);
+
+      // The three genuinely configurable properties all live under
+      // Preferences, and no control leaks into Explanations.
+      expect(
+        within(preferences).getByRole("group", { name: "Default cycling profile" }),
+      ).toBeInTheDocument();
+      expect(
+        within(preferences).getByRole("checkbox", { name: "Avoid ferries by default" }),
+      ).toBeInTheDocument();
+      expect(
+        within(preferences).getByLabelText("OpenRouteService API key"),
+      ).toBeInTheDocument();
+      expect(within(explanations).queryAllByRole("button")).toHaveLength(0);
+      expect(within(explanations).queryAllByRole("checkbox")).toHaveLength(0);
+      expect(within(explanations).queryAllByRole("textbox")).toHaveLength(0);
+    });
+
+    it("keeps all four panel cards, each as its own panel beneath its group", () => {
+      render(<SettingsScreen />);
+
+      for (const name of [
+        "Route planning",
+        "OpenRouteService",
+        "Elevation and climbs",
+        "Riding",
+      ]) {
+        const panel = screen.getByRole("heading", { level: 3, name }).closest("section");
+        expect(panel).not.toBeNull();
+        expect(panel).toHaveClass("panel");
+      }
     });
 
     it("keeps the longer key/route-data explanation in a collapsed, keyboard-operable disclosure", () => {
@@ -486,7 +548,7 @@ describe("SettingsScreen", () => {
       render(<SettingsScreen />);
 
       expect(
-        screen.getByRole("heading", { level: 2, name: "Elevation and climbs" }),
+        screen.getByRole("heading", { level: 3, name: "Elevation and climbs" }),
       ).toBeInTheDocument();
 
       const details = screen.getByText("How climbs are classified").closest("details");
@@ -606,7 +668,7 @@ describe("SettingsScreen", () => {
       render(<SettingsScreen />);
 
       expect(
-        screen.getByRole("heading", { level: 2, name: "Riding" }),
+        screen.getByRole("heading", { level: 3, name: "Riding" }),
       ).toBeInTheDocument();
 
       const details = screen.getByText("Screen on").closest("details");
