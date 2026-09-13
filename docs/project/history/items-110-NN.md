@@ -421,15 +421,22 @@ The last two close the loop: the 27px is precisely what the demotion removes, an
 
 **Verification.** `corepack npm run lint`, `corepack npx tsc -b --noEmit`, `corepack npm test` — **3719/3719 across 171 files** — and `corepack npm run build` all clean. The **full Playwright suite ran in the pinned CI container**: **360/360 passed**, including the `webkit-smoke` project, which cannot launch on this development host at all and so has no local coverage outside the container. `corepack npm run format:check` was run last, and `git diff --check` is clean. Local npm resolves to the pinned `11.16.0`; local Node is `v24.13.0` against `.nvmrc`'s `24.18.0`, and the container's own Node is `v24.17.0` — CI enforces both and is authoritative.
 
-**Limitations, stated plainly.** Automated evidence only. **No installed-iPhone and no physical-Android verification is claimed**; the portrait checklist below has not been run. The 200%-root-text measurements are browser-text evidence, never iOS Dynamic Type acceptance — ACN has no Dynamic Type opt-in. The WebKit evidence is desktop WebKit in a container, not installed-iPhone Safari. `docs/project/current-status.md`'s dated "Diagnostics and Settings: layout, wrapping, disclosures and touch targets are satisfactory" entry predates this restructure and is annotated there rather than rewritten.
+**Limitations, stated plainly.** This was written before any device evidence existed; installed-iPhone acceptance has since been recorded below, and **no physical-Android verification is claimed**. The 200%-root-text measurements are browser-text evidence, never iOS Dynamic Type acceptance — ACN has no Dynamic Type opt-in. The WebKit evidence is desktop WebKit in a container, not installed-iPhone Safari. `docs/project/current-status.md`'s dated "Diagnostics and Settings: layout, wrapping, disclosures and touch targets are satisfactory" entry predates this restructure and is annotated there rather than rewritten.
 
-#### Installed-iPhone acceptance checklist — not yet run
+#### Installed-iPhone acceptance (13 September 2026): broad acceptance, with one clause outstanding
 
-Stationary, portrait, default text, on the installed Home Screen PWA:
+The user exercised this presentation on the installed iPhone Home Screen PWA in portrait and accepted the intended changes broadly — the renamed `Status` destination and screen, and Settings' `Preferences`/`Explanations` grouping over its four panels. **No app version or build was read from Status on the device**, so nothing here asserts which build was under test; the deployed context (`0.4.34`, commit `64ae976`) is recorded separately. The full ledger, including exactly what the session does and does not assert, is [`../current-status.md`](../current-status.md), which stays authoritative.
+
+The same session rejected one value this item did **not** introduce: for a route-backed session the `Active session` row exposed an opaque internal identifier. That is filed as item 117 — a pre-existing presentation problem uncovered by this acceptance, not a regression here, and item 112 is not reopened. A separate bottom-overscroll observation from the same session is recorded in the ledger as non-actionable, with no item allocated.
+
+**Not accepted, and still outstanding**, stationary, portrait, default text:
+
+- with no key saved, the missing-key hint names Settings and `Test routing connection` is visibly disabled — the session's device had a key configured, so this could not be exercised.
+
+**Accepted in that session**, recorded here for completeness:
 
 - the primary navigation reads `Routes / Ride / Plan / Status / Settings`, the active destination is recognisable without relying on colour, and every tab stays comfortably tappable with gloves;
-- `Status` opens and every row reads, including `Active session` showing `None`, a route id, or `Free roam` as appropriate;
-- with no key saved, the missing-key hint names Settings and `Test routing connection` is visibly disabled;
+- `Status` opens and every row reads, with `Active session` showing `None` or `Free roam` as appropriate — the route-backed value is item 117's;
 - Settings reads as two groups: `Preferences` above `Route planning` and `OpenRouteService`, `Explanations` above `Elevation and climbs` and `Riding`, with the group labels clearly subordinate to the `Settings` title and clearly above the panel titles;
 - the three configurable properties are reachable without scrolling past explanation, and the key save/replace/delete lifecycle still works;
 - both disclosure groups still open, close and read correctly with no route open.
