@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, RefObject } from "react";
 
 export interface ConfirmDialogProps {
   open: boolean;
@@ -27,6 +27,15 @@ export interface ConfirmDialogProps {
    * .screen-title's own clamped size — and would read as a new top-level
    * section rather than as part of the card it belongs to. */
   headingLevel?: 2 | 3 | 4;
+  /** A handle onto this dialog's own root element, for a caller that must
+   * measure its rendered box (backlog item 118's Settings reveal, which
+   * scrolls the confirmation into the usable viewport when opening it
+   * would otherwise leave it partly hidden). Named after
+   * RouteTagManager.tsx's own `confirmRef` precedent rather than using
+   * React 19's ref-as-prop, since every ref in this codebase is passed as
+   * an explicit `*Ref` prop. Undefined for all six other callers, so their
+   * rendering and behaviour are byte-identical. */
+  containerRef?: RefObject<HTMLDivElement | null>;
 }
 
 /** Keeps the rendered tag a real JSX intrinsic rather than a computed
@@ -54,6 +63,7 @@ export function ConfirmDialog({
   confirmDisabled,
   cancelDisabled,
   headingLevel = 2,
+  containerRef,
 }: ConfirmDialogProps) {
   if (!open) {
     return null;
@@ -74,6 +84,7 @@ export function ConfirmDialog({
       aria-labelledby="confirm-dialog-title"
       className="route-delete-confirm"
       onKeyDown={handleKeyDown}
+      ref={containerRef}
     >
       <Title id="confirm-dialog-title">{title}</Title>
       <p>{message}</p>

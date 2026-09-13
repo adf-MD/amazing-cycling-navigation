@@ -118,3 +118,82 @@ Stationary, portrait, on the installed Home Screen PWA, in Settings with a key s
 **No app version or build was read from Status on the device**, so nothing here asserts which build was under test; the deployed context (`0.4.36`, commit `37f6895`) is recorded separately. This is **broad product-level acceptance** of the intended containment and behaviour, never a hand-recreation of the automated boundaries above: no VoiceOver audit, no iOS Dynamic Type result and no physical-Android result is claimed, and the 200% figures stay browser-root-text evidence. The ledger, [`../current-status.md`](../current-status.md), remains authoritative.
 
 Having accepted that, the user then approved a **conditional-reveal refinement** — activating **Delete key** should bring the expanded confirmation and both actions into view when they would otherwise be partly hidden. That is a follow-up to this item, recorded below once implemented; it is **not** a defect report against the behaviour accepted here, and the acceptance above is not retrospectively rewritten as though the refinement had existed.
+
+### Conditional-reveal follow-up (13 September 2026, `0.4.37`)
+
+**Contract.** Activating **Delete key** brings the expanded confirmation and both actions into view when they would otherwise be partly hidden: nothing moves when the whole inset already fits the usable visual viewport; the minimum movement when it fits but is clipped; and, when it cannot fit, the **Cancel**/**Delete** row is prioritised while retaining as much title and warning context as possible. Immediate, never animated, once per arming, and re-evaluated on reopen.
+
+#### Baseline, measured on `37f6895` before a line was written
+
+At 390x844 in the pinned container, across Chromium, WebKit and the Pixel-7 preset — three deliberately seeded starting positions, each opened with a real DOM click so Playwright's own actionability scroll could not contaminate the measurement:
+
+| Fixture                            | Native result, all three engines                                                                                                |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Confirmation already fully visible | `scrollY` unchanged; inset 267.9..495.9 inside a 67..844 band                                                                   |
+| **Delete key** 20px above the fold | **619px of native scroll** (WebKit 620), landing the inset's bottom at 456.9 — **379px above** the minimum-movement position    |
+| 200% root text                     | `scrollY` clamped at the document end; inset 748px tall with its **top at −270.3**, and 366px of unused space below the actions |
+| Application scrolls issued         | **0**, in every fixture                                                                                                         |
+
+Two findings decided the design. First, **the application had no reveal at all** — every visible movement came from the browser's own `autoFocus` scroll on Cancel. Second, that native scroll **over-shoots**: at ordinary text it reveals far more than asked, which is why the honest contract here is "add only the residual", not "take over the scrolling".
+
+#### What was built
+
+A Settings-owned `confirmationRevealScroll.ts`: a pure `computeConfirmationRevealDelta` plus a thin `applyConfirmationReveal` that measures the visible band, asks for a delta and issues at most one `window.scrollBy({ top, left: 0, behavior: "auto" })`, returning the delta so tests assert the decision and not only its effect. `SettingsScreen` gains a `useLayoutEffect` keyed on `pendingDelete`, `ConfirmDialog` an optional `containerRef`, and `App` passes its existing `stickyHeaderRef` down — the same prop `RouteLibrary` and `RouteListItem` already take. **No CSS change, and no change to the inset's styling, wording, deletion semantics or the `savedAt` identity guard.**
+
+Five decisions are worth carrying forward.
+
+**Neither existing reveal helper matched.** `routeCardTopReveal.ts` is explicitly _top_-prioritising — "never sacrificing the top to try to also show the band's bottom" — and scrolls smooth unless reduced motion is set; clause 3 needs the opposite priority and clause 5 forbids smooth. `runWhenViewportSettled` was rejected on two grounds: it waits three stable frames, so the actions would be painted and touchable before anything moved, and **at its one-second cap it abandons without running at all**, which is the opposite of a deterministic reveal. Its own motivating case is unreachable here, since the saved-key branch mounts no text input.
+
+**The cushion is read from a custom property, not from `scroll-margin-bottom`.** Items 95 and 106 read `scroll-margin-bottom` because the browser performs their scroll, so the declaration is genuinely honoured there. Here it would be read purely as a number — and `scroll-margin` is **not inert**: it also feeds the scroll-into-view the focusing steps run for `autoFocus`, so declaring it would have quietly changed the native reveal this code measures and then corrects, leaving two mechanisms interacting through one property. `getComputedStyle(document.documentElement).getPropertyValue("--safe-area-inset-bottom")` has no scrolling effect, and **measurement settled a design review's objection that it would not resolve**: it returns `"0px"` in Chromium, WebKit and the Pixel-7 preset alike, and `"34px"` under the inline root override `index.css` documents for exactly this purpose.
+
+**Bottom-anchoring needs no second ref.** Source inspection confirms `.route-delete-confirm-actions` is the inset's final child, followed only by its own padding, so aligning the inset's bottom to the band guarantees at least as much protection as measuring the buttons — and keeps Cancel's 4px focus ring inside that padding rather than inside the cushion. The browser assertions are still made on the real **Cancel** and **Delete** rectangles. The residual case where the action row alone exceeds the band is unreachable at supported phone-portrait widths and is deliberately not engineered for.
+
+**No mirror ref is needed for "once per arming".** `pendingDelete` is a primitive boolean, so a `useLayoutEffect` keyed on it runs exactly on its false→true and true→false transitions — never on a `useNow` tick, a live-query re-emission or an unrelated control's state change — and a reopen _is_ a fresh false→true transition, which is what makes clause 6 fall out for free. Item 95 needed its `lastSwitchMessageRef` only because its own dependency was an object recreated every render.
+
+**A jsdom-forced correctness guard.** Every rect is all-zero there, so an unguarded delta computes as `0 − (0 + 8) = −8` and would have fired a spurious scroll in every existing Settings component test. An element with no laid-out box cannot be revealed, so a zero-or-negative height returns 0, and that is asserted directly.
+
+#### Evidence
+
+Eleven pure fixture tests, thirteen component tests and seven browser tests. The decisive browser instrument patches `window.scrollBy` and records the deltas the **application** requested: because the reveal scrolls that way and the browser's native focus scroll does not, this separates "the app decided to move" from "the view moved because focus moved", which a raw `scrollY` comparison cannot.
+
+Three browser fixtures carry the discriminating evidence, and one carries a finding worth stating plainly:
+
+- **The browser already satisfies the ordinary clipped case.** Its 619px over-shoot leaves the whole inset inside the band, so the correct application behaviour is to issue **zero** scrolls — the contract's own "avoid a redundant second adjustment when native focus has already made the target visible". That is asserted as an outcome, and it is recorded as a browser behaviour rather than as evidence for this change.
+- **A 34px home-indicator inset** — a real iPhone value — creates a gap the browser cannot know about: Cancel stays inside the layout viewport, so the native scroll does nothing, while the inset's bottom sits below the cushioned band. Exactly one application scroll lands it on the band.
+- **200% text with a 120px synthetic inset** takes the overflow branch with a wide margin rather than the ~20px that 200% alone would leave. Both actions end inside the band, the warning above them stays visible, and a real `.click()` on Cancel — whose actionability check is the hit-test proof — still works.
+- **Scrolling past an oversized confirmation** and reopening produces a single **negative** delta, asserted on the requested movement rather than on net `scrollY`.
+
+Interaction safety reuses item 95's per-frame recorder, re-implemented locally per the no-shared-e2e-helpers convention and scoped to the OpenRouteService card because item 119 means a page-level dialog can legitimately coexist. It is installed before the confirmation opens and stops at the first activation, so the window it covers is exactly "actionable and touchable"; a `MIN_ACTIONABLE_FRAMES` floor of 3 keeps it from passing vacuously.
+
+**Negative controls: seven of eight discriminate, and the eighth does not — stated rather than implied.**
+
+| Control                                                | Result                                     |
+| ------------------------------------------------------ | ------------------------------------------ |
+| 1. Remove the conditional reveal                       | 6 component tests and 3 browser tests fail |
+| 2. Scroll even when already fully visible              | 5 pure and 1 component test fail           |
+| 3. Reveal only the title, leaving the actions clipped  | 2 pure and 1 component test fail           |
+| 4. Smooth behaviour                                    | 2 component tests fail                     |
+| 5. Run the reveal on every render                      | the once-per-arming test fails             |
+| 6. Post-paint `useEffect` instead of `useLayoutEffect` | **Did not discriminate** — see below       |
+| 7a. Ignore the sticky-header boundary                  | the header-occlusion test fails            |
+| 7b. Ignore the visual viewport                         | the visual-viewport test fails             |
+| 8. Regress Cancel's focus restoration                  | 2 existing tests fail                      |
+
+**Control 6 did not discriminate at 20x CPU throttling, and did not discriminate at 50x either.** Item 95 exposed a 242px drift the same way, so this was expected to work and does not. The likely reason — reasoned, not proved — is that this reveal is triggered by a **discrete click**, whose passive effects React flushes before yielding to paint, whereas item 95's prompt opened from an asynchronous storage check. `useLayoutEffect` is kept because it guarantees the pre-paint ordering independently of that scheduling detail, but **no test here proves it is load-bearing**, and it should not be described as proved. Two further non-discriminations are recorded for the same reason: under control 1 the stability tests pass **vacuously** — with no reveal, nothing moves — so stability is never a proxy for correctness; and the Android-emulation test is a containment guard that the native scroll also satisfies at the Pixel-7 preset, so the discriminating browser evidence is the three Chromium fixtures.
+
+One consequence is pinned as a stated outcome rather than left to be discovered: after Cancel in the constrained case the restored **Delete key** trigger is asserted to be both focused and fully inside the usable band.
+
+**Verification.** `corepack npm run lint`, `corepack npx tsc -b --noEmit`, **3768/3768 Vitest across 173 files** and `corepack npm run build` all clean; the **full Playwright suite passes 381/381 in the pinned CI container**, including `webkit-smoke`, which cannot launch on this development host. A production build preceded every Playwright run. `corepack npm run format:check` ran last and `git diff --check` is clean.
+
+**Limitations.** Automated evidence only — **no installed-iPhone verification of this refinement is claimed**, and its checklist below has not been run. The 200% and synthetic-inset figures are browser measurements, never iOS Dynamic Type acceptance. WebKit coverage for Settings is a one-off investigation run, because the `webkit-smoke` project matches `smoke.spec.ts` alone; the committed regression coverage is Chromium and the Chromium-emulated Pixel-7 preset. On iOS Safari a programmatic focus on a non-editable element scrolls synchronously, so the keyboard-driven deferral that motivated `viewportSettle.ts` should not apply — but that is reasoning, not measurement, which is why the device check remains the gate.
+
+#### Installed-iPhone checklist for the refinement — not yet run
+
+Stationary, portrait, in Settings with a key saved:
+
+- with **Delete key** low enough that the expanded confirmation would not fit without movement, activating it moves the card only enough to show the warning and both buttons;
+- both buttons are stationary the moment they appear;
+- cancelling, then reopening when the confirmation is already fully visible, produces no unnecessary movement;
+- at a constrained position both actions stay fully tappable and the OpenRouteService context is still understandable;
+- Cancel still preserves the key and returns to **Delete key**;
+- confirmed deletion still removes the key, does not open the keyboard, and leaves focus and context at the OpenRouteService section.

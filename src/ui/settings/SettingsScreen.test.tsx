@@ -333,6 +333,301 @@ describe("SettingsScreen", () => {
     expect((await getProviderKey())?.apiKey).toBe(REPLACEMENT_KEY);
   });
 
+  // ---------------------------------------------------------------------
+  // Backlog item 118's conditional-reveal follow-up. jsdom has no layout
+  // engine, so every branch here is driven by deliberately stubbed
+  // geometry — the harness mirrors RouteListItem.test.tsx's own item
+  // 95/106 scroll-and-focus harness. The rendered result is proved in
+  // e2e/settings.spec.ts; these tests prove the decisions.
+  // ---------------------------------------------------------------------
+  describe("delete-confirmation reveal", () => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalFocus = HTMLElement.prototype.focus;
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalScrollBy = window.scrollBy;
+    const originalVisualViewport = window.visualViewport;
+
+    afterEach(() => {
+      Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+      HTMLElement.prototype.focus = originalFocus;
+      window.scrollBy = originalScrollBy;
+      Object.defineProperty(window, "visualViewport", {
+        configurable: true,
+        value: originalVisualViewport,
+      });
+    });
+
+    function rect(top: number, bottom: number): DOMRect {
+      return {
+        top,
+        bottom,
+        left: 0,
+        right: 358,
+        width: 358,
+        height: bottom - top,
+        x: 0,
+        y: top,
+        toJSON: () => "",
+      };
+    }
+
+    /** The confirmation reports `inset`; the sticky header reports
+     * `header`; everything else reports an empty box. */
+    function stubGeometry(
+      inset: { top: number; bottom: number },
+      header = { top: 0, bottom: 0 },
+    ) {
+      Element.prototype.getBoundingClientRect = function (this: Element) {
+        if (this.getAttribute("role") === "alertdialog") {
+          return rect(inset.top, inset.bottom);
+        }
+        if (this.tagName === "HEADER") return rect(header.top, header.bottom);
+        return rect(0, 0);
+      };
+    }
+
+    function captureScrollByCalls() {
+      const calls: ScrollToOptions[] = [];
+      window.scrollBy = (options?: ScrollToOptions | number) => {
+        if (typeof options === "object") calls.push(options);
+      };
+      return calls;
+    }
+
+    /** Records focus and scroll in one ordered log, so the React commit
+     * ordering this design depends on is pinned as a fact rather than
+     * assumed. Delegates to the real focus so activeElement and
+     * userEvent's own keyboard handling are unaffected. */
+    function captureOrderedLog() {
+      const log: string[] = [];
+      HTMLElement.prototype.focus = function focus(
+        this: HTMLElement,
+        options?: FocusOptions,
+      ) {
+        log.push(`focus:${this.textContent.trim().slice(0, 12)}`);
+        originalFocus.call(this, options);
+      };
+      window.scrollBy = (options?: ScrollToOptions | number) => {
+        if (typeof options === "object") log.push("scrollBy");
+      };
+      return log;
+    }
+
+    function stubVisualViewport(value: { offsetTop: number; height: number } | null) {
+      Object.defineProperty(window, "visualViewport", { configurable: true, value });
+    }
+
+    async function openConfirmation() {
+      const user = userEvent.setup();
+      render(<SettingsScreen />);
+      await waitFor(() => screen.getByRole("button", { name: "Delete key" }));
+      await user.click(screen.getByRole("button", { name: "Delete key" }));
+      return user;
+    }
+
+    it("issues one immediate, horizontally neutral scroll when the inset is clipped below", async () => {
+      await saveProviderKey(DUMMY_KEY);
+      // jsdom's window.innerHeight is 768; an inset ending at 900 is clipped.
+      stubGeometry({ top: 600, bottom: 900 });
+      const calls = captureScrollByCalls();
+
+      await openConfirmation();
+
+      expect(calls).toHaveLength(1);
+      // 900 - (768 - 8) = 140. left: 0 is what keeps this reveal from
+      // disturbing the 200%-text horizontal containment guarantees.
+      expect(calls[0]).toEqual({ top: 140, left: 0, behavior: "auto" });
+    });
+
+    it("does not scroll at all when the whole inset already fits", async () => {
+      await saveProviderKey(DUMMY_KEY);
+      stubGeometry({ top: 200, bottom: 500 });
+      const calls = captureScrollByCalls();
+
+      await openConfirmation();
+
+      expect(calls).toEqual([]);
+    });
+
+    it("corrects upwards by the minimum when the sticky header occludes the inset", async () => {
+      await saveProviderKey(DUMMY_KEY);
+      // A 120px sticky header; the inset starts at 60, i.e. under it.
+      stubGeometry({ top: 60, bottom: 400 }, { top: 0, bottom: 120 });
+      const calls = captureScrollByCalls();
+      // The real header lives in App, which threads its ref down; this
+      // supplies the same shape so the prop itself is exercised.
+      const header = document.createElement("header");
+      document.body.appendChild(header);
+      const user = userEvent.setup();
+      render(<SettingsScreen stickyHeaderRef={{ current: header }} />);
+      await waitFor(() => screen.getByRole("button", { name: "Delete key" }));
+      await user.click(screen.getByRole("button", { name: "Delete key" }));
+
+      // 60 - (120 + 8) = -68: up by exactly enough to clear the header.
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.top).toBe(-68);
+      expect(calls[0]?.behavior).toBe("auto");
+      header.remove();
+    });
+
+    it("keeps the actions in view by anchoring the inset's bottom when it cannot fit", async () => {
+      await saveProviderKey(DUMMY_KEY);
+      // 1000px tall against jsdom's 768px viewport: the overflow branch.
+      stubGeometry({ top: -100, bottom: 900 });
+      const calls = captureScrollByCalls();
+
+      await openConfirmation();
+
+      expect(calls).toHaveLength(1);
+      // The inset's bottom lands exactly on the band's bottom, so the
+      // action row below the warning is complete.
+      expect(calls[0]?.top).toBe(900 - (768 - 8));
+    });
+
+    it("measures the visual viewport, not the layout viewport", async () => {
+      await saveProviderKey(DUMMY_KEY);
+      // Comfortably inside jsdom's 768px layout viewport, but not inside a
+      // 400px visual viewport.
+      stubGeometry({ top: 150, bottom: 400 });
+      stubVisualViewport({ offsetTop: 0, height: 400 });
+      const calls = captureScrollByCalls();
+
+      await openConfirmation();
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.top).toBe(400 - (400 - 8));
+    });
+
+    it("focuses Cancel before it measures, so only the residual movement is applied", async () => {
+      await saveProviderKey(DUMMY_KEY);
+      stubGeometry({ top: 600, bottom: 900 });
+      const log = captureOrderedLog();
+
+      await openConfirmation();
+
+      // React commits the child host mount — and the focusing steps' own
+      // scroll — before this parent's layout effect runs. If a future
+      // React changed that, this reveal would fight the native one.
+      // The click's own focus on the trigger comes first and is not part
+      // of the claim, so the assertion is on the relative order.
+      expect(log).toContain("focus:Cancel");
+      expect(log).toContain("scrollBy");
+      expect(log.indexOf("focus:Cancel")).toBeLessThan(log.indexOf("scrollBy"));
+      expect(log.filter((entry) => entry === "scrollBy")).toHaveLength(1);
+    });
+
+    it("issues no scroll of its own when focusing Cancel has already revealed the inset", async () => {
+      await saveProviderKey(DUMMY_KEY);
+      let insetBottom = 900;
+      Element.prototype.getBoundingClientRect = function (this: Element) {
+        if (this.getAttribute("role") === "alertdialog") {
+          return rect(insetBottom - 300, insetBottom);
+        }
+        return rect(0, 0);
+      };
+      // Models the browser's native focus scroll bringing it fully into view.
+      HTMLElement.prototype.focus = function focus(
+        this: HTMLElement,
+        options?: FocusOptions,
+      ) {
+        insetBottom = 500;
+        originalFocus.call(this, options);
+      };
+      const calls = captureScrollByCalls();
+
+      await openConfirmation();
+
+      expect(calls).toEqual([]);
+    });
+
+    it("reveals once per arming, not on unrelated re-renders or clock ticks", async () => {
+      await saveProviderKey(DUMMY_KEY);
+      stubGeometry({ top: 600, bottom: 900 });
+      const calls = captureScrollByCalls();
+      let nowMs = 1_000;
+      const user = userEvent.setup();
+      render(<SettingsScreen clock={{ now: () => nowMs }} />);
+      await waitFor(() => screen.getByRole("button", { name: "Delete key" }));
+      await user.click(screen.getByRole("button", { name: "Delete key" }));
+      expect(calls).toHaveLength(1);
+
+      // An unrelated Settings control commits a real state change and a
+      // storage write while the confirmation is open.
+      nowMs += 5_000;
+      await user.click(
+        screen.getByRole("checkbox", { name: "Avoid ferries by default" }),
+      );
+      await waitFor(async () => {
+        expect((await getPlanningPreferences()).avoidFerriesByDefault).toBe(false);
+      });
+
+      expect(calls).toHaveLength(1);
+    });
+
+    it("re-evaluates from the geometry that exists when it is reopened", async () => {
+      await saveProviderKey(DUMMY_KEY);
+      let inset = { top: 600, bottom: 900 };
+      Element.prototype.getBoundingClientRect = function (this: Element) {
+        return this.getAttribute("role") === "alertdialog"
+          ? rect(inset.top, inset.bottom)
+          : rect(0, 0);
+      };
+      const calls = captureScrollByCalls();
+      const user = await openConfirmation();
+      expect(calls).toHaveLength(1);
+
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      // The rider has scrolled; the confirmation now opens lower down, so
+      // a different correction is required.
+      inset = { top: 700, bottom: 1000 };
+      await user.click(screen.getByRole("button", { name: "Delete key" }));
+
+      expect(calls).toHaveLength(2);
+      expect(calls[0]?.top).toBe(900 - (768 - 8));
+      expect(calls[1]?.top).toBe(1000 - (768 - 8));
+
+      // ...and a third opening, at a position that already fits, correctly
+      // decides to do nothing rather than repeating the last correction.
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      inset = { top: 200, bottom: 500 };
+      await user.click(screen.getByRole("button", { name: "Delete key" }));
+      expect(calls).toHaveLength(2);
+    });
+
+    it("adds no second movement when Cancel or a successful deletion closes it", async () => {
+      await saveProviderKey(DUMMY_KEY);
+      stubGeometry({ top: 600, bottom: 900 });
+      const calls = captureScrollByCalls();
+      const user = await openConfirmation();
+      expect(calls).toHaveLength(1);
+
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(calls).toHaveLength(1);
+
+      await user.click(screen.getByRole("button", { name: "Delete key" }));
+      expect(calls).toHaveLength(2);
+      await user.click(screen.getByRole("button", { name: "Delete" }));
+      await waitFor(() => {
+        expect(screen.getByText("No key configured")).toBeInTheDocument();
+      });
+
+      expect(calls).toHaveLength(2);
+    });
+
+    it("never scrolls merely because the confirmation was measured, and deletes nothing", async () => {
+      await saveProviderKey(DUMMY_KEY);
+      stubGeometry({ top: 600, bottom: 900 });
+      captureScrollByCalls();
+
+      await openConfirmation();
+
+      expect((await getProviderKey())?.apiKey).toBe(DUMMY_KEY);
+    });
+  });
+
   it("a key replaced in another tab disarms the confirmation, which can never delete the replacement", async () => {
     await saveProviderKey(DUMMY_KEY);
     const user = userEvent.setup();

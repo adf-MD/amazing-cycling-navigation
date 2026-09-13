@@ -1,4 +1,11 @@
-import { useCallback, useRef, useState, type SubmitEvent } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+  type SubmitEvent,
+} from "react";
 import type { RoutingProfile } from "../../domain/types.ts";
 import { systemClock, useNow, type Clock } from "../../platform/clock.ts";
 import { useOnlineStatus } from "../../platform/onlineStatus.ts";
@@ -39,6 +46,7 @@ import { DescentLocalLegend } from "../shared/DescentLocalLegend.tsx";
 import { formatMetres, formatWholeNumber } from "../shared/routeSummary.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
+import { applyConfirmationReveal } from "./confirmationRevealScroll.ts";
 import { describeProviderKeyStatus } from "./providerKeyStatus.ts";
 
 // The complete climb/descent local-gradient palettes, for Settings' own
@@ -55,9 +63,18 @@ const ALL_DESCENT_LOCAL_KEYS: ReadonlySet<DescentLocalKey> = new Set(
 
 export interface SettingsScreenProps {
   clock?: Clock;
+  /** Read-only handle onto the sticky top navigation's own rendered box,
+   * so the key-deletion confirmation's reveal can measure the header's
+   * live height when deciding how far to scroll (backlog item 118's
+   * follow-up). Mirrors RouteLibrary/RouteListItem's identical prop —
+   * App owns a page-chrome fact a screen component needs. */
+  stickyHeaderRef?: RefObject<HTMLElement | null>;
 }
 
-export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
+export function SettingsScreen({
+  clock = systemClock,
+  stickyHeaderRef,
+}: SettingsScreenProps) {
   const keyQuery = useCallback(() => getProviderKey(), []);
   const key = useLiveQuery(keyQuery);
   const verificationQuery = useCallback(() => getProviderKeyVerification(), []);
@@ -90,6 +107,7 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
   // succeeded and unmounted that trigger — see handleConfirmDelete.
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const cardHeadingRef = useRef<HTMLHeadingElement>(null);
+  const confirmRef = useRef<HTMLDivElement>(null);
 
   // avoidFerriesByDefault/profileByDefault are undefined both while the
   // live query is still loading and when no preferences row has ever been
@@ -232,6 +250,58 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
   // render, with no effect and no cleanup path to get wrong.
   const pendingDelete =
     armedDeleteSavedAt !== null && key?.savedAt === armedDeleteSavedAt;
+
+  /**
+   * Brings the armed confirmation into the usable viewport, if opening it
+   * would otherwise leave any of it hidden (backlog item 118's follow-up).
+   *
+   * SAFETY INVARIANT, inherited from item 95's correction in
+   * RouteListItem.tsx: once these actions are available to activate they
+   * must not still be moving. Two things enforce it and neither is
+   * sufficient alone — `useLayoutEffect`, so the adjustment lands after
+   * DOM layout but BEFORE the browser paints the confirmation, making the
+   * first frame a rider can see or touch the settled one; and
+   * `behavior: "auto"` unconditionally inside applyConfirmationReveal,
+   * since a smooth scroll keeps moving the buttons for hundreds of
+   * milliseconds after they are interactive. `Delete` is destructive, so a
+   * control that drifts under a finger already travelling towards it is
+   * the hazard itself.
+   *
+   * Deliberately NOT routed through runWhenViewportSettled, which items
+   * 105 and 106 use: it waits three stable animation frames, so the
+   * actions would be painted and hit-testable before anything moved, and
+   * at its one-second safety cap it abandons without running at all —
+   * which would make this reveal non-deterministic, the opposite of the
+   * contract. The case it exists for is unreachable here: the saved-key
+   * branch mounts no text input, so no software keyboard can be
+   * mid-dismissal. The one narrow window — saving a key and immediately
+   * pressing Delete key while iOS is still un-panning — is an accepted,
+   * documented trade, the same shape item 95 made.
+   *
+   * `pendingDelete` is a primitive boolean, so this runs exactly on its
+   * false→true and true→false transitions: never on a `useNow` tick, a
+   * live-query re-emission or any other re-render, which is what keeps
+   * one reveal per arming; and a reopen IS a fresh false→true transition,
+   * so it re-measures from the geometry that then exists. No mirror ref is
+   * needed — item 95 needed one only because its own dependency was an
+   * object recreated on every render.
+   *
+   * The dialog's own `autoFocus` on Cancel has already run by this point
+   * (React commits a child host mount, and the focusing steps' scroll,
+   * before a parent's layout effect), so this measures post-native-scroll
+   * geometry and applies only the residual. When the browser has already
+   * made the whole inset visible, that residual is zero and no scroll is
+   * issued at all.
+   */
+  useLayoutEffect(() => {
+    if (!pendingDelete) return;
+    const insetEl = confirmRef.current;
+    if (!insetEl) return;
+    applyConfirmationReveal(
+      insetEl,
+      stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+    );
+  }, [pendingDelete, stickyHeaderRef]);
 
   return (
     <section className="screen" aria-label="Settings">
@@ -437,12 +507,14 @@ export function SettingsScreen({ clock = systemClock }: SettingsScreenProps) {
                   panel and, because Cancel carries autoFocus, opening it
                   scrolled the viewport to the bottom of Settings. h4 keeps
                   item 112's outline monotonic beneath this card's own h3.
-                  No scroll of its own: the trigger is by definition just
-                  above it, and autoFocus's native "scroll only if needed"
-                  is all the reveal this ever requires. */}
+                  containerRef lets the layout effect above measure this
+                  box and correct whatever the browser's own autoFocus
+                  scroll left hidden — see that effect for why the native
+                  movement is built on rather than suppressed. */}
               <ConfirmDialog
                 open={pendingDelete}
                 headingLevel={4}
+                containerRef={confirmRef}
                 title="Delete OpenRouteService key"
                 message="This removes your saved key from this device. Route planning will be unavailable until you enter a key again. Any routes you have already saved remain fully usable without it."
                 confirmLabel="Delete"

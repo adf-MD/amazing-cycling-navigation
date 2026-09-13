@@ -232,3 +232,76 @@ test("the Settings key-deletion confirmation stays inside its card at 200% text"
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
   }
 });
+
+// Item 118's conditional-reveal follow-up, at the Pixel-7 preset. The
+// confirmation is deliberately opened with a real DOM click from a seeded
+// scroll position, so Playwright's own actionability scroll cannot stand
+// in for the behaviour under test. Chromium emulation, never a substitute
+// for a physical Android device.
+test("the key-deletion confirmation's actions are brought fully into the usable band when it cannot fit", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByLabel("OpenRouteService API key").fill("dummy-e2e-key");
+  await page.getByRole("button", { name: "Save on this device" }).click();
+  await expect(
+    page.getByText(/key saved on this device, not yet verified/i),
+  ).toBeVisible();
+
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+    document.documentElement.style.setProperty("--safe-area-inset-bottom", "120px");
+    const btn = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent.trim() === "Delete key",
+    );
+    if (!btn) throw new Error("expected a Delete key button");
+    const r = btn.getBoundingClientRect();
+    window.scrollTo(0, window.scrollY + r.bottom - (window.innerHeight - 20));
+  });
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent.trim() === "Delete key",
+    );
+    if (!btn) throw new Error("expected a Delete key button");
+    btn.click();
+  });
+  await expect(page.getByRole("alertdialog")).toBeVisible();
+
+  const measured = await page.evaluate(() => {
+    const GAP = 8;
+    const dialog = document.querySelector('[role="alertdialog"]');
+    if (!dialog) throw new Error("expected the confirmation to be rendered");
+    const header = document.querySelector("header.app-header--sticky");
+    const vv = window.visualViewport;
+    const safeArea =
+      Number.parseFloat(
+        getComputedStyle(document.documentElement)
+          .getPropertyValue("--safe-area-inset-bottom")
+          .trim(),
+      ) || 0;
+    return {
+      bandTop:
+        Math.max(header?.getBoundingClientRect().bottom ?? 0, vv?.offsetTop ?? 0) + GAP,
+      bandBottom: (vv ? vv.offsetTop + vv.height : window.innerHeight) - (safeArea + GAP),
+      insetHeight: dialog.getBoundingClientRect().height,
+      actions: [...dialog.querySelectorAll("button")].map((b) => {
+        const r = b.getBoundingClientRect();
+        return { label: b.textContent.trim(), top: r.top, bottom: r.bottom };
+      }),
+    };
+  });
+
+  // The overflow branch was genuinely taken, not an accidental fit.
+  expect(measured.insetHeight).toBeGreaterThan(measured.bandBottom - measured.bandTop);
+  expect(measured.actions).toHaveLength(2);
+  for (const action of measured.actions) {
+    expect(action.top, action.label).toBeGreaterThanOrEqual(measured.bandTop - 1);
+    expect(action.bottom, action.label).toBeLessThanOrEqual(measured.bandBottom + 1);
+  }
+
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error("expected the android-chrome project to set a viewport");
+  const widths = await readScrollWidths(page);
+  expect(widths.documentWidth).toBeLessThanOrEqual(viewport.width);
+});

@@ -156,4 +156,35 @@ describe("ConfirmDialog", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("alertdialog")).toHaveAccessibleName("Delete route");
   });
+
+  it("resolves containerRef to the alertdialog root, and renders identically without it (backlog item 118 follow-up)", () => {
+    const containerRef = { current: null as HTMLDivElement | null };
+    const { unmount } = render(
+      <ConfirmDialog
+        open
+        containerRef={containerRef}
+        title="Delete route"
+        message="Are you sure?"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(containerRef.current).toBe(screen.getByRole("alertdialog"));
+    const withRef = screen.getByRole("alertdialog").outerHTML;
+    unmount();
+
+    // The six other call sites omit the prop; their markup must be
+    // byte-identical to the same dialog rendered with it.
+    render(
+      <ConfirmDialog
+        open
+        title="Delete route"
+        message="Are you sure?"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("alertdialog").outerHTML).toBe(withRef);
+  });
 });

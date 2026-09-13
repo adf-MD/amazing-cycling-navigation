@@ -1099,7 +1099,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
           />
         )}
         {screen === "diagnostics" && <DiagnosticsScreen />}
-        {screen === "settings" && <SettingsScreen />}
+        {screen === "settings" && <SettingsScreen stickyHeaderRef={stickyHeaderRef} />}
       </main>
     </div>
   );
