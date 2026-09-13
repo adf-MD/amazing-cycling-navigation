@@ -102,11 +102,11 @@ Filed as **item 119**, and reproduced rather than inferred. `ConfirmDialog` hard
 
 ### Limitations, stated plainly
 
-Automated evidence only. **No installed-iPhone verification of this presentation is claimed**, and the checklist below has not been run. The 200% figures are browser-root-text measurements in a Chromium container, never iOS Dynamic Type acceptance — ACN has no Dynamic Type opt-in — and the WebKit evidence is desktop WebKit in a container, not installed-iPhone Safari. **No physical-Android result is claimed**; the `android-chrome` project is Chromium emulation. Two behaviours are unchanged and should not be reported as new: `deleteProviderKey()` failing is silent, logged only, with no visible error, unlike the save path's own `saveError`; and focus after a **Replace key** press still falls where it always did, since only the delete path gained a handoff.
+This section was written before any device evidence existed; installed-iPhone acceptance has since been recorded below. The 200% figures are browser-root-text measurements in a Chromium container, never iOS Dynamic Type acceptance — ACN has no Dynamic Type opt-in — and the WebKit evidence is desktop WebKit in a container, not installed-iPhone Safari. **No physical-Android result is claimed**; the `android-chrome` project is Chromium emulation. Two behaviours are unchanged and should not be reported as new: `deleteProviderKey()` failing is silent, logged only, with no visible error, unlike the save path's own `saveError`; and focus after a **Replace key** press still falls where it always did, since only the delete path gained a handoff.
 
-#### Installed-iPhone acceptance checklist — not yet run
+#### Installed-iPhone acceptance (13 September 2026): complete, at product level
 
-Stationary, portrait, on the installed Home Screen PWA, in Settings with a key saved:
+Stationary, portrait, on the installed Home Screen PWA, in Settings with a key saved, **all six checks were reported positive**:
 
 - **Delete key** expands the OpenRouteService card and the confirmation appears directly beneath it, clearly part of that card rather than a separate panel;
 - the confirmation's full wording is readable, and **Cancel** and **Delete** are both fully visible and comfortably tappable;
@@ -114,3 +114,7 @@ Stationary, portrait, on the installed Home Screen PWA, in Settings with a key s
 - **Delete** removes the key and the same card switches to its no-key state with the entry field;
 - `Status` then shows `Test routing connection` disabled with its Settings-directed hint;
 - nothing scrolls unexpectedly when the confirmation opens.
+
+**No app version or build was read from Status on the device**, so nothing here asserts which build was under test; the deployed context (`0.4.36`, commit `37f6895`) is recorded separately. This is **broad product-level acceptance** of the intended containment and behaviour, never a hand-recreation of the automated boundaries above: no VoiceOver audit, no iOS Dynamic Type result and no physical-Android result is claimed, and the 200% figures stay browser-root-text evidence. The ledger, [`../current-status.md`](../current-status.md), remains authoritative.
+
+Having accepted that, the user then approved a **conditional-reveal refinement** — activating **Delete key** should bring the expanded confirmation and both actions into view when they would otherwise be partly hidden. That is a follow-up to this item, recorded below once implemented; it is **not** a defect report against the behaviour accepted here, and the acceptance above is not retrospectively rewritten as though the refinement had existed.
