@@ -187,13 +187,19 @@ One consequence is pinned as a stated outcome rather than left to be discovered:
 
 **Limitations.** Automated evidence only — **no installed-iPhone verification of this refinement is claimed**, and its checklist below has not been run. The 200% and synthetic-inset figures are browser measurements, never iOS Dynamic Type acceptance. WebKit coverage for Settings is a one-off investigation run, because the `webkit-smoke` project matches `smoke.spec.ts` alone; the committed regression coverage is Chromium and the Chromium-emulated Pixel-7 preset. On iOS Safari a programmatic focus on a non-editable element scrolls synchronously, so the keyboard-driven deferral that motivated `viewportSettle.ts` should not apply — but that is reasoning, not measurement, which is why the device check remains the gate.
 
-#### Installed-iPhone checklist for the refinement — not yet run
+#### Installed-iPhone acceptance of the refinement — 14 September 2026
 
-Stationary, portrait, in Settings with a key saved:
+**Accepted.** All six stationary portrait checks were reported positive on the installed Home Screen PWA:
 
-- with **Delete key** low enough that the expanded confirmation would not fit without movement, activating it moves the card only enough to show the warning and both buttons;
-- both buttons are stationary the moment they appear;
-- cancelling, then reopening when the confirmation is already fully visible, produces no unnecessary movement;
-- at a constrained position both actions stay fully tappable and the OpenRouteService context is still understandable;
-- Cancel still preserves the key and returns to **Delete key**;
-- confirmed deletion still removes the key, does not open the keyboard, and leaves focus and context at the OpenRouteService section.
+- with **Delete key** low enough that the expanded confirmation would not fit without movement, activating it moved the OpenRouteService card only enough to reveal the warning and both actions;
+- both actions were stationary the moment they appeared;
+- reopening an already fully visible confirmation caused no unnecessary movement;
+- at the constrained position both actions remained tappable and the OpenRouteService context remained understandable;
+- **Cancel** preserved the key and returned focus to **Delete key**;
+- confirmed deletion removed the key, did not open the keyboard, and retained context at the OpenRouteService section.
+
+This is **broad installed-iPhone portrait product-level acceptance** of the refinement's intended behaviour — that each check behaved as described during ordinary use. It is **not** a hand-recreation of the automated boundaries above: no VoiceOver audit, no iOS Dynamic Type result and no physical-Android result is claimed, and the 200%-root-text and synthetic-safe-area figures remain browser measurements. In particular, the three findings recorded above that only automated evidence establishes — the browser's own 619px over-shoot, the 34px-inset gap, and control 6's non-discrimination — are not re-asserted by this acceptance.
+
+**Build context, stated separately from the physical evidence.** The refinement shipped as version `0.4.37` (commit `5bee225`) and was deployed before this report. **No app version or build was read from `Status` on the device during the session**, so nothing here asserts which build was installed; the deployed context is recorded alongside the report rather than as part of it.
+
+With this, item 118 is complete: the shipped same-card containment was accepted on 13 September 2026 and the conditional-reveal refinement on 14 September 2026.
