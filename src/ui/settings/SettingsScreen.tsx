@@ -48,6 +48,8 @@ import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
 import { applyConfirmationReveal } from "./confirmationRevealScroll.ts";
 import { describeProviderKeyStatus } from "./providerKeyStatus.ts";
+import { useTranslate } from "../../i18n/useTranslate.ts";
+import { RichText } from "../../i18n/RichText.tsx";
 
 // The complete climb/descent local-gradient palettes, for Settings' own
 // always-full "Local gradient colours" disclosure (backlog item 79) —
@@ -75,6 +77,8 @@ export function SettingsScreen({
   clock = systemClock,
   stickyHeaderRef,
 }: SettingsScreenProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   const keyQuery = useCallback(() => getProviderKey(), []);
   const key = useLiveQuery(keyQuery);
   const verificationQuery = useCallback(() => getProviderKeyVerification(), []);
@@ -139,8 +143,8 @@ export function SettingsScreen({
         logError("settings-save-key", error);
         setSaveError(
           error instanceof InvalidApiKeyError
-            ? "This key contains a character that cannot be sent in a request header. Check for an accidental line break introduced while copying it."
-            : "The key could not be saved on this device. Try again.",
+            ? t("settings.ors.saveFailedInvalidHeader")
+            : t("settings.ors.saveFailed"),
         );
       });
   };
@@ -225,9 +229,7 @@ export function SettingsScreen({
         logError("settings-save-planning-preferences", error);
         isSavingPreferencesRef.current = false;
         setIsSavingPreferences(false);
-        setPreferencesError(
-          "This preference could not be saved on this device. Try again.",
-        );
+        setPreferencesError(t("settings.routePlanning.saveFailed"));
       });
   };
 
@@ -304,13 +306,12 @@ export function SettingsScreen({
   }, [pendingDelete, stickyHeaderRef]);
 
   return (
-    <section className="screen" aria-label="Settings">
-      <h1 className="screen-title">Settings</h1>
+    <section className="screen" aria-label={t("settings.landmarkLabel")}>
+      <h1 className="screen-title">{t("settings.title")}</h1>
 
       {!online ? (
         <p role="status" className="status-row status-row--info">
-          Offline — you can still view or edit your saved key, but calculating a route
-          needs a connection.
+          {t("settings.offline")}
         </p>
       ) : null}
 
@@ -327,14 +328,14 @@ export function SettingsScreen({
         className="stack settings-group"
         aria-labelledby="settings-preferences-heading"
       >
-        <h2 id="settings-preferences-heading">Preferences</h2>
+        <h2 id="settings-preferences-heading">{t("settings.group.preferences")}</h2>
 
         <section className="panel stack" aria-labelledby="route-planning-heading">
-          <h3 id="route-planning-heading">Route planning</h3>
+          <h3 id="route-planning-heading">{t("settings.routePlanning.heading")}</h3>
 
           <div className="stack">
             <p className="setting-row-title" id="default-cycling-profile-heading">
-              Default cycling profile
+              {t("settings.routePlanning.defaultProfile")}
             </p>
             <div
               role="group"
@@ -378,7 +379,7 @@ export function SettingsScreen({
               // activates the checkbox on click/tap via the native <label>
               // wrapping behaviour; aria-label only affects how assistive
               // technology announces the control's name.
-              aria-label="Avoid ferries by default"
+              aria-label={t("settings.routePlanning.avoidFerries")}
               checked={avoidFerriesByDefault}
               disabled={isSavingPreferences}
               onChange={(event) => {
@@ -386,13 +387,17 @@ export function SettingsScreen({
               }}
             />
             <span className="setting-row-text">
-              <span className="setting-row-title">Avoid ferries by default</span>
-              <span className="field-hint">Used when a new draft is created.</span>
+              <span className="setting-row-title">
+                {t("settings.routePlanning.avoidFerries")}
+              </span>
+              <span className="field-hint">
+                {t("settings.routePlanning.avoidFerriesHint")}
+              </span>
             </span>
           </label>
           {isSavingPreferences ? (
             <p role="status" className="field-hint">
-              Saving…
+              {t("settings.routePlanning.saving")}
             </p>
           ) : null}
           {preferencesError ? (
@@ -402,25 +407,36 @@ export function SettingsScreen({
           ) : null}
 
           <details className="settings-disclosure">
-            <summary>How recalculation works</summary>
-            <p>
-              A route is calculated in sections between waypoints. The first calculation
-              uses one routing request per section; later edits normally recalculate only
-              changed sections.
-            </p>
+            <summary>{t("settings.routePlanning.recalculationSummary")}</summary>
+            <p>{t("settings.routePlanning.recalculationBody")}</p>
           </details>
         </section>
 
         <section className="panel stack" aria-labelledby="ors-settings-heading">
           <h3 id="ors-settings-heading" tabIndex={-1} ref={cardHeadingRef}>
-            OpenRouteService
+            {t("settings.ors.heading")}
           </h3>
           <p>
-            Road-bike route planning uses your own free key from{" "}
-            <a href="https://account.heigit.org/signup" target="_blank" rel="noreferrer">
-              HeiGIT — sign up for an OpenRouteService key
-            </a>
-            , obtained from the HeiGIT account dashboard, then pasted below.
+            {/* Backlog item 113. The whole sentence lives in the
+                catalogue and only the link node is injected, so a
+                translation can put the link wherever the language needs
+                it — which splitting it into JSX fragments would have
+                made impossible. No dangerouslySetInnerHTML. */}
+            <RichText
+              messageKey="settings.ors.intro"
+              translator={translator}
+              values={{
+                link: (
+                  <a
+                    href="https://account.heigit.org/signup"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t("settings.ors.signUpLink")}
+                  </a>
+                ),
+              }}
+            />
           </p>
 
           <p role="status" className="status-row">
@@ -429,7 +445,7 @@ export function SettingsScreen({
 
           {showForm ? (
             <form onSubmit={handleSave} className="stack">
-              <label htmlFor="ors-key-input">OpenRouteService API key</label>
+              <label htmlFor="ors-key-input">{t("settings.ors.keyInputLabel")}</label>
               <div className="row">
                 <input
                   id="ors-key-input"
@@ -448,7 +464,7 @@ export function SettingsScreen({
                     setKeyVisible((visible) => !visible);
                   }}
                 >
-                  {keyVisible ? "Hide" : "Reveal"}
+                  {keyVisible ? t("settings.ors.hide") : t("settings.ors.reveal")}
                 </button>
               </div>
               {saveError ? (
@@ -462,7 +478,7 @@ export function SettingsScreen({
                   className="btn-primary"
                   disabled={draftKey.trim().length === 0}
                 >
-                  Save on this device
+                  {t("settings.ors.save")}
                 </button>
                 {isEditing && key ? (
                   <button
@@ -470,21 +486,21 @@ export function SettingsScreen({
                     className="btn-secondary"
                     onClick={handleCancelEdit}
                   >
-                    Cancel
+                    {t("settings.ors.cancel")}
                   </button>
                 ) : null}
               </div>
             </form>
           ) : (
             <div className="stack">
-              <p className="status-row">Key saved on this device: •••• (hidden)</p>
+              <p className="status-row">{t("settings.ors.saved")}</p>
               <div className="row">
                 <button
                   type="button"
                   className="btn-secondary"
                   onClick={handleStartReplace}
                 >
-                  Replace key
+                  {t("settings.ors.replace")}
                 </button>
                 <button
                   type="button"
@@ -496,7 +512,7 @@ export function SettingsScreen({
                     setArmedDeleteSavedAt(key.savedAt);
                   }}
                 >
-                  Delete key
+                  {t("settings.ors.delete")}
                 </button>
               </div>
 
@@ -515,9 +531,9 @@ export function SettingsScreen({
                 open={pendingDelete}
                 headingLevel={4}
                 containerRef={confirmRef}
-                title="Delete OpenRouteService key"
-                message="This removes your saved key from this device. Route planning will be unavailable until you enter a key again. Any routes you have already saved remain fully usable without it."
-                confirmLabel="Delete"
+                title={t("settings.ors.deleteConfirmTitle")}
+                message={t("settings.ors.deleteConfirmMessage")}
+                confirmLabel={t("settings.ors.deleteConfirmLabel")}
                 onConfirm={handleConfirmDelete}
                 onCancel={() => {
                   setArmedDeleteSavedAt(null);
@@ -532,18 +548,16 @@ export function SettingsScreen({
           )}
 
           <details className="settings-disclosure">
-            <summary>How the key and route data are used</summary>
+            <summary>{t("settings.ors.usageSummary")}</summary>
+            <p>{t("settings.ors.usageBody")}</p>
             <p>
-              When you calculate a route in Planning, your key and the waypoints you have
-              placed are sent directly to HeiGIT to compute the route. Your riding GPS
-              location is never sent to HeiGIT.
-            </p>
-            <p>
-              This is <strong>not encrypted</strong>. It is stored on this device only to
-              keep it out of this app&apos;s source code and away from accidental
-              publication — any JavaScript running on this site can still read it.
-              Clearing Safari&apos;s or your browser&apos;s site data for this app removes
-              it, and you will need to enter it again.
+              <RichText
+                messageKey="settings.ors.usageStorage"
+                translator={translator}
+                values={{
+                  emphasis: <strong>{t("settings.ors.usageStorageEmphasis")}</strong>,
+                }}
+              />
             </p>
           </details>
         </section>
@@ -553,90 +567,70 @@ export function SettingsScreen({
         className="stack settings-group"
         aria-labelledby="settings-explanations-heading"
       >
-        <h2 id="settings-explanations-heading">Explanations</h2>
+        <h2 id="settings-explanations-heading">{t("settings.group.explanations")}</h2>
 
         <section className="panel stack" aria-labelledby="elevation-climbs-heading">
-          <h3 id="elevation-climbs-heading">Elevation and climbs</h3>
+          <h3 id="elevation-climbs-heading">{t("settings.elevation.heading")}</h3>
 
           <details className="settings-disclosure">
-            <summary>How climbs are classified</summary>
+            <summary>{t("settings.elevation.classificationSummary")}</summary>
+            <p>{t("settings.elevation.climbScore")}</p>
             <p>
-              Climb score is climb length in metres multiplied by average gradient
-              percentage.
-            </p>
-            <p>
-              A climb is recognised once it is at least{" "}
-              {formatMetres(MIN_FEATURE_LENGTH_METRES)} long, averages at least{" "}
-              {MIN_CLIMB_AVERAGE_GRADIENT_PERCENT}% and reaches a minimum score of{" "}
-              {formatWholeNumber(MIN_CLIMB_SCORE)}.
+              {t("settings.elevation.recognitionThresholds", {
+                length: formatMetres(MIN_FEATURE_LENGTH_METRES),
+                gradient: MIN_CLIMB_AVERAGE_GRADIENT_PERCENT,
+                score: formatWholeNumber(MIN_CLIMB_SCORE),
+              })}
             </p>
             <ul>
-              <li>Uncategorised: below {formatWholeNumber(CLIMB_CATEGORY_4_SCORE)}</li>
               <li>
-                {CLIMB_CATEGORY_NAMES["category-4"]}:{" "}
-                {formatWholeNumber(CLIMB_CATEGORY_4_SCORE)} to{" "}
-                {formatWholeNumber(CLIMB_CATEGORY_3_SCORE - 1)}
+                {t("settings.elevation.uncategorised", {
+                  score: formatWholeNumber(CLIMB_CATEGORY_4_SCORE),
+                })}
               </li>
+              {(
+                [
+                  ["category-4", CLIMB_CATEGORY_4_SCORE, CLIMB_CATEGORY_3_SCORE],
+                  ["category-3", CLIMB_CATEGORY_3_SCORE, CLIMB_CATEGORY_2_SCORE],
+                  ["category-2", CLIMB_CATEGORY_2_SCORE, CLIMB_CATEGORY_1_SCORE],
+                  ["category-1", CLIMB_CATEGORY_1_SCORE, CLIMB_CATEGORY_HC_SCORE],
+                ] as const
+              ).map(([category, from, nextCategoryFrom]) => (
+                <li key={category}>
+                  {t("settings.elevation.categoryRange", {
+                    name: CLIMB_CATEGORY_NAMES[category],
+                    from: formatWholeNumber(from),
+                    to: formatWholeNumber(nextCategoryFrom - 1),
+                  })}
+                </li>
+              ))}
               <li>
-                {CLIMB_CATEGORY_NAMES["category-3"]}:{" "}
-                {formatWholeNumber(CLIMB_CATEGORY_3_SCORE)} to{" "}
-                {formatWholeNumber(CLIMB_CATEGORY_2_SCORE - 1)}
-              </li>
-              <li>
-                {CLIMB_CATEGORY_NAMES["category-2"]}:{" "}
-                {formatWholeNumber(CLIMB_CATEGORY_2_SCORE)} to{" "}
-                {formatWholeNumber(CLIMB_CATEGORY_1_SCORE - 1)}
-              </li>
-              <li>
-                {CLIMB_CATEGORY_NAMES["category-1"]}:{" "}
-                {formatWholeNumber(CLIMB_CATEGORY_1_SCORE)} to{" "}
-                {formatWholeNumber(CLIMB_CATEGORY_HC_SCORE - 1)}
-              </li>
-              <li>
-                {CLIMB_CATEGORY_NAMES.hc}: {formatWholeNumber(CLIMB_CATEGORY_HC_SCORE)} or
-                more
+                {t("settings.elevation.categoryOrMore", {
+                  name: CLIMB_CATEGORY_NAMES.hc,
+                  score: formatWholeNumber(CLIMB_CATEGORY_HC_SCORE),
+                })}
               </li>
             </ul>
           </details>
 
           <details className="settings-disclosure">
-            <summary>Local gradient colours</summary>
-            <p>
-              Detailed colours along a route show local gradient, smoothed over
-              approximately 100 m — not a climb&apos;s overall category or a single
-              point&apos;s exact grade.
-            </p>
+            <summary>{t("settings.elevation.localColoursSummary")}</summary>
+            <p>{t("settings.elevation.localColoursBody")}</p>
             <ClimbGradientBandLegend presentClimbBands={ALL_CLIMB_GRADIENT_BANDS} />
-            <p>
-              A brief flat or descending section within a recognised climb uses the green,
-              below-3% band.
-            </p>
+            <p>{t("settings.elevation.localColoursFlat")}</p>
             <DescentLocalLegend presentDescentLocalKeys={ALL_DESCENT_LOCAL_KEYS} />
-            <p>
-              A recognised descent reuses the same three blues locally; any locally
-              shallow stretch shows the plain route colour instead.
-            </p>
-            <p>
-              Blue intensity reflects gradient steepness only, not surface, bends, traffic
-              or other conditions.
-            </p>
+            <p>{t("settings.elevation.localColoursDescent")}</p>
+            <p>{t("settings.elevation.localColoursCaveat")}</p>
           </details>
         </section>
 
         <section className="panel stack" aria-labelledby="riding-heading">
-          <h3 id="riding-heading">Riding</h3>
+          <h3 id="riding-heading">{t("settings.riding.heading")}</h3>
 
           <details className="settings-disclosure">
-            <summary>Screen on</summary>
-            <p>
-              Keeps the display on while an active Riding or free-roam screen is visible.
-              This may increase battery use.
-            </p>
-            <p>
-              This only applies while that screen is open and visible — it is not
-              background location tracking, and does not guarantee the display can stay on
-              if your browser does not support this feature.
-            </p>
+            <summary>{t("settings.riding.screenOnSummary")}</summary>
+            <p>{t("settings.riding.screenOnBody")}</p>
+            <p>{t("settings.riding.screenOnCaveat")}</p>
           </details>
         </section>
       </section>

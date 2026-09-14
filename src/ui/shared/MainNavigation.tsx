@@ -1,4 +1,6 @@
 import { NavIcon } from "./NavIcon.tsx";
+import { useTranslate } from "../../i18n/useTranslate.ts";
+import type { ParameterlessMessageKey } from "../../i18n/translate.ts";
 import type { Screen } from "./screenTypes.ts";
 
 // Re-exported so existing consumers (App.tsx, immersiveRidingShell.ts,
@@ -10,22 +12,25 @@ export type { Screen } from "./screenTypes.ts";
 
 interface NavItem {
   screen: Screen;
-  label: string;
+  /** Backlog item 113: a catalogue key, never the label text itself. */
+  labelKey: ParameterlessMessageKey;
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
-  { screen: "library", label: "Routes" },
-  { screen: "riding", label: "Ride" },
-  { screen: "planning", label: "Plan" },
+  { screen: "library", labelKey: "nav.routes" },
+  { screen: "riding", labelKey: "nav.ride" },
+  { screen: "planning", labelKey: "nav.plan" },
   // Backlog item 112: the rider-facing label is "Status" — plainer language
   // for a non-technical rider, and it accurately covers what the screen holds
   // (system status, recent errors, routing and imagery attempts, and the one
   // connection test). The `screen` key stays "diagnostics": it is the internal
   // identifier that screenTypes.ts, App.tsx's render switch and NavIcon's
   // glyph lookup all key off, and nothing about the rename is meant to reach
-  // them, the src/ui/diagnostics/ directory, or the diagnostics-* CSS.
-  { screen: "diagnostics", label: "Status" },
-  { screen: "settings", label: "Settings" },
+  // them, the src/ui/diagnostics/ directory, or the diagnostics-* CSS. The
+  // same separation applies to the item 113 label key: `nav.status` is what
+  // the rider reads, `diagnostics` is what the application is built on.
+  { screen: "diagnostics", labelKey: "nav.status" },
+  { screen: "settings", labelKey: "nav.settings" },
 ];
 
 export interface MainNavigationProps {
@@ -54,8 +59,9 @@ export interface MainNavigationProps {
  * visual cue.
  */
 export function MainNavigation({ screen, onNavigate }: MainNavigationProps) {
+  const { t } = useTranslate();
   return (
-    <nav aria-label="Main" className="main-nav">
+    <nav aria-label={t("nav.landmarkLabel")} className="main-nav">
       {NAV_ITEMS.map((item) => (
         <button
           key={item.screen}
@@ -67,7 +73,7 @@ export function MainNavigation({ screen, onNavigate }: MainNavigationProps) {
           }}
         >
           <NavIcon screen={item.screen} />
-          <span>{item.label}</span>
+          <span>{t(item.labelKey)}</span>
         </button>
       ))}
     </nav>

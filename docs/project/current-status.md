@@ -73,6 +73,12 @@ None of these blocks acceptance of the item it came from. Record one if it occur
 
 ---
 
+## Monitored, corroborating only
+
+- **The contention-sensitive map/camera e2e class is confirmed present on the parent commit (14 September 2026, measured during item 113 stage 1).** Under 36-worker full-suite runs in the pinned container, the parent commit `df2e6c0` failed **exactly one test in each of three consecutive full runs** (380 passed, 1 failed, every time), with the failures landing in `e2e/mapImageryRecovery.spec.ts`'s reconnection-recovery camera-anchor test, `e2e/ridingActiveDirectionLayer.spec.ts`'s overlapping-return-leg test and `e2e/fetchInvocation.spec.ts`. The item 113 branch produced the **same tests** at a comparable rate across its own runs, and each passed **6/6 in isolation**. `anchorWithinTolerance` returns `false` when an anchor reads as `null`, so an unresolved read under contention presents as a tolerance failure rather than as a timeout.
+
+  This upgrades the earlier "consistent with" note for this file to a **measured, reproduced-on-baseline** finding: the class is pre-existing and is **not** attributable to item 113's pre-render IndexedDB read, which was the specific hypothesis worth ruling out, since that change does add a blocking database open before the first paint. No production change was made for it, and it remains monitored rather than fixed — if it is ever worked on, start from the artefacts item 116 retains.
+
 ## Dated acceptance record
 
 ### Installed-iPhone session, 14 September 2026 (item 118's conditional-reveal refinement accepted)

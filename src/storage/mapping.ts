@@ -1,4 +1,9 @@
 import type { Coordinate, RoutingProfile, Waypoint } from "../domain/types.ts";
+import {
+  DEFAULT_LANGUAGE_PREFERENCE,
+  isLanguagePreference,
+  type LanguagePreference,
+} from "../i18n/language.ts";
 import { DEFAULT_ROUTING_PROFILE, isRoutingProfile } from "../domain/routingProfile.ts";
 import type { GeolocationFix } from "../platform/geolocation.ts";
 import type {
@@ -17,6 +22,7 @@ import {
   type StoredPlanningDraft,
   type StoredPlanningPreferences,
   type StoredRideState,
+  type StoredAppPreferences,
   type StoredRouteLibraryPreferences,
   type StoredRouteRideState,
 } from "./db.ts";
@@ -561,4 +567,45 @@ export function fromStoredRouteLibraryPreferences(
   const legacy =
     typeof raw === "string" ? resolveLegacyRouteLibrarySortOrder(raw) : undefined;
   return { sortOrder: legacy ?? DEFAULT_ROUTE_LIBRARY_SORT_ORDER };
+}
+
+/**
+ * Application-wide preferences, resolved for use. Backlog item 113.
+ *
+ * `language` is what the rider *chose*, not what they get: resolving that
+ * is i18n/language.ts's job, and it applies the supported-language gate.
+ * Keeping the two apart is what lets a recognised-but-unavailable choice
+ * survive here untouched.
+ */
+export interface AppPreferences {
+  language: LanguagePreference;
+}
+
+export function toStoredAppPreferences(
+  preferences: AppPreferences,
+): Omit<StoredAppPreferences, "id"> {
+  return { language: preferences.language };
+}
+
+/**
+ * Like fromStoredRouteLibraryPreferences, "no row present" is itself the
+ * settled default state, so this accepts a possibly-absent row and always
+ * resolves to a concrete value. A real validity check, not a bare `??`: a
+ * corrupt or future-unknown string must never flow through to the
+ * language layer.
+ *
+ * The distinction that matters, and that has its own test: this rejects
+ * values that are **not a recognised preference at all**, and nothing
+ * else. A recognised language whose catalogue has not shipped yet is
+ * preserved verbatim — clamping it to English here would silently discard
+ * a choice the rider made, and would make a build that cannot yet honour
+ * a preference destroy it rather than defer it.
+ */
+export function fromStoredAppPreferences(
+  stored: StoredAppPreferences | undefined,
+): AppPreferences {
+  const raw = stored?.language;
+  return {
+    language: isLanguagePreference(raw) ? raw : DEFAULT_LANGUAGE_PREFERENCE,
+  };
 }

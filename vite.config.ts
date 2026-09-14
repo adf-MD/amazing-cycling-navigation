@@ -36,6 +36,15 @@ export default defineConfig({
         name: "Amazing Cycling Navigation",
         short_name: "ACN",
         description: "Private-use route planning and riding for road cyclists.",
+        // Backlog item 113. Authored explicitly rather than left to
+        // vite-plugin-pwa's own `lang: "en"` default, which silently
+        // disagreed with index.html's `lang="en-GB"`. A manifest is a
+        // single static file and cannot follow a runtime preference, so
+        // it describes the installed application's default identity, not
+        // the rider's current selection — which is also why name,
+        // short_name and description stay English: iOS captures them at
+        // install time.
+        lang: "en-GB",
         start_url: BASE_PATH,
         scope: BASE_PATH,
         display: "standalone",

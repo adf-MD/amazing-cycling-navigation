@@ -165,7 +165,7 @@ describe("DiagnosticsScreen", () => {
     expect(screen.getByText(/no errors recorded this session/i)).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(getDetailValue("Storage")).toHaveTextContent(/OK \(schema version 4\)/);
+      expect(getDetailValue("Storage")).toHaveTextContent(/OK \(schema version 5\)/);
     });
   });
 
@@ -961,7 +961,7 @@ describe("DiagnosticsScreen", () => {
       render(<DiagnosticsScreen />);
 
       await waitFor(() => {
-        expect(getDetailValue("Storage")).toHaveTextContent(/OK \(schema version 4\)/);
+        expect(getDetailValue("Storage")).toHaveTextContent(/OK \(schema version 5\)/);
       });
       expect(getDetailValue("Storage")).toHaveTextContent(
         "Estimated app storage: not supported by this browser",
@@ -1041,7 +1041,7 @@ describe("DiagnosticsScreen", () => {
       render(<DiagnosticsScreen />);
 
       await waitFor(() => {
-        expect(getDetailValue("Storage")).toHaveTextContent(/OK \(schema version 4\)/);
+        expect(getDetailValue("Storage")).toHaveTextContent(/OK \(schema version 5\)/);
       });
       expect(getDetailValue("Storage")).toHaveTextContent(
         "Estimated app storage: unavailable",

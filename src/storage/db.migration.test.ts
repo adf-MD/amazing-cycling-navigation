@@ -36,7 +36,7 @@ afterEach(async () => {
   await Dexie.delete(TEST_DB_NAME);
 });
 
-describe("AcnDatabase schema migration (v1 -> v4)", () => {
+describe("AcnDatabase schema migration (v1 -> v5)", () => {
   it("preserves existing routes and ride state, and adds the later empty tables", async () => {
     // Simulates a real browser that only ever saw the v1 schema: a bare
     // Dexie instance with just the v1 stores(), seeded and closed.
@@ -47,12 +47,12 @@ describe("AcnDatabase schema migration (v1 -> v4)", () => {
     await v1Db.table("rideState").put(rideState);
     v1Db.close();
 
-    // The real, current (v4) database opening against that same name is
+    // The real, current (v5) database opening against that same name is
     // exactly what happens when an existing installation upgrades.
     const upgraded = new AcnDatabase(TEST_DB_NAME);
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(4);
+    expect(upgraded.verno).toBe(5);
     const upgradedRoute = await upgraded.routes.get("route-1");
     expect(upgradedRoute).toEqual(route);
     // pinnedAt is a plain, non-indexed field added after this fixture was
@@ -67,15 +67,16 @@ describe("AcnDatabase schema migration (v1 -> v4)", () => {
     await expect(upgraded.planningDrafts.toArray()).resolves.toEqual([]);
     await expect(upgraded.planningPreferences.toArray()).resolves.toEqual([]);
     await expect(upgraded.routeLibraryPreferences.toArray()).resolves.toEqual([]);
+    await expect(upgraded.appPreferences.toArray()).resolves.toEqual([]);
 
     upgraded.close();
   });
 
-  it("a fresh install (no prior database) opens directly at v4 with all tables usable", async () => {
+  it("a fresh install (no prior database) opens directly at v5 with all tables usable", async () => {
     const fresh = new AcnDatabase(TEST_DB_NAME);
     await fresh.open();
 
-    expect(fresh.verno).toBe(4);
+    expect(fresh.verno).toBe(5);
     await expect(fresh.routes.toArray()).resolves.toEqual([]);
     await fresh.providerKeys.put({
       id: "openrouteservice",
@@ -105,7 +106,7 @@ describe("AcnDatabase schema migration (v1 -> v4)", () => {
   });
 });
 
-describe("AcnDatabase schema migration (v2 -> v4)", () => {
+describe("AcnDatabase schema migration (v2 -> v5)", () => {
   it("preserves all existing v2 tables and records, and adds later tables empty", async () => {
     // Simulates a real browser that only ever saw the v2 schema (i.e. an
     // installation from before this slice): a bare Dexie instance with
@@ -140,12 +141,12 @@ describe("AcnDatabase schema migration (v2 -> v4)", () => {
     });
     v2Db.close();
 
-    // The real, current (v4) database opening against that same name is
+    // The real, current (v5) database opening against that same name is
     // exactly what happens when a v2 installation upgrades.
     const upgraded = new AcnDatabase(TEST_DB_NAME);
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(4);
+    expect(upgraded.verno).toBe(5);
     await expect(upgraded.routes.get("route-1")).resolves.toEqual(route);
     await expect(upgraded.rideState.get("active")).resolves.toEqual(rideState);
     await expect(upgraded.providerKeys.get("openrouteservice")).resolves.toMatchObject({
@@ -160,13 +161,14 @@ describe("AcnDatabase schema migration (v2 -> v4)", () => {
 
     await expect(upgraded.planningPreferences.toArray()).resolves.toEqual([]);
     await expect(upgraded.routeLibraryPreferences.toArray()).resolves.toEqual([]);
+    await expect(upgraded.appPreferences.toArray()).resolves.toEqual([]);
 
     upgraded.close();
   });
 });
 
-describe("AcnDatabase schema migration (v3 -> v4)", () => {
-  it("preserves all existing v3 tables and records, and adds routeLibraryPreferences empty", async () => {
+describe("AcnDatabase schema migration (v3 -> v5)", () => {
+  it("preserves all existing v3 tables and records, and adds the later tables empty", async () => {
     // Simulates a real browser that only ever saw the v3 schema (i.e. an
     // installation from before the Route Library search/sort slice): a
     // bare Dexie instance with the v1+v2+v3 stores(), seeded across every
@@ -213,12 +215,12 @@ describe("AcnDatabase schema migration (v3 -> v4)", () => {
     });
     v3Db.close();
 
-    // The real, current (v4) database opening against that same name is
+    // The real, current (v5) database opening against that same name is
     // exactly what happens when a v3 installation upgrades.
     const upgraded = new AcnDatabase(TEST_DB_NAME);
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(4);
+    expect(upgraded.verno).toBe(5);
     await expect(upgraded.routes.get("route-1")).resolves.toEqual(route);
     await expect(upgraded.rideState.get("active")).resolves.toEqual(rideState);
     await expect(upgraded.providerKeys.get("openrouteservice")).resolves.toMatchObject({
@@ -235,12 +237,102 @@ describe("AcnDatabase schema migration (v3 -> v4)", () => {
     });
 
     await expect(upgraded.routeLibraryPreferences.toArray()).resolves.toEqual([]);
+    await expect(upgraded.appPreferences.toArray()).resolves.toEqual([]);
 
     upgraded.close();
   });
 });
 
-describe("planningDrafts editCopySourceRouteId/editCopyWaypointsOrigin (no schema version bump)", () => {
+describe("AcnDatabase schema migration (v4 -> v5)", () => {
+  it("preserves every v4 table and record, and adds appPreferences empty", async () => {
+    // Simulates a real installation on v4 — everything shipped before
+    // backlog item 113's interface-language preference. This is the
+    // upgrade path an existing rider actually takes, and the one measured
+    // before choosing the pre-render read's timeout: adding an object
+    // store never rewrites a row, so it costs about the same with 200
+    // dense routes as with 1000.
+    const v4Db = new Dexie(TEST_DB_NAME);
+    v4Db.version(1).stores({ routes: "id, name, createdAt", rideState: "id" });
+    v4Db.version(2).stores({
+      routes: "id, name, createdAt",
+      rideState: "id",
+      providerKeys: "id",
+      providerKeyVerifications: "id",
+      planningDrafts: "id",
+    });
+    v4Db.version(3).stores({
+      routes: "id, name, createdAt",
+      rideState: "id",
+      providerKeys: "id",
+      providerKeyVerifications: "id",
+      planningDrafts: "id",
+      planningPreferences: "id",
+    });
+    v4Db.version(4).stores({
+      routes: "id, name, createdAt",
+      rideState: "id",
+      providerKeys: "id",
+      providerKeyVerifications: "id",
+      planningDrafts: "id",
+      planningPreferences: "id",
+      routeLibraryPreferences: "id",
+    });
+    await v4Db.open();
+    await v4Db.table("routes").put(route);
+    await v4Db.table("rideState").put(rideState);
+    await v4Db.table("planningPreferences").put({
+      id: "planning",
+      avoidFerriesByDefault: false,
+    });
+    await v4Db.table("routeLibraryPreferences").put({
+      id: "route-library",
+      sortOrder: "name-asc",
+    });
+    v4Db.close();
+
+    // The real, current (v5) database opening against that same name is
+    // exactly what happens when a v4 installation upgrades.
+    const upgraded = new AcnDatabase(TEST_DB_NAME);
+    await upgraded.open();
+
+    expect(upgraded.verno).toBe(5);
+    await expect(upgraded.routes.get("route-1")).resolves.toEqual(route);
+    await expect(upgraded.rideState.get("active")).resolves.toEqual(rideState);
+    await expect(upgraded.planningPreferences.get("planning")).resolves.toMatchObject({
+      avoidFerriesByDefault: false,
+    });
+    await expect(
+      upgraded.routeLibraryPreferences.get("route-library"),
+    ).resolves.toMatchObject({ sortOrder: "name-asc" });
+
+    // The whole point of the bump: a new, empty table, with no upgrade
+    // callback and nothing transformed.
+    await expect(upgraded.appPreferences.toArray()).resolves.toEqual([]);
+
+    upgraded.close();
+  });
+
+  it("keeps a language preference the running build cannot yet honour", async () => {
+    // A v5 installation that reached a later build, chose German and then
+    // moved back — a downgrade, or a build rolled back on the same
+    // installation. IndexedDB does not synchronise between devices, so
+    // this is the case that actually arises. The stored row must survive
+    // being read by a build whose supported-language gate cannot resolve
+    // to it.
+    const db = new AcnDatabase(TEST_DB_NAME);
+    await db.open();
+    await db.appPreferences.put({ id: "app", language: "de" });
+
+    await expect(db.appPreferences.get("app")).resolves.toEqual({
+      id: "app",
+      language: "de",
+    });
+
+    db.close();
+  });
+});
+
+describe("planningDrafts editCopySourceRouteId/editCopyWaypointsOrigin (no schema version bump of its own)", () => {
   it("a legacy v4 planningDrafts row written before these fields existed loads cleanly", async () => {
     // Simulates a real installation already on v4 before the "Edit copy in
     // Planning" slice — the schema itself (planningDrafts: "id") is
@@ -281,7 +373,7 @@ describe("planningDrafts editCopySourceRouteId/editCopyWaypointsOrigin (no schem
   });
 });
 
-describe("routes tags field (no schema version bump)", () => {
+describe("routes tags field (no schema version bump of its own)", () => {
   it("a legacy v4 routes row written before tags existed loads cleanly", async () => {
     // The schema itself (routes: "id, name, createdAt") is unchanged —
     // tags is a plain field addition, not a new Dexie version; no
@@ -292,7 +384,12 @@ describe("routes tags field (no schema version bump)", () => {
 
     const stored = await db.routes.get(route.id);
     expect(stored).not.toHaveProperty("tags");
-    expect(db.verno).toBe(4);
+    // The current schema version, pinned. These describes assert that
+    // THEIR OWN field addition needed no bump — the version moving to 5
+    // is item 113's separate, deliberate appPreferences table, and this
+    // literal must be updated in step with any such bump rather than
+    // loosened to "whatever the schema says".
+    expect(db.verno).toBe(5);
 
     db.close();
   });
@@ -305,13 +402,18 @@ describe("routes tags field (no schema version bump)", () => {
     await expect(db.routes.get(route.id)).resolves.toMatchObject({
       tags: ["commute", "gravel"],
     });
-    expect(db.verno).toBe(4);
+    // The current schema version, pinned. These describes assert that
+    // THEIR OWN field addition needed no bump — the version moving to 5
+    // is item 113's separate, deliberate appPreferences table, and this
+    // literal must be updated in step with any such bump rather than
+    // loosened to "whatever the schema says".
+    expect(db.verno).toBe(5);
 
     db.close();
   });
 });
 
-describe("planningPreferences profileByDefault (no schema version bump)", () => {
+describe("planningPreferences profileByDefault (no schema version bump of its own)", () => {
   it("a legacy planningPreferences row written before profileByDefault existed loads cleanly", async () => {
     // Simulates a real installation whose planningPreferences row predates
     // backlog item 36 — the schema itself (planningPreferences: "id") is
@@ -344,7 +446,7 @@ describe("planningPreferences profileByDefault (no schema version bump)", () => 
   });
 });
 
-describe("rideState kind (no schema version bump)", () => {
+describe("rideState kind (no schema version bump of its own)", () => {
   it("a legacy rideState row written before kind existed loads cleanly", async () => {
     // Simulates a real installation whose active-ride row predates backlog
     // item 41 (the Ride launcher/explicit-session-recovery slice) — the

@@ -166,6 +166,38 @@ _Category: Interface and accessibility consistency_
 
 _Category: Internationalisation_
 
+> **Staged delivery — Stage 1 complete (`0.4.38`), Stage 2 next.**
+> This item ships in stages and stays **pending** here until its final
+> stage. Nothing about it enters [`history/`](history/README.md) before
+> then. Each stage's commit updates the two lines below.
+>
+> | Stage | Content                                                                                                                                                                                                              | Status                  |
+> | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+> | 1     | Internationalisation boundary; `appPreferences` storage at schema `version(5)`; the supported-language gate; pre-render language resolution; authored `manifest.lang`; primary navigation and Settings copy migrated | **Complete — `0.4.38`** |
+> | 2     | Route library, tags, GPX import UI                                                                                                                                                                                   | **Next**                |
+> | 3     | Planning; render-time localisation of route warnings, GPX notices and provider errors                                                                                                                                | Pending                 |
+> | 4     | Riding, free roam, ride launcher, climb views, map overlays                                                                                                                                                          | Pending                 |
+> | 5     | Status, PWA update prompt, shared components                                                                                                                                                                         | Pending                 |
+> | 6a    | Complete German catalogue authored, then **stop** and hand the full reviewable list to the user. `Deutsch` still unreachable, nothing pushed                                                                         | Pending                 |
+> | 6b    | **Only after linguistic approval**: German enabled, the `Language`/`Sprache` card, the `:lang(de)` navigation rule, the openrouteservice `language` parameter, German layout and accessibility evidence              | Pending                 |
+>
+> **Decisions approved at the gate** (14 September 2026), recorded here because
+> they constrain every later stage:
+>
+> - informal **`du`**;
+> - a repository-owned typed catalogue over the platform `Intl` APIs, **no new dependency**;
+> - a dedicated `appPreferences` table, schema `version(5)`, additive with no upgrade callback;
+> - language options **`Device language` / `Gerätesprache`**, **`English`**, **`Deutsch`**, resolving to English or German only;
+> - **ordered** `navigator.languages` resolution — the first _supported_ entry wins, an unsupported entry is skipped rather than ending the search, and the supported set constrains an explicit override exactly as it constrains device resolution;
+> - `languagechange` re-resolves only while `Device language` is selected;
+> - the language is resolved **before the first paint**, bounded so a failing IndexedDB cannot leave the application blank;
+> - copied diagnostic reports **stay English**;
+> - the selected language drives numbers, dates, plurals, list joins and display collators — never stored values, computation or tag identity;
+> - a new **`Language` / `Sprache`** card, first in Settings → Preferences, revising item 112's hierarchy contract to **five** `h3` panels;
+> - a **German-only** navigation wrapping rule (`:lang(de)`, `overflow-wrap: anywhere`, horizontal padding removed), keeping `Einstellungen` in full;
+> - openrouteservice `language: "de"` for new calculations only, accepting that a partially recalculated route can mix languages, with **no provider request ever made because the interface language changed**, and stored and imported instructions shown **verbatim**;
+> - glossary: **`Optionen`** / **`Erklärungen`**, **`Freies Fahren`**, **`Höhenmeter`** / **`Abstieg`**, **`Während der Fahrt`**. Every remaining term is reviewed with the complete catalogue at stage 6a.
+
 113. **German localisation**
      - Origin: the installed-iPhone field test of 10 September 2026 — see [`current-status.md`](current-status.md) for the dated report. German-language support is recorded as a **substantial staged feature, not a small copy-editing task**.
      - It is scheduled ahead of items 102 and 103, and preferably **after** item 112's Diagnostics and Settings information architecture is settled, so that strings are not migrated twice.
