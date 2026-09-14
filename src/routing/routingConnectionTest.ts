@@ -1,3 +1,4 @@
+import { englishTranslator } from "../i18n/englishTranslator.ts";
 import type { Coordinate } from "../domain/types.ts";
 import type { RoutingProvider } from "./provider.ts";
 import {
@@ -275,7 +276,14 @@ export async function runRoutingConnectionTest(
       reason: error.reason,
       httpStatus: error.httpStatus,
       elapsedMs,
-      message: describeRoutingError(error),
+      // Backlog item 113 stage 3, approved decision R4: the copyable
+      // connection-test report stays English so it can be shared for
+      // support, and the enum values it embeds are language-neutral
+      // anyway. Passing the English translator explicitly makes that true
+      // BY CONSTRUCTION — this says the report is English on purpose,
+      // rather than leaving it English by nobody having localised it.
+      // Planning passes the rider's own translator to the same function.
+      message: describeRoutingError(englishTranslator, error),
       waypointCount: waypoints.length,
       headersConstructed: markers.headersConstructed,
       requestConstructed: markers.requestConstructed,

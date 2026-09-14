@@ -1,3 +1,4 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { Waypoint } from "../../domain/types.ts";
 import type { WaypointRole } from "../../map/mapAdapter.ts";
 import type { PlanningInteractionMode } from "./planningInteractionMode.ts";
@@ -52,12 +53,9 @@ export function WaypointList({
   onMoveDown,
   onDelete,
 }: WaypointListProps) {
+  const { t } = useTranslate();
   if (waypoints.length === 0) {
-    return (
-      <p className="field-hint">
-        No waypoints yet. Tap the map or use the crosshair button below to add one.
-      </p>
-    );
+    return <p className="field-hint">{t("planning.waypoints.empty")}</p>;
   }
 
   // "append" carries no waypointId; every other mode kind names exactly
@@ -67,13 +65,16 @@ export function WaypointList({
     interactionMode.kind === "append" ? null : interactionMode.waypointId;
 
   return (
-    <ol aria-label="Waypoints" className="waypoint-list">
+    <ol aria-label={t("planning.waypoints.listLabel")} className="waypoint-list">
       {waypoints.map((waypoint, index) => {
         const isSelected = waypoint.id === activeWaypointId;
         const isPendingMove = isSelected && interactionMode.kind === "move";
         const isPendingInsertAfter =
           isSelected && interactionMode.kind === "insert-after";
-        const label = index === 0 ? "Start" : `Waypoint ${String(index + 1)}`;
+        const label =
+          index === 0
+            ? t("planning.waypoints.start")
+            : t("planning.waypoints.numbered", { number: index + 1 });
         const role = waypointRoles[index] ?? "ordinary";
         const roleClass = ROW_ORDINAL_ROLE_CLASS[role];
         const ordinalClassName = roleClass
@@ -102,7 +103,7 @@ export function WaypointList({
                 <button
                   type="button"
                   className="waypoint-row-icon-button"
-                  aria-label={`Move ${label} up`}
+                  aria-label={t("planning.waypoints.moveUp", { waypoint: label })}
                   disabled={index === 0}
                   onClick={() => {
                     onMoveUp(waypoint.id);
@@ -113,7 +114,7 @@ export function WaypointList({
                 <button
                   type="button"
                   className="waypoint-row-icon-button"
-                  aria-label={`Move ${label} down`}
+                  aria-label={t("planning.waypoints.moveDown", { waypoint: label })}
                   disabled={index === waypoints.length - 1}
                   onClick={() => {
                     onMoveDown(waypoint.id);
@@ -125,18 +126,18 @@ export function WaypointList({
               <button
                 type="button"
                 className="waypoint-row-icon-button"
-                aria-label={`Delete ${label}`}
+                aria-label={t("planning.waypoints.deleteNamed", { waypoint: label })}
                 onClick={() => {
                   onDelete(waypoint.id);
                 }}
               >
-                Delete
+                {t("planning.waypoints.delete")}
               </button>
             </div>
             {isSelected ? (
               <div
                 role="group"
-                aria-label={`${label} actions`}
+                aria-label={t("planning.waypoints.actionsGroup", { waypoint: label })}
                 className="waypoint-row-relocate"
               >
                 <button
@@ -151,7 +152,7 @@ export function WaypointList({
                     onStartMove(waypoint.id);
                   }}
                 >
-                  Move
+                  {t("planning.waypoints.move")}
                 </button>
                 <button
                   type="button"
@@ -165,7 +166,7 @@ export function WaypointList({
                     onStartInsertAfter(waypoint.id);
                   }}
                 >
-                  Insert after
+                  {t("planning.waypoints.insertAfter")}
                 </button>
               </div>
             ) : null}

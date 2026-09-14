@@ -68,6 +68,11 @@ import { downloadTextFile } from "../shared/downloadTextFile.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { ImportGpxButton } from "./ImportGpxButton.tsx";
 import { useTranslate } from "../../i18n/useTranslate.ts";
+import {
+  describeGpxExportFailure,
+  describeGpxImportFailure,
+  describeGpxImportNotice,
+} from "./gpxMessages.ts";
 import { computeFocusRouteIdAfterDelete } from "./routeDeleteFocus.ts";
 import { isPinnedRoute, selectRouteLibraryGroups } from "./routeLibraryView.ts";
 import { RouteListItem, type RouteSwitchPrompt } from "./RouteListItem.tsx";
@@ -616,7 +621,7 @@ export function RouteLibrary({
 
   const handleImportError = (error: unknown) => {
     setNotices([]);
-    setImportError(error instanceof Error ? error.message : t("routes.error.import"));
+    setImportError(describeGpxImportFailure(translator, error, t("routes.error.import")));
     logError("gpx-import", error);
   };
 
@@ -646,7 +651,9 @@ export function RouteLibrary({
         downloadTextFile(fileName, xml, "application/gpx+xml");
       })
       .catch((error: unknown) => {
-        setExportError(error instanceof Error ? error.message : t("routes.error.export"));
+        setExportError(
+          describeGpxExportFailure(translator, error, t("routes.error.export")),
+        );
         logError("route-export", error);
       });
   };
@@ -1310,8 +1317,8 @@ export function RouteLibrary({
       {importError ? <p role="alert">{importError}</p> : null}
       {exportError ? <p role="alert">{exportError}</p> : null}
       {notices.map((notice) => (
-        <p role="status" key={notice.message}>
-          {notice.message}
+        <p role="status" key={notice.kind}>
+          {describeGpxImportNotice(translator, notice)}
         </p>
       ))}
 

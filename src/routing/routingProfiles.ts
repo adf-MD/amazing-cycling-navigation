@@ -4,6 +4,7 @@ import {
   isRoutingProfile,
 } from "../domain/routingProfile.ts";
 import type { RoutingProfile } from "../domain/types.ts";
+import type { ParameterlessMessageKey, Translator } from "../i18n/translate.ts";
 
 export { DEFAULT_ROUTING_PROFILE, isRoutingProfile };
 
@@ -14,38 +15,53 @@ export interface RoutingProfileMetadata {
   readonly description: string;
 }
 
+/** Catalogue keys per profile — backlog item 113 stage 3. The copy itself
+ * lives in the catalogue; this module keeps only the mapping, so the
+ * compile-time exhaustiveness the Record below provides is preserved. */
+interface RoutingProfileMessageKeys {
+  readonly label: ParameterlessMessageKey;
+  readonly description: ParameterlessMessageKey;
+}
+
 /** A Record, not a lookup array/switch, so TypeScript refuses to compile
  * if a future RoutingProfile member is added without matching UI metadata
  * here. */
-const METADATA_BY_VALUE: Record<
-  RoutingProfile,
-  Omit<RoutingProfileMetadata, "value" | "isDefault">
-> = {
+const MESSAGE_KEYS_BY_VALUE: Record<RoutingProfile, RoutingProfileMessageKeys> = {
   "cycling-road": {
-    label: "Road bike",
-    description: "Prefers roads suitable for a road bike.",
+    label: "routingProfile.cyclingRoad.label",
+    description: "routingProfile.cyclingRoad.description",
   },
   "cycling-regular": {
-    label: "General cycling",
-    description:
-      "May use more cycling infrastructure, such as cycle paths and tracks, but can also " +
-      "include compacted, gravel, unpaved or other surfaces that may not suit a road bike.",
+    label: "routingProfile.cyclingRegular.label",
+    description: "routingProfile.cyclingRegular.description",
   },
 };
 
 /** The authoritative list driving Planning's cycling-profile selector, in
- * a stable, deliberate order (Road bike first, since it's the default). */
-export const ROUTING_PROFILES: readonly RoutingProfileMetadata[] =
-  ROUTING_PROFILE_VALUES.map((value) => ({
+ * a stable, deliberate order (Road bike first, since it's the default).
+ * A function rather than a constant since item 113 stage 3: the labels are
+ * language-dependent, so they cannot be frozen at module load. */
+export function listRoutingProfiles(
+  translator: Translator,
+): readonly RoutingProfileMetadata[] {
+  return ROUTING_PROFILE_VALUES.map((value) => ({
     value,
     isDefault: value === DEFAULT_ROUTING_PROFILE,
-    ...METADATA_BY_VALUE[value],
+    label: formatRoutingProfileLabel(translator, value),
+    description: describeRoutingProfile(translator, value),
   }));
-
-export function formatRoutingProfileLabel(profile: RoutingProfile): string {
-  return METADATA_BY_VALUE[profile].label;
 }
 
-export function describeRoutingProfile(profile: RoutingProfile): string {
-  return METADATA_BY_VALUE[profile].description;
+export function formatRoutingProfileLabel(
+  translator: Translator,
+  profile: RoutingProfile,
+): string {
+  return translator.t(MESSAGE_KEYS_BY_VALUE[profile].label);
+}
+
+export function describeRoutingProfile(
+  translator: Translator,
+  profile: RoutingProfile,
+): string {
+  return translator.t(MESSAGE_KEYS_BY_VALUE[profile].description);
 }

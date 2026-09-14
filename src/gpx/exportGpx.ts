@@ -57,7 +57,7 @@ export async function exportRouteToGpx(route: PlannedRoute): Promise<string> {
   if (needsGeometryDigest) {
     if (typeof crypto === "undefined" || typeof crypto.subtle === "undefined") {
       throw new GpxExportError(
-        "crypto-unavailable",
+        { kind: "crypto-unavailable" },
         "This route's turn information and/or planning waypoints could not be preserved " +
           "in the GPX export because this browser does not support the cryptography " +
           "needed to bind them to the route geometry. Export was cancelled rather than " +

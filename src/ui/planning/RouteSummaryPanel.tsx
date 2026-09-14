@@ -1,10 +1,11 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
+import {
+  describeRouteWarning,
+  describeSurfaceWarningKind,
+  formatSurfaceLabel,
+} from "./routeWarningCopy.ts";
 import { useEffect, useRef, useState } from "react";
-import type {
-  PlannedRoute,
-  RoutePoint,
-  RouteWarning,
-  RouteWarningKind,
-} from "../../domain/types.ts";
+import type { PlannedRoute, RoutePoint, RouteWarning } from "../../domain/types.ts";
 import type { ClassifiedSegment } from "../../navigation/gradient.ts";
 import type { ClimbGradientBand, RouteFeature } from "../../navigation/routeFeatures.ts";
 import type { MicroDetailVisualKey } from "../../navigation/routeFeaturePalette.ts";
@@ -84,25 +85,8 @@ export interface RouteSummaryPanelProps {
   revealToken: number;
 }
 
-/** Short display name for a surface-classification warning kind — only
- * ever used for a warning that carries surface detail, so the three
- * surface kinds are the only cases that matter in practice. */
-function surfaceKindLabel(kind: RouteWarningKind): string {
-  switch (kind) {
-    case "unknown-surface":
-      return "Unknown surface";
-    case "questionable-surface":
-      return "Questionable surface";
-    case "unsuitable-surface":
-      return "Unsuitable surface";
-    default:
-      // Unreachable in practice — warning.surface is only ever set for
-      // the three kinds above (see normalizeOpenRouteServiceRoute.ts) —
-      // but kept total rather than throwing, matching this file's own
-      // defensive style elsewhere.
-      return "Surface";
-  }
-}
+// Backlog item 113 stage 3: the kind-to-heading switch moved into
+// routeWarningCopy.ts, beside the rest of the render-time warning copy.
 
 /**
  * Distance, ascent/descent, provider provenance, surface breakdown and
@@ -131,6 +115,8 @@ export function RouteSummaryPanel({
   selectedSegmentEndElevationMetres = null,
   onClearGradientSegmentSelection,
 }: RouteSummaryPanelProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   const surface = route.surfaceSummary;
   const selectedButtonRef = useRef<HTMLButtonElement | null>(null);
   const lastRevealTokenRef = useRef(revealToken);
@@ -166,19 +152,20 @@ export function RouteSummaryPanel({
       : undefined;
 
   return (
-    <section aria-label="Route summary" className="panel stack planning-section">
-      <h2>Route overview</h2>
+    <section
+      aria-label={t("routeSummary.landmarkLabel")}
+      className="panel stack planning-section"
+    >
+      <h2>{t("routeSummary.heading")}</h2>
 
       <div className="route-summary-metrics">
         <p>
           {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
           {route.descentMetres !== null
-            ? ` · ${String(Math.round(route.descentMetres))} m descent`
+            ? ` · ${t("routeSummary.descent", { descent: Math.round(route.descentMetres) })}`
             : ""}
         </p>
-        <p>
-          {waypointCount} waypoint{waypointCount === 1 ? "" : "s"}
-        </p>
+        <p>{translator.plural("routeSummary.waypointCount", waypointCount)}</p>
       </div>
 
       <div className="route-overview-elevation-section">
@@ -221,30 +208,51 @@ export function RouteSummaryPanel({
 
       {route.source.kind === "planner" ? (
         <p className="field-hint">
-          Routed via {route.source.provider ?? "unknown provider"}
           {route.source.profile
-            ? ` · ${formatRoutingProfileLabel(route.source.profile)} (${route.source.profile})`
-            : ""}
+            ? t("routeSummary.routedViaProfile", {
+                provider: route.source.provider ?? t("routeSummary.unknownProvider"),
+                profile: formatRoutingProfileLabel(translator, route.source.profile),
+                profileId: route.source.profile,
+              })
+            : t("routeSummary.routedVia", {
+                provider: route.source.provider ?? t("routeSummary.unknownProvider"),
+              })}
         </p>
       ) : null}
       {surface ? (
         <>
-          <ul aria-label="Surface breakdown" className="surface-summary-grid">
-            <li>Paved: {formatMetres(surface.pavedMetres)}</li>
-            <li>Questionable: {formatMetres(surface.questionableMetres)}</li>
-            <li>Unsuitable: {formatMetres(surface.unsuitableMetres)}</li>
-            <li>Unknown: {formatMetres(surface.unknownMetres)}</li>
+          <ul
+            aria-label={t("routeSummary.surfaceLabel")}
+            className="surface-summary-grid"
+          >
+            <li>
+              {t("routeSummary.surfacePaved", {
+                distance: formatMetres(surface.pavedMetres),
+              })}
+            </li>
+            <li>
+              {t("routeSummary.surfaceQuestionable", {
+                distance: formatMetres(surface.questionableMetres),
+              })}
+            </li>
+            <li>
+              {t("routeSummary.surfaceUnsuitable", {
+                distance: formatMetres(surface.unsuitableMetres),
+              })}
+            </li>
+            <li>
+              {t("routeSummary.surfaceUnknown", {
+                distance: formatMetres(surface.unknownMetres),
+              })}
+            </li>
           </ul>
-          <p className="field-hint">
-            Based on available data only — not a guarantee of road quality, legal access
-            or current conditions.
-          </p>
+          <p className="field-hint">{t("routeSummary.surfaceCaveat")}</p>
         </>
       ) : null}
       {warnings.length > 0 ? (
         <div className="stack">
-          <h3>Route warnings</h3>
-          <ul aria-label="Route warnings">
+          <h3>{t("routeSummary.warningsHeading")}</h3>
+          <ul aria-label={t("routeSummary.warningsHeading")}>
             {warnings.map((warning, index) => {
               const isSelected = index === selectedWarningIndex;
               const hasSurfaceDetail = warning.surface !== undefined;
@@ -279,25 +287,34 @@ export function RouteSummaryPanel({
                     </span>
                     {hasSurfaceDetail ? (
                       <>
-                        {surfaceKindLabel(warning.kind)} · {formatMetres(lengthMetres)}
+                        {t("routeSummary.warningRowSurface", {
+                          warning: describeSurfaceWarningKind(translator, warning),
+                          length: formatMetres(lengthMetres),
+                        })}
                       </>
                     ) : (
                       <>
-                        {warning.message} — {formatMetres(lengthMetres)}
-                        {" ("}
-                        {formatDistanceKm(warning.startDistanceMetres)}–
-                        {formatDistanceKm(warning.endDistanceMetres)}
-                        {")"}
+                        {t("routeSummary.warningRow", {
+                          warning: describeRouteWarning(translator, warning),
+                          length: formatMetres(lengthMetres),
+                          start: formatDistanceKm(warning.startDistanceMetres),
+                          end: formatDistanceKm(warning.endDistanceMetres),
+                        })}
                       </>
                     )}
                   </button>
                   {isSelected && warning.surface ? (
                     <div id={detailId} className="route-warning-detail">
-                      <p>Surface: {warning.surface.label}</p>
                       <p>
-                        Route position:{" "}
-                        {formatDistanceKmValue(warning.startDistanceMetres)}–
-                        {formatDistanceKmValue(warning.endDistanceMetres)} km
+                        {t("routeSummary.warningSurfaceDetail", {
+                          surface: formatSurfaceLabel(translator, warning.surface.type),
+                        })}
+                      </p>
+                      <p>
+                        {t("routeSummary.warningPosition", {
+                          start: formatDistanceKmValue(warning.startDistanceMetres),
+                          end: formatDistanceKmValue(warning.endDistanceMetres),
+                        })}
                       </p>
                     </div>
                   ) : null}
@@ -307,9 +324,11 @@ export function RouteSummaryPanel({
           </ul>
           {justRevealedWarning ? (
             <p role="status">
-              Selected warning: {justRevealedWarning.message} (
-              {formatDistanceKm(justRevealedWarning.startDistanceMetres)}–
-              {formatDistanceKm(justRevealedWarning.endDistanceMetres)}).
+              {t("routeSummary.warningSelected", {
+                warning: describeRouteWarning(translator, justRevealedWarning),
+                start: formatDistanceKm(justRevealedWarning.startDistanceMetres),
+                end: formatDistanceKm(justRevealedWarning.endDistanceMetres),
+              })}
             </p>
           ) : null}
           {selectedWarningIndex !== null ? (
@@ -318,7 +337,7 @@ export function RouteSummaryPanel({
               className="btn-secondary"
               onClick={onClearWarningSelection}
             >
-              Clear warning selection
+              {t("routeSummary.clearWarningSelection")}
             </button>
           ) : null}
         </div>

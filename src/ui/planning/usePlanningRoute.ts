@@ -1,3 +1,4 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PlannedRoute, Waypoint } from "../../domain/types.ts";
 import { createRouteId } from "../../domain/id.ts";
@@ -130,6 +131,7 @@ export function usePlanningRoute({
   avoidFerries,
   adapter,
 }: UsePlanningRouteOptions): UsePlanningRouteResult {
+  const translator = useTranslate();
   const [routedResult, setRoutedResult] = useState<{
     route: PlannedRoute;
     waypoints: readonly Waypoint[];
@@ -261,7 +263,7 @@ export function usePlanningRoute({
         setIsCalculating(false);
         setUpdatingLegCount(null);
         if (error instanceof RoutingError) {
-          setLastErrorMessage(describeRoutingError(error));
+          setLastErrorMessage(describeRoutingError(translator, error));
           const outcome = mapErrorReasonToOutcome(error.reason);
           if (outcome) {
             const rateLimitResetAt = error.retryAfterSeconds
@@ -274,11 +276,16 @@ export function usePlanningRoute({
             );
           }
         } else {
-          setLastErrorMessage("The route could not be calculated. Try again.");
+          setLastErrorMessage(translator.t("planning.calculateFailed"));
         }
         logError("planning-calculate-route", error);
       });
-  }, [adapter]);
+    // `translator` is a stable object while the language is unchanged (see
+    // i18n/useTranslate.ts, which returns the provider's memoised instance
+    // or the single shared English one), so including it does not make
+    // this callback churn — and omitting it would leave a stale translator
+    // captured across a language change.
+  }, [adapter, translator]);
 
   const calculateNow = useCallback(() => {
     window.clearTimeout(debounceTimeoutRef.current);

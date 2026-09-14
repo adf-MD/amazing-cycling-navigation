@@ -1,3 +1,5 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
+
 export interface NoApiKeyNoticeProps {
   onOpenSettings: () => void;
 }
@@ -8,11 +10,12 @@ export interface NoApiKeyNoticeProps {
  * CLAUDE.md: waypoint editing and drafts must never depend on a key).
  */
 export function NoApiKeyNotice({ onOpenSettings }: NoApiKeyNoticeProps) {
+  const { t } = useTranslate();
   return (
     <div role="status" className="status-row status-row--info row planning-section">
-      <p>Road routing requires your personal OpenRouteService key.</p>
+      <p>{t("planning.noKey.message")}</p>
       <button type="button" className="btn-secondary" onClick={onOpenSettings}>
-        Open Settings
+        {t("planning.noKey.openSettings")}
       </button>
     </div>
   );

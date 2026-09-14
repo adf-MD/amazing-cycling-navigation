@@ -1,3 +1,4 @@
+import type { Translator } from "../../i18n/translate.ts";
 import type { Waypoint } from "../../domain/types.ts";
 
 /**
@@ -40,27 +41,35 @@ export function deriveInteractionMode(
 }
 
 function describeWaypointPhrase(
+  translator: Translator,
   waypoints: readonly Waypoint[],
   waypointId: string,
 ): string {
   const index = waypoints.findIndex((waypoint) => waypoint.id === waypointId);
-  return index === 0 ? "the start" : `waypoint ${String(index + 1)}`;
+  return index === 0
+    ? translator.t("planning.place.theStart")
+    : translator.t("planning.place.numbered", { number: index + 1 });
 }
 
 /** The crosshair/placement button's label for the current mode — always
  * describes exactly what a bare tap or button click will do next, never
  * a generic instruction. */
 export function describeCrosshairAction(
+  translator: Translator,
   mode: PlanningInteractionMode,
   waypoints: readonly Waypoint[],
 ): string {
   switch (mode.kind) {
     case "append":
     case "selected":
-      return "Add waypoint here";
+      return translator.t("planning.place.addHere");
     case "move":
-      return `Move ${describeWaypointPhrase(waypoints, mode.waypointId)} here`;
+      return translator.t("planning.place.moveHere", {
+        waypoint: describeWaypointPhrase(translator, waypoints, mode.waypointId),
+      });
     case "insert-after":
-      return `Insert after ${describeWaypointPhrase(waypoints, mode.waypointId)}`;
+      return translator.t("planning.place.insertAfter", {
+        waypoint: describeWaypointPhrase(translator, waypoints, mode.waypointId),
+      });
   }
 }

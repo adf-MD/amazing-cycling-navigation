@@ -76,3 +76,44 @@ describe("isValidLatitude", () => {
     expect(isValidLatitude(value)).toBe(expected);
   });
 });
+
+/** Runs `act` and returns the GpxParseError it threw, failing otherwise. */
+function captureParseError(act: () => void): GpxParseError {
+  let captured: unknown;
+  try {
+    act();
+  } catch (error) {
+    captured = error;
+  }
+  expect(captured).toBeInstanceOf(GpxParseError);
+  return captured as GpxParseError;
+}
+
+describe("typed error detail (backlog item 113 stage 3)", () => {
+  it("reports the real size limit as data, not only inside the sentence", () => {
+    // The describer's own test builds a detail by hand, so it cannot
+    // notice a producer that supplies the wrong number. This closes that
+    // gap at the source: the limit must be the module's actual constant.
+    const oversized = new File([new Uint8Array(MAX_GPX_FILE_SIZE_BYTES + 1)], "big.gpx");
+    const error = captureParseError(() => {
+      validateGpxFile(oversized);
+    });
+    expect(error.detail.kind).toBe("too-large");
+    if (error.detail.kind !== "too-large") return;
+    expect(error.detail.limitMb).toBe(MAX_GPX_FILE_SIZE_BYTES / (1024 * 1024));
+    expect(error.detail.limitMb).toBeGreaterThan(0);
+  });
+
+  it("carries a typed detail for every other validation outcome", () => {
+    const cases: readonly (readonly [File, string])[] = [
+      [new File([], "empty.gpx"), "empty-file"],
+      [new File(["<gpx/>"], "notes.txt"), "unsupported-type"],
+    ];
+    for (const [file, expectedKind] of cases) {
+      const error = captureParseError(() => {
+        validateGpxFile(file);
+      });
+      expect(error.detail.kind).toBe(expectedKind);
+    }
+  });
+});

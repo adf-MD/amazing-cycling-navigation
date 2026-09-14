@@ -313,3 +313,124 @@ describe("coalesceAdjacentWarnings", () => {
     expect(result[0]?.surface).toBeUndefined();
   });
 });
+
+describe("semantic coalescing (backlog item 113 stage 3)", () => {
+  function surfaceWarning(overrides: Partial<RouteWarning> = {}): RouteWarning {
+    return {
+      kind: "questionable-surface",
+      startDistanceMetres: 0,
+      endDistanceMetres: 100,
+      message: "Questionable surface for a road bike: gravel / fine gravel.",
+      surface: { type: "gravel", label: "Gravel / fine gravel" },
+      ...overrides,
+    };
+  }
+
+  it("coalesces adjacent warnings whose stored labels are stale but whose semantics match", () => {
+    // The ONE approved behaviour change of this stage. A route saved
+    // before surfaceCodes.ts's table was corrected carries the older
+    // label; the newer half of the same gravel stretch carries the
+    // current one. They mean the same thing and are adjacent, so they
+    // are one warning. Verified failing on the parent commit before the
+    // change: it produced two warnings, not one.
+    const coalesced = coalesceAdjacentWarnings([
+      surfaceWarning({
+        endDistanceMetres: 100,
+        message: "Questionable surface for a road bike: fine gravel.",
+        surface: { type: "gravel", label: "Fine gravel" },
+      }),
+      surfaceWarning({ startDistanceMetres: 100, endDistanceMetres: 220 }),
+    ]);
+    expect(coalesced).toHaveLength(1);
+    expect(coalesced[0]?.startDistanceMetres).toBe(0);
+    expect(coalesced[0]?.endDistanceMetres).toBe(220);
+  });
+
+  it("never coalesces different surface types, however adjacent", () => {
+    const coalesced = coalesceAdjacentWarnings([
+      surfaceWarning(),
+      surfaceWarning({
+        startDistanceMetres: 100,
+        endDistanceMetres: 200,
+        message: "Unsuitable surface for a road bike: sand.",
+        surface: { type: "sand", label: "Sand" },
+      }),
+    ]);
+    expect(coalesced).toHaveLength(2);
+  });
+
+  it("never coalesces different kinds carrying the same surface type", () => {
+    const coalesced = coalesceAdjacentWarnings([
+      surfaceWarning(),
+      surfaceWarning({
+        kind: "unsuitable-surface",
+        startDistanceMetres: 100,
+        endDistanceMetres: 200,
+      }),
+    ]);
+    expect(coalesced).toHaveLength(2);
+  });
+
+  it("keeps two legacy surface warnings apart when only their messages distinguish them", () => {
+    // No surface detail at all — saved before the field existed. The
+    // stored message is the only evidence of which surface each
+    // described, so the generalisation above must not reach them.
+    const coalesced = coalesceAdjacentWarnings([
+      surfaceWarning({
+        surface: undefined,
+        message: "Questionable surface for a road bike: gravel.",
+      }),
+      surfaceWarning({
+        surface: undefined,
+        startDistanceMetres: 100,
+        endDistanceMetres: 200,
+        message: "Questionable surface for a road bike: compacted gravel.",
+      }),
+    ]);
+    expect(coalesced).toHaveLength(2);
+  });
+
+  it("still coalesces two identical legacy surface warnings", () => {
+    const legacy = {
+      surface: undefined,
+      message: "Questionable surface for a road bike: gravel.",
+    } as const;
+    const coalesced = coalesceAdjacentWarnings([
+      surfaceWarning(legacy),
+      surfaceWarning({ ...legacy, startDistanceMetres: 100, endDistanceMetres: 200 }),
+    ]);
+    expect(coalesced).toHaveLength(1);
+    expect(coalesced[0]?.endDistanceMetres).toBe(200);
+  });
+
+  it("still coalesces adjacent structural warnings of the same kind", () => {
+    const steps = {
+      kind: "steps",
+      message: "Route includes steps.",
+      surface: undefined,
+    } as const;
+    const coalesced = coalesceAdjacentWarnings([
+      surfaceWarning(steps),
+      surfaceWarning({ ...steps, startDistanceMetres: 100, endDistanceMetres: 160 }),
+    ]);
+    expect(coalesced).toHaveLength(1);
+  });
+
+  it("never coalesces different structural kinds", () => {
+    const coalesced = coalesceAdjacentWarnings([
+      surfaceWarning({
+        kind: "steps",
+        message: "Route includes steps.",
+        surface: undefined,
+      }),
+      surfaceWarning({
+        kind: "ford",
+        message: "Route includes a ford.",
+        surface: undefined,
+        startDistanceMetres: 100,
+        endDistanceMetres: 160,
+      }),
+    ]);
+    expect(coalesced).toHaveLength(2);
+  });
+});

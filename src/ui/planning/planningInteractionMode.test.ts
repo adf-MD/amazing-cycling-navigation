@@ -4,6 +4,7 @@ import {
   describeCrosshairAction,
 } from "./planningInteractionMode.ts";
 import type { Coordinate, Waypoint } from "../../domain/types.ts";
+import { englishTranslator } from "../../i18n/englishTranslator.ts";
 
 const A: Coordinate = [0, 51];
 const B: Coordinate = [0.001, 51];
@@ -43,35 +44,55 @@ describe("deriveInteractionMode", () => {
 
 describe("describeCrosshairAction", () => {
   it("describes append and selected modes identically as Add waypoint here", () => {
-    expect(describeCrosshairAction({ kind: "append" }, WAYPOINTS)).toBe(
-      "Add waypoint here",
-    );
     expect(
-      describeCrosshairAction({ kind: "selected", waypointId: "b" }, WAYPOINTS),
+      describeCrosshairAction(englishTranslator, { kind: "append" }, WAYPOINTS),
+    ).toBe("Add waypoint here");
+    expect(
+      describeCrosshairAction(
+        englishTranslator,
+        { kind: "selected", waypointId: "b" },
+        WAYPOINTS,
+      ),
     ).toBe("Add waypoint here");
   });
 
   it("describes move mode by the waypoint's position", () => {
-    expect(describeCrosshairAction({ kind: "move", waypointId: "b" }, WAYPOINTS)).toBe(
-      "Move waypoint 2 here",
-    );
+    expect(
+      describeCrosshairAction(
+        englishTranslator,
+        { kind: "move", waypointId: "b" },
+        WAYPOINTS,
+      ),
+    ).toBe("Move waypoint 2 here");
   });
 
   it("describes move mode for the start waypoint distinctly", () => {
-    expect(describeCrosshairAction({ kind: "move", waypointId: "a" }, WAYPOINTS)).toBe(
-      "Move the start here",
-    );
+    expect(
+      describeCrosshairAction(
+        englishTranslator,
+        { kind: "move", waypointId: "a" },
+        WAYPOINTS,
+      ),
+    ).toBe("Move the start here");
   });
 
   it("describes insert-after mode by the anchor's position, with no trailing 'here'", () => {
     expect(
-      describeCrosshairAction({ kind: "insert-after", waypointId: "b" }, WAYPOINTS),
+      describeCrosshairAction(
+        englishTranslator,
+        { kind: "insert-after", waypointId: "b" },
+        WAYPOINTS,
+      ),
     ).toBe("Insert after waypoint 2");
   });
 
   it("describes insert-after mode for the start waypoint distinctly", () => {
     expect(
-      describeCrosshairAction({ kind: "insert-after", waypointId: "a" }, WAYPOINTS),
+      describeCrosshairAction(
+        englishTranslator,
+        { kind: "insert-after", waypointId: "a" },
+        WAYPOINTS,
+      ),
     ).toBe("Insert after the start");
   });
 });

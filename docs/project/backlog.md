@@ -166,20 +166,20 @@ _Category: Interface and accessibility consistency_
 
 _Category: Internationalisation_
 
-> **Staged delivery — Stage 2 complete (no version bump), Stage 3 next.**
+> **Staged delivery — Stage 3 complete (`0.4.39`), Stage 4 next.**
 > This item ships in stages and stays **pending** here until its final
 > stage. Nothing about it enters [`history/`](history/README.md) before
 > then. Each stage's commit updates the two lines below.
 >
-> | Stage | Content                                                                                                                                                                                                              | Status                         |
-> | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-> | 1     | Internationalisation boundary; `appPreferences` storage at schema `version(5)`; the supported-language gate; pre-render language resolution; authored `manifest.lang`; primary navigation and Settings copy migrated | Complete — `0.4.38`            |
-> | 2     | Route Library, route cards, search/sort/filtering, the tag lifecycle, route actions and confirmations, and the GPX-import controls migrated                                                                          | **Complete — no version bump** |
-> | 3     | Planning; render-time localisation of route warnings, GPX notices and provider errors                                                                                                                                | **Next**                       |
-> | 4     | Riding, free roam, ride launcher, climb views, map overlays                                                                                                                                                          | Pending                        |
-> | 5     | Status, PWA update prompt, shared components                                                                                                                                                                         | Pending                        |
-> | 6a    | Complete German catalogue authored, then **stop** and hand the full reviewable list to the user. `Deutsch` still unreachable, nothing pushed                                                                         | Pending                        |
-> | 6b    | **Only after linguistic approval**: German enabled, the `Language`/`Sprache` card, the `:lang(de)` navigation rule, the openrouteservice `language` parameter, German layout and accessibility evidence              | Pending                        |
+> | Stage | Content                                                                                                                                                                                                              | Status                     |
+> | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+> | 1     | Internationalisation boundary; `appPreferences` storage at schema `version(5)`; the supported-language gate; pre-render language resolution; authored `manifest.lang`; primary navigation and Settings copy migrated | Complete — `0.4.38`        |
+> | 2     | Route Library, route cards, search/sort/filtering, the tag lifecycle, route actions and confirmations, and the GPX-import controls migrated                                                                          | Complete — no version bump |
+> | 3     | Planning copy; render-time route-warning copy with a semantic `routeWarningIdentity`; typed GPX errors and notices; Planning-owned routing-provider messages                                                         | **Complete — `0.4.39`**    |
+> | 4     | Riding, free roam, ride launcher, climb views, map overlays                                                                                                                                                          | **Next**                   |
+> | 5     | Status, PWA update prompt, shared components                                                                                                                                                                         | Pending                    |
+> | 6a    | Complete German catalogue authored, then **stop** and hand the full reviewable list to the user. `Deutsch` still unreachable, nothing pushed                                                                         | Pending                    |
+> | 6b    | **Only after linguistic approval**: German enabled, the `Language`/`Sprache` card, the `:lang(de)` navigation rule, the openrouteservice `language` parameter, German layout and accessibility evidence              | Pending                    |
 >
 > **Decisions approved at the gate** (14 September 2026), recorded here because
 > they constrain every later stage:
@@ -221,6 +221,61 @@ _Category: Internationalisation_
 >   `sortRoutesForLibrary` and `selectRouteLibraryGroups` would churn an API
 >   a large body of order-pinning tests depends on. It belongs to the stage
 >   that makes the difference observable.
+
+> **Stage 3, recorded.** Shipped in `0.4.39`.
+>
+> - **Route-warning copy is now selected at render time** from `kind` plus
+>   `surface.type`, by `src/ui/planning/routeWarningCopy.ts`. **No migration,
+>   no database change and no GPX-format change**: the semantic fields were
+>   already persisted alongside the message. `warning.message` is still
+>   stored and is still what the diagnostics log shows.
+> - **`routeWarningIdentity`** (`src/domain/routeWarnings.ts`) replaces
+>   message-string equality in `coalesceAdjacentWarnings`. Surface warnings
+>   are identified by `kind` + `surface.type`; structural warnings by `kind`;
+>   and a surface warning saved **before** `surface` existed keeps its stored
+>   message in its identity, because that message is the only remaining
+>   record of which surface it described. The surface table's
+>   type↔label mapping is proved bijective **in both directions** by
+>   enumeration through the module's public decoder — 16 types, 16 labels,
+>   no duplicates either way.
+> - **One approved behaviour change, and only one**: two adjacent warnings of
+>   the same kind and surface type now coalesce even when their stored labels
+>   differ, which happens on a route saved before the surface table was
+>   corrected. Verified failing on `eeff4fc` before the change (it produced
+>   two warnings where one is correct) and covered by its own test. Legacy
+>   warnings without surface detail are deliberately **not** generalised.
+> - **GPX errors and notices are typed domain data.** `GpxParseError` gains a
+>   discriminated `detail` carrying the values that used to exist only inside
+>   English prose — the size limit, the file's own raw coordinate attributes,
+>   the offending elevation text, the track and route counts. `detail.kind` is
+>   deliberately **finer than `reason`**: three throw sites share
+>   `no-track-or-route` but produce two different sentences, so the reason
+>   alone could never have reconstructed the text. `reason` and `message` are
+>   both unchanged, so the GPX suites and the diagnostics log are untouched.
+> - **Provider messages** moved behind the catalogue via
+>   `describeRoutingError(translator, error)`. The Status screen's copyable
+>   connection-test report keeps approved decision **R4** by passing the
+>   **English** translator explicitly — English _by construction_, not by
+>   omission — while Planning passes the rider's own.
+> - **The openrouteservice request is unchanged**: no `language` field, and a
+>   test captures the real serialised body to prove it.
+>
+> **Deliberately deferred by stage 3:**
+>
+> - **`src/map/planningLayer.ts`'s five marker accessible names.** The copy is
+>   authored in the map layer and rendered by `MapView`, which stage 4 owns;
+>   threading a translator in now would mean editing `MapView` and absorbing
+>   stage 4's surface.
+> - **`src/ui/shared/routeSummary.ts`'s unit formatters**, unchanged since
+>   stage 2 for the same reason — seventeen importers across other screens.
+> - **`domain/routeNaming.ts`'s `" (reversed)"` suffix and the `"Planned route"`
+>   default name.** Both generate text that is then **persisted as a route
+>   name**, which is user content thereafter. That is the same class the
+>   accepted plan settled for manoeuvres — generated-then-stored text is not
+>   retranslated — and it deserves its own decision rather than being folded
+>   in silently.
+> - **`routingDiagnostics.ts` and the connection-test stage descriptions**,
+>   which are Status-owned and stay English under R4.
 
 113. **German localisation**
      - Origin: the installed-iPhone field test of 10 September 2026 — see [`current-status.md`](current-status.md) for the dated report. German-language support is recorded as a **substantial staged feature, not a small copy-editing task**.

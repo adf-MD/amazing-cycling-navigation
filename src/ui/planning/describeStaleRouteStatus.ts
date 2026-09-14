@@ -1,3 +1,4 @@
+import type { Translator } from "../../i18n/translate.ts";
 import { formatRoutingProfileLabel } from "../../routing/routingProfiles.ts";
 import type { RoutingProfile } from "../../domain/types.ts";
 
@@ -22,23 +23,24 @@ export interface StaleRouteStatusParams {
  * avoidFerries-triggered recalculation, which uses generic wording since
  * no profile changed.
  */
-export function describeStaleRouteStatus({
-  previousProfile,
-  currentProfile,
-  isCalculating,
-}: StaleRouteStatusParams): string {
+export function describeStaleRouteStatus(
+  translator: Translator,
+  { previousProfile, currentProfile, isCalculating }: StaleRouteStatusParams,
+): string {
   const profileChanged =
     previousProfile !== undefined && previousProfile !== currentProfile;
 
   if (profileChanged) {
-    const currentLabel = formatRoutingProfileLabel(currentProfile);
-    const previousLabel = formatRoutingProfileLabel(previousProfile);
+    const params = {
+      current: formatRoutingProfileLabel(translator, currentProfile),
+      previous: formatRoutingProfileLabel(translator, previousProfile),
+    };
     return isCalculating
-      ? `Recalculating for ${currentLabel}; showing the previous ${previousLabel} result below.`
-      : `Waiting to recalculate for ${currentLabel}; showing the previous ${previousLabel} result below.`;
+      ? translator.t("planning.stale.recalculatingProfile", params)
+      : translator.t("planning.stale.waitingProfile", params);
   }
 
   return isCalculating
-    ? "Recalculating your latest changes; showing the previous result below."
-    : "Waiting to recalculate your latest changes; showing the previous result below.";
+    ? translator.t("planning.stale.recalculating")
+    : translator.t("planning.stale.waiting");
 }

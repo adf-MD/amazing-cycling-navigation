@@ -23,7 +23,7 @@ import {
 } from "../../storage/planningPreferencesRepository.ts";
 import {
   DEFAULT_ROUTING_PROFILE,
-  ROUTING_PROFILES,
+  listRoutingProfiles,
   describeRoutingProfile,
 } from "../../routing/routingProfiles.ts";
 import {
@@ -342,7 +342,7 @@ export function SettingsScreen({
               aria-labelledby="default-cycling-profile-heading"
               className="cycling-profile-group"
             >
-              {ROUTING_PROFILES.map((metadata) => {
+              {listRoutingProfiles(translator).map((metadata) => {
                 const isSelected = profileByDefault === metadata.value;
                 return (
                   <button
@@ -364,7 +364,9 @@ export function SettingsScreen({
                 );
               })}
             </div>
-            <p className="field-hint">{describeRoutingProfile(profileByDefault)}</p>
+            <p className="field-hint">
+              {describeRoutingProfile(translator, profileByDefault)}
+            </p>
           </div>
 
           <label className="setting-row" htmlFor="avoid-ferries-default-checkbox">

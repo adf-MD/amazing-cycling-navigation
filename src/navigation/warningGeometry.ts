@@ -1,3 +1,4 @@
+import { routeWarningIdentity } from "../domain/routeWarnings.ts";
 import type { RoutePoint, RouteWarning } from "../domain/types.ts";
 
 function interpolatePointAtDistance(
@@ -118,19 +119,22 @@ export function coalesceAdjacentWarnings(
   const result: RouteWarning[] = [];
   for (const warning of sorted) {
     const previous = result.at(-1);
-    // Structured surface identity, not just message-string equality: two
-    // different surface types happen to always produce different message
-    // text today (the label is baked in), but this check is explicit and
-    // independent of that, so it stays correct even if message wording
-    // ever changes. Both undefined (any non-surface, or legacy
-    // pre-feature, warning) compares equal, so existing behaviour for
-    // every structural/legacy warning is unaffected.
-    const sameSurfaceType =
-      (previous?.surface?.type ?? null) === (warning.surface?.type ?? null);
+    // Semantic identity, not message-string equality (backlog item 113
+    // stage 3). Copy is now selected at render time, so two warnings that
+    // mean the same thing must be recognised as the same warning whatever
+    // language they would be shown in — a persisted English sentence is no
+    // longer the thing that records what a warning means.
+    //
+    // Exactly one deliberate behaviour change comes with this: two
+    // adjacent warnings of the same kind and surface type now coalesce
+    // even when their stored labels differ, which happens on a route saved
+    // before surfaceCodes.ts's table was corrected. That is a fix, and it
+    // has its own test. Nothing else merges that did not merge before —
+    // routeWarningIdentity keeps a legacy surface warning's stored message
+    // in its identity precisely so those cannot over-merge.
     if (
-      previous?.kind === warning.kind &&
-      previous.message === warning.message &&
-      sameSurfaceType &&
+      previous !== undefined &&
+      routeWarningIdentity(previous) === routeWarningIdentity(warning) &&
       warning.startDistanceMetres - previous.endDistanceMetres <= toleranceMetres
     ) {
       result[result.length - 1] = {

@@ -3,17 +3,20 @@ import { MAX_GPX_FILE_SIZE_BYTES } from "./constants.ts";
 
 export function validateGpxFile(file: File): void {
   if (file.size === 0) {
-    throw new GpxParseError("empty-file", "The selected file is empty.");
+    throw new GpxParseError({ kind: "empty-file" }, "The selected file is empty.");
   }
   if (file.size > MAX_GPX_FILE_SIZE_BYTES) {
     const limitMb = MAX_GPX_FILE_SIZE_BYTES / (1024 * 1024);
     throw new GpxParseError(
-      "too-large",
+      { kind: "too-large", limitMb },
       `The selected file is larger than the ${String(limitMb)} MB limit.`,
     );
   }
   if (!file.name.toLowerCase().endsWith(".gpx")) {
-    throw new GpxParseError("unsupported-type", "Only .gpx files are supported.");
+    throw new GpxParseError(
+      { kind: "unsupported-type" },
+      "Only .gpx files are supported.",
+    );
   }
 }
 

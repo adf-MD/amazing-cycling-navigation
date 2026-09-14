@@ -7,14 +7,28 @@ export interface RawGpxPoint {
   elevationMetres: number | null;
 }
 
-export interface GpxImportNotice {
-  kind:
-    | "multiple-tracks-first-used"
-    | "multiple-routes-first-used"
-    | "acn-extension-rejected"
-    | "acn-planning-extension-rejected";
-  message: string;
-}
+/**
+ * Something worth telling the rider about an otherwise successful import.
+ *
+ * Backlog item 113 stage 3: a discriminated union carrying its own typed
+ * parameters, so the count in "this file contains N tracks" survives as a
+ * number instead of only as part of an English sentence. `message` is
+ * retained and still English — it is what the diagnostics log records —
+ * but the rider-facing text is now chosen from `kind` and `count`.
+ */
+export type GpxImportNotice =
+  | {
+      readonly kind: "multiple-tracks-first-used";
+      readonly count: number;
+      readonly message: string;
+    }
+  | {
+      readonly kind: "multiple-routes-first-used";
+      readonly count: number;
+      readonly message: string;
+    }
+  | { readonly kind: "acn-extension-rejected"; readonly message: string }
+  | { readonly kind: "acn-planning-extension-rejected"; readonly message: string };
 
 export interface GpxExtractionResult {
   points: RawGpxPoint[];
@@ -32,7 +46,10 @@ export function parseGpxDocument(xmlText: string): Document {
 
   const parserError = doc.getElementsByTagName("parsererror")[0];
   if (parserError || doc.documentElement.nodeName !== "gpx") {
-    throw new GpxParseError("malformed-xml", "The file is not well-formed GPX/XML.");
+    throw new GpxParseError(
+      { kind: "malformed-xml" },
+      "The file is not well-formed GPX/XML.",
+    );
   }
 
   return doc;
@@ -55,7 +72,7 @@ function extractPoint(pointElement: Element): RawGpxPoint {
 
   if (!isValidLongitude(longitude) || !isValidLatitude(latitude)) {
     throw new GpxParseError(
-      "invalid-coordinate",
+      { kind: "invalid-coordinate", longitude: lonAttr, latitude: latAttr },
       `Point has an invalid or out-of-range coordinate (lon=${lonAttr ?? "missing"}, lat=${latAttr ?? "missing"}).`,
     );
   }
@@ -66,7 +83,7 @@ function extractPoint(pointElement: Element): RawGpxPoint {
     const elevation = Number(elevationText);
     if (!Number.isFinite(elevation)) {
       throw new GpxParseError(
-        "invalid-elevation",
+        { kind: "invalid-elevation", elevation: elevationText },
         `Point has a non-numeric elevation value "${elevationText}".`,
       );
     }
@@ -95,7 +112,7 @@ export function extractRoutePoints(doc: Document): GpxExtractionResult {
     );
     if (points.length === 0) {
       throw new GpxParseError(
-        "no-track-or-route",
+        { kind: "no-usable-points" },
         "The file has no usable track or route points.",
       );
     }
@@ -105,6 +122,7 @@ export function extractRoutePoints(doc: Document): GpxExtractionResult {
         ? [
             {
               kind: "multiple-tracks-first-used",
+              count: tracks.length,
               message: `This file contains ${String(tracks.length)} tracks; only the first was imported.`,
             },
           ]
@@ -122,7 +140,7 @@ export function extractRoutePoints(doc: Document): GpxExtractionResult {
     );
     if (points.length === 0) {
       throw new GpxParseError(
-        "no-track-or-route",
+        { kind: "no-usable-points" },
         "The file has no usable track or route points.",
       );
     }
@@ -132,6 +150,7 @@ export function extractRoutePoints(doc: Document): GpxExtractionResult {
         ? [
             {
               kind: "multiple-routes-first-used",
+              count: routes.length,
               message: `This file contains ${String(routes.length)} routes; only the first was imported.`,
             },
           ]
@@ -141,7 +160,7 @@ export function extractRoutePoints(doc: Document): GpxExtractionResult {
   }
 
   throw new GpxParseError(
-    "no-track-or-route",
+    { kind: "no-track-or-route" },
     "The file has no track or route to import.",
   );
 }

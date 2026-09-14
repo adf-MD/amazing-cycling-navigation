@@ -274,6 +274,260 @@ export const en = {
   // --- GPX import ----------------------------------------------------
   "gpx.import": "Import GPX",
   "gpx.importFile": "Import GPX file",
+
+  // --- Planning: screen chrome --------------------------------------
+  "planning.landmarkLabel": "Planning",
+  "planning.title": "Plan a route",
+  "planning.loadingDraft": "Loading your draft…",
+  "planning.draftLoadFailed":
+    "Your saved draft could not be loaded. Nothing in storage has been changed.",
+  "planning.retry": "Retry",
+
+  // --- Planning: map controls ---------------------------------------
+  "planning.map.zoomIn": "Zoom in",
+  "planning.map.zoomOut": "Zoom out",
+  "planning.map.northUp": "North-up, top-down view",
+  "planning.map.locateMe": "Locate me",
+  "planning.map.locating": "Locating…",
+  "planning.map.locateFailed": "Your location could not be determined.",
+  "planning.map.clearWarningFirst":
+    "Clear the selected warning to place or move a waypoint.",
+  "planning.map.clearFeatureFirst":
+    "Clear the selected route feature to place or move a waypoint.",
+
+  // --- Planning: waypoints ------------------------------------------
+  "planning.waypoints.heading": "Waypoints",
+  "planning.waypoints.listLabel": "Waypoints",
+  "planning.waypoints.empty":
+    "No waypoints yet. Tap the map or use the crosshair button below to add one.",
+  "planning.waypoints.start": "Start",
+  // translator: {number} is the waypoint's position in the list, from 2.
+  "planning.waypoints.numbered": "Waypoint {number}",
+  // translator: {waypoint} is either the start or a numbered waypoint, from
+  // the two messages above. Kept as whole sentences so the verb can move.
+  "planning.waypoints.moveUp": "Move {waypoint} up",
+  "planning.waypoints.moveDown": "Move {waypoint} down",
+  "planning.waypoints.deleteNamed": "Delete {waypoint}",
+  "planning.waypoints.actionsGroup": "{waypoint} actions",
+  "planning.waypoints.delete": "Delete",
+  "planning.waypoints.move": "Move",
+  "planning.waypoints.insertAfter": "Insert after",
+
+  // --- Planning: waypoint actions -----------------------------------
+  "planning.actions.group": "Waypoint actions",
+  "planning.actions.undo": "Undo",
+  "planning.actions.redo": "Redo",
+  "planning.actions.returnToStart": "Return to start",
+  "planning.actions.reverse": "Reverse route",
+  "planning.actions.addToEnd": "Add to end",
+
+  // --- Planning: crosshair placement --------------------------------
+  // translator: the crosshair button always says exactly what the next tap
+  // will do. {waypoint} is "the start" or "waypoint N".
+  "planning.place.addHere": "Add waypoint here",
+  "planning.place.moveHere": "Move {waypoint} here",
+  "planning.place.insertAfter": "Insert after {waypoint}",
+  "planning.place.theStart": "the start",
+  "planning.place.numbered": "waypoint {number}",
+
+  // --- Planning: calculation ----------------------------------------
+  "planning.calculate": "Calculate route",
+  "planning.calculating": "Calculating…",
+  // translator: only ever shown for two or more sections, never one.
+  "planning.calculatingSections": "Calculating {count} route sections…",
+  "planning.tryAgain": "Try again",
+  "planning.calculateFailed": "The route could not be calculated. Try again.",
+
+  // --- Planning: routing options ------------------------------------
+  "planning.routing.profileGroup": "Cycling profile for this draft",
+  // translator: {profile} is a cycling-profile name; {ferries} is one of
+  // the two words below. Kept as one sentence rather than assembled.
+  "planning.routing.summary": "Routing: {profile} · Ferries {ferries}",
+  "planning.routing.ferriesAvoided": "avoided",
+  "planning.routing.ferriesAllowed": "allowed",
+  "planning.routing.change": "Change",
+  "planning.routing.avoidFerries": "Avoid ferries for this draft",
+
+  // --- Planning: stale-route status ---------------------------------
+  // translator: shown while an already-calculated route is out of date.
+  // {current} and {previous} are cycling-profile names.
+  "planning.stale.recalculatingProfile":
+    "Recalculating for {current}; showing the previous {previous} result below.",
+  "planning.stale.waitingProfile":
+    "Waiting to recalculate for {current}; showing the previous {previous} result below.",
+  "planning.stale.recalculating":
+    "Recalculating your latest changes; showing the previous result below.",
+  "planning.stale.waiting":
+    "Waiting to recalculate your latest changes; showing the previous result below.",
+
+  // --- Planning: edit-copy notices ----------------------------------
+  "planning.editCopy.reversedExact":
+    "Reversed editable copy created. Recalculate before saving; one-way restrictions may make the new route differ from the original. The saved route remains unchanged.",
+  "planning.editCopy.reversedEstimated":
+    "Reversed waypoints were estimated from this route. Recalculation may follow different roads, especially around one-way restrictions. The saved route remains unchanged.",
+  "planning.editCopy.exact":
+    "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.",
+  "planning.editCopy.estimated":
+    "Editable waypoints were estimated from this route. Recalculation may follow different roads. The saved route will remain unchanged.",
+
+  // --- Planning: save, export, clear ---------------------------------
+  "planning.save.heading": "Save or export",
+  "planning.save.nameLabel": "Route name",
+  "planning.save.save": "Save route",
+  "planning.save.saving": "Saving…",
+  "planning.save.export": "Export GPX",
+  "planning.save.hint": "Calculate a complete routed result before saving or exporting.",
+  "planning.save.failed": "The route could not be saved on this device. Try again.",
+  "planning.export.failed": "The route could not be exported.",
+  "planning.clearDraft": "Clear draft",
+  "planning.clearDraft.clearing": "Clearing…",
+  "planning.clearDraft.confirmTitle": "Clear this draft?",
+  "planning.clearDraft.confirmMessage":
+    "This removes all waypoints, the calculated route and other unsaved draft details. Saved routes are not affected.",
+  "planning.clearDraft.cancel": "Cancel",
+  "planning.clearDraft.failed":
+    "The draft could not be cleared on this device. Try again.",
+
+  // --- Planning: no API key -----------------------------------------
+  "planning.noKey.message": "Road routing requires your personal OpenRouteService key.",
+  "planning.noKey.openSettings": "Open Settings",
+
+  // --- Cycling profiles ----------------------------------------------
+  "routingProfile.cyclingRoad.label": "Road bike",
+  "routingProfile.cyclingRoad.description": "Prefers roads suitable for a road bike.",
+  "routingProfile.cyclingRegular.label": "General cycling",
+  "routingProfile.cyclingRegular.description":
+    "May use more cycling infrastructure, such as cycle paths and tracks, but can also include compacted, gravel, unpaved or other surfaces that may not suit a road bike.",
+
+  // --- Route summary -------------------------------------------------
+  "routeSummary.landmarkLabel": "Route summary",
+  "routeSummary.heading": "Route overview",
+  // translator: {distance} and {ascent} already carry their own units.
+  "routeSummary.descent": "{descent} m descent",
+  "routeSummary.waypointCount": { one: "1 waypoint", other: "{count} waypoints" },
+  // translator: {provider} is a machine-supplied provider name, {profile} a
+  // cycling-profile label, {profileId} its machine identifier.
+  "routeSummary.routedVia": "Routed via {provider}",
+  "routeSummary.routedViaProfile": "Routed via {provider} · {profile} ({profileId})",
+  "routeSummary.unknownProvider": "unknown provider",
+  "routeSummary.surfaceLabel": "Surface breakdown",
+  "routeSummary.surfacePaved": "Paved: {distance}",
+  "routeSummary.surfaceQuestionable": "Questionable: {distance}",
+  "routeSummary.surfaceUnsuitable": "Unsuitable: {distance}",
+  "routeSummary.surfaceUnknown": "Unknown: {distance}",
+  "routeSummary.surfaceCaveat":
+    "Based on available data only — not a guarantee of road quality, legal access or current conditions.",
+  "routeSummary.warningsHeading": "Route warnings",
+  "routeSummary.clearWarningSelection": "Clear warning selection",
+  "routeSummary.warningSurfaceDetail": "Surface: {surface}",
+  "routeSummary.warningPosition": "Route position: {start}–{end} km",
+  // translator: {warning} is a warning description, {length} a distance.
+  "routeSummary.warningRowSurface": "{warning} · {length}",
+  "routeSummary.warningRow": "{warning} — {length} ({start}–{end})",
+  "routeSummary.warningSelected": "Selected warning: {warning} ({start}–{end}).",
+
+  // --- Route warnings, selected at render time from semantic data -----
+  "warning.surfaceKind.unknown": "Unknown surface",
+  "warning.surfaceKind.questionable": "Questionable surface",
+  "warning.surfaceKind.unsuitable": "Unsuitable surface",
+  "warning.surfaceKind.other": "Surface",
+  // translator: the full sentence form, used where a warning has no
+  // separate kind/label presentation. {surface} is a surface name.
+  "warning.surface.unknown": "Surface data is unavailable for this segment.",
+  "warning.surface.questionable": "Questionable surface for a road bike: {surface}.",
+  "warning.surface.unsuitable": "Unsuitable surface for a road bike: {surface}.",
+  "warning.structural.steps": "Route includes steps.",
+  "warning.structural.ferry": "Route includes a ferry.",
+  "warning.structural.ford": "Route includes a ford.",
+  "warning.structural.access": "Route includes an access restriction.",
+  "warning.structural.other": "Route includes a construction-designated way.",
+
+  // --- Surface names --------------------------------------------------
+  "surface.unknown": "No usable surface data",
+  "surface.paved": "Paved",
+  "surface.asphalt": "Asphalt",
+  "surface.concrete": "Concrete",
+  "surface.unpavedUnspecified": "Unpaved (unspecified)",
+  "surface.metal": "Metal",
+  "surface.wood": "Wood",
+  "surface.compactedGravel": "Compacted gravel",
+  "surface.gravel": "Gravel / fine gravel",
+  "surface.pavingStones": "Paving stones / cobblestone",
+  "surface.grassPaver": "Grass paver",
+  "surface.dirt": "Dirt",
+  "surface.ground": "Ground or mud",
+  "surface.ice": "Ice or snow",
+  "surface.sand": "Sand",
+  "surface.grass": "Grass",
+
+  // --- Routing-provider failures, as the rider sees them --------------
+  // translator: these are shown in Planning. The same function also feeds
+  // the Status screen's copyable report, which deliberately passes the
+  // English translator so that report stays shareable for support.
+  "routingError.noApiKey": "Road routing requires your personal OpenRouteService key.",
+  "routingError.invalidHeaderValue":
+    "Your OpenRouteService key contains a character that cannot be sent in a request header. Check it in Settings.",
+  "routingError.requestNotSent":
+    "The routing request could not be prepared or sent. Try again.",
+  "routingError.unauthorized":
+    "Your OpenRouteService key was rejected. Check it in Settings.",
+  "routingError.forbidden":
+    "Access was denied — check your OpenRouteService account, permissions or daily quota in Settings.",
+  "routingError.rateLimited": "The routing rate limit was reached. Try again shortly.",
+  "routingError.offline": "You are offline. Connect to calculate a route.",
+  "routingError.transportFailure":
+    "The routing provider could not be reached. OpenRouteService may be temporarily unavailable, or the browser or network may have blocked the request. Try again later.",
+  "routingError.timeout": "The routing request timed out. Try again.",
+  "routingError.noRouteFound":
+    "No cycling route could be found between these waypoints — they may be separated by water, a barrier, or a gap in rideable roads. Your key and connection to OpenRouteService are working; try adjusting the route.",
+  "routingError.noRoutablePoint":
+    "One of your waypoints is too far from a usable road for cycling. Try moving it closer to a street or cycle path. Your key and connection to OpenRouteService are working.",
+  // translator: {status} is an HTTP status number, or the word below when
+  // no response was received at all. Never translate the digits.
+  "routingError.providerUnavailable":
+    "OpenRouteService is temporarily unavailable (HTTP {status}). Your waypoints have been retained. Try again later.",
+  "routingError.providerError":
+    "The routing provider returned an unexpected error (HTTP {status}).",
+  "routingError.unknownStatus": "error",
+  // translator: appended to a sentence, so it begins with a space.
+  // {code} is openrouteservice's own numeric code; never translate it.
+  "routingError.providerCodeSuffix": " (provider code {code})",
+  "routingError.unusableResponse":
+    "The routing provider returned an unusable response. Try again.",
+  "routingError.legStitchingFailed":
+    "The route sections could not be joined into one continuous route. Try recalculating.",
+
+  // --- GPX import and export failures ---------------------------------
+  "gpx.error.emptyFile": "The selected file is empty.",
+  // translator: {limitMb} is a whole number of megabytes.
+  "gpx.error.tooLarge": "The selected file is larger than the {limitMb} MB limit.",
+  "gpx.error.unsupportedType": "Only .gpx files are supported.",
+  "gpx.error.malformedXml": "The file is not well-formed GPX/XML.",
+  // translator: {longitude} and {latitude} are the file's own raw attribute
+  // text, reproduced exactly, or the word below when the attribute is absent.
+  "gpx.error.invalidCoordinate":
+    "Point has an invalid or out-of-range coordinate (lon={longitude}, lat={latitude}).",
+  "gpx.error.missingAttribute": "missing",
+  // translator: {elevation} is the file's own raw text, reproduced exactly.
+  "gpx.error.invalidElevation": 'Point has a non-numeric elevation value "{elevation}".',
+  "gpx.error.noUsablePoints": "The file has no usable track or route points.",
+  "gpx.error.noTrackOrRoute": "The file has no track or route to import.",
+  "gpx.error.cryptoUnavailable":
+    "This route's turn information and/or planning waypoints could not be preserved in the GPX export because this browser does not support the cryptography needed to bind them to the route geometry. Export was cancelled rather than silently dropping that data.",
+
+  // --- GPX import notices ---------------------------------------------
+  "gpx.notice.multipleTracks": {
+    one: "This file contains 1 track; only the first was imported.",
+    other: "This file contains {count} tracks; only the first was imported.",
+  },
+  "gpx.notice.multipleRoutes": {
+    one: "This file contains 1 route; only the first was imported.",
+    other: "This file contains {count} routes; only the first was imported.",
+  },
+  "gpx.notice.acnExtensionRejected":
+    "This GPX contained turn information, but it did not match the route geometry and was ignored.",
+  "gpx.notice.acnPlanningExtensionRejected":
+    "This GPX contained planning waypoints, but they did not match the route geometry and were ignored. Editing this route as a copy will use estimated waypoints instead.",
 } as const;
 
 export type MessageKey = keyof typeof en;

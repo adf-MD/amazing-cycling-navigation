@@ -1,3 +1,6 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
+import type { Translator } from "../../i18n/translate.ts";
+import { describeGpxExportFailure } from "../library/gpxMessages.ts";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type {
   Coordinate,
@@ -43,7 +46,7 @@ import { OpenRouteServiceAdapter } from "../../routing/openRouteServiceAdapter.t
 import type { RoutingProvider } from "../../routing/provider.ts";
 import {
   DEFAULT_ROUTING_PROFILE,
-  ROUTING_PROFILES,
+  listRoutingProfiles,
   describeRoutingProfile,
   formatRoutingProfileLabel,
 } from "../../routing/routingProfiles.ts";
@@ -244,18 +247,18 @@ function buildPlanningProvenance(
  * contradiction: the notice narrates the draft's origin, a historical
  * fact unaffected by later edits, exactly like it already tolerates an
  * ordinary append/delete edit without updating. */
-function describeEditCopyNotice(meta: {
-  origin: "exact" | "derived";
-  operation: EditCopyOperation;
-}): string {
+function describeEditCopyNotice(
+  translator: Translator,
+  meta: { origin: "exact" | "derived"; operation: EditCopyOperation },
+): string {
   if (meta.operation === "reverse") {
     return meta.origin === "exact"
-      ? "Reversed editable copy created. Recalculate before saving; one-way restrictions may make the new route differ from the original. The saved route remains unchanged."
-      : "Reversed waypoints were estimated from this route. Recalculation may follow different roads, especially around one-way restrictions. The saved route remains unchanged.";
+      ? translator.t("planning.editCopy.reversedExact")
+      : translator.t("planning.editCopy.reversedEstimated");
   }
   return meta.origin === "exact"
-    ? "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged."
-    : "Editable waypoints were estimated from this route. Recalculation may follow different roads. The saved route will remain unchanged.";
+    ? translator.t("planning.editCopy.exact")
+    : translator.t("planning.editCopy.estimated");
 }
 
 /** The always-visible compact routing-preference summary shown beside
@@ -269,12 +272,18 @@ function describeEditCopyNotice(meta: {
  * unit, with "Change" visually dominating the actual routing state it was
  * meant to be secondary to. */
 function describeCurrentDraftRoutingSummary(
+  translator: Translator,
   profile: RoutingProfile,
   avoidFerries: boolean,
 ): string {
-  return `Routing: ${formatRoutingProfileLabel(profile)} · Ferries ${
-    avoidFerries ? "avoided" : "allowed"
-  }`;
+  return translator.t("planning.routing.summary", {
+    profile: formatRoutingProfileLabel(translator, profile),
+    ferries: translator.t(
+      avoidFerries
+        ? "planning.routing.ferriesAvoided"
+        : "planning.routing.ferriesAllowed",
+    ),
+  });
 }
 
 /**
@@ -291,6 +300,8 @@ export function PlanningScreen({
   requestApproximateLocation = getApproximateLocationOnce,
   clock = systemClock,
 }: PlanningScreenProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   // Created once, ignoring any later identity change of the routingProvider
   // prop — mirrors how mapFactory/clock are treated elsewhere in this
   // project as effectively-stable injectable dependencies.
@@ -1412,7 +1423,7 @@ export function PlanningScreen({
       .catch((error: unknown) => {
         if (saveGenerationRef.current !== attemptGeneration) return;
         logError("planning-save-route", error);
-        setSaveError("The route could not be saved on this device. Try again.");
+        setSaveError(t("planning.save.failed"));
       })
       .finally(() => {
         isSavingRef.current = false;
@@ -1543,7 +1554,7 @@ export function PlanningScreen({
         // preferences read above already swallows its own failure.
         if (saveGenerationRef.current !== attemptGeneration) return;
         logError("planning-clear-draft", error);
-        setClearDraftError("The draft could not be cleared on this device. Try again.");
+        setClearDraftError(t("planning.clearDraft.failed"));
         pendingClearDraftFocusRef.current = true;
         setIsClearDraftConfirmOpen(false);
       })
@@ -1574,7 +1585,7 @@ export function PlanningScreen({
       })
       .catch((error: unknown) => {
         setExportError(
-          error instanceof Error ? error.message : "The route could not be exported.",
+          describeGpxExportFailure(translator, error, t("planning.export.failed")),
         );
         logError("planning-export-route", error);
       });
@@ -1669,21 +1680,21 @@ export function PlanningScreen({
   };
 
   return (
-    <section aria-label="Planning" className="screen planning-screen">
-      <h1 className="screen-title">Plan a route</h1>
+    <section aria-label={t("planning.landmarkLabel")} className="screen planning-screen">
+      <h1 className="screen-title">{t("planning.title")}</h1>
 
       {!hasKey ? <NoApiKeyNotice onOpenSettings={onNavigateToSettings} /> : null}
 
       {hydrationStatus === "loading" ? (
         <p className="status-row" role="status">
-          Loading your draft…
+          {t("planning.loadingDraft")}
         </p>
       ) : null}
 
       {hydrationStatus === "failed" ? (
         <div className="row">
           <p className="field-error" role="alert">
-            Your saved draft could not be loaded. Nothing in storage has been changed.
+            {t("planning.draftLoadFailed")}
           </p>
           <button
             type="button"
@@ -1693,14 +1704,14 @@ export function PlanningScreen({
               setHydrationRetryToken((token) => token + 1);
             }}
           >
-            Retry
+            {t("planning.retry")}
           </button>
         </div>
       ) : null}
 
       {editCopyMeta ? (
         <p className="status-row status-row--info" role="status">
-          {describeEditCopyNotice(editCopyMeta)}
+          {describeEditCopyNotice(translator, editCopyMeta)}
         </p>
       ) : null}
 
@@ -1746,14 +1757,14 @@ export function PlanningScreen({
             selectedRouteFeatureId !== null
           }
         >
-          {describeCrosshairAction(interactionMode, state.present.waypoints)}
+          {describeCrosshairAction(translator, interactionMode, state.present.waypoints)}
         </button>
         <div className="planning-map-zoom-controls">
           <button
             type="button"
             className="planning-map-control"
             onClick={handleZoomIn}
-            aria-label="Zoom in"
+            aria-label={t("planning.map.zoomIn")}
           >
             <ZoomIcon direction="in" />
           </button>
@@ -1761,7 +1772,7 @@ export function PlanningScreen({
             type="button"
             className="planning-map-control"
             onClick={handleZoomOut}
-            aria-label="Zoom out"
+            aria-label={t("planning.map.zoomOut")}
           >
             <ZoomIcon direction="out" />
           </button>
@@ -1778,7 +1789,7 @@ export function PlanningScreen({
             type="button"
             className={`planning-map-control${isNorthUpTopDown ? " is-pressed" : ""}`}
             onClick={handleRequestNorthUp}
-            aria-label="North-up, top-down view"
+            aria-label={t("planning.map.northUp")}
             aria-pressed={isNorthUpTopDown}
           >
             <NorthArrowIcon
@@ -1791,32 +1802,32 @@ export function PlanningScreen({
             className="planning-map-control"
             onClick={handleLocateMe}
             disabled={locateStatus === "locating"}
-            aria-label="Locate me"
+            aria-label={t("planning.map.locateMe")}
           >
-            {locateStatus === "locating" ? "Locating…" : <CrosshairIcon />}
+            {locateStatus === "locating" ? t("planning.map.locating") : <CrosshairIcon />}
           </button>
         </div>
         <div className="planning-map-status-overlay">
           {locateStatus === "failed" ? (
             <p role="status" className="planning-map-status-message">
-              Your location could not be determined.
+              {t("planning.map.locateFailed")}
             </p>
           ) : null}
           {selectedWarningIndex !== null ? (
             <p role="status" className="planning-map-status-message">
-              Clear the selected warning to place or move a waypoint.
+              {t("planning.map.clearWarningFirst")}
             </p>
           ) : null}
           {selectedRouteFeatureId !== null ? (
             <p role="status" className="planning-map-status-message">
-              Clear the selected route feature to place or move a waypoint.
+              {t("planning.map.clearFeatureFirst")}
             </p>
           ) : null}
         </div>
       </div>
 
       <div className="panel stack planning-section">
-        <div role="group" aria-label="Waypoint actions" className="row">
+        <div role="group" aria-label={t("planning.actions.group")} className="row">
           <button
             type="button"
             onClick={() => {
@@ -1824,7 +1835,7 @@ export function PlanningScreen({
             }}
             disabled={state.past.length === 0}
           >
-            Undo
+            {t("planning.actions.undo")}
           </button>
           <button
             type="button"
@@ -1833,7 +1844,7 @@ export function PlanningScreen({
             }}
             disabled={state.future.length === 0}
           >
-            Redo
+            {t("planning.actions.redo")}
           </button>
           <button
             type="button"
@@ -1843,7 +1854,7 @@ export function PlanningScreen({
             }}
             disabled={!canReturnToStart}
           >
-            Return to start
+            {t("planning.actions.returnToStart")}
           </button>
           <button
             type="button"
@@ -1851,7 +1862,7 @@ export function PlanningScreen({
             onClick={handleReverseRoute}
             disabled={state.present.waypoints.length < 2}
           >
-            Reverse route
+            {t("planning.actions.reverse")}
           </button>
           {state.selectedWaypointId ? (
             <button
@@ -1860,7 +1871,7 @@ export function PlanningScreen({
                 dispatchWaypointAction({ type: "select", waypointId: null });
               }}
             >
-              Add to end
+              {t("planning.actions.addToEnd")}
             </button>
           ) : null}
         </div>
@@ -1876,11 +1887,11 @@ export function PlanningScreen({
           >
             {routing.isCalculating
               ? routing.updatingLegCount !== null
-                ? `Calculating ${String(routing.updatingLegCount)} route sections…`
-                : "Calculating…"
+                ? t("planning.calculatingSections", { count: routing.updatingLegCount })
+                : t("planning.calculating")
               : routing.lastErrorMessage
-                ? "Try again"
-                : "Calculate route"}
+                ? t("planning.tryAgain")
+                : t("planning.calculate")}
           </button>
           {hasKey ? (
             <p className="status-row" role="status">
@@ -1894,7 +1905,7 @@ export function PlanningScreen({
           ) : null}
           {routing.isStale && routing.state.kind === "routed" ? (
             <p className="status-row" role="status">
-              {describeStaleRouteStatus({
+              {describeStaleRouteStatus(translator, {
                 previousProfile: routing.state.route.source.profile,
                 currentProfile: profile,
                 isCalculating: routing.isCalculating,
@@ -1907,10 +1918,12 @@ export function PlanningScreen({
           <summary>
             <span className="planning-routing-disclosure-header">
               <span className="planning-routing-disclosure-value">
-                {describeCurrentDraftRoutingSummary(profile, avoidFerries)}
+                {describeCurrentDraftRoutingSummary(translator, profile, avoidFerries)}
               </span>
               <span className="planning-routing-disclosure-action">
-                <span className="planning-routing-disclosure-action-label">Change</span>
+                <span className="planning-routing-disclosure-action-label">
+                  {t("planning.routing.change")}
+                </span>
                 <span className="planning-routing-disclosure-chevron" aria-hidden="true">
                   ▾
                 </span>
@@ -1921,10 +1934,10 @@ export function PlanningScreen({
             <div>
               <div
                 role="group"
-                aria-label="Cycling profile for this draft"
+                aria-label={t("planning.routing.profileGroup")}
                 className="cycling-profile-group"
               >
-                {ROUTING_PROFILES.map((metadata) => {
+                {listRoutingProfiles(translator).map((metadata) => {
                   const isSelected = profile === metadata.value;
                   return (
                     <button
@@ -1946,7 +1959,7 @@ export function PlanningScreen({
                   );
                 })}
               </div>
-              <p className="field-hint">{describeRoutingProfile(profile)}</p>
+              <p className="field-hint">{describeRoutingProfile(translator, profile)}</p>
             </div>
             <label className="setting-row" htmlFor="planning-avoid-ferries-checkbox">
               <input
@@ -1960,7 +1973,9 @@ export function PlanningScreen({
                 }}
               />
               <span className="setting-row-text">
-                <span className="setting-row-title">Avoid ferries for this draft</span>
+                <span className="setting-row-title">
+                  {t("planning.routing.avoidFerries")}
+                </span>
               </span>
             </label>
           </div>
@@ -1969,10 +1984,12 @@ export function PlanningScreen({
         {isClearDraftConfirmOpen ? (
           <ConfirmDialog
             open={isClearDraftConfirmOpen}
-            title="Clear this draft?"
-            message="This removes all waypoints, the calculated route and other unsaved draft details. Saved routes are not affected."
-            confirmLabel={isClearing ? "Clearing…" : "Clear draft"}
-            cancelLabel="Cancel"
+            title={t("planning.clearDraft.confirmTitle")}
+            message={t("planning.clearDraft.confirmMessage")}
+            confirmLabel={
+              isClearing ? t("planning.clearDraft.clearing") : t("planning.clearDraft")
+            }
+            cancelLabel={t("planning.clearDraft.cancel")}
             confirmDisabled={isClearing}
             cancelDisabled={isClearing}
             onConfirm={handleClearDraftConfirm}
@@ -1987,7 +2004,7 @@ export function PlanningScreen({
               onClick={handleClearDraftClick}
               disabled={isSaving || isClearing}
             >
-              Clear draft
+              {t("planning.clearDraft")}
             </button>
             {clearDraftError ? (
               <p className="field-error" role="alert">
@@ -1999,7 +2016,7 @@ export function PlanningScreen({
       </div>
 
       <div className="stack planning-section">
-        <h2>Waypoints</h2>
+        <h2>{t("planning.waypoints.heading")}</h2>
         <WaypointList
           waypoints={state.present.waypoints}
           waypointRoles={waypointRoles}
@@ -2060,9 +2077,9 @@ export function PlanningScreen({
       ) : null}
 
       <div className="panel stack planning-section">
-        <h2>Save or export</h2>
+        <h2>{t("planning.save.heading")}</h2>
         <div className="stack">
-          <label htmlFor="planning-route-name">Route name</label>
+          <label htmlFor="planning-route-name">{t("planning.save.nameLabel")}</label>
           <input
             id="planning-route-name"
             type="text"
@@ -2081,9 +2098,7 @@ export function PlanningScreen({
           />
         </div>
         {!canSaveOrExport && !routing.isStale ? (
-          <p className="field-hint">
-            Calculate a complete routed result before saving or exporting.
-          </p>
+          <p className="field-hint">{t("planning.save.hint")}</p>
         ) : null}
         {saveError ? (
           <p className="field-error" role="alert">
@@ -2102,7 +2117,7 @@ export function PlanningScreen({
             onClick={handleSave}
             disabled={!canSaveOrExport || isSaving || isClearing}
           >
-            {isSaving ? "Saving…" : "Save route"}
+            {isSaving ? t("planning.save.saving") : t("planning.save.save")}
           </button>
           <button
             type="button"
@@ -2110,7 +2125,7 @@ export function PlanningScreen({
             onClick={handleExport}
             disabled={!canSaveOrExport}
           >
-            Export GPX
+            {t("planning.save.export")}
           </button>
         </div>
       </div>

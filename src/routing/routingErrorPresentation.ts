@@ -1,3 +1,4 @@
+import type { Translator } from "../i18n/translate.ts";
 import type { RoutingError, RoutingErrorReason } from "./openRouteServiceErrors.ts";
 import type { ProviderKeyOutcome } from "../storage/db.ts";
 
@@ -57,51 +58,74 @@ export function mapErrorReasonToOutcome(
 /** Appended to a message when the provider supplied a numeric error code
  * — a safe, concrete diagnostic detail (never the accompanying message
  * text; see RoutingError's own doc comment). */
-function formatProviderCode(error: RoutingError): string {
+function formatProviderCode(translator: Translator, error: RoutingError): string {
   return error.providerErrorCode !== undefined
-    ? ` (provider code ${String(error.providerErrorCode)})`
+    ? translator.t("routingError.providerCodeSuffix", {
+        code: error.providerErrorCode,
+      })
     : "";
 }
 
-function formatHttpStatus(error: RoutingError): string {
-  return error.httpStatus !== undefined ? String(error.httpStatus) : "error";
+function formatHttpStatus(translator: Translator, error: RoutingError): string {
+  return error.httpStatus !== undefined
+    ? String(error.httpStatus)
+    : translator.t("routingError.unknownStatus");
 }
 
-export function describeRoutingError(error: RoutingError): string {
+/**
+ * The rider-facing sentence for a routing failure.
+ *
+ * Backlog item 113 stage 3: the translator is an explicit parameter, not a
+ * context read, and that is load-bearing beyond purity. This one function
+ * serves two surfaces with different language requirements — Planning,
+ * which follows the rider's chosen language, and the Status screen's
+ * copyable connection-test report, which stays English so it can be
+ * shared for support (approved decision R4). The report keeps that
+ * property by passing the English translator explicitly, so it is English
+ * **by construction** rather than by nobody having localised it yet.
+ */
+export function describeRoutingError(
+  translator: Translator,
+  error: RoutingError,
+): string {
   switch (error.reason) {
     case "no-api-key":
-      return "Road routing requires your personal OpenRouteService key.";
+      return translator.t("routingError.noApiKey");
     case "invalid-header-value":
-      return "Your OpenRouteService key contains a character that cannot be sent in a request header. Check it in Settings.";
+      return translator.t("routingError.invalidHeaderValue");
     case "header-construction-failure":
     case "invalid-request-construction":
     case "fetch-invocation-failure":
-      return "The routing request could not be prepared or sent. Try again.";
+      return translator.t("routingError.requestNotSent");
     case "unauthorized":
-      return "Your OpenRouteService key was rejected. Check it in Settings.";
+      return translator.t("routingError.unauthorized");
     case "forbidden":
-      return "Access was denied — check your OpenRouteService account, permissions or daily quota in Settings.";
+      return translator.t("routingError.forbidden");
     case "rate-limited":
-      return "The routing rate limit was reached. Try again shortly.";
+      return translator.t("routingError.rateLimited");
     case "offline":
-      return "You are offline. Connect to calculate a route.";
+      return translator.t("routingError.offline");
     case "transport-failure":
-      return "The routing provider could not be reached. OpenRouteService may be temporarily unavailable, or the browser or network may have blocked the request. Try again later.";
+      return translator.t("routingError.transportFailure");
     case "timeout":
-      return "The routing request timed out. Try again.";
+      return translator.t("routingError.timeout");
     case "no-route-found":
-      return `No cycling route could be found between these waypoints — they may be separated by water, a barrier, or a gap in rideable roads. Your key and connection to OpenRouteService are working; try adjusting the route.${formatProviderCode(error)}`;
+      return `${translator.t("routingError.noRouteFound")}${formatProviderCode(translator, error)}`;
     case "no-routable-point":
-      return `One of your waypoints is too far from a usable road for cycling. Try moving it closer to a street or cycle path. Your key and connection to OpenRouteService are working.${formatProviderCode(error)}`;
+      return `${translator.t("routingError.noRoutablePoint")}${formatProviderCode(translator, error)}`;
     case "provider-unavailable":
-      return `OpenRouteService is temporarily unavailable (HTTP ${formatHttpStatus(error)}). Your waypoints have been retained. Try again later.`;
+      return translator.t("routingError.providerUnavailable", {
+        status: formatHttpStatus(translator, error),
+      });
     case "provider-error":
-      return `The routing provider returned an unexpected error (HTTP ${formatHttpStatus(error)}).${formatProviderCode(error)}`;
+      return `${translator.t("routingError.providerError", {
+        status: formatHttpStatus(translator, error),
+      })}${formatProviderCode(translator, error)}`;
     case "malformed-response":
     case "no-geometry":
     case "unknown":
-      return "The routing provider returned an unusable response. Try again.";
+      return translator.t("routingError.unusableResponse");
     case "leg-stitching-failed":
-      return "The route sections could not be joined into one continuous route. Try recalculating.";
+      return translator.t("routingError.legStitchingFailed");
   }
 }

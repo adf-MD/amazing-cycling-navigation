@@ -4,6 +4,7 @@ import {
   describeRoutingError,
   mapErrorReasonToOutcome,
 } from "./routingErrorPresentation.ts";
+import { englishTranslator } from "../i18n/englishTranslator.ts";
 
 const ALL_REASONS: RoutingErrorReason[] = [
   "no-api-key",
@@ -31,6 +32,7 @@ describe("describeRoutingError", () => {
   it("produces a non-empty, generic message for every reason", () => {
     for (const reason of ALL_REASONS) {
       const message = describeRoutingError(
+        englishTranslator,
         new RoutingError({ reason, message: "generic" }),
       );
       expect(message.length).toBeGreaterThan(0);
@@ -44,18 +46,20 @@ describe("describeRoutingError", () => {
       providerErrorCode: 9999,
       httpStatus: 404,
     });
-    expect(describeRoutingError(error)).toContain("404");
-    expect(describeRoutingError(error)).toContain("9999");
+    expect(describeRoutingError(englishTranslator, error)).toContain("404");
+    expect(describeRoutingError(englishTranslator, error)).toContain("9999");
   });
 
   it("reassures that the key and connection work for no-route-found/no-routable-point", () => {
     expect(
       describeRoutingError(
+        englishTranslator,
         new RoutingError({ reason: "no-route-found", message: "generic" }),
       ),
     ).toContain("working");
     expect(
       describeRoutingError(
+        englishTranslator,
         new RoutingError({ reason: "no-routable-point", message: "generic" }),
       ),
     ).toContain("working");
@@ -63,6 +67,7 @@ describe("describeRoutingError", () => {
 
   it("describes a leg-stitching failure without implying a provider/network problem", () => {
     const message = describeRoutingError(
+      englishTranslator,
       new RoutingError({ reason: "leg-stitching-failed", message: "generic" }),
     );
     expect(message).toContain("route sections");
@@ -71,6 +76,7 @@ describe("describeRoutingError", () => {
 
   it("distinguishes a local key-format problem from an unreachable provider", () => {
     const message = describeRoutingError(
+      englishTranslator,
       new RoutingError({ reason: "invalid-header-value", message: "generic" }),
     );
     expect(message).toContain("key");
