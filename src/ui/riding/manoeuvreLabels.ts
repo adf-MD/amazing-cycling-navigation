@@ -1,4 +1,5 @@
 import type { ManoeuvreType } from "../../domain/types.ts";
+import type { Translator } from "../../i18n/translate.ts";
 
 /** Generic, per-type fallback instruction text, used whenever the provider
  * gave no usable instruction text of its own. A switch with a real
@@ -9,33 +10,36 @@ import type { ManoeuvreType } from "../../domain/types.ts";
  * panel) and RidingCompactManoeuvreCue (the compact Profile-view cue,
  * backlog item 56), kept in its own module rather than exported from
  * either component so both stay fast-refresh-friendly. */
-export function genericManoeuvreLabel(type: ManoeuvreType): string {
+export function genericManoeuvreLabel(
+  translator: Translator,
+  type: ManoeuvreType,
+): string {
   switch (type) {
     case "start":
-      return "Start of route";
+      return translator.t("manoeuvre.start");
     case "continue":
-      return "Continue straight ahead";
+      return translator.t("manoeuvre.continue");
     case "slight-left":
-      return "Bear left";
+      return translator.t("manoeuvre.slightLeft");
     case "left":
-      return "Turn left";
+      return translator.t("manoeuvre.left");
     case "sharp-left":
-      return "Sharp left turn";
+      return translator.t("manoeuvre.sharpLeft");
     case "slight-right":
-      return "Bear right";
+      return translator.t("manoeuvre.slightRight");
     case "right":
-      return "Turn right";
+      return translator.t("manoeuvre.right");
     case "sharp-right":
-      return "Sharp right turn";
+      return translator.t("manoeuvre.sharpRight");
     case "u-turn":
-      return "Make a U-turn";
+      return translator.t("manoeuvre.uTurn");
     case "roundabout":
-      return "Go through the roundabout";
+      return translator.t("manoeuvre.roundabout");
     case "waypoint":
-      return "Waypoint";
+      return translator.t("manoeuvre.waypoint");
     case "finish":
-      return "Arrive at the finish";
+      return translator.t("manoeuvre.finish");
     default:
-      return "Continue on the route";
+      return translator.t("manoeuvre.fallback");
   }
 }

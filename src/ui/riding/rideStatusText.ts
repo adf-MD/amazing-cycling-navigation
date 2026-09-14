@@ -8,10 +8,14 @@
  * (keeps both components Vite Fast-Refresh friendly).
  */
 
-export function formatFixAge(ageMs: number): string {
+import type { Translator } from "../../i18n/translate.ts";
+
+export function formatFixAge(translator: Translator, ageMs: number): string {
   const seconds = Math.max(0, Math.round(ageMs / 1000));
-  if (seconds < 60) return `${String(seconds)}s ago`;
-  return `${String(Math.round(seconds / 60))} min ago`;
+  if (seconds < 60) return translator.t("ride.fixAge.seconds", { seconds });
+  return translator.t("ride.fixAge.minutes", {
+    minutes: Math.round(seconds / 60),
+  });
 }
 
 export interface GpsStatusLineParams {
@@ -26,11 +30,19 @@ export interface GpsStatusLineParams {
  * when the fix age itself is unknown. A fresh (non-stale) fix never shows
  * an age, even when fixAgeMs is non-null.
  */
-export function formatGpsStatusLine({
-  accuracyMetres,
-  isStale,
-  fixAgeMs,
-}: GpsStatusLineParams): string {
-  const ageSuffix = isStale && fixAgeMs !== null ? ` (${formatFixAge(fixAgeMs)})` : "";
-  return `GPS ±${String(Math.round(accuracyMetres))} m · ${isStale ? `Stale${ageSuffix}` : "Live"}`;
+export function formatGpsStatusLine(
+  translator: Translator,
+  { accuracyMetres, isStale, fixAgeMs }: GpsStatusLineParams,
+): string {
+  const freshness = !isStale
+    ? translator.t("ride.gpsFresh")
+    : fixAgeMs !== null
+      ? translator.t("ride.gpsStaleWithAge", {
+          age: formatFixAge(translator, fixAgeMs),
+        })
+      : translator.t("ride.gpsStale");
+  return translator.t("ride.gpsStatus", {
+    accuracy: Math.round(accuracyMetres),
+    freshness,
+  });
 }

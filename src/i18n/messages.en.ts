@@ -528,6 +528,252 @@ export const en = {
     "This GPX contained turn information, but it did not match the route geometry and was ignored.",
   "gpx.notice.acnPlanningExtensionRejected":
     "This GPX contained planning waypoints, but they did not match the route geometry and were ignored. Editing this route as a copy will use estimated waypoints instead.",
+
+  // --- Distance badges on the route ------------------------------------
+  // translator: a badge marks a whole-kilometre point along the route.
+  "map.badge.distance": { one: "1 kilometre", other: "{count} kilometres" },
+  // translator: {list} is a locale-formatted list of whole numbers, e.g.
+  // "2, 4 and 6" — several badges that coincide at one place on the map.
+  "map.badge.distanceList": "{list} kilometres",
+  "map.badge.fromRouteStart": "{distances} from route start",
+
+  // --- Map imagery recovery ---------------------------------------------
+  // translator: these are shown when map imagery is slow, failed or
+  // unavailable. The route-riding and free-roam wordings are NOT a
+  // mechanical substitution: free roam has no route on screen and must
+  // never claim one is shown, and the sentences differ in article and
+  // verb number, not only in the noun.
+  "map.imagery.delayed.route":
+    "Map imagery is taking longer than usual to load. Your route and position are still shown.",
+  "map.imagery.delayed.freeRoam":
+    "Map imagery is taking longer than usual to load. Your position is still shown.",
+  // translator: the one message that is the same on both surfaces —
+  // nothing is shown at all, so there is no route to mention.
+  "map.imagery.loadError": "Map failed to load. Check your connection and try again.",
+  "map.imagery.tileError.route":
+    "Map imagery unavailable. The route and your position are still shown.",
+  "map.imagery.tileError.freeRoam":
+    "Map imagery unavailable. Your position is still shown.",
+  "map.imagery.fallback.route":
+    "Map imagery unavailable — showing your route on a plain background.",
+  "map.imagery.fallback.freeRoam":
+    "Map imagery unavailable — showing your position on a plain background.",
+  "map.retryImagery": "Retry map imagery",
+  "map.loading": "Loading map…",
+  "map.loadTimeout": "Map is taking longer than expected to load.",
+
+  // --- Planning waypoint markers on the map -----------------------------
+  // translator: {ordinal} and {count} are waypoint positions, from 1.
+  "map.marker.waypoint": "Waypoint {ordinal}",
+  "map.marker.startWaypoint": "Start waypoint 1",
+  "map.marker.startAndFinish": "Start and finish waypoints 1 and {count}",
+  "map.marker.finishWaypoint": "Finish waypoint {ordinal}",
+
+  // --- Shared ride chrome (Riding and free roam) ------------------------
+  "ride.map.zoomIn": "Zoom in",
+  "ride.map.zoomOut": "Zoom out",
+  "ride.map.northUp": "North-up, top-down view",
+  "ride.map.followLocation": "Follow my location",
+  "ride.map.waiting": "Waiting…",
+  "ride.map.followPaused": "Map follow paused.",
+  "ride.online": "Online",
+  "ride.offline": "Offline",
+  "ride.tryAgain": "Try again",
+  "ride.cancel": "Cancel",
+  "ride.pause": "Pause",
+  "ride.pausing": "Pausing…",
+  "ride.endRide": "End ride",
+  "ride.endingRide": "Ending ride…",
+  "ride.gpsError": "GPS error",
+  "ride.waitingForFix": "Waiting for a GPS fix…",
+  // translator: {seconds} and {minutes} are whole numbers. The short form
+  // has no space before its unit; the minute form does.
+  "ride.fixAge.seconds": "{seconds}s ago",
+  "ride.fixAge.minutes": "{minutes} min ago",
+  // translator: {accuracy} is a whole number of metres; {freshness} is one
+  // of the two words below, optionally followed by a parenthesised age.
+  "ride.gpsStatus": "GPS ±{accuracy} m · {freshness}",
+  "ride.gpsFresh": "Live",
+  "ride.gpsStale": "Stale",
+  "ride.gpsStaleWithAge": "Stale ({age})",
+
+  // --- Geolocation failures ---------------------------------------------
+  // translator: {surface} is the name of the screen needing location.
+  "ride.geolocation.deniedRiding":
+    "Location permission was denied. Allow location access in your browser settings to use Riding mode.",
+  "ride.geolocation.deniedFreeRoam":
+    "Location permission was denied. Allow location access in your browser settings to use Free roam.",
+  "ride.geolocation.timeout":
+    "Getting your location timed out. Check you have a clear view of the sky and try again.",
+  "ride.geolocation.unsupported": "This browser does not support location services.",
+  "ride.geolocation.unavailable": "Your location is currently unavailable.",
+
+  // --- Riding status card -----------------------------------------------
+  "ride.status.onRoute": "On route",
+  "ride.status.possiblyOffRoute": "Possibly off route",
+  "ride.status.offRoute": "Off route",
+  "ride.status.ascentUnavailable": "ascent unavailable",
+  "ride.status.ascent": "{ascent} ascent",
+  // translator: the spelled-out announcement that replaces the compact
+  // visible line for assistive technology. {distance} is a bare number of
+  // kilometres; the unit word belongs to this message.
+  "ride.status.remainingAnnouncement": "{distance} kilometres remaining, {ascent}",
+  "ride.status.ascentRemainingUnavailable": "ascent remaining not available",
+  "ride.status.ascentRemaining": "{ascent} metres ascent remaining",
+
+  // --- Free roam ---------------------------------------------------------
+  "freeRoam.title": "Free roam",
+  "freeRoam.endFailed": "The ride could not be ended on this device. Try again.",
+  "freeRoam.pauseFailed": "Free roam could not be paused on this device. Try again.",
+  "freeRoam.endConfirmTitle": "End this ride?",
+  "freeRoam.endConfirmMessage":
+    "Your free roam position and camera state will be cleared.",
+  "freeRoam.trackingLost": "Location — signal lost",
+  "freeRoam.tracking": "Location",
+
+  // --- Riding screen -----------------------------------------------------
+  "riding.landmarkLabel": "Riding",
+  "riding.endConfirmTitle": "End this ride?",
+  "riding.endConfirmMessage":
+    "Navigation progress for this ride will be cleared. The saved route will remain in your library.",
+  "riding.endFailed": "The ride could not be ended on this device. Try again.",
+  "riding.finishFailed": "Finish ride could not be completed on this device. Try again.",
+  "riding.pauseFailed": "The ride could not be paused on this device. Try again.",
+  "riding.offlineNotice":
+    "Offline — the route, your position, progress and elevation still work; map imagery may be unavailable.",
+  "riding.restoreFailed": "Your ride could not be restored on this device. Try again.",
+  "riding.retry": "Retry",
+  "riding.backToRideOptions": "Back to Ride options",
+  "riding.resuming": "Resuming your ride…",
+  "riding.resumePrompt": "Resume riding to continue tracking your progress.",
+  "riding.startPrompt": "Location access is needed to track your progress on this ride.",
+  "riding.resumeRide": "Resume ride",
+  "riding.startRiding": "Start riding",
+  "riding.editCopy": "Edit copy",
+  "riding.creatingEditCopy": "Creating editable copy…",
+  "riding.editCopyTooShort":
+    "This route doesn't have enough distinct geometry to create an editable copy.",
+  "riding.editCopyFailed":
+    "The editable copy could not be created on this device. Try again.",
+  "riding.editCopyDraftCheckFailed":
+    "Your existing draft could not be checked. Try again.",
+  "riding.editCopyConfirmTitle": "Replace your current draft?",
+  "riding.editCopyConfirmMessage":
+    "Editing this route will replace your unsaved draft in Planning. This route itself will remain unchanged.",
+  "riding.editCopyConfirmLabel": "Replace and edit",
+  "riding.elevationViewLabel": "Elevation profile view",
+  "riding.elevationFull": "Full",
+  // translator: {km} is a whole number of kilometres.
+  "riding.elevationWindow": "{km} km",
+  "riding.climb": "Climb",
+  "riding.routeProfile": "Route profile",
+  "riding.viewLabel": "Riding view",
+  "riding.viewMap": "Map",
+  "riding.viewProfile": "Profile",
+  // translator: {number} is the climb's position on the route, from 1.
+  "riding.climbChartLabel": "Elevation profile for Climb {number}",
+  "riding.descentChartLabel": "Elevation profile for selected recognised descent",
+
+  // --- Ride launcher ------------------------------------------------------
+  "launcher.landmarkLabel": "Ride",
+  "launcher.title": "Ride",
+  "launcher.checking": "Checking for an unfinished ride…",
+  "launcher.checkFailed":
+    "Your unfinished ride status could not be checked. Nothing has been changed.",
+  "launcher.retry": "Retry",
+  "launcher.noRoute":
+    "No route selected yet. Choose a route from Routes to start riding.",
+  "launcher.chooseRoute": "Choose a route",
+  "launcher.startFreeRoam": "Start free roam",
+  "launcher.startingFreeRoam": "Starting…",
+  "launcher.unfinishedRide": "You have an unfinished ride on this route.",
+  "launcher.resumeRide": "Resume ride",
+  "launcher.freeRoamHeading": "Free roam",
+  "launcher.unfinishedFreeRoam": "You have an unfinished free roam session.",
+  "launcher.resumeFreeRoam": "Resume free roam",
+  "launcher.resumingFreeRoam": "Resuming…",
+  "launcher.endFreeRoamFailed": "Free roam could not be ended on this device. Try again.",
+  "launcher.discardTitle": "Discard unfinished ride?",
+  "launcher.discardMessage":
+    "Only the stored progress for this unfinished ride will be removed — no saved route is affected.",
+  "launcher.discardConfirm": "Discard unfinished ride",
+  "launcher.discarding": "Discarding…",
+  "launcher.discardFailed":
+    "This unfinished ride could not be discarded on this device. Try again.",
+  "launcher.routeMissing":
+    "This unfinished ride refers to a route that's no longer in your library, so it can't be resumed.",
+  "launcher.unsupportedKind":
+    "This unfinished ride can't be recovered by this version of the app.",
+
+  // --- Climbs -------------------------------------------------------------
+  "climb.selectorLabel": "Recognised climbs",
+  "climb.empty":
+    "No recognised climbs. A recognised climb must be at least 500 m long and average at least 3%.",
+  "climb.allRoute": "All route",
+  // translator: {number} is the climb's position, {category} its category
+  // name, {start} a bare number of kilometres.
+  "climb.option": "Climb {number} · {category} · starts at {start} km",
+  "climb.count": {
+    one: "1 recognised climb on this route",
+    other: "{count} recognised climbs on this route",
+  },
+  "climb.heading": "Climb {number} · {category}",
+  "climb.previewLabel": "Climb preview",
+  "climb.progressLabel": "Climb progress",
+  "climb.startsIn": "Starts in {distance}",
+  "climb.distanceToSummit": "Distance to summit",
+  "climb.elevationRemaining": "Elevation remaining",
+  "climb.currentGradient": "Current gradient: {gradient}",
+  "climb.currentElevation": "Current elevation: {elevation}",
+  "climb.summitElevation": "Summit elevation: {elevation}",
+  "climb.distanceCompleted": "Distance completed: {distance}",
+  "climb.cueActive": "Climb active",
+  "climb.cueRemaining": "{distance} remaining",
+  "climb.viewClimb": "View climb",
+  "climb.selectedFeatureLabel": "Selected feature summary",
+  "climb.recognisedDescent": "Recognised descent",
+  "climb.remaining": "{distance} remaining",
+  "climb.passedAgo": "Passed {distance} ago",
+  "climb.average": "{gradient} average",
+  "climb.routePosition": "Route position: {start}–{end} km",
+
+  // --- Manoeuvres: locally authored fallbacks only ------------------------
+  // translator: these are ACN's own generic labels, used only when the
+  // routing provider supplied no instruction at all. A provider's own
+  // instruction — which carries road names — is never translated.
+  "manoeuvre.start": "Start of route",
+  "manoeuvre.continue": "Continue straight ahead",
+  "manoeuvre.slightLeft": "Bear left",
+  "manoeuvre.left": "Turn left",
+  "manoeuvre.sharpLeft": "Sharp left turn",
+  "manoeuvre.slightRight": "Bear right",
+  "manoeuvre.right": "Turn right",
+  "manoeuvre.sharpRight": "Sharp right turn",
+  "manoeuvre.uTurn": "Make a U-turn",
+  "manoeuvre.roundabout": "Go through the roundabout",
+  "manoeuvre.waypoint": "Waypoint",
+  "manoeuvre.finish": "Arrive at the finish",
+  "manoeuvre.fallback": "Continue on the route",
+  "manoeuvre.unavailable": "Turn information is unavailable for this route.",
+  // translator: appended to an instruction; the leading space is part of
+  // the message and must be preserved.
+  "manoeuvre.frozenFull": " — based on your last known position",
+  "manoeuvre.frozenCompact": " — last known position",
+
+  // --- Route completion, wake lock, untrusted GPX -------------------------
+  "riding.routeComplete": "Route complete",
+  "riding.finishRide": "Finish ride",
+  "riding.finishingRide": "Finishing ride…",
+  "riding.keepRiding": "Keep riding",
+  "wakeLock.label": "Screen on",
+  "wakeLock.on": "On",
+  "wakeLock.off": "Off",
+  "wakeLock.active": "Screen staying awake.",
+  "wakeLock.failed": "The screen could not be kept awake.",
+  "wakeLock.retry": "Tap to try again",
+  "riding.untrustedGpx":
+    "No trusted turn information is available for this imported GPX. Follow the route line on the map.",
+  "riding.noTurnCues": "No turn cues",
 } as const;
 
 export type MessageKey = keyof typeof en;

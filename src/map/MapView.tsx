@@ -1,3 +1,4 @@
+import { useTranslate } from "../i18n/useTranslate.ts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { StyleSpecification } from "maplibre-gl";
@@ -758,6 +759,7 @@ export function MapView({
   imageryRetryCommand = null,
   onRecoveryFramingEligible,
 }: MapViewProps) {
+  const translator = useTranslate();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreLike | null>(null);
   // Always call the latest callback without needing it in the map-creation
@@ -2300,12 +2302,21 @@ export function MapView({
   const planningSelectedIndex = planningOverlay?.selectedWaypointIndex ?? null;
   const planningPreviewCoordinates = planningOverlay?.previewCoordinates;
 
+  // `translator` belongs in these deps: the marker labels are copy, so a
+  // language change must redraw them. It is safe here for the same reason
+  // it is safe for the distance badges below — this effect only calls
+  // setMarkers. It touches no map lifecycle, no geolocation watch, no wake
+  // lock and no network request, so re-running it cannot restart anything.
   useEffect(() => {
     if (!styleStructurallyReady) return;
     mapRef.current?.setMarkers(
-      buildWaypointMarkerSpecs(planningWaypoints ?? [], planningSelectedIndex),
+      buildWaypointMarkerSpecs(
+        translator,
+        planningWaypoints ?? [],
+        planningSelectedIndex,
+      ),
     );
-  }, [planningWaypoints, planningSelectedIndex, styleStructurallyReady]);
+  }, [planningWaypoints, planningSelectedIndex, styleStructurallyReady, translator]);
 
   // Distance-from-start badges: an entirely independent marker
   // collection from the waypoint markers above (see setDistanceBadges),
@@ -2325,6 +2336,7 @@ export function MapView({
     if (badgeDensityMode === "active-upcoming") {
       mapRef.current?.setDistanceBadges(
         buildActiveUpcomingDistanceBadgeMarkerSpecs(
+          translator,
           points,
           distanceBadgeZoom ?? Number.NaN,
           distanceBadgeProgressMetres ?? null,
@@ -2339,17 +2351,26 @@ export function MapView({
     );
     mapRef.current?.setDistanceBadges(
       buildDistanceBadgeMarkerSpecs(
+        translator,
         points,
         intervalMetres,
         distanceBadgeProgressMetres ?? null,
       ),
     );
+    // `translator` belongs here: a badge's accessible name is copy, so it
+    // must be rebuilt when the language changes. It is safe to depend on
+    // precisely because this effect only ever calls setDistanceBadges —
+    // it creates no map, starts no geolocation watch, acquires no wake
+    // lock and issues no request — and because the translator's identity
+    // is keyed on the language alone (see i18n/LanguageProvider.tsx and
+    // its translatorStability test), so ordinary rerenders never move it.
   }, [
     points,
     distanceBadgeZoom,
     distanceBadgeProgressMetres,
     badgeDensityMode,
     styleStructurallyReady,
+    translator,
   ]);
 
   useEffect(() => {
@@ -2508,9 +2529,7 @@ export function MapView({
         !styleStructurallyReady &&
         !hasExternalImageryPresentation ? (
           <div role="status" data-testid="map-loading" className="map-status-message">
-            {loadTimedOut
-              ? "Map is taking longer than expected to load."
-              : "Loading map…"}
+            {loadTimedOut ? translator.t("map.loadTimeout") : translator.t("map.loading")}
           </div>
         ) : null}
         {slowImageryNoticeVisible && !hasExternalImageryPresentation ? (
@@ -2519,7 +2538,10 @@ export function MapView({
             data-testid="map-imagery-delayed-banner"
             className="map-status-message"
           >
-            {describeMapImageryRecovery("delayed", imageryCopyContext).message}
+            {
+              describeMapImageryRecovery(translator, "delayed", imageryCopyContext)
+                .message
+            }
           </div>
         ) : null}
         {/* Backlog item 83: each of these three terminal, retryable states
@@ -2543,14 +2565,17 @@ export function MapView({
             data-testid="map-load-error"
             className="map-status-message map-status-message--alert"
           >
-            {describeMapImageryRecovery("load-error", imageryCopyContext).message}
+            {
+              describeMapImageryRecovery(translator, "load-error", imageryCopyContext)
+                .message
+            }
             <button
               type="button"
               onClick={handleRetryImagery}
               data-testid="retry-map-imagery-button"
               className="map-status-retry-button"
             >
-              Retry map imagery
+              {translator.t("map.retryImagery")}
             </button>
           </div>
         ) : null}
@@ -2560,14 +2585,17 @@ export function MapView({
             data-testid="tiles-unavailable-banner"
             className="map-status-message"
           >
-            {describeMapImageryRecovery("tile-error", imageryCopyContext).message}
+            {
+              describeMapImageryRecovery(translator, "tile-error", imageryCopyContext)
+                .message
+            }
             <button
               type="button"
               onClick={handleRetryImagery}
               data-testid="retry-map-imagery-button"
               className="map-status-retry-button"
             >
-              Retry map imagery
+              {translator.t("map.retryImagery")}
             </button>
           </div>
         ) : null}
@@ -2577,14 +2605,17 @@ export function MapView({
             data-testid="map-fallback-banner"
             className="map-status-message"
           >
-            {describeMapImageryRecovery("fallback", imageryCopyContext).message}
+            {
+              describeMapImageryRecovery(translator, "fallback", imageryCopyContext)
+                .message
+            }
             <button
               type="button"
               onClick={handleRetryImagery}
               data-testid="retry-map-imagery-button"
               className="map-status-retry-button"
             >
-              Retry map imagery
+              {translator.t("map.retryImagery")}
             </button>
           </div>
         ) : null}

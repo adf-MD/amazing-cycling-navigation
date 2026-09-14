@@ -4,6 +4,7 @@ import {
   type MapImageryPresentationContext,
   type MapImageryStatusKind,
 } from "./mapImageryRecoveryPresentation.ts";
+import { englishTranslator } from "../i18n/englishTranslator.ts";
 
 /**
  * Backlog item 108. This module had no test file of its own before this
@@ -28,7 +29,11 @@ const ALL_CONTEXTS: readonly MapImageryPresentationContext[] = [
 describe("describeMapImageryRecovery", () => {
   describe("route riding keeps the wording item 83 established", () => {
     it("describes the delayed state as still showing the route and position", () => {
-      const presentation = describeMapImageryRecovery("delayed", "route-riding");
+      const presentation = describeMapImageryRecovery(
+        englishTranslator,
+        "delayed",
+        "route-riding",
+      );
       expect(presentation.message).toBe(
         "Map imagery is taking longer than usual to load. Your route and position are still shown.",
       );
@@ -37,40 +42,47 @@ describe("describeMapImageryRecovery", () => {
     });
 
     it("describes a tile error as still showing the route and position", () => {
-      expect(describeMapImageryRecovery("tile-error", "route-riding").message).toBe(
-        "Map imagery unavailable. The route and your position are still shown.",
-      );
+      expect(
+        describeMapImageryRecovery(englishTranslator, "tile-error", "route-riding")
+          .message,
+      ).toBe("Map imagery unavailable. The route and your position are still shown.");
     });
 
     it("describes the fallback style as still showing the route", () => {
-      expect(describeMapImageryRecovery("fallback", "route-riding").message).toBe(
-        "Map imagery unavailable — showing your route on a plain background.",
-      );
+      expect(
+        describeMapImageryRecovery(englishTranslator, "fallback", "route-riding").message,
+      ).toBe("Map imagery unavailable — showing your route on a plain background.");
     });
   });
 
   describe("free roam never claims a route it does not have", () => {
     it("describes the delayed state in terms of position only", () => {
-      expect(describeMapImageryRecovery("delayed", "free-roam").message).toBe(
+      expect(
+        describeMapImageryRecovery(englishTranslator, "delayed", "free-roam").message,
+      ).toBe(
         "Map imagery is taking longer than usual to load. Your position is still shown.",
       );
     });
 
     it("describes a tile error in terms of position only", () => {
-      expect(describeMapImageryRecovery("tile-error", "free-roam").message).toBe(
-        "Map imagery unavailable. Your position is still shown.",
-      );
+      expect(
+        describeMapImageryRecovery(englishTranslator, "tile-error", "free-roam").message,
+      ).toBe("Map imagery unavailable. Your position is still shown.");
     });
 
     it("describes the fallback style in terms of position only", () => {
-      expect(describeMapImageryRecovery("fallback", "free-roam").message).toBe(
-        "Map imagery unavailable — showing your position on a plain background.",
-      );
+      expect(
+        describeMapImageryRecovery(englishTranslator, "fallback", "free-roam").message,
+      ).toBe("Map imagery unavailable — showing your position on a plain background.");
     });
 
     it("mentions no route in any message, for any kind", () => {
       for (const kind of ALL_KINDS) {
-        const { message } = describeMapImageryRecovery(kind, "free-roam");
+        const { message } = describeMapImageryRecovery(
+          englishTranslator,
+          kind,
+          "free-roam",
+        );
         expect(message.toLowerCase()).not.toContain("route");
       }
     });
@@ -78,8 +90,16 @@ describe("describeMapImageryRecovery", () => {
 
   describe("the terminal load-error message is context-independent", () => {
     it("says the same thing in both contexts, because it names neither a route nor a position", () => {
-      const routeRiding = describeMapImageryRecovery("load-error", "route-riding");
-      const freeRoam = describeMapImageryRecovery("load-error", "free-roam");
+      const routeRiding = describeMapImageryRecovery(
+        englishTranslator,
+        "load-error",
+        "route-riding",
+      );
+      const freeRoam = describeMapImageryRecovery(
+        englishTranslator,
+        "load-error",
+        "free-roam",
+      );
       expect(routeRiding.message).toBe(
         "Map failed to load. Check your connection and try again.",
       );
@@ -90,14 +110,18 @@ describe("describeMapImageryRecovery", () => {
   describe("retryability", () => {
     it("offers no retry for the transient delayed state, in either context", () => {
       for (const context of ALL_CONTEXTS) {
-        expect(describeMapImageryRecovery("delayed", context).retryable).toBe(false);
+        expect(
+          describeMapImageryRecovery(englishTranslator, "delayed", context).retryable,
+        ).toBe(false);
       }
     });
 
     it("keeps retry available for all three terminal states, in either context", () => {
       for (const context of ALL_CONTEXTS) {
         for (const kind of ["load-error", "tile-error", "fallback"] as const) {
-          expect(describeMapImageryRecovery(kind, context).retryable).toBe(true);
+          expect(
+            describeMapImageryRecovery(englishTranslator, kind, context).retryable,
+          ).toBe(true);
         }
       }
     });
@@ -107,7 +131,7 @@ describe("describeMapImageryRecovery", () => {
     it("reserves role=alert for the terminal load-error state alone", () => {
       for (const context of ALL_CONTEXTS) {
         for (const kind of ALL_KINDS) {
-          expect(describeMapImageryRecovery(kind, context).role).toBe(
+          expect(describeMapImageryRecovery(englishTranslator, kind, context).role).toBe(
             kind === "load-error" ? "alert" : "status",
           );
         }
@@ -123,7 +147,9 @@ describe("describeMapImageryRecovery", () => {
       };
       for (const context of ALL_CONTEXTS) {
         for (const kind of ALL_KINDS) {
-          expect(describeMapImageryRecovery(kind, context).testId).toBe(expected[kind]);
+          expect(
+            describeMapImageryRecovery(englishTranslator, kind, context).testId,
+          ).toBe(expected[kind]);
         }
       }
     });
@@ -136,7 +162,11 @@ describe("describeMapImageryRecovery", () => {
     it("never says offline or online in any message", () => {
       for (const context of ALL_CONTEXTS) {
         for (const kind of ALL_KINDS) {
-          const message = describeMapImageryRecovery(kind, context).message.toLowerCase();
+          const message = describeMapImageryRecovery(
+            englishTranslator,
+            kind,
+            context,
+          ).message.toLowerCase();
           expect(message).not.toContain("offline");
           expect(message).not.toContain("online");
         }
@@ -149,7 +179,7 @@ describe("describeMapImageryRecovery", () => {
       for (const context of ALL_CONTEXTS) {
         for (const kind of ALL_KINDS) {
           expect(
-            describeMapImageryRecovery(kind, context).message.length,
+            describeMapImageryRecovery(englishTranslator, kind, context).message.length,
           ).toBeGreaterThan(0);
         }
       }

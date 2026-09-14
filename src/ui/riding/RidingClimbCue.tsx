@@ -1,3 +1,4 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { ClimbProgressMetrics } from "../../navigation/climbElevationView.ts";
 import { formatDistanceKm } from "../shared/routeSummary.ts";
 
@@ -20,7 +21,7 @@ export interface RidingClimbCueProps {
  * "climb", Profile shows Climb view immediately with no separate dismissal
  * state to clear.
  *
- * Only the constant "Climb active" title carries `role="status"` — it
+ * Only the constant "{t("climb.cueActive")}" title carries `role="status"` — it
  * never changes while the cue is shown for one climb, so entering a climb
  * announces once and the continuously-updating distance-remaining line
  * beneath it (plain text, no live region) is never re-announced on every
@@ -42,15 +43,19 @@ export interface RidingClimbCueProps {
  * derivation and for why the base placement is deliberately unchanged.
  */
 export function RidingClimbCue({ metrics, onViewClimb }: RidingClimbCueProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   return (
     <div className="ride-climb-cue-slot">
       <div className="ride-climb-cue">
         <div className="ride-climb-cue-text">
           <p role="status" className="ride-climb-cue-title">
-            Climb active
+            {t("climb.cueActive")}
           </p>
           <p className="ride-climb-cue-detail">
-            {formatDistanceKm(metrics.distanceRemainingMetres)} remaining
+            {t("climb.cueRemaining", {
+              distance: formatDistanceKm(metrics.distanceRemainingMetres),
+            })}
           </p>
         </div>
         <button
@@ -58,7 +63,7 @@ export function RidingClimbCue({ metrics, onViewClimb }: RidingClimbCueProps) {
           className="btn-primary ride-climb-cue-action"
           onClick={onViewClimb}
         >
-          View climb
+          {t("climb.viewClimb")}
         </button>
       </div>
     </div>

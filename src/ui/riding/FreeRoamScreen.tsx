@@ -1,3 +1,5 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
+import type { Translator } from "../../i18n/translate.ts";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   MapView,
@@ -56,17 +58,17 @@ const DEFAULT_CAMERA_STATE: StoredCameraState = {
 // Mirrors RidingScreen.tsx's identical RIDING_ZOOM_STEP (backlog item 53).
 const RIDING_ZOOM_STEP = 1;
 
-function formatGeolocationError(error: GeolocationError): string {
+function formatGeolocationError(translator: Translator, error: GeolocationError): string {
   switch (error.reason) {
     case "permission-denied":
-      return "Location permission was denied. Allow location access in your browser settings to use Free roam.";
+      return translator.t("ride.geolocation.deniedFreeRoam");
     case "timeout":
-      return "Getting your location timed out. Check you have a clear view of the sky and try again.";
+      return translator.t("ride.geolocation.timeout");
     case "unsupported":
-      return "This browser does not support location services.";
+      return translator.t("ride.geolocation.unsupported");
     case "position-unavailable":
     default:
-      return "Your location is currently unavailable.";
+      return translator.t("ride.geolocation.unavailable");
   }
 }
 
@@ -117,6 +119,8 @@ export function FreeRoamScreen({
   onRideFinalized,
   onRidePaused,
 }: FreeRoamScreenProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   // Bridges useFreeRoamCamera's current camera state and last-reliable
   // bearing into useFreeRoamNavigation's persistence — see
   // useFreeRoamNavigation.ts's getPersistableSnapshot doc comment for why
@@ -260,7 +264,7 @@ export function FreeRoamScreen({
       }
     } catch (error) {
       logError("free-roam-end-ride", error);
-      setFinalizeError("The ride could not be ended on this device. Try again.");
+      setFinalizeError(t("freeRoam.endFailed"));
       setIsEndRideConfirmOpen(false);
       // Restoring focus is deferred to the pending-ref effect below rather
       // than called directly here — see RidingScreen.tsx's identical
@@ -290,7 +294,7 @@ export function FreeRoamScreen({
       }
     } catch (error) {
       logError("free-roam-pause-ride", error);
-      setPauseError("Free roam could not be paused on this device. Try again.");
+      setPauseError(t("freeRoam.pauseFailed"));
     } finally {
       isPauseActionPendingRef.current = false;
       setIsPausePending(false);
@@ -340,10 +344,10 @@ export function FreeRoamScreen({
       return (
         <ConfirmDialog
           open={isEndRideConfirmOpen}
-          title="End this ride?"
-          message="Your free roam position and camera state will be cleared."
-          confirmLabel={isFinalizing ? "Ending ride…" : "End ride"}
-          cancelLabel="Cancel"
+          title={t("freeRoam.endConfirmTitle")}
+          message={t("freeRoam.endConfirmMessage")}
+          confirmLabel={isFinalizing ? t("ride.endingRide") : t("ride.endRide")}
+          cancelLabel={t("ride.cancel")}
           confirmDisabled={isFinalizing}
           cancelDisabled={isFinalizing}
           onConfirm={() => {
@@ -362,7 +366,7 @@ export function FreeRoamScreen({
           onClick={handleEndRideClick}
           disabled={isFinalizing || isPausePending}
         >
-          End ride
+          {t("ride.endRide")}
         </button>
         {finalizeError ? (
           <p className="field-error" role="alert">
@@ -374,7 +378,7 @@ export function FreeRoamScreen({
   }
 
   return (
-    <section className="screen riding-fixed-shell" aria-label="Free roam">
+    <section className="screen riding-fixed-shell" aria-label={t("freeRoam.title")}>
       {/* The immersive Pause/title/End header (backlog item 55) — renders
        * unconditionally, mirroring the unconditional <h1>/.ride-end-ride-row
        * it replaces: this screen has no idle/pre-ride panel of its own (see
@@ -383,8 +387,8 @@ export function FreeRoamScreen({
        * fixed shell (riding-fixed-shell, backlog item 58) above is applied
        * unconditionally for the identical reason. */}
       <RidingImmersiveHeader
-        title="Free roam"
-        pauseLabel={isPausePending ? "Pausing…" : "Pause"}
+        title={t("freeRoam.title")}
+        pauseLabel={isPausePending ? t("ride.pausing") : t("ride.pause")}
         onPause={() => {
           void performPauseRide();
         }}
@@ -419,7 +423,7 @@ export function FreeRoamScreen({
           }
           geolocationErrorMessage={
             nav.geolocationStatus === "error" && nav.geolocationError
-              ? formatGeolocationError(nav.geolocationError)
+              ? formatGeolocationError(translator, nav.geolocationError)
               : null
           }
           onRetryGeolocation={handleStart}
@@ -481,7 +485,7 @@ export function FreeRoamScreen({
               <button
                 type="button"
                 onClick={handleZoomIn}
-                aria-label="Zoom in"
+                aria-label={t("ride.map.zoomIn")}
                 className="ride-map-control ride-map-control--zoom"
               >
                 <ZoomIcon direction="in" />
@@ -489,7 +493,7 @@ export function FreeRoamScreen({
               <button
                 type="button"
                 onClick={handleZoomOut}
-                aria-label="Zoom out"
+                aria-label={t("ride.map.zoomOut")}
                 className="ride-map-control ride-map-control--zoom"
               >
                 <ZoomIcon direction="out" />
@@ -501,7 +505,7 @@ export function FreeRoamScreen({
               <button
                 type="button"
                 onClick={camera.requestNorthUp}
-                aria-label="North-up, top-down view"
+                aria-label={t("ride.map.northUp")}
                 aria-pressed={camera.isNorthUpTopDown}
                 className={`ride-map-control ride-map-control--north-up${
                   camera.isNorthUpTopDown ? " is-pressed" : ""
@@ -515,14 +519,14 @@ export function FreeRoamScreen({
               <button
                 type="button"
                 onClick={camera.requestFollow}
-                aria-label="Follow my location"
+                aria-label={t("ride.map.followLocation")}
                 aria-pressed={camera.mode === "following"}
                 className={`ride-map-control ride-map-control--follow${
                   camera.mode === "following" ? " is-pressed" : ""
                 }`}
               >
                 {camera.mode === "following" && camera.awaitingFreshFix ? (
-                  "Waiting…"
+                  t("ride.map.waiting")
                 ) : (
                   <CrosshairIcon />
                 )}
@@ -542,7 +546,7 @@ export function FreeRoamScreen({
            * found and fixed for RidingScreen. */}
           {camera.showPausedToast ? (
             <p role="status" className="ride-map-paused-toast">
-              Map follow paused.
+              {t("ride.map.followPaused")}
             </p>
           ) : null}
         </div>

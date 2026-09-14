@@ -1,3 +1,5 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
+import type { ParameterlessMessageKey, Translator } from "../../i18n/translate.ts";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PlannedRoute } from "../../domain/types.ts";
 import { logError } from "../../platform/errorLog.ts";
@@ -63,50 +65,55 @@ const NONE_SESSION_STATE: RidingLauncherSessionState = { status: "none" };
 
 type LauncherClearAction = "end-ride" | "end-free-roam" | "discard-unfinished";
 
+/** Backlog item 113 stage 4: the five rider-facing fields are catalogue
+ * keys; `logContext` deliberately stays a raw identifier, because it is a
+ * diagnostics key and not copy. Two entries share a title and confirm
+ * label but differ in message and error, which is why this stays a table
+ * per action rather than collapsing into one shared set of keys. */
 const LAUNCHER_CLEAR_ACTION_COPY: Record<
   LauncherClearAction,
   {
-    dialogTitle: string;
-    dialogMessage: string;
-    confirmLabel: string;
-    confirmPendingLabel: string;
-    errorMessage: string;
+    dialogTitle: ParameterlessMessageKey;
+    dialogMessage: ParameterlessMessageKey;
+    confirmLabel: ParameterlessMessageKey;
+    confirmPendingLabel: ParameterlessMessageKey;
+    errorMessage: ParameterlessMessageKey;
     logContext: string;
   }
 > = {
   "end-ride": {
-    dialogTitle: "End this ride?",
-    dialogMessage:
-      "Navigation progress for this ride will be cleared. The saved route will remain in your library.",
-    confirmLabel: "End ride",
-    confirmPendingLabel: "Ending ride…",
-    errorMessage: "The ride could not be ended on this device. Try again.",
+    dialogTitle: "riding.endConfirmTitle",
+    dialogMessage: "riding.endConfirmMessage",
+    confirmLabel: "ride.endRide",
+    confirmPendingLabel: "ride.endingRide",
+    errorMessage: "riding.endFailed",
     logContext: "riding-launcher-end-ride",
   },
   "end-free-roam": {
-    dialogTitle: "End this ride?",
-    dialogMessage: "Your free roam position and camera state will be cleared.",
-    confirmLabel: "End ride",
-    confirmPendingLabel: "Ending ride…",
-    errorMessage: "Free roam could not be ended on this device. Try again.",
+    dialogTitle: "freeRoam.endConfirmTitle",
+    dialogMessage: "freeRoam.endConfirmMessage",
+    confirmLabel: "ride.endRide",
+    confirmPendingLabel: "ride.endingRide",
+    errorMessage: "launcher.endFreeRoamFailed",
     logContext: "riding-launcher-end-free-roam",
   },
   "discard-unfinished": {
-    dialogTitle: "Discard unfinished ride?",
-    dialogMessage:
-      "Only the stored progress for this unfinished ride will be removed — no saved route is affected.",
-    confirmLabel: "Discard unfinished ride",
-    confirmPendingLabel: "Discarding…",
-    errorMessage:
-      "This unfinished ride could not be discarded on this device. Try again.",
+    dialogTitle: "launcher.discardTitle",
+    dialogMessage: "launcher.discardMessage",
+    confirmLabel: "launcher.discardConfirm",
+    confirmPendingLabel: "launcher.discarding",
+    errorMessage: "launcher.discardFailed",
     logContext: "riding-launcher-discard-unfinished",
   },
 };
 
-function describeUnresumableReason(reason: "route-missing" | "unsupported-kind"): string {
+function describeUnresumableReason(
+  translator: Translator,
+  reason: "route-missing" | "unsupported-kind",
+): string {
   return reason === "route-missing"
-    ? "This unfinished ride refers to a route that's no longer in your library, so it can't be resumed."
-    : "This unfinished ride can't be recovered by this version of the app.";
+    ? translator.t("launcher.routeMissing")
+    : translator.t("launcher.unsupportedKind");
 }
 
 /**
@@ -131,6 +138,8 @@ export function RidingLauncher({
   freeRoamError = null,
   sessionRefreshToken,
 }: RidingLauncherProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   const [hydrationStatus, setHydrationStatus] =
     useState<RidingLauncherHydrationStatus>("loading");
   const hydrationGenerationRef = useRef(0);
@@ -248,7 +257,7 @@ export function RidingLauncher({
       logError(LAUNCHER_CLEAR_ACTION_COPY[action].logContext, error);
       setClearError({
         action,
-        message: LAUNCHER_CLEAR_ACTION_COPY[action].errorMessage,
+        message: translator.t(LAUNCHER_CLEAR_ACTION_COPY[action].errorMessage),
       });
       setIsClearConfirmOpen(false);
       // Restoring focus is deferred to the pending-ref effect below rather
@@ -305,14 +314,14 @@ export function RidingLauncher({
       return (
         <ConfirmDialog
           open={isClearConfirmOpen}
-          title={copy.dialogTitle}
-          message={copy.dialogMessage}
+          title={t(copy.dialogTitle)}
+          message={t(copy.dialogMessage)}
           confirmLabel={
             activeClearAction === clearAction
-              ? copy.confirmPendingLabel
-              : copy.confirmLabel
+              ? t(copy.confirmPendingLabel)
+              : t(copy.confirmLabel)
           }
-          cancelLabel="Cancel"
+          cancelLabel={t("ride.cancel")}
           confirmDisabled={activeClearAction === clearAction}
           cancelDisabled={activeClearAction === clearAction}
           onConfirm={() => {
@@ -331,7 +340,7 @@ export function RidingLauncher({
           onClick={handleClearTriggerClick}
           disabled={activeClearAction !== null}
         >
-          {copy.confirmLabel}
+          {t(copy.confirmLabel)}
         </button>
         {clearError?.action === clearAction ? (
           <p className="field-error" role="alert">
@@ -343,19 +352,19 @@ export function RidingLauncher({
   }
 
   return (
-    <section className="screen" aria-label="Ride">
-      <h1 className="screen-title">Ride</h1>
+    <section className="screen" aria-label={t("launcher.landmarkLabel")}>
+      <h1 className="screen-title">{t("launcher.title")}</h1>
 
       {hydrationStatus === "loading" ? (
         <p className="status-row" role="status">
-          Checking for an unfinished ride…
+          {t("launcher.checking")}
         </p>
       ) : null}
 
       {hydrationStatus === "failed" ? (
         <div className="row">
           <p className="field-error" role="alert">
-            Your unfinished ride status could not be checked. Nothing has been changed.
+            {t("launcher.checkFailed")}
           </p>
           <button
             type="button"
@@ -365,16 +374,16 @@ export function RidingLauncher({
               setHydrationRetryToken((token) => token + 1);
             }}
           >
-            Retry
+            {t("launcher.retry")}
           </button>
         </div>
       ) : null}
 
       {hydrationStatus === "ready" && sessionState.status === "none" ? (
         <>
-          <p>No route selected yet. Choose a route from Routes to start riding.</p>
+          <p>{t("launcher.noRoute")}</p>
           <button type="button" className="btn-primary" onClick={onChooseRoute}>
-            Choose a route
+            {t("launcher.chooseRoute")}
           </button>
           <button
             type="button"
@@ -382,7 +391,9 @@ export function RidingLauncher({
             onClick={onStartFreeRoam}
             disabled={isFreeRoamPending}
           >
-            {isFreeRoamPending ? "Starting…" : "Start free roam"}
+            {isFreeRoamPending
+              ? t("launcher.startingFreeRoam")
+              : t("launcher.startFreeRoam")}
           </button>
           {freeRoamError ? (
             <p className="field-error" role="alert">
@@ -399,7 +410,7 @@ export function RidingLauncher({
             {formatDistanceKm(sessionState.route.distanceMetres)} ·{" "}
             {formatAscent(sessionState.route.ascentMetres)}
           </p>
-          <p>You have an unfinished ride on this route.</p>
+          <p>{t("launcher.unfinishedRide")}</p>
           <button
             type="button"
             className="btn-primary"
@@ -407,7 +418,7 @@ export function RidingLauncher({
               onResumeRoute(sessionState.route);
             }}
           >
-            Resume ride
+            {t("launcher.resumeRide")}
           </button>
           <div className="ride-launcher-clear-row stack">{renderClearAction()}</div>
         </div>
@@ -415,15 +426,17 @@ export function RidingLauncher({
 
       {hydrationStatus === "ready" && sessionState.status === "resumable-free-roam" ? (
         <div className="panel stack">
-          <h2>Free roam</h2>
-          <p>You have an unfinished free roam session.</p>
+          <h2>{t("launcher.freeRoamHeading")}</h2>
+          <p>{t("launcher.unfinishedFreeRoam")}</p>
           <button
             type="button"
             className="btn-primary"
             onClick={onResumeFreeRoam}
             disabled={isFreeRoamPending}
           >
-            {isFreeRoamPending ? "Resuming…" : "Resume free roam"}
+            {isFreeRoamPending
+              ? t("launcher.resumingFreeRoam")
+              : t("launcher.resumeFreeRoam")}
           </button>
           {freeRoamError ? (
             <p className="field-error" role="alert">
@@ -436,7 +449,7 @@ export function RidingLauncher({
 
       {hydrationStatus === "ready" && sessionState.status === "unresumable" ? (
         <div className="panel stack">
-          <p>{describeUnresumableReason(sessionState.reason)}</p>
+          <p>{describeUnresumableReason(translator, sessionState.reason)}</p>
           <div className="ride-launcher-clear-row stack">{renderClearAction()}</div>
         </div>
       ) : null}

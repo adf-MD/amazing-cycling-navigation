@@ -1,3 +1,4 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { NextManoeuvreSelection } from "../../navigation/nextManoeuvre.ts";
 import { formatManoeuvreDistance } from "../shared/routeSummary.ts";
 import { ManoeuvreIcon } from "./ManoeuvreIcon.tsx";
@@ -38,16 +39,18 @@ export function RidingCompactManoeuvreCue({
   selection,
   isFrozen,
 }: RidingCompactManoeuvreCueProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   const instructionText =
     selection.manoeuvre.instruction?.trim() ??
-    genericManoeuvreLabel(selection.manoeuvre.type);
+    genericManoeuvreLabel(translator, selection.manoeuvre.type);
 
   return (
     <div className="ride-compact-manoeuvre-cue">
       <ManoeuvreIcon type={selection.manoeuvre.type} sizePx={20} />
       <p role="status" className="ride-compact-manoeuvre-instruction">
         {instructionText}
-        {isFrozen ? " — last known position" : ""}
+        {isFrozen ? t("manoeuvre.frozenCompact") : ""}
       </p>
       <p className="ride-compact-manoeuvre-distance">
         {formatManoeuvreDistance(selection.remainingDistanceMetres)}

@@ -1,3 +1,5 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
+import type { ParameterlessMessageKey, Translator } from "../../i18n/translate.ts";
 import type { OffRouteLevel } from "../../navigation/types.ts";
 import type { MapImageryRecoveryStatus } from "../../map/MapView.tsx";
 import {
@@ -42,10 +44,10 @@ export interface RidingStatusCardProps {
   wakeLock?: RidingWakeLockControlProps;
 }
 
-const OFF_ROUTE_LABEL: Record<OffRouteLevel, string> = {
-  "on-route": "On route",
-  "possibly-off-route": "Possibly off route",
-  "off-route": "Off route",
+const OFF_ROUTE_LABEL_KEYS: Record<OffRouteLevel, ParameterlessMessageKey> = {
+  "on-route": "ride.status.onRoute",
+  "possibly-off-route": "ride.status.possiblyOffRoute",
+  "off-route": "ride.status.offRoute",
 };
 
 // Deliberately not formatAscent() from routeSummary.ts: that helper's
@@ -55,10 +57,15 @@ const OFF_ROUTE_LABEL: Record<OffRouteLevel, string> = {
 // Checks === null, never a truthy check, since a genuinely known 0 m
 // remaining ascent must render as "0 m ascent", not be treated as
 // unavailable.
-function formatRemainingAscentText(remainingAscentMetres: number | null): string {
+function formatRemainingAscentText(
+  translator: Translator,
+  remainingAscentMetres: number | null,
+): string {
   return remainingAscentMetres === null
-    ? "ascent unavailable"
-    : `${formatMetres(remainingAscentMetres)} ascent`;
+    ? translator.t("ride.status.ascentUnavailable")
+    : translator.t("ride.status.ascent", {
+        ascent: formatMetres(remainingAscentMetres),
+      });
 }
 
 // The compact visible text ("61.5 km · 993 m ascent") could be misread as
@@ -66,15 +73,19 @@ function formatRemainingAscentText(remainingAscentMetres: number | null): string
 // instead (via aria-label on the wrapping span), making the "remaining"
 // framing unambiguous.
 function buildRemainingAriaLabel(
+  translator: Translator,
   distanceRemainingMetres: number,
   remainingAscentMetres: number | null,
 ): string {
-  const distancePart = `${formatDistanceKmValue(distanceRemainingMetres)} kilometres remaining`;
-  const ascentPart =
-    remainingAscentMetres === null
-      ? "ascent remaining not available"
-      : `${String(Math.round(remainingAscentMetres))} metres ascent remaining`;
-  return `${distancePart}, ${ascentPart}`;
+  return translator.t("ride.status.remainingAnnouncement", {
+    distance: formatDistanceKmValue(distanceRemainingMetres),
+    ascent:
+      remainingAscentMetres === null
+        ? translator.t("ride.status.ascentRemainingUnavailable")
+        : translator.t("ride.status.ascentRemaining", {
+            ascent: Math.round(remainingAscentMetres),
+          }),
+  });
 }
 
 /**
@@ -108,18 +119,20 @@ export function RidingStatusCard({
   onRetryImagery,
   wakeLock,
 }: RidingStatusCardProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   const topLabel = liveStatus
-    ? OFF_ROUTE_LABEL[liveStatus.offRouteLevel]
+    ? t(OFF_ROUTE_LABEL_KEYS[liveStatus.offRouteLevel])
     : geolocationErrorMessage
-      ? "GPS error"
-      : "Waiting for a GPS fix…";
+      ? t("ride.gpsError")
+      : t("ride.waitingForFix");
   const topRole = liveStatus?.offRouteLevel === "off-route" ? "alert" : "status";
   // Backlog item 108: "route-riding" is a truthful capability statement —
   // active Route riding really does keep drawing the route and the rider's
   // position while imagery is missing. Free roam passes "free-roam" to the
   // same table instead; the mapping itself is never duplicated.
   const imageryRecoveryPresentation = imageryRecoveryStatus
-    ? describeMapImageryRecovery(imageryRecoveryStatus.kind, "route-riding")
+    ? describeMapImageryRecovery(translator, imageryRecoveryStatus.kind, "route-riding")
     : null;
 
   return (
@@ -137,24 +150,25 @@ export function RidingStatusCard({
             </span>
             <span role="status" className="ride-status-card-connectivity">
               <ConnectivityIcon online={online} />
-              {online ? "Online" : "Offline"}
+              {online ? t("ride.online") : t("ride.offline")}
             </span>
           </div>
           {liveStatus && liveStatus.distanceRemainingMetres !== null ? (
             <span
               className="ride-status-card-remaining"
               aria-label={buildRemainingAriaLabel(
+                translator,
                 liveStatus.distanceRemainingMetres,
                 liveStatus.remainingAscentMetres,
               )}
             >
               {formatDistanceKm(liveStatus.distanceRemainingMetres)} ·{" "}
-              {formatRemainingAscentText(liveStatus.remainingAscentMetres)}
+              {formatRemainingAscentText(translator, liveStatus.remainingAscentMetres)}
             </span>
           ) : null}
           {liveStatus ? (
             <span className="ride-status-card-gps">
-              {formatGpsStatusLine(liveStatus)}
+              {formatGpsStatusLine(translator, liveStatus)}
             </span>
           ) : null}
         </div>
@@ -164,7 +178,7 @@ export function RidingStatusCard({
         <div role="alert" className="ride-status-card-error-row">
           <span>{geolocationErrorMessage}</span>
           <button type="button" onClick={onRetryGeolocation}>
-            Try again
+            {t("ride.tryAgain")}
           </button>
         </div>
       ) : null}
@@ -196,7 +210,7 @@ export function RidingStatusCard({
               data-testid="retry-map-imagery-button"
               className="map-status-retry-button"
             >
-              Retry map imagery
+              {t("map.retryImagery")}
             </button>
           ) : null}
         </div>

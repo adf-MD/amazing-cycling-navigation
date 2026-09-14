@@ -45,6 +45,7 @@ import {
   ROUTE_WIDTH_REGIONAL_ZOOM,
   warningWidthStops,
 } from "./routeWidthPolicy.ts";
+import { englishTranslator } from "../i18n/englishTranslator.ts";
 
 const points: RoutePoint[] = [
   { coordinate: [0, 51], elevationMetres: 10, distanceFromStartMetres: 0 },
@@ -5768,7 +5769,12 @@ describe("MapView", () => {
       expect(activeSpecs).not.toEqual(wholeRouteSpecs);
       expect(activeSpecs.length).toBeLessThanOrEqual(10);
       expect(activeSpecs).toEqual(
-        buildActiveUpcomingDistanceBadgeMarkerSpecs(veryLongBadgeRoutePoints, 16, 34_500),
+        buildActiveUpcomingDistanceBadgeMarkerSpecs(
+          englishTranslator,
+          veryLongBadgeRoutePoints,
+          16,
+          34_500,
+        ),
       );
     });
 
@@ -5816,6 +5822,7 @@ describe("MapView", () => {
         veryLongBadgeRoutePoints.at(-1)?.distanceFromStartMetres ?? 0;
       expect(lastCallFirstArg(activeMock.setDistanceBadgesSpy)).toEqual(
         buildDistanceBadgeMarkerSpecs(
+          englishTranslator,
           veryLongBadgeRoutePoints,
           selectDistanceBadgeIntervalMetres(16, routeLengthMetres),
           null,

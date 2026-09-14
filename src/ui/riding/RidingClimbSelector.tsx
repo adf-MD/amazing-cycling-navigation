@@ -1,3 +1,4 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { ClimbFeature } from "../../navigation/routeFeatures.ts";
 import { CLIMB_CATEGORY_NAMES } from "../../navigation/routeFeaturePalette.ts";
 import { formatDistanceKmValue } from "../shared/routeSummary.ts";
@@ -36,21 +37,20 @@ export function RidingClimbSelector({
   selectedClimbId,
   onSelectClimb,
 }: RidingClimbSelectorProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   if (climbs.length === 0) {
     return (
-      <section aria-label="Recognised climbs" className="stack">
-        <h2>Recognised climbs</h2>
-        <p>
-          No recognised climbs. A recognised climb must be at least 500 m long and average
-          at least 3%.
-        </p>
+      <section aria-label={t("climb.selectorLabel")} className="stack">
+        <h2>{t("climb.selectorLabel")}</h2>
+        <p>{t("climb.empty")}</p>
       </section>
     );
   }
 
   return (
-    <section aria-label="Recognised climbs" className="stack">
-      <h2 id="recognised-climbs-heading">Recognised climbs</h2>
+    <section aria-label={t("climb.selectorLabel")} className="stack">
+      <h2 id="recognised-climbs-heading">{t("climb.selectorLabel")}</h2>
       <select
         className="recognised-climb-select"
         aria-labelledby="recognised-climbs-heading"
@@ -60,17 +60,19 @@ export function RidingClimbSelector({
           onSelectClimb(value === ALL_ROUTE_VALUE ? null : value);
         }}
       >
-        <option value={ALL_ROUTE_VALUE}>All route</option>
+        <option value={ALL_ROUTE_VALUE}>{t("climb.allRoute")}</option>
         {climbs.map((climb, index) => (
           <option key={climb.id} value={climb.id}>
-            {`Climb ${String(index + 1)} · ${CLIMB_CATEGORY_NAMES[climb.category]} · starts at ${formatDistanceKmValue(climb.startDistanceMetres)} km`}
+            {t("climb.option", {
+              number: index + 1,
+              category: CLIMB_CATEGORY_NAMES[climb.category],
+              start: formatDistanceKmValue(climb.startDistanceMetres),
+            })}
           </option>
         ))}
       </select>
       {selectedClimbId === null ? (
-        <p>
-          {`${String(climbs.length)} recognised climb${climbs.length === 1 ? "" : "s"} on this route`}
-        </p>
+        <p>{translator.plural("climb.count", climbs.length)}</p>
       ) : null}
     </section>
   );

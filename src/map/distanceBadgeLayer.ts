@@ -1,3 +1,4 @@
+import type { Translator } from "../i18n/translate.ts";
 import type { Coordinate, RoutePoint } from "../domain/types.ts";
 import { haversineDistanceMetres } from "../navigation/distance.ts";
 import type { DistanceBadgeMarkerSpec } from "./mapAdapter.ts";
@@ -331,18 +332,42 @@ export function filterActiveRidingCandidates(
   );
 }
 
-function formatKilometreList(kmValues: readonly number[]): string {
+/**
+ * The distance list inside a badge's accessible name.
+ *
+ * Backlog item 113 stage 4 changed the three-or-more case, deliberately
+ * and as the reason this stage takes a version bump: `[2, 4, 6]` used to
+ * read "2 and 4 and 6 kilometres", an "and" chain that is not how English
+ * punctuates a list. `Intl.ListFormat` produces "2, 4 and 6" instead. One
+ * and two values are unchanged — `ListFormat` renders "10 and 30" for a
+ * pair exactly as the old join did — and each case is pinned separately
+ * so a regression in one cannot hide behind another.
+ *
+ * The locale comes from the translator, never from the host: a formatter
+ * left to the environment's own default would punctuate differently on a
+ * German CI machine than on a rider's phone.
+ */
+function formatKilometreList(
+  translator: Translator,
+  kmValues: readonly number[],
+): string {
   if (kmValues.length === 1) {
     const [km] = kmValues;
     if (km === undefined) {
       throw new Error("unreachable: the length check above guarantees a first element");
     }
-    return `${String(km)} kilometre${km === 1 ? "" : "s"}`;
+    return translator.plural("map.badge.distance", km);
   }
-  return `${kmValues.join(" and ")} kilometres`;
+  return translator.t("map.badge.distanceList", {
+    list: new Intl.ListFormat(translator.locale, {
+      style: "long",
+      type: "conjunction",
+    }).format(kmValues.map((km) => String(km))),
+  });
 }
 
 function buildMarkerSpecForGroup(
+  translator: Translator,
   group: readonly DistanceBadgeCandidate[],
 ): DistanceBadgeMarkerSpec {
   const sorted = [...group].sort(
@@ -361,7 +386,9 @@ function buildMarkerSpecForGroup(
     id: `distance-badge-${kmValues.join("-")}`,
     coordinate: anchor.coordinate,
     label: kmValues.join(" / "),
-    ariaLabel: `${formatKilometreList(kmValues)} from route start`,
+    ariaLabel: translator.t("map.badge.fromRouteStart", {
+      distances: formatKilometreList(translator, kmValues),
+    }),
   };
 }
 
@@ -393,6 +420,7 @@ function buildMarkerSpecForGroup(
  * survivors when truncating.
  */
 export function mergeCoincidentDistanceBadges(
+  translator: Translator,
   candidates: readonly DistanceBadgeCandidate[],
   coincidenceThresholdMetres: number = DISTANCE_BADGE_COINCIDENCE_THRESHOLD_METRES,
 ): DistanceBadgeMarkerSpec[] {
@@ -413,7 +441,7 @@ export function mergeCoincidentDistanceBadges(
     }
   }
 
-  return groups.map((group) => buildMarkerSpecForGroup(group));
+  return groups.map((group) => buildMarkerSpecForGroup(translator, group));
 }
 
 /**
@@ -449,6 +477,7 @@ export function capDistanceBadgeMarkerSpecs(
  * MAX_ACTIVE_UPCOMING_DISTANCE_BADGES explicitly.
  */
 export function buildDistanceBadgeMarkerSpecs(
+  translator: Translator,
   points: readonly RoutePoint[],
   intervalMetres: number,
   presentationDistanceFromStartMetres: number | null,
@@ -458,7 +487,10 @@ export function buildDistanceBadgeMarkerSpecs(
     placeDistanceBadgeCandidates(points, intervalMetres),
     presentationDistanceFromStartMetres,
   );
-  return capDistanceBadgeMarkerSpecs(mergeCoincidentDistanceBadges(candidates), maxCount);
+  return capDistanceBadgeMarkerSpecs(
+    mergeCoincidentDistanceBadges(translator, candidates),
+    maxCount,
+  );
 }
 
 /**
@@ -478,6 +510,7 @@ export function buildDistanceBadgeMarkerSpecs(
  * exists.
  */
 export function buildActiveUpcomingDistanceBadgeMarkerSpecs(
+  translator: Translator,
   points: readonly RoutePoint[],
   zoom: number,
   presentationDistanceFromStartMetres: number | null,
@@ -488,10 +521,11 @@ export function buildActiveUpcomingDistanceBadgeMarkerSpecs(
   ) {
     const routeLengthMetres = points.at(-1)?.distanceFromStartMetres ?? 0;
     const intervalMetres = selectDistanceBadgeIntervalMetres(zoom, routeLengthMetres);
-    return buildDistanceBadgeMarkerSpecs(points, intervalMetres, null);
+    return buildDistanceBadgeMarkerSpecs(translator, points, intervalMetres, null);
   }
   const intervalMetres = selectActiveUpcomingBadgeSpacingMetres(zoom);
   return buildDistanceBadgeMarkerSpecs(
+    translator,
     points,
     intervalMetres,
     presentationDistanceFromStartMetres,

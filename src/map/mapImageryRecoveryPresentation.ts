@@ -1,3 +1,5 @@
+import type { Translator } from "../i18n/translate.ts";
+
 /** The four MapView-owned imagery states that a rider-facing surface has
  * something to say about. Three are terminal (they never silently self-heal
  * from waiting alone) and retryable: loadState==="load-error" (fatal — even
@@ -59,6 +61,7 @@ export interface MapImageryRecoveryPresentation {
  * the browser still reports Online).
  */
 export function describeMapImageryRecovery(
+  translator: Translator,
   kind: MapImageryStatusKind,
   context: MapImageryPresentationContext,
 ): MapImageryRecoveryPresentation {
@@ -69,34 +72,34 @@ export function describeMapImageryRecovery(
         role: "status",
         testId: "map-imagery-delayed-banner",
         retryable: false,
-        message: routeRiding
-          ? "Map imagery is taking longer than usual to load. Your route and position are still shown."
-          : "Map imagery is taking longer than usual to load. Your position is still shown.",
+        message: translator.t(
+          routeRiding ? "map.imagery.delayed.route" : "map.imagery.delayed.freeRoam",
+        ),
       };
     case "load-error":
       return {
         role: "alert",
         testId: "map-load-error",
         retryable: true,
-        message: "Map failed to load. Check your connection and try again.",
+        message: translator.t("map.imagery.loadError"),
       };
     case "tile-error":
       return {
         role: "status",
         testId: "tiles-unavailable-banner",
         retryable: true,
-        message: routeRiding
-          ? "Map imagery unavailable. The route and your position are still shown."
-          : "Map imagery unavailable. Your position is still shown.",
+        message: translator.t(
+          routeRiding ? "map.imagery.tileError.route" : "map.imagery.tileError.freeRoam",
+        ),
       };
     case "fallback":
       return {
         role: "status",
         testId: "map-fallback-banner",
         retryable: true,
-        message: routeRiding
-          ? "Map imagery unavailable — showing your route on a plain background."
-          : "Map imagery unavailable — showing your position on a plain background.",
+        message: translator.t(
+          routeRiding ? "map.imagery.fallback.route" : "map.imagery.fallback.freeRoam",
+        ),
       };
   }
 }

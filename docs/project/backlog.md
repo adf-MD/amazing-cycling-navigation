@@ -166,7 +166,7 @@ _Category: Interface and accessibility consistency_
 
 _Category: Internationalisation_
 
-> **Staged delivery — Stage 3 complete (`0.4.39`), Stage 4 next.**
+> **Staged delivery — Stage 4 complete (`0.4.40`), Stage 5 next.**
 > This item ships in stages and stays **pending** here until its final
 > stage. Nothing about it enters [`history/`](history/README.md) before
 > then. Each stage's commit updates the two lines below.
@@ -175,9 +175,9 @@ _Category: Internationalisation_
 > | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
 > | 1     | Internationalisation boundary; `appPreferences` storage at schema `version(5)`; the supported-language gate; pre-render language resolution; authored `manifest.lang`; primary navigation and Settings copy migrated | Complete — `0.4.38`        |
 > | 2     | Route Library, route cards, search/sort/filtering, the tag lifecycle, route actions and confirmations, and the GPX-import controls migrated                                                                          | Complete — no version bump |
-> | 3     | Planning copy; render-time route-warning copy with a semantic `routeWarningIdentity`; typed GPX errors and notices; Planning-owned routing-provider messages                                                         | **Complete — `0.4.39`**    |
-> | 4     | Riding, free roam, ride launcher, climb views, map overlays                                                                                                                                                          | **Next**                   |
-> | 5     | Status, PWA update prompt, shared components                                                                                                                                                                         | Pending                    |
+> | 3     | Planning copy; render-time route-warning copy with a semantic `routeWarningIdentity`; typed GPX errors and notices; Planning-owned routing-provider messages                                                         | Complete — `0.4.39`        |
+> | 4     | Riding, free roam, ride launcher, climb views, map overlays                                                                                                                                                          | **Complete — `0.4.40`**    |
+> | 5     | Status, PWA update prompt, shared components                                                                                                                                                                         | **Next**                   |
 > | 6a    | Complete German catalogue authored, then **stop** and hand the full reviewable list to the user. `Deutsch` still unreachable, nothing pushed                                                                         | Pending                    |
 > | 6b    | **Only after linguistic approval**: German enabled, the `Language`/`Sprache` card, the `:lang(de)` navigation rule, the openrouteservice `language` parameter, German layout and accessibility evidence              | Pending                    |
 >
@@ -276,6 +276,77 @@ _Category: Internationalisation_
 >   in silently.
 > - **`routingDiagnostics.ts` and the connection-test stage descriptions**,
 >   which are Status-owned and stay English under R4.
+
+> **Stage 4, recorded.** Shipped in `0.4.40`.
+>
+> - **Route Riding, free roam, the ride launcher, the climb views and the
+>   map layers** now read every rider-facing string from the catalogue,
+>   including the GPS status line, the off-route states, the manoeuvre
+>   fallback labels, the launcher's four confirmations, the climb cue and
+>   selector, and the map controls' accessible names. `MapView` and the two
+>   imperative marker layers — `distanceBadgeLayer.ts` and the five
+>   `planningLayer.ts` marker names stage 3 deferred — receive the
+>   translator **as a parameter**, never by reading context, storage,
+>   `navigator` or a global.
+> - **One deliberate English change, which is why this stage takes a bump.**
+>   A distance badge merging three or more kilometre marks used to read
+>   `2 and 4 and 6 kilometres from route start` — an `and` chain, not how
+>   English punctuates a list. `Intl.ListFormat` now produces
+>   `2, 4 and 6 kilometres from route start`. **One and two values are
+>   unchanged**: `ListFormat` renders `10 and 30` for a pair exactly as the
+>   old join did, and each of the three cases is pinned by its own test so a
+>   regression in one cannot hide behind another. Verified failing on
+>   `3daa585` first, which produced the old chain.
+> - **Provider text stays data, not copy.** A manoeuvre instruction and a
+>   road name are runtime values, so they are rendered verbatim and never
+>   pass through the catalogue. Proved with hostile fixtures — an
+>   instruction containing `{count}` placeholder syntax, one that is
+>   spelled exactly like a message key (`manoeuvre.left`), German street
+>   names and embedded quotation marks all render unchanged. The documented
+>   whitespace-only edge case is pinned as-is rather than quietly "fixed".
+> - **The two map-imagery surfaces keep their separate wordings.** Route
+>   riding says the route is still shown; free roam has no route on screen
+>   and must never claim one. That is now a semantic invariant asserted per
+>   state, not a wording preference, so it must survive translation. Only
+>   `load-error` — where nothing is shown in either surface — is one shared
+>   key. `role`, `testId` and `retryable` stay out of the catalogue
+>   entirely, so announcement severity can never become language-dependent.
+> - **Copy changes must not restart a ride.** The translator is memoised on
+>   the resolved `language` alone, so its identity is stable across every
+>   unrelated rerender, and the ride-lifecycle hooks — navigation, camera
+>   and wake lock, in both route riding and free roam — never see a
+>   translator at all. The two map effects that legitimately depend on one
+>   only call `setMarkers`/`setDistanceBadges`; they touch no watch, no wake
+>   lock and no network request.
+> - **Eight negative controls, each shown to fail**: restoring the old `and`
+>   chain; dropping `translator.locale` so `Intl.ListFormat` falls back to
+>   the host; letting a local label override the provider's own instruction;
+>   giving free roam the route-riding imagery wording; letting `MapView`
+>   render its in-map imagery copy while a status card already presents it;
+>   recreating the translator on every render; inlining one accessible
+>   label; and removing the supported-set clamp from the explicit-override
+>   branch of `resolveLanguage`.
+> - **The gate is unchanged.** `SUPPORTED_LANGUAGES` is still `["en"]`, a
+>   German device and a stored `"de"` preference both still render English
+>   with the stored row untouched, `document.documentElement.lang` and
+>   `manifest.lang` are both still `en-GB`, and there is still **no**
+>   production German catalogue and no language selector.
+> - **The openrouteservice request is still unchanged** — no `language`
+>   field. That belongs to stage 6b.
+>
+> **Deliberately deferred by stage 4:**
+>
+> - **`src/ui/shared/routeSummary.ts`'s unit formatters**, unchanged since
+>   stage 2 for the third time. They are imported by Riding, Planning,
+>   Settings and Status alike, so they belong to stage 5, which owns the
+>   shared components.
+> - **`routeFeaturePalette.ts`'s feature labels**, which the selected-feature
+>   summary reads. Shared with Planning and the Status explanations, so it is
+>   stage 5's.
+> - **`App.tsx`'s ride-switch copy**, deferred by stage 2 to "the Riding
+>   surface": it is rendered by the Route **Library** card and owned by the
+>   application shell, both of which are stage 5's, so it moves there rather
+>   than being split across two stages.
 
 113. **German localisation**
      - Origin: the installed-iPhone field test of 10 September 2026 — see [`current-status.md`](current-status.md) for the dated report. German-language support is recorded as a **substantial staged feature, not a small copy-editing task**.

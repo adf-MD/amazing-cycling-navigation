@@ -15,6 +15,7 @@ import {
   type DistanceBadgeCandidate,
 } from "./distanceBadgeLayer.ts";
 import type { DistanceBadgeMarkerSpec } from "./mapAdapter.ts";
+import { englishTranslator } from "../i18n/englishTranslator.ts";
 
 function point(distanceFromStartMetres: number, lon: number, lat = 51): RoutePoint {
   return { coordinate: [lon, lat], elevationMetres: null, distanceFromStartMetres };
@@ -331,7 +332,7 @@ describe("mergeCoincidentDistanceBadges", () => {
       { distanceFromStartMetres: 10000, coordinate: [0, 51] },
       { distanceFromStartMetres: 30000, coordinate: [0.0001, 51] }, // ~7m away
     ];
-    const specs = mergeCoincidentDistanceBadges(candidates);
+    const specs = mergeCoincidentDistanceBadges(englishTranslator, candidates);
     expect(specs).toHaveLength(1);
     expect(specs[0]).toMatchObject({
       id: "distance-badge-10-30",
@@ -345,7 +346,7 @@ describe("mergeCoincidentDistanceBadges", () => {
       { distanceFromStartMetres: 5000, coordinate: [0.05, 51] },
       { distanceFromStartMetres: 15000, coordinate: [0.050001, 51] },
     ];
-    const specs = mergeCoincidentDistanceBadges(candidates);
+    const specs = mergeCoincidentDistanceBadges(englishTranslator, candidates);
     expect(specs).toHaveLength(1);
     expect(specs[0]).toMatchObject({ label: "5 / 15" });
   });
@@ -358,7 +359,7 @@ describe("mergeCoincidentDistanceBadges", () => {
       { distanceFromStartMetres: 15000, coordinate: [0.00015, 51] },
       { distanceFromStartMetres: 25000, coordinate: [0.0003, 51] },
     ];
-    const specs = mergeCoincidentDistanceBadges(candidates);
+    const specs = mergeCoincidentDistanceBadges(englishTranslator, candidates);
     expect(specs).toHaveLength(1);
     expect(specs[0]).toMatchObject({ label: "5 / 15 / 25" });
   });
@@ -368,7 +369,7 @@ describe("mergeCoincidentDistanceBadges", () => {
       { distanceFromStartMetres: 1000, coordinate: [0.01, 51] },
       { distanceFromStartMetres: 5000, coordinate: [0.05, 51] },
     ];
-    const specs = mergeCoincidentDistanceBadges(candidates);
+    const specs = mergeCoincidentDistanceBadges(englishTranslator, candidates);
     expect(specs.map((s) => s.label)).toEqual(["1", "5"]);
   });
 
@@ -377,7 +378,7 @@ describe("mergeCoincidentDistanceBadges", () => {
       { distanceFromStartMetres: 30000, coordinate: [0, 51] },
       { distanceFromStartMetres: 10000, coordinate: [0, 51] },
     ];
-    const specs = mergeCoincidentDistanceBadges(candidates);
+    const specs = mergeCoincidentDistanceBadges(englishTranslator, candidates);
     expect(specs).toEqual([
       {
         id: "distance-badge-10-30",
@@ -389,14 +390,14 @@ describe("mergeCoincidentDistanceBadges", () => {
   });
 
   it("uses singular wording for a single 1 km badge", () => {
-    const specs = mergeCoincidentDistanceBadges([
+    const specs = mergeCoincidentDistanceBadges(englishTranslator, [
       { distanceFromStartMetres: 1000, coordinate: [0.01, 51] },
     ]);
     expect(specs[0]).toMatchObject({ ariaLabel: "1 kilometre from route start" });
   });
 
   it("uses plural wording for a single non-1 km badge", () => {
-    const specs = mergeCoincidentDistanceBadges([
+    const specs = mergeCoincidentDistanceBadges(englishTranslator, [
       { distanceFromStartMetres: 5000, coordinate: [0.05, 51] },
     ]);
     expect(specs[0]).toMatchObject({ ariaLabel: "5 kilometres from route start" });
@@ -446,25 +447,25 @@ describe("buildDistanceBadgeMarkerSpecs", () => {
 
   it("shows every badge on the whole route when progress is null", () => {
     const route = longRoute(5000);
-    const specs = buildDistanceBadgeMarkerSpecs(route, 1000, null);
+    const specs = buildDistanceBadgeMarkerSpecs(englishTranslator, route, 1000, null);
     expect(specs.map((s) => s.label)).toEqual(["1", "2", "3", "4"]);
   });
 
   it("keeps the next absolute badge ahead of progress — 37 km progress leaves 40 km, never renumbered", () => {
     const route = longRoute(45000);
-    const specs = buildDistanceBadgeMarkerSpecs(route, 10000, 37000);
+    const specs = buildDistanceBadgeMarkerSpecs(englishTranslator, route, 10000, 37000);
     expect(specs.map((s) => s.label)).toEqual(["40"]);
   });
 
   it("always formats labels as absolute whole-kilometre values regardless of progress", () => {
     const route = longRoute(45000);
-    const specs = buildDistanceBadgeMarkerSpecs(route, 10000, 20000);
+    const specs = buildDistanceBadgeMarkerSpecs(englishTranslator, route, 10000, 20000);
     expect(specs.map((s) => s.label)).toEqual(["20", "30", "40"]);
   });
 
   it("caps a long route's badge count", () => {
     const route = longRoute(500_000, 1000);
-    const specs = buildDistanceBadgeMarkerSpecs(route, 1000, null);
+    const specs = buildDistanceBadgeMarkerSpecs(englishTranslator, route, 1000, null);
     expect(specs).toHaveLength(MAX_WHOLE_ROUTE_DISTANCE_BADGES);
     expect(specs[0]).toMatchObject({ label: "1" });
   });
@@ -480,7 +481,7 @@ describe("buildDistanceBadgeMarkerSpecs", () => {
       point(15000, 0.05),
       point(20000, 0.2),
     ];
-    const specs = buildDistanceBadgeMarkerSpecs(points, 5000, null);
+    const specs = buildDistanceBadgeMarkerSpecs(englishTranslator, points, 5000, null);
     const merged = specs.find((s) => s.label.includes("/"));
     expect(merged?.label).toBe("5 / 15");
   });
@@ -498,13 +499,13 @@ describe("buildDistanceBadgeMarkerSpecs", () => {
       point(20000, 0.2),
       point(25000, 0.25),
     ];
-    const specs = buildDistanceBadgeMarkerSpecs(points, 5000, 12000);
+    const specs = buildDistanceBadgeMarkerSpecs(englishTranslator, points, 5000, 12000);
     expect(specs.map((s) => s.label)).toEqual(["15", "20"]);
   });
 
   it("accepts an explicit maxCount, capping below the default whole-route cap", () => {
     const route = longRoute(50_000, 1000);
-    const specs = buildDistanceBadgeMarkerSpecs(route, 1000, null, 3);
+    const specs = buildDistanceBadgeMarkerSpecs(englishTranslator, route, 1000, null, 3);
     expect(specs.map((s) => s.label)).toEqual(["1", "2", "3"]);
   });
 });
@@ -603,13 +604,14 @@ describe("buildActiveUpcomingDistanceBadgeMarkerSpecs", () => {
     const zoom = 16;
     const routeLengthMetres = route.at(-1)?.distanceFromStartMetres ?? 0;
     const expected = buildDistanceBadgeMarkerSpecs(
+      englishTranslator,
       route,
       selectDistanceBadgeIntervalMetres(zoom, routeLengthMetres),
       null,
     );
-    expect(buildActiveUpcomingDistanceBadgeMarkerSpecs(route, zoom, null)).toEqual(
-      expected,
-    );
+    expect(
+      buildActiveUpcomingDistanceBadgeMarkerSpecs(englishTranslator, route, zoom, null),
+    ).toEqual(expected);
   });
 
   it("falls back to the whole-route policy for non-finite progress too (NaN, +/-Infinity)", () => {
@@ -617,6 +619,7 @@ describe("buildActiveUpcomingDistanceBadgeMarkerSpecs", () => {
     const zoom = 16;
     const routeLengthMetres = route.at(-1)?.distanceFromStartMetres ?? 0;
     const expected = buildDistanceBadgeMarkerSpecs(
+      englishTranslator,
       route,
       selectDistanceBadgeIntervalMetres(zoom, routeLengthMetres),
       null,
@@ -626,15 +629,25 @@ describe("buildActiveUpcomingDistanceBadgeMarkerSpecs", () => {
       Number.POSITIVE_INFINITY,
       Number.NEGATIVE_INFINITY,
     ]) {
-      expect(buildActiveUpcomingDistanceBadgeMarkerSpecs(route, zoom, progress)).toEqual(
-        expected,
-      );
+      expect(
+        buildActiveUpcomingDistanceBadgeMarkerSpecs(
+          englishTranslator,
+          route,
+          zoom,
+          progress,
+        ),
+      ).toEqual(expected);
     }
   });
 
   it("keeps exactly the next ten 1 km badges ahead of progress (42.3 km worked example)", () => {
     const route = longRoute(60_000);
-    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 42_300);
+    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(
+      englishTranslator,
+      route,
+      16,
+      42_300,
+    );
     expect(specs.map((s) => s.label)).toEqual([
       "43",
       "44",
@@ -651,7 +664,12 @@ describe("buildActiveUpcomingDistanceBadgeMarkerSpecs", () => {
 
   it("rolls the window forward by exactly one once progress crosses a badge", () => {
     const route = longRoute(60_000);
-    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 43_001);
+    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(
+      englishTranslator,
+      route,
+      16,
+      43_001,
+    );
     expect(specs.map((s) => s.label)).toEqual([
       "44",
       "45",
@@ -668,15 +686,30 @@ describe("buildActiveUpcomingDistanceBadgeMarkerSpecs", () => {
 
   it("keeps a badge exactly at the current progress (inclusive boundary, matching filterActiveRidingCandidates)", () => {
     const route = longRoute(60_000);
-    const atExactly43km = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 43_000);
-    const justBefore = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 42_300);
+    const atExactly43km = buildActiveUpcomingDistanceBadgeMarkerSpecs(
+      englishTranslator,
+      route,
+      16,
+      43_000,
+    );
+    const justBefore = buildActiveUpcomingDistanceBadgeMarkerSpecs(
+      englishTranslator,
+      route,
+      16,
+      42_300,
+    );
     // Same leading edge (43 km) as the 42.3 km worked example above.
     expect(atExactly43km).toEqual(justBefore);
   });
 
   it("caps after merging: an 11-raw/10-group window keeps every group, including the merged one", () => {
     const route = longRouteWithCoincidence(52_000, 1000, [45_000, 50_000]);
-    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 40_500);
+    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(
+      englishTranslator,
+      route,
+      16,
+      40_500,
+    );
     expect(specs.map((s) => s.label)).toEqual([
       "41",
       "42",
@@ -693,7 +726,12 @@ describe("buildActiveUpcomingDistanceBadgeMarkerSpecs", () => {
 
   it("caps after merging: a 12-raw/11-group window drops the furthest unmerged group, not the merged one", () => {
     const route = longRouteWithCoincidence(53_000, 1000, [45_000, 50_000]);
-    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 40_500);
+    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(
+      englishTranslator,
+      route,
+      16,
+      40_500,
+    );
     expect(specs).toHaveLength(MAX_ACTIVE_UPCOMING_DISTANCE_BADGES);
     expect(specs.map((s) => s.label)).toEqual([
       "41",
@@ -713,7 +751,12 @@ describe("buildActiveUpcomingDistanceBadgeMarkerSpecs", () => {
     for (const zoom of [15, 16]) {
       for (const totalKm of [45, 100, 300]) {
         const route = longRoute(totalKm * 1000);
-        const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, zoom, 0);
+        const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(
+          englishTranslator,
+          route,
+          zoom,
+          0,
+        );
         expect(specs).toHaveLength(MAX_ACTIVE_UPCOMING_DISTANCE_BADGES);
         const labels = specs.map((s) => Number(s.label));
         for (let i = 1; i < labels.length; i += 1) {
@@ -733,7 +776,12 @@ describe("buildActiveUpcomingDistanceBadgeMarkerSpecs", () => {
       [16, 1],
     ];
     for (const [zoom, spacingKm] of expectedSpacingKm) {
-      const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, zoom, 0);
+      const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(
+        englishTranslator,
+        route,
+        zoom,
+        0,
+      );
       expect(specs.length).toBeLessThanOrEqual(MAX_ACTIVE_UPCOMING_DISTANCE_BADGES);
       const labels = specs.map((s) => Number(s.label));
       for (let i = 1; i < labels.length; i += 1) {
@@ -744,13 +792,88 @@ describe("buildActiveUpcomingDistanceBadgeMarkerSpecs", () => {
 
   it("does not pad the window when fewer than ten candidates remain near the route end", () => {
     const route = longRoute(50_000);
-    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 47_500);
+    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(
+      englishTranslator,
+      route,
+      16,
+      47_500,
+    );
     expect(specs.map((s) => s.label)).toEqual(["48", "49"]);
   });
 
   it("returns no badges for a route shorter than the active interval at the current zoom", () => {
     const route = longRoute(500, 500);
-    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(route, 16, 0);
+    const specs = buildActiveUpcomingDistanceBadgeMarkerSpecs(
+      englishTranslator,
+      route,
+      16,
+      0,
+    );
     expect(specs).toEqual([]);
+  });
+});
+
+describe("distance-badge list formatting (backlog item 113 stage 4)", () => {
+  function coincident(kmValues: readonly number[]) {
+    return mergeCoincidentDistanceBadges(
+      englishTranslator,
+      kmValues.map((km, index) => ({
+        distanceFromStartMetres: km * 1000,
+        // ~5m apart, well inside the coincidence threshold.
+        coordinate: [index * 0.00005, 51] as [number, number],
+      })),
+    );
+  }
+
+  it("leaves a single badge unchanged, singular and plural", () => {
+    expect(coincident([1])[0]?.ariaLabel).toBe("1 kilometre from route start");
+    expect(coincident([5])[0]?.ariaLabel).toBe("5 kilometres from route start");
+  });
+
+  it("leaves two badges unchanged", () => {
+    // Intl.ListFormat renders a pair exactly as the old join did, so this
+    // case is deliberately asserted to be untouched by the change below.
+    expect(coincident([10, 30])[0]?.ariaLabel).toBe(
+      "10 and 30 kilometres from route start",
+    );
+  });
+
+  it("punctuates three or more as a British list", () => {
+    // The declared English change of this stage, and the reason it takes a
+    // version bump. Verified failing on the parent commit, which produced
+    // "2 and 4 and 6 kilometres from route start".
+    expect(coincident([2, 4, 6])[0]?.ariaLabel).toBe(
+      "2, 4 and 6 kilometres from route start",
+    );
+    expect(coincident([1, 2, 3, 4])[0]?.ariaLabel).toBe(
+      "1, 2, 3 and 4 kilometres from route start",
+    );
+  });
+
+  it("uses the translator's locale, never the host default", () => {
+    // A formatter left to the environment would punctuate differently on a
+    // machine with a non-English default locale, which is exactly the kind
+    // of difference that only shows up in CI.
+    expect(englishTranslator.locale).toBe("en-GB");
+    const hostFormatted = new Intl.ListFormat(undefined, {
+      style: "long",
+      type: "conjunction",
+    }).format(["2", "4", "6"]);
+    const explicit = new Intl.ListFormat(englishTranslator.locale, {
+      style: "long",
+      type: "conjunction",
+    }).format(["2", "4", "6"]);
+    expect(explicit).toBe("2, 4 and 6");
+    // Recorded rather than asserted equal: on this machine the host locale
+    // happens to agree, which is precisely why relying on it would be an
+    // untested assumption rather than a guarantee.
+    expect(typeof hostFormatted).toBe("string");
+  });
+
+  it("keeps the visible label, id and coordinate unchanged", () => {
+    const [spec] = coincident([2, 4, 6]);
+    expect(spec?.label).toBe("2 / 4 / 6");
+    expect(spec?.id).toBe("distance-badge-2-4-6");
+    expect(spec?.coordinate).toEqual([0, 51]);
   });
 });

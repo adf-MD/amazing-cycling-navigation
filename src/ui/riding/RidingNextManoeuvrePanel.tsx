@@ -1,3 +1,4 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { PlannedRouteSource } from "../../domain/types.ts";
 import {
   classifyManoeuvreUrgency,
@@ -74,6 +75,8 @@ export function RidingNextManoeuvrePanel({
   selection,
   isFrozen,
 }: RidingNextManoeuvrePanelProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   if (!selection) {
     if (!isTrusted) {
       if (sourceKind === "gpx-import") {
@@ -83,7 +86,7 @@ export function RidingNextManoeuvrePanel({
       }
       return (
         <p role="status" className="status-row">
-          Turn information is unavailable for this route.
+          {t("manoeuvre.unavailable")}
         </p>
       );
     }
@@ -98,7 +101,7 @@ export function RidingNextManoeuvrePanel({
   // effectively unreachable edge case rather than a real correctness gap.
   const instructionText =
     selection.manoeuvre.instruction?.trim() ??
-    genericManoeuvreLabel(selection.manoeuvre.type);
+    genericManoeuvreLabel(translator, selection.manoeuvre.type);
 
   return (
     <div className="ride-manoeuvre-card">
@@ -108,7 +111,7 @@ export function RidingNextManoeuvrePanel({
       <div className="ride-manoeuvre-text">
         <p role="status" className="ride-manoeuvre-instruction">
           {instructionText}
-          {isFrozen ? " — based on your last known position" : ""}
+          {isFrozen ? t("manoeuvre.frozenFull") : ""}
         </p>
         <p
           className="ride-manoeuvre-distance"

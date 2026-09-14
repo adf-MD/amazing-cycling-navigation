@@ -72,14 +72,33 @@ export function LanguageProvider({
     [onSelectPreference, readLanguages],
   );
 
+  /**
+   * Memoised on the language ALONE, deliberately not folded into the
+   * context value below.
+   *
+   * Backlog item 113 stage 4. Riding's components call `useTranslate()`,
+   * and Riding's effects start a geolocation watch, acquire a wake lock
+   * and create the map and its camera. A translator whose identity moved
+   * whenever some unrelated part of the context did would put a new value
+   * into any dependency array containing it, restarting exactly those
+   * lifecycles for no reason.
+   *
+   * Keying it on `selectPreference` — which is what folding it into the
+   * value object effectively did — was the concrete hazard: that callback
+   * changes whenever a caller passes an inline `readLanguages`, which is
+   * easy to do and silently destabilises every consumer. The translator
+   * depends on the language and nothing else, so that is what it is keyed
+   * on, and `translatorStability.test.tsx` asserts the consequence rather
+   * than trusting the reasoning.
+   */
+  const translator = useMemo(
+    () => createTranslator(language, catalogueFor(language)),
+    [language],
+  );
+
   const value = useMemo<LanguageContextValue>(
-    () => ({
-      translator: createTranslator(language, catalogueFor(language)),
-      preference,
-      language,
-      selectPreference,
-    }),
-    [language, preference, selectPreference],
+    () => ({ translator, preference, language, selectPreference }),
+    [translator, language, preference, selectPreference],
   );
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;

@@ -1,3 +1,4 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { RefObject } from "react";
 
 export interface RidingRouteCompletionPanelProps {
@@ -36,9 +37,11 @@ export function RidingRouteCompletionPanel({
   error,
   finishButtonRef,
 }: RidingRouteCompletionPanelProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   return (
     <div className="panel stack ride-completion-panel">
-      <p role="status">Route complete</p>
+      <p role="status">{t("riding.routeComplete")}</p>
       <div className="row">
         <button
           type="button"
@@ -47,7 +50,7 @@ export function RidingRouteCompletionPanel({
           onClick={onFinish}
           disabled={isFinishing || disabled}
         >
-          {isFinishing ? "Finishing ride…" : "Finish ride"}
+          {isFinishing ? t("riding.finishingRide") : t("riding.finishRide")}
         </button>
         <button
           type="button"
@@ -55,7 +58,7 @@ export function RidingRouteCompletionPanel({
           onClick={onKeepRiding}
           disabled={isFinishing || disabled}
         >
-          Keep riding
+          {t("riding.keepRiding")}
         </button>
       </div>
       {error ? (

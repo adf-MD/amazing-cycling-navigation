@@ -9,6 +9,7 @@ import {
 import type { Coordinate } from "../domain/types.ts";
 import { haversineDistanceMetres } from "../navigation/distance.ts";
 import { ROUTE_WIDTH_CLOSE_ZOOM, ROUTE_WIDTH_REGIONAL_ZOOM } from "./routeWidthPolicy.ts";
+import { englishTranslator } from "../i18n/englishTranslator.ts";
 
 const waypoints: PlanningOverlayWaypoint[] = [
   { id: "a", coordinate: [0, 51] },
@@ -18,11 +19,15 @@ const waypoints: PlanningOverlayWaypoint[] = [
 
 describe("buildWaypointMarkerSpecs", () => {
   it("returns no markers for no waypoints", () => {
-    expect(buildWaypointMarkerSpecs([], null)).toEqual([]);
+    expect(buildWaypointMarkerSpecs(englishTranslator, [], null)).toEqual([]);
   });
 
   it("labels a single waypoint as start, ordinal 1", () => {
-    const specs = buildWaypointMarkerSpecs([{ id: "a", coordinate: [0, 51] }], null);
+    const specs = buildWaypointMarkerSpecs(
+      englishTranslator,
+      [{ id: "a", coordinate: [0, 51] }],
+      null,
+    );
     expect(specs).toHaveLength(1);
     expect(specs[0]).toMatchObject({
       id: "a",
@@ -34,7 +39,7 @@ describe("buildWaypointMarkerSpecs", () => {
   });
 
   it("labels first/last as start/finish and the rest ordinary, in list order", () => {
-    const specs = buildWaypointMarkerSpecs(waypoints, null);
+    const specs = buildWaypointMarkerSpecs(englishTranslator, waypoints, null);
     expect(specs).toHaveLength(3);
     expect(specs[0]).toMatchObject({ id: "a", label: "1", role: "start" });
     expect(specs[1]).toMatchObject({ id: "b", label: "2", role: "ordinary" });
@@ -42,12 +47,12 @@ describe("buildWaypointMarkerSpecs", () => {
   });
 
   it("marks exactly the waypoint at selectedIndex as selected", () => {
-    const specs = buildWaypointMarkerSpecs(waypoints, 1);
+    const specs = buildWaypointMarkerSpecs(englishTranslator, waypoints, 1);
     expect(specs.map((spec) => spec.selected)).toEqual([false, true, false]);
   });
 
   it("treats an out-of-range selectedIndex as none selected", () => {
-    const specs = buildWaypointMarkerSpecs(waypoints, 99);
+    const specs = buildWaypointMarkerSpecs(englishTranslator, waypoints, 99);
     expect(specs.every((spec) => !spec.selected)).toBe(true);
   });
 
@@ -58,7 +63,7 @@ describe("buildWaypointMarkerSpecs", () => {
       { id: "c", coordinate: [0.001, 51] },
       { id: "d", coordinate: [0.002, 51] },
     ];
-    const specs = buildWaypointMarkerSpecs(withDuplicateMiddle, null);
+    const specs = buildWaypointMarkerSpecs(englishTranslator, withDuplicateMiddle, null);
     expect(specs.map((spec) => spec.id)).toEqual(["a", "b", "c", "d"]);
     expect(specs.map((spec) => spec.role)).toEqual([
       "start",
@@ -79,7 +84,7 @@ describe("buildWaypointMarkerSpecs", () => {
     ];
 
     it("renders one combined start-finish marker instead of two", () => {
-      const specs = buildWaypointMarkerSpecs(loopWaypoints, null);
+      const specs = buildWaypointMarkerSpecs(englishTranslator, loopWaypoints, null);
       expect(specs).toHaveLength(3);
       expect(specs.map((spec) => spec.id)).toEqual(["a", "b", "c"]);
       expect(specs[0]).toMatchObject({
@@ -93,9 +98,15 @@ describe("buildWaypointMarkerSpecs", () => {
     });
 
     it("selects the combined marker when either the first or final waypoint is selected", () => {
-      expect(buildWaypointMarkerSpecs(loopWaypoints, 0)[0]?.selected).toBe(true);
-      expect(buildWaypointMarkerSpecs(loopWaypoints, 3)[0]?.selected).toBe(true);
-      expect(buildWaypointMarkerSpecs(loopWaypoints, 1)[0]?.selected).toBe(false);
+      expect(
+        buildWaypointMarkerSpecs(englishTranslator, loopWaypoints, 0)[0]?.selected,
+      ).toBe(true);
+      expect(
+        buildWaypointMarkerSpecs(englishTranslator, loopWaypoints, 3)[0]?.selected,
+      ).toBe(true);
+      expect(
+        buildWaypointMarkerSpecs(englishTranslator, loopWaypoints, 1)[0]?.selected,
+      ).toBe(false);
     });
 
     it("does not merge when first/last are farther apart than the threshold", () => {
@@ -105,7 +116,7 @@ describe("buildWaypointMarkerSpecs", () => {
         // ~50m east of "a" — outside the coincidence threshold.
         { id: "c", coordinate: [0.0007, 51] },
       ];
-      const specs = buildWaypointMarkerSpecs(notQuiteALoop, null);
+      const specs = buildWaypointMarkerSpecs(englishTranslator, notQuiteALoop, null);
       expect(specs.map((spec) => spec.id)).toEqual(["a", "b", "c"]);
       expect(specs.map((spec) => spec.role)).toEqual(["start", "ordinary", "finish"]);
     });
@@ -215,7 +226,7 @@ describe("deriveWaypointRoles", () => {
   });
 
   it("agrees with buildWaypointMarkerSpecs's own role assignment for an open route", () => {
-    const specs = buildWaypointMarkerSpecs(waypoints, null);
+    const specs = buildWaypointMarkerSpecs(englishTranslator, waypoints, null);
     expect(specs.map((spec) => spec.role)).toEqual(
       deriveWaypointRoles(waypoints.map((waypoint) => waypoint.coordinate)),
     );

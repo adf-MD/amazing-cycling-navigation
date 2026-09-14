@@ -1,11 +1,9 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import { useEffect, useId, useState } from "react";
 
 // Backlog item 97. 10 seconds, not a shorter/tunable value — never shorten
 // this for test convenience; e2e coverage waits it out for real.
 const UNTRUSTED_GPX_FULL_WARNING_MS = 10_000;
-
-const FULL_WARNING_TEXT =
-  "No trusted turn information is available for this imported GPX. Follow the route line on the map.";
 
 /**
  * The untrusted-GPX-import trust notice, shown throughout an active ride on
@@ -36,6 +34,8 @@ const FULL_WARNING_TEXT =
  * and therefore no overlapping-timer race to guard against.
  */
 export function RidingUntrustedGpxNotice() {
+  const { t } = useTranslate();
+  const fullWarningText = t("riding.untrustedGpx");
   const [autoCollapsed, setAutoCollapsed] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const explanationId = useId();
@@ -60,7 +60,7 @@ export function RidingUntrustedGpxNotice() {
   if (!autoCollapsed) {
     return (
       <p role="status" className="status-row">
-        {FULL_WARNING_TEXT}
+        {fullWarningText}
       </p>
     );
   }
@@ -76,11 +76,11 @@ export function RidingUntrustedGpxNotice() {
           setIsExpanded((expanded) => !expanded);
         }}
       >
-        No turn cues
+        {t("riding.noTurnCues")}
       </button>
       {isExpanded ? (
         <p id={explanationId} className="status-row">
-          {FULL_WARNING_TEXT}
+          {fullWarningText}
         </p>
       ) : null}
     </div>

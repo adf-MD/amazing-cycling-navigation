@@ -1,3 +1,4 @@
+import type { Translator } from "../i18n/translate.ts";
 import type { Coordinate } from "../domain/types.ts";
 import { haversineDistanceMetres } from "../navigation/distance.ts";
 import type { MapMarkerSpec, WaypointRole } from "./mapAdapter.ts";
@@ -25,6 +26,7 @@ function toGeoJsonCoordinate(coordinate: Coordinate): [number, number] {
 const WAYPOINT_COINCIDENCE_THRESHOLD_METRES = 3;
 
 function ordinaryMarker(
+  translator: Translator,
   waypoint: PlanningOverlayWaypoint,
   ordinal: number,
   selectedIndex: number | null,
@@ -36,7 +38,7 @@ function ordinaryMarker(
     label: String(ordinal),
     role: "ordinary",
     selected: selectedIndex === index,
-    ariaLabel: `Waypoint ${String(ordinal)}`,
+    ariaLabel: translator.t("map.marker.waypoint", { ordinal }),
   };
 }
 
@@ -117,6 +119,7 @@ export function deriveMarkerZoomBand(zoom: number): MarkerZoomBand {
  * so nothing is selected.
  */
 export function buildWaypointMarkerSpecs(
+  translator: Translator,
   waypoints: readonly PlanningOverlayWaypoint[],
   selectedIndex: number | null,
 ): MapMarkerSpec[] {
@@ -131,7 +134,7 @@ export function buildWaypointMarkerSpecs(
         label: "1",
         role: "start",
         selected: selectedIndex === 0,
-        ariaLabel: "Start waypoint 1",
+        ariaLabel: translator.t("map.marker.startWaypoint"),
       },
     ];
   }
@@ -154,13 +157,13 @@ export function buildWaypointMarkerSpecs(
         label: `1/${String(waypointCount)}`,
         role: "start-finish",
         selected: selectedIndex === 0 || selectedIndex === lastIndex,
-        ariaLabel: `Start and finish waypoints 1 and ${String(waypointCount)}`,
+        ariaLabel: translator.t("map.marker.startAndFinish", { count: waypointCount }),
       },
     ];
     for (let index = 1; index < lastIndex; index += 1) {
       const waypoint = waypoints[index];
       if (!waypoint) continue;
-      specs.push(ordinaryMarker(waypoint, index + 1, selectedIndex, index));
+      specs.push(ordinaryMarker(translator, waypoint, index + 1, selectedIndex, index));
     }
     return specs;
   }
@@ -174,7 +177,7 @@ export function buildWaypointMarkerSpecs(
         label: "1",
         role: "start",
         selected: selectedIndex === 0,
-        ariaLabel: "Start waypoint 1",
+        ariaLabel: translator.t("map.marker.startWaypoint"),
       };
     }
     const ordinal = index + 1;
@@ -185,10 +188,10 @@ export function buildWaypointMarkerSpecs(
         label: String(ordinal),
         role: "finish",
         selected: selectedIndex === lastIndex,
-        ariaLabel: `Finish waypoint ${String(ordinal)}`,
+        ariaLabel: translator.t("map.marker.finishWaypoint", { ordinal }),
       };
     }
-    return ordinaryMarker(waypoint, ordinal, selectedIndex, index);
+    return ordinaryMarker(translator, waypoint, ordinal, selectedIndex, index);
   });
 }
 

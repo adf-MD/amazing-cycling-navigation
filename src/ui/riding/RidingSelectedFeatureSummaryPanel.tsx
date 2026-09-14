@@ -1,3 +1,4 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { FeatureRelativePosition } from "../../navigation/routeFeatureDetail.ts";
 import type { RouteFeature } from "../../navigation/routeFeatures.ts";
 import {
@@ -50,6 +51,8 @@ export function RidingSelectedFeatureSummaryPanel({
   relativePosition,
   onClear,
 }: RidingSelectedFeatureSummaryPanelProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   if (feature === null) {
     return null;
   }
@@ -58,16 +61,22 @@ export function RidingSelectedFeatureSummaryPanel({
   const heading =
     feature.kind === "climb"
       ? ROUTE_FEATURE_LABELS[feature.category]
-      : "Recognised descent";
+      : t("climb.recognisedDescent");
 
   const relativePositionText =
     relativePosition === null
       ? null
       : relativePosition.kind === "ahead"
-        ? `Starts in ${formatDistanceKm(relativePosition.distanceUntilStartMetres)}`
+        ? t("climb.startsIn", {
+            distance: formatDistanceKm(relativePosition.distanceUntilStartMetres),
+          })
         : relativePosition.kind === "within"
-          ? `${formatDistanceKm(relativePosition.distanceRemainingMetres)} remaining`
-          : `Passed ${formatDistanceKm(relativePosition.distanceSincePassedMetres)} ago`;
+          ? t("climb.remaining", {
+              distance: formatDistanceKm(relativePosition.distanceRemainingMetres),
+            })
+          : t("climb.passedAgo", {
+              distance: formatDistanceKm(relativePosition.distanceSincePassedMetres),
+            });
 
   const elevationText =
     feature.kind === "climb"
@@ -78,12 +87,14 @@ export function RidingSelectedFeatureSummaryPanel({
     relativePositionText,
     formatDistanceKm(feature.lengthMetres),
     elevationText,
-    `${formatGradientPercent(feature.averageGradientPercent)} average`,
+    t("climb.average", {
+      gradient: formatGradientPercent(feature.averageGradientPercent),
+    }),
   ].filter((part): part is string => part !== null);
 
   return (
     <section
-      aria-label="Selected feature summary"
+      aria-label={t("climb.selectedFeatureLabel")}
       className="riding-selected-feature-summary"
     >
       <h3 aria-live="polite">
@@ -93,8 +104,10 @@ export function RidingSelectedFeatureSummaryPanel({
         {primaryLineParts.join(" · ")}
       </p>
       <p className="riding-selected-feature-summary-secondary">
-        Route position: {formatDistanceKmValue(feature.startDistanceMetres)}–
-        {formatDistanceKmValue(feature.endDistanceMetres)} km
+        {t("climb.routePosition", {
+          start: formatDistanceKmValue(feature.startDistanceMetres),
+          end: formatDistanceKmValue(feature.endDistanceMetres),
+        })}
       </p>
       {onClear && <ClearSelectionButton onClick={onClear} />}
     </section>

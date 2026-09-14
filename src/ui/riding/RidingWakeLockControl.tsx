@@ -1,3 +1,4 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { Clock } from "../../platform/clock.ts";
 import type { WakeLockSource } from "../../platform/wakeLock.ts";
 import { useScreenWakeLock } from "./useScreenWakeLock.ts";
@@ -25,7 +26,7 @@ export interface RidingWakeLockControlProps {
  * announcements to meaningful transitions only (activation, failure),
  * with no continuously-updating live region and no extra bookkeeping. The
  * success status element is visually hidden (backlog item 68 — a
- * permanent visible "Screen staying awake." line was judged too much
+ * permanent visible "{t("wakeLock.active")}" line was judged too much
  * scarce vertical space for a compact shared status area) but stays
  * mounted in the accessibility tree exactly as before, so the
  * announcement itself is unchanged — only its visibility is.
@@ -45,6 +46,8 @@ export function RidingWakeLockControl({
   wakeLockSource,
   clock,
 }: RidingWakeLockControlProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   const { status, retry } = useScreenWakeLock({ desired, wakeLockSource, clock });
 
   return (
@@ -57,9 +60,9 @@ export function RidingWakeLockControl({
           onToggleDesired(!desired);
         }}
       >
-        <span className="wake-lock-toggle-label">Screen on</span>
+        <span className="wake-lock-toggle-label">{t("wakeLock.label")}</span>
         <span className="wake-lock-toggle-state" aria-hidden="true">
-          {desired ? "On" : "Off"}
+          {desired ? t("wakeLock.on") : t("wakeLock.off")}
         </span>
       </button>
       {status === "active" ? (
@@ -69,9 +72,9 @@ export function RidingWakeLockControl({
       ) : null}
       {status === "unavailable" ? (
         <div role="alert" className="wake-lock-failure-row">
-          <p>The screen could not be kept awake.</p>
+          <p>{t("wakeLock.failed")}</p>
           <button type="button" onClick={retry}>
-            Tap to try again
+            {t("wakeLock.retry")}
           </button>
         </div>
       ) : null}

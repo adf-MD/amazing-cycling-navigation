@@ -1,3 +1,5 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
+import type { Translator } from "../../i18n/translate.ts";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   canDeriveEditableWaypoints,
@@ -173,24 +175,17 @@ const DEFAULT_CAMERA_STATE: StoredCameraState = {
 // configurable product setting (backlog item 53).
 const RIDING_ZOOM_STEP = 1;
 
-const EDIT_COPY_DIALOG_TITLE = "Replace your current draft?";
-const EDIT_COPY_DIALOG_MESSAGE =
-  "Editing this route will replace your unsaved draft in Planning. This route itself will remain unchanged.";
-const EDIT_COPY_CONFIRM_LABEL = "Replace and edit";
-const EDIT_COPY_GENERIC_ERROR_MESSAGE =
-  "The editable copy could not be created on this device. Try again.";
-
-function formatGeolocationError(error: GeolocationError): string {
+function formatGeolocationError(translator: Translator, error: GeolocationError): string {
   switch (error.reason) {
     case "permission-denied":
-      return "Location permission was denied. Allow location access in your browser settings to use Riding mode.";
+      return translator.t("ride.geolocation.deniedRiding");
     case "timeout":
-      return "Getting your location timed out. Check you have a clear view of the sky and try again.";
+      return translator.t("ride.geolocation.timeout");
     case "unsupported":
-      return "This browser does not support location services.";
+      return translator.t("ride.geolocation.unsupported");
     case "position-unavailable":
     default:
-      return "Your location is currently unavailable.";
+      return translator.t("ride.geolocation.unavailable");
   }
 }
 
@@ -201,8 +196,10 @@ function isSameElevationViewMode(a: ElevationViewMode, b: ElevationViewMode): bo
     : true;
 }
 
-function elevationViewModeLabel(mode: ElevationViewMode): string {
-  return mode.kind === "full" ? "Full" : `${String(mode.windowMetres / 1000)} km`;
+function elevationViewModeLabel(translator: Translator, mode: ElevationViewMode): string {
+  return mode.kind === "full"
+    ? translator.t("riding.elevationFull")
+    : translator.t("riding.elevationWindow", { km: mode.windowMetres / 1000 });
 }
 
 function elevationViewModeKey(mode: ElevationViewMode): string {
@@ -222,6 +219,8 @@ export function RidingScreen({
   onReturnToRideLauncher,
   onRidePaused,
 }: RidingScreenProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   // Bridges useRideCamera's current camera state into useRideNavigation's
   // persistence. Both hooks are called in this same render, and
   // useRideCamera needs useRideNavigation's restoredCameraState as an
@@ -532,7 +531,7 @@ export function RidingScreen({
               gradientSegments={viewModel.gradientSegments}
               areaFill={viewModel.areaFill}
               marker={viewModel.marker}
-              ariaLabel={`Elevation profile for Climb ${String(preRideClimbNumber)}`}
+              ariaLabel={t("riding.climbChartLabel", { number: preRideClimbNumber })}
             />
           );
         })()
@@ -563,7 +562,7 @@ export function RidingScreen({
               gradientSegments={viewModel.gradientSegments}
               areaFill={viewModel.areaFill}
               marker={viewModel.marker}
-              ariaLabel="Elevation profile for selected recognised descent"
+              ariaLabel={t("riding.descentChartLabel")}
             />
           );
         })()
@@ -920,10 +919,7 @@ export function RidingScreen({
       logError(source === "end" ? "riding-end-ride" : "riding-finish-ride", error);
       setFinalizeError({
         source,
-        message:
-          source === "end"
-            ? "The ride could not be ended on this device. Try again."
-            : "Finish ride could not be completed on this device. Try again.",
+        message: source === "end" ? t("riding.endFailed") : t("riding.finishFailed"),
       });
       setIsEndRideConfirmOpen(false);
       if (source === "end") {
@@ -969,7 +965,7 @@ export function RidingScreen({
       }
     } catch (error) {
       logError("riding-pause-ride", error);
-      setPauseError("The ride could not be paused on this device. Try again.");
+      setPauseError(t("riding.pauseFailed"));
     } finally {
       isPauseActionPendingRef.current = false;
       setIsPausePending(false);
@@ -1031,9 +1027,7 @@ export function RidingScreen({
         // Defensive only — canDeriveEditableWaypoints already disables
         // the triggering button for this case, so this should be
         // unreachable.
-        setEditCopyError(
-          "This route doesn't have enough distinct geometry to create an editable copy.",
-        );
+        setEditCopyError(t("riding.editCopyTooShort"));
         setIsEditCopyConfirmOpen(false);
         return;
       }
@@ -1054,14 +1048,14 @@ export function RidingScreen({
       onNavigateToPlanning?.();
     } catch (error) {
       logError("riding-edit-copy-in-planning", error);
-      setEditCopyError(EDIT_COPY_GENERIC_ERROR_MESSAGE);
+      setEditCopyError(t("riding.editCopyFailed"));
       setIsEditCopyConfirmOpen(false);
       editCopyButtonRef.current?.focus();
     } finally {
       isEditCopyActionPendingRef.current = false;
       setIsEditCopyInFlight(false);
     }
-  }, [route, onNavigateToPlanning]);
+  }, [route, onNavigateToPlanning, t]);
 
   const handleEditCopyClick = useCallback(() => {
     if (isEditCopyConfirmOpen || isEditCopyActionPendingRef.current) return;
@@ -1077,9 +1071,9 @@ export function RidingScreen({
       })
       .catch((error: unknown) => {
         logError("riding-edit-copy-check-draft", error);
-        setEditCopyError("Your existing draft could not be checked. Try again.");
+        setEditCopyError(t("riding.editCopyDraftCheckFailed"));
       });
-  }, [isEditCopyConfirmOpen, performEditCopy]);
+  }, [isEditCopyConfirmOpen, performEditCopy, t]);
 
   const handleEditCopyCancel = useCallback(() => {
     setIsEditCopyConfirmOpen(false);
@@ -1196,10 +1190,12 @@ export function RidingScreen({
       return (
         <ConfirmDialog
           open={isEndRideConfirmOpen}
-          title="End this ride?"
-          message="Navigation progress for this ride will be cleared. The saved route will remain in your library."
-          confirmLabel={activeFinalizeSource === "end" ? "Ending ride…" : "End ride"}
-          cancelLabel="Cancel"
+          title={t("riding.endConfirmTitle")}
+          message={t("riding.endConfirmMessage")}
+          confirmLabel={
+            activeFinalizeSource === "end" ? t("ride.endingRide") : t("ride.endRide")
+          }
+          cancelLabel={t("ride.cancel")}
           confirmDisabled={activeFinalizeSource === "end"}
           cancelDisabled={activeFinalizeSource === "end"}
           onConfirm={() => {
@@ -1271,7 +1267,7 @@ export function RidingScreen({
       {nav.matchedDistanceFromStartMetres !== null ? (
         <div
           role="group"
-          aria-label="Elevation profile view"
+          aria-label={t("riding.elevationViewLabel")}
           className="elevation-window-group"
         >
           {ELEVATION_VIEW_MODE_OPTIONS.map((mode) => {
@@ -1300,7 +1296,7 @@ export function RidingScreen({
                   setClimbPreviewSelection(null);
                 }}
               >
-                {elevationViewModeLabel(mode)}
+                {elevationViewModeLabel(translator, mode)}
               </button>
             );
           })}
@@ -1334,7 +1330,7 @@ export function RidingScreen({
                 }
               }}
             >
-              Climb
+              {t("riding.climb")}
             </button>
           ) : null}
         </div>
@@ -1441,7 +1437,7 @@ export function RidingScreen({
               gradientSegments={previewViewModel.gradientSegments}
               areaFill={previewViewModel.areaFill}
               marker={previewViewModel.marker}
-              ariaLabel={`Elevation profile for Climb ${String(upcomingClimbNumber)}`}
+              ariaLabel={t("riding.climbChartLabel", { number: upcomingClimbNumber })}
             />
           );
           climbProgressPanel = (
@@ -1627,7 +1623,7 @@ export function RidingScreen({
   return (
     <section
       className={`screen${nav.geolocationStatus !== "idle" ? " riding-fixed-shell" : ""}`}
-      aria-label="Riding"
+      aria-label={t("riding.landmarkLabel")}
     >
       {nav.geolocationStatus === "idle" ? (
         <div className="ride-route-header">
@@ -1646,7 +1642,7 @@ export function RidingScreen({
         <>
           <RidingImmersiveHeader
             title={route.name}
-            pauseLabel={isPausePending ? "Pausing…" : "Pause"}
+            pauseLabel={isPausePending ? t("ride.pausing") : t("ride.pause")}
             onPause={() => {
               void performPauseRide();
             }}
@@ -1672,17 +1668,16 @@ export function RidingScreen({
        * both never render together. */}
       {!online && !showStatusCard ? (
         <p role="status" className="status-row">
-          Offline — the route, your position, progress and elevation still work; map
-          imagery may be unavailable.
+          {t("riding.offlineNotice")}
         </p>
       ) : null}
 
       {nav.geolocationStatus === "idle" && isConsumingResumeIntent ? (
         nav.restorationStatus === "error" ? (
           <div role="alert" className="ride-alert-panel">
-            <p>Your ride could not be restored on this device. Try again.</p>
+            <p>{t("riding.restoreFailed")}</p>
             <button type="button" className="btn-primary" onClick={nav.retryRestoration}>
-              Retry
+              {t("riding.retry")}
             </button>
             <button
               type="button"
@@ -1691,29 +1686,25 @@ export function RidingScreen({
                 onReturnToRideLauncher?.();
               }}
             >
-              Back to Ride options
+              {t("riding.backToRideOptions")}
             </button>
           </div>
         ) : (
           <p role="status" className="status-row">
-            Resuming your ride…
+            {t("riding.resuming")}
           </p>
         )
       ) : null}
 
       {nav.geolocationStatus === "idle" && !isConsumingResumeIntent ? (
         <div className="panel stack ride-start-panel">
-          <p>
-            {nav.currentFix
-              ? "Resume riding to continue tracking your progress."
-              : "Location access is needed to track your progress on this ride."}
-          </p>
+          <p>{nav.currentFix ? t("riding.resumePrompt") : t("riding.startPrompt")}</p>
           <button
             type="button"
             className="btn-primary ride-start-panel-button"
             onClick={handleStart}
           >
-            {nav.currentFix ? "Resume ride" : "Start riding"}
+            {nav.currentFix ? t("riding.resumeRide") : t("riding.startRiding")}
           </button>
           <button
             type="button"
@@ -1723,7 +1714,7 @@ export function RidingScreen({
             }}
             disabled={activeFinalizeSource !== null}
           >
-            Back to Ride options
+            {t("riding.backToRideOptions")}
           </button>
           <button
             type="button"
@@ -1732,7 +1723,7 @@ export function RidingScreen({
             onClick={handleEditCopyClick}
             disabled={!canDeriveEditableWaypoints(route) || isEditCopyInFlight}
           >
-            {isEditCopyInFlight ? "Creating editable copy…" : "Edit copy"}
+            {isEditCopyInFlight ? t("riding.creatingEditCopy") : t("riding.editCopy")}
           </button>
           {!canDeriveEditableWaypoints(route) ? (
             <p className="field-hint">
@@ -1746,10 +1737,10 @@ export function RidingScreen({
           ) : null}
           <ConfirmDialog
             open={isEditCopyConfirmOpen}
-            title={EDIT_COPY_DIALOG_TITLE}
-            message={EDIT_COPY_DIALOG_MESSAGE}
-            confirmLabel={EDIT_COPY_CONFIRM_LABEL}
-            cancelLabel="Cancel"
+            title={t("riding.editCopyConfirmTitle")}
+            message={t("riding.editCopyConfirmMessage")}
+            confirmLabel={t("riding.editCopyConfirmLabel")}
+            cancelLabel={t("ride.cancel")}
             onConfirm={() => {
               void performEditCopy();
             }}
@@ -1787,7 +1778,7 @@ export function RidingScreen({
           }
           geolocationErrorMessage={
             nav.geolocationStatus === "error" && nav.geolocationError
-              ? formatGeolocationError(nav.geolocationError)
+              ? formatGeolocationError(translator, nav.geolocationError)
               : null
           }
           onRetryGeolocation={handleStart}
@@ -1921,7 +1912,7 @@ export function RidingScreen({
               <button
                 type="button"
                 onClick={handleZoomIn}
-                aria-label="Zoom in"
+                aria-label={t("ride.map.zoomIn")}
                 className="ride-map-control ride-map-control--zoom"
               >
                 <ZoomIcon direction="in" />
@@ -1929,7 +1920,7 @@ export function RidingScreen({
               <button
                 type="button"
                 onClick={handleZoomOut}
-                aria-label="Zoom out"
+                aria-label={t("ride.map.zoomOut")}
                 className="ride-map-control ride-map-control--zoom"
               >
                 <ZoomIcon direction="out" />
@@ -1941,7 +1932,7 @@ export function RidingScreen({
               <button
                 type="button"
                 onClick={camera.requestNorthUp}
-                aria-label="North-up, top-down view"
+                aria-label={t("ride.map.northUp")}
                 aria-pressed={camera.isNorthUpTopDown}
                 className={`ride-map-control ride-map-control--north-up${
                   camera.isNorthUpTopDown ? " is-pressed" : ""
@@ -1955,14 +1946,14 @@ export function RidingScreen({
               <button
                 type="button"
                 onClick={camera.requestFollow}
-                aria-label="Follow my location"
+                aria-label={t("ride.map.followLocation")}
                 aria-pressed={camera.mode === "following"}
                 className={`ride-map-control ride-map-control--follow${
                   camera.mode === "following" ? " is-pressed" : ""
                 }`}
               >
                 {camera.mode === "following" && camera.awaitingFreshFix ? (
-                  "Waiting…"
+                  t("ride.map.waiting")
                 ) : (
                   <CrosshairIcon />
                 )}
@@ -1983,7 +1974,7 @@ export function RidingScreen({
            * this way (no reason to show it while Profile is selected). */}
           {camera.showPausedToast ? (
             <p role="status" className="ride-map-paused-toast">
-              Map follow paused.
+              {t("ride.map.followPaused")}
             </p>
           ) : null}
           {/* backlog item 57: a non-disruptive climb cue, Map-view-only.
@@ -2041,7 +2032,7 @@ export function RidingScreen({
             nav.geolocationStatus !== "idle" ? activeView !== "profile" : undefined
           }
         >
-          {nav.geolocationStatus === "idle" ? <h2>Route profile</h2> : null}
+          {nav.geolocationStatus === "idle" ? <h2>{t("riding.routeProfile")}</h2> : null}
           <div className="ride-elevation-section">
             {/* A compact, near/imminent-only cue (backlog item 56) — see
              * RidingCompactManoeuvreCue's own doc comment. TypeScript's
@@ -2060,7 +2051,11 @@ export function RidingScreen({
       </div>
 
       {nav.geolocationStatus !== "idle" ? (
-        <div role="group" aria-label="Riding view" className="ride-immersive-switcher">
+        <div
+          role="group"
+          aria-label={t("riding.viewLabel")}
+          className="ride-immersive-switcher"
+        >
           <button
             type="button"
             className={`ride-immersive-switcher-button${
@@ -2071,7 +2066,7 @@ export function RidingScreen({
               setActiveView("map");
             }}
           >
-            Map
+            {t("riding.viewMap")}
           </button>
           <button
             type="button"
@@ -2083,7 +2078,7 @@ export function RidingScreen({
               setActiveView("profile");
             }}
           >
-            Profile
+            {t("riding.viewProfile")}
           </button>
         </div>
       ) : null}

@@ -1,3 +1,5 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
+import type { Translator } from "../../i18n/translate.ts";
 import type { MapImageryRecoveryStatus } from "../../map/MapView.tsx";
 import { formatGpsStatusLine } from "./rideStatusText.ts";
 import { ConnectivityIcon } from "./ConnectivityIcon.tsx";
@@ -39,12 +41,15 @@ export interface FreeRoamStatusCardProps {
 // 82): free roam records no track, progress or location history, so the
 // previous wording overstated what the feature does.
 function freeRoamTrackingLabel(
+  translator: Translator,
   liveStatus: FreeRoamLiveStatus | null,
   hasError: boolean,
 ): string {
-  if (hasError) return "GPS error";
-  if (!liveStatus) return "Waiting for a GPS fix…";
-  return liveStatus.isStale ? "Location — signal lost" : "Location";
+  if (hasError) return translator.t("ride.gpsError");
+  if (!liveStatus) return translator.t("ride.waitingForFix");
+  return liveStatus.isStale
+    ? translator.t("freeRoam.trackingLost")
+    : translator.t("freeRoam.tracking");
 }
 
 /**
@@ -66,13 +71,19 @@ export function FreeRoamStatusCard({
   onRetryImagery,
   wakeLock,
 }: FreeRoamStatusCardProps) {
-  const topLabel = freeRoamTrackingLabel(liveStatus, geolocationErrorMessage !== null);
+  const translator = useTranslate();
+  const { t } = translator;
+  const topLabel = freeRoamTrackingLabel(
+    translator,
+    liveStatus,
+    geolocationErrorMessage !== null,
+  );
   // Backlog item 108: free roam has no route, so it must never inherit
   // Route riding's "the route ... is still shown" wording — the shared
   // table below resolves position-only copy from this context argument
   // rather than either card carrying its own copy of the mapping.
   const imageryRecoveryPresentation = imageryRecoveryStatus
-    ? describeMapImageryRecovery(imageryRecoveryStatus.kind, "free-roam")
+    ? describeMapImageryRecovery(translator, imageryRecoveryStatus.kind, "free-roam")
     : null;
 
   return (
@@ -85,12 +96,12 @@ export function FreeRoamStatusCard({
             </span>
             <span role="status" className="ride-status-card-connectivity">
               <ConnectivityIcon online={online} />
-              {online ? "Online" : "Offline"}
+              {online ? t("ride.online") : t("ride.offline")}
             </span>
           </div>
           {liveStatus ? (
             <span className="ride-status-card-detail">
-              {formatGpsStatusLine(liveStatus)}
+              {formatGpsStatusLine(translator, liveStatus)}
             </span>
           ) : null}
         </div>
@@ -100,7 +111,7 @@ export function FreeRoamStatusCard({
         <div role="alert" className="ride-status-card-error-row">
           <span>{geolocationErrorMessage}</span>
           <button type="button" onClick={onRetryGeolocation}>
-            Try again
+            {t("ride.tryAgain")}
           </button>
         </div>
       ) : null}
@@ -132,7 +143,7 @@ export function FreeRoamStatusCard({
               data-testid="retry-map-imagery-button"
               className="map-status-retry-button"
             >
-              Retry map imagery
+              {t("map.retryImagery")}
             </button>
           ) : null}
         </div>
