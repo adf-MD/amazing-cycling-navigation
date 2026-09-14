@@ -1,9 +1,10 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import {
   CLIMB_CATEGORY_SEVERITY_ORDER,
   type ClimbCategory,
 } from "../../navigation/routeFeatures.ts";
 import {
-  CLIMB_CATEGORY_NAMES,
+  CLIMB_CATEGORY_NAME_KEYS,
   ROUTE_FEATURE_COLOURS,
 } from "../../navigation/routeFeaturePalette.ts";
 import { GradientColourSwatch } from "./GradientColourSwatch.tsx";
@@ -35,6 +36,7 @@ export interface ClimbCategoriesDisclosureProps {
 export function ClimbCategoriesDisclosure({
   presentCategories,
 }: ClimbCategoriesDisclosureProps) {
+  const { t } = useTranslate();
   if (presentCategories.size === 0) {
     return null;
   }
@@ -45,12 +47,12 @@ export function ClimbCategoriesDisclosure({
 
   return (
     <details className="climb-categories-disclosure">
-      <summary>Climb categories</summary>
-      <ul aria-label="Climb categories" className="route-feature-legend">
+      <summary>{t("legend.climbCategories")}</summary>
+      <ul aria-label={t("legend.climbCategories")} className="route-feature-legend">
         {categories.map((category) => (
           <li key={category} className="route-feature-legend-entry">
             <GradientColourSwatch colour={ROUTE_FEATURE_COLOURS[category]} />
-            {CLIMB_CATEGORY_NAMES[category]}
+            {t(CLIMB_CATEGORY_NAME_KEYS[category])}
           </li>
         ))}
       </ul>

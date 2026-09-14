@@ -40,7 +40,7 @@ import {
   type ClimbGradientBand,
   type DescentLocalKey,
 } from "../../navigation/routeFeatures.ts";
-import { CLIMB_CATEGORY_NAMES } from "../../navigation/routeFeaturePalette.ts";
+import { CLIMB_CATEGORY_NAME_KEYS } from "../../navigation/routeFeaturePalette.ts";
 import { ClimbGradientBandLegend } from "../shared/ClimbGradientBandLegend.tsx";
 import { DescentLocalLegend } from "../shared/DescentLocalLegend.tsx";
 import { formatMetres, formatWholeNumber } from "../shared/routeSummary.ts";
@@ -246,7 +246,7 @@ export function SettingsScreen({
   // useLiveQuery consumers (e.g. RouteLibrary), that brief, imperceptible
   // ambiguity is accepted rather than adding a second loading concept.
   const showForm = !key || isEditing;
-  const status = describeProviderKeyStatus(key, verification, now);
+  const status = describeProviderKeyStatus(translator, key, verification, now);
   // Derived, never stored: if the armed key has since been deleted or
   // replaced — in this tab or another — this is false on the very next
   // render, with no effect and no cleanup path to get wrong.
@@ -536,6 +536,7 @@ export function SettingsScreen({
                 title={t("settings.ors.deleteConfirmTitle")}
                 message={t("settings.ors.deleteConfirmMessage")}
                 confirmLabel={t("settings.ors.deleteConfirmLabel")}
+                cancelLabel={t("settings.ors.cancel")}
                 onConfirm={handleConfirmDelete}
                 onCancel={() => {
                   setArmedDeleteSavedAt(null);
@@ -579,15 +580,15 @@ export function SettingsScreen({
             <p>{t("settings.elevation.climbScore")}</p>
             <p>
               {t("settings.elevation.recognitionThresholds", {
-                length: formatMetres(MIN_FEATURE_LENGTH_METRES),
+                length: formatMetres(translator, MIN_FEATURE_LENGTH_METRES),
                 gradient: MIN_CLIMB_AVERAGE_GRADIENT_PERCENT,
-                score: formatWholeNumber(MIN_CLIMB_SCORE),
+                score: formatWholeNumber(translator, MIN_CLIMB_SCORE),
               })}
             </p>
             <ul>
               <li>
                 {t("settings.elevation.uncategorised", {
-                  score: formatWholeNumber(CLIMB_CATEGORY_4_SCORE),
+                  score: formatWholeNumber(translator, CLIMB_CATEGORY_4_SCORE),
                 })}
               </li>
               {(
@@ -600,16 +601,16 @@ export function SettingsScreen({
               ).map(([category, from, nextCategoryFrom]) => (
                 <li key={category}>
                   {t("settings.elevation.categoryRange", {
-                    name: CLIMB_CATEGORY_NAMES[category],
-                    from: formatWholeNumber(from),
-                    to: formatWholeNumber(nextCategoryFrom - 1),
+                    name: t(CLIMB_CATEGORY_NAME_KEYS[category]),
+                    from: formatWholeNumber(translator, from),
+                    to: formatWholeNumber(translator, nextCategoryFrom - 1),
                   })}
                 </li>
               ))}
               <li>
                 {t("settings.elevation.categoryOrMore", {
-                  name: CLIMB_CATEGORY_NAMES.hc,
-                  score: formatWholeNumber(CLIMB_CATEGORY_HC_SCORE),
+                  name: t(CLIMB_CATEGORY_NAME_KEYS.hc),
+                  score: formatWholeNumber(translator, CLIMB_CATEGORY_HC_SCORE),
                 })}
               </li>
             </ul>

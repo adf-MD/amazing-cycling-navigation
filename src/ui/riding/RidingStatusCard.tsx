@@ -50,7 +50,7 @@ const OFF_ROUTE_LABEL_KEYS: Record<OffRouteLevel, ParameterlessMessageKey> = {
   "off-route": "ride.status.offRoute",
 };
 
-// Deliberately not formatAscent() from routeSummary.ts: that helper's
+// Deliberately not formatAscent(translator, ) from routeSummary.ts: that helper's
 // "ascent not available" wording is tuned for the separate whole-route-
 // total call sites (pre-ride header, RidingLauncher) and must stay
 // unchanged there — this is a shorter, remaining-value-specific phrase.
@@ -64,7 +64,7 @@ function formatRemainingAscentText(
   return remainingAscentMetres === null
     ? translator.t("ride.status.ascentUnavailable")
     : translator.t("ride.status.ascent", {
-        ascent: formatMetres(remainingAscentMetres),
+        ascent: formatMetres(translator, remainingAscentMetres),
       });
 }
 
@@ -78,7 +78,7 @@ function buildRemainingAriaLabel(
   remainingAscentMetres: number | null,
 ): string {
   return translator.t("ride.status.remainingAnnouncement", {
-    distance: formatDistanceKmValue(distanceRemainingMetres),
+    distance: formatDistanceKmValue(translator, distanceRemainingMetres),
     ascent:
       remainingAscentMetres === null
         ? translator.t("ride.status.ascentRemainingUnavailable")
@@ -162,7 +162,7 @@ export function RidingStatusCard({
                 liveStatus.remainingAscentMetres,
               )}
             >
-              {formatDistanceKm(liveStatus.distanceRemainingMetres)} ·{" "}
+              {formatDistanceKm(translator, liveStatus.distanceRemainingMetres)} ·{" "}
               {formatRemainingAscentText(translator, liveStatus.remainingAscentMetres)}
             </span>
           ) : null}

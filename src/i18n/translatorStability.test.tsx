@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { useEffect, useState } from "react";
 import { LanguageProvider } from "./LanguageProvider.tsx";
+import { en } from "./messages.en.ts";
 import { useTranslate } from "./useTranslate.ts";
 import { englishTranslator } from "./englishTranslator.ts";
 
@@ -123,5 +124,91 @@ describe("translator identity", () => {
     getByRole("button").click();
 
     expect(effect).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("stage 5 lifecycles never depend on copy", () => {
+  const SOURCES: Readonly<Record<string, string>> = Object.fromEntries(
+    Object.entries(
+      import.meta.glob("../{pwa,storage,platform}/*.ts", {
+        query: "?raw",
+        import: "default",
+        eager: true,
+      }),
+    ).map(([path, source]) => [path, source]),
+  );
+
+  it("keeps the translator out of service-worker, storage and platform modules", () => {
+    // The strongest guarantee available: these modules never see a
+    // translator, so nothing about copy can reach a dependency array that
+    // registers a service worker, opens IndexedDB or starts a watch.
+    // `geolocation.ts` is deliberately included — its retained English
+    // messages are diagnostics, and no screen renders them.
+    for (const [path, source] of Object.entries(SOURCES)) {
+      if (path.includes(".test.")) continue;
+      expect(source, path).not.toContain("useTranslate");
+      expect(source, path).not.toContain("i18n/translate.ts");
+      expect(source, path).not.toContain("englishTranslator");
+    }
+  });
+
+  it("registers the update hook once, however many times copy rerenders", async () => {
+    // A real render of the shell: the update hook must be called on each
+    // render (it is a hook) while the registration it wraps runs once.
+    const register = vi.fn();
+    function useFakeRegistration() {
+      useEffect(() => {
+        register();
+      }, []);
+      return null;
+    }
+    function Probe() {
+      const [, setTick] = useState(0);
+      useTranslate();
+      useFakeRegistration();
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            setTick((tick) => tick + 1);
+          }}
+        >
+          rerender
+        </button>
+      );
+    }
+    const { getByRole } = render(
+      <LanguageProvider
+        preference="device"
+        readLanguages={() => ["en-GB"]}
+        documentElement={{ lang: "" }}
+      >
+        <Probe />
+      </LanguageProvider>,
+    );
+    getByRole("button").click();
+    getByRole("button").click();
+    await Promise.resolve();
+    expect(register).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the update prompt's copy in the catalogue and its mechanism out", () => {
+    const pwa = Object.entries(SOURCES).find(([path]) => path.endsWith("/registerSW.ts"));
+    expect(pwa).toBeDefined();
+    const source = pwa?.[1] ?? "";
+    // The mechanism: registration, update detection, reload and dismissal
+    // all stay exactly where they were.
+    for (const kept of [
+      "useRegisterSW",
+      "updateServiceWorker(true)",
+      "setNeedRefresh(false)",
+    ]) {
+      expect(source, kept).toContain(kept);
+    }
+    // And it authors no copy at all — the shell renders the catalogue.
+    expect(source).not.toContain("An update is ready");
+    expect(en["update.ready"]).toBe("An update is ready.");
+    expect(en["update.now"]).toBe("Update now");
+    expect(en["update.later"]).toBe("Later");
   });
 });

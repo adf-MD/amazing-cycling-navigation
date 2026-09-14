@@ -3,7 +3,7 @@ import type { FeatureRelativePosition } from "../../navigation/routeFeatureDetai
 import type { RouteFeature } from "../../navigation/routeFeatures.ts";
 import {
   ROUTE_FEATURE_COLOURS,
-  ROUTE_FEATURE_LABELS,
+  ROUTE_FEATURE_LABEL_KEYS,
 } from "../../navigation/routeFeaturePalette.ts";
 import { ClearSelectionButton } from "../shared/ClearSelectionButton.tsx";
 import { GradientColourSwatch } from "../shared/GradientColourSwatch.tsx";
@@ -60,7 +60,7 @@ export function RidingSelectedFeatureSummaryPanel({
   const visualKey = feature.kind === "climb" ? feature.category : feature.band;
   const heading =
     feature.kind === "climb"
-      ? ROUTE_FEATURE_LABELS[feature.category]
+      ? t(ROUTE_FEATURE_LABEL_KEYS[feature.category])
       : t("climb.recognisedDescent");
 
   const relativePositionText =
@@ -68,27 +68,36 @@ export function RidingSelectedFeatureSummaryPanel({
       ? null
       : relativePosition.kind === "ahead"
         ? t("climb.startsIn", {
-            distance: formatDistanceKm(relativePosition.distanceUntilStartMetres),
+            distance: formatDistanceKm(
+              translator,
+              relativePosition.distanceUntilStartMetres,
+            ),
           })
         : relativePosition.kind === "within"
           ? t("climb.remaining", {
-              distance: formatDistanceKm(relativePosition.distanceRemainingMetres),
+              distance: formatDistanceKm(
+                translator,
+                relativePosition.distanceRemainingMetres,
+              ),
             })
           : t("climb.passedAgo", {
-              distance: formatDistanceKm(relativePosition.distanceSincePassedMetres),
+              distance: formatDistanceKm(
+                translator,
+                relativePosition.distanceSincePassedMetres,
+              ),
             });
 
   const elevationText =
     feature.kind === "climb"
-      ? formatAscent(feature.elevationGainMetres)
-      : formatDescentLoss(feature.elevationLossMetres);
+      ? formatAscent(translator, feature.elevationGainMetres)
+      : formatDescentLoss(translator, feature.elevationLossMetres);
 
   const primaryLineParts = [
     relativePositionText,
-    formatDistanceKm(feature.lengthMetres),
+    formatDistanceKm(translator, feature.lengthMetres),
     elevationText,
     t("climb.average", {
-      gradient: formatGradientPercent(feature.averageGradientPercent),
+      gradient: formatGradientPercent(translator, feature.averageGradientPercent),
     }),
   ].filter((part): part is string => part !== null);
 
@@ -105,8 +114,8 @@ export function RidingSelectedFeatureSummaryPanel({
       </p>
       <p className="riding-selected-feature-summary-secondary">
         {t("climb.routePosition", {
-          start: formatDistanceKmValue(feature.startDistanceMetres),
-          end: formatDistanceKmValue(feature.endDistanceMetres),
+          start: formatDistanceKmValue(translator, feature.startDistanceMetres),
+          end: formatDistanceKmValue(translator, feature.endDistanceMetres),
         })}
       </p>
       {onClear && <ClearSelectionButton onClick={onClear} />}

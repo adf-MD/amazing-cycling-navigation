@@ -1,3 +1,5 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
+import type { Translator } from "../../i18n/translate.ts";
 import { useId } from "react";
 import type { RoutePoint } from "../../domain/types.ts";
 import { hasAnyElevation } from "../../navigation/elevation.ts";
@@ -193,8 +195,20 @@ const DISTANCE_GUIDE_GUTTER_HEIGHT = 18;
  * profile above and the final viewBox edge below. */
 const DISTANCE_GUIDE_LABEL_OFFSET_Y = 13;
 
-function distanceGuideLabel(aheadMetres: number): string {
-  return `${String(aheadMetres / 1000)} km`;
+/** No minimumFractionDigits, so a whole-kilometre guide still renders as
+ * "2 km" rather than "2.0 km" exactly as the previous `String()` did —
+ * the locale supplies only the decimal separator, where one is needed. */
+function distanceGuideKilometres(translator: Translator, aheadMetres: number): string {
+  return new Intl.NumberFormat(translator.locale, {
+    maximumFractionDigits: 1,
+    useGrouping: false,
+  }).format(Number((aheadMetres / 1000).toFixed(1)));
+}
+
+function distanceGuideLabel(translator: Translator, aheadMetres: number): string {
+  return translator.t("format.distanceKm", {
+    distance: distanceGuideKilometres(translator, aheadMetres),
+  });
 }
 
 /** An accessible-only description of the guides shown, since backlog item
@@ -202,15 +216,22 @@ function distanceGuideLabel(aheadMetres: number): string {
  * ahead at 1 kilometre" or "Distance guides ahead at 2, 4, 6 and 8
  * kilometres". Only called when at least one guide is present. */
 function formatDistanceGuideDescription(
+  translator: Translator,
   guides: readonly ElevationChartDistanceGuideInput[],
 ): string {
-  const values = guides.map((guide) => String(guide.aheadMetres / 1000));
-  const unit = values.length === 1 ? "kilometre" : "kilometres";
-  const joined =
-    values.length === 1
-      ? (values[0] ?? "")
-      : `${values.slice(0, -1).join(", ")} and ${values.at(-1) ?? ""}`;
-  return `Distance guides ahead at ${joined} ${unit}`;
+  const values = guides.map((guide) =>
+    distanceGuideKilometres(translator, guide.aheadMetres),
+  );
+  // `Intl.ListFormat` reproduces the previous hand-rolled join exactly for
+  // English — "2, 4 and 6" — and the locale comes from the translator, so
+  // this never punctuates against the host's own default.
+  const joined = new Intl.ListFormat(translator.locale, {
+    style: "long",
+    type: "conjunction",
+  }).format(values);
+  return translator.plural("elevation.distanceGuides", values.length, {
+    distances: joined,
+  });
 }
 
 function distanceGuideTextAnchor(x: number, width: number): "start" | "middle" | "end" {
@@ -244,14 +265,16 @@ export function ElevationChart({
   width = DEFAULT_WIDTH,
   height = DEFAULT_HEIGHT,
 }: ElevationChartProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   const distanceGuideDescriptionId = useId();
 
   if (points.length === 0) {
-    return <p>No route loaded.</p>;
+    return <p>{t("elevation.noRoute")}</p>;
   }
 
   if (!hasAnyElevation(points)) {
-    return <p role="status">Elevation data is not available for this route.</p>;
+    return <p role="status">{t("elevation.noData")}</p>;
   }
 
   const resolvedDomain: ElevationChartDomain = domain ?? {
@@ -261,7 +284,7 @@ export function ElevationChart({
 
   const geometry = buildElevationChartGeometry(points, resolvedDomain, width, height);
   if (!geometry) {
-    return <p role="status">Elevation data is not available for this route.</p>;
+    return <p role="status">{t("elevation.noData")}</p>;
   }
 
   const hasGaps = points.some((point) => point.elevationMetres === null);
@@ -381,13 +404,13 @@ export function ElevationChart({
   }
 
   return (
-    <figure aria-label={ariaLabel ?? "Elevation profile"}>
+    <figure aria-label={ariaLabel ?? t("elevation.landmarkLabel")}>
       <svg
         viewBox={`0 0 ${String(width)} ${String(outerHeight)}`}
         width="100%"
         height={outerHeight}
         role="img"
-        aria-label={ariaLabel ?? "Elevation profile chart"}
+        aria-label={ariaLabel ?? t("elevation.chartLabel")}
         aria-describedby={hasDistanceGuides ? distanceGuideDescriptionId : undefined}
       >
         {onTapDistance && (
@@ -427,7 +450,7 @@ export function ElevationChart({
                     fillOpacity={0.7}
                     className="elevation-chart-distance-guide-label"
                   >
-                    {distanceGuideLabel(guide.aheadMetres)}
+                    {distanceGuideLabel(translator, guide.aheadMetres)}
                   </text>
                 </g>
               );
@@ -574,20 +597,22 @@ export function ElevationChart({
         )}
       </svg>
       <figcaption>
-        {Math.round(geometry.minElevationMetres)}–
-        {Math.round(geometry.maxElevationMetres)} m
-        {hasGaps ? " (some sections have no elevation data)" : ""}
+        {t(hasGaps ? "elevation.rangeWithGaps" : "elevation.range", {
+          min: Math.round(geometry.minElevationMetres),
+          max: Math.round(geometry.maxElevationMetres),
+        })}
       </figcaption>
       {marker && (
         <p>
-          {marker.stale ? "Last known position: " : "Current route position: "}
-          {formatDistanceKm(marker.distanceFromStartMetres)} of{" "}
-          {formatDistanceKm(resolvedDomain.endDistanceMetres)}.
+          {t(marker.stale ? "elevation.markerStale" : "elevation.markerCurrent", {
+            position: formatDistanceKm(translator, marker.distanceFromStartMetres),
+            total: formatDistanceKm(translator, resolvedDomain.endDistanceMetres),
+          })}
         </p>
       )}
       {hasDistanceGuides && (
         <p id={distanceGuideDescriptionId} className="visually-hidden">
-          {formatDistanceGuideDescription(distanceGuides)}
+          {formatDistanceGuideDescription(translator, distanceGuides)}
         </p>
       )}
     </figure>

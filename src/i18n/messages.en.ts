@@ -774,6 +774,448 @@ export const en = {
   "riding.untrustedGpx":
     "No trusted turn information is available for this imported GPX. Follow the route line on the map.",
   "riding.noTurnCues": "No turn cues",
+
+  // --- Shared unit and figure formatters ---------------------------------
+  // translator: these carry the unit with the number, so the unit itself is
+  // part of the message rather than appended at the call site. The numeric
+  // value arrives already formatted with an explicit locale, so a German
+  // catalogue must not try to re-punctuate it.
+  "format.distanceKm": "{distance} km",
+  "format.metres": "{metres} m",
+  "format.gradientPercent": "{gradient}%",
+  "format.ascent": "{metres} m ascent",
+  "format.ascentUnavailable": "ascent not available",
+  "format.descentLoss": "{metres} m loss",
+
+  // --- Recognised climbs and descents: presentation ----------------------
+  // translator: the KEYS below are the application's semantic identity for
+  // a route feature and never change. Only these rendered names do. The
+  // same key must always select the same colour, the same warning kind and
+  // the same behaviour in every language.
+  "feature.colour.green": "green",
+  "feature.colour.yellow": "yellow",
+  "feature.colour.orange": "orange",
+  "feature.colour.red": "red",
+  "feature.colour.darkRed": "dark red",
+  "feature.colour.lightBlue": "light blue",
+  "feature.colour.blue": "blue",
+  "feature.colour.darkBlue": "dark blue",
+
+  // Bare category name, with no "climb" suffix — for the pre-ride
+  // selector's numbered heading ("Climb 2 · Category 3"), where "Climb N"
+  // has already established that it is a climb.
+  "feature.category.uncategorised": "Uncategorised",
+  "feature.category.category4": "Category 4",
+  "feature.category.category3": "Category 3",
+  "feature.category.category2": "Category 2",
+  "feature.category.category1": "Category 1",
+  "feature.category.hc": "HC",
+
+  "feature.label.uncategorised": "Uncategorised climb",
+  "feature.label.category4": "Category 4 climb",
+  "feature.label.category3": "Category 3 climb",
+  "feature.label.category2": "Category 2 climb",
+  "feature.label.category1": "Category 1 climb",
+  "feature.label.hc": "HC climb",
+  // translator: described by magnitude (steepness), not signed value —
+  // "just below" reads confusingly against negative numbers that grow
+  // more negative as they steepen. Every boundary value (6%, 9%) is
+  // unambiguously owned by exactly one entry.
+  "feature.label.moderate": "Recognised descent (moderate, 3% to just below 6%)",
+  "feature.label.steep": "Recognised descent (steep, 6% to just below 9%)",
+  "feature.label.verySteep": "Recognised descent (very steep, 9% or more)",
+  "feature.label.uncategorisedOrCategory4": "Uncategorised or Category 4 climb",
+
+  // translator: short codes for space-constrained map labels. The hollow
+  // down-arrows are deliberate, so a macro descent glyph can never be
+  // confused with a climb glyph; keep them as they are.
+  "feature.shortLabel.uncategorised": "UC",
+  "feature.shortLabel.category4": "C4",
+  "feature.shortLabel.category3": "C3",
+  "feature.shortLabel.category2": "C2",
+  "feature.shortLabel.category1": "C1",
+  "feature.shortLabel.hc": "HC",
+  "feature.shortLabel.moderate": "▽",
+  "feature.shortLabel.steep": "▽▽",
+  "feature.shortLabel.verySteep": "▽▽▽",
+  "feature.shortLabel.uncategorisedOrCategory4": "UC/C4",
+
+  "feature.ordinaryRoute":
+    "Ordinary route (including sections with missing or insufficient elevation data, and any locally shallow stretch within a selected descent) · green",
+  "feature.recognisedDescent": "Recognised descent",
+
+  // translator: local-gradient wording, deliberately never "Category N" —
+  // a local band describes only the smoothed gradient at one point within
+  // a climb, not the climb's own length-and-average score.
+  "feature.band.gentleOrDescending": "Gentle, flat or brief descent",
+  "feature.band.moderateClimb": "Moderate climb",
+  "feature.band.hardClimb": "Hard climb",
+  "feature.band.veryHardClimb": "Very hard climb",
+  "feature.band.extremelySteepClimb": "Extremely steep climb",
+  "feature.bandRange.gentleOrDescending": "Below 3%",
+  "feature.bandRange.moderateClimb": "3% to just below 6%",
+  "feature.bandRange.hardClimb": "6% to just below 9%",
+  "feature.bandRange.veryHardClimb": "9% to just below 12%",
+  "feature.bandRange.extremelySteepClimb": "12% or more",
+
+  "feature.descentLocal.moderate": "Moderate descent",
+  "feature.descentLocal.steep": "Steep descent",
+  "feature.descentLocal.verySteep": "Very steep descent",
+  "feature.descentLocal.neutral": "Shallower than the descent threshold",
+  "feature.descentLocalRange.neutral": "Below 3%",
+  "feature.descentLocalRange.moderate": "3% to just below 6%",
+  "feature.descentLocalRange.steep": "6% to just below 9%",
+  "feature.descentLocalRange.verySteep": "9% or more",
+
+  // --- Shared legends, disclosures and detail panels ---------------------
+  "legend.climbCategories": "Climb categories",
+  "legend.climbGradient": "Detailed climb gradient legend",
+  "legend.descentGradient": "Detailed descent gradient legend",
+  "legend.routeFeatures": "Recognised route features legend",
+  "legend.localClimbColours": "Local gradient colours on this climb",
+  "legend.localDescentColours": "Local gradient colours on this descent",
+  "legend.gradientColours": "Gradient colours",
+  "legend.recognisedRouteFeatures": "Recognised route features",
+  "legend.detailedLocalGradient": "Detailed local gradient",
+  "legend.macroExplanation":
+    "Overall climb colours depend on climb length and average gradient. Recognised descents use one of three blues based on average gradient and are specific to this app.",
+  "legend.localExplanation":
+    "Detailed colours show local gradient over approximately 100 m within the selected or currently active climb. Brief flat or descending sections inside a climb are green. A selected or currently active descent reuses the same three blues shown above, applied to its local sections instead of its whole length — any locally shallow stretch there shows the plain route colour instead.",
+  "legend.clearSelection": "Clear selection",
+
+  "featureDetails.landmarkLabel": "Route feature details",
+  "featureDetails.heading": "Climb {number} · {category}",
+  "featureDetails.routePosition": "Route position: {start}–{end} km",
+  "featureDetails.length": "Length: {distance}",
+  "featureDetails.elevationGain": "Elevation gain: {elevation}",
+  "featureDetails.elevationLoss": "Elevation loss: {elevation}",
+  "featureDetails.averageGradient": "Average gradient: {gradient}",
+  "featureDetails.maximumLocalGradient": "Maximum local gradient: {gradient}",
+  "featureDetails.steepestLocalGradient": "Steepest local gradient: {gradient}",
+  "featureDetails.climbScore": "Climb score: {score}",
+
+  "segmentDetails.landmarkLabel": "Gradient segment details",
+  "segmentDetails.heading": "{band} · {gradient}",
+  "segmentDetails.elevation": "Elevation: {start} m to {end} m",
+
+  // --- Elevation chart ---------------------------------------------------
+  "elevation.noRoute": "No route loaded.",
+  "elevation.noData": "Elevation data is not available for this route.",
+  "elevation.landmarkLabel": "Elevation profile",
+  "elevation.chartLabel": "Elevation profile chart",
+  "elevation.range": "{min}–{max} m",
+  "elevation.rangeWithGaps": "{min}–{max} m (some sections have no elevation data)",
+  "elevation.markerCurrent": "Current route position: {position} of {total}.",
+  "elevation.markerStale": "Last known position: {position} of {total}.",
+  // translator: an accessible-only description of the distance guides on
+  // the chart. `distances` is an already-punctuated list of numbers.
+  "elevation.distanceGuides": {
+    one: "Distance guides ahead at {distances} kilometre",
+    other: "Distance guides ahead at {distances} kilometres",
+  },
+
+  // --- Stored routing key: status ----------------------------------------
+  // translator: every one of these is deliberately phrased as a historical
+  // fact, never a live assertion about the provider's current state — a
+  // reload re-checks nothing. Keep that tense in translation. `checkedAt`
+  // is an already-formatted timestamp, always in UTC and marked as such.
+  "providerKey.none": "No key configured",
+  "providerKey.unverified": "Key saved on this device, not yet verified",
+  "providerKey.verified": "Key last verified {checkedAt}",
+  "providerKey.rejected": "Key was rejected when last checked {checkedAt}",
+  "providerKey.quotaRetryAfter": "Quota reached, retry after {resetAt}",
+  "providerKey.quotaReached":
+    "Quota was reached when last checked {checkedAt} — you can try again",
+  "providerKey.unavailable": "Provider was unavailable when last checked {checkedAt}",
+  // translator: the trailing zone marker. The timestamp really is UTC, not
+  // the rider's local time, so this must stay explicit.
+  "providerKey.utcTimestamp": "{timestamp} UTC",
+
+  // --- Status: on-screen diagnostic log lines ----------------------------
+  // translator: these lead phrases are rider-facing prose on the Status
+  // screen. Everything they interpolate — an HTTP status, a browser error
+  // class such as TypeError, a provider category, a transport reason code
+  // — is a machine token supplied verbatim and MUST NOT be translated.
+  // The copied diagnostic report is a separate surface and stays English
+  // (approved decision R4); these lines never appear in it.
+  "routingLog.responseReceived": "HTTP response received: {status}",
+  "routingLog.responseReceivedWithCategory":
+    "HTTP response received: {status} ({category})",
+  "routingLog.offline": "Device reported offline",
+  "routingLog.timeout": "Request timed out",
+  "routingLog.invalidHeaderValue": "The stored key could not be used in a request header",
+  "routingLog.headerConstructionFailure": "Request headers could not be constructed",
+  "routingLog.invalidRequestConstruction": "Request could not be constructed",
+  "routingLog.fetchInvocationFailure": "Fetch could not be invoked",
+  "routingLog.noResponseExposed":
+    "Fetch promise rejected before an HTTP response was exposed",
+  // translator: `detail` is an already-assembled machine string, e.g.
+  // "TypeError: Failed to fetch; reason: generic-fetch-rejection".
+  "routingLog.withDetail": "{base} ({detail})",
+  "routingLog.unknownStatus": "unknown",
+
+  "mapLog.styleRequestOrParseFailure": "Map style failed to load or parse",
+  "mapLog.tileRequestFailure": "A map tile request failed",
+  "mapLog.spriteFailure": "Map sprite (icons) failed to load",
+  "mapLog.workerFailure": "The map's background worker did not respond in time",
+  "mapLog.webglInitFailure":
+    "This device or browser could not initialise map graphics (WebGL)",
+  "mapLog.initialLoadTimeout": "Map style did not become ready in time",
+  "mapLog.fallbackActivated": "Switched to the plain background",
+  "mapLog.manualRetry": "Map imagery retry requested",
+  "mapLog.autoRetry":
+    "Map imagery retry attempted automatically after resuming or reconnecting",
+  "mapLog.imageryRecovered": "Map imagery loaded successfully",
+
+  // --- Status: routing connection test -----------------------------------
+  // translator: these describe observed facts, never an assumed root
+  // cause. "transport-response-unavailable" in particular is deliberately
+  // hedged — page JavaScript cannot establish WHY the browser withheld a
+  // response, so a translation must never present CORS as confirmed.
+  //
+  // These same entries also appear in the copied diagnostic report, which
+  // stays entirely English under approved decision R4. The report reads
+  // them through the English translator explicitly, so it is English by
+  // construction rather than by omission, and there is exactly one source
+  // for the sentence.
+  "connectionTest.stage.notAttemptedNoKey":
+    "No OpenRouteService key is configured, so no request was sent.",
+  "connectionTest.stage.invalidKeySyntax":
+    "The stored key itself contains a character that cannot be sent in a request header — checked before any request was constructed.",
+  "connectionTest.stage.headerConstruction":
+    "The request's headers could not be constructed.",
+  "connectionTest.stage.requestConstruction":
+    "The request object itself could not be constructed.",
+  "connectionTest.stage.fetchInvocation":
+    "Calling the fetch implementation failed synchronously, before any promise existed.",
+  "connectionTest.stage.offline":
+    "The device reported itself offline before any request was sent.",
+  "connectionTest.stage.timeout":
+    "The request did not receive a response within the routing timeout.",
+  "connectionTest.stage.transportResponseUnavailable":
+    "The browser did not expose an HTTP response. Possible causes include CORS/preflight rejection, DNS, TLS, timeout, connectivity, or a provider response whose CORS headers were missing.",
+  "connectionTest.stage.httpResponse":
+    "An HTTP response was received from OpenRouteService.",
+  "connectionTest.stage.responseParsing":
+    "An HTTP response was received but its body could not be parsed as the expected route format.",
+  "connectionTest.stage.routeProcessing":
+    "A response was received and parsed, but the route itself could not be used.",
+  "connectionTest.stage.success": "A valid cycling route was received.",
+
+  // --- Status: screen chrome and system status ---------------------------
+  "status.landmarkLabel": "Status",
+  "status.title": "Status",
+  "status.systemStatus": "System status",
+  "status.appVersion": "App version",
+  "status.build": "Build",
+  "status.network": "Network",
+  "status.online": "Online",
+  "status.offline": "Offline",
+  "status.serviceWorker": "Service worker",
+  "status.sw.unsupported": "Not supported by this browser",
+  "status.sw.notRegistered": "Not registered",
+  "status.sw.installing": "Installing",
+  "status.sw.waiting": "Waiting to activate",
+  "status.sw.active": "Active",
+  "status.sw.unknown": "Unknown",
+  "status.storage": "Storage",
+  "status.storage.checking": "Checking…",
+  "status.storage.unavailable": "Unavailable",
+  "status.storage.ok": "OK (schema version {version})",
+  "status.storage.estimateChecking": "Checking storage estimate…",
+  "status.storage.estimateUnsupported":
+    "Estimated app storage: not supported by this browser",
+  "status.storage.estimateUnavailable": "Estimated app storage: unavailable",
+  "status.storage.estimate":
+    "Estimated app storage: {used} of {quota} used ({percentage})",
+  "status.storage.pressure":
+    "Storage pressure warning: estimated app storage usage is high.",
+  "status.storage.bytes": "{value} B",
+  "status.storage.kibibytes": "{value} KiB",
+  "status.storage.mebibytes": "{value} MiB",
+  "status.storage.gibibytes": "{value} GiB",
+  "status.storage.tebibytes": "{value} TiB",
+  // translator: a genuinely non-zero fraction below one per cent, shown
+  // rather than a misleadingly exact "0%".
+  "status.storage.lessThanOnePercent": "<1%",
+  "status.storage.percentage": "{percentage}%",
+  "status.mapRendering": "Map rendering support",
+  "status.mapRendering.supported": "Supported",
+  "status.mapRendering.unsupported": "Not supported by this browser",
+  "status.geolocationPermission": "Geolocation permission",
+  "status.permission.granted": "Granted",
+  "status.permission.denied": "Denied",
+  "status.permission.prompt": "Not yet requested",
+  "status.permission.unsupported": "Not supported by this browser",
+  "status.fixAccuracy": "Last known fix accuracy",
+  "status.fixAccuracyValue": "±{accuracy} m",
+  "status.fixAge": "Last known fix age",
+  "status.notApplicableYet": "Not applicable yet",
+  "status.fixAge.seconds": "{seconds}s ago",
+  "status.fixAge.minutes": "{minutes} min ago",
+
+  // --- Status: active session (backlog item 117) -------------------------
+  // translator: each of these is a distinct, load-bearing state and none
+  // may be merged with another. "None" means no session at all;
+  // "Checking…" means a lookup is still in flight; "Route unavailable"
+  // means the session's route has been deleted; "Session unavailable"
+  // means the stored session is of a kind this build does not recognise.
+  // A route-backed session shows the rider's own route name verbatim and
+  // never an internal identifier.
+  "status.session": "Active session",
+  "status.session.none": "None",
+  "status.session.freeRoam": "Free roam",
+  "status.session.checking": "Checking…",
+  "status.session.routeUnavailable": "Route unavailable",
+  "status.session.unavailable": "Session unavailable",
+
+  // --- Status: recent errors ---------------------------------------------
+  "status.recentErrors": "Recent errors",
+  "status.noErrors": "No errors recorded this session.",
+
+  // --- Status: routing diagnostics ---------------------------------------
+  "status.routingDiagnostics": "Routing diagnostics",
+  "status.recentRoutingAttempts": "Recent routing attempts",
+  "status.noRoutingAttempts": "No routing attempts recorded this session.",
+  "status.fetchFailureSummary": "Why a fetch can fail before an HTTP response",
+  "status.fetchFailureDetail":
+    'Browsers may report a generic fetch failure instead of the real HTTP status (for example 502) when the provider\'s error response is missing CORS headers — an entry reading "Fetch promise rejected before an HTTP response was exposed" can mean a provider outage, a missing CORS header, a DNS or TLS failure, or a local network restriction, and cannot be told apart from this information alone.',
+  "status.httpGuideSummary": "What HTTP statuses mean",
+  "status.httpGuideIntro":
+    "When the routing provider exposes an HTTP response, its status is recorded in Recent routing attempts below. A failed connection test also shows it when the failure carried one; a successful connection test does not repeat it. These are broad categories, not a proven cause:",
+  // translator: the parenthesised status ranges and the individual codes
+  // are machine values. Keep every digit exactly as it is.
+  "status.http.success": "Success (2xx)",
+  "status.http.200":
+    "— the normal successful response for a routing request. HTTP success is not the whole check: ACN still checks that the response contains usable route data.",
+  "status.http.redirects": "Redirects (3xx)",
+  "status.http.redirectsDetail":
+    "The browser normally follows redirects automatically and records the final response instead, so an intermediate 3xx status is not normally shown here.",
+  "status.http.requestProblems": "Request or access problems (4xx)",
+  "status.http.400": "— the request was incorrect or could not be processed.",
+  "status.http.401or403": "401 or 403",
+  "status.http.401or403Detail":
+    "— the stored key, authorisation or access may have been rejected. OpenRouteService can also use 403 for an exhausted daily allowance, but the status alone does not prove which cause applies.",
+  "status.http.404":
+    "— OpenRouteService documents this as either an unavailable endpoint or a request for which no result or route was found. The status alone does not say which.",
+  "status.http.405":
+    "— the request method was not accepted. This is unexpected during normal ACN use.",
+  "status.http.408":
+    "— an HTTP server or intermediary returned an exposed timeout response. This is not the same as ACN's own request timeout, or a fetch rejection with no exposed response.",
+  "status.http.413": "— the request exceeds a size or capacity limit.",
+  "status.http.429":
+    "— request-rate or quota limiting. Waiting before retrying, or checking the provider allowance, may help.",
+  "status.http.other4xx": "Other 4xx",
+  "status.http.other4xxDetail":
+    "— the request was rejected, but the exact reason is not established by the status alone.",
+  "status.http.serviceProblems": "Service problems (5xx)",
+  "status.http.500": "— an unexpected service-side error.",
+  "status.http.501":
+    "— the service does not support functionality required by the request.",
+  "status.http.other5xx": "Other 5xx, including 502 to 504",
+  "status.http.other5xxDetail":
+    "— a service, gateway or upstream failure. Retrying later may help.",
+  "status.http.none": "No HTTP status",
+  "status.http.noneDetail":
+    'No HTTP response was exposed to the browser, so no status can say anything about the service. See "Why a fetch can fail before an HTTP response" above.',
+
+  // --- Status: connection test -------------------------------------------
+  "status.testConnection": "Test routing connection",
+  "status.testConnectionHint":
+    "This sends one real request to OpenRouteService, using fixed test coordinates rather than any route you've planned, and uses one API request.",
+  "status.testConnectionNoKey":
+    "No OpenRouteService key configured. Add one in Settings to enable this test.",
+  "status.testing": "Testing…",
+  "status.testSucceeded": "Succeeded",
+  "status.testFailed": "Failed",
+  // translator: `outcome` is the localised Succeeded/Failed word, `detail`
+  // the provider-facing explanation and `elapsed` a machine number.
+  "status.testResult": "{outcome} — {detail} ({elapsed} ms)",
+  "status.stage": "Stage",
+  "status.stageValue": "{stage} — {description}",
+  "status.error": "Error",
+  "status.errorValue": "{name}: {message}",
+  "status.safeReasonCode": "Safe reason code",
+  "status.httpStatus": "HTTP status",
+  "status.headersConstructed": "Headers constructed",
+  "status.requestConstructed": "Request constructed",
+  "status.fetchInvoked": "Fetch invoked",
+  "status.fetchReturnedPromise": "Fetch returned a promise",
+  "status.responseReceived": "HTTP response received",
+  "status.secureContext": "Secure context",
+  "status.serviceWorkerControlling": "Service worker controlling this page",
+  "status.activeServiceWorkerScript": "Active service worker script",
+  "status.standaloneDisplay": "Installed/standalone display",
+  "status.yes": "Yes",
+  "status.no": "No",
+  "status.none": "None",
+  "status.copyReport": "Copy diagnostic report",
+  "status.copied": "Copied to clipboard.",
+  "status.copyFailed":
+    "Could not copy automatically — select and copy the report text manually:",
+
+  // --- Status: map imagery -----------------------------------------------
+  "status.recentMapAttempts": "Recent map imagery attempts",
+  "status.noMapAttempts": "No map imagery attempts recorded this session.",
+
+  // --- Application shell: the ride-switch prompt -------------------------
+  // translator: `target` and `existing` below name a session, and `target`
+  // may be the rider's own route name in quotation marks. Both are
+  // supplied as values and are never re-interpreted.
+  "switch.freeRoamTarget": "free roam",
+  "switch.quotedRouteName": '"{name}"',
+  "switch.title": "Switch to {target}?",
+  // translator: the read failed — this is deliberately NOT described as a
+  // conflict. A storage read failing is not evidence that another session
+  // exists, and presenting it as one would be a misstatement.
+  "switch.checkFailedTitle": "Couldn't check for an unfinished ride",
+  "switch.checkFailedMessage":
+    "Whether you have an unfinished ride could not be checked, so nothing has opened yet.",
+  "switch.retry": "Retry",
+  "switch.discardAndContinue": "Discard and continue",
+  "switch.endAndSwitch": "End and switch",
+  "switch.discarding": "Discarding your unfinished ride…",
+  "switch.ending": "Ending your current ride…",
+  "switch.discardingLabel": "Discarding…",
+  "switch.endingLabel": "Ending…",
+  "switch.startingFreeRoam": "Starting free roam…",
+  "switch.startingLabel": "Starting…",
+  "switch.clearFailed":
+    "This unfinished ride could not be ended on this device. Try again.",
+  "switch.startFreeRoamFailed":
+    "Free roam could not be started on this device. Try again.",
+  "switch.tryAgain": "Try again",
+  "switch.returning": "Opening your paused ride…",
+  "switch.returnFailed":
+    "This paused ride could not be reopened. Check again to see its current status.",
+  "switch.checkAgain": "Check again",
+  "switch.existingRoute": "an unfinished ride on another route",
+  "switch.existingFreeRoam": "an unfinished free roam session",
+  "switch.existingUnsupported":
+    "an unfinished ride that can't be recovered by this version of the app",
+  "switch.conflict":
+    "You have {existing}. It must be ended before this can open — ride progress will be cleared.",
+  "switch.conflictKeepsRoute":
+    "You have {existing}. It must be ended before this can open — the saved route will remain in your library, but ride progress will be cleared.",
+  "switch.inlineRouteConflict":
+    '"{existing}" is paused. Return to it, or end it and switch to {target}. Ending it will clear ride progress; the saved route will remain in Routes.',
+  "switch.cancel": "Cancel",
+  "switch.pausedRideCheckFailed":
+    "This paused ride's status could not be checked. Try again.",
+  "switch.pausedRideChanged":
+    "This paused ride has changed since this screen opened. Check again to see its current status.",
+  "switch.pausedRouteCheckFailed":
+    "This paused ride's route could not be checked. Try again.",
+  "switch.pausedRouteMissing":
+    "This route is no longer in your library, so this paused ride can't be reopened.",
+
+  // --- Application shell: the service-worker update prompt ---------------
+  // translator: this appears while the rider may be mid-ride. It is
+  // announced politely, never as an alert, and neither action is
+  // destructive — "Later" simply dismisses the notice.
+  "update.ready": "An update is ready.",
+  "update.now": "Update now",
+  "update.later": "Later",
 } as const;
 
 export type MessageKey = keyof typeof en;

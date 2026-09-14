@@ -10,6 +10,8 @@ describe("ConfirmDialog", () => {
         open={false}
         title="Delete route"
         message="Are you sure?"
+        confirmLabel="Confirm"
+        cancelLabel="Cancel"
         onConfirm={vi.fn()}
         onCancel={vi.fn()}
       />,
@@ -51,6 +53,8 @@ describe("ConfirmDialog", () => {
         open
         title="Delete route"
         message="Are you sure?"
+        confirmLabel="Confirm"
+        cancelLabel="Cancel"
         onConfirm={vi.fn()}
         onCancel={vi.fn()}
       />,
@@ -68,6 +72,8 @@ describe("ConfirmDialog", () => {
         open
         title="Delete route"
         message="Are you sure?"
+        confirmLabel="Confirm"
+        cancelLabel="Cancel"
         onConfirm={onConfirm}
         onCancel={onCancel}
       />,
@@ -89,6 +95,7 @@ describe("ConfirmDialog", () => {
         title="Delete route"
         message="Are you sure?"
         confirmLabel="Delete"
+        cancelLabel="Cancel"
         confirmDisabled
         onConfirm={onConfirm}
         onCancel={onCancel}
@@ -111,6 +118,8 @@ describe("ConfirmDialog", () => {
         open
         title="Delete route"
         message="Are you sure?"
+        confirmLabel="Confirm"
+        cancelLabel="Cancel"
         cancelDisabled
         onConfirm={onConfirm}
         onCancel={onCancel}
@@ -129,6 +138,8 @@ describe("ConfirmDialog", () => {
         open
         title="Delete route"
         message="Are you sure?"
+        confirmLabel="Confirm"
+        cancelLabel="Cancel"
         onConfirm={vi.fn()}
         onCancel={vi.fn()}
       />,
@@ -146,6 +157,8 @@ describe("ConfirmDialog", () => {
         headingLevel={4}
         title="Delete route"
         message="Are you sure?"
+        confirmLabel="Confirm"
+        cancelLabel="Cancel"
         onConfirm={vi.fn()}
         onCancel={vi.fn()}
       />,
@@ -165,6 +178,8 @@ describe("ConfirmDialog", () => {
         containerRef={containerRef}
         title="Delete route"
         message="Are you sure?"
+        confirmLabel="Confirm"
+        cancelLabel="Cancel"
         onConfirm={vi.fn()}
         onCancel={vi.fn()}
       />,
@@ -181,6 +196,8 @@ describe("ConfirmDialog", () => {
         open
         title="Delete route"
         message="Are you sure?"
+        confirmLabel="Confirm"
+        cancelLabel="Cancel"
         onConfirm={vi.fn()}
         onCancel={vi.fn()}
       />,

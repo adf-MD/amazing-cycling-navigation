@@ -1,7 +1,7 @@
 import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { ClimbProgressMetrics } from "../../navigation/climbElevationView.ts";
 import type { ClimbFeature } from "../../navigation/routeFeatures.ts";
-import { CLIMB_CATEGORY_NAMES } from "../../navigation/routeFeaturePalette.ts";
+import { CLIMB_CATEGORY_NAME_KEYS } from "../../navigation/routeFeaturePalette.ts";
 import {
   formatDistanceKm,
   formatGradientPercent,
@@ -62,7 +62,7 @@ export function RidingClimbProgressPanel({
       <h3 aria-live="polite">
         {t("climb.heading", {
           number: climbNumber,
-          category: CLIMB_CATEGORY_NAMES[climb.category],
+          category: t(CLIMB_CATEGORY_NAME_KEYS[climb.category]),
         })}
       </h3>
       <div className="riding-climb-progress-primary">
@@ -71,7 +71,7 @@ export function RidingClimbProgressPanel({
             {t("climb.distanceToSummit")}
           </span>
           <span className="riding-climb-progress-metric-value">
-            {formatDistanceKm(metrics.distanceRemainingMetres)}
+            {formatDistanceKm(translator, metrics.distanceRemainingMetres)}
           </span>
         </span>
         {metrics.elevationRemainingMetres !== null ? (
@@ -80,7 +80,7 @@ export function RidingClimbProgressPanel({
               {t("climb.elevationRemaining")}
             </span>
             <span className="riding-climb-progress-metric-value">
-              {formatMetres(metrics.elevationRemainingMetres)}
+              {formatMetres(translator, metrics.elevationRemainingMetres)}
             </span>
           </span>
         ) : null}
@@ -89,27 +89,27 @@ export function RidingClimbProgressPanel({
         {metrics.currentGradientPercent !== null ? (
           <p>
             {t("climb.currentGradient", {
-              gradient: formatGradientPercent(metrics.currentGradientPercent),
+              gradient: formatGradientPercent(translator, metrics.currentGradientPercent),
             })}
           </p>
         ) : null}
         {metrics.currentElevationMetres !== null ? (
           <p>
             {t("climb.currentElevation", {
-              elevation: formatMetres(metrics.currentElevationMetres),
+              elevation: formatMetres(translator, metrics.currentElevationMetres),
             })}
           </p>
         ) : null}
         {metrics.finishElevationMetres !== null ? (
           <p>
             {t("climb.summitElevation", {
-              elevation: formatMetres(metrics.finishElevationMetres),
+              elevation: formatMetres(translator, metrics.finishElevationMetres),
             })}
           </p>
         ) : null}
         <p>
           {t("climb.distanceCompleted", {
-            distance: formatDistanceKm(metrics.distanceCompletedMetres),
+            distance: formatDistanceKm(translator, metrics.distanceCompletedMetres),
           })}
         </p>
       </div>

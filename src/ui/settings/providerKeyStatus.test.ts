@@ -1,3 +1,4 @@
+import { englishTranslator } from "../../i18n/englishTranslator.ts";
 import { describe, expect, it } from "vitest";
 import { describeProviderKeyStatus } from "./providerKeyStatus.ts";
 import type {
@@ -27,19 +28,22 @@ function verification(
 
 describe("describeProviderKeyStatus", () => {
   it("no key configured", () => {
-    expect(describeProviderKeyStatus(undefined, undefined, NOW_MS)).toEqual({
+    expect(
+      describeProviderKeyStatus(englishTranslator, undefined, undefined, NOW_MS),
+    ).toEqual({
       headline: "No key configured",
     });
   });
 
   it("key saved, never verified", () => {
-    expect(describeProviderKeyStatus(key, undefined, NOW_MS)).toEqual({
+    expect(describeProviderKeyStatus(englishTranslator, key, undefined, NOW_MS)).toEqual({
       headline: "Key saved on this device, not yet verified",
     });
   });
 
   it("key last verified successfully", () => {
     const status = describeProviderKeyStatus(
+      englishTranslator,
       key,
       verification({ outcome: "verified" }),
       NOW_MS,
@@ -50,6 +54,7 @@ describe("describeProviderKeyStatus", () => {
 
   it("key was rejected when last checked", () => {
     const status = describeProviderKeyStatus(
+      englishTranslator,
       key,
       verification({ outcome: "rejected" }),
       NOW_MS,
@@ -60,6 +65,7 @@ describe("describeProviderKeyStatus", () => {
 
   it("quota reached with a reset time still in the future", () => {
     const status = describeProviderKeyStatus(
+      englishTranslator,
       key,
       verification({
         outcome: "quota-limited",
@@ -73,6 +79,7 @@ describe("describeProviderKeyStatus", () => {
 
   it("quota reached with a reset time already passed does not claim it is still exhausted", () => {
     const status = describeProviderKeyStatus(
+      englishTranslator,
       key,
       verification({
         outcome: "quota-limited",
@@ -87,6 +94,7 @@ describe("describeProviderKeyStatus", () => {
 
   it("quota reached with no reset time at all", () => {
     const status = describeProviderKeyStatus(
+      englishTranslator,
       key,
       verification({ outcome: "quota-limited", rateLimitResetAt: null }),
       NOW_MS,
@@ -97,6 +105,7 @@ describe("describeProviderKeyStatus", () => {
 
   it("provider was unavailable when last checked, never claims current unavailability", () => {
     const status = describeProviderKeyStatus(
+      englishTranslator,
       key,
       verification({ outcome: "unavailable" }),
       NOW_MS,

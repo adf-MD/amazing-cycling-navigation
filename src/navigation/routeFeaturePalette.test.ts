@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { englishTranslator } from "../i18n/englishTranslator.ts";
 import type { ClimbCategory, DescentBand } from "./routeFeatures.ts";
 import {
   ACTIVE_DIRECTION_COLOURS,
-  CLIMB_CATEGORY_NAMES,
-  CLIMB_GRADIENT_BAND_COLOUR_NAMES,
+  CLIMB_CATEGORY_NAME_KEYS,
+  CLIMB_GRADIENT_BAND_COLOUR_NAME_KEYS,
   MICRO_DETAIL_COLOURS,
   ORDINARY_ROUTE_COLOUR,
-  ROUTE_FEATURE_COLOUR_NAMES,
+  ROUTE_FEATURE_COLOUR_NAME_KEYS,
   ROUTE_FEATURE_COLOURS,
-  ROUTE_FEATURE_LABELS,
+  ROUTE_FEATURE_LABEL_KEYS,
   ROUTE_FEATURE_LEGEND_ENTRIES,
   type MicroDetailVisualKey,
   type RouteFeatureVisualKey,
@@ -137,21 +138,21 @@ describe("route feature palette: macro colours", () => {
 
   it("gives Uncategorised and Category 4 climbs the exact same macro colour", () => {
     expect(ROUTE_FEATURE_COLOURS.uncategorised).toBe(ROUTE_FEATURE_COLOURS["category-4"]);
-    expect(ROUTE_FEATURE_COLOUR_NAMES.uncategorised).toBe(
-      ROUTE_FEATURE_COLOUR_NAMES["category-4"],
+    expect(englishTranslator.t(ROUTE_FEATURE_COLOUR_NAME_KEYS.uncategorised)).toBe(
+      englishTranslator.t(ROUTE_FEATURE_COLOUR_NAME_KEYS["category-4"]),
     );
   });
 
   it("has a colour name for every climb category and descent band", () => {
     for (const visualKey of ALL_ROUTE_FEATURE_VISUAL_KEYS) {
-      expect(ROUTE_FEATURE_COLOUR_NAMES[visualKey]).toBeTruthy();
+      expect(englishTranslator.t(ROUTE_FEATURE_COLOUR_NAME_KEYS[visualKey])).toBeTruthy();
     }
   });
 
-  it("never lets CLIMB_CATEGORY_NAMES and ROUTE_FEATURE_LABELS drift apart", () => {
+  it("never lets the category names and the full labels drift apart", () => {
     for (const category of CLIMB_CATEGORIES) {
-      expect(ROUTE_FEATURE_LABELS[category]).toBe(
-        `${CLIMB_CATEGORY_NAMES[category]} climb`,
+      expect(englishTranslator.t(ROUTE_FEATURE_LABEL_KEYS[category])).toBe(
+        `${englishTranslator.t(CLIMB_CATEGORY_NAME_KEYS[category])} climb`,
       );
     }
   });
@@ -160,13 +161,13 @@ describe("route feature palette: macro colours", () => {
   // adjacent-band wording (both "moderate" and "steep" claiming −6%, both
   // "steep" and "very-steep" claiming −9%) shows up as a failing diff.
   it("states every descent-band boundary unambiguously", () => {
-    expect(ROUTE_FEATURE_LABELS.moderate).toBe(
+    expect(englishTranslator.t(ROUTE_FEATURE_LABEL_KEYS.moderate)).toBe(
       "Recognised descent (moderate, 3% to just below 6%)",
     );
-    expect(ROUTE_FEATURE_LABELS.steep).toBe(
+    expect(englishTranslator.t(ROUTE_FEATURE_LABEL_KEYS.steep)).toBe(
       "Recognised descent (steep, 6% to just below 9%)",
     );
-    expect(ROUTE_FEATURE_LABELS["very-steep"]).toBe(
+    expect(englishTranslator.t(ROUTE_FEATURE_LABEL_KEYS["very-steep"])).toBe(
       "Recognised descent (very steep, 9% or more)",
     );
   });
@@ -300,12 +301,18 @@ describe("micro detail (local gradient band) colours", () => {
   });
 
   it("has a colour name for every climb local band, distinct from its neighbours", () => {
-    const names = new Set(Object.values(CLIMB_GRADIENT_BAND_COLOUR_NAMES));
+    const names = new Set(
+      Object.values(CLIMB_GRADIENT_BAND_COLOUR_NAME_KEYS).map((key) =>
+        englishTranslator.t(key),
+      ),
+    );
     expect(names.size).toBe(5);
   });
 
   it("never labels a local climb band with overall-category wording", () => {
-    for (const label of Object.values(CLIMB_GRADIENT_BAND_COLOUR_NAMES)) {
+    for (const label of Object.values(CLIMB_GRADIENT_BAND_COLOUR_NAME_KEYS).map((key) =>
+      englishTranslator.t(key),
+    )) {
       expect(label).not.toMatch(/category/i);
     }
   });

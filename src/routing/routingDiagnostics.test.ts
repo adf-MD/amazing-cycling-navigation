@@ -1,3 +1,4 @@
+import { englishTranslator } from "../i18n/englishTranslator.ts";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearRoutingDiagnostics,
@@ -69,6 +70,7 @@ describe("describeRoutingAttempt", () => {
   it("describes a received HTTP response, including the non-success reason", () => {
     expect(
       describeRoutingAttempt(
+        englishTranslator,
         buildDiagnostic({
           responseReceived: true,
           httpStatus: 502,
@@ -81,6 +83,7 @@ describe("describeRoutingAttempt", () => {
   it("describes a successful received response with no reason suffix", () => {
     expect(
       describeRoutingAttempt(
+        englishTranslator,
         buildDiagnostic({ responseReceived: true, httpStatus: 200, category: "success" }),
       ),
     ).toBe("HTTP response received: 200");
@@ -95,6 +98,7 @@ describe("describeRoutingAttempt", () => {
   it("distinguishes an exposed HTTP 408 response from this application's own timeout", () => {
     expect(
       describeRoutingAttempt(
+        englishTranslator,
         buildDiagnostic({
           responseReceived: true,
           httpStatus: 408,
@@ -104,6 +108,7 @@ describe("describeRoutingAttempt", () => {
     ).toBe("HTTP response received: 408 (provider-error)");
     expect(
       describeRoutingAttempt(
+        englishTranslator,
         buildDiagnostic({
           responseReceived: false,
           httpStatus: undefined,
@@ -116,11 +121,13 @@ describe("describeRoutingAttempt", () => {
   it("distinguishes offline from a request that timed out", () => {
     expect(
       describeRoutingAttempt(
+        englishTranslator,
         buildDiagnostic({ responseReceived: false, category: "offline" }),
       ),
     ).toBe("Device reported offline");
     expect(
       describeRoutingAttempt(
+        englishTranslator,
         buildDiagnostic({ responseReceived: false, category: "timeout" }),
       ),
     ).toBe("Request timed out");
@@ -129,6 +136,7 @@ describe("describeRoutingAttempt", () => {
   it("reports a transport failure as indistinguishable from other causes, never guessing", () => {
     expect(
       describeRoutingAttempt(
+        englishTranslator,
         buildDiagnostic({ responseReceived: false, category: "transport-failure" }),
       ),
     ).toBe("Fetch promise rejected before an HTTP response was exposed");
@@ -137,6 +145,7 @@ describe("describeRoutingAttempt", () => {
   it("appends a safe error name/message and reason code when present", () => {
     expect(
       describeRoutingAttempt(
+        englishTranslator,
         buildDiagnostic({
           responseReceived: false,
           category: "transport-failure",
@@ -153,6 +162,7 @@ describe("describeRoutingAttempt", () => {
   it("appends only the error name when no sanitised message is available", () => {
     expect(
       describeRoutingAttempt(
+        englishTranslator,
         buildDiagnostic({
           responseReceived: false,
           category: "header-construction-failure",
@@ -165,11 +175,13 @@ describe("describeRoutingAttempt", () => {
   it("distinguishes each explicit local pipeline stage", () => {
     expect(
       describeRoutingAttempt(
+        englishTranslator,
         buildDiagnostic({ responseReceived: false, category: "invalid-header-value" }),
       ),
     ).toBe("The stored key could not be used in a request header");
     expect(
       describeRoutingAttempt(
+        englishTranslator,
         buildDiagnostic({
           responseReceived: false,
           category: "invalid-request-construction",
@@ -178,6 +190,7 @@ describe("describeRoutingAttempt", () => {
     ).toBe("Request could not be constructed");
     expect(
       describeRoutingAttempt(
+        englishTranslator,
         buildDiagnostic({
           responseReceived: false,
           category: "fetch-invocation-failure",

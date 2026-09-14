@@ -1,8 +1,9 @@
 import type { ClassifiedSegment } from "../../navigation/gradient.ts";
 import {
-  MICRO_DETAIL_LABELS,
+  MICRO_DETAIL_LABEL_KEYS,
   type MicroDetailVisualKey,
 } from "../../navigation/routeFeaturePalette.ts";
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import { ClearSelectionButton } from "./ClearSelectionButton.tsx";
 import { formatDistanceKmValue, formatGradientPercent } from "./routeSummary.ts";
 
@@ -34,26 +35,37 @@ export function GradientSegmentDetailsPanel({
   endElevationMetres,
   onClear,
 }: GradientSegmentDetailsPanelProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   if (segment === null) {
     return null;
   }
 
   return (
-    <section aria-label="Gradient segment details" className="gradient-segment-details">
+    <section
+      aria-label={t("segmentDetails.landmarkLabel")}
+      className="gradient-segment-details"
+    >
       <h3>
-        {MICRO_DETAIL_LABELS[segment.visualKey]}
         {segment.averageGradientPercent !== null
-          ? ` · ${formatGradientPercent(segment.averageGradientPercent)}`
-          : ""}
+          ? t("segmentDetails.heading", {
+              band: t(MICRO_DETAIL_LABEL_KEYS[segment.visualKey]),
+              gradient: formatGradientPercent(translator, segment.averageGradientPercent),
+            })
+          : t(MICRO_DETAIL_LABEL_KEYS[segment.visualKey])}
       </h3>
       <p>
-        Route position: {formatDistanceKmValue(segment.startDistanceMetres)}–
-        {formatDistanceKmValue(segment.endDistanceMetres)} km
+        {t("featureDetails.routePosition", {
+          start: formatDistanceKmValue(translator, segment.startDistanceMetres),
+          end: formatDistanceKmValue(translator, segment.endDistanceMetres),
+        })}
       </p>
       {startElevationMetres !== null && endElevationMetres !== null ? (
         <p>
-          Elevation: {Math.round(startElevationMetres)} m to{" "}
-          {Math.round(endElevationMetres)} m
+          {t("segmentDetails.elevation", {
+            start: Math.round(startElevationMetres),
+            end: Math.round(endElevationMetres),
+          })}
         </p>
       ) : null}
       {onClear && <ClearSelectionButton onClick={onClear} />}

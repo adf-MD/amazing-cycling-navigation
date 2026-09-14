@@ -2,25 +2,34 @@ import type {
   StoredProviderKey,
   StoredProviderKeyVerification,
 } from "../../storage/db.ts";
+import type { Translator } from "../../i18n/translate.ts";
 
 export interface ProviderKeyStatus {
   headline: string;
 }
 
 /** Fixed to UTC so this is deterministic in tests regardless of the
- * environment's local timezone/locale, at the small cost of always
- * showing UTC rather than the rider's own local time. */
-const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  timeZone: "UTC",
-});
-
-function formatTimestamp(iso: string): string {
-  return `${DATE_TIME_FORMATTER.format(new Date(iso))} UTC`;
+ * environment's local timezone, at the small cost of always showing UTC
+ * rather than the rider's own local time.
+ *
+ * Backlog item 113 stage 5: the *locale* now comes from the translator
+ * while the *time zone* stays pinned to UTC. Those are two separate
+ * promises and only the first is the rider's to change — a German
+ * interface should read the date in German, but silently swapping UTC for
+ * local time would make every stored verification record mean something
+ * different. For English the locale resolves to `en-GB`, exactly the
+ * literal this replaces, so the output is byte-identical. */
+function formatTimestamp(translator: Translator, iso: string): string {
+  return translator.t("providerKey.utcTimestamp", {
+    timestamp: new Intl.DateTimeFormat(translator.locale, {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "UTC",
+    }).format(new Date(iso)),
+  });
 }
 
 /**
@@ -34,34 +43,37 @@ function formatTimestamp(iso: string): string {
  * never folded into this wording.
  */
 export function describeProviderKeyStatus(
+  translator: Translator,
   key: StoredProviderKey | undefined,
   verification: StoredProviderKeyVerification | undefined,
   nowMs: number,
 ): ProviderKeyStatus {
   if (!key) {
-    return { headline: "No key configured" };
+    return { headline: translator.t("providerKey.none") };
   }
   if (!verification) {
-    return { headline: "Key saved on this device, not yet verified" };
+    return { headline: translator.t("providerKey.unverified") };
   }
 
-  const checkedAt = formatTimestamp(verification.checkedAt);
+  const checkedAt = formatTimestamp(translator, verification.checkedAt);
 
   switch (verification.outcome) {
     case "verified":
-      return { headline: `Key last verified ${checkedAt}` };
+      return { headline: translator.t("providerKey.verified", { checkedAt }) };
     case "rejected":
-      return { headline: `Key was rejected when last checked ${checkedAt}` };
+      return { headline: translator.t("providerKey.rejected", { checkedAt }) };
     case "quota-limited": {
       const resetAt = verification.rateLimitResetAt;
       if (resetAt && new Date(resetAt).getTime() > nowMs) {
-        return { headline: `Quota reached, retry after ${formatTimestamp(resetAt)}` };
+        return {
+          headline: translator.t("providerKey.quotaRetryAfter", {
+            resetAt: formatTimestamp(translator, resetAt),
+          }),
+        };
       }
-      return {
-        headline: `Quota was reached when last checked ${checkedAt} — you can try again`,
-      };
+      return { headline: translator.t("providerKey.quotaReached", { checkedAt }) };
     }
     case "unavailable":
-      return { headline: `Provider was unavailable when last checked ${checkedAt}` };
+      return { headline: translator.t("providerKey.unavailable", { checkedAt }) };
   }
 }

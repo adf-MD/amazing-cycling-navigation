@@ -1,11 +1,12 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import {
   CLIMB_GRADIENT_BAND_SEVERITY_ORDER,
   type ClimbGradientBand,
 } from "../../navigation/routeFeatures.ts";
 import {
-  CLIMB_GRADIENT_BAND_COLOUR_NAMES,
-  CLIMB_GRADIENT_BAND_LABELS,
-  CLIMB_GRADIENT_BAND_RANGE_LABELS,
+  CLIMB_GRADIENT_BAND_COLOUR_NAME_KEYS,
+  CLIMB_GRADIENT_BAND_LABEL_KEYS,
+  CLIMB_GRADIENT_BAND_RANGE_LABEL_KEYS,
   MICRO_DETAIL_COLOURS,
 } from "../../navigation/routeFeaturePalette.ts";
 import { GradientColourSwatch } from "./GradientColourSwatch.tsx";
@@ -39,6 +40,7 @@ export function ClimbGradientBandLegend({
   presentClimbBands,
   variant = "full",
 }: ClimbGradientBandLegendProps) {
+  const { t } = useTranslate();
   const entries = CLIMB_GRADIENT_BAND_SEVERITY_ORDER.filter((band) =>
     presentClimbBands.has(band),
   );
@@ -47,18 +49,18 @@ export function ClimbGradientBandLegend({
   }
 
   return (
-    <ul aria-label="Detailed climb gradient legend" className="gradient-legend">
+    <ul aria-label={t("legend.climbGradient")} className="gradient-legend">
       {entries.map((band) => (
         <li key={band} className="gradient-legend-entry">
           <GradientColourSwatch colour={MICRO_DETAIL_COLOURS[band]} />
           {variant === "full" ? (
             <>
-              {CLIMB_GRADIENT_BAND_LABELS[band]} ·{" "}
-              {CLIMB_GRADIENT_BAND_RANGE_LABELS[band]} ·{" "}
-              {CLIMB_GRADIENT_BAND_COLOUR_NAMES[band]}
+              {t(CLIMB_GRADIENT_BAND_LABEL_KEYS[band])} ·{" "}
+              {t(CLIMB_GRADIENT_BAND_RANGE_LABEL_KEYS[band])} ·{" "}
+              {t(CLIMB_GRADIENT_BAND_COLOUR_NAME_KEYS[band])}
             </>
           ) : (
-            CLIMB_GRADIENT_BAND_RANGE_LABELS[band]
+            t(CLIMB_GRADIENT_BAND_RANGE_LABEL_KEYS[band])
           )}
         </li>
       ))}

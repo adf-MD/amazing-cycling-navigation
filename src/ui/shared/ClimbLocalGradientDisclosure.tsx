@@ -1,3 +1,4 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { ClimbGradientBand } from "../../navigation/routeFeatures.ts";
 import { ClimbGradientBandLegend } from "./ClimbGradientBandLegend.tsx";
 
@@ -24,13 +25,14 @@ export interface ClimbLocalGradientDisclosureProps {
 export function ClimbLocalGradientDisclosure({
   presentClimbBands,
 }: ClimbLocalGradientDisclosureProps) {
+  const { t } = useTranslate();
   if (presentClimbBands.size === 0) {
     return null;
   }
 
   return (
     <details className="local-gradient-disclosure">
-      <summary>Local gradient colours on this climb</summary>
+      <summary>{t("legend.localClimbColours")}</summary>
       <ClimbGradientBandLegend presentClimbBands={presentClimbBands} variant="compact" />
     </details>
   );

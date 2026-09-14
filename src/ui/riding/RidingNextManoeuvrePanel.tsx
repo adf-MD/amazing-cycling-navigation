@@ -120,7 +120,7 @@ export function RidingNextManoeuvrePanel({
             fontWeight: URGENCY_FONT_WEIGHT[urgency],
           }}
         >
-          {formatManoeuvreDistance(selection.remainingDistanceMetres)}
+          {formatManoeuvreDistance(translator, selection.remainingDistanceMetres)}
         </p>
       </div>
     </div>

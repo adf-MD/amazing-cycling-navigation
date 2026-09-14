@@ -15,7 +15,7 @@ import {
 import { OpenRouteServiceAdapter } from "../../routing/openRouteServiceAdapter.ts";
 import type { RoutingProvider } from "../../routing/provider.ts";
 import {
-  CONNECTION_TEST_STAGE_DESCRIPTIONS,
+  describeConnectionTestStage,
   formatConnectionTestReport,
   runRoutingConnectionTest,
   type RoutingConnectionTestResult,
@@ -31,50 +31,81 @@ import {
   type ResolvedActiveRoute,
 } from "./activeSessionSummary.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
+import { useTranslate } from "../../i18n/useTranslate.ts";
+import type { ParameterlessMessageKey, Translator } from "../../i18n/translate.ts";
 
-const SERVICE_WORKER_LABEL: Record<ServiceWorkerStatus, string> = {
-  unsupported: "Not supported by this browser",
-  "not-registered": "Not registered",
-  installing: "Installing",
-  waiting: "Waiting to activate",
-  active: "Active",
-  unknown: "Unknown",
+const SERVICE_WORKER_LABEL_KEYS: Record<ServiceWorkerStatus, ParameterlessMessageKey> = {
+  unsupported: "status.sw.unsupported",
+  "not-registered": "status.sw.notRegistered",
+  installing: "status.sw.installing",
+  waiting: "status.sw.waiting",
+  active: "status.sw.active",
+  unknown: "status.sw.unknown",
 };
 
-const GEOLOCATION_PERMISSION_LABEL = {
-  granted: "Granted",
-  denied: "Denied",
-  prompt: "Not yet requested",
-  unsupported: "Not supported by this browser",
+const GEOLOCATION_PERMISSION_LABEL_KEYS: Record<
+  "granted" | "denied" | "prompt" | "unsupported",
+  ParameterlessMessageKey
+> = {
+  granted: "status.permission.granted",
+  denied: "status.permission.denied",
+  prompt: "status.permission.prompt",
+  unsupported: "status.permission.unsupported",
 };
 
-function formatFixAge(ageMs: number): string {
+function formatFixAge(translator: Translator, ageMs: number): string {
   const seconds = Math.max(0, Math.round(ageMs / 1000));
-  if (seconds < 60) return `${String(seconds)}s ago`;
-  return `${String(Math.round(seconds / 60))} min ago`;
+  if (seconds < 60) return translator.t("status.fixAge.seconds", { seconds });
+  return translator.t("status.fixAge.minutes", {
+    minutes: Math.round(seconds / 60),
+  });
 }
 
-const STORAGE_BYTE_UNITS = ["KiB", "MiB", "GiB", "TiB"];
+/** Binary units, ordered from the smallest this ever selects. The unit is
+ * part of the message rather than appended, since a language may place it
+ * differently; the abbreviations themselves are standard and stay. */
+const STORAGE_BYTE_UNIT_KEYS = [
+  "status.storage.kibibytes",
+  "status.storage.mebibytes",
+  "status.storage.gibibytes",
+  "status.storage.tebibytes",
+] as const;
 
-function formatStorageBytes(bytes: number): string {
-  if (bytes < 1024) return `${String(Math.round(bytes))} B`;
+function formatStorageBytes(translator: Translator, bytes: number): string {
+  // Rounds first, then formats the already-rounded value — see
+  // `src/ui/shared/routeSummary.ts`'s header for why that ordering is
+  // load-bearing rather than stylistic.
+  const round = (value: number, digits: number): string =>
+    new Intl.NumberFormat(translator.locale, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+      useGrouping: false,
+    }).format(
+      digits === 0 ? Number(String(Math.round(value))) : Number(value.toFixed(digits)),
+    );
+  if (bytes < 1024) {
+    return translator.t("status.storage.bytes", { value: round(bytes, 0) });
+  }
   let value = bytes;
   let unitIndex = -1;
-  while (value >= 1024 && unitIndex < STORAGE_BYTE_UNITS.length - 1) {
+  while (value >= 1024 && unitIndex < STORAGE_BYTE_UNIT_KEYS.length - 1) {
     value /= 1024;
     unitIndex += 1;
   }
-  return `${value.toFixed(1)} ${STORAGE_BYTE_UNITS[unitIndex] ?? "TiB"}`;
+  const unitKey = STORAGE_BYTE_UNIT_KEYS[unitIndex] ?? "status.storage.tebibytes";
+  return translator.t(unitKey, { value: round(value, 1) });
 }
 
 // Floors so a displayed "90%" can never contradict the raw >=0.9 pressure
 // classification, except a genuinely non-zero fraction below 1% shows
 // "<1%" rather than a misleadingly exact "0%" — only an exact 0 ratio
 // still shows "0%".
-function formatStoragePercentage(usageRatio: number): string {
+function formatStoragePercentage(translator: Translator, usageRatio: number): string {
   const flooredPercent = Math.floor(usageRatio * 100);
-  if (usageRatio > 0 && flooredPercent === 0) return "<1%";
-  return `${String(flooredPercent)}%`;
+  if (usageRatio > 0 && flooredPercent === 0) {
+    return translator.t("status.storage.lessThanOnePercent");
+  }
+  return translator.t("status.storage.percentage", { percentage: flooredPercent });
 }
 
 function formatDiagnosticsReportHeader(): string {
@@ -100,6 +131,8 @@ export function DiagnosticsScreen({
   clock = systemClock,
   routingProvider,
 }: DiagnosticsScreenProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   const online = useOnlineStatus();
   const serviceWorkerStatus = useServiceWorkerStatus();
   const storageHealth = useStorageHealth();
@@ -172,64 +205,83 @@ export function DiagnosticsScreen({
   const fixAgeMs = rideState?.lastFix ? now - rideState.lastFix.timestampMs : null;
 
   return (
-    <section className="screen diagnostics-screen" aria-label="Status">
-      <h1 className="screen-title">Status</h1>
+    <section className="screen diagnostics-screen" aria-label={t("status.landmarkLabel")}>
+      <h1 className="screen-title">{t("status.title")}</h1>
 
       <section
         className="panel stack diagnostics-section"
         aria-labelledby="diagnostics-system-status-heading"
       >
-        <h2 id="diagnostics-system-status-heading">System status</h2>
+        <h2 id="diagnostics-system-status-heading">{t("status.systemStatus")}</h2>
         <dl className="diagnostics-definition-grid">
           <div className="diagnostics-definition-item">
-            <dt className="diagnostics-label">App version</dt>
+            <dt className="diagnostics-label">{t("status.appVersion")}</dt>
             <dd className="diagnostics-value">{__APP_VERSION__}</dd>
           </div>
 
           <div className="diagnostics-definition-item">
-            <dt className="diagnostics-label">Build</dt>
+            <dt className="diagnostics-label">{t("status.build")}</dt>
             <dd className="diagnostics-value diagnostics-value--mono">{__BUILD_ID__}</dd>
           </div>
 
           <div className="diagnostics-definition-item">
-            <dt className="diagnostics-label">Network</dt>
-            <dd className="diagnostics-value">{online ? "Online" : "Offline"}</dd>
-          </div>
-
-          <div className="diagnostics-definition-item">
-            <dt className="diagnostics-label">Service worker</dt>
+            <dt className="diagnostics-label">{t("status.network")}</dt>
             <dd className="diagnostics-value">
-              {SERVICE_WORKER_LABEL[serviceWorkerStatus]}
+              {t(online ? "status.online" : "status.offline")}
             </dd>
           </div>
 
           <div className="diagnostics-definition-item">
-            <dt className="diagnostics-label">Storage</dt>
+            <dt className="diagnostics-label">{t("status.serviceWorker")}</dt>
             <dd className="diagnostics-value">
-              {storageHealth.status === "checking" && "Checking…"}
-              {storageHealth.status === "error" && "Unavailable"}
+              {t(SERVICE_WORKER_LABEL_KEYS[serviceWorkerStatus])}
+            </dd>
+          </div>
+
+          <div className="diagnostics-definition-item">
+            <dt className="diagnostics-label">{t("status.storage")}</dt>
+            <dd className="diagnostics-value">
+              {storageHealth.status === "checking" && t("status.storage.checking")}
+              {storageHealth.status === "error" && t("status.storage.unavailable")}
               {storageHealth.status === "ok" && (
                 <div className="diagnostics-value-lines">
-                  <p>{`OK (schema version ${String(storageHealth.schemaVersion)})`}</p>
+                  <p>
+                    {t("status.storage.ok", { version: storageHealth.schemaVersion })}
+                  </p>
                   {storageHealth.estimate.status === "checking" && (
-                    <p className="field-hint">Checking storage estimate…</p>
+                    <p className="field-hint">{t("status.storage.estimateChecking")}</p>
                   )}
                   {storageHealth.estimate.status === "unsupported" && (
                     <p className="field-hint">
-                      Estimated app storage: not supported by this browser
+                      {t("status.storage.estimateUnsupported")}
                     </p>
                   )}
                   {storageHealth.estimate.status === "unavailable" && (
-                    <p className="field-hint">Estimated app storage: unavailable</p>
+                    <p className="field-hint">
+                      {t("status.storage.estimateUnavailable")}
+                    </p>
                   )}
                   {storageHealth.estimate.status === "available" && (
                     <>
                       <p>
-                        {`Estimated app storage: ${formatStorageBytes(storageHealth.estimate.usageBytes)} of ${formatStorageBytes(storageHealth.estimate.quotaBytes)} used (${formatStoragePercentage(storageHealth.estimate.usageRatio)})`}
+                        {t("status.storage.estimate", {
+                          used: formatStorageBytes(
+                            translator,
+                            storageHealth.estimate.usageBytes,
+                          ),
+                          quota: formatStorageBytes(
+                            translator,
+                            storageHealth.estimate.quotaBytes,
+                          ),
+                          percentage: formatStoragePercentage(
+                            translator,
+                            storageHealth.estimate.usageRatio,
+                          ),
+                        })}
                       </p>
                       {storageHealth.estimate.highPressure && (
                         <p className="diagnostics-value--storage-pressure">
-                          Storage pressure warning: estimated app storage usage is high.
+                          {t("status.storage.pressure")}
                         </p>
                       )}
                     </>
@@ -240,39 +292,47 @@ export function DiagnosticsScreen({
           </div>
 
           <div className="diagnostics-definition-item">
-            <dt className="diagnostics-label">Map rendering support</dt>
+            <dt className="diagnostics-label">{t("status.mapRendering")}</dt>
             <dd className="diagnostics-value">
-              {isMapRenderingSupported() ? "Supported" : "Not supported by this browser"}
+              {t(
+                isMapRenderingSupported()
+                  ? "status.mapRendering.supported"
+                  : "status.mapRendering.unsupported",
+              )}
             </dd>
           </div>
 
           <div className="diagnostics-definition-item">
-            <dt className="diagnostics-label">Geolocation permission</dt>
+            <dt className="diagnostics-label">{t("status.geolocationPermission")}</dt>
             <dd className="diagnostics-value">
-              {GEOLOCATION_PERMISSION_LABEL[geolocationPermission]}
+              {t(GEOLOCATION_PERMISSION_LABEL_KEYS[geolocationPermission])}
             </dd>
           </div>
 
           <div className="diagnostics-definition-item">
-            <dt className="diagnostics-label">Last known fix accuracy</dt>
+            <dt className="diagnostics-label">{t("status.fixAccuracy")}</dt>
             <dd className="diagnostics-value">
               {rideState?.lastFix
-                ? `±${String(Math.round(rideState.lastFix.accuracyMetres))} m`
-                : "Not applicable yet"}
+                ? t("status.fixAccuracyValue", {
+                    accuracy: Math.round(rideState.lastFix.accuracyMetres),
+                  })
+                : t("status.notApplicableYet")}
             </dd>
           </div>
 
           <div className="diagnostics-definition-item">
-            <dt className="diagnostics-label">Last known fix age</dt>
+            <dt className="diagnostics-label">{t("status.fixAge")}</dt>
             <dd className="diagnostics-value">
-              {fixAgeMs !== null ? formatFixAge(fixAgeMs) : "Not applicable yet"}
+              {fixAgeMs !== null
+                ? formatFixAge(translator, fixAgeMs)
+                : t("status.notApplicableYet")}
             </dd>
           </div>
 
           <div className="diagnostics-definition-item">
-            <dt className="diagnostics-label">Active session</dt>
+            <dt className="diagnostics-label">{t("status.session")}</dt>
             <dd className="diagnostics-value">
-              {describeActiveSession(rideState, resolvedActiveRoute)}
+              {describeActiveSession(translator, rideState, resolvedActiveRoute)}
             </dd>
           </div>
         </dl>
@@ -282,9 +342,9 @@ export function DiagnosticsScreen({
         className="panel stack diagnostics-section"
         aria-labelledby="diagnostics-errors-heading"
       >
-        <h2 id="diagnostics-errors-heading">Recent errors</h2>
+        <h2 id="diagnostics-errors-heading">{t("status.recentErrors")}</h2>
         {recentErrors.length === 0 ? (
-          <p className="field-hint">No errors recorded this session.</p>
+          <p className="field-hint">{t("status.noErrors")}</p>
         ) : (
           <ul className="diagnostics-log-list">
             {recentErrors.map((entry) => (
@@ -303,177 +363,160 @@ export function DiagnosticsScreen({
         className="panel stack diagnostics-section"
         aria-labelledby="diagnostics-routing-heading"
       >
-        <h2 id="diagnostics-routing-heading">Routing diagnostics</h2>
+        <h2 id="diagnostics-routing-heading">{t("status.routingDiagnostics")}</h2>
 
-        <h3>Recent routing attempts</h3>
+        <h3>{t("status.recentRoutingAttempts")}</h3>
         <details className="settings-disclosure">
-          <summary>Why a fetch can fail before an HTTP response</summary>
-          <p>
-            Browsers may report a generic fetch failure instead of the real HTTP status
-            (for example 502) when the provider&apos;s error response is missing CORS
-            headers — an entry reading &quot;Fetch promise rejected before an HTTP
-            response was exposed&quot; can mean a provider outage, a missing CORS header,
-            a DNS or TLS failure, or a local network restriction, and cannot be told apart
-            from this information alone.
-          </p>
+          <summary>{t("status.fetchFailureSummary")}</summary>
+          <p>{t("status.fetchFailureDetail")}</p>
         </details>
         <details className="settings-disclosure">
-          <summary>What HTTP statuses mean</summary>
-          <p>
-            When the routing provider exposes an HTTP response, its status is recorded in
-            Recent routing attempts below. A failed connection test also shows it when the
-            failure carried one; a successful connection test does not repeat it. These
-            are broad categories, not a proven cause:
-          </p>
+          <summary>{t("status.httpGuideSummary")}</summary>
+          <p>{t("status.httpGuideIntro")}</p>
+          {/* The <strong> code and the prose after it are two separate
+              pieces on purpose: the code is a machine value that must read
+              identically in every language, while the sentence beside it is
+              rider-facing copy. Keeping them apart is what stops a
+              translation from silently renumbering an HTTP status. */}
           <ul className="diagnostics-status-guide">
             <li>
-              <strong>Success (2xx)</strong>
+              <strong>{t("status.http.success")}</strong>
               <ul>
                 <li>
-                  <strong>200</strong> — the normal successful response for a routing
-                  request. HTTP success is not the whole check: ACN still checks that the
-                  response contains usable route data.
+                  <strong>200</strong> {t("status.http.200")}
                 </li>
               </ul>
             </li>
             <li>
-              <strong>Redirects (3xx)</strong>
+              <strong>{t("status.http.redirects")}</strong>
+              <ul>
+                <li>{t("status.http.redirectsDetail")}</li>
+              </ul>
+            </li>
+            <li>
+              <strong>{t("status.http.requestProblems")}</strong>
               <ul>
                 <li>
-                  The browser normally follows redirects automatically and records the
-                  final response instead, so an intermediate 3xx status is not normally
-                  shown here.
+                  <strong>400</strong> {t("status.http.400")}
+                </li>
+                <li>
+                  <strong>{t("status.http.401or403")}</strong>{" "}
+                  {t("status.http.401or403Detail")}
+                </li>
+                <li>
+                  <strong>404</strong> {t("status.http.404")}
+                </li>
+                <li>
+                  <strong>405</strong> {t("status.http.405")}
+                </li>
+                <li>
+                  <strong>408</strong> {t("status.http.408")}
+                </li>
+                <li>
+                  <strong>413</strong> {t("status.http.413")}
+                </li>
+                <li>
+                  <strong>429</strong> {t("status.http.429")}
+                </li>
+                <li>
+                  <strong>{t("status.http.other4xx")}</strong>{" "}
+                  {t("status.http.other4xxDetail")}
                 </li>
               </ul>
             </li>
             <li>
-              <strong>Request or access problems (4xx)</strong>
+              <strong>{t("status.http.serviceProblems")}</strong>
               <ul>
                 <li>
-                  <strong>400</strong> — the request was incorrect or could not be
-                  processed.
+                  <strong>500</strong> {t("status.http.500")}
                 </li>
                 <li>
-                  <strong>401 or 403</strong> — the stored key, authorisation or access
-                  may have been rejected. OpenRouteService can also use 403 for an
-                  exhausted daily allowance, but the status alone does not prove which
-                  cause applies.
+                  <strong>501</strong> {t("status.http.501")}
                 </li>
                 <li>
-                  <strong>404</strong> — OpenRouteService documents this as either an
-                  unavailable endpoint or a request for which no result or route was
-                  found. The status alone does not say which.
-                </li>
-                <li>
-                  <strong>405</strong> — the request method was not accepted. This is
-                  unexpected during normal ACN use.
-                </li>
-                <li>
-                  <strong>408</strong> — an HTTP server or intermediary returned an
-                  exposed timeout response. This is not the same as ACN&apos;s own request
-                  timeout, or a fetch rejection with no exposed response.
-                </li>
-                <li>
-                  <strong>413</strong> — the request exceeds a size or capacity limit.
-                </li>
-                <li>
-                  <strong>429</strong> — request-rate or quota limiting. Waiting before
-                  retrying, or checking the provider allowance, may help.
-                </li>
-                <li>
-                  <strong>Other 4xx</strong> — the request was rejected, but the exact
-                  reason is not established by the status alone.
+                  <strong>{t("status.http.other5xx")}</strong>{" "}
+                  {t("status.http.other5xxDetail")}
                 </li>
               </ul>
             </li>
             <li>
-              <strong>Service problems (5xx)</strong>
+              <strong>{t("status.http.none")}</strong>
               <ul>
-                <li>
-                  <strong>500</strong> — an unexpected service-side error.
-                </li>
-                <li>
-                  <strong>501</strong> — the service does not support functionality
-                  required by the request.
-                </li>
-                <li>
-                  <strong>Other 5xx, including 502 to 504</strong> — a service, gateway or
-                  upstream failure. Retrying later may help.
-                </li>
-              </ul>
-            </li>
-            <li>
-              <strong>No HTTP status</strong>
-              <ul>
-                <li>
-                  No HTTP response was exposed to the browser, so no status can say
-                  anything about the service. See &quot;Why a fetch can fail before an
-                  HTTP response&quot; above.
-                </li>
+                <li>{t("status.http.noneDetail")}</li>
               </ul>
             </li>
           </ul>
         </details>
         {recentRoutingAttempts.length === 0 ? (
-          <p className="field-hint">No routing attempts recorded this session.</p>
+          <p className="field-hint">{t("status.noRoutingAttempts")}</p>
         ) : (
           <ul className="diagnostics-log-list">
             {recentRoutingAttempts.map((entry) => (
               <li key={entry.attemptId} className="diagnostics-log-row">
-                {describeRoutingAttempt(entry)}
+                {describeRoutingAttempt(translator, entry)}
               </li>
             ))}
           </ul>
         )}
 
-        <h3>Test routing connection</h3>
-        <p className="field-hint">
-          This sends one real request to OpenRouteService, using fixed test coordinates
-          rather than any route you&apos;ve planned, and uses one API request.
-        </p>
-        {!hasKey ? (
-          <p className="field-hint">
-            No OpenRouteService key configured. Add one in Settings to enable this test.
-          </p>
-        ) : null}
+        <h3>{t("status.testConnection")}</h3>
+        <p className="field-hint">{t("status.testConnectionHint")}</p>
+        {!hasKey ? <p className="field-hint">{t("status.testConnectionNoKey")}</p> : null}
         <button
           type="button"
           className="btn-secondary"
           onClick={runConnectionTest}
           disabled={!hasKey || isTestingConnection}
         >
-          {isTestingConnection ? "Testing…" : "Test routing connection"}
+          {t(isTestingConnection ? "status.testing" : "status.testConnection")}
         </button>
         {connectionTestResult ? (
           <>
             <p className="status-row" role="status">
-              {connectionTestResult.outcome === "success" ? "Succeeded" : "Failed"} —{" "}
-              {connectionTestResult.message} ({String(connectionTestResult.elapsedMs)} ms)
+              {/* `detail` is the provider-facing explanation the connection
+                  test itself produced, and `elapsed` a machine number.
+                  Both are interpolated as values, never re-parsed. */}
+              {t("status.testResult", {
+                outcome: t(
+                  connectionTestResult.outcome === "success"
+                    ? "status.testSucceeded"
+                    : "status.testFailed",
+                ),
+                detail: connectionTestResult.message,
+                elapsed: connectionTestResult.elapsedMs,
+              })}
             </p>
             <dl className="diagnostics-definition-grid">
               <div className="diagnostics-definition-item">
-                <dt className="diagnostics-label">Stage</dt>
+                <dt className="diagnostics-label">{t("status.stage")}</dt>
                 <dd className="diagnostics-value">
-                  {connectionTestResult.stage} —{" "}
-                  {CONNECTION_TEST_STAGE_DESCRIPTIONS[connectionTestResult.stage]}
+                  {t("status.stageValue", {
+                    stage: connectionTestResult.stage,
+                    description: describeConnectionTestStage(
+                      translator,
+                      connectionTestResult.stage,
+                    ),
+                  })}
                 </dd>
               </div>
 
               {connectionTestResult.errorName ? (
                 <div className="diagnostics-definition-item">
-                  <dt className="diagnostics-label">Error</dt>
+                  <dt className="diagnostics-label">{t("status.error")}</dt>
                   <dd className="diagnostics-value">
-                    {connectionTestResult.errorName}
                     {connectionTestResult.errorMessage
-                      ? `: ${connectionTestResult.errorMessage}`
-                      : ""}
+                      ? t("status.errorValue", {
+                          name: connectionTestResult.errorName,
+                          message: connectionTestResult.errorMessage,
+                        })
+                      : connectionTestResult.errorName}
                   </dd>
                 </div>
               ) : null}
 
               {connectionTestResult.transportFailureReasonCode ? (
                 <div className="diagnostics-definition-item">
-                  <dt className="diagnostics-label">Safe reason code</dt>
+                  <dt className="diagnostics-label">{t("status.safeReasonCode")}</dt>
                   <dd className="diagnostics-value">
                     {connectionTestResult.transportFailureReasonCode}
                   </dd>
@@ -482,73 +525,87 @@ export function DiagnosticsScreen({
 
               {connectionTestResult.httpStatus !== undefined ? (
                 <div className="diagnostics-definition-item">
-                  <dt className="diagnostics-label">HTTP status</dt>
+                  <dt className="diagnostics-label">{t("status.httpStatus")}</dt>
                   <dd className="diagnostics-value">{connectionTestResult.httpStatus}</dd>
                 </div>
               ) : null}
 
               <div className="diagnostics-definition-item">
-                <dt className="diagnostics-label">Headers constructed</dt>
+                <dt className="diagnostics-label">{t("status.headersConstructed")}</dt>
                 <dd className="diagnostics-value">
-                  {connectionTestResult.headersConstructed ? "Yes" : "No"}
+                  {connectionTestResult.headersConstructed
+                    ? t("status.yes")
+                    : t("status.no")}
                 </dd>
               </div>
 
               <div className="diagnostics-definition-item">
-                <dt className="diagnostics-label">Request constructed</dt>
+                <dt className="diagnostics-label">{t("status.requestConstructed")}</dt>
                 <dd className="diagnostics-value">
-                  {connectionTestResult.requestConstructed ? "Yes" : "No"}
+                  {connectionTestResult.requestConstructed
+                    ? t("status.yes")
+                    : t("status.no")}
                 </dd>
               </div>
 
               <div className="diagnostics-definition-item">
-                <dt className="diagnostics-label">Fetch invoked</dt>
+                <dt className="diagnostics-label">{t("status.fetchInvoked")}</dt>
                 <dd className="diagnostics-value">
-                  {connectionTestResult.fetchInvoked ? "Yes" : "No"}
+                  {connectionTestResult.fetchInvoked ? t("status.yes") : t("status.no")}
                 </dd>
               </div>
 
               <div className="diagnostics-definition-item">
-                <dt className="diagnostics-label">Fetch returned a promise</dt>
+                <dt className="diagnostics-label">{t("status.fetchReturnedPromise")}</dt>
                 <dd className="diagnostics-value">
-                  {connectionTestResult.fetchReturnedPromise ? "Yes" : "No"}
+                  {connectionTestResult.fetchReturnedPromise
+                    ? t("status.yes")
+                    : t("status.no")}
                 </dd>
               </div>
 
               <div className="diagnostics-definition-item">
-                <dt className="diagnostics-label">HTTP response received</dt>
+                <dt className="diagnostics-label">{t("status.responseReceived")}</dt>
                 <dd className="diagnostics-value">
-                  {connectionTestResult.responseReceived ? "Yes" : "No"}
+                  {connectionTestResult.responseReceived
+                    ? t("status.yes")
+                    : t("status.no")}
                 </dd>
               </div>
 
               <div className="diagnostics-definition-item">
-                <dt className="diagnostics-label">Secure context</dt>
+                <dt className="diagnostics-label">{t("status.secureContext")}</dt>
                 <dd className="diagnostics-value">
-                  {connectionTestResult.isSecureContext ? "Yes" : "No"}
+                  {connectionTestResult.isSecureContext
+                    ? t("status.yes")
+                    : t("status.no")}
                 </dd>
               </div>
 
               <div className="diagnostics-definition-item">
                 <dt className="diagnostics-label">
-                  Service worker controlling this page
+                  {t("status.serviceWorkerControlling")}
                 </dt>
                 <dd className="diagnostics-value">
-                  {connectionTestResult.isServiceWorkerControlled ? "Yes" : "No"}
+                  {connectionTestResult.isServiceWorkerControlled
+                    ? t("status.yes")
+                    : t("status.no")}
                 </dd>
               </div>
 
               <div className="diagnostics-definition-item">
-                <dt className="diagnostics-label">Active service worker script</dt>
+                <dt className="diagnostics-label">
+                  {t("status.activeServiceWorkerScript")}
+                </dt>
                 <dd className="diagnostics-value">
-                  {connectionTestResult.activeServiceWorkerScriptUrl ?? "None"}
+                  {connectionTestResult.activeServiceWorkerScriptUrl ?? t("status.none")}
                 </dd>
               </div>
 
               <div className="diagnostics-definition-item">
-                <dt className="diagnostics-label">Installed/standalone display</dt>
+                <dt className="diagnostics-label">{t("status.standaloneDisplay")}</dt>
                 <dd className="diagnostics-value">
-                  {connectionTestResult.isStandalone ? "Yes" : "No"}
+                  {connectionTestResult.isStandalone ? t("status.yes") : t("status.no")}
                 </dd>
               </div>
             </dl>
@@ -557,14 +614,14 @@ export function DiagnosticsScreen({
               className="btn-secondary"
               onClick={copyConnectionTestReport}
             >
-              Copy diagnostic report
+              {t("status.copyReport")}
             </button>
             {copyStatus === "copied" ? (
-              <p className="field-hint">Copied to clipboard.</p>
+              <p className="field-hint">{t("status.copied")}</p>
             ) : null}
             {copyStatus === "failed" ? (
               <p className="field-error">
-                Could not copy automatically — select and copy the report text manually:
+                {t("status.copyFailed")}
                 <br />
                 <textarea
                   readOnly
@@ -581,14 +638,14 @@ export function DiagnosticsScreen({
         className="panel stack diagnostics-section"
         aria-labelledby="diagnostics-map-heading"
       >
-        <h2 id="diagnostics-map-heading">Recent map imagery attempts</h2>
+        <h2 id="diagnostics-map-heading">{t("status.recentMapAttempts")}</h2>
         {recentMapAttempts.length === 0 ? (
-          <p className="field-hint">No map imagery attempts recorded this session.</p>
+          <p className="field-hint">{t("status.noMapAttempts")}</p>
         ) : (
           <ul className="diagnostics-log-list">
             {recentMapAttempts.map((entry) => (
               <li key={entry.timestampIso} className="diagnostics-log-row">
-                {describeMapAttempt(entry)}
+                {describeMapAttempt(translator, entry)}
               </li>
             ))}
           </ul>

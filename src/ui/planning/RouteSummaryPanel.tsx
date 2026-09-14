@@ -160,7 +160,8 @@ export function RouteSummaryPanel({
 
       <div className="route-summary-metrics">
         <p>
-          {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
+          {formatDistanceKm(translator, route.distanceMetres)} ·{" "}
+          {formatAscent(translator, route.ascentMetres)}
           {route.descentMetres !== null
             ? ` · ${t("routeSummary.descent", { descent: Math.round(route.descentMetres) })}`
             : ""}
@@ -227,22 +228,22 @@ export function RouteSummaryPanel({
           >
             <li>
               {t("routeSummary.surfacePaved", {
-                distance: formatMetres(surface.pavedMetres),
+                distance: formatMetres(translator, surface.pavedMetres),
               })}
             </li>
             <li>
               {t("routeSummary.surfaceQuestionable", {
-                distance: formatMetres(surface.questionableMetres),
+                distance: formatMetres(translator, surface.questionableMetres),
               })}
             </li>
             <li>
               {t("routeSummary.surfaceUnsuitable", {
-                distance: formatMetres(surface.unsuitableMetres),
+                distance: formatMetres(translator, surface.unsuitableMetres),
               })}
             </li>
             <li>
               {t("routeSummary.surfaceUnknown", {
-                distance: formatMetres(surface.unknownMetres),
+                distance: formatMetres(translator, surface.unknownMetres),
               })}
             </li>
           </ul>
@@ -289,16 +290,19 @@ export function RouteSummaryPanel({
                       <>
                         {t("routeSummary.warningRowSurface", {
                           warning: describeSurfaceWarningKind(translator, warning),
-                          length: formatMetres(lengthMetres),
+                          length: formatMetres(translator, lengthMetres),
                         })}
                       </>
                     ) : (
                       <>
                         {t("routeSummary.warningRow", {
                           warning: describeRouteWarning(translator, warning),
-                          length: formatMetres(lengthMetres),
-                          start: formatDistanceKm(warning.startDistanceMetres),
-                          end: formatDistanceKm(warning.endDistanceMetres),
+                          length: formatMetres(translator, lengthMetres),
+                          start: formatDistanceKm(
+                            translator,
+                            warning.startDistanceMetres,
+                          ),
+                          end: formatDistanceKm(translator, warning.endDistanceMetres),
                         })}
                       </>
                     )}
@@ -312,8 +316,14 @@ export function RouteSummaryPanel({
                       </p>
                       <p>
                         {t("routeSummary.warningPosition", {
-                          start: formatDistanceKmValue(warning.startDistanceMetres),
-                          end: formatDistanceKmValue(warning.endDistanceMetres),
+                          start: formatDistanceKmValue(
+                            translator,
+                            warning.startDistanceMetres,
+                          ),
+                          end: formatDistanceKmValue(
+                            translator,
+                            warning.endDistanceMetres,
+                          ),
                         })}
                       </p>
                     </div>
@@ -326,8 +336,11 @@ export function RouteSummaryPanel({
             <p role="status">
               {t("routeSummary.warningSelected", {
                 warning: describeRouteWarning(translator, justRevealedWarning),
-                start: formatDistanceKm(justRevealedWarning.startDistanceMetres),
-                end: formatDistanceKm(justRevealedWarning.endDistanceMetres),
+                start: formatDistanceKm(
+                  translator,
+                  justRevealedWarning.startDistanceMetres,
+                ),
+                end: formatDistanceKm(translator, justRevealedWarning.endDistanceMetres),
               })}
             </p>
           ) : null}

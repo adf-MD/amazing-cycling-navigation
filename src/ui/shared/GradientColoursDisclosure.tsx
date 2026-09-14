@@ -1,3 +1,4 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { ClimbGradientBand } from "../../navigation/routeFeatures.ts";
 import type { RouteFeatureVisualKey } from "../../navigation/routeFeaturePalette.ts";
 import { ClimbGradientBandLegend } from "./ClimbGradientBandLegend.tsx";
@@ -33,29 +34,20 @@ export function GradientColoursDisclosure({
   presentClimbBands,
   presentVisualKeys,
 }: GradientColoursDisclosureProps) {
+  const { t } = useTranslate();
   if (presentClimbBands.size === 0 && presentVisualKeys.size === 0) {
     return null;
   }
 
   return (
     <details className="gradient-colours-disclosure">
-      <summary>Gradient colours</summary>
-      <section aria-label="Recognised route features">
-        <p>
-          Overall climb colours depend on climb length and average gradient. Recognised
-          descents use one of three blues based on average gradient and are specific to
-          this app.
-        </p>
+      <summary>{t("legend.gradientColours")}</summary>
+      <section aria-label={t("legend.recognisedRouteFeatures")}>
+        <p>{t("legend.macroExplanation")}</p>
         <RouteFeatureLegend presentVisualKeys={presentVisualKeys} />
       </section>
-      <section aria-label="Detailed local gradient">
-        <p>
-          Detailed colours show local gradient over approximately 100 m within the
-          selected or currently active climb. Brief flat or descending sections inside a
-          climb are green. A selected or currently active descent reuses the same three
-          blues shown above, applied to its local sections instead of its whole length —
-          any locally shallow stretch there shows the plain route colour instead.
-        </p>
+      <section aria-label={t("legend.detailedLocalGradient")}>
+        <p>{t("legend.localExplanation")}</p>
         <ClimbGradientBandLegend presentClimbBands={presentClimbBands} />
       </section>
     </details>

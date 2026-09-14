@@ -1,6 +1,6 @@
 import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { ClimbFeature } from "../../navigation/routeFeatures.ts";
-import { CLIMB_CATEGORY_NAMES } from "../../navigation/routeFeaturePalette.ts";
+import { CLIMB_CATEGORY_NAME_KEYS } from "../../navigation/routeFeaturePalette.ts";
 import { formatDistanceKmValue } from "../shared/routeSummary.ts";
 
 export interface RidingClimbSelectorProps {
@@ -65,8 +65,8 @@ export function RidingClimbSelector({
           <option key={climb.id} value={climb.id}>
             {t("climb.option", {
               number: index + 1,
-              category: CLIMB_CATEGORY_NAMES[climb.category],
-              start: formatDistanceKmValue(climb.startDistanceMetres),
+              category: t(CLIMB_CATEGORY_NAME_KEYS[climb.category]),
+              start: formatDistanceKmValue(translator, climb.startDistanceMetres),
             })}
           </option>
         ))}

@@ -1,3 +1,4 @@
+import { englishTranslator } from "../../i18n/englishTranslator.ts";
 import { describe, expect, it } from "vitest";
 import { describeActiveSession } from "./activeSessionSummary.ts";
 import type { StoredRideState } from "../../storage/db.ts";
@@ -26,25 +27,39 @@ const freeRoamSession: StoredRideState = {
 
 describe("describeActiveSession (backlog item 117)", () => {
   it("reads None with no stored session", () => {
-    expect(describeActiveSession(undefined, undefined)).toBe("None");
+    expect(describeActiveSession(englishTranslator, undefined, undefined)).toBe("None");
   });
 
   it("reads Free roam for a free-roam session", () => {
-    expect(describeActiveSession(freeRoamSession, undefined)).toBe("Free roam");
+    expect(describeActiveSession(englishTranslator, freeRoamSession, undefined)).toBe(
+      "Free roam",
+    );
   });
 
   it("shows the resolved route name for a route-backed session", () => {
     expect(
-      describeActiveSession(routeSession(), { routeId: ROUTE_ID, name: "Evening loop" }),
+      describeActiveSession(englishTranslator, routeSession(), {
+        routeId: ROUTE_ID,
+        name: "Evening loop",
+      }),
     ).toBe("Evening loop");
   });
 
   it("never returns the route identifier, whatever the lookup produced", () => {
     const results = [
-      describeActiveSession(routeSession(), undefined),
-      describeActiveSession(routeSession(), { routeId: ROUTE_ID, name: null }),
-      describeActiveSession(routeSession(), { routeId: ROUTE_ID, name: "Evening loop" }),
-      describeActiveSession(routeSession(), { routeId: OTHER_ROUTE_ID, name: "Stale" }),
+      describeActiveSession(englishTranslator, routeSession(), undefined),
+      describeActiveSession(englishTranslator, routeSession(), {
+        routeId: ROUTE_ID,
+        name: null,
+      }),
+      describeActiveSession(englishTranslator, routeSession(), {
+        routeId: ROUTE_ID,
+        name: "Evening loop",
+      }),
+      describeActiveSession(englishTranslator, routeSession(), {
+        routeId: OTHER_ROUTE_ID,
+        name: "Stale",
+      }),
     ];
 
     for (const result of results) {
@@ -54,7 +69,7 @@ describe("describeActiveSession (backlog item 117)", () => {
   });
 
   it("falls back honestly when the route no longer exists, rather than to None", () => {
-    const result = describeActiveSession(routeSession(), {
+    const result = describeActiveSession(englishTranslator, routeSession(), {
       routeId: ROUTE_ID,
       name: null,
     });
@@ -65,7 +80,10 @@ describe("describeActiveSession (backlog item 117)", () => {
 
   it("falls back when a stored name is blank, since no field may render empty", () => {
     expect(
-      describeActiveSession(routeSession(), { routeId: ROUTE_ID, name: "   " }),
+      describeActiveSession(englishTranslator, routeSession(), {
+        routeId: ROUTE_ID,
+        name: "   ",
+      }),
     ).toBe("Route unavailable");
   });
 
@@ -75,7 +93,7 @@ describe("describeActiveSession (backlog item 117)", () => {
     // routeId comparison a switch from one route to another would render
     // the old route's name against the new session.
     expect(
-      describeActiveSession(routeSession(OTHER_ROUTE_ID), {
+      describeActiveSession(englishTranslator, routeSession(OTHER_ROUTE_ID), {
         routeId: ROUTE_ID,
         name: "Evening loop",
       }),
@@ -83,7 +101,9 @@ describe("describeActiveSession (backlog item 117)", () => {
   });
 
   it("shows a placeholder, not a fallback, before the first lookup resolves", () => {
-    expect(describeActiveSession(routeSession(), undefined)).toBe("Checking…");
+    expect(describeActiveSession(englishTranslator, routeSession(), undefined)).toBe(
+      "Checking…",
+    );
   });
 
   it("does not call a session of an unrecognised kind Free roam", () => {
@@ -92,7 +112,7 @@ describe("describeActiveSession (backlog item 117)", () => {
       kind: "some-future-kind",
     } as unknown as StoredRideState;
 
-    const result = describeActiveSession(unsupported, undefined);
+    const result = describeActiveSession(englishTranslator, unsupported, undefined);
 
     expect(result).toBe("Session unavailable");
     expect(result).not.toBe("Free roam");

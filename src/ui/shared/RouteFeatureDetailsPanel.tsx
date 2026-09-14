@@ -5,10 +5,11 @@ import type {
   RouteFeature,
 } from "../../navigation/routeFeatures.ts";
 import {
-  CLIMB_CATEGORY_NAMES,
+  CLIMB_CATEGORY_NAME_KEYS,
   ROUTE_FEATURE_COLOURS,
-  ROUTE_FEATURE_LABELS,
+  ROUTE_FEATURE_LABEL_KEYS,
 } from "../../navigation/routeFeaturePalette.ts";
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import { ClearSelectionButton } from "./ClearSelectionButton.tsx";
 import { ClimbLocalGradientDisclosure } from "./ClimbLocalGradientDisclosure.tsx";
 import { DescentLocalGradientDisclosure } from "./DescentLocalGradientDisclosure.tsx";
@@ -78,6 +79,8 @@ export function RouteFeatureDetailsPanel({
   presentDescentLocalKeys = EMPTY_DESCENT_LOCAL_KEYS,
   onClear,
 }: RouteFeatureDetailsPanelProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   if (feature === null) {
     return null;
   }
@@ -85,13 +88,19 @@ export function RouteFeatureDetailsPanel({
   const visualKey = feature.kind === "climb" ? feature.category : feature.band;
   const heading =
     feature.kind === "climb" && climbNumber !== undefined
-      ? `Climb ${String(climbNumber)} · ${CLIMB_CATEGORY_NAMES[feature.category]}`
+      ? t("featureDetails.heading", {
+          number: climbNumber,
+          category: t(CLIMB_CATEGORY_NAME_KEYS[feature.category]),
+        })
       : feature.kind === "climb"
-        ? ROUTE_FEATURE_LABELS[feature.category]
-        : "Recognised descent";
+        ? t(ROUTE_FEATURE_LABEL_KEYS[feature.category])
+        : t("feature.recognisedDescent");
 
   return (
-    <section aria-label="Route feature details" className="route-feature-details">
+    <section
+      aria-label={t("featureDetails.landmarkLabel")}
+      className="route-feature-details"
+    >
       <h3>
         <GradientColourSwatch colour={ROUTE_FEATURE_COLOURS[visualKey]} /> {heading}
       </h3>
@@ -104,21 +113,45 @@ export function RouteFeatureDetailsPanel({
         />
       )}
       <p>
-        Route position: {formatDistanceKmValue(feature.startDistanceMetres)}–
-        {formatDistanceKmValue(feature.endDistanceMetres)} km
+        {t("featureDetails.routePosition", {
+          start: formatDistanceKmValue(translator, feature.startDistanceMetres),
+          end: formatDistanceKmValue(translator, feature.endDistanceMetres),
+        })}
       </p>
-      <p>Length: {formatDistanceKm(feature.lengthMetres)}</p>
-      {feature.kind === "climb" ? (
-        <p>Elevation gain: {formatMetres(feature.elevationGainMetres)}</p>
-      ) : (
-        <p>Elevation loss: {formatMetres(feature.elevationLossMetres)}</p>
-      )}
-      <p>Average gradient: {formatGradientPercent(feature.averageGradientPercent)}</p>
       <p>
-        {feature.kind === "climb" ? "Maximum" : "Steepest"} local gradient:{" "}
-        {formatGradientPercent(feature.maxGradientPercent)}
+        {t("featureDetails.length", {
+          distance: formatDistanceKm(translator, feature.lengthMetres),
+        })}
       </p>
-      {feature.kind === "climb" && <p>Climb score: {Math.round(feature.climbScore)}</p>}
+      {feature.kind === "climb" ? (
+        <p>
+          {t("featureDetails.elevationGain", {
+            elevation: formatMetres(translator, feature.elevationGainMetres),
+          })}
+        </p>
+      ) : (
+        <p>
+          {t("featureDetails.elevationLoss", {
+            elevation: formatMetres(translator, feature.elevationLossMetres),
+          })}
+        </p>
+      )}
+      <p>
+        {t("featureDetails.averageGradient", {
+          gradient: formatGradientPercent(translator, feature.averageGradientPercent),
+        })}
+      </p>
+      <p>
+        {t(
+          feature.kind === "climb"
+            ? "featureDetails.maximumLocalGradient"
+            : "featureDetails.steepestLocalGradient",
+          { gradient: formatGradientPercent(translator, feature.maxGradientPercent) },
+        )}
+      </p>
+      {feature.kind === "climb" && (
+        <p>{t("featureDetails.climbScore", { score: Math.round(feature.climbScore) })}</p>
+      )}
       {onClear && <ClearSelectionButton onClick={onClear} />}
     </section>
   );

@@ -1,6 +1,6 @@
 import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { ClimbFeature } from "../../navigation/routeFeatures.ts";
-import { CLIMB_CATEGORY_NAMES } from "../../navigation/routeFeaturePalette.ts";
+import { CLIMB_CATEGORY_NAME_KEYS } from "../../navigation/routeFeaturePalette.ts";
 import { formatDistanceKm } from "../shared/routeSummary.ts";
 
 export interface RidingClimbPreviewPanelProps {
@@ -48,11 +48,13 @@ export function RidingClimbPreviewPanel({
       <h3 aria-live="polite">
         {t("climb.heading", {
           number: climbNumber,
-          category: CLIMB_CATEGORY_NAMES[climb.category],
+          category: t(CLIMB_CATEGORY_NAME_KEYS[climb.category]),
         })}
       </h3>
       <p>
-        {t("climb.startsIn", { distance: formatDistanceKm(distanceUntilStartMetres) })}
+        {t("climb.startsIn", {
+          distance: formatDistanceKm(translator, distanceUntilStartMetres),
+        })}
       </p>
     </section>
   );

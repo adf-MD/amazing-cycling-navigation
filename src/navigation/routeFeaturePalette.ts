@@ -1,3 +1,4 @@
+import type { ParameterlessMessageKey } from "../i18n/translate.ts";
 import type {
   ClimbCategory,
   ClimbGradientBand,
@@ -40,12 +41,14 @@ const CLIMB_TIER_COLOURS: Readonly<Record<ClimbColourTier, string>> = {
   "dark-red": "#8e0000",
 };
 
-const CLIMB_TIER_COLOUR_NAMES: Readonly<Record<ClimbColourTier, string>> = {
-  green: "green",
-  yellow: "yellow",
-  orange: "orange",
-  red: "red",
-  "dark-red": "dark red",
+const CLIMB_TIER_COLOUR_NAME_KEYS: Readonly<
+  Record<ClimbColourTier, ParameterlessMessageKey>
+> = {
+  green: "feature.colour.green",
+  yellow: "feature.colour.yellow",
+  orange: "feature.colour.orange",
+  red: "feature.colour.red",
+  "dark-red": "feature.colour.darkRed",
 };
 
 const CLIMB_CATEGORY_TIER: Readonly<Record<ClimbCategory, ClimbColourTier>> = {
@@ -76,10 +79,12 @@ export const DESCENT_BAND_COLOURS: Readonly<Record<DescentBand, string>> = {
   "very-steep": "#1a1a4e",
 };
 
-const DESCENT_BAND_COLOUR_NAMES: Readonly<Record<DescentBand, string>> = {
-  moderate: "light blue",
-  steep: "blue",
-  "very-steep": "dark blue",
+const DESCENT_BAND_COLOUR_NAME_KEYS: Readonly<
+  Record<DescentBand, ParameterlessMessageKey>
+> = {
+  moderate: "feature.colour.lightBlue",
+  steep: "feature.colour.blue",
+  "very-steep": "feature.colour.darkBlue",
 };
 
 /** Mirrors MapView.tsx's own REMAINING_LAYER colour (#0a5f38) — kept as a
@@ -91,8 +96,7 @@ const DESCENT_BAND_COLOUR_NAMES: Readonly<Record<DescentBand, string>> = {
  * deliberate visual "this bit is just ordinary route", not a fourth
  * descent-severity colour. */
 export const ORDINARY_ROUTE_COLOUR = "#0a5f38";
-export const ORDINARY_ROUTE_LABEL =
-  "Ordinary route (including sections with missing or insufficient elevation data, and any locally shallow stretch within a selected descent) · green";
+export const ORDINARY_ROUTE_LABEL_KEY: ParameterlessMessageKey = "feature.ordinaryRoute";
 
 /** Defensive fallback for the map's DataDrivenLineColor.fallback slots
  * (macro and micro layers) — genuinely unreachable in normal operation,
@@ -117,18 +121,19 @@ export const ROUTE_FEATURE_COLOURS: Readonly<Record<RouteFeatureVisualKey, strin
  * state a colour in words as well as showing the swatch itself, so
  * meaning never depends on perceiving the colour. Uncategorised and
  * Category 4 intentionally share "green", matching their shared colour. */
-export const ROUTE_FEATURE_COLOUR_NAMES: Readonly<Record<RouteFeatureVisualKey, string>> =
-  {
-    uncategorised: CLIMB_TIER_COLOUR_NAMES[CLIMB_CATEGORY_TIER.uncategorised],
-    "category-4": CLIMB_TIER_COLOUR_NAMES[CLIMB_CATEGORY_TIER["category-4"]],
-    "category-3": CLIMB_TIER_COLOUR_NAMES[CLIMB_CATEGORY_TIER["category-3"]],
-    "category-2": CLIMB_TIER_COLOUR_NAMES[CLIMB_CATEGORY_TIER["category-2"]],
-    "category-1": CLIMB_TIER_COLOUR_NAMES[CLIMB_CATEGORY_TIER["category-1"]],
-    hc: CLIMB_TIER_COLOUR_NAMES[CLIMB_CATEGORY_TIER.hc],
-    moderate: DESCENT_BAND_COLOUR_NAMES.moderate,
-    steep: DESCENT_BAND_COLOUR_NAMES.steep,
-    "very-steep": DESCENT_BAND_COLOUR_NAMES["very-steep"],
-  };
+export const ROUTE_FEATURE_COLOUR_NAME_KEYS: Readonly<
+  Record<RouteFeatureVisualKey, ParameterlessMessageKey>
+> = {
+  uncategorised: CLIMB_TIER_COLOUR_NAME_KEYS[CLIMB_CATEGORY_TIER.uncategorised],
+  "category-4": CLIMB_TIER_COLOUR_NAME_KEYS[CLIMB_CATEGORY_TIER["category-4"]],
+  "category-3": CLIMB_TIER_COLOUR_NAME_KEYS[CLIMB_CATEGORY_TIER["category-3"]],
+  "category-2": CLIMB_TIER_COLOUR_NAME_KEYS[CLIMB_CATEGORY_TIER["category-2"]],
+  "category-1": CLIMB_TIER_COLOUR_NAME_KEYS[CLIMB_CATEGORY_TIER["category-1"]],
+  hc: CLIMB_TIER_COLOUR_NAME_KEYS[CLIMB_CATEGORY_TIER.hc],
+  moderate: DESCENT_BAND_COLOUR_NAME_KEYS.moderate,
+  steep: DESCENT_BAND_COLOUR_NAME_KEYS.steep,
+  "very-steep": DESCENT_BAND_COLOUR_NAME_KEYS["very-steep"],
+};
 
 /** Bare climb category name, with no "climb" suffix — used for the
  * pre-ride climb selector's numbered heading ("Climb 2 · Category 3") and
@@ -137,13 +142,15 @@ export const ROUTE_FEATURE_COLOUR_NAMES: Readonly<Record<RouteFeatureVisualKey, 
  * vice versa) to avoid risking the latter's existing tested strings; a
  * consistency test instead asserts the two can never silently drift
  * apart. */
-export const CLIMB_CATEGORY_NAMES: Readonly<Record<ClimbCategory, string>> = {
-  uncategorised: "Uncategorised",
-  "category-4": "Category 4",
-  "category-3": "Category 3",
-  "category-2": "Category 2",
-  "category-1": "Category 1",
-  hc: "HC",
+export const CLIMB_CATEGORY_NAME_KEYS: Readonly<
+  Record<ClimbCategory, ParameterlessMessageKey>
+> = {
+  uncategorised: "feature.category.uncategorised",
+  "category-4": "feature.category.category4",
+  "category-3": "feature.category.category3",
+  "category-2": "feature.category.category2",
+  "category-1": "feature.category.category1",
+  hc: "feature.category.hc",
 };
 
 /** Full text labels for the macro legend. Descent labels spell out the
@@ -151,37 +158,36 @@ export const CLIMB_CATEGORY_NAMES: Readonly<Record<ClimbCategory, string>> = {
  * (the details panel instead always shows the exact, band-independent
  * "Recognised descent" heading required by the spec, plus its own
  * average-gradient figure — see RouteFeatureDetailsPanel.tsx). */
-export const ROUTE_FEATURE_LABELS: Readonly<Record<RouteFeatureVisualKey, string>> = {
-  uncategorised: "Uncategorised climb",
-  "category-4": "Category 4 climb",
-  "category-3": "Category 3 climb",
-  "category-2": "Category 2 climb",
-  "category-1": "Category 1 climb",
-  hc: "HC climb",
-  // Described by magnitude (steepness), not signed value: "just below"
-  // reads confusingly against negative numbers that grow more negative as
-  // they steepen. Every boundary value (6%, 9%) is unambiguously owned by
-  // exactly one entry.
-  moderate: "Recognised descent (moderate, 3% to just below 6%)",
-  steep: "Recognised descent (steep, 6% to just below 9%)",
-  "very-steep": "Recognised descent (very steep, 9% or more)",
+export const ROUTE_FEATURE_LABEL_KEYS: Readonly<
+  Record<RouteFeatureVisualKey, ParameterlessMessageKey>
+> = {
+  uncategorised: "feature.label.uncategorised",
+  "category-4": "feature.label.category4",
+  "category-3": "feature.label.category3",
+  "category-2": "feature.label.category2",
+  "category-1": "feature.label.category1",
+  hc: "feature.label.hc",
+  moderate: "feature.label.moderate",
+  steep: "feature.label.steep",
+  "very-steep": "feature.label.verySteep",
 };
 
 /** Short codes for space-constrained map labels. Deliberately hollow
  * down-arrow glyphs for descents (▽ rather than an up-arrow) so a macro
  * descent glyph is never visually confused with a climb glyph. */
-export const ROUTE_FEATURE_SHORT_LABELS: Readonly<Record<RouteFeatureVisualKey, string>> =
-  {
-    uncategorised: "UC",
-    "category-4": "C4",
-    "category-3": "C3",
-    "category-2": "C2",
-    "category-1": "C1",
-    hc: "HC",
-    moderate: "▽",
-    steep: "▽▽",
-    "very-steep": "▽▽▽",
-  };
+export const ROUTE_FEATURE_SHORT_LABEL_KEYS: Readonly<
+  Record<RouteFeatureVisualKey, ParameterlessMessageKey>
+> = {
+  uncategorised: "feature.shortLabel.uncategorised",
+  "category-4": "feature.shortLabel.category4",
+  "category-3": "feature.shortLabel.category3",
+  "category-2": "feature.shortLabel.category2",
+  "category-1": "feature.shortLabel.category1",
+  hc: "feature.shortLabel.hc",
+  moderate: "feature.shortLabel.moderate",
+  steep: "feature.shortLabel.steep",
+  "very-steep": "feature.shortLabel.verySteep",
+};
 
 /** One legend row per distinguishable macro colour: Uncategorised and
  * Category 4 climbs are combined into a single row (they render with an
@@ -193,67 +199,67 @@ export const ROUTE_FEATURE_SHORT_LABELS: Readonly<Record<RouteFeatureVisualKey, 
 export interface RouteFeatureLegendEntry {
   visualKeys: readonly RouteFeatureVisualKey[];
   colour: string;
-  colourName: string;
-  label: string;
-  shortLabel: string;
+  colourNameKey: ParameterlessMessageKey;
+  labelKey: ParameterlessMessageKey;
+  shortLabelKey: ParameterlessMessageKey;
 }
 
 export const ROUTE_FEATURE_LEGEND_ENTRIES: readonly RouteFeatureLegendEntry[] = [
   {
     visualKeys: ["uncategorised", "category-4"],
     colour: ROUTE_FEATURE_COLOURS["category-4"],
-    colourName: ROUTE_FEATURE_COLOUR_NAMES["category-4"],
-    label: "Uncategorised or Category 4 climb",
-    shortLabel: "UC/C4",
+    colourNameKey: ROUTE_FEATURE_COLOUR_NAME_KEYS["category-4"],
+    labelKey: "feature.label.uncategorisedOrCategory4",
+    shortLabelKey: "feature.shortLabel.uncategorisedOrCategory4",
   },
   {
     visualKeys: ["category-3"],
     colour: ROUTE_FEATURE_COLOURS["category-3"],
-    colourName: ROUTE_FEATURE_COLOUR_NAMES["category-3"],
-    label: ROUTE_FEATURE_LABELS["category-3"],
-    shortLabel: ROUTE_FEATURE_SHORT_LABELS["category-3"],
+    colourNameKey: ROUTE_FEATURE_COLOUR_NAME_KEYS["category-3"],
+    labelKey: ROUTE_FEATURE_LABEL_KEYS["category-3"],
+    shortLabelKey: ROUTE_FEATURE_SHORT_LABEL_KEYS["category-3"],
   },
   {
     visualKeys: ["category-2"],
     colour: ROUTE_FEATURE_COLOURS["category-2"],
-    colourName: ROUTE_FEATURE_COLOUR_NAMES["category-2"],
-    label: ROUTE_FEATURE_LABELS["category-2"],
-    shortLabel: ROUTE_FEATURE_SHORT_LABELS["category-2"],
+    colourNameKey: ROUTE_FEATURE_COLOUR_NAME_KEYS["category-2"],
+    labelKey: ROUTE_FEATURE_LABEL_KEYS["category-2"],
+    shortLabelKey: ROUTE_FEATURE_SHORT_LABEL_KEYS["category-2"],
   },
   {
     visualKeys: ["category-1"],
     colour: ROUTE_FEATURE_COLOURS["category-1"],
-    colourName: ROUTE_FEATURE_COLOUR_NAMES["category-1"],
-    label: ROUTE_FEATURE_LABELS["category-1"],
-    shortLabel: ROUTE_FEATURE_SHORT_LABELS["category-1"],
+    colourNameKey: ROUTE_FEATURE_COLOUR_NAME_KEYS["category-1"],
+    labelKey: ROUTE_FEATURE_LABEL_KEYS["category-1"],
+    shortLabelKey: ROUTE_FEATURE_SHORT_LABEL_KEYS["category-1"],
   },
   {
     visualKeys: ["hc"],
     colour: ROUTE_FEATURE_COLOURS.hc,
-    colourName: ROUTE_FEATURE_COLOUR_NAMES.hc,
-    label: ROUTE_FEATURE_LABELS.hc,
-    shortLabel: ROUTE_FEATURE_SHORT_LABELS.hc,
+    colourNameKey: ROUTE_FEATURE_COLOUR_NAME_KEYS.hc,
+    labelKey: ROUTE_FEATURE_LABEL_KEYS.hc,
+    shortLabelKey: ROUTE_FEATURE_SHORT_LABEL_KEYS.hc,
   },
   {
     visualKeys: ["moderate"],
     colour: ROUTE_FEATURE_COLOURS.moderate,
-    colourName: ROUTE_FEATURE_COLOUR_NAMES.moderate,
-    label: ROUTE_FEATURE_LABELS.moderate,
-    shortLabel: ROUTE_FEATURE_SHORT_LABELS.moderate,
+    colourNameKey: ROUTE_FEATURE_COLOUR_NAME_KEYS.moderate,
+    labelKey: ROUTE_FEATURE_LABEL_KEYS.moderate,
+    shortLabelKey: ROUTE_FEATURE_SHORT_LABEL_KEYS.moderate,
   },
   {
     visualKeys: ["steep"],
     colour: ROUTE_FEATURE_COLOURS.steep,
-    colourName: ROUTE_FEATURE_COLOUR_NAMES.steep,
-    label: ROUTE_FEATURE_LABELS.steep,
-    shortLabel: ROUTE_FEATURE_SHORT_LABELS.steep,
+    colourNameKey: ROUTE_FEATURE_COLOUR_NAME_KEYS.steep,
+    labelKey: ROUTE_FEATURE_LABEL_KEYS.steep,
+    shortLabelKey: ROUTE_FEATURE_SHORT_LABEL_KEYS.steep,
   },
   {
     visualKeys: ["very-steep"],
     colour: ROUTE_FEATURE_COLOURS["very-steep"],
-    colourName: ROUTE_FEATURE_COLOUR_NAMES["very-steep"],
-    label: ROUTE_FEATURE_LABELS["very-steep"],
-    shortLabel: ROUTE_FEATURE_SHORT_LABELS["very-steep"],
+    colourNameKey: ROUTE_FEATURE_COLOUR_NAME_KEYS["very-steep"],
+    labelKey: ROUTE_FEATURE_LABEL_KEYS["very-steep"],
+    shortLabelKey: ROUTE_FEATURE_SHORT_LABEL_KEYS["very-steep"],
   },
 ];
 
@@ -276,48 +282,54 @@ const CLIMB_GRADIENT_BAND_COLOURS: Readonly<Record<ClimbGradientBand, string>> =
     CLIMB_TIER_COLOURS[CLIMB_GRADIENT_BAND_TIER["extremely-steep-climb"]],
 };
 
-export const CLIMB_GRADIENT_BAND_COLOUR_NAMES: Readonly<
-  Record<ClimbGradientBand, string>
+export const CLIMB_GRADIENT_BAND_COLOUR_NAME_KEYS: Readonly<
+  Record<ClimbGradientBand, ParameterlessMessageKey>
 > = {
   "gentle-or-descending":
-    CLIMB_TIER_COLOUR_NAMES[CLIMB_GRADIENT_BAND_TIER["gentle-or-descending"]],
-  "moderate-climb": CLIMB_TIER_COLOUR_NAMES[CLIMB_GRADIENT_BAND_TIER["moderate-climb"]],
-  "hard-climb": CLIMB_TIER_COLOUR_NAMES[CLIMB_GRADIENT_BAND_TIER["hard-climb"]],
-  "very-hard-climb": CLIMB_TIER_COLOUR_NAMES[CLIMB_GRADIENT_BAND_TIER["very-hard-climb"]],
+    CLIMB_TIER_COLOUR_NAME_KEYS[CLIMB_GRADIENT_BAND_TIER["gentle-or-descending"]],
+  "moderate-climb":
+    CLIMB_TIER_COLOUR_NAME_KEYS[CLIMB_GRADIENT_BAND_TIER["moderate-climb"]],
+  "hard-climb": CLIMB_TIER_COLOUR_NAME_KEYS[CLIMB_GRADIENT_BAND_TIER["hard-climb"]],
+  "very-hard-climb":
+    CLIMB_TIER_COLOUR_NAME_KEYS[CLIMB_GRADIENT_BAND_TIER["very-hard-climb"]],
   "extremely-steep-climb":
-    CLIMB_TIER_COLOUR_NAMES[CLIMB_GRADIENT_BAND_TIER["extremely-steep-climb"]],
+    CLIMB_TIER_COLOUR_NAME_KEYS[CLIMB_GRADIENT_BAND_TIER["extremely-steep-climb"]],
 };
 
 /** Local-gradient-only wording — deliberately never "Category N": a local
  * band describes only the smoothed gradient at one point within a climb,
  * not the climb's own overall length+average-gradient score. */
-export const CLIMB_GRADIENT_BAND_LABELS: Readonly<Record<ClimbGradientBand, string>> = {
-  "gentle-or-descending": "Gentle, flat or brief descent",
-  "moderate-climb": "Moderate climb",
-  "hard-climb": "Hard climb",
-  "very-hard-climb": "Very hard climb",
-  "extremely-steep-climb": "Extremely steep climb",
+export const CLIMB_GRADIENT_BAND_LABEL_KEYS: Readonly<
+  Record<ClimbGradientBand, ParameterlessMessageKey>
+> = {
+  "gentle-or-descending": "feature.band.gentleOrDescending",
+  "moderate-climb": "feature.band.moderateClimb",
+  "hard-climb": "feature.band.hardClimb",
+  "very-hard-climb": "feature.band.veryHardClimb",
+  "extremely-steep-climb": "feature.band.extremelySteepClimb",
 };
 
-export const CLIMB_GRADIENT_BAND_RANGE_LABELS: Readonly<
-  Record<ClimbGradientBand, string>
+export const CLIMB_GRADIENT_BAND_RANGE_LABEL_KEYS: Readonly<
+  Record<ClimbGradientBand, ParameterlessMessageKey>
 > = {
-  "gentle-or-descending": "Below 3%",
-  "moderate-climb": "3% to just below 6%",
-  "hard-climb": "6% to just below 9%",
-  "very-hard-climb": "9% to just below 12%",
-  "extremely-steep-climb": "12% or more",
+  "gentle-or-descending": "feature.bandRange.gentleOrDescending",
+  "moderate-climb": "feature.bandRange.moderateClimb",
+  "hard-climb": "feature.bandRange.hardClimb",
+  "very-hard-climb": "feature.bandRange.veryHardClimb",
+  "extremely-steep-climb": "feature.bandRange.extremelySteepClimb",
 };
 
 /** Short local-detail heading for a selected micro segment within a
  * descent (see GradientSegmentDetailsPanel.tsx) — distinct from
  * ROUTE_FEATURE_LABELS' longer legend sentences, the same granularity
  * relationship CLIMB_CATEGORY_NAMES already has to ROUTE_FEATURE_LABELS. */
-export const DESCENT_LOCAL_LABELS: Readonly<Record<DescentLocalKey, string>> = {
-  moderate: "Moderate descent",
-  steep: "Steep descent",
-  "very-steep": "Very steep descent",
-  neutral: "Shallower than the descent threshold",
+export const DESCENT_LOCAL_LABEL_KEYS: Readonly<
+  Record<DescentLocalKey, ParameterlessMessageKey>
+> = {
+  moderate: "feature.descentLocal.moderate",
+  steep: "feature.descentLocal.steep",
+  "very-steep": "feature.descentLocal.verySteep",
+  neutral: "feature.descentLocal.neutral",
 };
 
 /** Grade ranges for a selected/active descent's local legend (backlog item
@@ -325,11 +337,13 @@ export const DESCENT_LOCAL_LABELS: Readonly<Record<DescentLocalKey, string>> = {
  * descentBandFromGradient/classifyDescentLocalKey in routeFeatures.ts
  * (-6%/-9% band edges, -3% neutral threshold), expressed as positive
  * percentages for display. */
-export const DESCENT_LOCAL_RANGE_LABELS: Readonly<Record<DescentLocalKey, string>> = {
-  neutral: "Below 3%",
-  moderate: "3% to just below 6%",
-  steep: "6% to just below 9%",
-  "very-steep": "9% or more",
+export const DESCENT_LOCAL_RANGE_LABEL_KEYS: Readonly<
+  Record<DescentLocalKey, ParameterlessMessageKey>
+> = {
+  neutral: "feature.descentLocalRange.neutral",
+  moderate: "feature.descentLocalRange.moderate",
+  steep: "feature.descentLocalRange.steep",
+  "very-steep": "feature.descentLocalRange.verySteep",
 };
 
 /** Colour names for a selected/active descent's local legend (backlog item
@@ -337,9 +351,11 @@ export const DESCENT_LOCAL_RANGE_LABELS: Readonly<Record<DescentLocalKey, string
  * DESCENT_BAND_COLOUR_NAMES' own wording for the three descent bands
  * (identical local colours, see MICRO_DETAIL_COLOURS below) plus "green"
  * for the plain ordinary-route neutral colour. */
-export const DESCENT_LOCAL_COLOUR_NAMES: Readonly<Record<DescentLocalKey, string>> = {
-  ...DESCENT_BAND_COLOUR_NAMES,
-  neutral: "green",
+export const DESCENT_LOCAL_COLOUR_NAME_KEYS: Readonly<
+  Record<DescentLocalKey, ParameterlessMessageKey>
+> = {
+  ...DESCENT_BAND_COLOUR_NAME_KEYS,
+  neutral: "feature.colour.green",
 };
 
 /** The colours actually painted for a selected/active climb or descent's
@@ -391,7 +407,9 @@ export const ACTIVE_DIRECTION_COLOURS: Readonly<
  * since ClimbGradientBand and DescentLocalKey are disjoint string unions
  * (no shared key, so the spread below can never silently overwrite an
  * entry). */
-export const MICRO_DETAIL_LABELS: Readonly<Record<MicroDetailVisualKey, string>> = {
-  ...CLIMB_GRADIENT_BAND_LABELS,
-  ...DESCENT_LOCAL_LABELS,
+export const MICRO_DETAIL_LABEL_KEYS: Readonly<
+  Record<MicroDetailVisualKey, ParameterlessMessageKey>
+> = {
+  ...CLIMB_GRADIENT_BAND_LABEL_KEYS,
+  ...DESCENT_LOCAL_LABEL_KEYS,
 };

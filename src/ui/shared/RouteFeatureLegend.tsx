@@ -1,6 +1,7 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import {
   ORDINARY_ROUTE_COLOUR,
-  ORDINARY_ROUTE_LABEL,
+  ORDINARY_ROUTE_LABEL_KEY,
   ROUTE_FEATURE_LEGEND_ENTRIES,
   type RouteFeatureVisualKey,
 } from "../../navigation/routeFeaturePalette.ts";
@@ -26,21 +27,22 @@ export interface RouteFeatureLegendProps {
  * (and one swatch), since they render with an identical colour.
  */
 export function RouteFeatureLegend({ presentVisualKeys }: RouteFeatureLegendProps) {
+  const { t } = useTranslate();
   const entries = ROUTE_FEATURE_LEGEND_ENTRIES.filter((entry) =>
     entry.visualKeys.some((visualKey) => presentVisualKeys.has(visualKey)),
   );
 
   return (
-    <ul aria-label="Recognised route features legend" className="route-feature-legend">
+    <ul aria-label={t("legend.routeFeatures")} className="route-feature-legend">
       <li className="route-feature-legend-entry">
         <GradientColourSwatch colour={ORDINARY_ROUTE_COLOUR} />
-        {ORDINARY_ROUTE_LABEL}
+        {t(ORDINARY_ROUTE_LABEL_KEY)}
       </li>
       {entries.map((entry) => (
         <li key={entry.visualKeys.join("-")} className="route-feature-legend-entry">
           <GradientColourSwatch colour={entry.colour} />
-          <span aria-hidden="true">{entry.shortLabel} </span>
-          {entry.label} · {entry.colourName}
+          <span aria-hidden="true">{t(entry.shortLabelKey)} </span>
+          {t(entry.labelKey)} · {t(entry.colourNameKey)}
         </li>
       ))}
     </ul>

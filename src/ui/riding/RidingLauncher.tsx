@@ -407,8 +407,8 @@ export function RidingLauncher({
         <div className="panel stack">
           <h2>{sessionState.route.name}</h2>
           <p className="route-card-meta">
-            {formatDistanceKm(sessionState.route.distanceMetres)} ·{" "}
-            {formatAscent(sessionState.route.ascentMetres)}
+            {formatDistanceKm(translator, sessionState.route.distanceMetres)} ·{" "}
+            {formatAscent(translator, sessionState.route.ascentMetres)}
           </p>
           <p>{t("launcher.unfinishedRide")}</p>
           <button

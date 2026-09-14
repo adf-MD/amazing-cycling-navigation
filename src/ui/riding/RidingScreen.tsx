@@ -1629,7 +1629,8 @@ export function RidingScreen({
         <div className="ride-route-header">
           <h1 className="screen-title">{route.name}</h1>
           <p className="route-card-meta">
-            {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
+            {formatDistanceKm(translator, route.distanceMetres)} ·{" "}
+            {formatAscent(translator, route.ascentMetres)}
           </p>
         </div>
       ) : (

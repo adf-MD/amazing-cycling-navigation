@@ -4,8 +4,15 @@ export interface ConfirmDialogProps {
   open: boolean;
   title: string;
   message: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
+  /** Both labels are **required** (backlog item 113 stage 5). They used to
+   * default to "Confirm"/"Cancel" here, which made this generic component
+   * an author of rider-facing copy — and the only way to localise a
+   * default would have been to read the language from React context
+   * inside a component whose whole value is that it holds no opinions.
+   * Every caller already supplied `confirmLabel`; they now supply
+   * `cancelLabel` too, from their own translator. */
+  confirmLabel: string;
+  cancelLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
   /** Disables the Confirm/Cancel buttons while a triggered action is still
@@ -56,8 +63,8 @@ export function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   onConfirm,
   onCancel,
   confirmDisabled,

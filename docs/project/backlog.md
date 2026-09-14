@@ -166,7 +166,7 @@ _Category: Interface and accessibility consistency_
 
 _Category: Internationalisation_
 
-> **Staged delivery — Stage 4 complete (`0.4.40`), Stage 5 next.**
+> **Staged delivery — Stage 5 complete (no version bump; `0.4.40` stands), Stage 6a next.**
 > This item ships in stages and stays **pending** here until its final
 > stage. Nothing about it enters [`history/`](history/README.md) before
 > then. Each stage's commit updates the two lines below.
@@ -176,9 +176,9 @@ _Category: Internationalisation_
 > | 1     | Internationalisation boundary; `appPreferences` storage at schema `version(5)`; the supported-language gate; pre-render language resolution; authored `manifest.lang`; primary navigation and Settings copy migrated | Complete — `0.4.38`        |
 > | 2     | Route Library, route cards, search/sort/filtering, the tag lifecycle, route actions and confirmations, and the GPX-import controls migrated                                                                          | Complete — no version bump |
 > | 3     | Planning copy; render-time route-warning copy with a semantic `routeWarningIdentity`; typed GPX errors and notices; Planning-owned routing-provider messages                                                         | Complete — `0.4.39`        |
-> | 4     | Riding, free roam, ride launcher, climb views, map overlays                                                                                                                                                          | **Complete — `0.4.40`**    |
-> | 5     | Status, PWA update prompt, shared components                                                                                                                                                                         | **Next**                   |
-> | 6a    | Complete German catalogue authored, then **stop** and hand the full reviewable list to the user. `Deutsch` still unreachable, nothing pushed                                                                         | Pending                    |
+> | 4     | Riding, free roam, ride launcher, climb views, map overlays                                                                                                                                                          | Complete — `0.4.40`        |
+> | 5     | Status, PWA update prompt, shared components and the application shell; the English migration completed, with a classified residual-copy audit                                                                       | **Complete — no bump**     |
+> | 6a    | Complete German catalogue authored, then **stop** and hand the full reviewable list to the user. `Deutsch` still unreachable, nothing pushed                                                                         | **Next**                   |
 > | 6b    | **Only after linguistic approval**: German enabled, the `Language`/`Sprache` card, the `:lang(de)` navigation rule, the openrouteservice `language` parameter, German layout and accessibility evidence              | Pending                    |
 >
 > **Decisions approved at the gate** (14 September 2026), recorded here because
@@ -347,6 +347,106 @@ _Category: Internationalisation_
 >   surface": it is rendered by the Route **Library** card and owned by the
 >   application shell, both of which are stage 5's, so it moves there rather
 >   than being split across two stages.
+
+> **Stage 5, recorded.** No version bump — `0.4.40` stands, on item 116's
+> precedent: every rider-facing English string is unchanged, and the
+> existing ~6331 copy-coupled assertions pass untouched, so nothing about
+> the shipped application behaves differently.
+>
+> - **The English migration is complete.** Stage 5 took the Status screen,
+>   the service-worker update prompt, the application shell's ride-switch
+>   copy, every remaining shared component, and `routeFeaturePalette`'s
+>   presentation strings. It also cleared the three items earlier stages
+>   had deferred: `src/ui/shared/routeSummary.ts`'s unit formatters
+>   (deferred by stages 2, 3 **and** 4), `routeFeaturePalette.ts`'s feature
+>   labels, and `App.tsx`'s ride-switch copy.
+> - **Route-feature identity is the key, never the name.** Each
+>   `*_LABELS` map became a `*_LABEL_KEYS` map of catalogue keys, and every
+>   consumer now renders `t(MAP[key])`. Renaming rather than re-typing was
+>   deliberate: it turns every stale call site into a compile error instead
+>   of a silent string. The visual keys, colours, legend grouping, warning
+>   kinds and GPX encoding are untouched, so the same identifier selects
+>   the same colour and behaviour in every language. Stage 3's bidirectional
+>   surface type-to-label proof lives in `surfaceCodes.ts`, a different
+>   module with no dependency on the palette, and is unaffected.
+> - **The one rider-facing change this stage nearly shipped, and did not.**
+>   Handing `Intl.NumberFormat` the raw value looks equivalent to the
+>   `toFixed`/`Math.round`/manual-grouping it replaces. It is not, in three
+>   separate ways: `Math.round` rounds a half towards +∞ while `Intl`'s
+>   `halfExpand` rounds it away from zero, so `-0.5 m` became `-1 m`;
+>   `String(-0)` is `"0"` while `Intl` renders `-0`, so every small negative
+>   grew a minus sign; and `(0.15).toFixed(1)` is `"0.1"` while `Intl` gives
+>   `"0.2"`. `signDisplay: "exceptZero"` added a fourth, dropping the sign
+>   from a `-0.04%` gradient the old code showed as `-0.0%`. Every formatter
+>   now **rounds first and formats the already-rounded value**, and a probe
+>   over 400,029 values — every documented edge case plus a large
+>   pseudo-random spread — finds no difference in any of the four. This is
+>   recorded as a near-miss rather than a change, because it would have been
+>   invisible in review and no existing test covered those values.
+> - **The copied diagnostic report stays English by construction.** Its own
+>   field labels, machine tokens, HTTP codes and URLs never enter the
+>   catalogue (approved decision R4). The one sentence it shares with the
+>   Status screen's `Stage` row — the per-stage explanation — moved into the
+>   catalogue and the report reads it through `englishTranslator`
+>   explicitly, exactly as stage 3 arranged for `describeRoutingError`. That
+>   keeps a single source for the wording while the screen follows the
+>   rider, instead of a screen copy and a report copy drifting apart.
+> - **Stage 3's deferral of `routingDiagnostics.ts` is narrowed, with the
+>   reason stated.** That note said those lines stayed English "under R4",
+>   which over-applied a decision about the copied _report_ to on-screen
+>   copy. `Recent routing attempts` and `Recent map imagery attempts` are
+>   rider-facing lists on a localised screen, so their lead phrases are now
+>   catalogue-backed while every machine token they interpolate — an HTTP
+>   status, a browser error class, a provider category, a transport reason
+>   code — stays verbatim.
+> - **The generic confirmation component stopped authoring copy.**
+>   `ConfirmDialog`'s `confirmLabel`/`cancelLabel` defaults are gone and both
+>   props are required. Every caller already supplied `confirmLabel`; only
+>   Settings relied on the `cancelLabel` default. The alternative would have
+>   been to give a deliberately opinion-free component an opinion about the
+>   rider's language by reading React context. Its heading level, focus
+>   handling, action order, Escape behaviour and item-118 contained layout
+>   with its conditional reveal are all unchanged, and pending item 119's
+>   `aria-labelledby` defect is deliberately left exactly as it is.
+>
+> **The residual-copy audit.** `src/i18n/residualCopyAudit.test.ts` is a
+> source-aware test, not a repository grep: it strips comments, reads
+> production sources only, and asserts each exclusion is still where the
+> audit says it is. The classified residue is:
+>
+> - **Provider and product names** — `OpenRouteService`, `OpenStreetMap
+contributors`, `OpenFreeMap Liberty`, `GPX`, `ACN`. Names and required
+>   attribution, not copy.
+> - **Machine tokens** — schema keys, HTTP statuses, GeoJSON type strings,
+>   URLs, `KeyboardEvent.key` values (`"Escape"`), DOMException names
+>   (`"AbortError"`), and the copied report's own field labels.
+> - **User-authored or imported content** — route names, tags, provider
+>   manoeuvre instructions, road names. Rendered verbatim, never through the
+>   catalogue, with hostile fixtures proving it.
+> - **Internal identifiers** — CSS classes, `data-testid`s, screen keys
+>   (`"diagnostics"` is still the internal key behind the `Status` label).
+> - **Retained English compatibility and diagnostic data that no interface
+>   renders** — `GpxParseError.message` (the library describes the error
+>   from the typed `detail`), `RouteWarning.message` (read only as the
+>   honest fallback for a warning saved before `surface` existed),
+>   `surfaceCodes.ts`'s labels (rendering goes through `surface.*` keys),
+>   `GeolocationError.message` (both screens select from `reason` instead),
+>   and every `logError` sentence, which is a diagnostic record shown as
+>   data in `Recent errors` exactly like a browser's own `Error.message`.
+> - **Deferred to stage 6** — the language-selection copy itself: the
+>   `Language`/`Sprache` card, the three options and the note explaining
+>   that a copied report stays English.
+> - **Genuine missed rider-facing copy** — none. Anything found in this
+>   class was migrated rather than listed.
+>
+> **Next: stage 6a.** The complete German catalogue is authored, then work
+> **stops** and the full reviewable list is handed to the user. `Deutsch`
+> is still unreachable for two independent reasons — there is no selector,
+> and `SUPPORTED_LANGUAGES` remains `["en"]` so neither a German device nor
+> a stored `"de"` preference can resolve to it. `document.documentElement
+.lang` and `manifest.lang` are both still `en-GB`, the openrouteservice
+> request still carries no `language` field, and there is no production
+> `messages.de.ts`.
 
 113. **German localisation**
      - Origin: the installed-iPhone field test of 10 September 2026 — see [`current-status.md`](current-status.md) for the dated report. German-language support is recorded as a **substantial staged feature, not a small copy-editing task**.

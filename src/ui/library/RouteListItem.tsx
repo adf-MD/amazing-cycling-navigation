@@ -131,7 +131,8 @@ export function RouteListItem({
   dismissInlineEditorsToken,
   requestInlineEditorOpen,
 }: RouteListItemProps) {
-  const { t } = useTranslate();
+  const translator = useTranslate();
+  const { t } = translator;
   // Backlog item 113 stage 2. The pin control's accessible name used to be
   // a verb fragment glued to the route name (`${isPinned ? "Unpin" :
   // "Pin"} ${route.name}`). Each state is now a whole message carrying the
@@ -677,7 +678,8 @@ export function RouteListItem({
             }}
           />
           <p className="route-card-meta">
-            {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
+            {formatDistanceKm(translator, route.distanceMetres)} ·{" "}
+            {formatAscent(translator, route.ascentMetres)}
           </p>
           <div className="row">
             <button type="submit" className="btn-primary">
@@ -692,7 +694,8 @@ export function RouteListItem({
         <div className="tag-editor stack" onKeyDown={handleTagsEditorKeyDown}>
           <h2 id={tagsHeadingId}>{route.name}</h2>
           <p className="route-card-meta">
-            {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
+            {formatDistanceKm(translator, route.distanceMetres)} ·{" "}
+            {formatAscent(translator, route.ascentMetres)}
           </p>
           <form className="row" onSubmit={handleAddTag}>
             <div className="route-library-field">
@@ -795,7 +798,8 @@ export function RouteListItem({
             </button>
           </div>
           <p className="route-card-meta">
-            {formatDistanceKm(route.distanceMetres)} · {formatAscent(route.ascentMetres)}
+            {formatDistanceKm(translator, route.distanceMetres)} ·{" "}
+            {formatAscent(translator, route.ascentMetres)}
           </p>
           {pinError ? (
             <p role="alert" className="field-error">

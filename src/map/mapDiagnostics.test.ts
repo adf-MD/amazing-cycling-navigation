@@ -1,3 +1,4 @@
+import { englishTranslator } from "../i18n/englishTranslator.ts";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearMapDiagnostics,
@@ -65,7 +66,9 @@ describe("describeMapAttempt", () => {
     ["auto-retry", /automatically/i],
     ["imagery-recovered", /loaded successfully/i],
   ] as const)("describes %s in plain language", (category, expected) => {
-    expect(describeMapAttempt(buildDiagnostic({ category }))).toMatch(expected);
+    expect(describeMapAttempt(englishTranslator, buildDiagnostic({ category }))).toMatch(
+      expected,
+    );
   });
 });
 

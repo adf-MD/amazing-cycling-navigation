@@ -53,7 +53,7 @@ export function RidingCompactManoeuvreCue({
         {isFrozen ? t("manoeuvre.frozenCompact") : ""}
       </p>
       <p className="ride-compact-manoeuvre-distance">
-        {formatManoeuvreDistance(selection.remainingDistanceMetres)}
+        {formatManoeuvreDistance(translator, selection.remainingDistanceMetres)}
       </p>
     </div>
   );

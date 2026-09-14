@@ -54,7 +54,7 @@ export function RidingClimbCue({ metrics, onViewClimb }: RidingClimbCueProps) {
           </p>
           <p className="ride-climb-cue-detail">
             {t("climb.cueRemaining", {
-              distance: formatDistanceKm(metrics.distanceRemainingMetres),
+              distance: formatDistanceKm(translator, metrics.distanceRemainingMetres),
             })}
           </p>
         </div>

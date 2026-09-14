@@ -1895,7 +1895,7 @@ export function PlanningScreen({
           </button>
           {hasKey ? (
             <p className="status-row" role="status">
-              {describeProviderKeyStatus(key, verification, now).headline}
+              {describeProviderKeyStatus(translator, key, verification, now).headline}
             </p>
           ) : null}
           {routing.lastErrorMessage ? (

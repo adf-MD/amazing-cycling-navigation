@@ -1,3 +1,4 @@
+import type { ParameterlessMessageKey, Translator } from "../i18n/translate.ts";
 import { useSyncExternalStore } from "react";
 
 /**
@@ -75,24 +76,27 @@ export function useRecentMapAttempts(): readonly MapAttemptDiagnostic[] {
   return useSyncExternalStore(subscribeMapDiagnostics, getRecentMapAttempts);
 }
 
-const CATEGORY_LABEL: Record<MapDiagnosticCategory, string> = {
-  "style-request-or-parse-failure": "Map style failed to load or parse",
-  "tile-request-failure": "A map tile request failed",
-  "sprite-failure": "Map sprite (icons) failed to load",
-  "worker-failure": "The map's background worker did not respond in time",
-  "webgl-init-failure":
-    "This device or browser could not initialise map graphics (WebGL)",
-  "initial-load-timeout": "Map style did not become ready in time",
-  "fallback-activated": "Switched to the plain background",
-  "manual-retry": "Map imagery retry requested",
-  "auto-retry":
-    "Map imagery retry attempted automatically after resuming or reconnecting",
-  "imagery-recovered": "Map imagery loaded successfully",
+const CATEGORY_LABEL_KEYS: Record<MapDiagnosticCategory, ParameterlessMessageKey> = {
+  "style-request-or-parse-failure": "mapLog.styleRequestOrParseFailure",
+  "tile-request-failure": "mapLog.tileRequestFailure",
+  "sprite-failure": "mapLog.spriteFailure",
+  "worker-failure": "mapLog.workerFailure",
+  "webgl-init-failure": "mapLog.webglInitFailure",
+  "initial-load-timeout": "mapLog.initialLoadTimeout",
+  "fallback-activated": "mapLog.fallbackActivated",
+  "manual-retry": "mapLog.manualRetry",
+  "auto-retry": "mapLog.autoRetry",
+  "imagery-recovered": "mapLog.imageryRecovered",
 };
 
-/** Plain-language label for one recorded attempt, for the Diagnostics
- * screen — never interpolates anything beyond the closed category label
- * itself, so this is always safe to render as-is. */
-export function describeMapAttempt(entry: MapAttemptDiagnostic): string {
-  return CATEGORY_LABEL[entry.category];
+/** Plain-language label for one recorded attempt, for the Status screen —
+ * never interpolates anything beyond the closed category label itself, so
+ * this is always safe to render as-is. The translator is a parameter
+ * because this module is imported by the map layer as well as the screen
+ * and must never reach for React context. */
+export function describeMapAttempt(
+  translator: Translator,
+  entry: MapAttemptDiagnostic,
+): string {
+  return translator.t(CATEGORY_LABEL_KEYS[entry.category]);
 }

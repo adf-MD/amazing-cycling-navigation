@@ -1,3 +1,4 @@
+import { englishTranslator } from "../../i18n/englishTranslator.ts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -558,6 +559,7 @@ describe("DiagnosticsScreen", () => {
     render(<DiagnosticsScreen />);
 
     const actualEntry = describeRoutingAttempt(
+      englishTranslator,
       buildAttempt({
         timestampIso: "2026-01-01T00:00:00.000Z",
         responseReceived: false,

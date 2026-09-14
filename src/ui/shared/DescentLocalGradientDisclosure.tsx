@@ -1,3 +1,4 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { DescentLocalKey } from "../../navigation/routeFeatures.ts";
 import { DescentLocalLegend } from "./DescentLocalLegend.tsx";
 
@@ -22,13 +23,14 @@ export interface DescentLocalGradientDisclosureProps {
 export function DescentLocalGradientDisclosure({
   presentDescentLocalKeys,
 }: DescentLocalGradientDisclosureProps) {
+  const { t } = useTranslate();
   if (presentDescentLocalKeys.size === 0) {
     return null;
   }
 
   return (
     <details className="local-gradient-disclosure">
-      <summary>Local gradient colours on this descent</summary>
+      <summary>{t("legend.localDescentColours")}</summary>
       <DescentLocalLegend
         presentDescentLocalKeys={presentDescentLocalKeys}
         variant="compact"

@@ -3,6 +3,7 @@ import {
   isStoredFreeRoamRideState,
   isStoredRouteRideState,
 } from "../../storage/mapping.ts";
+import type { Translator } from "../../i18n/translate.ts";
 
 /**
  * A route-name lookup result, tagged with the id it was resolved for.
@@ -35,25 +36,33 @@ export interface ResolvedActiveRoute {
  * something to put in front of a rider.
  */
 export function describeActiveSession(
+  translator: Translator,
   rideState: StoredRideState | undefined,
   resolvedRoute: ResolvedActiveRoute | undefined,
 ): string {
-  if (!rideState) return "None";
-  if (isStoredFreeRoamRideState(rideState)) return "Free roam";
+  if (!rideState) return translator.t("status.session.none");
+  if (isStoredFreeRoamRideState(rideState))
+    return translator.t("status.session.freeRoam");
 
   // Neither guard is true for a session whose stored `kind` this build does
   // not recognise — a row a newer build could have written. getActiveRideState
   // is a raw read with no parsing, so such a row genuinely reaches this
   // screen, and calling it "Free roam" would be a plain misstatement.
-  if (!isStoredRouteRideState(rideState)) return "Session unavailable";
+  if (!isStoredRouteRideState(rideState))
+    return translator.t("status.session.unavailable");
 
   // Still resolving, or holding a result for a session that has since been
   // replaced. Never the identifier, and never "None" — a route-backed
   // session does exist.
-  if (resolvedRoute?.routeId !== rideState.routeId) return "Checking…";
+  if (resolvedRoute?.routeId !== rideState.routeId)
+    return translator.t("status.session.checking");
 
   // Storage never validates `name`, and this screen's own contract is that
   // no field renders blank, so a whitespace-only name falls back too.
+  //
+  // The name is returned **verbatim**, never through the catalogue: it is
+  // the rider's own content, so braces, quotation marks or a string that
+  // happens to look like a message key must all survive untouched.
   const name = resolvedRoute.name?.trim() ?? "";
-  return name.length > 0 ? name : "Route unavailable";
+  return name.length > 0 ? name : translator.t("status.session.routeUnavailable");
 }

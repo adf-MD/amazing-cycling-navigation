@@ -1,3 +1,4 @@
+import type { Translator } from "../i18n/translate.ts";
 import { useSyncExternalStore } from "react";
 import type {
   RoutingErrorReason,
@@ -126,7 +127,11 @@ export function useRecentRoutingAttempts(): readonly RoutingAttemptDiagnostic[] 
  * generic-fetch-rejection)". Kept as a separate step from the base
  * description so the "Recent routing attempts" list stays concise; full
  * marker-level detail belongs in the connection-test report instead. */
-function appendSafeErrorDetail(base: string, entry: RoutingAttemptDiagnostic): string {
+function appendSafeErrorDetail(
+  translator: Translator,
+  base: string,
+  entry: RoutingAttemptDiagnostic,
+): string {
   const parts: string[] = [];
   if (entry.errorName) {
     parts.push(
@@ -136,7 +141,14 @@ function appendSafeErrorDetail(base: string, entry: RoutingAttemptDiagnostic): s
   if (entry.transportFailureReasonCode) {
     parts.push(`reason: ${entry.transportFailureReasonCode}`);
   }
-  return parts.length > 0 ? `${base} (${parts.join("; ")})` : base;
+  // The detail itself is deliberately assembled here rather than passed
+  // through the catalogue as separate placeholders: every part of it is a
+  // machine token (a browser error class, an already-sanitised message, a
+  // closed reason code) that must read identically in every language and
+  // must never be interpreted as catalogue syntax.
+  return parts.length > 0
+    ? translator.t("routingLog.withDetail", { base, detail: parts.join("; ") })
+    : base;
 }
 
 /**
@@ -147,35 +159,46 @@ function appendSafeErrorDetail(base: string, entry: RoutingAttemptDiagnostic): s
  * headers, so this is reported honestly as indistinguishable from a
  * DNS/TLS failure or a local network restriction.
  */
-export function describeRoutingAttempt(entry: RoutingAttemptDiagnostic): string {
+export function describeRoutingAttempt(
+  translator: Translator,
+  entry: RoutingAttemptDiagnostic,
+): string {
   if (entry.responseReceived) {
-    const status = entry.httpStatus !== undefined ? String(entry.httpStatus) : "unknown";
-    const suffix = entry.category === "success" ? "" : ` (${entry.category})`;
-    return `HTTP response received: ${status}${suffix}`;
+    // `status` and `category` are machine values, interpolated verbatim.
+    const status =
+      entry.httpStatus !== undefined
+        ? String(entry.httpStatus)
+        : translator.t("routingLog.unknownStatus");
+    return entry.category === "success"
+      ? translator.t("routingLog.responseReceived", { status })
+      : translator.t("routingLog.responseReceivedWithCategory", {
+          status,
+          category: entry.category,
+        });
   }
   let base: string;
   switch (entry.category) {
     case "offline":
-      base = "Device reported offline";
+      base = translator.t("routingLog.offline");
       break;
     case "timeout":
-      base = "Request timed out";
+      base = translator.t("routingLog.timeout");
       break;
     case "invalid-header-value":
-      base = "The stored key could not be used in a request header";
+      base = translator.t("routingLog.invalidHeaderValue");
       break;
     case "header-construction-failure":
-      base = "Request headers could not be constructed";
+      base = translator.t("routingLog.headerConstructionFailure");
       break;
     case "invalid-request-construction":
-      base = "Request could not be constructed";
+      base = translator.t("routingLog.invalidRequestConstruction");
       break;
     case "fetch-invocation-failure":
-      base = "Fetch could not be invoked";
+      base = translator.t("routingLog.fetchInvocationFailure");
       break;
     default:
-      base = "Fetch promise rejected before an HTTP response was exposed";
+      base = translator.t("routingLog.noResponseExposed");
       break;
   }
-  return appendSafeErrorDetail(base, entry);
+  return appendSafeErrorDetail(translator, base, entry);
 }

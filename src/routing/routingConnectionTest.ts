@@ -1,4 +1,5 @@
 import { englishTranslator } from "../i18n/englishTranslator.ts";
+import type { ParameterlessMessageKey, Translator } from "../i18n/translate.ts";
 import type { Coordinate } from "../domain/types.ts";
 import type { RoutingProvider } from "./provider.ts";
 import {
@@ -58,29 +59,40 @@ export type RoutingConnectionTestStage =
  * *why* the browser withheld a response (CORS/preflight rejection is only
  * one of several indistinguishable possibilities), so this must never
  * present CORS as confirmed. */
-export const CONNECTION_TEST_STAGE_DESCRIPTIONS: Record<
+const CONNECTION_TEST_STAGE_DESCRIPTION_KEYS: Record<
   RoutingConnectionTestStage,
-  string
+  ParameterlessMessageKey
 > = {
-  "not-attempted-no-key":
-    "No OpenRouteService key is configured, so no request was sent.",
-  "invalid-key-syntax":
-    "The stored key itself contains a character that cannot be sent in a request header — checked before any request was constructed.",
-  "header-construction": "The request's headers could not be constructed.",
-  "request-construction": "The request object itself could not be constructed.",
-  "fetch-invocation":
-    "Calling the fetch implementation failed synchronously, before any promise existed.",
-  offline: "The device reported itself offline before any request was sent.",
-  timeout: "The request did not receive a response within the routing timeout.",
-  "transport-response-unavailable":
-    "The browser did not expose an HTTP response. Possible causes include CORS/preflight rejection, DNS, TLS, timeout, connectivity, or a provider response whose CORS headers were missing.",
-  "http-response": "An HTTP response was received from OpenRouteService.",
-  "response-parsing":
-    "An HTTP response was received but its body could not be parsed as the expected route format.",
-  "route-processing":
-    "A response was received and parsed, but the route itself could not be used.",
-  success: "A valid cycling route was received.",
+  "not-attempted-no-key": "connectionTest.stage.notAttemptedNoKey",
+  "invalid-key-syntax": "connectionTest.stage.invalidKeySyntax",
+  "header-construction": "connectionTest.stage.headerConstruction",
+  "request-construction": "connectionTest.stage.requestConstruction",
+  "fetch-invocation": "connectionTest.stage.fetchInvocation",
+  offline: "connectionTest.stage.offline",
+  timeout: "connectionTest.stage.timeout",
+  "transport-response-unavailable": "connectionTest.stage.transportResponseUnavailable",
+  "http-response": "connectionTest.stage.httpResponse",
+  "response-parsing": "connectionTest.stage.responseParsing",
+  "route-processing": "connectionTest.stage.routeProcessing",
+  success: "connectionTest.stage.success",
 };
+
+/**
+ * One stage explanation, in the supplied language.
+ *
+ * Two surfaces read this and they have opposite requirements: the Status
+ * screen's own `Stage` row follows the rider, while the copied report
+ * below passes `englishTranslator` so it stays English under approved
+ * decision R4. Keeping one function rather than a screen copy and a
+ * report copy is what makes the report English *by construction*, and is
+ * the same arrangement `describeRoutingError` already uses.
+ */
+export function describeConnectionTestStage(
+  translator: Translator,
+  stage: RoutingConnectionTestStage,
+): string {
+  return translator.t(CONNECTION_TEST_STAGE_DESCRIPTION_KEYS[stage]);
+}
 
 export function classifyConnectionTestStage(
   reason: RoutingErrorReason | "success",
@@ -307,7 +319,7 @@ export function formatConnectionTestReport(result: RoutingConnectionTestResult):
     "OpenRouteService connection test report",
     `Attempt ID: ${result.attemptId}`,
     `Outcome: ${result.outcome}`,
-    `Stage: ${result.stage} — ${CONNECTION_TEST_STAGE_DESCRIPTIONS[result.stage]}`,
+    `Stage: ${result.stage} — ${describeConnectionTestStage(englishTranslator, result.stage)}`,
     `Detail: ${result.message}`,
     result.errorName
       ? `Error: ${result.errorName}${result.errorMessage ? `: ${result.errorMessage}` : ""}`

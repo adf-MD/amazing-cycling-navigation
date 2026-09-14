@@ -1,11 +1,12 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import {
   DESCENT_LOCAL_KEY_SEVERITY_ORDER,
   type DescentLocalKey,
 } from "../../navigation/routeFeatures.ts";
 import {
-  DESCENT_LOCAL_COLOUR_NAMES,
-  DESCENT_LOCAL_LABELS,
-  DESCENT_LOCAL_RANGE_LABELS,
+  DESCENT_LOCAL_COLOUR_NAME_KEYS,
+  DESCENT_LOCAL_LABEL_KEYS,
+  DESCENT_LOCAL_RANGE_LABEL_KEYS,
   MICRO_DETAIL_COLOURS,
 } from "../../navigation/routeFeaturePalette.ts";
 import { GradientColourSwatch } from "./GradientColourSwatch.tsx";
@@ -37,6 +38,7 @@ export function DescentLocalLegend({
   presentDescentLocalKeys,
   variant = "full",
 }: DescentLocalLegendProps) {
+  const { t } = useTranslate();
   const entries = DESCENT_LOCAL_KEY_SEVERITY_ORDER.filter((key) =>
     presentDescentLocalKeys.has(key),
   );
@@ -45,17 +47,18 @@ export function DescentLocalLegend({
   }
 
   return (
-    <ul aria-label="Detailed descent gradient legend" className="gradient-legend">
+    <ul aria-label={t("legend.descentGradient")} className="gradient-legend">
       {entries.map((key) => (
         <li key={key} className="gradient-legend-entry">
           <GradientColourSwatch colour={MICRO_DETAIL_COLOURS[key]} />
           {variant === "full" ? (
             <>
-              {DESCENT_LOCAL_LABELS[key]} · {DESCENT_LOCAL_RANGE_LABELS[key]} ·{" "}
-              {DESCENT_LOCAL_COLOUR_NAMES[key]}
+              {t(DESCENT_LOCAL_LABEL_KEYS[key])} ·{" "}
+              {t(DESCENT_LOCAL_RANGE_LABEL_KEYS[key])} ·{" "}
+              {t(DESCENT_LOCAL_COLOUR_NAME_KEYS[key])}
             </>
           ) : (
-            DESCENT_LOCAL_RANGE_LABELS[key]
+            t(DESCENT_LOCAL_RANGE_LABEL_KEYS[key])
           )}
         </li>
       ))}

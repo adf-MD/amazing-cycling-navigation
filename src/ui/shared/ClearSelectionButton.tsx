@@ -1,3 +1,5 @@
+import { useTranslate } from "../../i18n/useTranslate.ts";
+
 export interface ClearSelectionButtonProps {
   onClick: () => void;
 }
@@ -10,9 +12,10 @@ export interface ClearSelectionButtonProps {
  * construction, rather than three call sites kept in sync by hand.
  */
 export function ClearSelectionButton({ onClick }: ClearSelectionButtonProps) {
+  const { t } = useTranslate();
   return (
     <button type="button" className="clear-selection-button" onClick={onClick}>
-      Clear selection
+      {t("legend.clearSelection")}
     </button>
   );
 }

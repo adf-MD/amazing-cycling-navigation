@@ -24,6 +24,8 @@ import { RidingScreen } from "./ui/riding/RidingScreen.tsx";
 import { SettingsScreen } from "./ui/settings/SettingsScreen.tsx";
 import { ConfirmDialog } from "./ui/shared/ConfirmDialog.tsx";
 import { MainNavigation, type Screen } from "./ui/shared/MainNavigation.tsx";
+import { useTranslate } from "./i18n/useTranslate.ts";
+import type { Translator } from "./i18n/translate.ts";
 import { isImmersiveRidingShell } from "./ui/shared/immersiveRidingShell.ts";
 import { useResetScrollForNewRideContent } from "./ui/shared/useResetScrollForNewRideContent.ts";
 
@@ -112,14 +114,21 @@ interface PendingRideSwitch {
   errorMessage: string | null;
 }
 
-function targetLabel(target: RideSessionTarget): string {
-  return target.kind === "route" ? `"${target.route.name}"` : "free roam";
+/** The rider's own route name, quoted — returned verbatim, never through
+ * the catalogue, so braces or quotation marks inside it survive intact. */
+function targetLabel(translator: Translator, target: RideSessionTarget): string {
+  return target.kind === "route"
+    ? translator.t("switch.quotedRouteName", { name: target.route.name })
+    : translator.t("switch.freeRoamTarget");
 }
 
-function existingSessionLabel(existing: "route" | "free-roam" | "unsupported"): string {
-  if (existing === "route") return "an unfinished ride on another route";
-  if (existing === "free-roam") return "an unfinished free roam session";
-  return "an unfinished ride that can't be recovered by this version of the app";
+function existingSessionLabel(
+  translator: Translator,
+  existing: "route" | "free-roam" | "unsupported",
+): string {
+  if (existing === "route") return translator.t("switch.existingRoute");
+  if (existing === "free-roam") return translator.t("switch.existingFreeRoam");
+  return translator.t("switch.existingUnsupported");
 }
 
 /** Whether a status belongs to the destructive End-and-switch/Discard-and-
@@ -144,54 +153,66 @@ function isDestructiveSwitchConfirmStatus(status: PendingRideSwitch["status"]): 
  * page-level ConfirmDialog always uses, and what the inline card falls
  * back to for every case describeInlineRouteSwitchMessage doesn't cover —
  * it must stay unchanged, since Planning-save's own e2e coverage pins it. */
-function describePendingRideSwitch(pending: PendingRideSwitch): {
+function describePendingRideSwitch(
+  translator: Translator,
+  pending: PendingRideSwitch,
+): {
   title: string;
   message: string;
   confirmLabel: string;
 } {
   if (pending.status === "check-failed") {
     return {
-      title: "Couldn't check for an unfinished ride",
-      message:
-        "Whether you have an unfinished ride could not be checked, so nothing has opened yet.",
-      confirmLabel: "Retry",
+      title: translator.t("switch.checkFailedTitle"),
+      message: translator.t("switch.checkFailedMessage"),
+      confirmLabel: translator.t("switch.retry"),
     };
   }
 
   const existing = pending.existing ?? "unsupported";
   const isUnsupported = existing === "unsupported";
-  const title = `Switch to ${targetLabel(pending.target)}?`;
-  const confirmLabel = isUnsupported ? "Discard and continue" : "End and switch";
+  const title = translator.t("switch.title", {
+    target: targetLabel(translator, pending.target),
+  });
+  const confirmLabel = translator.t(
+    isUnsupported ? "switch.discardAndContinue" : "switch.endAndSwitch",
+  );
 
   switch (pending.status) {
     case "clearing":
       return {
         title,
-        message: isUnsupported
-          ? "Discarding your unfinished ride…"
-          : "Ending your current ride…",
-        confirmLabel: isUnsupported ? "Discarding…" : "Ending…",
+        message: translator.t(isUnsupported ? "switch.discarding" : "switch.ending"),
+        confirmLabel: translator.t(
+          isUnsupported ? "switch.discardingLabel" : "switch.endingLabel",
+        ),
       };
     case "starting-free-roam":
-      return { title, message: "Starting free roam…", confirmLabel: "Starting…" };
+      return {
+        title,
+        message: translator.t("switch.startingFreeRoam"),
+        confirmLabel: translator.t("switch.startingLabel"),
+      };
     case "clear-failed":
       return {
         title,
-        message:
-          pending.errorMessage ??
-          "This unfinished ride could not be ended on this device. Try again.",
+        // An errorMessage already produced by a failing operation is
+        // rendered as-is. It is a value, not a key.
+        message: pending.errorMessage ?? translator.t("switch.clearFailed"),
         confirmLabel,
       };
     case "start-free-roam-failed":
       return {
         title,
-        message:
-          pending.errorMessage ??
-          "Free roam could not be started on this device. Try again.",
-        confirmLabel: "Try again",
+        message: pending.errorMessage ?? translator.t("switch.startFreeRoamFailed"),
+        confirmLabel: translator.t("switch.tryAgain"),
       };
     case "returning":
-      return { title, message: "Opening your paused ride…", confirmLabel };
+      return {
+        title,
+        message: translator.t("switch.returning"),
+        confirmLabel,
+      };
     case "return-failed":
       // Deliberately never "End and switch": returnToPausedRide only
       // reaches this status once its own revalidation has shown the
@@ -202,17 +223,18 @@ function describePendingRideSwitch(pending: PendingRideSwitch): {
       // reuses retryPendingSwitchCheck to re-establish fresh state first.
       return {
         title,
-        message:
-          pending.errorMessage ??
-          "This paused ride could not be reopened. Check again to see its current status.",
-        confirmLabel: "Check again",
+        message: pending.errorMessage ?? translator.t("switch.returnFailed"),
+        confirmLabel: translator.t("switch.checkAgain"),
       };
     default: {
-      const routeNote =
-        existing === "route" ? "the saved route will remain in your library, but " : "";
+      // Two whole sentences rather than a note spliced into one: German
+      // would need to reorder the clause, which a fragment cannot do.
       return {
         title,
-        message: `You have ${existingSessionLabel(existing)}. It must be ended before this can open — ${routeNote}ride progress will be cleared.`,
+        message: translator.t(
+          existing === "route" ? "switch.conflictKeepsRoute" : "switch.conflict",
+          { existing: existingSessionLabel(translator, existing) },
+        ),
         confirmLabel,
       };
     }
@@ -226,7 +248,10 @@ function describePendingRideSwitch(pending: PendingRideSwitch): {
  * so the caller falls back to describePendingRideSwitch's generic
  * wording — used only when building the inline card view model, never by
  * the page-level ConfirmDialog. */
-function describeInlineRouteSwitchMessage(pending: PendingRideSwitch): string | null {
+function describeInlineRouteSwitchMessage(
+  translator: Translator,
+  pending: PendingRideSwitch,
+): string | null {
   if (
     pending.origin !== "route-card" ||
     pending.target.kind !== "route" ||
@@ -236,10 +261,15 @@ function describeInlineRouteSwitchMessage(pending: PendingRideSwitch): string | 
   ) {
     return null;
   }
-  return `"${pending.existingRoute.name}" is paused. Return to it, or end it and switch to ${targetLabel(pending.target)}. Ending it will clear ride progress; the saved route will remain in Routes.`;
+  return translator.t("switch.inlineRouteConflict", {
+    existing: pending.existingRoute.name,
+    target: targetLabel(translator, pending.target),
+  });
 }
 
 function App({ mapFactory, clock = systemClock }: AppProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   const [screen, setScreen] = useState<Screen>("library");
   const [ridingContent, setRidingContent] = useState<RidingContent>(NONE_RIDING_CONTENT);
   const [isRidingActive, setIsRidingActive] = useState(false);
@@ -512,9 +542,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
       if (wroteState) {
         openRideTarget(target);
       } else {
-        setFreeRoamTransitionError(
-          "Free roam could not be started on this device. Try again.",
-        );
+        setFreeRoamTransitionError(t("switch.startFreeRoamFailed"));
       }
       return;
     }
@@ -579,8 +607,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         setPendingRideSwitch({
           ...pending,
           status: "clear-failed",
-          errorMessage:
-            "This unfinished ride could not be ended on this device. Try again.",
+          errorMessage: t("switch.clearFailed"),
         });
         return;
       }
@@ -611,7 +638,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         setPendingRideSwitch({
           ...pending,
           status: "start-free-roam-failed",
-          errorMessage: "Free roam could not be started on this device. Try again.",
+          errorMessage: t("switch.startFreeRoamFailed"),
         });
       }
     } finally {
@@ -659,7 +686,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
           setPendingRideSwitch({
             ...pending,
             status: "start-free-roam-failed",
-            errorMessage: "Free roam could not be started on this device. Try again.",
+            errorMessage: t("switch.startFreeRoamFailed"),
           });
         }
         return;
@@ -710,7 +737,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         setPendingRideSwitch({
           ...pending,
           status: "start-free-roam-failed",
-          errorMessage: "Free roam could not be started on this device. Try again.",
+          errorMessage: t("switch.startFreeRoamFailed"),
         });
       }
     } finally {
@@ -751,7 +778,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
           ...pending,
           existingRoute: null,
           status: "return-failed",
-          errorMessage: "This paused ride's status could not be checked. Try again.",
+          errorMessage: t("switch.pausedRideCheckFailed"),
         });
         return;
       }
@@ -766,8 +793,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
           ...pending,
           existingRoute: null,
           status: "return-failed",
-          errorMessage:
-            "This paused ride has changed since this screen opened. Check again to see its current status.",
+          errorMessage: t("switch.pausedRideChanged"),
         });
         return;
       }
@@ -782,7 +808,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
           ...pending,
           existingRoute: null,
           status: "return-failed",
-          errorMessage: "This paused ride's route could not be checked. Try again.",
+          errorMessage: t("switch.pausedRouteCheckFailed"),
         });
         return;
       }
@@ -792,8 +818,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
           ...pending,
           existingRoute: null,
           status: "return-failed",
-          errorMessage:
-            "This route is no longer in your library, so this paused ride can't be reopened.",
+          errorMessage: t("switch.pausedRouteMissing"),
         });
         return;
       }
@@ -974,7 +999,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   };
 
   const pendingSwitchCopy = pendingRideSwitch
-    ? describePendingRideSwitch(pendingRideSwitch)
+    ? describePendingRideSwitch(translator, pendingRideSwitch)
     : null;
   const isPendingSwitchBusy =
     pendingRideSwitch?.status === "clearing" ||
@@ -998,7 +1023,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
           routeId: pendingRideSwitch.target.route.id,
           title: pendingSwitchCopy.title,
           message:
-            describeInlineRouteSwitchMessage(pendingRideSwitch) ??
+            describeInlineRouteSwitchMessage(translator, pendingRideSwitch) ??
             pendingSwitchCopy.message,
           confirmLabel: pendingSwitchCopy.confirmLabel,
           confirmVariant: isDestructiveSwitchConfirmStatus(pendingRideSwitch.status)
@@ -1029,7 +1054,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
           title={pendingSwitchCopy.title}
           message={pendingSwitchCopy.message}
           confirmLabel={pendingSwitchCopy.confirmLabel}
-          cancelLabel="Cancel"
+          cancelLabel={t("switch.cancel")}
           confirmDisabled={isPendingSwitchBusy}
           cancelDisabled={isPendingSwitchBusy}
           onConfirm={handlePendingSwitchConfirm}
@@ -1039,12 +1064,12 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
 
       {needRefresh ? (
         <div role="status">
-          <p>An update is ready.</p>
+          <p>{t("update.ready")}</p>
           <button type="button" onClick={updateNow}>
-            Update now
+            {t("update.now")}
           </button>
           <button type="button" onClick={dismiss}>
-            Later
+            {t("update.later")}
           </button>
         </div>
       ) : null}
