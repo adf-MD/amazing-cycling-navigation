@@ -8,6 +8,7 @@ import {
   type MessageEntry,
   type MessageValue,
   type ParamsFor,
+  type ParamsForExcept,
   type Placeholders,
   type PluralEntry,
   type RichEntry,
@@ -73,13 +74,20 @@ export type ParameterlessMessageKey = {
 }[PlainMessageKey];
 
 /**
- * A plural message's parameters come from both of its variants, plus the
- * implicit `{count}` every plural message may use. `count` is supplied
- * positionally, so it is never forgotten.
+ * A plural message's parameters, derived from its `other` variant — the
+ * one that carries every placeholder, since `one` may legitimately spell
+ * its count out ("1 route"). `{count}` is excluded because it is supplied
+ * positionally, so `plural("routes.count", 3)` needs no parameter object
+ * at all while `plural("tags.preview.merge", 3, { source, target })` does.
+ *
+ * Placeholder-name parity between catalogues is what keeps deriving this
+ * from `other` alone safe: a translation cannot introduce a placeholder in
+ * `one` that `other` lacks without failing that check.
  */
-type PluralArgs<K extends PluralMessageKey> = ParamsFor<
+type PluralArgs<K extends PluralMessageKey> = ParamsForExcept<
   (EntryOf<K> & PluralEntry)["other"],
-  MessageValue
+  MessageValue,
+  "count"
 >;
 
 /**
@@ -108,42 +116,49 @@ function shouldThrowOnMessageError(): boolean {
  * supplied parameter the message does not use is as much a mistake as a
  * placeholder nothing supplies, because both mean the call site and the
  * message have drifted apart.
+ *
+ * **Validation reads the template, never the substituted result.** This is
+ * load-bearing, not a style choice. Substituted values routinely carry
+ * user-authored text — a route name, a tag — which may legitimately
+ * contain braces: `My {weird} route` is a perfectly valid route name. An
+ * earlier version swept the *result* for leftover placeholder syntax and
+ * so rejected exactly that, turning a rider's own punctuation into a
+ * formatting error. Checking the template up front catches every defect
+ * that sweep was meant to catch (a placeholder with no value) while
+ * leaving user content inert.
+ *
+ * Substituted text is never re-scanned either: `String.prototype.replace`
+ * with a function callback walks the original string once, so a value
+ * containing `{b}` is not mistaken for the `b` parameter.
  */
 export function formatMessage(
   message: string,
   params: Readonly<Record<string, MessageValue>> | undefined,
   describeKey: string,
 ): string {
-  const used = new Set<string>();
-  const result = message.replace(placeholderPattern(), (_whole, rawName: string) => {
-    const name = rawName;
-    const value = params?.[name];
-    if (value === undefined) {
+  const required = placeholderNames(message);
+
+  for (const name of required) {
+    if (params?.[name] === undefined) {
       throw new MessageFormatError(
         `Message "${describeKey}" has no value for placeholder {${name}}.`,
       );
     }
-    used.add(name);
-    return typeof value === "number" ? String(value) : value;
-  });
+  }
 
   for (const supplied of Object.keys(params ?? {})) {
-    if (!used.has(supplied)) {
+    if (!required.includes(supplied)) {
       throw new MessageFormatError(
         `Message "${describeKey}" was given an unused parameter "${supplied}".`,
       );
     }
   }
 
-  // A defensive final sweep: nothing above can leave a placeholder behind,
-  // but a message rendered with a stray brace would reach a rider as
-  // literal punctuation, and that must never pass silently.
-  if (placeholderPattern().test(result)) {
-    throw new MessageFormatError(
-      `Message "${describeKey}" still contains an unsubstituted placeholder.`,
-    );
-  }
-  return result;
+  return message.replace(placeholderPattern(), (_whole, rawName: string) => {
+    // Guaranteed present by the template check above.
+    const value = params?.[rawName];
+    return typeof value === "number" ? String(value) : (value ?? "");
+  });
 }
 
 /**

@@ -67,6 +67,7 @@ import {
 import { downloadTextFile } from "../shared/downloadTextFile.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { ImportGpxButton } from "./ImportGpxButton.tsx";
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import { computeFocusRouteIdAfterDelete } from "./routeDeleteFocus.ts";
 import { isPinnedRoute, selectRouteLibraryGroups } from "./routeLibraryView.ts";
 import { RouteListItem, type RouteSwitchPrompt } from "./RouteListItem.tsx";
@@ -138,6 +139,8 @@ export function RouteLibrary({
   pendingRouteSwitch = null,
   stickyHeaderRef,
 }: RouteLibraryProps) {
+  const translator = useTranslate();
+  const { t } = translator;
   const listRoutesQuery = useCallback(() => listRoutes(), []);
   const routes = useLiveQuery(listRoutesQuery);
   const preferencesQuery = useCallback(() => getRouteLibraryPreferences(), []);
@@ -335,6 +338,7 @@ export function RouteLibrary({
   if (settled !== null && settled.outcome.status === "applied") {
     setTagLifecycleStatus(
       describeTagLifecycleSuccess(
+        translator,
         settled.kind === "delete"
           ? { kind: "delete", sourceTag: settled.sourceSpelling }
           : {
@@ -612,9 +616,7 @@ export function RouteLibrary({
 
   const handleImportError = (error: unknown) => {
     setNotices([]);
-    setImportError(
-      error instanceof Error ? error.message : "That file could not be imported.",
-    );
+    setImportError(error instanceof Error ? error.message : t("routes.error.import"));
     logError("gpx-import", error);
   };
 
@@ -644,9 +646,7 @@ export function RouteLibrary({
         downloadTextFile(fileName, xml, "application/gpx+xml");
       })
       .catch((error: unknown) => {
-        setExportError(
-          error instanceof Error ? error.message : "That route could not be exported.",
-        );
+        setExportError(error instanceof Error ? error.message : t("routes.error.export"));
         logError("route-export", error);
       });
   };
@@ -679,9 +679,7 @@ export function RouteLibrary({
         });
         setPinErrors((previous) => ({
           ...previous,
-          [route.id]: wasPinned
-            ? "This route could not be unpinned. Try again."
-            : "This route could not be pinned. Try again.",
+          [route.id]: wasPinned ? t("routes.error.unpin") : t("routes.error.pin"),
         }));
         logError("route-pin-toggle", error);
       });
@@ -812,15 +810,15 @@ export function RouteLibrary({
       return;
     }
     if (busyTagSaveRouteIds.size > 0) {
-      setTagManagerHint("Finish saving that route's tags first, then manage tags.");
+      setTagManagerHint(t("routes.busy.savingTags"));
       return;
     }
     if (isDeleting) {
-      setTagManagerHint("Wait for the route deletion to finish, then manage tags.");
+      setTagManagerHint(t("routes.busy.deleting"));
       return;
     }
     if (pendingRouteSwitch?.busy) {
-      setTagManagerHint("Wait for the ride switch to finish, then manage tags.");
+      setTagManagerHint(t("routes.busy.switching"));
       return;
     }
     if (pendingRouteSwitch) {
@@ -899,7 +897,7 @@ export function RouteLibrary({
         setTagLifecycleConfirm(null);
         if (outcome.status === "invalid-target") {
           abandonMarker();
-          setTagLifecycleError("Enter a new name for this tag.");
+          setTagLifecycleError(t("routes.error.tagNameRequired"));
           return;
         }
         // The write signal. The corpus signal is awaited separately, in
@@ -928,8 +926,8 @@ export function RouteLibrary({
         abandonMarker();
         setTagLifecycleError(
           operation.kind === "rename"
-            ? "That tag could not be renamed. Try again."
-            : "That tag could not be deleted. Try again.",
+            ? t("routes.error.renameTag")
+            : t("routes.error.deleteTag"),
         );
         requestManagerFocus(operation.kind === "rename" ? "rename" : "delete");
         logError("route-tag-lifecycle", error);
@@ -963,7 +961,7 @@ export function RouteLibrary({
     if (targetSpelling === null) {
       // Deliberately submitted rather than blocked behind a disabled
       // button: this is a real, reachable message instead of dead code.
-      setTagLifecycleError("Enter a new name for this tag.");
+      setTagLifecycleError(t("routes.error.tagNameRequired"));
       return;
     }
     const operation: RouteTagLifecycleOperation = {
@@ -983,6 +981,7 @@ export function RouteLibrary({
     setTagLifecycleConfirm({
       operation,
       copy: describeMergeConfirmation(
+        translator,
         sourceSpelling,
         targetSpelling,
         routeCountsByTagKey.get(sourceKey) ?? 0,
@@ -997,6 +996,7 @@ export function RouteLibrary({
     setTagLifecycleConfirm({
       operation: { kind: "delete", sourceKey },
       copy: describeDeleteConfirmation(
+        translator,
         sourceSpelling,
         routeCountsByTagKey.get(sourceKey) ?? 0,
       ),
@@ -1172,7 +1172,7 @@ export function RouteLibrary({
       return;
     }
     if (isTagLifecycleBusyRef.current) {
-      setTagManagerHint("Wait for the tag update to finish, then filter by tags.");
+      setTagManagerHint(t("routes.busy.tagUpdate"));
       return;
     }
     setTagManagerHint(null);
@@ -1219,9 +1219,7 @@ export function RouteLibrary({
       })
       .catch((error: unknown) => {
         setIsDeleting(false);
-        setDeleteError(
-          error instanceof Error ? error.message : "That route could not be deleted.",
-        );
+        setDeleteError(error instanceof Error ? error.message : t("routes.error.delete"));
         logError("route-delete", error);
       });
   };
@@ -1248,9 +1246,7 @@ export function RouteLibrary({
       .catch((error: unknown) => {
         logError("route-library-save-preferences", error);
         setIsSavingSortPreference(false);
-        setSortPreferenceError(
-          "This preference could not be saved on this device. Try again.",
-        );
+        setSortPreferenceError(t("routes.preferenceSaveFailed"));
       });
   };
 
@@ -1304,10 +1300,10 @@ export function RouteLibrary({
   );
 
   return (
-    <section className="screen" aria-label="Route library">
+    <section className="screen" aria-label={t("routes.landmarkLabel")}>
       <div className="row">
         <h1 className="screen-title" ref={headingRef} tabIndex={-1}>
-          Routes
+          {t("routes.title")}
         </h1>
         <ImportGpxButton onImported={handleImported} onError={handleImportError} />
       </div>
@@ -1322,7 +1318,7 @@ export function RouteLibrary({
       {routes !== undefined && routes.length > 0 ? (
         <div className="row">
           <div className="route-library-field">
-            <label htmlFor="route-library-search">Search routes</label>
+            <label htmlFor="route-library-search">{t("routes.searchLabel")}</label>
             <div className="row">
               <input
                 id="route-library-search"
@@ -1340,13 +1336,13 @@ export function RouteLibrary({
                   className="btn-secondary"
                   onClick={handleClearSearch}
                 >
-                  Clear search
+                  {t("routes.clearSearch")}
                 </button>
               ) : null}
             </div>
           </div>
           <div className="route-library-field">
-            <label htmlFor="route-library-sort">Sort by</label>
+            <label htmlFor="route-library-sort">{t("routes.sortLabel")}</label>
             <select
               id="route-library-sort"
               className="route-library-sort-select"
@@ -1355,15 +1351,15 @@ export function RouteLibrary({
                 handleSortOrderChange(event.target.value as RouteLibrarySortOrder);
               }}
             >
-              <option value="most-recent">Most recent</option>
-              <option value="name-asc">Name A–Z</option>
-              <option value="distance-desc">Longest route</option>
-              <option value="ascent-desc">Most total ascent</option>
+              <option value="most-recent">{t("routes.sort.mostRecent")}</option>
+              <option value="name-asc">{t("routes.sort.nameAsc")}</option>
+              <option value="distance-desc">{t("routes.sort.longest")}</option>
+              <option value="ascent-desc">{t("routes.sort.mostAscent")}</option>
             </select>
           </div>
           {isSavingSortPreference ? (
             <p role="status" className="field-hint">
-              Saving…
+              {t("routes.saving")}
             </p>
           ) : null}
           {sortPreferenceError ? (
@@ -1392,7 +1388,7 @@ export function RouteLibrary({
               aria-controls={isTagFilterOpen ? tagFilterPanelId : undefined}
               onClick={handleToggleTagFilters}
             >
-              Filter by tags
+              {t("routes.filterByTags")}
               <span aria-hidden="true" className="tag-disclosure-chevron">
                 ▾
               </span>
@@ -1405,7 +1401,7 @@ export function RouteLibrary({
               aria-controls={isTagManagerOpen ? tagManagerPanelId : undefined}
               onClick={handleOpenTagManager}
             >
-              Manage tags
+              {t("routes.manageTags")}
               <span aria-hidden="true" className="tag-disclosure-chevron">
                 ▾
               </span>
@@ -1417,7 +1413,7 @@ export function RouteLibrary({
           {!isTagFilterOpen && hasActiveTagFilters ? (
             <div className="row tag-controls-summary">
               <p className="field-hint">
-                {describeActiveTagFilterCount(selectedTagFilters.size)}
+                {describeActiveTagFilterCount(translator, selectedTagFilters.size)}
               </p>
               <button
                 type="button"
@@ -1425,7 +1421,7 @@ export function RouteLibrary({
                 ref={clearTagFiltersButtonRef}
                 onClick={handleClearTagFilters}
               >
-                Clear tag filters
+                {t("routes.clearTagFilters")}
               </button>
             </div>
           ) : null}
@@ -1524,6 +1520,7 @@ export function RouteLibrary({
                   return (
                     <span key={key} id={`${tagFilterCountIdPrefix}-${String(index)}`}>
                       {describeProspectiveTagFilterCount(
+                        translator,
                         prospectiveTagFilterCounts.get(key) ?? 0,
                       )}
                     </span>
@@ -1537,7 +1534,7 @@ export function RouteLibrary({
                   ref={clearTagFiltersButtonRef}
                   onClick={handleClearTagFilters}
                 >
-                  Clear tag filters
+                  {t("routes.clearTagFilters")}
                 </button>
               ) : null}
             </div>
@@ -1593,16 +1590,16 @@ export function RouteLibrary({
       ) : null}
 
       {routes === undefined || preferences === undefined ? (
-        <p>Loading routes…</p>
+        <p>{t("routes.loading")}</p>
       ) : routes.length === 0 ? (
-        <p>No routes saved yet. Import a GPX file to get started.</p>
+        <p>{t("routes.emptyLibrary")}</p>
       ) : viewRoutes.length === 0 ? (
         <p role="status">
           {hasActiveNameQuery && hasActiveTagFilters
-            ? `No routes match “${trimmedQuery}” and the selected tags.`
+            ? t("routes.noMatchQueryAndTags", { query: trimmedQuery })
             : hasActiveTagFilters
-              ? "No routes match the selected tags."
-              : `No routes match “${trimmedQuery}”.`}
+              ? t("routes.noMatchTags")
+              : t("routes.noMatchQuery", { query: trimmedQuery })}
         </p>
       ) : (
         <ul className="route-list">{viewRoutes.map(renderCard)}</ul>

@@ -11,6 +11,7 @@ import {
   sortRoutesForLibrary,
   tagFilterCountSlotDigits,
 } from "./routeLibraryView.ts";
+import { englishTranslator } from "../../i18n/englishTranslator.ts";
 
 const NO_TAG_FILTERS = new Set<string>();
 
@@ -744,16 +745,24 @@ describe("selectProspectiveTagFilterCounts", () => {
 
 describe("describeProspectiveTagFilterCount", () => {
   it("spells out unavailability rather than saying '0 routes'", () => {
-    expect(describeProspectiveTagFilterCount(0)).toBe("No routes would remain");
+    expect(describeProspectiveTagFilterCount(englishTranslator, 0)).toBe(
+      "No routes would remain",
+    );
   });
 
   it("uses the singular for exactly one route", () => {
-    expect(describeProspectiveTagFilterCount(1)).toBe("1 route would remain");
+    expect(describeProspectiveTagFilterCount(englishTranslator, 1)).toBe(
+      "1 route would remain",
+    );
   });
 
   it("uses the plural beyond one", () => {
-    expect(describeProspectiveTagFilterCount(2)).toBe("2 routes would remain");
-    expect(describeProspectiveTagFilterCount(1234)).toBe("1234 routes would remain");
+    expect(describeProspectiveTagFilterCount(englishTranslator, 2)).toBe(
+      "2 routes would remain",
+    );
+    expect(describeProspectiveTagFilterCount(englishTranslator, 1234)).toBe(
+      "1234 routes would remain",
+    );
   });
 });
 

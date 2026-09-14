@@ -10,13 +10,27 @@
  * moved to routeCountCopy.ts when backlog item 111 needed the same
  * pluralisation for a derived UI count, and that formatter deliberately
  * carries no such claim of its own.
+ *
+ * Backlog item 113 stage 2. Three things changed, and none of them changes
+ * a single English character:
+ *
+ * 1. Each message is now **one whole catalogue sentence** rather than
+ *    fragments joined at the call site. The old code built a `scope`
+ *    clause (`on 3 routes`) and injected it into five different
+ *    sentences; that works only because English happens to put it last,
+ *    and it is exactly the shape a translator cannot reorder.
+ * 2. The curly quotes moved **into** the messages. They are punctuation,
+ *    and punctuation is language-specific — German uses low-high quotes.
+ *    The rider's own tag name is interpolated between them and is never
+ *    altered, cased or re-quoted.
+ * 3. Singular and plural are selected by `Intl.PluralRules` for the active
+ *    locale instead of an `=== 1` test.
+ *
+ * The translator is passed in explicitly, so every function here stays
+ * pure and callable from a fixture test with no React tree.
  */
 
-import { formatRouteCount } from "./routeCountCopy.ts";
-
-function quote(tag: string): string {
-  return `“${tag}”`;
-}
+import type { Translator } from "../../i18n/translate.ts";
 
 export interface TagLifecycleConfirmation {
   readonly title: string;
@@ -27,53 +41,64 @@ export interface TagLifecycleConfirmation {
 /** A merge is confirmed explicitly, naming BOTH tags and the affected
  * route count, so a rename can never silently become a merge. */
 export function describeMergeConfirmation(
+  translator: Translator,
   sourceTag: string,
   targetTag: string,
   sourceRouteCount: number,
 ): TagLifecycleConfirmation {
   return {
-    title: `Merge ${quote(sourceTag)} into ${quote(targetTag)}?`,
-    message:
-      `${quote(targetTag)} already exists, so this merges the two tags on ` +
-      `${formatRouteCount(sourceRouteCount)}. ${quote(sourceTag)} will no longer ` +
-      `exist. No route is deleted.`,
-    confirmLabel: "Merge tags",
+    title: translator.t("tags.confirm.mergeTitle", {
+      source: sourceTag,
+      target: targetTag,
+    }),
+    message: translator.plural("tags.confirm.mergeMessage", sourceRouteCount, {
+      source: sourceTag,
+      target: targetTag,
+    }),
+    confirmLabel: translator.t("tags.manage.merge"),
   };
 }
 
 /** On a screen where "Delete" otherwise means deleting a route, the copy
  * has to say plainly that the routes themselves survive. */
 export function describeDeleteConfirmation(
+  translator: Translator,
   tag: string,
   sourceRouteCount: number,
 ): TagLifecycleConfirmation {
   return {
-    title: `Delete the tag ${quote(tag)}?`,
-    message:
-      `${quote(tag)} will be removed from ${formatRouteCount(sourceRouteCount)}. ` +
-      `The routes themselves are not deleted and stay in your library.`,
-    confirmLabel: "Delete tag",
+    title: translator.t("tags.confirm.deleteTitle", { tag }),
+    message: translator.plural("tags.confirm.deleteMessage", sourceRouteCount, { tag }),
+    confirmLabel: translator.t("tags.manage.delete"),
   };
 }
 
 /** The live scope line shown before submitting, so the rider always knows
  * how far a global change reaches — and, when the typed name collides
  * with an existing tag, that it is about to become a merge. */
-export function describeTagLifecyclePreview(input: {
-  readonly sourceTag: string;
-  readonly targetTag: string | null;
-  readonly isMerge: boolean;
-  readonly routeCount: number;
-}): string {
+export function describeTagLifecyclePreview(
+  translator: Translator,
+  input: {
+    readonly sourceTag: string;
+    readonly targetTag: string | null;
+    readonly isMerge: boolean;
+    readonly routeCount: number;
+  },
+): string {
   const { sourceTag, targetTag, isMerge, routeCount } = input;
-  const scope = `on ${formatRouteCount(routeCount)}`;
   if (targetTag === null) {
-    return `Rename ${quote(sourceTag)} ${scope}.`;
+    return translator.plural("tags.preview.rename", routeCount, { source: sourceTag });
   }
   if (isMerge) {
-    return `Merge ${quote(sourceTag)} into ${quote(targetTag)} ${scope}.`;
+    return translator.plural("tags.preview.merge", routeCount, {
+      source: sourceTag,
+      target: targetTag,
+    });
   }
-  return `Rename ${quote(sourceTag)} to ${quote(targetTag)} ${scope}.`;
+  return translator.plural("tags.preview.renameTo", routeCount, {
+    source: sourceTag,
+    target: targetTag,
+  });
 }
 
 export type TagLifecycleSummary =
@@ -81,21 +106,26 @@ export type TagLifecycleSummary =
   | { kind: "delete"; sourceTag: string };
 
 export function describeTagLifecycleSuccess(
+  translator: Translator,
   summary: TagLifecycleSummary,
   sourceRouteCount: number,
 ): string {
   if (sourceRouteCount === 0) {
-    return `${quote(summary.sourceTag)} is no longer used by any route, so nothing changed.`;
+    return translator.t("tags.success.unused", { source: summary.sourceTag });
   }
-  const scope = `on ${formatRouteCount(sourceRouteCount)}`;
   if (summary.kind === "delete") {
-    return (
-      `Deleted ${quote(summary.sourceTag)} from ${formatRouteCount(sourceRouteCount)}. ` +
-      `Those routes are still saved.`
-    );
+    return translator.plural("tags.success.deleted", sourceRouteCount, {
+      source: summary.sourceTag,
+    });
   }
   if (summary.merged) {
-    return `Merged ${quote(summary.sourceTag)} into ${quote(summary.targetTag)} ${scope}.`;
+    return translator.plural("tags.success.merged", sourceRouteCount, {
+      source: summary.sourceTag,
+      target: summary.targetTag,
+    });
   }
-  return `Renamed ${quote(summary.sourceTag)} to ${quote(summary.targetTag)} ${scope}.`;
+  return translator.plural("tags.success.renamed", sourceRouteCount, {
+    source: summary.sourceTag,
+    target: summary.targetTag,
+  });
 }

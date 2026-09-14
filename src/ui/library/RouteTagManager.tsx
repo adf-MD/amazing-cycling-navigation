@@ -5,6 +5,7 @@ import {
   type TagLifecycleConfirmation,
 } from "./tagLifecycleMessages.ts";
 import { findTagSpelling, resolveTagLifecycleTarget } from "./tagLifecycleTarget.ts";
+import { useTranslate } from "../../i18n/useTranslate.ts";
 
 export interface RouteTagManagerProps {
   /** Lets the "Manage tags" disclosure point at this panel with
@@ -117,6 +118,9 @@ export function RouteTagManager({
   const controlsDisabled = isBusy || confirmation !== null;
   const hasSource = sourceTag !== null;
 
+  const translator = useTranslate();
+  const { t } = translator;
+
   const handleConfirmKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       onCancelConfirm();
@@ -132,25 +136,25 @@ export function RouteTagManager({
       ref={panelRef}
     >
       <h2 id={headingId} ref={headingRef}>
-        Manage tags
+        {t("tags.manage.heading")}
       </h2>
 
       {tags.length === 0 ? (
         <>
-          <p>No tags left. Add tags from a route to manage them here.</p>
+          <p>{t("tags.manage.empty")}</p>
           <button
             type="button"
             className="btn-secondary"
             ref={closeButtonRef}
             onClick={onClose}
           >
-            Close
+            {t("tags.manage.close")}
           </button>
         </>
       ) : (
         <>
           <div className="route-library-field">
-            <label htmlFor={selectId}>Tag to manage</label>
+            <label htmlFor={selectId}>{t("tags.manage.selectLabel")}</label>
             <select
               id={selectId}
               className="tag-manager-select"
@@ -161,13 +165,13 @@ export function RouteTagManager({
                 onSourceKeyChange(event.target.value);
               }}
             >
-              <option value="">Choose a tag</option>
+              <option value="">{t("tags.manage.selectPlaceholder")}</option>
               {tags.map((tag) => {
                 const key = tagIdentityKey(tag);
                 const count = routeCountsByTagKey.get(key) ?? 0;
                 return (
                   <option key={key} value={key}>
-                    {`${tag} (${count === 1 ? "1 route" : `${String(count)} routes`})`}
+                    {translator.plural("tags.manage.option", count, { tag })}
                   </option>
                 );
               })}
@@ -175,7 +179,7 @@ export function RouteTagManager({
           </div>
 
           <div className="route-library-field">
-            <label htmlFor={newNameId}>New name</label>
+            <label htmlFor={newNameId}>{t("tags.manage.newNameLabel")}</label>
             <input
               id={newNameId}
               type="text"
@@ -190,7 +194,7 @@ export function RouteTagManager({
 
           {hasSource ? (
             <p className="field-hint">
-              {describeTagLifecyclePreview({
+              {describeTagLifecyclePreview(translator, {
                 sourceTag,
                 targetTag: targetSpelling,
                 isMerge,
@@ -198,14 +202,12 @@ export function RouteTagManager({
               })}
             </p>
           ) : (
-            <p className="field-hint">
-              Choose a tag to rename, merge or delete it everywhere it is used.
-            </p>
+            <p className="field-hint">{t("tags.manage.hint")}</p>
           )}
 
           {isBusy ? (
             <p role="status" className="field-hint">
-              Applying…
+              {t("tags.manage.applying")}
             </p>
           ) : null}
           {errorMessage ? (
@@ -222,7 +224,7 @@ export function RouteTagManager({
               disabled={controlsDisabled || !hasSource}
               onClick={onRenameRequest}
             >
-              {isMerge ? "Merge tags" : "Rename tag"}
+              {isMerge ? t("tags.manage.merge") : t("tags.manage.rename")}
             </button>
             <button
               type="button"
@@ -231,7 +233,7 @@ export function RouteTagManager({
               disabled={controlsDisabled || !hasSource}
               onClick={onDeleteRequest}
             >
-              Delete tag
+              {t("tags.manage.delete")}
             </button>
             <button
               type="button"
@@ -240,7 +242,7 @@ export function RouteTagManager({
               disabled={isBusy}
               onClick={onClose}
             >
-              Close
+              {t("tags.manage.close")}
             </button>
           </div>
 
@@ -269,7 +271,7 @@ export function RouteTagManager({
                   disabled={isBusy}
                   onClick={onCancelConfirm}
                 >
-                  Cancel
+                  {t("tags.manage.cancel")}
                 </button>
                 <button
                   type="button"

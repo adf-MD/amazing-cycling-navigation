@@ -9,6 +9,7 @@ import {
   tagsEqualByIdentity,
 } from "../../domain/routeTags.ts";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import { PinIcon } from "./PinIcon.tsx";
 import { runWhenViewportSettled } from "../shared/viewportSettle.ts";
 import { applyTopRevealScroll } from "./routeCardTopReveal.ts";
@@ -130,6 +131,17 @@ export function RouteListItem({
   dismissInlineEditorsToken,
   requestInlineEditorOpen,
 }: RouteListItemProps) {
+  const { t } = useTranslate();
+  // Backlog item 113 stage 2. The pin control's accessible name used to be
+  // a verb fragment glued to the route name (`${isPinned ? "Unpin" :
+  // "Pin"} ${route.name}`). Each state is now a whole message carrying the
+  // name as a parameter, so a translation can put the verb wherever its
+  // grammar needs it. The rider's own route name is interpolated verbatim
+  // — including any braces it happens to contain, which the message
+  // formatter treats as ordinary text rather than placeholder syntax.
+  const pinActionLabel = isPinned
+    ? t("routes.card.unpin", { name: route.name })
+    : t("routes.card.pin", { name: route.name });
   const [isRenaming, setIsRenaming] = useState(false);
   const [draftName, setDraftName] = useState(route.name);
   const [isEditingTags, setIsEditingTags] = useState(false);
@@ -634,7 +646,7 @@ export function RouteListItem({
       .catch(() => {
         isSavingTagsRef.current = false;
         setIsSavingTags(false);
-        setTagsSaveError("This route's tags could not be saved. Try again.");
+        setTagsSaveError(t("routes.error.saveTags"));
       });
   };
 
@@ -654,7 +666,7 @@ export function RouteListItem({
           onSubmit={handleRenameSubmit}
           onKeyDown={handleRenameKeyDown}
         >
-          <label htmlFor={nameFieldId}>Route name</label>
+          <label htmlFor={nameFieldId}>{t("routes.card.nameLabel")}</label>
           <input
             id={nameFieldId}
             ref={nameInputRef}
@@ -669,10 +681,10 @@ export function RouteListItem({
           </p>
           <div className="row">
             <button type="submit" className="btn-primary">
-              Save
+              {t("routes.card.save")}
             </button>
             <button type="button" className="btn-secondary" onClick={handleCancelRename}>
-              Cancel
+              {t("routes.card.cancel")}
             </button>
           </div>
         </form>
@@ -684,7 +696,7 @@ export function RouteListItem({
           </p>
           <form className="row" onSubmit={handleAddTag}>
             <div className="route-library-field">
-              <label htmlFor={tagInputId}>Add a tag</label>
+              <label htmlFor={tagInputId}>{t("routes.card.addTagLabel")}</label>
               <input
                 id={tagInputId}
                 ref={tagInputRef}
@@ -697,10 +709,14 @@ export function RouteListItem({
               />
             </div>
             <button type="submit" className="btn-secondary" disabled={isSavingTags}>
-              Add tag
+              {t("routes.card.addTag")}
             </button>
           </form>
-          <div className="tag-suggestions" role="group" aria-label="Tag suggestions">
+          <div
+            className="tag-suggestions"
+            role="group"
+            aria-label={t("routes.card.tagSuggestions")}
+          >
             {sortTagsForDisplay(normalizeRouteTags([...tagSuggestions, ...tagDraft])).map(
               (tag) => {
                 const key = tagIdentityKey(tag);
@@ -727,7 +743,7 @@ export function RouteListItem({
               },
             )}
           </div>
-          {isSavingTags ? <p role="status">Saving…</p> : null}
+          {isSavingTags ? <p role="status">{t("routes.saving")}</p> : null}
           {tagsSaveError ? (
             <p role="alert" className="field-error">
               {tagsSaveError}
@@ -740,7 +756,7 @@ export function RouteListItem({
               disabled={isSavingTags}
               onClick={handleSaveTags}
             >
-              Save tags
+              {t("routes.card.saveTags")}
             </button>
             <button
               type="button"
@@ -748,7 +764,7 @@ export function RouteListItem({
               disabled={isSavingTags}
               onClick={handleCancelTags}
             >
-              Cancel
+              {t("routes.card.cancel")}
             </button>
           </div>
         </div>
@@ -770,8 +786,8 @@ export function RouteListItem({
               className={`route-pin-toggle${isPinned ? " is-pinned" : ""}`}
               ref={pinButtonRef}
               aria-pressed={isPinned}
-              aria-label={`${isPinned ? "Unpin" : "Pin"} ${route.name}`}
-              title={`${isPinned ? "Unpin" : "Pin"} ${route.name}`}
+              aria-label={pinActionLabel}
+              title={pinActionLabel}
               disabled={isPinPending || isDeleting}
               onClick={handlePinClick}
             >
@@ -787,7 +803,7 @@ export function RouteListItem({
             </p>
           ) : null}
           {route.tags.length > 0 ? (
-            <ul className="route-card-tags" aria-label="Tags">
+            <ul className="route-card-tags" aria-label={t("routes.card.tags")}>
               {route.tags.map((tag) => (
                 <li key={tag} className="route-card-tag">
                   {tag}
@@ -802,7 +818,7 @@ export function RouteListItem({
               ref={renameButtonRef}
               onClick={openRename}
             >
-              Rename
+              {t("routes.card.rename")}
             </button>
             <button
               type="button"
@@ -810,7 +826,9 @@ export function RouteListItem({
               ref={tagsButtonRef}
               onClick={openTagEditor}
             >
-              {route.tags.length > 0 ? "Edit tags" : "Add tags"}
+              {route.tags.length > 0
+                ? t("routes.card.editTags")
+                : t("routes.card.addTags")}
             </button>
             <button
               type="button"
@@ -819,7 +837,7 @@ export function RouteListItem({
                 onExport(route);
               }}
             >
-              Export
+              {t("routes.card.export")}
             </button>
             <button
               type="button"
@@ -829,7 +847,7 @@ export function RouteListItem({
                 onDeleteRequest(route.id);
               }}
             >
-              Delete
+              {t("routes.card.delete")}
             </button>
           </div>
           {isDeletePending ? (
@@ -840,11 +858,10 @@ export function RouteListItem({
               aria-describedby={descriptionId}
               onKeyDown={handleConfirmKeyDown}
             >
-              <h2 id={headingId}>Delete “{route.name}”?</h2>
-              <p id={descriptionId}>
-                This route will be permanently deleted from this device. This cannot be
-                undone.
-              </p>
+              <h2 id={headingId}>
+                {t("routes.card.deleteConfirmTitle", { name: route.name })}
+              </h2>
+              <p id={descriptionId}>{t("routes.card.deleteConfirmBody")}</p>
               {deleteError ? <p role="alert">{deleteError}</p> : null}
               <div className="route-delete-confirm-actions">
                 <button
@@ -854,7 +871,7 @@ export function RouteListItem({
                   disabled={isDeleting}
                   onClick={handleCancelDelete}
                 >
-                  Cancel
+                  {t("routes.card.cancel")}
                 </button>
                 <button
                   type="button"
@@ -864,7 +881,9 @@ export function RouteListItem({
                     onDeleteConfirm(route.id);
                   }}
                 >
-                  {isDeleting ? "Deleting…" : "Delete route"}
+                  {isDeleting
+                    ? t("routes.card.deleting")
+                    : t("routes.card.deleteConfirm")}
                 </button>
               </div>
             </div>
@@ -903,7 +922,7 @@ export function RouteListItem({
                     disabled={switchPrompt.busy}
                     onClick={switchPrompt.onReturn}
                   >
-                    Return to paused ride
+                    {t("routes.card.returnToPausedRide")}
                   </button>
                 ) : null}
                 <button
@@ -913,7 +932,7 @@ export function RouteListItem({
                   disabled={switchPrompt.busy}
                   onClick={switchPrompt.onCancel}
                 >
-                  Cancel
+                  {t("routes.card.cancel")}
                 </button>
               </div>
             </div>

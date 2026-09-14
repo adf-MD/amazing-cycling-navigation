@@ -62,9 +62,19 @@ export type MessageValue = string | number;
  * all, expressed as an empty rest tuple rather than an optional `{}`, so
  * passing one is also an error.
  */
-export type ParamsFor<S extends string, V> = [Placeholders<S>] extends [never]
+export type ParamsFor<S extends string, V> = ParamsForExcept<S, V, never>;
+
+/**
+ * As `ParamsFor`, but with some placeholder names supplied by other
+ * means. A plural message's `{count}` is passed positionally, so it must
+ * not also be demanded in the parameter object — and when `count` is the
+ * message's only placeholder, the call takes no parameter object at all.
+ */
+export type ParamsForExcept<S extends string, V, Omitted extends string> = [
+  Exclude<Placeholders<S>, Omitted>,
+] extends [never]
   ? []
-  : [params: Readonly<Record<Placeholders<S>, V>>];
+  : [params: Readonly<Record<Exclude<Placeholders<S>, Omitted>, V>>];
 
 /**
  * The runtime placeholder pattern, kept beside the type that mirrors it.

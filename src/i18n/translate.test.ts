@@ -182,6 +182,33 @@ describe("formatMessage", () => {
     expect(formatMessage("plain text", undefined, "k")).toBe("plain text");
   });
 
+  it("substitutes a value that itself contains braces, verbatim", () => {
+    // User-authored content — a route name, a tag — may legitimately
+    // contain braces. An earlier version swept the substituted RESULT for
+    // placeholder syntax and rejected exactly this, turning a rider's own
+    // punctuation into a formatting error. Validation reads the template.
+    expect(formatMessage("Delete {name}?", { name: "My {weird} route" }, "k")).toBe(
+      "Delete My {weird} route?",
+    );
+  });
+
+  it("does not re-substitute a brace sequence inside a value that names another parameter", () => {
+    // replace() with a function callback walks the original string once,
+    // so a value containing "{b}" is not mistaken for the b parameter.
+    expect(formatMessage("{a} and {b}", { a: "literally {b}", b: "TWO" }, "k")).toBe(
+      "literally {b} and TWO",
+    );
+  });
+
+  it("still rejects a template placeholder that has no value, braces or not", () => {
+    // The guarantee the removed result-sweep was meant to provide, kept
+    // where it actually belongs — on the template.
+    expect(() => formatMessage("Hello {name}", {}, "k")).toThrow(MessageFormatError);
+    expect(() => formatMessage("Hello {name}", { other: "x" }, "k")).toThrow(
+      MessageFormatError,
+    );
+  });
+
   it("is not confused by repeated calls, which a shared /g regex would be", () => {
     // Negative control for the stateful-regex defect: a module-level /g
     // pattern carries lastIndex between calls, so the second call would

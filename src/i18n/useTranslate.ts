@@ -1,7 +1,7 @@
-import { useContext, useMemo } from "react";
-import { catalogueFor } from "./catalogues.ts";
+import { useContext } from "react";
+import { englishTranslator } from "./englishTranslator.ts";
 import { LanguageContext, type LanguageContextValue } from "./languageContext.ts";
-import { createTranslator, type Translator } from "./translate.ts";
+import type { Translator } from "./translate.ts";
 
 /**
  * The translator for the active language.
@@ -14,10 +14,7 @@ import { createTranslator, type Translator } from "./translate.ts";
  */
 export function useTranslate(): Translator {
   const context = useContext(LanguageContext);
-  return useMemo(
-    () => context?.translator ?? createTranslator("en", catalogueFor("en")),
-    [context],
-  );
+  return context?.translator ?? englishTranslator;
 }
 
 /** The full language context, for the parts of the UI that change it. */

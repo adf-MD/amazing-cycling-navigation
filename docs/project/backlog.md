@@ -166,20 +166,20 @@ _Category: Interface and accessibility consistency_
 
 _Category: Internationalisation_
 
-> **Staged delivery — Stage 1 complete (`0.4.38`), Stage 2 next.**
+> **Staged delivery — Stage 2 complete (no version bump), Stage 3 next.**
 > This item ships in stages and stays **pending** here until its final
 > stage. Nothing about it enters [`history/`](history/README.md) before
 > then. Each stage's commit updates the two lines below.
 >
-> | Stage | Content                                                                                                                                                                                                              | Status                  |
-> | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-> | 1     | Internationalisation boundary; `appPreferences` storage at schema `version(5)`; the supported-language gate; pre-render language resolution; authored `manifest.lang`; primary navigation and Settings copy migrated | **Complete — `0.4.38`** |
-> | 2     | Route library, tags, GPX import UI                                                                                                                                                                                   | **Next**                |
-> | 3     | Planning; render-time localisation of route warnings, GPX notices and provider errors                                                                                                                                | Pending                 |
-> | 4     | Riding, free roam, ride launcher, climb views, map overlays                                                                                                                                                          | Pending                 |
-> | 5     | Status, PWA update prompt, shared components                                                                                                                                                                         | Pending                 |
-> | 6a    | Complete German catalogue authored, then **stop** and hand the full reviewable list to the user. `Deutsch` still unreachable, nothing pushed                                                                         | Pending                 |
-> | 6b    | **Only after linguistic approval**: German enabled, the `Language`/`Sprache` card, the `:lang(de)` navigation rule, the openrouteservice `language` parameter, German layout and accessibility evidence              | Pending                 |
+> | Stage | Content                                                                                                                                                                                                              | Status                         |
+> | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+> | 1     | Internationalisation boundary; `appPreferences` storage at schema `version(5)`; the supported-language gate; pre-render language resolution; authored `manifest.lang`; primary navigation and Settings copy migrated | Complete — `0.4.38`            |
+> | 2     | Route Library, route cards, search/sort/filtering, the tag lifecycle, route actions and confirmations, and the GPX-import controls migrated                                                                          | **Complete — no version bump** |
+> | 3     | Planning; render-time localisation of route warnings, GPX notices and provider errors                                                                                                                                | **Next**                       |
+> | 4     | Riding, free roam, ride launcher, climb views, map overlays                                                                                                                                                          | Pending                        |
+> | 5     | Status, PWA update prompt, shared components                                                                                                                                                                         | Pending                        |
+> | 6a    | Complete German catalogue authored, then **stop** and hand the full reviewable list to the user. `Deutsch` still unreachable, nothing pushed                                                                         | Pending                        |
+> | 6b    | **Only after linguistic approval**: German enabled, the `Language`/`Sprache` card, the `:lang(de)` navigation rule, the openrouteservice `language` parameter, German layout and accessibility evidence              | Pending                        |
 >
 > **Decisions approved at the gate** (14 September 2026), recorded here because
 > they constrain every later stage:
@@ -197,6 +197,30 @@ _Category: Internationalisation_
 > - a **German-only** navigation wrapping rule (`:lang(de)`, `overflow-wrap: anywhere`, horizontal padding removed), keeping `Einstellungen` in full;
 > - openrouteservice `language: "de"` for new calculations only, accepting that a partially recalculated route can mix languages, with **no provider request ever made because the interface language changed**, and stored and imported instructions shown **verbatim**;
 > - glossary: **`Optionen`** / **`Erklärungen`**, **`Freies Fahren`**, **`Höhenmeter`** / **`Abstieg`**, **`Während der Fahrt`**. Every remaining term is reviewed with the complete catalogue at stage 6a.
+>
+> **Deliberately deferred by stage 2, and why** — each is a scope call, not
+> an oversight, and a later stage inherits it:
+>
+> - **`src/gpx/` message text.** The GPX-import _controls_ are migrated, but
+>   the parse, validation and import-notice strings are authored in
+>   `src/gpx/` and reach the interface as an opaque `Error.message` or
+>   `GpxImportNotice.message`. Localising them means either migrating that
+>   layer or rendering from the existing `reason`/`kind` enums — and the
+>   interpolated values several of them carry (a size limit, a coordinate,
+>   a track count) are not exposed on those objects, so it needs a typed
+>   domain change rather than a copy change. Stage 2 left every distinction
+>   exactly as it was.
+> - **`src/ui/shared/routeSummary.ts`** (`formatDistanceKm`, `formatAscent`).
+>   Seventeen importers across Riding, Planning and Settings; migrating it
+>   from the Route Library would migrate those screens with it.
+> - **`App.tsx`'s ride-switch copy**, which reaches the route card as props
+>   rather than as an import, and belongs to the Riding surface.
+> - **`routeLibraryView.ts`'s `NAME_COLLATOR`**, still pinned to `en-GB`.
+>   Collation is not copy; with English the only available language the
+>   change would be a pure no-op, while threading a locale through
+>   `sortRoutesForLibrary` and `selectRouteLibraryGroups` would churn an API
+>   a large body of order-pinning tests depends on. It belongs to the stage
+>   that makes the difference observable.
 
 113. **German localisation**
      - Origin: the installed-iPhone field test of 10 September 2026 — see [`current-status.md`](current-status.md) for the dated report. German-language support is recorded as a **substantial staged feature, not a small copy-editing task**.

@@ -1,13 +1,22 @@
+import type { Translator } from "../../i18n/translate.ts";
 import type { LibraryRoute, PlannedRoute } from "../../domain/types.ts";
 import { countRoutesByTagIdentity, tagIdentityKey } from "../../domain/routeTags.ts";
 import type { RouteLibrarySortOrder } from "../../storage/mapping.ts";
-import { formatRouteCount } from "./routeCountCopy.ts";
 
 // Pinned to en-GB rather than the runtime default (see
 // providerKeyStatus.ts's DATE_TIME_FORMATTER for the same convention) so
 // ordering is deterministic across machines/CI, not dependent on the
 // host's default locale. Module-level: Collator construction isn't free
 // and the instance is stateless/reusable.
+//
+// Backlog item 113 stage 2 deliberately did NOT move this to the active
+// application locale. That slice migrates copy, and collation is not
+// copy: with English the only available language the change would be a
+// pure no-op today, while threading a locale through sortRoutesForLibrary
+// and selectRouteLibraryGroups would churn an API that a large body of
+// order-pinning tests depends on. It is left for the slice that actually
+// enables a second language, where the difference becomes observable and
+// can be asserted.
 const NAME_COLLATOR = new Intl.Collator("en-GB", { sensitivity: "base", numeric: true });
 
 // Strips Unicode combining diacritical marks (the U+0300-U+036F block)
@@ -298,9 +307,12 @@ export function tagFilterCountSlotDigits(routeCount: number): number {
  * the visible chip already shows a literal 0, and this is the string that
  * has to make the unavailability unmistakable when read aloud.
  */
-export function describeProspectiveTagFilterCount(count: number): string {
-  if (count === 0) return "No routes would remain";
-  return `${formatRouteCount(count)} would remain`;
+export function describeProspectiveTagFilterCount(
+  translator: Translator,
+  count: number,
+): string {
+  if (count === 0) return translator.t("routes.noneWouldRemain");
+  return translator.plural("routes.wouldRemain", count);
 }
 
 /**
@@ -310,6 +322,9 @@ export function describeProspectiveTagFilterCount(count: number): string {
  * Clear action in the same row. Singular/plural is spelled out rather than
  * "1 filter(s)", matching this project's other counted copy.
  */
-export function describeActiveTagFilterCount(count: number): string {
-  return count === 1 ? "1 filter active" : `${String(count)} filters active`;
+export function describeActiveTagFilterCount(
+  translator: Translator,
+  count: number,
+): string {
+  return translator.plural("routes.filtersActive", count);
 }

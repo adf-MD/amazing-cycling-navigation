@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import type { ChangeEvent } from "react";
+import { useTranslate } from "../../i18n/useTranslate.ts";
 import { importGpxFile, type GpxImportResult } from "../../gpx/importGpx.ts";
 import { saveRoute } from "../../storage/routesRepository.ts";
 
@@ -9,6 +10,7 @@ export interface ImportGpxButtonProps {
 }
 
 export function ImportGpxButton({ onImported, onError }: ImportGpxButtonProps) {
+  const { t } = useTranslate();
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -35,13 +37,13 @@ export function ImportGpxButton({ onImported, onError }: ImportGpxButtonProps) {
           inputRef.current?.click();
         }}
       >
-        Import GPX
+        {t("gpx.import")}
       </button>
       <input
         ref={inputRef}
         type="file"
         accept=".gpx"
-        aria-label="Import GPX file"
+        aria-label={t("gpx.importFile")}
         style={{ display: "none" }}
         onChange={handleChange}
       />
