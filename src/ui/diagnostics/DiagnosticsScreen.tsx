@@ -368,7 +368,15 @@ export function DiagnosticsScreen({
         <h3>{t("status.recentRoutingAttempts")}</h3>
         <details className="settings-disclosure">
           <summary>{t("status.fetchFailureSummary")}</summary>
-          <p>{t("status.fetchFailureDetail")}</p>
+          {/* The quoted log entry is the localised `routingLog.noResponseExposed`
+              itself, not a second copy of its words. A German reader would
+              otherwise see this disclosure quote an English sentence that
+              never appears in the log above it. */}
+          <p>
+            {t("status.fetchFailureDetail", {
+              entry: t("routingLog.noResponseExposed"),
+            })}
+          </p>
         </details>
         <details className="settings-disclosure">
           <summary>{t("status.httpGuideSummary")}</summary>
@@ -442,7 +450,13 @@ export function DiagnosticsScreen({
             <li>
               <strong>{t("status.http.none")}</strong>
               <ul>
-                <li>{t("status.http.noneDetail")}</li>
+                {/* Likewise: the referenced heading is the localised
+                    `status.fetchFailureSummary`, so the two cannot drift. */}
+                <li>
+                  {t("status.http.noneDetail", {
+                    summary: t("status.fetchFailureSummary"),
+                  })}
+                </li>
               </ul>
             </li>
           </ul>
@@ -616,6 +630,13 @@ export function DiagnosticsScreen({
             >
               {t("status.copyReport")}
             </button>
+            {/* The report is English in every language (approved decision R4).
+                Saying so is only useful to a reader whose interface is not
+                English, so this notice is German-only rather than a line every
+                English reader would read as noise. */}
+            {translator.language === "de" ? (
+              <p className="field-hint">{t("status.copyReportLanguage")}</p>
+            ) : null}
             {copyStatus === "copied" ? (
               <p className="field-hint">{t("status.copied")}</p>
             ) : null}

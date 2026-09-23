@@ -260,6 +260,36 @@ header {
  * the existing .cycling-profile-button.is-selected convention below.
  * Keyed off aria-current directly rather than a parallel class, so there
  * is exactly one source of truth for which destination is active. */
+/* Backlog item 113 stage 6b: German-only navigation containment.
+ *
+ * `Einstellungen` is 131px wide at 200% root text against a 87.6px budget,
+ * so German overflows the document by 22px without this — measured in the
+ * pinned container, in Chromium and WebKit, agreeing within 0.03px.
+ *
+ * Both halves are load-bearing and both were measured. Removing the
+ * horizontal padding takes the content box from 63.59px to 71.59px, which
+ * is what keeps `Einstellungen` on ONE line at ordinary text; with the
+ * padding kept, the wrap rule alone drops it to two lines at 100% and the
+ * navigation grows from 58px to 72px — an ordinary-German regression.
+ *
+ * `overflow-wrap: anywhere`, never `word-break: break-all`: `anywhere`
+ * breaks only when there is no other opportunity, so it activates only
+ * when a word genuinely cannot fit. `:lang()` prefix-matches per BCP 47,
+ * so this holds for `de-AT`/`de-CH` if the attribute ever carries a
+ * region. Scoped to German because the unconditional variant would take
+ * the English navigation from 74px to 105px at 200% text, a regression
+ * item 113 has no business opening. This is containment, not the
+ * navigation redesign items 102 and 103 own. */
+:lang(de) .main-nav-button {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+:lang(de) .main-nav-button > span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .main-nav-button[aria-current="page"] {
   background: var(--colour-accent-soft);
   box-shadow: inset 0 0 0 2px var(--colour-accent);

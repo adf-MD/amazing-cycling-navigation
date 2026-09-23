@@ -88,7 +88,7 @@ async function openManager(page: Page) {
 }
 
 async function chooseTag(page: Page, optionLabel: string) {
-  await getManager(page).getByLabel("Tag to manage").selectOption({ label: optionLabel });
+  await getManager(page).getByLabel("Selected tag").selectOption({ label: optionLabel });
 }
 
 function visibleCardTitles(page: Page) {
@@ -308,8 +308,8 @@ test.describe("390x844 portrait at 200% text", () => {
 
     const manager = getManager(page);
     await expectContainedWithinViewport(manager, 390);
-    await expectContainedWithinViewport(manager.getByLabel("Tag to manage"), 390);
-    await expectAtLeastTouchTarget(manager.getByLabel("Tag to manage"));
+    await expectContainedWithinViewport(manager.getByLabel("Selected tag"), 390);
+    await expectAtLeastTouchTarget(manager.getByLabel("Selected tag"));
     await expectAtLeastTouchTarget(
       manager.getByRole("button", { name: "Rename tag", exact: true }),
     );
@@ -336,7 +336,7 @@ test.describe("844x390 short landscape", () => {
 
     await openManager(page);
     await expectContainedWithinViewport(getManager(page), 844);
-    await expectAtLeastTouchTarget(getManager(page).getByLabel("Tag to manage"));
+    await expectAtLeastTouchTarget(getManager(page).getByLabel("Selected tag"));
 
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
@@ -526,7 +526,7 @@ test.describe("Manage tags panel reveal (item 105)", () => {
       after.visibleBottom + PANEL_REVEAL_TOLERANCE_PX,
     );
     // The post-success focus target is unchanged from 0.4.19.
-    await expect(getManager(page).getByLabel("Tag to manage")).toBeFocused();
+    await expect(getManager(page).getByLabel("Selected tag")).toBeFocused();
     expect(after.scrollX).toBe(scrollXBefore);
     // Exactly one deliberate scroll, and the positive control for the
     // instrumented counter used by the no-scroll test below: without this,

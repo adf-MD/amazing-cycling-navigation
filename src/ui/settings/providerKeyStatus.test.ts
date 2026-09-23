@@ -48,7 +48,7 @@ describe("describeProviderKeyStatus", () => {
       verification({ outcome: "verified" }),
       NOW_MS,
     );
-    expect(status.headline).toContain("Key last verified");
+    expect(status.headline).toContain("Key last verified:");
     expect(status.headline).toContain("23 Jul 2026");
   });
 
@@ -59,7 +59,7 @@ describe("describeProviderKeyStatus", () => {
       verification({ outcome: "rejected" }),
       NOW_MS,
     );
-    expect(status.headline).toContain("Key was rejected when last checked");
+    expect(status.headline).toContain("Key rejected when last checked:");
     expect(status.headline).not.toMatch(/^Key is rejected/);
   });
 
@@ -87,8 +87,8 @@ describe("describeProviderKeyStatus", () => {
       }),
       NOW_MS,
     );
-    expect(status.headline).toContain("Quota was reached when last checked");
-    expect(status.headline).toContain("you can try again");
+    expect(status.headline).toContain("Quota exhausted when last checked:");
+    expect(status.headline).toContain("You can try again.");
     expect(status.headline).not.toContain("retry after");
   });
 
@@ -99,8 +99,8 @@ describe("describeProviderKeyStatus", () => {
       verification({ outcome: "quota-limited", rateLimitResetAt: null }),
       NOW_MS,
     );
-    expect(status.headline).toContain("Quota was reached when last checked");
-    expect(status.headline).toContain("you can try again");
+    expect(status.headline).toContain("Quota exhausted when last checked:");
+    expect(status.headline).toContain("You can try again.");
   });
 
   it("provider was unavailable when last checked, never claims current unavailability", () => {
@@ -110,7 +110,7 @@ describe("describeProviderKeyStatus", () => {
       verification({ outcome: "unavailable" }),
       NOW_MS,
     );
-    expect(status.headline).toContain("Provider was unavailable when last checked");
+    expect(status.headline).toContain("Provider unavailable when last checked:");
     expect(status.headline).not.toMatch(/^Provider is unavailable/);
   });
 });

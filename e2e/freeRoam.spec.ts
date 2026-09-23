@@ -496,7 +496,7 @@ test("End ride from the active screen clears the row and returns to the empty la
   await endRideButton.click();
   const dialog = page.getByRole("alertdialog");
   await expect(
-    dialog.getByText("Your free roam position and camera state will be cleared."),
+    dialog.getByText("Your saved position and map view for Free roam will be cleared."),
   ).toBeVisible();
 
   // The immersive header's own End slot (backlog item 55, superseding

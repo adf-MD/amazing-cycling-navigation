@@ -103,7 +103,7 @@ describe("shape parity", () => {
     };
     expect(count(de)).toEqual(count(en));
     // Pinned literally so a silently shrinking catalogue is visible.
-    expect(count(en)).toEqual({ plain: 719, plural: 18, rich: 2 });
+    expect(count(en)).toEqual({ plain: 727, plural: 18, rich: 2 });
   });
 
   it("gives every plural entry both German categories, non-empty", () => {
@@ -448,6 +448,11 @@ describe("no English residue where German was intended", () => {
     "format.gradientPercent": "composition plus the per-cent sign",
     "status.storage.percentage": "composition plus the per-cent sign",
     "status.storage.lessThanOnePercent": "symbols only",
+    // Endonyms, deliberately identical in both catalogues: a rider who
+    // cannot read the current interface must still recognise their own
+    // language in the selector.
+    "settings.language.english": "an endonym, the same in both catalogues",
+    "settings.language.german": "an endonym, the same in both catalogues",
   };
 
   function variants(entry: MessageEntry): readonly string[] {
@@ -513,23 +518,27 @@ describe("no English residue where German was intended", () => {
   });
 });
 
-describe("German is still unreachable", () => {
-  it("is not registered as an available catalogue", async () => {
-    // Authored, compiled and tested — but the application has no route to
-    // it. Stage 6b registers it and adds "de" to the supported set.
+describe("German is reachable", () => {
+  it("is registered as an available catalogue", async () => {
     const { CATALOGUES, catalogueFor } = await import("./catalogues.ts");
-    expect(Object.keys(CATALOGUES)).toEqual(["en"]);
-    expect(catalogueFor("de")).toBe(en);
+    expect(Object.keys(CATALOGUES).sort()).toEqual(["de", "en"]);
+    expect(catalogueFor("de")).toBe(de);
   });
 
-  it("is not in the supported set", () => {
-    expect(SUPPORTED_LANGUAGES).toEqual(["en"]);
+  it("is in the supported set", () => {
+    expect(SUPPORTED_LANGUAGES).toEqual(["en", "de"]);
   });
 
-  it("cannot be resolved from a German device or a stored preference", () => {
-    expect(resolveLanguage("device", ["de-DE", "en-GB"])).toBe("en");
-    expect(resolveLanguage("device", ["de"])).toBe("en");
-    expect(resolveLanguage("device", ["de-AT"])).toBe("en");
-    expect(resolveLanguage("de", ["de-DE"])).toBe("en");
+  it("resolves from a German device or a stored preference", () => {
+    expect(resolveLanguage("device", ["de-DE", "en-GB"])).toBe("de");
+    expect(resolveLanguage("device", ["de"])).toBe("de");
+    expect(resolveLanguage("device", ["de-AT"])).toBe("de");
+    expect(resolveLanguage("de", ["en-GB"])).toBe("de");
+  });
+
+  it("still falls back to English for a language it does not have", () => {
+    const { catalogueFor } = { catalogueFor: (l: string) => (l === "de" ? de : en) };
+    expect(catalogueFor("fr")).toBe(en);
+    expect(resolveLanguage("device", ["fr-FR"])).toBe("en");
   });
 });

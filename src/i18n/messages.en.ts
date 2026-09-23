@@ -49,6 +49,20 @@ export const en = {
   // translator: the group heading over the cards that only explain.
   "settings.group.explanations": "Explanations",
 
+  // --- Settings: language -------------------------------------------
+  // translator: `English` and `Deutsch` are endonyms and read identically
+  // in both catalogues, so a rider who cannot read the current interface
+  // can still recognise their own language.
+  "settings.language.heading": "Language",
+  "settings.language.groupLabel": "Interface language",
+  "settings.language.device": "Device language",
+  "settings.language.english": "English",
+  "settings.language.german": "Deutsch",
+  "settings.language.hint":
+    "Applies to this app's own wording. Route names, tags and turn instructions saved with a route are never translated.",
+  "settings.language.saveFailed":
+    "This language could not be saved on this device. Try again.",
+
   // --- Settings: route planning -------------------------------------
   "settings.routePlanning.heading": "Route planning",
   "settings.routePlanning.defaultProfile": "Default cycling profile",
@@ -67,7 +81,7 @@ export const en = {
   // own text is settings.ors.signUpLink. Keep it one sentence so the
   // link can sit wherever the language needs it.
   "settings.ors.intro": {
-    rich: "Road-bike route planning uses your own free key from {link}, obtained from the HeiGIT account dashboard, then pasted below.",
+    rich: "Route planning uses your own free key from {link}. Get it from the HeiGIT account dashboard, then paste it below.",
   },
   "settings.ors.signUpLink": "HeiGIT — sign up for an OpenRouteService key",
   "settings.ors.keyInputLabel": "OpenRouteService API key",
@@ -98,7 +112,7 @@ export const en = {
   "settings.ors.usageStorageEmphasis": "not encrypted",
 
   // --- Settings: elevation and climbs -------------------------------
-  "settings.elevation.heading": "Elevation and climbs",
+  "settings.elevation.heading": "Climbs and gradients",
   "settings.elevation.classificationSummary": "How climbs are classified",
   "settings.elevation.climbScore":
     "Climb score is climb length in metres multiplied by average gradient percentage.",
@@ -130,7 +144,7 @@ export const en = {
   "settings.riding.screenOnBody":
     "Keeps the display on while an active Riding or free-roam screen is visible. This may increase battery use.",
   "settings.riding.screenOnCaveat":
-    "This only applies while that screen is open and visible — it is not background location tracking, and does not guarantee the display can stay on if your browser does not support this feature.",
+    "This applies only while the relevant screen is open and visible. It does not track your location in the background. If your browser does not support this feature, the app cannot ensure that the display stays on.",
 
   // --- Route Library: screen chrome ---------------------------------
   "routes.landmarkLabel": "Route library",
@@ -212,7 +226,7 @@ export const en = {
   "tags.manage.heading": "Manage tags",
   "tags.manage.empty": "No tags left. Add tags from a route to manage them here.",
   "tags.manage.close": "Close",
-  "tags.manage.selectLabel": "Tag to manage",
+  "tags.manage.selectLabel": "Selected tag",
   "tags.manage.selectPlaceholder": "Choose a tag",
   // translator: {tag} is a rider-created tag, reproduced exactly.
   "tags.manage.option": { one: "{tag} (1 route)", other: "{tag} ({count} routes)" },
@@ -259,7 +273,7 @@ export const en = {
   // --- Tag lifecycle: outcomes ---------------------------------------
   "tags.success.unused": "“{source}” is no longer used by any route, so nothing changed.",
   "tags.success.deleted": {
-    one: "Deleted “{source}” from 1 route. Those routes are still saved.",
+    one: "Deleted “{source}” from 1 route. That route is still saved.",
     other: "Deleted “{source}” from {count} routes. Those routes are still saved.",
   },
   "tags.success.merged": {
@@ -298,8 +312,10 @@ export const en = {
   // --- Planning: waypoints ------------------------------------------
   "planning.waypoints.heading": "Waypoints",
   "planning.waypoints.listLabel": "Waypoints",
+  // translator: deliberately no directional word — this hint sits below the
+  // map while the crosshair is on it.
   "planning.waypoints.empty":
-    "No waypoints yet. Tap the map or use the crosshair button below to add one.",
+    "No waypoints yet. Tap the map or use the crosshair to add one.",
   "planning.waypoints.start": "Start",
   // translator: {number} is the waypoint's position in the list, from 2.
   "planning.waypoints.numbered": "Waypoint {number}",
@@ -319,7 +335,9 @@ export const en = {
   "planning.actions.redo": "Redo",
   "planning.actions.returnToStart": "Return to start",
   "planning.actions.reverse": "Reverse route",
-  "planning.actions.addToEnd": "Add to end",
+  // translator: this control does not add anything — it clears the current
+  // waypoint selection, which returns Planning to appending at the end.
+  "planning.actions.addToEnd": "Deselect waypoint",
 
   // --- Planning: crosshair placement --------------------------------
   // translator: the crosshair button always says exactly what the next tap
@@ -351,14 +369,16 @@ export const en = {
   // --- Planning: stale-route status ---------------------------------
   // translator: shown while an already-calculated route is out of date.
   // {current} and {previous} are cycling-profile names.
+  // translator: no positional word — the previous result can appear both on
+  // the map above this message and in the route overview below it.
   "planning.stale.recalculatingProfile":
-    "Recalculating for {current}; showing the previous {previous} result below.",
+    "Recalculating for {current}. The previous {previous} result remains visible in the meantime.",
   "planning.stale.waitingProfile":
-    "Waiting to recalculate for {current}; showing the previous {previous} result below.",
+    "Waiting to recalculate for {current}. The previous {previous} result remains visible in the meantime.",
   "planning.stale.recalculating":
-    "Recalculating your latest changes; showing the previous result below.",
+    "Recalculating the route with your latest changes. The previous result remains visible in the meantime.",
   "planning.stale.waiting":
-    "Waiting to recalculate your latest changes; showing the previous result below.",
+    "Waiting to recalculate the route with your latest changes. The previous result remains visible in the meantime.",
 
   // --- Planning: edit-copy notices ----------------------------------
   "planning.editCopy.reversedExact":
@@ -471,8 +491,10 @@ export const en = {
     "The routing request could not be prepared or sent. Try again.",
   "routingError.unauthorized":
     "Your OpenRouteService key was rejected. Check it in Settings.",
+  // translator: only the saved key can be managed in Settings; the account,
+  // permissions and quota live with the provider.
   "routingError.forbidden":
-    "Access was denied — check your OpenRouteService account, permissions or daily quota in Settings.",
+    "Access was denied. Check your OpenRouteService account, permissions or daily quota. If necessary, replace the saved key in Settings.",
   "routingError.rateLimited": "The routing rate limit was reached. Try again shortly.",
   "routingError.offline": "You are offline. Connect to calculate a route.",
   "routingError.transportFailure":
@@ -502,11 +524,11 @@ export const en = {
   // translator: {limitMb} is a whole number of megabytes.
   "gpx.error.tooLarge": "The selected file is larger than the {limitMb} MB limit.",
   "gpx.error.unsupportedType": "Only .gpx files are supported.",
-  "gpx.error.malformedXml": "The file is not well-formed GPX/XML.",
+  "gpx.error.malformedXml": "The file contains malformed XML and cannot be read as GPX.",
   // translator: {longitude} and {latitude} are the file's own raw attribute
   // text, reproduced exactly, or the word below when the attribute is absent.
   "gpx.error.invalidCoordinate":
-    "Point has an invalid or out-of-range coordinate (lon={longitude}, lat={latitude}).",
+    "Point has invalid or out-of-range coordinates (lon={longitude}, lat={latitude}).",
   "gpx.error.missingAttribute": "missing",
   // translator: {elevation} is the file's own raw text, reproduced exactly.
   "gpx.error.invalidElevation": 'Point has a non-numeric elevation value "{elevation}".',
@@ -517,11 +539,11 @@ export const en = {
 
   // --- GPX import notices ---------------------------------------------
   "gpx.notice.multipleTracks": {
-    one: "This file contains 1 track; only the first was imported.",
+    one: "This file contains 1 track; it was imported.",
     other: "This file contains {count} tracks; only the first was imported.",
   },
   "gpx.notice.multipleRoutes": {
-    one: "This file contains 1 route; only the first was imported.",
+    one: "This file contains 1 route; it was imported.",
     other: "This file contains {count} routes; only the first was imported.",
   },
   "gpx.notice.acnExtensionRejected":
@@ -565,9 +587,11 @@ export const en = {
   // --- Planning waypoint markers on the map -----------------------------
   // translator: {ordinal} and {count} are waypoint positions, from 1.
   "map.marker.waypoint": "Waypoint {ordinal}",
-  "map.marker.startWaypoint": "Start waypoint 1",
-  "map.marker.startAndFinish": "Start and finish waypoints 1 and {count}",
-  "map.marker.finishWaypoint": "Finish waypoint {ordinal}",
+  // translator: the colon separates the marker's route role from the
+  // waypoint number, so neither reads as part of the other.
+  "map.marker.startWaypoint": "Start: waypoint 1",
+  "map.marker.startAndFinish": "Start: waypoint 1; finish: waypoint {count}",
+  "map.marker.finishWaypoint": "Finish: waypoint {ordinal}",
 
   // --- Shared ride chrome (Riding and free roam) ------------------------
   "ride.map.zoomIn": "Zoom in",
@@ -629,8 +653,10 @@ export const en = {
   "freeRoam.endFailed": "The ride could not be ended on this device. Try again.",
   "freeRoam.pauseFailed": "Free roam could not be paused on this device. Try again.",
   "freeRoam.endConfirmTitle": "End this ride?",
+  // translator: "camera state" was an implementation word; a rider
+  // experiences it as the saved map view.
   "freeRoam.endConfirmMessage":
-    "Your free roam position and camera state will be cleared.",
+    "Your saved position and map view for Free roam will be cleared.",
   "freeRoam.trackingLost": "Location — signal lost",
   "freeRoam.tracking": "Location",
 
@@ -924,12 +950,14 @@ export const en = {
   // is an already-formatted timestamp, always in UTC and marked as such.
   "providerKey.none": "No key configured",
   "providerKey.unverified": "Key saved on this device, not yet verified",
-  "providerKey.verified": "Key last verified {checkedAt}",
-  "providerKey.rejected": "Key was rejected when last checked {checkedAt}",
+  "providerKey.verified": "Key last verified: {checkedAt}",
+  "providerKey.rejected": "Key rejected when last checked: {checkedAt}",
   "providerKey.quotaRetryAfter": "Quota reached, retry after {resetAt}",
+  // translator: deliberately no "now" — this branch is also used when no
+  // reset time was recorded, so the app does not know quota is available.
   "providerKey.quotaReached":
-    "Quota was reached when last checked {checkedAt} — you can try again",
-  "providerKey.unavailable": "Provider was unavailable when last checked {checkedAt}",
+    "Quota exhausted when last checked: {checkedAt}. You can try again.",
+  "providerKey.unavailable": "Provider unavailable when last checked: {checkedAt}",
   // translator: the trailing zone marker. The timestamp really is UTC, not
   // the rider's local time, so this must stay explicit.
   "providerKey.utcTimestamp": "{timestamp} UTC",
@@ -951,7 +979,7 @@ export const en = {
   "routingLog.invalidRequestConstruction": "Request could not be constructed",
   "routingLog.fetchInvocationFailure": "Fetch could not be invoked",
   "routingLog.noResponseExposed":
-    "Fetch promise rejected before an HTTP response was exposed",
+    "The network request failed before the browser exposed an HTTP response",
   // translator: `detail` is an already-assembled machine string, e.g.
   // "TypeError: Failed to fetch; reason: generic-fetch-rejection".
   "routingLog.withDetail": "{base} ({detail})",
@@ -1053,7 +1081,9 @@ export const en = {
   "status.fixAccuracy": "Last known fix accuracy",
   "status.fixAccuracyValue": "±{accuracy} m",
   "status.fixAge": "Last known fix age",
-  "status.notApplicableYet": "Not applicable yet",
+  // translator: shown only for the accuracy and age of the last location
+  // fix, when there is no fix at all.
+  "status.notApplicableYet": "No location fix yet",
   "status.fixAge.seconds": "{seconds}s ago",
   "status.fixAge.minutes": "{minutes} min ago",
 
@@ -1080,12 +1110,16 @@ export const en = {
   "status.routingDiagnostics": "Routing diagnostics",
   "status.recentRoutingAttempts": "Recent routing attempts",
   "status.noRoutingAttempts": "No routing attempts recorded this session.",
-  "status.fetchFailureSummary": "Why a fetch can fail before an HTTP response",
+  "status.fetchFailureSummary":
+    "Why a network request can fail before an HTTP response is available",
+  // translator: {entry} is the localised text of `routingLog.noResponseExposed`,
+  // supplied at the call site. It is NOT duplicated here: a German screen that
+  // quoted an English sentence it never shows would be simply wrong.
   "status.fetchFailureDetail":
-    'Browsers may report a generic fetch failure instead of the real HTTP status (for example 502) when the provider\'s error response is missing CORS headers — an entry reading "Fetch promise rejected before an HTTP response was exposed" can mean a provider outage, a missing CORS header, a DNS or TLS failure, or a local network restriction, and cannot be told apart from this information alone.',
+    "Browsers may report a generic network failure instead of the actual HTTP status code, such as 502, when the provider’s error response lacks the required CORS headers. An entry reading “{entry}” may therefore indicate a provider outage, missing CORS headers, a DNS or TLS failure, or a local network restriction. This information alone cannot distinguish between those causes.",
   "status.httpGuideSummary": "What HTTP statuses mean",
   "status.httpGuideIntro":
-    "When the routing provider exposes an HTTP response, its status is recorded in Recent routing attempts below. A failed connection test also shows it when the failure carried one; a successful connection test does not repeat it. These are broad categories, not a proven cause:",
+    "When the app can access an HTTP response from the routing provider, its status code is recorded in Recent routing attempts. A failed connection test also shows the status code when one is available; a successful connection test does not repeat it. The following descriptions are broad categories and do not establish a specific cause:",
   // translator: the parenthesised status ranges and the individual codes
   // are machine values. Keep every digit exactly as it is.
   "status.http.success": "Success (2xx)",
@@ -1093,7 +1127,7 @@ export const en = {
     "— the normal successful response for a routing request. HTTP success is not the whole check: ACN still checks that the response contains usable route data.",
   "status.http.redirects": "Redirects (3xx)",
   "status.http.redirectsDetail":
-    "The browser normally follows redirects automatically and records the final response instead, so an intermediate 3xx status is not normally shown here.",
+    "The browser normally follows redirects automatically, so ACN receives the final response and records its status. Intermediate 3xx statuses are therefore not normally shown here.",
   "status.http.requestProblems": "Request or access problems (4xx)",
   "status.http.400": "— the request was incorrect or could not be processed.",
   "status.http.401or403": "401 or 403",
@@ -1119,8 +1153,12 @@ export const en = {
   "status.http.other5xxDetail":
     "— a service, gateway or upstream failure. Retrying later may help.",
   "status.http.none": "No HTTP status",
+  // translator: {summary} is the localised text of
+  // `status.fetchFailureSummary`, supplied at the call site so the reference
+  // and the heading it points at cannot drift apart. No positional word:
+  // the disclosure is not reliably "above" at every width.
   "status.http.noneDetail":
-    'No HTTP response was exposed to the browser, so no status can say anything about the service. See "Why a fetch can fail before an HTTP response" above.',
+    "The browser did not make an HTTP response available to the app. Consequently, there is no status code from which to draw conclusions about the service. See “{summary}”.",
 
   // --- Status: connection test -------------------------------------------
   "status.testConnection": "Test routing connection",
@@ -1154,6 +1192,11 @@ export const en = {
   "status.none": "None",
   "status.copyReport": "Copy diagnostic report",
   "status.copied": "Copied to clipboard.",
+  // translator: rendered only while the interface is German. The report is
+  // English in every language (approved decision R4), but telling an English
+  // reader that an English report is in English would be noise. The entry
+  // exists here for key and shape parity.
+  "status.copyReportLanguage": "The copied diagnostic report is in English.",
   "status.copyFailed":
     "Could not copy automatically — select and copy the report text manually:",
 

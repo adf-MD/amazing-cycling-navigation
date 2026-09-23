@@ -296,7 +296,7 @@ test("globally renaming a tag updates every card and the filter chip, with the m
   const manager = page.getByRole("group", { name: "Manage tags" });
   await expect(manager).toBeVisible();
 
-  const tagSelect = manager.getByLabel("Tag to manage");
+  const tagSelect = manager.getByLabel("Selected tag");
   await tagSelect.selectOption({ label: "Gravel (2 routes)" });
   await manager.getByLabel("New name").fill("Trail");
 

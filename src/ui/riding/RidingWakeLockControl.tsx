@@ -67,7 +67,7 @@ export function RidingWakeLockControl({
       </button>
       {status === "active" ? (
         <span role="status" className="visually-hidden">
-          Screen staying awake.
+          {t("wakeLock.active")}
         </span>
       ) : null}
       {status === "unavailable" ? (

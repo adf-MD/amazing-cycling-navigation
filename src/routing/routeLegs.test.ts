@@ -219,6 +219,54 @@ describe("resolveRouteLegsInOrder — cache keying", () => {
     expect(callsB).toHaveLength(1);
   });
 
+  it("re-requests every leg when the instruction language changes", async () => {
+    // Backlog item 113 stage 6b. Without the language in the key, an
+    // English leg already in this session's cache would satisfy a German
+    // request and one calculation would return mixed-language turn
+    // instructions.
+    const { adapter, calls } = buildImmediateAdapter();
+    const cache = new RouteLegCache();
+    const providerToken = getProviderInstanceToken(adapter);
+    const requirements = deriveLegRequirements([A, B, C, D]);
+
+    await resolveRouteLegsInOrder(
+      requirements,
+      { profile: "cycling-road", language: "en" },
+      { adapter, cache, providerToken },
+    );
+    calls.length = 0;
+    await resolveRouteLegsInOrder(
+      requirements,
+      { profile: "cycling-road", language: "de" },
+      { adapter, cache, providerToken },
+    );
+
+    expect(calls).toHaveLength(3);
+  });
+
+  it("treats an omitted language as English, so existing cached legs still hit", async () => {
+    // The default must not invalidate every leg of a route calculated
+    // before the language field existed.
+    const { adapter, calls } = buildImmediateAdapter();
+    const cache = new RouteLegCache();
+    const providerToken = getProviderInstanceToken(adapter);
+    const requirements = deriveLegRequirements([A, B]);
+
+    await resolveRouteLegsInOrder(
+      requirements,
+      { profile: "cycling-road" },
+      { adapter, cache, providerToken },
+    );
+    calls.length = 0;
+    await resolveRouteLegsInOrder(
+      requirements,
+      { profile: "cycling-road", language: "en" },
+      { adapter, cache, providerToken },
+    );
+
+    expect(calls).toHaveLength(0);
+  });
+
   it("re-requests every leg when avoidFerries changes, even with unchanged endpoints", async () => {
     const { adapter, calls } = buildImmediateAdapter();
     const cache = new RouteLegCache();

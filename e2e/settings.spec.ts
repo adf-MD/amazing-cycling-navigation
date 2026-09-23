@@ -72,7 +72,7 @@ function documentBox(locator: Locator) {
   });
 }
 
-test("groups the four panels under Preferences and Explanations, in that order", async ({
+test("groups the five panels under Preferences and Explanations, in that order", async ({
   page,
 }) => {
   await openSettings(page);
@@ -80,13 +80,15 @@ test("groups the four panels under Preferences and Explanations, in that order",
   expect(await headingTexts(page, 2)).toEqual(["Preferences", "Explanations"]);
 
   const preferences = page.getByRole("region", { name: "Preferences" });
+  // Language comes first: it governs every other word on the screen.
   expect(await headingTexts(preferences, 3)).toEqual([
+    "Language",
     "Route planning",
     "OpenRouteService",
   ]);
 
   const explanations = page.getByRole("region", { name: "Explanations" });
-  expect(await headingTexts(explanations, 3)).toEqual(["Elevation and climbs", "Riding"]);
+  expect(await headingTexts(explanations, 3)).toEqual(["Climbs and gradients", "Riding"]);
 
   // Preferences precedes Explanations in the DOM, so keyboard and reading
   // order both reach the configurable content first.
@@ -105,9 +107,10 @@ test("keeps every panel card and puts all three configurable properties under Pr
   await openSettings(page);
 
   for (const name of [
+    "Language",
     "Route planning",
     "OpenRouteService",
-    "Elevation and climbs",
+    "Climbs and gradients",
     "Riding",
   ]) {
     const panel = page
@@ -154,7 +157,10 @@ test("the reorganised hierarchy stays contained and legible at ordinary and 200%
   expect(await documentOverflow(page)).toBeLessThanOrEqual(0);
 
   const panels = page.locator("section.panel");
-  await expect(panels).toHaveCount(4);
+  // Five since item 113 stage 6b added the Language card, first in
+  // Preferences: item 112's four-card structure was the right shape for the
+  // content that existed then, not a permanent limit.
+  await expect(panels).toHaveCount(5);
   for (const panel of await panels.all()) {
     const box = await panel.boundingBox();
     if (!box) throw new Error("expected every Settings panel to have a bounding box");
@@ -194,11 +200,11 @@ test("the group headings read as a level above their panels, not the same level"
   await openSettings(page);
 
   // The hierarchy is the whole point of the item, so it is asserted by level
-  // rather than by styling: one h1, two h2 groups, four h3 panels, and no
+  // rather than by styling: one h1, two h2 groups, five h3 panels, and no
   // panel heading left at h2.
   await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
   await expect(page.getByRole("heading", { level: 2 })).toHaveCount(2);
-  await expect(page.getByRole("heading", { level: 3 })).toHaveCount(4);
+  await expect(page.getByRole("heading", { level: 3 })).toHaveCount(5);
   await expect(
     page.getByRole("heading", { level: 2, name: "Route planning", exact: true }),
   ).toHaveCount(0);
@@ -329,7 +335,7 @@ test("the confirmation keeps item 112's heading outline while it is open", async
 
   await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
   await expect(page.getByRole("heading", { level: 2 })).toHaveCount(2);
-  await expect(page.getByRole("heading", { level: 3 })).toHaveCount(4);
+  await expect(page.getByRole("heading", { level: 3 })).toHaveCount(5);
   await expect(page.getByRole("heading", { level: 4 })).toHaveCount(1);
   await expect(page.getByRole("alertdialog")).toHaveAccessibleName(
     "Delete OpenRouteService key",

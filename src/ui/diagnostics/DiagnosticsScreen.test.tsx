@@ -159,9 +159,9 @@ describe("DiagnosticsScreen", () => {
     expect(getDetailValue("Map rendering support")).not.toBeEmptyDOMElement();
     expect(getDetailValue("Geolocation permission")).not.toBeEmptyDOMElement();
     expect(getDetailValue("Last known fix accuracy")).toHaveTextContent(
-      "Not applicable yet",
+      "No location fix yet",
     );
-    expect(getDetailValue("Last known fix age")).toHaveTextContent("Not applicable yet");
+    expect(getDetailValue("Last known fix age")).toHaveTextContent("No location fix yet");
     expect(getDetailValue("Active session")).toHaveTextContent("None");
     expect(screen.getByText(/no errors recorded this session/i)).toBeInTheDocument();
 
@@ -392,12 +392,18 @@ describe("DiagnosticsScreen", () => {
     expect(screen.getByText("Device reported offline")).toBeInTheDocument();
     expect(screen.getByText("Request timed out")).toBeInTheDocument();
     expect(
-      screen.getByText("Fetch promise rejected before an HTTP response was exposed"),
+      screen.getByText(
+        "The network request failed before the browser exposed an HTTP response",
+      ),
     ).toBeInTheDocument();
 
     const explanation = screen.getByText(/missing CORS headers/i);
     expect(explanation).not.toBeVisible();
-    await user.click(screen.getByText("Why a fetch can fail before an HTTP response"));
+    await user.click(
+      screen.getByText(
+        "Why a network request can fail before an HTTP response is available",
+      ),
+    );
     expect(explanation).toBeVisible();
   });
 
@@ -407,7 +413,11 @@ describe("DiagnosticsScreen", () => {
 
     const explanation = screen.getByText(/missing CORS headers/i);
     expect(explanation).not.toBeVisible();
-    await user.click(screen.getByText("Why a fetch can fail before an HTTP response"));
+    await user.click(
+      screen.getByText(
+        "Why a network request can fail before an HTTP response is available",
+      ),
+    );
     expect(explanation).toBeVisible();
   });
 
@@ -420,7 +430,9 @@ describe("DiagnosticsScreen", () => {
     const user = userEvent.setup();
     render(<DiagnosticsScreen />);
 
-    const fetchSummary = screen.getByText("Why a fetch can fail before an HTTP response");
+    const fetchSummary = screen.getByText(
+      "Why a network request can fail before an HTTP response is available",
+    );
     const statusSummary = screen.getByText("What HTTP statuses mean");
     expect(fetchSummary.tagName).toBe("SUMMARY");
     expect(statusSummary.tagName).toBe("SUMMARY");
@@ -466,7 +478,9 @@ describe("DiagnosticsScreen", () => {
     const statusDisclosure = statusSummary.closest<HTMLDetailsElement>("details");
     if (!statusDisclosure) throw new Error("expected a native <details>");
 
-    const leadIn = screen.getByText(/broad categories, not a proven cause/i);
+    const leadIn = screen.getByText(
+      /broad categories and do not establish a specific cause/i,
+    );
     expect(leadIn).not.toBeVisible();
 
     await user.click(statusSummary);
@@ -480,7 +494,7 @@ describe("DiagnosticsScreen", () => {
     // contract rather than the earlier over-broad claim.
     const leadInText = leadIn.textContent.replace(/\s+/g, " ").trim();
     expect(leadInText).toBe(
-      "When the routing provider exposes an HTTP response, its status is recorded in Recent routing attempts below. A failed connection test also shows it when the failure carried one; a successful connection test does not repeat it. These are broad categories, not a proven cause:",
+      "When the app can access an HTTP response from the routing provider, its status code is recorded in Recent routing attempts. A failed connection test also shows the status code when one is available; a successful connection test does not repeat it. The following descriptions are broad categories and do not establish a specific cause:",
     );
 
     const groups = [...statusDisclosure.querySelectorAll(":scope > ul > li")];
@@ -508,7 +522,7 @@ describe("DiagnosticsScreen", () => {
     ]);
 
     expect(rowsOf(1)).toEqual([
-      "The browser normally follows redirects automatically and records the final response instead, so an intermediate 3xx status is not normally shown here.",
+      "The browser normally follows redirects automatically, so ACN receives the final response and records its status. Intermediate 3xx statuses are therefore not normally shown here.",
     ]);
 
     expect(rowsOf(2)).toEqual([
@@ -529,7 +543,7 @@ describe("DiagnosticsScreen", () => {
     ]);
 
     expect(rowsOf(4)).toEqual([
-      'No HTTP response was exposed to the browser, so no status can say anything about the service. See "Why a fetch can fail before an HTTP response" above.',
+      "The browser did not make an HTTP response available to the app. Consequently, there is no status code from which to draw conclusions about the service. See \u201CWhy a network request can fail before an HTTP response is available\u201D.",
     ]);
 
     // The qualifiers themselves, called out separately from the exact
@@ -567,7 +581,11 @@ describe("DiagnosticsScreen", () => {
       }),
     );
 
-    await user.click(screen.getByText("Why a fetch can fail before an HTTP response"));
+    await user.click(
+      screen.getByText(
+        "Why a network request can fail before an HTTP response is available",
+      ),
+    );
     const explanation = screen.getByText(/missing CORS headers/i);
 
     expect(explanation).toBeVisible();
@@ -579,9 +597,7 @@ describe("DiagnosticsScreen", () => {
     expect(explanation).toHaveTextContent(/missing CORS header/i);
     expect(explanation).toHaveTextContent(/DNS or TLS failure/i);
     expect(explanation).toHaveTextContent(/local network restriction/i);
-    expect(explanation).toHaveTextContent(
-      /cannot be told apart from this information alone/i,
-    );
+    expect(explanation).toHaveTextContent(/cannot distinguish between those causes/i);
   });
 
   // Backlog item 101: the guidance must not cost the reader the exact
@@ -935,7 +951,11 @@ describe("DiagnosticsScreen", () => {
         expect(screen.getByRole("status")).toHaveTextContent(/Succeeded/);
       });
 
-      await user.click(screen.getByText("Why a fetch can fail before an HTTP response"));
+      await user.click(
+        screen.getByText(
+          "Why a network request can fail before an HTTP response is available",
+        ),
+      );
       await user.click(screen.getByText("What HTTP statuses mean"));
 
       expect(document.body.textContent).not.toContain("dummy-test-key");

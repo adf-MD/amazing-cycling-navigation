@@ -50,6 +50,17 @@ export const de: Catalogue = {
   "settings.group.preferences": "Optionen",
   "settings.group.explanations": "Erklärungen",
 
+  // --- Settings: language -------------------------------------------
+  "settings.language.heading": "Sprache",
+  "settings.language.groupLabel": "Sprache der Oberfläche",
+  "settings.language.device": "Gerätesprache",
+  "settings.language.english": "English",
+  "settings.language.german": "Deutsch",
+  "settings.language.hint":
+    "Gilt für die Texte dieser App. Routennamen, Tags und die mit einer Route gespeicherten Abbiegehinweise werden nie übersetzt.",
+  "settings.language.saveFailed":
+    "Diese Sprache konnte auf diesem Gerät nicht gespeichert werden. Versuch es noch einmal.",
+
   // --- Settings: route planning -------------------------------------
   "settings.routePlanning.heading": "Routenplanung",
   "settings.routePlanning.defaultProfile": "Standardprofil",
@@ -1025,7 +1036,7 @@ export const de: Catalogue = {
   "status.fetchFailureSummary":
     "Warum eine Netzwerkanfrage scheitern kann, bevor eine HTTP-Antwort vorliegt",
   "status.fetchFailureDetail":
-    "Browser zeigen möglicherweise einen allgemeinen Netzwerkfehler statt des tatsächlichen HTTP-Statuscodes an, wenn in der Fehlerantwort des Anbieters die erforderlichen CORS-Header fehlen. Der Eintrag „Die Netzwerkanfrage schlug fehl, bevor der Browser eine HTTP-Antwort bereitstellte“ kann daher auf eine Störung beim Anbieter, fehlende CORS-Header, einen DNS- oder TLS-Fehler oder eine lokale Netzwerkbeschränkung zurückgehen. Allein anhand dieses Eintrags lassen sich diese Ursachen nicht unterscheiden.",
+    "Browser zeigen möglicherweise einen allgemeinen Netzwerkfehler statt des tatsächlichen HTTP-Statuscodes an, wenn in der Fehlerantwort des Anbieters die erforderlichen CORS-Header fehlen. Der Eintrag „{entry}“ kann daher auf eine Störung beim Anbieter, fehlende CORS-Header, einen DNS- oder TLS-Fehler oder eine lokale Netzwerkbeschränkung zurückgehen. Allein anhand dieses Eintrags lassen sich diese Ursachen nicht unterscheiden.",
   "status.httpGuideSummary": "Was HTTP-Statuscodes bedeuten",
   "status.httpGuideIntro":
     "Wenn die App auf eine HTTP-Antwort des Routing-Anbieters zugreifen kann, wird deren Statuscode unter „Letzte Routing-Versuche“ erfasst. Bei einem fehlgeschlagenen Verbindungstest wird der Statuscode ebenfalls angezeigt, sofern einer vorliegt. Bei einem erfolgreichen Verbindungstest wird er nicht erneut angezeigt. Die folgenden Angaben sind grobe Kategorien und belegen keine bestimmte Ursache:",
@@ -1061,7 +1072,7 @@ export const de: Catalogue = {
     "— ein Fehler des Dienstes, eines Gateways oder eines vorgelagerten Systems. Ein erneuter Versuch zu einem späteren Zeitpunkt kann helfen.",
   "status.http.none": "Kein HTTP-Statuscode",
   "status.http.noneDetail":
-    "Der Browser stellte der App keine HTTP-Antwort bereit. Daher liegt kein HTTP-Statuscode vor, aus dem sich Rückschlüsse auf den Dienst ziehen lassen. Siehe „Warum eine Netzwerkanfrage scheitern kann, bevor eine HTTP-Antwort vorliegt“.",
+    "Der Browser stellte der App keine HTTP-Antwort bereit. Daher liegt kein HTTP-Statuscode vor, aus dem sich Rückschlüsse auf den Dienst ziehen lassen. Siehe „{summary}“.",
 
   // --- Status: connection test -------------------------------------------
   "status.testConnection": "Routing-Verbindung testen",
@@ -1093,6 +1104,7 @@ export const de: Catalogue = {
   "status.none": "Nicht vorhanden",
   "status.copyReport": "Diagnosebericht kopieren",
   "status.copied": "In die Zwischenablage kopiert.",
+  "status.copyReportLanguage": "Der kopierte Diagnosebericht ist auf Englisch.",
   "status.copyFailed":
     "Automatisches Kopieren nicht möglich — markiere und kopiere den Berichtstext stattdessen manuell:",
 

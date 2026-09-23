@@ -154,7 +154,9 @@ test("Status renders its four sections without horizontal scrolling, with the fe
   // Playwright's getByText matches substrings by default. A stricter
   // locator, not a weaker one.
   await routingRegion
-    .getByText("Why a fetch can fail before an HTTP response", { exact: true })
+    .getByText("Why a network request can fail before an HTTP response is available", {
+      exact: true,
+    })
     .click();
   await expect(explanation).toBeVisible();
 
@@ -255,7 +257,7 @@ test("explains HTTP statuses in a second, independently operable disclosure", as
   // the other disclosure's title verbatim, so Playwright's default
   // substring matching would resolve two elements.
   const fetchSummary = routingRegion.getByText(
-    "Why a fetch can fail before an HTTP response",
+    "Why a network request can fail before an HTTP response is available",
     { exact: true },
   );
   const statusSummary = routingRegion.getByText("What HTTP statuses mean", {
@@ -264,9 +266,12 @@ test("explains HTTP statuses in a second, independently operable disclosure", as
   // `has:` re-roots its inner locator at each candidate <details>, so it
   // must be page-rooted rather than the region-scoped locators above.
   const fetchDisclosure = routingRegion.locator("details", {
-    has: page.getByText("Why a fetch can fail before an HTTP response", {
-      exact: true,
-    }),
+    has: page.getByText(
+      "Why a network request can fail before an HTTP response is available",
+      {
+        exact: true,
+      },
+    ),
   });
   const statusDisclosure = routingRegion.locator("details", {
     has: page.getByText("What HTTP statuses mean", { exact: true }),
@@ -307,7 +312,9 @@ test("explains HTTP statuses in a second, independently operable disclosure", as
   await expect(rowsOf(3)).toHaveCount(3);
   await expect(rowsOf(3).nth(1)).toContainText("does not support functionality");
   await expect(rowsOf(4)).toHaveCount(1);
-  await expect(rowsOf(4)).toContainText("No HTTP response was exposed to the browser");
+  await expect(rowsOf(4)).toContainText(
+    "The browser did not make an HTTP response available to the app",
+  );
 
   // Keyboard: the native summary is focusable and toggles on Enter, then
   // on Space — the browser is where that belongs, not jsdom.
@@ -324,7 +331,9 @@ test("explains HTTP statuses in a second, independently operable disclosure", as
   await expect(routingRegion.getByText(/missing CORS headers/i)).toHaveCount(1);
   await fetchSummary.click();
   await expect(
-    routingRegion.getByText(/Fetch promise rejected before an HTTP response was exposed/),
+    routingRegion.getByText(
+      /The network request failed before the browser exposed an HTTP response/,
+    ),
   ).toBeVisible();
 
   // With both open at default text size, the document still must not
@@ -361,7 +370,9 @@ test.describe("200% text at ordinary phone width", () => {
 
     const routingRegion = page.getByRole("region", { name: "Routing diagnostics" });
     await routingRegion
-      .getByText("Why a fetch can fail before an HTTP response", { exact: true })
+      .getByText("Why a network request can fail before an HTTP response is available", {
+        exact: true,
+      })
       .click();
     await routingRegion.getByText("What HTTP statuses mean", { exact: true }).click();
 

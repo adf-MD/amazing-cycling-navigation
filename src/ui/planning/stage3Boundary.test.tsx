@@ -37,7 +37,7 @@ describe("typed GPX errors keep every parameter and distinction", () => {
         longitude: "999.9",
         latitude: "abc",
       }),
-    ).toBe("Point has an invalid or out-of-range coordinate (lon=999.9, lat=abc).");
+    ).toBe("Point has invalid or out-of-range coordinates (lon=999.9, lat=abc).");
   });
 
   it("says which attribute was absent rather than inventing a value", () => {
@@ -47,7 +47,7 @@ describe("typed GPX errors keep every parameter and distinction", () => {
         longitude: null,
         latitude: null,
       }),
-    ).toBe("Point has an invalid or out-of-range coordinate (lon=missing, lat=missing).");
+    ).toBe("Point has invalid or out-of-range coordinates (lon=missing, lat=missing).");
   });
 
   it("reproduces raw elevation text, including punctuation that looks like syntax", () => {
@@ -74,7 +74,7 @@ describe("typed GPX errors keep every parameter and distinction", () => {
       "Only .gpx files are supported.",
     );
     expect(describeGpxErrorDetail(t, { kind: "malformed-xml" })).toBe(
-      "The file is not well-formed GPX/XML.",
+      "The file contains malformed XML and cannot be read as GPX.",
     );
     expect(describeGpxExportErrorDetail(t, { kind: "crypto-unavailable" })).toContain(
       "Export was cancelled",
@@ -321,12 +321,17 @@ describe("the openrouteservice request is unchanged by this stage", () => {
 });
 
 describe("the supported-language gate is untouched by this stage", () => {
-  it("still offers English only", () => {
-    expect(SUPPORTED_LANGUAGES).toEqual(["en"]);
+  // Stage 6b opened the gate; what this stage must not do is change how
+  // it resolves. English still wins when it comes first in the device
+  // list, and an explicit override still beats the device entirely.
+  it("offers exactly the two reviewed languages", () => {
+    expect(SUPPORTED_LANGUAGES).toEqual(["en", "de"]);
   });
 
-  it("still resolves a German device and a stored German preference to English", () => {
-    expect(resolveLanguage("device", ["de-DE", "en-GB"])).toBe("en");
-    expect(resolveLanguage("de", ["de-DE"])).toBe("en");
+  it("still resolves in device order, and still lets an override win", () => {
+    expect(resolveLanguage("device", ["en-GB", "de-DE"])).toBe("en");
+    expect(resolveLanguage("device", ["de-DE", "en-GB"])).toBe("de");
+    expect(resolveLanguage("en", ["de-DE"])).toBe("en");
+    expect(resolveLanguage("de", ["en-GB"])).toBe("de");
   });
 });

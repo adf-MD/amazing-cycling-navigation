@@ -181,9 +181,9 @@ test.describe("Planning: waypoint marker zoom scaling", () => {
     const markers = mapContainer.getByRole("img");
     await expect(markers).toHaveCount(waypointCount);
 
-    const startMarker = mapContainer.getByRole("img", { name: "Start waypoint 1" });
+    const startMarker = mapContainer.getByRole("img", { name: "Start: waypoint 1" });
     const finishMarker = mapContainer.getByRole("img", {
-      name: `Finish waypoint ${String(waypointCount)}`,
+      name: `Finish: waypoint ${String(waypointCount)}`,
     });
     const startRow = page.getByRole("button", { name: "Start", exact: true });
     await expect(startRow).toBeVisible();
@@ -264,7 +264,7 @@ test.describe("Planning: waypoint marker zoom scaling", () => {
     await mapContainer.click({ position: { x: 80, y: 80 } });
     await mapContainer.click({ position: { x: 180, y: 120 } });
 
-    const startMarker = mapContainer.getByRole("img", { name: "Start waypoint 1" });
+    const startMarker = mapContainer.getByRole("img", { name: "Start: waypoint 1" });
     await expect(startMarker).toBeVisible();
 
     await zoomToBand(page, mapContainer, "in", "close");

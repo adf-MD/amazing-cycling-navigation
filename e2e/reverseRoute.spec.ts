@@ -517,7 +517,7 @@ test("reversing a closed-loop draft inside Planning retains the same start/finis
     page.getByRole("button", { name: "Waypoint 4", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("img", { name: "Start and finish waypoints 1 and 4" }),
+    page.getByRole("img", { name: "Start: waypoint 1; finish: waypoint 4" }),
   ).toBeVisible();
 
   const calculateButton = page.getByRole("button", { name: /calculate route/i });

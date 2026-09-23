@@ -102,7 +102,7 @@ const MIGRATED_LITERALS: Readonly<Record<string, readonly string[]>> = {
   "./RouteTagManager.tsx": [
     "Manage tags",
     "No tags left. Add tags from a route to manage them here.",
-    "Tag to manage",
+    "Selected tag",
     "Choose a tag",
     "New name",
     "Choose a tag to rename, merge or delete it everywhere it is used.",

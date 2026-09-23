@@ -139,7 +139,7 @@ describe("describeRoutingAttempt", () => {
         englishTranslator,
         buildDiagnostic({ responseReceived: false, category: "transport-failure" }),
       ),
-    ).toBe("Fetch promise rejected before an HTTP response was exposed");
+    ).toBe("The network request failed before the browser exposed an HTTP response");
   });
 
   it("appends a safe error name/message and reason code when present", () => {
@@ -155,7 +155,7 @@ describe("describeRoutingAttempt", () => {
         }),
       ),
     ).toBe(
-      "Fetch promise rejected before an HTTP response was exposed (TypeError: Failed to fetch; reason: generic-fetch-rejection)",
+      "The network request failed before the browser exposed an HTTP response (TypeError: Failed to fetch; reason: generic-fetch-rejection)",
     );
   });
 

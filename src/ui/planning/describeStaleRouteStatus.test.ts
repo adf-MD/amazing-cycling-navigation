@@ -11,7 +11,7 @@ describe("describeStaleRouteStatus", () => {
         isCalculating: true,
       }),
     ).toBe(
-      "Recalculating for General cycling; showing the previous Road bike result below.",
+      "Recalculating for General cycling. The previous Road bike result remains visible in the meantime.",
     );
   });
 
@@ -23,7 +23,7 @@ describe("describeStaleRouteStatus", () => {
         isCalculating: false,
       }),
     ).toBe(
-      "Waiting to recalculate for General cycling; showing the previous Road bike result below.",
+      "Waiting to recalculate for General cycling. The previous Road bike result remains visible in the meantime.",
     );
   });
 
@@ -34,7 +34,9 @@ describe("describeStaleRouteStatus", () => {
         currentProfile: "cycling-road",
         isCalculating: true,
       }),
-    ).toBe("Recalculating your latest changes; showing the previous result below.");
+    ).toBe(
+      "Recalculating the route with your latest changes. The previous result remains visible in the meantime.",
+    );
     expect(
       describeStaleRouteStatus(englishTranslator, {
         previousProfile: "cycling-road",
@@ -42,7 +44,7 @@ describe("describeStaleRouteStatus", () => {
         isCalculating: false,
       }),
     ).toBe(
-      "Waiting to recalculate your latest changes; showing the previous result below.",
+      "Waiting to recalculate the route with your latest changes. The previous result remains visible in the meantime.",
     );
   });
 
@@ -53,6 +55,8 @@ describe("describeStaleRouteStatus", () => {
         currentProfile: "cycling-regular",
         isCalculating: true,
       }),
-    ).toBe("Recalculating your latest changes; showing the previous result below.");
+    ).toBe(
+      "Recalculating the route with your latest changes. The previous result remains visible in the meantime.",
+    );
   });
 });

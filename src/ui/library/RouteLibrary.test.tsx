@@ -3367,7 +3367,7 @@ describe("RouteLibrary — tag filtering", () => {
       });
 
       await user.click(screen.getByRole("button", { name: "Manage tags" }));
-      const select = await screen.findByLabelText("Tag to manage");
+      const select = await screen.findByLabelText("Selected tag");
       // Weekend's prospective count under the active Gravel filter is 1,
       // but the manager must still offer its true corpus-wide count.
       expect(

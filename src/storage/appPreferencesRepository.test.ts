@@ -46,15 +46,17 @@ describe("round trip through IndexedDB", () => {
     }
   });
 
-  it("keeps a stored 'de' byte-identical across a read, while resolving to English", async () => {
+  it("keeps a stored 'de' byte-identical across a read, and now resolves it", async () => {
     // Reading must not normalise, rewrite or re-save. The gate lives in
-    // resolveLanguage, never at the storage boundary — so the row still
-    // says "de" afterwards and the effective language is still English.
+    // resolveLanguage, never at the storage boundary. That separation is
+    // what kept a stored "de" intact through the five stages when German
+    // had no catalogue; it resolves to German now, and the row is still
+    // untouched by having been read.
     await saveAppPreferences({ language: "de" });
 
     const read = await getAppPreferences();
     expect(read.language).toBe("de");
-    expect(resolveLanguage(read.language, ["de-DE"])).toBe("en");
+    expect(resolveLanguage(read.language, ["en-GB"])).toBe("de");
 
     const row = await db.appPreferences.get("app");
     expect(row?.language).toBe("de");

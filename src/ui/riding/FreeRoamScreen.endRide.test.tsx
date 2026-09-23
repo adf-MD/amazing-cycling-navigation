@@ -89,7 +89,7 @@ describe("FreeRoamScreen End ride", () => {
     expect(within(dialog).getByText("End this ride?")).toBeInTheDocument();
     expect(
       within(dialog).getByText(
-        "Your free roam position and camera state will be cleared.",
+        "Your saved position and map view for Free roam will be cleared.",
       ),
     ).toBeInTheDocument();
     expect(within(dialog).queryByText(/saved route/i)).toBeNull();

@@ -165,13 +165,18 @@ describe("map imagery wording keeps its surface distinctions", () => {
 });
 
 describe("the supported-language gate is untouched by this stage", () => {
-  it("still offers English only", () => {
-    expect(SUPPORTED_LANGUAGES).toEqual(["en"]);
+  // Stage 6b opened the gate; what this stage must not do is change how
+  // it resolves. English still wins when it comes first in the device
+  // list, and an explicit override still beats the device entirely.
+  it("offers exactly the two reviewed languages", () => {
+    expect(SUPPORTED_LANGUAGES).toEqual(["en", "de"]);
   });
 
-  it("still resolves a German device and a stored German preference to English", () => {
-    expect(resolveLanguage("device", ["de-DE", "en-GB"])).toBe("en");
-    expect(resolveLanguage("de", ["de-DE"])).toBe("en");
+  it("still resolves in device order, and still lets an override win", () => {
+    expect(resolveLanguage("device", ["en-GB", "de-DE"])).toBe("en");
+    expect(resolveLanguage("device", ["de-DE", "en-GB"])).toBe("de");
+    expect(resolveLanguage("en", ["de-DE"])).toBe("en");
+    expect(resolveLanguage("de", ["en-GB"])).toBe("de");
   });
 });
 

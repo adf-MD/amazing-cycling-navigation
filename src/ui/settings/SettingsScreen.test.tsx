@@ -213,7 +213,10 @@ describe("SettingsScreen", () => {
     // here would read as a third top-level group, an h3 as a sibling of the
     // card it is supposed to belong to.
     expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(2);
-    expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(4);
+    // Five since item 113 stage 6b added the Language card; item 112's own
+    // rule — the dialog title sits one level below its card, never as a
+    // sibling — is what this test is really pinning.
+    expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(5);
   });
 
   it("opening the confirmation deletes nothing and never exposes the key", async () => {
@@ -652,11 +655,9 @@ describe("SettingsScreen", () => {
     render(<SettingsScreen />);
 
     await waitFor(() => {
-      expect(screen.getByText(/was rejected when last checked/i)).toBeInTheDocument();
+      expect(screen.getByText(/rejected when last checked/i)).toBeInTheDocument();
     });
-    expect(
-      screen.getByText(/was rejected when last checked/i).closest("details"),
-    ).toBeNull();
+    expect(screen.getByText(/rejected when last checked/i).closest("details")).toBeNull();
   });
 
   it("shows a quota-limited status message with a fixed clock", async () => {
@@ -750,7 +751,7 @@ describe("SettingsScreen", () => {
       ).toEqual(["Preferences", "Explanations"]);
     });
 
-    it("puts the two configurable panels under Preferences and the two explanation-only panels under Explanations", () => {
+    it("puts the three configurable panels under Preferences and the two explanation-only panels under Explanations", () => {
       render(<SettingsScreen />);
 
       const preferences = screen.getByRole("region", { name: "Preferences" });
@@ -758,14 +759,14 @@ describe("SettingsScreen", () => {
         within(preferences)
           .getAllByRole("heading", { level: 3 })
           .map((heading) => heading.textContent),
-      ).toEqual(["Route planning", "OpenRouteService"]);
+      ).toEqual(["Language", "Route planning", "OpenRouteService"]);
 
       const explanations = screen.getByRole("region", { name: "Explanations" });
       expect(
         within(explanations)
           .getAllByRole("heading", { level: 3 })
           .map((heading) => heading.textContent),
-      ).toEqual(["Elevation and climbs", "Riding"]);
+      ).toEqual(["Climbs and gradients", "Riding"]);
 
       // The three genuinely configurable properties all live under
       // Preferences, and no control leaks into Explanations.
@@ -789,7 +790,7 @@ describe("SettingsScreen", () => {
       for (const name of [
         "Route planning",
         "OpenRouteService",
-        "Elevation and climbs",
+        "Climbs and gradients",
         "Riding",
       ]) {
         const panel = screen.getByRole("heading", { level: 3, name }).closest("section");
@@ -1061,7 +1062,7 @@ describe("SettingsScreen", () => {
       render(<SettingsScreen />);
 
       expect(
-        screen.getByRole("heading", { level: 3, name: "Elevation and climbs" }),
+        screen.getByRole("heading", { level: 3, name: "Climbs and gradients" }),
       ).toBeInTheDocument();
 
       const details = screen.getByText("How climbs are classified").closest("details");
@@ -1069,7 +1070,7 @@ describe("SettingsScreen", () => {
       expect(details).not.toHaveAttribute("open");
 
       const elevationClimbsSection = screen
-        .getByRole("heading", { name: "Elevation and climbs" })
+        .getByRole("heading", { name: "Climbs and gradients" })
         .closest("section");
       expect(elevationClimbsSection).toContainElement(details);
 
@@ -1121,7 +1122,7 @@ describe("SettingsScreen", () => {
       expect(paletteDetails).not.toHaveAttribute("open");
 
       const elevationClimbsSection = screen
-        .getByRole("heading", { name: "Elevation and climbs" })
+        .getByRole("heading", { name: "Climbs and gradients" })
         .closest("section");
       expect(elevationClimbsSection).toContainElement(paletteDetails);
       expect(classificationDetails?.compareDocumentPosition(paletteDetails as Node)).toBe(
@@ -1210,7 +1211,9 @@ describe("SettingsScreen", () => {
       const details = screen.getByText("Screen on").closest("details");
       if (details) details.open = true;
 
-      expect(screen.getByText(/not background location tracking/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/does not track your location in the background/i),
+      ).toBeInTheDocument();
     });
 
     it("does not duplicate the live wake-lock toggle in Settings", () => {

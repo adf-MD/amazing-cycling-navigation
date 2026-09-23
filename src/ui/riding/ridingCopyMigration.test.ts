@@ -160,6 +160,10 @@ const MIGRATED_LITERALS: Readonly<Record<string, readonly string[]>> = {
     "Screen on",
     "The screen could not be kept awake",
     "Tap to try again",
+    // Absent from this list until stage 6b, which is exactly how the
+    // hard-coded visually-hidden announcement survived the stage 5 audit:
+    // an allowlist only catches the literals someone remembered to name.
+    "Screen staying awake.",
   ],
   "MapView.tsx": ["Map is taking longer than expected to load."],
   "mapImageryRecoveryPresentation.ts": [

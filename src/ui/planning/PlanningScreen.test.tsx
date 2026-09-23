@@ -611,9 +611,7 @@ describe("PlanningScreen", () => {
 
     await user.click(screen.getByRole("button", { name: "Undo" }));
     expect(
-      screen.getByText(
-        "No waypoints yet. Tap the map or use the crosshair button below to add one.",
-      ),
+      screen.getByText("No waypoints yet. Tap the map or use the crosshair to add one."),
     ).toBeInTheDocument();
   });
 
@@ -769,9 +767,7 @@ describe("PlanningScreen", () => {
     const draft = await getDraft();
     expect(draft).toBeUndefined();
     expect(
-      screen.getByText(
-        "No waypoints yet. Tap the map or use the crosshair button below to add one.",
-      ),
+      screen.getByText("No waypoints yet. Tap the map or use the crosshair to add one."),
     ).toBeInTheDocument();
 
     // Past the 900ms debounce the pre-save name edit would have armed —
@@ -2284,7 +2280,7 @@ describe("PlanningScreen", () => {
       expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
       expect(
         screen.queryByText(
-          "No waypoints yet. Tap the map or use the crosshair button below to add one.",
+          "No waypoints yet. Tap the map or use the crosshair to add one.",
         ),
       ).toBeNull();
     });
@@ -2541,6 +2537,82 @@ describe("PlanningScreen", () => {
 
     map.triggerCameraSettled([0.2, 51]);
     expect(crosshairButton).toBeEnabled();
+  });
+
+  it("deselecting a waypoint also disarms a pending Move, so re-selecting it does not resurrect the mode", async () => {
+    // Backlog item 113 stage 6b. `Deselect waypoint` used to dispatch only
+    // `{type: "select", waypointId: null}`. A pending action is masked by
+    // *equality* with the current selection rather than cleared, so the
+    // armed Move survived the deselection and came back the moment the
+    // same waypoint was selected again — the rider's next map tap would
+    // then move the waypoint instead of adding one.
+    const user = userEvent.setup();
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    await user.click(screen.getByRole("button", { name: "Move" }));
+    expect(
+      screen.getByRole("button", { name: "Move the start here" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Deselect waypoint" }));
+    expect(screen.getByRole("button", { name: "Add waypoint here" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Start" }));
+
+    expect(screen.queryByRole("button", { name: "Move the start here" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Add waypoint here" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Move" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("deselecting a waypoint also disarms a pending Insert after", async () => {
+    const user = userEvent.setup();
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    await user.click(screen.getByRole("button", { name: "Insert after" }));
+    expect(
+      screen.getByRole("button", { name: "Insert after the start" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Deselect waypoint" }));
+    await user.click(screen.getByRole("button", { name: "Start" }));
+
+    expect(screen.queryByRole("button", { name: "Insert after the start" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Insert after" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("deselecting a waypoint leaves the waypoints and the routed result untouched", async () => {
+    // The control clears a selection; it must not be mistaken for an edit.
+    const user = userEvent.setup();
+    const map = createMockMapFactory();
+    render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+    map.triggerLoad();
+
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    await user.click(screen.getByRole("button", { name: "Deselect waypoint" }));
+
+    expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Waypoint 2" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Deselect waypoint" })).toBeNull();
   });
 
   it("move is one-shot: completing it returns to selected mode, disabling further placement", async () => {
@@ -3905,7 +3977,7 @@ describe("PlanningScreen", () => {
         await waitFor(() => {
           expect(
             screen.getByText(
-              "Recalculating for General cycling; showing the previous Road bike result below.",
+              "Recalculating for General cycling. The previous Road bike result remains visible in the meantime.",
             ),
           ).toBeInTheDocument();
         });

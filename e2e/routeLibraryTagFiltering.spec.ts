@@ -839,8 +839,8 @@ test.describe("contextual tag-filter counts (item 111)", () => {
     await page.getByRole("button", { name: "Manage tags", exact: true }).click();
     const manager = page.getByRole("group", { name: "Manage tags" });
     await expect(manager).toBeVisible();
-    await expect(manager.getByLabel("Tag to manage")).toContainText("Gravel (2 routes)");
-    await expect(manager.getByLabel("Tag to manage")).toContainText("Weekend (1 route)");
+    await expect(manager.getByLabel("Selected tag")).toContainText("Gravel (2 routes)");
+    await expect(manager.getByLabel("Selected tag")).toContainText("Weekend (1 route)");
     await manager.getByRole("button", { name: "Close", exact: true }).click();
     await expect(manager).toHaveCount(0);
   });

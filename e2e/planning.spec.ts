@@ -945,7 +945,7 @@ test("aligns the crosshair exactly with the map's own visual centre, and renders
   const marker = page.locator(".planning-waypoint-marker");
   await expect(marker).toHaveText("1");
   await expect(marker).toHaveClass(/planning-waypoint-marker--start/);
-  await expect(page.getByRole("img", { name: "Start waypoint 1" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Start: waypoint 1" })).toBeVisible();
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
@@ -2024,9 +2024,9 @@ test.describe("phone viewport", () => {
     // Open route: Start / ordinary / Finish, each row's badge compared
     // against its own corresponding map marker.
     const openRouteRoles: { rowName: string; markerLabel: string }[] = [
-      { rowName: "Start", markerLabel: "Start waypoint 1" },
+      { rowName: "Start", markerLabel: "Start: waypoint 1" },
       { rowName: "Waypoint 2", markerLabel: "Waypoint 2" },
-      { rowName: "Waypoint 3", markerLabel: "Finish waypoint 3" },
+      { rowName: "Waypoint 3", markerLabel: "Finish: waypoint 3" },
     ];
     for (const { rowName, markerLabel } of openRouteRoles) {
       const badge = page
@@ -2054,7 +2054,7 @@ test.describe("phone viewport", () => {
     ).toBeVisible();
 
     const loopMarker = page.getByRole("img", {
-      name: "Start and finish waypoints 1 and 4",
+      name: "Start: waypoint 1; finish: waypoint 4",
     });
     await expect(loopMarker).toBeVisible();
     const loopMarkerStyle = await readVisualStyle(loopMarker);

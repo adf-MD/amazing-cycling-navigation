@@ -376,6 +376,9 @@ export class OpenRouteServiceAdapter implements RoutingProvider {
       elevation: true,
       extra_info: ["surface", "waytype", "waycategory"],
       instructions: true,
+      // Spread rather than assigned: the field is absent for English, not
+      // present-and-undefined, so the serialised English body is unchanged.
+      ...(options.language === "de" ? { language: "de" } : {}),
       ...(options.avoidFerries ? { options: { avoid_features: ["ferries"] } } : {}),
     };
 

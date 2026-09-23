@@ -76,6 +76,11 @@ function buildRouteLegKey(
     providerToken,
     options.profile,
     options.avoidFerries ?? false,
+    // Backlog item 113 stage 6b: instruction language is part of a leg's
+    // identity. Without it an English leg already in this session's cache
+    // would satisfy a German request, and the route would come back with
+    // mixed-language turn instructions from one calculation.
+    options.language ?? "en",
     startLon,
     startLat,
     endLon,

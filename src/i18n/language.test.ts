@@ -12,14 +12,15 @@ import {
 } from "./language.ts";
 
 describe("the supported-language gate", () => {
-  it("does not yet offer German, so no device or stored preference can reach it", () => {
-    // This is the gate itself. It flips to ["en", "de"] in the stage that
-    // completes and reviews the German catalogue, and several assertions
-    // below flip with it — deliberately, so enabling German cannot be done
+  it("offers both reviewed languages", () => {
+    // This is the gate itself. It read ["en"] through stages 1 to 6a and
+    // flipped here, in the stage that completed and reviewed the German
+    // catalogue — deliberately, so enabling German could not be done
     // quietly.
-    expect(SUPPORTED_LANGUAGES).toEqual(["en"]);
-    expect(isSupportedLanguage("de")).toBe(false);
+    expect(SUPPORTED_LANGUAGES).toEqual(["en", "de"]);
+    expect(isSupportedLanguage("de")).toBe(true);
     expect(isSupportedLanguage("en")).toBe(true);
+    expect(isSupportedLanguage("fr")).toBe(false);
   });
 
   it("still treats German as a language the application knows about", () => {
@@ -43,13 +44,13 @@ describe("resolveLanguage, device preference", () => {
     // The first SUPPORTED entry wins, so order is what decides — not
     // whether German appears anywhere in the list.
     [["en-GB", "de-DE"], "en"],
-    [["de-DE", "en-GB"], "en"],
+    [["de-DE", "en-GB"], "de"],
     // An unsupported tag is skipped, never treated as a reason to stop.
-    [["fr-FR", "de-DE"], "en"],
+    [["fr-FR", "de-DE"], "de"],
     [["fr-FR", "es-ES"], "en"],
-    [["de"], "en"],
-    [["de-AT"], "en"],
-    [["de-CH"], "en"],
+    [["de"], "de"],
+    [["de-AT"], "de"],
+    [["de-CH"], "de"],
     [[], "en"],
     [undefined, "en"],
   ];
@@ -76,13 +77,19 @@ describe("resolveLanguage, explicit override", () => {
     expect(resolveLanguage("en", ["de-DE", "fr-FR"])).toBe("en");
   });
 
-  it("clamps an override the gate does not yet allow, rather than trusting it", () => {
+  it("honours a German override regardless of the device list", () => {
+    expect(resolveLanguage("de", ["de-DE"])).toBe("de");
+    expect(resolveLanguage("de", ["fr-FR"])).toBe("de");
+    expect(resolveLanguage("de", undefined)).toBe("de");
+  });
+
+  it("still clamps an override the gate does not allow", () => {
     // The override branch is constrained by SUPPORTED_LANGUAGES exactly as
-    // the device branch is. Without that, a stored "de" would ask for a
-    // catalogue that does not exist.
-    expect(resolveLanguage("de", ["de-DE"])).toBe("en");
-    expect(resolveLanguage("de", ["fr-FR"])).toBe("en");
-    expect(resolveLanguage("de", undefined)).toBe("en");
+    // the device branch is. That constraint is what made a stored "de"
+    // safe before German shipped, and it is what keeps an unknown value
+    // safe now.
+    expect(resolveLanguage("fr" as never, ["fr-FR"])).toBe("en");
+    expect(resolveLanguage("klingon" as never, ["de-DE"])).toBe("de");
   });
 });
 

@@ -1868,6 +1868,15 @@ export function PlanningScreen({
             <button
               type="button"
               onClick={() => {
+                // Disarm before deselecting. `effectivePendingAction` masks a
+                // pending Move/Insert-after by *equality* with the current
+                // selection rather than clearing it, so without this the armed
+                // mode survives the deselection and returns the moment the same
+                // waypoint is selected again — and the rider's next map tap
+                // moves a waypoint instead of adding one. The sibling
+                // `selectWarning` and `selectRouteFeature` paths already clear
+                // it for the same reason.
+                setPendingWaypointAction(null);
                 dispatchWaypointAction({ type: "select", waypointId: null });
               }}
             >

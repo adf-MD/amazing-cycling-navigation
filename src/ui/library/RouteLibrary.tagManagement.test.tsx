@@ -118,7 +118,7 @@ async function chooseTag(
   optionLabel: string,
 ): Promise<void> {
   await user.selectOptions(
-    within(getManager()).getByLabelText("Tag to manage"),
+    within(getManager()).getByLabelText("Selected tag"),
     within(getManager()).getByRole("option", { name: optionLabel }),
   );
 }
@@ -986,7 +986,7 @@ describe("RouteLibrary — global tag management, failures and the one-at-a-time
     });
 
     await waitFor(() => {
-      expect(within(getManager()).getByLabelText("Tag to manage")).toHaveValue("");
+      expect(within(getManager()).getByLabelText("Selected tag")).toHaveValue("");
     });
     expect(
       within(getManager()).getByRole("button", { name: "Rename tag" }),
@@ -1278,7 +1278,7 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
   }
 
   function getSelect(): HTMLElement {
-    return within(getManager()).getByLabelText("Tag to manage");
+    return within(getManager()).getByLabelText("Selected tag");
   }
 
   it("reveals the panel's top after a successful rename, focusing the select without a native scroll", async () => {

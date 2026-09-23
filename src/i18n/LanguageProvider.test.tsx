@@ -40,23 +40,30 @@ describe("LanguageProvider", () => {
     expect(screen.getByTestId("label")).toHaveTextContent("Settings");
   });
 
-  it("renders English for a German device, because German is not available yet", () => {
+  it("renders German for a German device", () => {
     // The supported-language gate, end to end through the provider. This
-    // assertion flips when German's catalogue ships and its own gate
-    // constant changes — deliberately, so enabling German cannot happen
-    // quietly.
+    // assertion read "en" through stages 1 to 6a and flipped here, in the
+    // stage that reviewed German's catalogue.
     renderWithLanguages("device", ["de-DE", "en-GB"]);
+    expect(screen.getByTestId("language")).toHaveTextContent("de");
+    expect(screen.getByTestId("label")).toHaveTextContent("Einstellungen");
+  });
+
+  it("renders English for an English-first device, whatever follows it", () => {
+    // Order decides, not mere presence of German in the list.
+    renderWithLanguages("device", ["en-GB", "de-DE"]);
     expect(screen.getByTestId("language")).toHaveTextContent("en");
     expect(screen.getByTestId("label")).toHaveTextContent("Settings");
   });
 
-  it("keeps a stored German preference visible while still rendering English", () => {
+  it("keeps the stored preference and the resolved language as separate facts", () => {
     // What the rider chose and what they get are different facts, and the
     // context exposes both. The choice is never rewritten to match the
-    // outcome.
-    renderWithLanguages("de", ["de-DE"]);
+    // outcome — which is what kept a stored "de" intact before German
+    // shipped, and is unchanged now that it resolves.
+    renderWithLanguages("de", ["en-GB"]);
     expect(screen.getByTestId("preference")).toHaveTextContent("de");
-    expect(screen.getByTestId("language")).toHaveTextContent("en");
+    expect(screen.getByTestId("language")).toHaveTextContent("de");
   });
 
   it("declares the document language for the resolved language", () => {

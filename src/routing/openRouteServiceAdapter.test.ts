@@ -110,6 +110,53 @@ describe("OpenRouteServiceAdapter", () => {
     );
   });
 
+  it("asks openrouteservice for German instructions when the interface is German", async () => {
+    // Backlog item 113 stage 6b. Exactly "de": APIEnums.Languages lists it
+    // but not "de-at" or "de-ch", and an unlisted value throws a
+    // ParameterValueException that fails the whole request.
+    const fetchImpl = buildFetchMock({ ok: true });
+    const adapter = new OpenRouteServiceAdapter({
+      getApiKey: () => Promise.resolve(DUMMY_KEY),
+      fetchImpl,
+    });
+
+    await adapter.calculateRoute(WAYPOINTS, {
+      profile: "cycling-road",
+      language: "de",
+    });
+
+    const body = (await firstRequest(fetchImpl).json()) as Record<string, unknown>;
+    expect(body.language).toBe("de");
+  });
+
+  it("leaves the English request body byte-for-byte what it always was", async () => {
+    // The field is spread in, not assigned undefined, so an English body
+    // carries no `language` key at all — not a key with an empty value.
+    // Serialised rather than inspected, because JSON.stringify is what the
+    // provider actually receives.
+    const withoutLanguage = buildFetchMock({ ok: true });
+    const explicitEnglish = buildFetchMock({ ok: true });
+    const make = (fetchImpl: typeof withoutLanguage) =>
+      new OpenRouteServiceAdapter({
+        getApiKey: () => Promise.resolve(DUMMY_KEY),
+        fetchImpl,
+      });
+
+    await make(withoutLanguage).calculateRoute(WAYPOINTS, { profile: "cycling-road" });
+    await make(explicitEnglish).calculateRoute(WAYPOINTS, {
+      profile: "cycling-road",
+      language: "en",
+    });
+
+    const omitted = await firstRequest(withoutLanguage).text();
+    const english = await firstRequest(explicitEnglish).text();
+    expect(english).toBe(omitted);
+    expect(omitted).not.toContain("language");
+    expect(Object.keys(JSON.parse(omitted) as Record<string, unknown>)).not.toContain(
+      "language",
+    );
+  });
+
   it("posts to the cycling-regular endpoint when that profile is requested, with transport otherwise unchanged", async () => {
     const fetchImpl = buildFetchMock({ ok: true });
     const adapter = new OpenRouteServiceAdapter({

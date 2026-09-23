@@ -50,7 +50,7 @@ describe("RouteTagManager", () => {
 
   it("starts on a neutral placeholder rather than auto-selecting the first tag", () => {
     renderManager();
-    expect(within(panel()).getByLabelText("Tag to manage")).toHaveValue("");
+    expect(within(panel()).getByLabelText("Selected tag")).toHaveValue("");
     expect(
       within(panel()).getByRole("option", { name: "Choose a tag" }),
     ).toBeInTheDocument();
@@ -104,14 +104,14 @@ describe("RouteTagManager", () => {
       routeCountsByTagKey: new Map([["road", 1]]),
       sourceKey: "gravel",
     });
-    expect(within(panel()).getByLabelText("Tag to manage")).toHaveValue("");
+    expect(within(panel()).getByLabelText("Selected tag")).toHaveValue("");
     expect(within(panel()).getByRole("button", { name: "Delete tag" })).toBeDisabled();
   });
 
   it("disables every control and announces progress while an operation is applying", () => {
     renderManager({ sourceKey: "gravel", isBusy: true });
     expect(within(panel()).getByRole("status")).toHaveTextContent("Applying…");
-    expect(within(panel()).getByLabelText("Tag to manage")).toBeDisabled();
+    expect(within(panel()).getByLabelText("Selected tag")).toBeDisabled();
     expect(within(panel()).getByLabelText("New name")).toBeDisabled();
     expect(within(panel()).getByRole("button", { name: "Rename tag" })).toBeDisabled();
     expect(within(panel()).getByRole("button", { name: "Delete tag" })).toBeDisabled();
@@ -176,7 +176,7 @@ describe("RouteTagManager", () => {
         "No tags left. Add tags from a route to manage them here.",
       ),
     ).toBeVisible();
-    expect(within(panel()).queryByLabelText("Tag to manage")).not.toBeInTheDocument();
+    expect(within(panel()).queryByLabelText("Selected tag")).not.toBeInTheDocument();
     expect(within(panel()).getByRole("button", { name: "Close" })).toBeInTheDocument();
   });
 });

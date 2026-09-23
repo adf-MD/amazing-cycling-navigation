@@ -1914,7 +1914,7 @@ describe("MapView", () => {
           label: "1",
           role: "start",
           selected: false,
-          ariaLabel: "Start waypoint 1",
+          ariaLabel: "Start: waypoint 1",
         },
         {
           id: "b",
@@ -1922,7 +1922,7 @@ describe("MapView", () => {
           label: "2",
           role: "finish",
           selected: true,
-          ariaLabel: "Finish waypoint 2",
+          ariaLabel: "Finish: waypoint 2",
         },
       ]);
     });

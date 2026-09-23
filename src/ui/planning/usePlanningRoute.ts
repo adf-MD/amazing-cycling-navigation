@@ -209,7 +209,17 @@ export function usePlanningRoute({
 
     resolveRouteLegsInOrder(
       requirements,
-      { profile: currentProfile, avoidFerries: currentAvoidFerries },
+      {
+        profile: currentProfile,
+        avoidFerries: currentAvoidFerries,
+        // Read at the moment the calculation starts, so every leg of one
+        // route asks for the same language. Deliberately NOT part of
+        // computeRouteCalculationFingerprint or the debounce dependencies:
+        // changing the interface language must never spend a routing
+        // request, and must never mark an existing route stale. Already
+        // saved and imported instructions are left exactly as they are.
+        language: translator.language,
+      },
       {
         adapter,
         cache: legCache,

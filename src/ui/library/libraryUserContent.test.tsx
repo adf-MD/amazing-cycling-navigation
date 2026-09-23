@@ -134,7 +134,7 @@ describe("tag names pass through the boundary verbatim", () => {
           { kind: "delete", sourceTag: tag },
           1,
         ),
-      ).toBe(`Deleted “${tag}” from 1 route. Those routes are still saved.`);
+      ).toBe(`Deleted “${tag}” from 1 route. That route is still saved.`);
     });
   }
 

@@ -45,7 +45,7 @@ export const FALLBACK_LANGUAGE: AppLanguage = "en";
  * so that adding "de" here is a one-word change and every `includes`
  * check below keeps compiling either way.
  */
-export const SUPPORTED_LANGUAGES: readonly AppLanguage[] = ["en"];
+export const SUPPORTED_LANGUAGES: readonly AppLanguage[] = ["en", "de"];
 
 /**
  * What `document.documentElement.lang` becomes for each language.

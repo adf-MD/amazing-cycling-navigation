@@ -8,72 +8,66 @@ import { en } from "./messages.en.ts";
 import { RouteTagManager } from "./../ui/library/RouteTagManager.tsx";
 
 /**
- * Backlog item 113. The gate that keeps German unreachable until its
- * catalogue is complete and has passed linguistic review, asserted at the
- * boundary and against a real migrated screen.
+ * Backlog item 113. The supported-language gate, now that stage 6b has
+ * opened it.
  *
- * Several assertions here flip when German ships. That is the point: it
- * must not be possible to enable German quietly.
+ * Through stages 1 to 6a this file asserted German was unreachable. Those
+ * assertions have flipped, which is exactly what they were for: enabling
+ * German could not be done quietly, and each flip below is a deliberate,
+ * reviewed change rather than a silent one.
+ *
+ * What the gate still governs has not changed, and is what the rest of
+ * this file pins: `resolveLanguage` returns only a member of
+ * `SUPPORTED_LANGUAGES`, from either branch; an unrecognised tag is
+ * skipped rather than treated as a fallback trigger; and a stored
+ * preference is never rewritten by being read.
  */
 
-describe("German cannot be reached", () => {
-  it("is not an available language", () => {
-    expect(SUPPORTED_LANGUAGES).toEqual(["en"]);
+describe("German is available", () => {
+  it("is a supported language", () => {
+    expect(SUPPORTED_LANGUAGES).toEqual(["en", "de"]);
   });
 
-  it("has no bundled catalogue", () => {
-    expect(Object.keys(CATALOGUES)).toEqual(["en"]);
-    expect(CATALOGUES.de).toBeUndefined();
+  it("has a bundled catalogue", () => {
+    expect(Object.keys(CATALOGUES).sort()).toEqual(["de", "en"]);
+    expect(CATALOGUES.de).toBeDefined();
   });
 
-  it("has a German catalogue that nothing in the application imports", () => {
-    // Stage 6a authors `messages.de.ts`, so the old form of this
-    // assertion — that no such module exists — is no longer the
-    // guarantee. The guarantee is now stronger and states the thing that
-    // actually matters: the module exists, and **no production module
-    // reaches it**, so it cannot enter the bundle. Only this directory's
-    // own tests and the review tooling import it.
-    const messageModules = Object.keys(
-      import.meta.glob("./messages.*.ts", { eager: false }),
-    )
-      .filter((path) => !path.includes(".test."))
-      .sort();
-    expect(messageModules).toEqual(["./messages.de.ts", "./messages.en.ts"]);
-
-    const production = Object.entries(
-      import.meta.glob("../**/*.{ts,tsx}", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      }),
-    ).filter(
-      ([path]) =>
-        !path.includes(".test.") &&
-        !path.includes("/test/") &&
-        !path.endsWith("/messages.de.ts"),
-    );
-    const importers = production
-      .filter(([, source]) => /messages\.de(\.ts)?["']/.test(source))
-      .map(([path]) => path);
-    expect(importers).toEqual([]);
+  it("is offered by a language selector in Settings", () => {
+    expect(settingsSource).toContain("selectPreference");
+    expect(Object.keys(en)).toContain("settings.language.heading");
   });
 
-  it("offers no language selector anywhere in the interface", () => {
-    // Stage 1 deliberately shipped no selector: a control offering only
-    // English would be rider-facing noise. Its absence is also the second,
-    // independent reason German is unreachable.
-    expect(settingsSource).not.toContain("selectPreference");
-    expect(Object.keys(en)).not.toContain("settings.language.heading");
-  });
-
-  it("resolves a German device to English", () => {
+  it("resolves a German device to German, at every regional tag", () => {
     for (const languages of [["de"], ["de-DE"], ["de-AT"], ["de-CH"], ["de", "en"]]) {
-      expect(resolveLanguage("device", languages)).toBe("en");
+      expect(resolveLanguage("device", languages), languages.join(",")).toBe("de");
     }
   });
 
-  it("resolves an explicitly stored German preference to English", () => {
-    expect(resolveLanguage("de", ["de-DE"])).toBe("en");
+  it("resolves an explicitly stored German preference to German", () => {
+    expect(resolveLanguage("de", ["en-GB"])).toBe("de");
+  });
+});
+
+describe("the gate still governs what is reachable", () => {
+  it("returns only a supported language, from either branch", () => {
+    for (const preference of ["device", "en", "de"] as const) {
+      expect(SUPPORTED_LANGUAGES).toContain(resolveLanguage(preference, ["fr-FR"]));
+    }
+  });
+
+  it("still prefers the first supported device entry, in order", () => {
+    expect(resolveLanguage("device", ["en-GB", "de-DE"])).toBe("en");
+    expect(resolveLanguage("device", ["de-DE", "en-GB"])).toBe("de");
+  });
+
+  it("still skips an unsupported entry rather than falling back at it", () => {
+    expect(resolveLanguage("device", ["fr-FR", "de-DE"])).toBe("de");
+    expect(resolveLanguage("device", ["fr-FR", "es-ES"])).toBe("en");
+  });
+
+  it("still falls back to English for an unknown explicit preference", () => {
+    expect(resolveLanguage("fr" as never, ["fr-FR"])).toBe("en");
   });
 });
 
@@ -106,30 +100,61 @@ describe("a migrated screen under a German device", () => {
     );
   }
 
-  it("still renders English with a German device language", () => {
+  it("renders German with a German device language", () => {
     const { unmount } = renderTagManager("device");
-    expect(screen.getByRole("heading", { name: "Manage tags" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Hills (2 routes)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Tags verwalten" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Hills (2 Routen)" })).toBeInTheDocument();
     unmount();
   });
 
-  it("still renders English with a stored German preference", () => {
+  it("renders German with a stored German preference", () => {
     const { unmount } = renderTagManager("de");
+    expect(screen.getByRole("heading", { name: "Tags verwalten" })).toBeInTheDocument();
+    unmount();
+  });
+
+  it("renders English when English is chosen explicitly, whatever the device says", () => {
+    // The override wins over a German device list; the negative control
+    // for the resolution order.
+    const { unmount } = renderTagManager("en");
     expect(screen.getByRole("heading", { name: "Manage tags" })).toBeInTheDocument();
     unmount();
   });
 
-  it("declares en-GB on the document even under a German preference", () => {
-    const documentElement = { lang: "" };
-    render(
+  it("renders the rider's own tag verbatim in both languages", () => {
+    // The tag is user content and is never translated, only surrounded by
+    // different words.
+    const german = renderTagManager("de");
+    expect(screen.getByRole("option", { name: "Hills (2 Routen)" })).toBeInTheDocument();
+    german.unmount();
+    renderTagManager("en");
+    expect(screen.getByRole("option", { name: "Hills (2 routes)" })).toBeInTheDocument();
+  });
+
+  it("declares de on the document under a German preference, and en-GB under English", () => {
+    const germanElement = { lang: "" };
+    const german = render(
       <LanguageProvider
         preference="de"
         readLanguages={() => ["de-DE"]}
-        documentElement={documentElement}
+        documentElement={germanElement}
       >
         <span />
       </LanguageProvider>,
     );
-    expect(documentElement.lang).toBe("en-GB");
+    expect(germanElement.lang).toBe("de");
+    german.unmount();
+
+    const englishElement = { lang: "" };
+    render(
+      <LanguageProvider
+        preference="en"
+        readLanguages={() => ["de-DE"]}
+        documentElement={englishElement}
+      >
+        <span />
+      </LanguageProvider>,
+    );
+    expect(englishElement.lang).toBe("en-GB");
   });
 });

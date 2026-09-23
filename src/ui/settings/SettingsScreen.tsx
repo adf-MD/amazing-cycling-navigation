@@ -48,7 +48,7 @@ import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
 import { applyConfirmationReveal } from "./confirmationRevealScroll.ts";
 import { describeProviderKeyStatus } from "./providerKeyStatus.ts";
-import { useTranslate } from "../../i18n/useTranslate.ts";
+import { useLanguageContext, useTranslate } from "../../i18n/useTranslate.ts";
 import { RichText } from "../../i18n/RichText.tsx";
 
 // The complete climb/descent local-gradient palettes, for Settings' own
@@ -79,6 +79,11 @@ export function SettingsScreen({
 }: SettingsScreenProps) {
   const translator = useTranslate();
   const { t } = translator;
+  // The first production consumer of this hook. Null only when a test
+  // renders this screen with no provider, in which case the card shows
+  // English selected and cannot change anything — the same degradation
+  // `useTranslate` already makes.
+  const languageContext = useLanguageContext();
   const keyQuery = useCallback(() => getProviderKey(), []);
   const key = useLiveQuery(keyQuery);
   const verificationQuery = useCallback(() => getProviderKeyVerification(), []);
@@ -329,6 +334,54 @@ export function SettingsScreen({
         aria-labelledby="settings-preferences-heading"
       >
         <h2 id="settings-preferences-heading">{t("settings.group.preferences")}</h2>
+
+        {/* First in Preferences: the language governs every other word on
+            this screen, so it reads oddly anywhere below them. This makes
+            the group's contract five h3 panels rather than item 112's
+            four — a deliberate revision, recorded with that item. */}
+        <section className="panel stack" aria-labelledby="language-heading">
+          <h3 id="language-heading">{t("settings.language.heading")}</h3>
+
+          <div className="stack">
+            <p className="setting-row-title" id="interface-language-heading">
+              {t("settings.language.groupLabel")}
+            </p>
+            <div
+              role="group"
+              aria-labelledby="interface-language-heading"
+              className="cycling-profile-group"
+            >
+              {(
+                [
+                  ["device", "settings.language.device"],
+                  ["en", "settings.language.english"],
+                  ["de", "settings.language.german"],
+                ] as const
+              ).map(([value, labelKey]) => {
+                const isSelected = (languageContext?.preference ?? "device") === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    className={
+                      isSelected
+                        ? "cycling-profile-button is-selected"
+                        : "cycling-profile-button"
+                    }
+                    aria-pressed={isSelected}
+                    disabled={languageContext === null}
+                    onClick={() => {
+                      languageContext?.selectPreference(value);
+                    }}
+                  >
+                    {t(labelKey)}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="field-hint">{t("settings.language.hint")}</p>
+          </div>
+        </section>
 
         <section className="panel stack" aria-labelledby="route-planning-heading">
           <h3 id="route-planning-heading">{t("settings.routePlanning.heading")}</h3>

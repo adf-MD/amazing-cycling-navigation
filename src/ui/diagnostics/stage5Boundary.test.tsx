@@ -140,7 +140,7 @@ describe("raw diagnostic values are substituted, never re-parsed", () => {
       attempt({ errorName: "TypeError", errorMessage: "Failed to fetch {host}" }),
     );
     expect(line).toBe(
-      "Fetch promise rejected before an HTTP response was exposed (TypeError: Failed to fetch {host})",
+      "The network request failed before the browser exposed an HTTP response (TypeError: Failed to fetch {host})",
     );
   });
 
@@ -169,7 +169,7 @@ describe("raw diagnostic values are substituted, never re-parsed", () => {
         attempt({ transportFailureReasonCode: "generic-fetch-rejection" }),
       ),
     ).toBe(
-      "Fetch promise rejected before an HTTP response was exposed (reason: generic-fetch-rejection)",
+      "The network request failed before the browser exposed an HTTP response (reason: generic-fetch-rejection)",
     );
   });
 
@@ -247,7 +247,7 @@ describe("dates, numbers and ages use an explicit locale", () => {
     );
     // The zone is a promise about what the record means, not a
     // presentation preference, so it must not drift to local time.
-    expect(status.headline).toBe("Key last verified 14 Sept 2026, 16:04 UTC");
+    expect(status.headline).toBe("Key last verified: 14 Sept 2026, 16:04 UTC");
   });
 
   it("formats every figure from the translator's locale, not the host's", () => {
@@ -354,14 +354,17 @@ describe("route-feature identity is the key, never the rendered name", () => {
   });
 });
 
-describe("the English-only gate is untouched by this stage", () => {
-  it("still offers English only", () => {
-    expect(SUPPORTED_LANGUAGES).toEqual(["en"]);
+describe("the supported-language gate is untouched by this stage", () => {
+  // Stage 6b opened the gate; what this stage must not do is change how
+  // it resolves.
+  it("offers exactly the two reviewed languages", () => {
+    expect(SUPPORTED_LANGUAGES).toEqual(["en", "de"]);
   });
 
-  it("still resolves a German device and a stored German preference to English", () => {
-    expect(resolveLanguage("device", ["de-DE", "en-GB"])).toBe("en");
-    expect(resolveLanguage("de", ["de-DE"])).toBe("en");
-    expect(resolveLanguage("device", ["fr-FR", "de-AT"])).toBe("en");
+  it("still resolves in device order, and still lets an override win", () => {
+    expect(resolveLanguage("device", ["en-GB", "de-DE"])).toBe("en");
+    expect(resolveLanguage("device", ["de-DE", "en-GB"])).toBe("de");
+    expect(resolveLanguage("device", ["fr-FR", "de-AT"])).toBe("de");
+    expect(resolveLanguage("en", ["de-DE"])).toBe("en");
   });
 });

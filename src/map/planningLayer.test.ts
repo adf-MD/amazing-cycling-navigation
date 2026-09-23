@@ -34,7 +34,7 @@ describe("buildWaypointMarkerSpecs", () => {
       label: "1",
       role: "start",
       selected: false,
-      ariaLabel: "Start waypoint 1",
+      ariaLabel: "Start: waypoint 1",
     });
   });
 
@@ -91,7 +91,7 @@ describe("buildWaypointMarkerSpecs", () => {
         id: "a",
         label: "1/4",
         role: "start-finish",
-        ariaLabel: "Start and finish waypoints 1 and 4",
+        ariaLabel: "Start: waypoint 1; finish: waypoint 4",
       });
       expect(specs[1]).toMatchObject({ id: "b", label: "2", role: "ordinary" });
       expect(specs[2]).toMatchObject({ id: "c", label: "3", role: "ordinary" });

@@ -43,7 +43,7 @@ describe("renderWaypointMarkerElement", () => {
     const element = createWaypointMarkerElement();
     renderWaypointMarkerElement(
       element,
-      buildSpec({ role: "start", label: "1", ariaLabel: "Start waypoint 1" }),
+      buildSpec({ role: "start", label: "1", ariaLabel: "Start: waypoint 1" }),
     );
     expect(element.className).toBe(
       "planning-waypoint-marker planning-waypoint-marker--start",

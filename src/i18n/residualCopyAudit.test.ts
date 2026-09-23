@@ -214,19 +214,31 @@ describe("category 3 — user-authored and imported content stays verbatim", () 
   });
 });
 
-describe("category 6 — language-selection copy is deferred to stage 6", () => {
-  it("has no Language card, selector or device-language wording yet", () => {
+describe("category 6 — language-selection copy, delivered in stage 6b", () => {
+  it("has the Language card's own copy in the catalogue", () => {
     const keys = Object.keys(en);
-    for (const forbidden of [
-      "language.card",
-      "language.title",
-      "language.deviceLanguage",
-      "language.english",
-      "language.german",
+    for (const key of [
+      "settings.language.heading",
+      "settings.language.groupLabel",
+      "settings.language.device",
+      "settings.language.english",
+      "settings.language.german",
+      "settings.language.hint",
     ]) {
-      expect(keys, forbidden).not.toContain(forbidden);
+      expect(keys, key).toContain(key);
     }
-    expect(read("src/ui/settings/SettingsScreen.tsx")).not.toContain("selectPreference");
+  });
+
+  it("offers the selector from Settings", () => {
+    expect(read("src/ui/settings/SettingsScreen.tsx")).toContain("selectPreference");
+  });
+
+  it("keeps the endonyms identical in both catalogues", () => {
+    // A rider who cannot read the current interface must still recognise
+    // their own language in the list, so these two are deliberately not
+    // translated in either direction.
+    expect(en["settings.language.english"]).toBe("English");
+    expect(en["settings.language.german"]).toBe("Deutsch");
   });
 });
 

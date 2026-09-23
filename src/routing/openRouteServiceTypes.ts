@@ -10,6 +10,10 @@ export interface OrsDirectionsRequestBody {
   elevation: boolean;
   extra_info: readonly string[];
   instructions: boolean;
+  /** Exactly "de" or absent. openrouteservice's APIEnums.Languages lists
+   * `de` but not `de-at` or `de-ch`, and an unlisted value throws a
+   * ParameterValueException that fails the whole request. */
+  language?: string;
   options?: { avoid_features: readonly string[] };
 }
 

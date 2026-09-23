@@ -96,7 +96,7 @@ describe("describeTagLifecycleSuccess", () => {
         { kind: "delete", sourceTag: "Gravel" },
         1,
       ),
-    ).toBe("Deleted “Gravel” from 1 route. Those routes are still saved.");
+    ).toBe("Deleted “Gravel” from 1 route. That route is still saved.");
   });
 
   it("explains a stale source rather than claiming a change", () => {
