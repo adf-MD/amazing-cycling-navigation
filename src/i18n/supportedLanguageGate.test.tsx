@@ -26,16 +26,36 @@ describe("German cannot be reached", () => {
     expect(CATALOGUES.de).toBeUndefined();
   });
 
-  it("has no production German catalogue module on disk", () => {
-    // Not a partial one, not a copied-English stub. German wording is
-    // authored once, in the stage that also reviews it.
-    // Vite's own module graph rather than a filesystem read: it resolves
-    // exactly what the bundle would include, which is the thing that
-    // actually matters for "no German catalogue ships".
+  it("has a German catalogue that nothing in the application imports", () => {
+    // Stage 6a authors `messages.de.ts`, so the old form of this
+    // assertion — that no such module exists — is no longer the
+    // guarantee. The guarantee is now stronger and states the thing that
+    // actually matters: the module exists, and **no production module
+    // reaches it**, so it cannot enter the bundle. Only this directory's
+    // own tests and the review tooling import it.
     const messageModules = Object.keys(
       import.meta.glob("./messages.*.ts", { eager: false }),
-    ).sort();
-    expect(messageModules).toEqual(["./messages.en.ts"]);
+    )
+      .filter((path) => !path.includes(".test."))
+      .sort();
+    expect(messageModules).toEqual(["./messages.de.ts", "./messages.en.ts"]);
+
+    const production = Object.entries(
+      import.meta.glob("../**/*.{ts,tsx}", {
+        query: "?raw",
+        import: "default",
+        eager: true,
+      }),
+    ).filter(
+      ([path]) =>
+        !path.includes(".test.") &&
+        !path.includes("/test/") &&
+        !path.endsWith("/messages.de.ts"),
+    );
+    const importers = production
+      .filter(([, source]) => /messages\.de(\.ts)?["']/.test(source))
+      .map(([path]) => path);
+    expect(importers).toEqual([]);
   });
 
   it("offers no language selector anywhere in the interface", () => {

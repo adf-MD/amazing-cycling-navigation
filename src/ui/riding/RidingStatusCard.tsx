@@ -5,7 +5,7 @@ import type { MapImageryRecoveryStatus } from "../../map/MapView.tsx";
 import {
   formatDistanceKm,
   formatDistanceKmValue,
-  formatMetres,
+  formatMetresValue,
 } from "../shared/routeSummary.ts";
 import { formatGpsStatusLine } from "./rideStatusText.ts";
 import { ConnectivityIcon } from "./ConnectivityIcon.tsx";
@@ -64,7 +64,7 @@ function formatRemainingAscentText(
   return remainingAscentMetres === null
     ? translator.t("ride.status.ascentUnavailable")
     : translator.t("ride.status.ascent", {
-        ascent: formatMetres(translator, remainingAscentMetres),
+        ascent: formatMetresValue(translator, remainingAscentMetres),
       });
 }
 

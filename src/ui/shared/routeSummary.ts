@@ -69,6 +69,15 @@ export function formatDistanceKmValue(translator: Translator, metres: number): s
   return fixedOneDecimal(translator, metres / 1000);
 }
 
+/** Just the numeric whole-metre value, no unit — the counterpart of
+ * `formatDistanceKmValue`, for a message that supplies its own unit word.
+ * Backlog item 113 stage 6a needed this so `ride.status.ascent` could own
+ * its unit the way this module's other entries already do: German writes
+ * that figure as "993 Höhenmeter", where the unit is part of the word. */
+export function formatMetresValue(translator: Translator, metres: number): string {
+  return wholeNumber(translator, metres);
+}
+
 export function formatMetres(translator: Translator, metres: number): string {
   return translator.t("format.metres", { metres: wholeNumber(translator, metres) });
 }

@@ -613,7 +613,10 @@ export const en = {
   "ride.status.possiblyOffRoute": "Possibly off route",
   "ride.status.offRoute": "Off route",
   "ride.status.ascentUnavailable": "ascent unavailable",
-  "ride.status.ascent": "{ascent} ascent",
+  // translator: {ascent} is a bare whole number of metres and this message
+  // owns the unit, so a language whose word for it already implies metres
+  // ("Höhenmeter") need not repeat an "m". English output is unchanged.
+  "ride.status.ascent": "{ascent} m ascent",
   // translator: the spelled-out announcement that replaces the compact
   // visible line for assistive technology. {distance} is a bare number of
   // kilometres; the unit word belongs to this message.
