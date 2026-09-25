@@ -189,7 +189,7 @@ describe("DiagnosticsScreen", () => {
       "System status",
       "Recent errors",
       "Routing diagnostics",
-      "Recent map imagery attempts",
+      "Map imagery problems and recovery",
     ]);
 
     const routingRegion = screen.getByRole("region", { name: "Routing diagnostics" });
@@ -639,11 +639,16 @@ describe("DiagnosticsScreen", () => {
     expect(screen.getByText("HTTP response received: 200")).toBeInTheDocument();
   });
 
-  it("shows no map imagery attempts recorded this session by default", () => {
+  it("shows no map imagery problems recorded this session by default, and says successful loads are not listed", () => {
     render(<DiagnosticsScreen />);
 
+    // The log records only failures, retries, fallback and recovery, so an
+    // empty list must not read as a log of every map load (item 113's 25
+    // September 2026 follow-up).
     expect(
-      screen.getByText(/no map imagery attempts recorded this session/i),
+      screen.getByText(
+        "No map imagery problems, retries or recoveries recorded this session. Successful loads are not listed.",
+      ),
     ).toBeInTheDocument();
   });
 

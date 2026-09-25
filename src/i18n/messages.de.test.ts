@@ -200,7 +200,7 @@ describe("the German catalogue renders", () => {
         params[name] = `«${name}»`;
       }
       // One deliberately loose handle for this sweep only: the typed
-      // signatures are derived per key, and this loop visits all 739 at
+      // signatures are derived per key, and this loop visits every key at
       // once. Every other call in this file goes through the real types.
       const loose = german as unknown as {
         t: (key: string, params?: Record<string, string>) => string;

@@ -7,11 +7,9 @@ import type { Catalogue } from "./translate.ts";
  * the English object, so a missing key, an extra key or a wrongly-shaped
  * entry is a `tsc -b` failure rather than something a rider discovers.
  *
- * **Authored, not yet enabled.** `SUPPORTED_LANGUAGES` in `language.ts`
- * still contains only `"en"`, so neither a German device nor a stored
- * `"de"` preference can resolve to this file. Enabling German is stage
- * 6b's single-constant change, and happens only after human linguistic
- * review of this catalogue.
+ * Reviewed by a human at stage 6a and enabled at stage 6b (`0.4.41`), when
+ * `SUPPORTED_LANGUAGES` in `language.ts` gained `"de"`. Revised after the
+ * first installed-iPhone German pass on 25 September 2026.
  *
  * Conventions, all of them deliberate:
  *
@@ -76,7 +74,7 @@ export const de: Catalogue = {
   // --- Settings: OpenRouteService -----------------------------------
   "settings.ors.heading": "OpenRouteService",
   "settings.ors.intro": {
-    rich: "Für die Routenplanung brauchst du einen eigenen kostenlosen Schlüssel von {link}. Du erhältst ihn im HeiGIT-Konto-Dashboard und fügst ihn unten ein.",
+    rich: "Für die Routenplanung brauchst du einen eigenen kostenlosen Schlüssel von {link}. Kopiere ihn anschließend aus deinem HeiGIT-Konto-Dashboard und füge ihn unten ein.",
   },
   "settings.ors.signUpLink":
     "HeiGIT — Registriere dich für einen OpenRouteService-Schlüssel",
@@ -400,7 +398,7 @@ export const de: Catalogue = {
     "Bevorzugt Straßen, die für ein Rennrad geeignet sind.",
   "routingProfile.cyclingRegular.label": "Fahrrad",
   "routingProfile.cyclingRegular.description":
-    "Nutzt möglicherweise häufiger Radwege und Wirtschaftswege. Die Route kann aber auch Abschnitte mit verdichtetem, geschottertem, unbefestigtem oder anderem Belag enthalten, die für ein Rennrad ungeeignet sein können.",
+    "Kann häufiger Radwege und Wirtschaftswege nutzen, aber auch über verdichteten, geschotterten, unbefestigten oder anderen Untergrund führen, der für ein Rennrad ungeeignet sein kann.",
 
   // --- Route summary -------------------------------------------------
   "routeSummary.landmarkLabel": "Routenübersicht",
@@ -615,7 +613,7 @@ export const de: Catalogue = {
     "Freies Fahren konnte auf diesem Gerät nicht pausiert werden. Versuche es erneut.",
   "freeRoam.endConfirmTitle": "Diese Fahrt beenden?",
   "freeRoam.endConfirmMessage":
-    "Deine gespeicherte Position und Kartenansicht für „Freies Fahren“ werden verworfen.",
+    "Die letzte Position und Kartenansicht dieser Fahrt werden verworfen.",
   "freeRoam.trackingLost": "Standort — Signal verloren",
   "freeRoam.tracking": "Standort",
 
@@ -688,7 +686,7 @@ export const de: Catalogue = {
     "Freies Fahren konnte auf diesem Gerät nicht beendet werden. Versuche es erneut.",
   "launcher.discardTitle": "Nicht beendete Fahrt verwerfen?",
   "launcher.discardMessage":
-    "Es wird nur der gespeicherte Fortschritt dieser noch nicht beendeten Fahrt verworfen  —  gespeicherte Routen bleiben unverändert.",
+    "Es wird nur der gespeicherte Fortschritt dieser noch nicht beendeten Fahrt verworfen — gespeicherte Routen bleiben unverändert.",
   "launcher.discardConfirm": "Unbeendete Fahrt verwerfen",
   "launcher.discarding": "Wird verworfen…",
   "launcher.discardFailed":
@@ -1009,7 +1007,7 @@ export const de: Catalogue = {
   "status.storage.tebibytes": "{value}\u00a0TiB",
   "status.storage.lessThanOnePercent": "<1%",
   "status.storage.percentage": "{percentage}%",
-  "status.mapRendering": "Unterstützung für die Kartendarstellung",
+  "status.mapRendering": "Kartendarstellung",
   "status.mapRendering.supported": "Unterstützt",
   "status.mapRendering.unsupported": "Von diesem Browser nicht unterstützt",
   "status.geolocationPermission": "Standortberechtigung",
@@ -1119,9 +1117,9 @@ export const de: Catalogue = {
     "Automatisches Kopieren nicht möglich — markiere und kopiere den Berichtstext stattdessen manuell:",
 
   // --- Status: map imagery -----------------------------------------------
-  "status.recentMapAttempts": "Letzte Versuche, Kartenmaterial zu laden",
+  "status.recentMapAttempts": "Probleme und Wiederherstellung beim Kartenmaterial",
   "status.noMapAttempts":
-    "In der aktuellen Sitzung wurden keine Versuche zum Laden des Kartenmaterials erfasst.",
+    "In dieser Sitzung wurden keine Probleme, Wiederholungsversuche oder Wiederherstellungen beim Kartenmaterial erfasst. Erfolgreiche Ladevorgänge werden nicht aufgeführt.",
 
   // --- Application shell: the ride-switch prompt -------------------------
   // translator: `target` names a session and may be the rider's own route

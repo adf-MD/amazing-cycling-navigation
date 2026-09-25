@@ -1240,8 +1240,13 @@ export const en = {
     "Could not copy automatically — select and copy the report text manually:",
 
   // --- Status: map imagery -----------------------------------------------
-  "status.recentMapAttempts": "Recent map imagery attempts",
-  "status.noMapAttempts": "No map imagery attempts recorded this session.",
+  // translator: this list records only map-imagery failures, retries,
+  // fallback and recovery (see src/map/mapDiagnostics.ts), never every
+  // successful load — the heading and the empty state must not suggest
+  // otherwise (item 113's 25 September 2026 follow-up).
+  "status.recentMapAttempts": "Map imagery problems and recovery",
+  "status.noMapAttempts":
+    "No map imagery problems, retries or recoveries recorded this session. Successful loads are not listed.",
 
   // --- Application shell: the ride-switch prompt -------------------------
   // translator: `target` and `existing` below name a session, and `target`

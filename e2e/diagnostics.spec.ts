@@ -136,7 +136,7 @@ test("Status renders its four sections without horizontal scrolling, with the fe
     "System status",
     "Recent errors",
     "Routing diagnostics",
-    "Recent map imagery attempts",
+    "Map imagery problems and recovery",
   ]);
 
   const routingRegion = page.getByRole("region", { name: "Routing diagnostics" });
