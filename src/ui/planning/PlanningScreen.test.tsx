@@ -3184,7 +3184,7 @@ describe("PlanningScreen", () => {
 
       expect(warningButton).toHaveAttribute("aria-pressed", "true");
       expect(warningButton).toHaveClass("is-selected");
-      expect(warningButton).toHaveTextContent("✓");
+      expect(warningButton).not.toHaveTextContent("✓");
       expect(map.fitBoundsSpy.mock.calls.length).toBeGreaterThan(
         fitBoundsCallsBeforeSelect,
       );

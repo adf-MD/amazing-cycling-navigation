@@ -660,16 +660,23 @@ button:focus-visible {
   box-shadow: 0 0 0 2px var(--colour-border);
 }
 
-/* Reserves its own width regardless of content so the checkmark
- * appearing/disappearing on selection never reflows the warning text
- * or shifts neighbouring list entries. Always aria-hidden: aria-pressed
- * on the button already tells assistive technology the selection
- * state, so this glyph is a redundant, sighted-only cue. */
-.route-warning-selected-indicator {
-  display: inline-block;
-  width: 1.2em;
-  text-align: center;
-  font-weight: 700;
+/* Item 113's 25 September 2026 follow-up. On the installed iPhone the
+ * rows had the browser's full 40px list indent, content-width buttons of
+ * uneven widths with centred text, and a reserved slot whose ✓ on
+ * selection read as "approved" or "resolved" — misleading for a warning.
+ * The ✓ and its slot are gone: the selected row keeps its ring, fill,
+ * aria-pressed and (for a surface warning) its expanded details, none of
+ * them colour alone. The bullets and native list semantics stay; the
+ * indent becomes a compact gutter, and every button fills the width left
+ * beside it, start-aligned. */
+.route-warning-list {
+  margin: 0;
+  padding-inline-start: 1.25em;
+}
+
+.route-warning-button {
+  width: 100%;
+  text-align: start;
 }
 
 /* The expanded surface detail shown beneath a selected surface warning's

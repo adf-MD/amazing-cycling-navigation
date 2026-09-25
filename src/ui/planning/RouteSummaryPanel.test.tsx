@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouteSummaryPanel } from "./RouteSummaryPanel.tsx";
 import type { PlannedRoute, RouteWarning } from "../../domain/types.ts";
@@ -150,6 +150,30 @@ describe("RouteSummaryPanel", () => {
     expect(buttons[0]).not.toHaveTextContent("✓");
   });
 
+  it("keeps list semantics and no reserved check slot", () => {
+    // Item 113's 25 September 2026 follow-up: the ✓ implied approval, and
+    // its reserved slot narrowed every row. Selection is carried by
+    // aria-pressed, the class's ring and fill, and the expanded details.
+    const { container } = render(
+      <RouteSummaryPanel
+        route={buildRoute()}
+        waypointCount={2}
+        warnings={WARNINGS}
+        selectedWarningIndex={1}
+        onSelectWarning={vi.fn()}
+        onClearWarningSelection={vi.fn()}
+        revealToken={0}
+        gradientSegments={[]}
+      />,
+    );
+
+    const list = screen.getByRole("list", { name: "Route warnings" });
+    expect(list).toHaveClass("route-warning-list");
+    expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+    expect(container.querySelector(".route-warning-selected-indicator")).toBeNull();
+    expect(list).not.toHaveTextContent("✓");
+  });
+
   it("marks the selected warning's button as pressed", () => {
     render(
       <RouteSummaryPanel
@@ -168,7 +192,7 @@ describe("RouteSummaryPanel", () => {
     expect(buttons[0]).toHaveAttribute("aria-pressed", "false");
     expect(buttons[1]).toHaveAttribute("aria-pressed", "true");
     expect(buttons[1]).toHaveClass("route-warning-button", "is-selected");
-    expect(buttons[1]).toHaveTextContent("✓");
+    expect(buttons[1]).not.toHaveTextContent("✓");
     expect(buttons[0]).not.toHaveClass("is-selected");
   });
 
@@ -188,7 +212,7 @@ describe("RouteSummaryPanel", () => {
 
     let buttons = screen.getAllByRole("button", { name: /surface for a road bike/i });
     expect(buttons[0]).toHaveClass("is-selected");
-    expect(buttons[0]).toHaveTextContent("✓");
+    expect(buttons[0]).not.toHaveTextContent("✓");
     expect(buttons[1]).not.toHaveClass("is-selected");
     expect(buttons[1]).not.toHaveTextContent("✓");
 
@@ -209,7 +233,7 @@ describe("RouteSummaryPanel", () => {
     expect(buttons[0]).not.toHaveClass("is-selected");
     expect(buttons[0]).not.toHaveTextContent("✓");
     expect(buttons[1]).toHaveClass("is-selected");
-    expect(buttons[1]).toHaveTextContent("✓");
+    expect(buttons[1]).not.toHaveTextContent("✓");
 
     rerender(
       <RouteSummaryPanel

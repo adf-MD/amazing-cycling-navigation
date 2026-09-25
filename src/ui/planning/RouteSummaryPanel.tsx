@@ -253,7 +253,13 @@ export function RouteSummaryPanel({
       {warnings.length > 0 ? (
         <div className="stack">
           <h3>{t("routeSummary.warningsHeading")}</h3>
-          <ul aria-label={t("routeSummary.warningsHeading")}>
+          {/* Visible bullets and ordinary list semantics are kept; the
+              class only narrows the default indent to a compact gutter so
+              each row's button can fill the remaining width. */}
+          <ul
+            className="route-warning-list"
+            aria-label={t("routeSummary.warningsHeading")}
+          >
             {warnings.map((warning, index) => {
               const isSelected = index === selectedWarningIndex;
               const hasSurfaceDetail = warning.surface !== undefined;
@@ -283,9 +289,6 @@ export function RouteSummaryPanel({
                       }
                     }}
                   >
-                    <span className="route-warning-selected-indicator" aria-hidden="true">
-                      {isSelected ? "✓" : null}
-                    </span>
                     {hasSurfaceDetail ? (
                       <>
                         {t("routeSummary.warningRowSurface", {
