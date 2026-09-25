@@ -339,8 +339,8 @@ describe("RidingScreen — fixed Map/Profile shell (backlog item 56)", () => {
         fake.watches[0]?.emitFix(fixAt(pointAt(0), 1000));
       });
       await switchToProfile(user);
-      await user.click(await screen.findByRole("button", { name: "10 km" }));
-      expect(screen.getByRole("button", { name: "10 km" })).toHaveAttribute(
+      await user.click(await screen.findByRole("button", { name: "10\u00a0km" }));
+      expect(screen.getByRole("button", { name: "10\u00a0km" })).toHaveAttribute(
         "aria-pressed",
         "true",
       );
@@ -348,7 +348,7 @@ describe("RidingScreen — fixed Map/Profile shell (backlog item 56)", () => {
       await switchToMap(user);
       await switchToProfile(user);
 
-      expect(screen.getByRole("button", { name: "10 km" })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: "10\u00a0km" })).toHaveAttribute(
         "aria-pressed",
         "true",
       );

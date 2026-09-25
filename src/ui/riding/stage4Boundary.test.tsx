@@ -81,27 +81,27 @@ describe("GPS status copy", () => {
   it("renders accuracy and freshness unchanged", () => {
     expect(
       formatGpsStatusLine(t, { accuracyMetres: 12, isStale: false, fixAgeMs: null }),
-    ).toBe("GPS ±12 m · Live");
+    ).toBe("GPS ±12\u00a0m · Live");
     expect(
       formatGpsStatusLine(t, { accuracyMetres: 12, isStale: true, fixAgeMs: null }),
-    ).toBe("GPS ±12 m · Stale");
+    ).toBe("GPS ±12\u00a0m · Stale");
     expect(
       formatGpsStatusLine(t, { accuracyMetres: 12, isStale: true, fixAgeMs: 30_000 }),
-    ).toBe("GPS ±12 m · Stale (30s ago)");
+    ).toBe("GPS ±12\u00a0m · Stale (30s ago)");
     expect(
       formatGpsStatusLine(t, { accuracyMetres: 12, isStale: true, fixAgeMs: 120_000 }),
-    ).toBe("GPS ±12 m · Stale (2 min ago)");
+    ).toBe("GPS ±12\u00a0m · Stale (2\u00a0min ago)");
   });
 
   it("never shows an age for a fresh fix, even when one is known", () => {
     expect(
       formatGpsStatusLine(t, { accuracyMetres: 9, isStale: false, fixAgeMs: 45_000 }),
-    ).toBe("GPS ±9 m · Live");
+    ).toBe("GPS ±9\u00a0m · Live");
   });
 
   it("keeps the two fix-age forms distinct", () => {
     expect(formatFixAge(t, 5_000)).toBe("5s ago");
-    expect(formatFixAge(t, 180_000)).toBe("3 min ago");
+    expect(formatFixAge(t, 180_000)).toBe("3\u00a0min ago");
   });
 });
 

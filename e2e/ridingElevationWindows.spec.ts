@@ -125,7 +125,7 @@ test("offers the reduced Full/2 km/10 km button set, with 2 km selected on a fre
   // No recognised climb exists on this flat fixture, so no conditional
   // Climb button is ever appended — exactly the three standard buttons.
   const labels = await group.getByRole("button").allTextContents();
-  expect(labels).toEqual(["Full", "2 km", "10 km"]);
+  expect(labels).toEqual(["Full", "2\u00a0km", "10\u00a0km"]);
 
   await expect(page.getByRole("button", { name: "2 km" })).toHaveAttribute(
     "aria-pressed",
@@ -133,7 +133,7 @@ test("offers the reduced Full/2 km/10 km button set, with 2 km selected on a fre
   );
   await expect
     .poll(async () => guideLabelLocator(page).allTextContents(), { timeout: 15_000 })
-    .toEqual(["1 km"]);
+    .toEqual(["1\u00a0km"]);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
@@ -175,13 +175,13 @@ test("the 10 km view shows all four 2/4/6/8 km guides at a mid-route position", 
   });
   await expect
     .poll(async () => guideLabelLocator(page).allTextContents(), { timeout: 15_000 })
-    .toEqual(["1 km"]);
+    .toEqual(["1\u00a0km"]);
 
   await page.getByRole("button", { name: "10 km" }).click();
 
   await expect
     .poll(async () => guideLabelLocator(page).allTextContents(), { timeout: 15_000 })
-    .toEqual(["2 km", "4 km", "6 km", "8 km"]);
+    .toEqual(["2\u00a0km", "4\u00a0km", "6\u00a0km", "8\u00a0km"]);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
@@ -224,7 +224,7 @@ test("guides are progressively omitted as the rider approaches the route finish 
   await page.getByRole("button", { name: "10 km" }).click();
   await expect
     .poll(async () => guideLabelLocator(page).allTextContents(), { timeout: 15_000 })
-    .toEqual(["2 km", "4 km", "6 km", "8 km"]);
+    .toEqual(["2\u00a0km", "4\u00a0km", "6\u00a0km", "8\u00a0km"]);
 
   // 22,500 m leaves only 2,500 m of route — the window truncates to
   // [22500, 25000], so only the 2 km guide (at 24,500) still lands
@@ -237,7 +237,7 @@ test("guides are progressively omitted as the rider approaches the route finish 
   });
   await expect
     .poll(async () => guideLabelLocator(page).allTextContents(), { timeout: 15_000 })
-    .toEqual(["2 km"]);
+    .toEqual(["2\u00a0km"]);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
@@ -305,7 +305,7 @@ test.describe("phone viewport", () => {
     await page.getByRole("button", { name: "10 km" }).click();
     await expect
       .poll(async () => guideLabelLocator(page).allTextContents(), { timeout: 15_000 })
-      .toEqual(["2 km", "4 km", "6 km", "8 km"]);
+      .toEqual(["2\u00a0km", "4\u00a0km", "6\u00a0km", "8\u00a0km"]);
 
     // backlog item 80: with no recognised climb on this flat fixture, the
     // fourth grid track stays reserved and empty rather than letting the

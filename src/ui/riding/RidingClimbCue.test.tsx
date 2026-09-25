@@ -117,6 +117,6 @@ describe("RidingClimbCue", () => {
     expect(cue?.parentElement).toBe(slot);
     expect(slot?.children).toHaveLength(1);
     // Exactly the same visible text as before the wrapper existed.
-    expect(slot?.textContent).toBe("Climb active1.8 km remainingView climb");
+    expect(slot?.textContent).toBe("Climb active1.8\u00a0km remainingView climb");
   });
 });

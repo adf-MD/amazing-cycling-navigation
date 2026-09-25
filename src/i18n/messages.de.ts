@@ -110,15 +110,15 @@ export const de: Catalogue = {
   "settings.elevation.climbScore":
     "Die Anstiegswertung ist die Länge des Anstiegs in Metern multipliziert mit der durchschnittlichen Steigung in Prozent.",
   "settings.elevation.recognitionThresholds":
-    "Ein Anstieg wird als solcher erkannt, sobald er mindestens {length} lang ist, im Mittel eine Steigung von mindestens {gradient} % erreicht und eine Wertung von mindestens {score} hat.",
+    "Ein Anstieg wird als solcher erkannt, sobald er mindestens {length} lang ist, im Mittel eine Steigung von mindestens {gradient}\u00a0% erreicht und eine Wertung von mindestens {score} hat.",
   "settings.elevation.uncategorised": "Nicht kategorisiert: unter {score}",
   "settings.elevation.categoryRange": "{name}: {from} bis {to}",
   "settings.elevation.categoryOrMore": "{name}: {score} oder mehr",
   "settings.elevation.localColoursSummary": "Farbskala für lokale Steigungen",
   "settings.elevation.localColoursBody":
-    "Die detaillierten Farben entlang einer Route zeigen die lokale Steigung, geglättet über etwa 100 m — nicht die Gesamtkategorie eines Anstiegs und nicht die exakte Steigung an einem einzelnen Punkt.",
+    "Die detaillierten Farben entlang einer Route zeigen die lokale Steigung, geglättet über etwa 100\u00a0m — nicht die Gesamtkategorie eines Anstiegs und nicht die exakte Steigung an einem einzelnen Punkt.",
   "settings.elevation.localColoursFlat":
-    "Ein kurzes flaches oder abfallendes Stück innerhalb eines erkannten Anstiegs nutzt das grüne Band unter 3 %.",
+    "Ein kurzes flaches oder abfallendes Stück innerhalb eines erkannten Anstiegs nutzt das grüne Band unter 3\u00a0%.",
   "settings.elevation.localColoursDescent":
     "Eine erkannte Abfahrt nutzt lokal dieselben drei Blautöne; ein örtlich flaches Stück zeigt stattdessen die normale Routenfarbe.",
   "settings.elevation.localColoursCaveat":
@@ -402,7 +402,7 @@ export const de: Catalogue = {
   // --- Route summary -------------------------------------------------
   "routeSummary.landmarkLabel": "Routenübersicht",
   "routeSummary.heading": "Routenübersicht",
-  "routeSummary.descent": "{descent} m Abstieg",
+  "routeSummary.descent": "{descent}\u00a0m Abstieg",
   "routeSummary.waypointCount": { one: "1 Wegpunkt", other: "{count} Wegpunkte" },
   "routeSummary.routedVia": "Berechnet mit {provider}",
   "routeSummary.routedViaProfile": "Berechnet mit {provider} · {profile} ({profileId})",
@@ -417,7 +417,7 @@ export const de: Catalogue = {
   "routeSummary.warningsHeading": "Warnungen",
   "routeSummary.clearWarningSelection": "Auswahl der Warnung aufheben",
   "routeSummary.warningSurfaceDetail": "Belag: {surface}",
-  "routeSummary.warningPosition": "Position auf der Route: {start}–{end} km",
+  "routeSummary.warningPosition": "Position auf der Route: {start}–{end}\u00a0km",
   "routeSummary.warningRowSurface": "{warning} · {length}",
   "routeSummary.warningRow": "{warning} — {length} ({start}–{end})",
   "routeSummary.warningSelected": "Ausgewählte Warnung: {warning} ({start}–{end}).",
@@ -493,7 +493,8 @@ export const de: Catalogue = {
 
   // --- GPX import and export failures ---------------------------------
   "gpx.error.emptyFile": "Die gewählte Datei ist leer.",
-  "gpx.error.tooLarge": "Die gewählte Datei ist größer als das Limit von {limitMb} MB.",
+  "gpx.error.tooLarge":
+    "Die gewählte Datei ist größer als das Limit von {limitMb}\u00a0MB.",
   "gpx.error.unsupportedType": "Es werden nur .gpx-Dateien unterstützt.",
   "gpx.error.malformedXml":
     "Die Datei enthält fehlerhaftes XML und kann nicht als GPX gelesen werden.",
@@ -577,8 +578,8 @@ export const de: Catalogue = {
   // translator: space-constrained — this sits on one status line beside
   // the accuracy figure.
   "ride.fixAge.seconds": "vor {seconds}s",
-  "ride.fixAge.minutes": "vor {minutes} min",
-  "ride.gpsStatus": "GPS ±{accuracy} m · {freshness}",
+  "ride.fixAge.minutes": "vor {minutes}\u00a0min",
+  "ride.gpsStatus": "GPS ±{accuracy}\u00a0m · {freshness}",
   "ride.gpsFresh": "Live",
   "ride.gpsStale": "Veraltet",
   "ride.gpsStaleWithAge": "Veraltet ({age})",
@@ -598,10 +599,10 @@ export const de: Catalogue = {
   "ride.status.possiblyOffRoute": "Mögliche Kursabweichung",
   "ride.status.offRoute": "Vom Kurs ab",
   "ride.status.ascentUnavailable": "Höhenmeter nicht verfügbar",
-  "ride.status.ascent": "{ascent} Hm",
+  "ride.status.ascent": "{ascent}\u00a0Hm",
   "ride.status.remainingAnnouncement": "Noch {distance} Kilometer, {ascent}",
   "ride.status.ascentRemainingUnavailable": "verbleibende Höhenmeter nicht verfügbar",
-  "ride.status.ascentRemaining": "noch {ascent} Höhenmeter",
+  "ride.status.ascentRemaining": "noch {ascent}\u00a0Höhenmeter",
 
   // --- Free roam ---------------------------------------------------------
   "freeRoam.title": "Freies Fahren",
@@ -653,7 +654,7 @@ export const de: Catalogue = {
   "riding.editCopyConfirmLabel": "Ersetzen und bearbeiten",
   "riding.elevationViewLabel": "Ansicht des Höhenprofils",
   "riding.elevationFull": "Gesamt",
-  "riding.elevationWindow": "{km} km",
+  "riding.elevationWindow": "{km}\u00a0km",
   "riding.climb": "Anstieg",
   "riding.routeProfile": "Höhenprofil",
   "riding.viewLabel": "Ansicht während der Fahrt",
@@ -697,9 +698,9 @@ export const de: Catalogue = {
   // --- Climbs -------------------------------------------------------------
   "climb.selectorLabel": "Erkannte Anstiege",
   "climb.empty":
-    "Keine erkannten Anstiege. Ein Anstieg wird erkannt, wenn er mindestens 500 m lang ist und eine durchschnittliche Steigung von mindestens 3% aufweist.",
+    "Keine erkannten Anstiege. Ein Anstieg wird erkannt, wenn er mindestens 500\u00a0m lang ist und eine durchschnittliche Steigung von mindestens 3% aufweist.",
   "climb.allRoute": "Gesamte Route",
-  "climb.option": "Anstieg {number} · {category} · beginnt bei {start} km",
+  "climb.option": "Anstieg {number} · {category} · beginnt bei {start}\u00a0km",
   "climb.count": {
     one: "1 erkannter Anstieg auf dieser Route",
     other: "{count} erkannte Anstiege auf dieser Route",
@@ -722,7 +723,7 @@ export const de: Catalogue = {
   "climb.remaining": "noch {distance}",
   "climb.passedAgo": "vor {distance} passiert",
   "climb.average": "{gradient} im Mittel",
-  "climb.routePosition": "Position auf der Route: {start}–{end} km",
+  "climb.routePosition": "Position auf der Route: {start}–{end}\u00a0km",
 
   // --- Manoeuvres: locally authored fallbacks only ------------------------
   // translator: ACN's own generic labels, used only when the routing
@@ -766,12 +767,12 @@ export const de: Catalogue = {
   // --- Shared unit and figure formatters ---------------------------------
   // translator: the numeric value arrives already formatted with an
   // explicit locale, so these must not re-punctuate it.
-  "format.distanceKm": "{distance} km",
-  "format.metres": "{metres} m",
+  "format.distanceKm": "{distance}\u00a0km",
+  "format.metres": "{metres}\u00a0m",
   "format.gradientPercent": "{gradient}%",
-  "format.ascent": "{metres} Höhenmeter",
+  "format.ascent": "{metres}\u00a0Höhenmeter",
   "format.ascentUnavailable": "Höhenmeter nicht verfügbar",
-  "format.descentLoss": "{metres} m Höhenverlust",
+  "format.descentLoss": "{metres}\u00a0m Höhenverlust",
 
   // --- Recognised climbs and descents: presentation ----------------------
   "feature.colour.green": "grün",
@@ -852,12 +853,12 @@ export const de: Catalogue = {
   "legend.macroExplanation":
     "Die Farbe des gesamten Anstiegs richtet sich nach seiner Länge und seiner durchschnittlichen Steigung. Erkannte Abfahrten werden je nach durchschnittlichem Gefälle in einem von drei Blautönen dargestellt. Diese Farbzuordnung wurde eigens für diese App festgelegt.",
   "legend.localExplanation":
-    "Die Detailfarben zeigen die lokale Steigung in Abschnitten von jeweils etwa 100 m innerhalb des ausgewählten oder gerade aktiven Anstiegs. Kurze ebene oder abfallende Abschnitte innerhalb eines Anstiegs werden grün dargestellt. Bei einer ausgewählten oder gerade aktiven Abfahrt werden dieselben drei oben gezeigten Blautöne auf die einzelnen Abschnitte statt auf die gesamte Abfahrt angewendet. Abschnitte, deren Gefälle unterhalb der Schwelle liegt, erscheinen stattdessen in der normalen Routenfarbe.",
+    "Die Detailfarben zeigen die lokale Steigung in Abschnitten von jeweils etwa 100\u00a0m innerhalb des ausgewählten oder gerade aktiven Anstiegs. Kurze ebene oder abfallende Abschnitte innerhalb eines Anstiegs werden grün dargestellt. Bei einer ausgewählten oder gerade aktiven Abfahrt werden dieselben drei oben gezeigten Blautöne auf die einzelnen Abschnitte statt auf die gesamte Abfahrt angewendet. Abschnitte, deren Gefälle unterhalb der Schwelle liegt, erscheinen stattdessen in der normalen Routenfarbe.",
   "legend.clearSelection": "Auswahl aufheben",
 
   "featureDetails.landmarkLabel": "Details zum Routenabschnitt",
   "featureDetails.heading": "Anstieg {number} · {category}",
-  "featureDetails.routePosition": "Position auf der Route: {start}–{end} km",
+  "featureDetails.routePosition": "Position auf der Route: {start}–{end}\u00a0km",
   "featureDetails.length": "Länge: {distance}",
   "featureDetails.elevationGain": "Höhengewinn: {elevation}",
   "featureDetails.elevationLoss": "Höhenverlust: {elevation}",
@@ -868,15 +869,16 @@ export const de: Catalogue = {
 
   "segmentDetails.landmarkLabel": "Details zur Neigung des Streckenabschnitts",
   "segmentDetails.heading": "{band} · {gradient}",
-  "segmentDetails.elevation": "Höhe: {start} m bis {end} m",
+  "segmentDetails.elevation": "Höhe: {start}\u00a0m bis {end}\u00a0m",
 
   // --- Elevation chart ---------------------------------------------------
   "elevation.noRoute": "Keine Route geladen.",
   "elevation.noData": "Für diese Route sind keine Höhendaten verfügbar.",
   "elevation.landmarkLabel": "Höhenprofil",
   "elevation.chartLabel": "Höhenprofildiagramm",
-  "elevation.range": "{min}–{max} m",
-  "elevation.rangeWithGaps": "{min}–{max} m (für einige Abschnitte fehlen Höhendaten)",
+  "elevation.range": "{min}–{max}\u00a0m",
+  "elevation.rangeWithGaps":
+    "{min}–{max}\u00a0m (für einige Abschnitte fehlen Höhendaten)",
   "elevation.markerCurrent": "Aktuelle Position: {position} von {total}.",
   "elevation.markerStale": "Letzte bekannte Position: {position} von {total}.",
   "elevation.distanceGuides": {
@@ -992,11 +994,11 @@ export const de: Catalogue = {
     "Geschätzte App-Speichernutzung: {used} von {quota} belegt ({percentage})",
   "status.storage.pressure":
     "Speicherwarnung: Die geschätzte App-Speichernutzung ist hoch.",
-  "status.storage.bytes": "{value} B",
-  "status.storage.kibibytes": "{value} KiB",
-  "status.storage.mebibytes": "{value} MiB",
-  "status.storage.gibibytes": "{value} GiB",
-  "status.storage.tebibytes": "{value} TiB",
+  "status.storage.bytes": "{value}\u00a0B",
+  "status.storage.kibibytes": "{value}\u00a0KiB",
+  "status.storage.mebibytes": "{value}\u00a0MiB",
+  "status.storage.gibibytes": "{value}\u00a0GiB",
+  "status.storage.tebibytes": "{value}\u00a0TiB",
   "status.storage.lessThanOnePercent": "<1%",
   "status.storage.percentage": "{percentage}%",
   "status.mapRendering": "Unterstützung für die Kartendarstellung",
@@ -1008,11 +1010,11 @@ export const de: Catalogue = {
   "status.permission.prompt": "Noch nicht angefordert",
   "status.permission.unsupported": "Von diesem Browser nicht unterstützt",
   "status.fixAccuracy": "Genauigkeit der letzten Standortbestimmung",
-  "status.fixAccuracyValue": "±{accuracy} m",
+  "status.fixAccuracyValue": "±{accuracy}\u00a0m",
   "status.fixAge": "Zeit seit der letzten Standortbestimmung",
   "status.notApplicableYet": "Noch keine Standortbestimmung",
   "status.fixAge.seconds": "vor {seconds}s",
-  "status.fixAge.minutes": "vor {minutes} min",
+  "status.fixAge.minutes": "vor {minutes}\u00a0min",
 
   // --- Status: active session (backlog item 117) -------------------------
   // translator: each of these is a distinct, load-bearing state and none
@@ -1084,7 +1086,7 @@ export const de: Catalogue = {
   "status.testing": "Wird getestet…",
   "status.testSucceeded": "Erfolgreich",
   "status.testFailed": "Fehlgeschlagen",
-  "status.testResult": "{outcome} — {detail} ({elapsed} ms)",
+  "status.testResult": "{outcome} — {detail} ({elapsed}\u00a0ms)",
   "status.stage": "Phase",
   "status.stageValue": "{stage} — {description}",
   "status.error": "Fehler",

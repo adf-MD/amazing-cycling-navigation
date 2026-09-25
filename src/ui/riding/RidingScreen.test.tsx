@@ -478,7 +478,7 @@ describe("RidingScreen", () => {
       />,
     );
     const figcaption = container.querySelector("figcaption");
-    const match = /(\d+)–(\d+) m/.exec(figcaption?.textContent ?? "");
+    const match = /(\d+)–(\d+)\u00a0m/.exec(figcaption?.textContent ?? "");
     expect(match).not.toBeNull();
     const maxElevationShown = Number(match?.[2]);
     // Plotting route.points raw would show a max of exactly 50 (the spike
@@ -716,12 +716,12 @@ describe("RidingScreen", () => {
     });
     await switchToProfile(user);
 
-    const twoKmButton = await screen.findByRole("button", { name: "2 km" });
+    const twoKmButton = await screen.findByRole("button", { name: "2\u00a0km" });
     expect(twoKmButton).toHaveAttribute("aria-pressed", "true");
 
-    await user.click(screen.getByRole("button", { name: "10 km" }));
+    await user.click(screen.getByRole("button", { name: "10\u00a0km" }));
 
-    expect(screen.getByRole("button", { name: "10 km" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "10\u00a0km" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -1522,10 +1522,10 @@ describe("RidingScreen", () => {
       });
       await switchToProfile(user);
 
-      await user.click(await screen.findByRole("button", { name: "2 km" }));
+      await user.click(await screen.findByRole("button", { name: "2\u00a0km" }));
       expect(screen.queryByText("Gradient colours")).toBeNull();
 
-      await user.click(await screen.findByRole("button", { name: "10 km" }));
+      await user.click(await screen.findByRole("button", { name: "10\u00a0km" }));
       expect(screen.queryByText("Gradient colours")).toBeNull();
     });
 
@@ -3177,12 +3177,12 @@ describe("RidingScreen", () => {
       await switchToProfile(user);
       await screen.findByRole("button", { name: "Climb" });
 
-      await user.click(screen.getByRole("button", { name: "10 km" }));
+      await user.click(screen.getByRole("button", { name: "10\u00a0km" }));
       expect(screen.getByRole("button", { name: "Climb" })).toHaveAttribute(
         "aria-pressed",
         "false",
       );
-      expect(screen.getByRole("button", { name: "10 km" })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: "10\u00a0km" })).toHaveAttribute(
         "aria-pressed",
         "true",
       );
@@ -3228,7 +3228,7 @@ describe("RidingScreen", () => {
         );
       });
       // Falls back to the app's default 2 km view, never explicitly chosen.
-      expect(screen.getByRole("button", { name: "2 km" })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: "2\u00a0km" })).toHaveAttribute(
         "aria-pressed",
         "true",
       );
@@ -3491,7 +3491,7 @@ describe("RidingScreen", () => {
       const labels = within(group)
         .getAllByRole("button")
         .map((button) => button.textContent);
-      expect(labels).toEqual(["Full", "2 km", "10 km", "Climb"]);
+      expect(labels).toEqual(["Full", "2\u00a0km", "10\u00a0km", "Climb"]);
     });
 
     it("restores a climb-view dismissal for the current climb id across suspension/reload", async () => {
@@ -3523,7 +3523,7 @@ describe("RidingScreen", () => {
 
       const climbButton = await screen.findByRole("button", { name: "Climb" });
       expect(climbButton).toHaveAttribute("aria-pressed", "false");
-      expect(screen.getByRole("button", { name: "10 km" })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: "10\u00a0km" })).toHaveAttribute(
         "aria-pressed",
         "true",
       );
@@ -3714,7 +3714,7 @@ describe("RidingScreen", () => {
         await user.click(screen.getByRole("button", { name: "Start riding" }));
         emitFixAt(stub, CLIMB_1_MID_METRES, 1000);
         await switchToProfile(user);
-        await user.click(await screen.findByRole("button", { name: "10 km" }));
+        await user.click(await screen.findByRole("button", { name: "10\u00a0km" }));
         await switchToMap(user);
 
         expect(screen.queryByRole("button", { name: "View climb" })).toBeNull();
@@ -3797,7 +3797,7 @@ describe("RidingScreen", () => {
         await switchToMap(user);
         await user.click(await screen.findByRole("button", { name: "View climb" }));
         await switchToProfile(user);
-        await user.click(await screen.findByRole("button", { name: "10 km" }));
+        await user.click(await screen.findByRole("button", { name: "10\u00a0km" }));
 
         expect(stub.watchPositionSpy).toHaveBeenCalledOnce();
         expect(mapStub.setCameraSpy.mock.calls.length).toBe(setCameraCallsBefore);
@@ -3938,7 +3938,7 @@ describe("RidingScreen", () => {
         await user.click(climbButton);
         expect(climbButton).toHaveAttribute("aria-pressed", "true");
 
-        await user.click(screen.getByRole("button", { name: "10 km" }));
+        await user.click(screen.getByRole("button", { name: "10\u00a0km" }));
         expect(climbButton).toHaveAttribute("aria-pressed", "false");
         expect(screen.queryByRole("region", { name: "Climb preview" })).toBeNull();
 
@@ -4069,7 +4069,7 @@ describe("RidingScreen", () => {
         const changeZoomCallsBefore = mapStub.changeZoomBySpy.mock.calls.length;
 
         await user.click(climbButton);
-        await user.click(screen.getByRole("button", { name: "2 km" }));
+        await user.click(screen.getByRole("button", { name: "2\u00a0km" }));
         await user.click(climbButton);
 
         expect(stub.watchPositionSpy).toHaveBeenCalledOnce();
@@ -4599,7 +4599,7 @@ describe("RidingScreen", () => {
         expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
       });
       await switchToProfile(userEvent.setup());
-      expect(screen.getByRole("button", { name: "10 km" })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: "10\u00a0km" })).toHaveAttribute(
         "aria-pressed",
         "true",
       );
@@ -7264,7 +7264,7 @@ describe("RidingScreen", () => {
       });
       await screen.findByText("On route");
       await switchToProfile(user);
-      await user.click(screen.getByRole("button", { name: "2 km" }));
+      await user.click(screen.getByRole("button", { name: "2\u00a0km" }));
       const remainingBefore = screen.getByText(/km ·/).textContent;
 
       fake.watches[0]?.emitError({ reason: "timeout", message: "timed out" });
@@ -7286,7 +7286,7 @@ describe("RidingScreen", () => {
       // Reachable via a plain getByRole with no further switchToProfile
       // call — proves Try again also preserved activeView === "profile"
       // (backlog item 56), not just the elevation-view selection itself.
-      expect(screen.getByRole("button", { name: "2 km" })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: "2\u00a0km" })).toHaveAttribute(
         "aria-pressed",
         "true",
       );
@@ -8105,7 +8105,7 @@ describe("RidingScreen", () => {
 
       await screen.findByRole("group", { name: "Elevation profile view" });
       await waitFor(() => {
-        expect(guideLabels()).toEqual(["1 km"]);
+        expect(guideLabels()).toEqual(["1\u00a0km"]);
       });
     });
 
@@ -8124,10 +8124,15 @@ describe("RidingScreen", () => {
       await switchToProfile(user);
       await screen.findByRole("group", { name: "Elevation profile view" });
 
-      await user.click(screen.getByRole("button", { name: "10 km" }));
+      await user.click(screen.getByRole("button", { name: "10\u00a0km" }));
 
       await waitFor(() => {
-        expect(guideLabels()).toEqual(["2 km", "4 km", "6 km", "8 km"]);
+        expect(guideLabels()).toEqual([
+          "2\u00a0km",
+          "4\u00a0km",
+          "6\u00a0km",
+          "8\u00a0km",
+        ]);
       });
     });
 
@@ -8144,7 +8149,7 @@ describe("RidingScreen", () => {
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAtDistance(stub, 2000, 1000);
       await waitFor(() => {
-        expect(guideLabels()).toEqual(["1 km"]);
+        expect(guideLabels()).toEqual(["1\u00a0km"]);
       });
       const firstX = document
         .querySelector("line.elevation-chart-distance-guide")
@@ -8200,7 +8205,7 @@ describe("RidingScreen", () => {
       emitFixAtDistance(stub, 2000);
       await switchToProfile(user);
       await waitFor(() => {
-        expect(guideLabels()).toEqual(["1 km"]);
+        expect(guideLabels()).toEqual(["1\u00a0km"]);
       });
 
       await user.click(await screen.findByRole("button", { name: "Full" }));
@@ -8238,7 +8243,7 @@ describe("RidingScreen", () => {
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAtDistance(stub, 2000);
       await waitFor(() => {
-        expect(guideLabels()).toEqual(["1 km"]);
+        expect(guideLabels()).toEqual(["1\u00a0km"]);
       });
 
       expect(
@@ -8279,7 +8284,7 @@ describe("RidingScreen", () => {
       await user.click(screen.getByRole("button", { name: "Start riding" }));
       emitFixAtDistance(stub, 2000);
       await waitFor(() => {
-        expect(guideLabels()).toEqual(["1 km"]);
+        expect(guideLabels()).toEqual(["1\u00a0km"]);
       });
 
       const hitTarget = document.querySelector("rect.elevation-chart-tap-target");

@@ -83,8 +83,8 @@ describe("RidingClimbSelector", () => {
     const options = select.querySelectorAll("option");
     expect(options).toHaveLength(3);
     expect(options[0]?.textContent).toBe("All route");
-    expect(options[1]?.textContent).toBe("Climb 1 · Category 3 · starts at 2.0 km");
-    expect(options[2]?.textContent).toBe("Climb 2 · Category 2 · starts at 18.4 km");
+    expect(options[1]?.textContent).toBe("Climb 1 · Category 3 · starts at 2.0\u00a0km");
+    expect(options[2]?.textContent).toBe("Climb 2 · Category 2 · starts at 18.4\u00a0km");
   });
 
   it("shows the route-level climb count when All route is selected", () => {
@@ -131,7 +131,9 @@ describe("RidingClimbSelector", () => {
       />,
     );
     const select = screen.getByRole("combobox", { name: "Recognised climbs" });
-    await user.selectOptions(select, "Climb 2 · Category 2 · starts at 18.4 km");
+    // By value: user-event matches an option by its innerHTML, which
+    // serialises the label's non-breaking space as `&nbsp;`.
+    await user.selectOptions(select, "climb-2");
     expect(onSelectClimb).toHaveBeenCalledWith("climb-2");
 
     await user.selectOptions(select, "All route");

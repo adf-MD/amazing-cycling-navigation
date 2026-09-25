@@ -176,7 +176,9 @@ test.describe("Planning", () => {
     // smoothing-driven edge rounding right at the flat/climb transition
     // this fixture exercises; here it's enough to confirm the wiring
     // (real, plausible route-position/gradient figures reach the panel).
-    await expect(detailsPanel.getByText(/Route position: 0\.\d–1\.5 km/)).toBeVisible();
+    await expect(
+      detailsPanel.getByText(/Route position: 0\.\d–1\.5\u00a0km/),
+    ).toBeVisible();
     await expect(
       detailsPanel.getByText(/Average gradient: \+(1[5-9]\.\d|20\.0)%/),
     ).toBeVisible();

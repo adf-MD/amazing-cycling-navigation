@@ -947,8 +947,8 @@ describe("RouteSummaryPanel", () => {
       );
 
       const figcaption = container.querySelector("figcaption");
-      expect(figcaption?.textContent).toMatch(/5–45 m/);
-      expect(figcaption?.textContent).not.toMatch(/10–20 m/);
+      expect(figcaption?.textContent).toMatch(/5–45\u00a0m/);
+      expect(figcaption?.textContent).not.toMatch(/10–20\u00a0m/);
     });
   });
 

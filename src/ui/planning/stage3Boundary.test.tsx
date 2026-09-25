@@ -23,10 +23,10 @@ const t = englishTranslator;
 describe("typed GPX errors keep every parameter and distinction", () => {
   it("renders the size limit from the typed detail, not from prose", () => {
     expect(describeGpxErrorDetail(t, { kind: "too-large", limitMb: 20 })).toBe(
-      "The selected file is larger than the 20 MB limit.",
+      "The selected file is larger than the 20\u00a0MB limit.",
     );
     expect(describeGpxErrorDetail(t, { kind: "too-large", limitMb: 5 })).toContain(
-      "5 MB",
+      "5\u00a0MB",
     );
   });
 

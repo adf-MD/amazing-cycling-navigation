@@ -19,7 +19,11 @@
  * **Every string here is byte-identical to the literal it replaced.** That
  * is what makes the existing body of Vitest and Playwright assertions the
  * regression proof for this migration rather than 6000 edits: if a word
- * moved, they fail.
+ * moved, they fail. One deliberate exception followed: every number–unit
+ * pair (`{metres}\u00a0m`, `{distance}\u00a0km`, `100\u00a0m`, …) joins
+ * with U+00A0, written as an escape, so a pair never breaks across two
+ * lines — see unitSpacing.test.ts (item 113's 25 September 2026
+ * follow-up).
  *
  * `as const` is load-bearing — it preserves the literal types that
  * catalogue.ts's placeholder and shape machinery reads.
@@ -128,7 +132,7 @@ export const en = {
   "settings.elevation.categoryOrMore": "{name}: {score} or more",
   "settings.elevation.localColoursSummary": "Local gradient colours",
   "settings.elevation.localColoursBody":
-    "Detailed colours along a route show local gradient, smoothed over approximately 100 m — not a climb's overall category or a single point's exact grade.",
+    "Detailed colours along a route show local gradient, smoothed over approximately 100\u00a0m — not a climb's overall category or a single point's exact grade.",
   "settings.elevation.localColoursFlat":
     "A brief flat or descending section within a recognised climb uses the green, below-3% band.",
   "settings.elevation.localColoursDescent":
@@ -423,7 +427,7 @@ export const en = {
   "routeSummary.landmarkLabel": "Route summary",
   "routeSummary.heading": "Route overview",
   // translator: {distance} and {ascent} already carry their own units.
-  "routeSummary.descent": "{descent} m descent",
+  "routeSummary.descent": "{descent}\u00a0m descent",
   "routeSummary.waypointCount": { one: "1 waypoint", other: "{count} waypoints" },
   // translator: {provider} is a machine-supplied provider name, {profile} a
   // cycling-profile label, {profileId} its machine identifier.
@@ -440,7 +444,7 @@ export const en = {
   "routeSummary.warningsHeading": "Route warnings",
   "routeSummary.clearWarningSelection": "Clear warning selection",
   "routeSummary.warningSurfaceDetail": "Surface: {surface}",
-  "routeSummary.warningPosition": "Route position: {start}–{end} km",
+  "routeSummary.warningPosition": "Route position: {start}–{end}\u00a0km",
   // translator: {warning} is a warning description, {length} a distance.
   "routeSummary.warningRowSurface": "{warning} · {length}",
   "routeSummary.warningRow": "{warning} — {length} ({start}–{end})",
@@ -522,7 +526,7 @@ export const en = {
   // --- GPX import and export failures ---------------------------------
   "gpx.error.emptyFile": "The selected file is empty.",
   // translator: {limitMb} is a whole number of megabytes.
-  "gpx.error.tooLarge": "The selected file is larger than the {limitMb} MB limit.",
+  "gpx.error.tooLarge": "The selected file is larger than the {limitMb}\u00a0MB limit.",
   "gpx.error.unsupportedType": "Only .gpx files are supported.",
   "gpx.error.malformedXml": "The file contains malformed XML and cannot be read as GPX.",
   // translator: {longitude} and {latitude} are the file's own raw attribute
@@ -620,10 +624,10 @@ export const en = {
   // translator: {seconds} and {minutes} are whole numbers. The short form
   // has no space before its unit; the minute form does.
   "ride.fixAge.seconds": "{seconds}s ago",
-  "ride.fixAge.minutes": "{minutes} min ago",
+  "ride.fixAge.minutes": "{minutes}\u00a0min ago",
   // translator: {accuracy} is a whole number of metres; {freshness} is one
   // of the two words below, optionally followed by a parenthesised age.
-  "ride.gpsStatus": "GPS ±{accuracy} m · {freshness}",
+  "ride.gpsStatus": "GPS ±{accuracy}\u00a0m · {freshness}",
   "ride.gpsFresh": "Live",
   "ride.gpsStale": "Stale",
   "ride.gpsStaleWithAge": "Stale ({age})",
@@ -647,7 +651,7 @@ export const en = {
   // translator: {ascent} is a bare whole number of metres and this message
   // owns the unit, so a language whose word for it already implies metres
   // ("Höhenmeter") need not repeat an "m". English output is unchanged.
-  "ride.status.ascent": "{ascent} m ascent",
+  "ride.status.ascent": "{ascent}\u00a0m ascent",
   // translator: the spelled-out announcement that replaces the compact
   // visible line for assistive technology. {distance} is a bare number of
   // kilometres; the unit word belongs to this message.
@@ -700,7 +704,7 @@ export const en = {
   "riding.elevationViewLabel": "Elevation profile view",
   "riding.elevationFull": "Full",
   // translator: {km} is a whole number of kilometres.
-  "riding.elevationWindow": "{km} km",
+  "riding.elevationWindow": "{km}\u00a0km",
   "riding.climb": "Climb",
   "riding.routeProfile": "Route profile",
   "riding.viewLabel": "Riding view",
@@ -744,11 +748,11 @@ export const en = {
   // --- Climbs -------------------------------------------------------------
   "climb.selectorLabel": "Recognised climbs",
   "climb.empty":
-    "No recognised climbs. A recognised climb must be at least 500 m long and average at least 3%.",
+    "No recognised climbs. A recognised climb must be at least 500\u00a0m long and average at least 3%.",
   "climb.allRoute": "All route",
   // translator: {number} is the climb's position, {category} its category
   // name, {start} a bare number of kilometres.
-  "climb.option": "Climb {number} · {category} · starts at {start} km",
+  "climb.option": "Climb {number} · {category} · starts at {start}\u00a0km",
   "climb.count": {
     one: "1 recognised climb on this route",
     other: "{count} recognised climbs on this route",
@@ -771,7 +775,7 @@ export const en = {
   "climb.remaining": "{distance} remaining",
   "climb.passedAgo": "Passed {distance} ago",
   "climb.average": "{gradient} average",
-  "climb.routePosition": "Route position: {start}–{end} km",
+  "climb.routePosition": "Route position: {start}–{end}\u00a0km",
 
   // --- Manoeuvres: locally authored fallbacks only ------------------------
   // translator: these are ACN's own generic labels, used only when the
@@ -816,12 +820,12 @@ export const en = {
   // part of the message rather than appended at the call site. The numeric
   // value arrives already formatted with an explicit locale, so a German
   // catalogue must not try to re-punctuate it.
-  "format.distanceKm": "{distance} km",
-  "format.metres": "{metres} m",
+  "format.distanceKm": "{distance}\u00a0km",
+  "format.metres": "{metres}\u00a0m",
   "format.gradientPercent": "{gradient}%",
-  "format.ascent": "{metres} m ascent",
+  "format.ascent": "{metres}\u00a0m ascent",
   "format.ascentUnavailable": "ascent not available",
-  "format.descentLoss": "{metres} m loss",
+  "format.descentLoss": "{metres}\u00a0m loss",
 
   // --- Recognised climbs and descents: presentation ----------------------
   // translator: the KEYS below are the application's semantic identity for
@@ -916,12 +920,12 @@ export const en = {
   "legend.macroExplanation":
     "Overall climb colours depend on climb length and average gradient. Recognised descents use one of three blues based on average gradient and are specific to this app.",
   "legend.localExplanation":
-    "Detailed colours show local gradient over approximately 100 m within the selected or currently active climb. Brief flat or descending sections inside a climb are green. A selected or currently active descent reuses the same three blues shown above, applied to its local sections instead of its whole length — any locally shallow stretch there shows the plain route colour instead.",
+    "Detailed colours show local gradient over approximately 100\u00a0m within the selected or currently active climb. Brief flat or descending sections inside a climb are green. A selected or currently active descent reuses the same three blues shown above, applied to its local sections instead of its whole length — any locally shallow stretch there shows the plain route colour instead.",
   "legend.clearSelection": "Clear selection",
 
   "featureDetails.landmarkLabel": "Route feature details",
   "featureDetails.heading": "Climb {number} · {category}",
-  "featureDetails.routePosition": "Route position: {start}–{end} km",
+  "featureDetails.routePosition": "Route position: {start}–{end}\u00a0km",
   "featureDetails.length": "Length: {distance}",
   "featureDetails.elevationGain": "Elevation gain: {elevation}",
   "featureDetails.elevationLoss": "Elevation loss: {elevation}",
@@ -932,15 +936,15 @@ export const en = {
 
   "segmentDetails.landmarkLabel": "Gradient segment details",
   "segmentDetails.heading": "{band} · {gradient}",
-  "segmentDetails.elevation": "Elevation: {start} m to {end} m",
+  "segmentDetails.elevation": "Elevation: {start}\u00a0m to {end}\u00a0m",
 
   // --- Elevation chart ---------------------------------------------------
   "elevation.noRoute": "No route loaded.",
   "elevation.noData": "Elevation data is not available for this route.",
   "elevation.landmarkLabel": "Elevation profile",
   "elevation.chartLabel": "Elevation profile chart",
-  "elevation.range": "{min}–{max} m",
-  "elevation.rangeWithGaps": "{min}–{max} m (some sections have no elevation data)",
+  "elevation.range": "{min}–{max}\u00a0m",
+  "elevation.rangeWithGaps": "{min}–{max}\u00a0m (some sections have no elevation data)",
   "elevation.markerCurrent": "Current route position: {position} of {total}.",
   "elevation.markerStale": "Last known position: {position} of {total}.",
   // translator: an accessible-only description of the distance guides on
@@ -1068,11 +1072,11 @@ export const en = {
     "Estimated app storage: {used} of {quota} used ({percentage})",
   "status.storage.pressure":
     "Storage pressure warning: estimated app storage usage is high.",
-  "status.storage.bytes": "{value} B",
-  "status.storage.kibibytes": "{value} KiB",
-  "status.storage.mebibytes": "{value} MiB",
-  "status.storage.gibibytes": "{value} GiB",
-  "status.storage.tebibytes": "{value} TiB",
+  "status.storage.bytes": "{value}\u00a0B",
+  "status.storage.kibibytes": "{value}\u00a0KiB",
+  "status.storage.mebibytes": "{value}\u00a0MiB",
+  "status.storage.gibibytes": "{value}\u00a0GiB",
+  "status.storage.tebibytes": "{value}\u00a0TiB",
   // translator: a genuinely non-zero fraction below one per cent, shown
   // rather than a misleadingly exact "0%".
   "status.storage.lessThanOnePercent": "<1%",
@@ -1086,13 +1090,13 @@ export const en = {
   "status.permission.prompt": "Not yet requested",
   "status.permission.unsupported": "Not supported by this browser",
   "status.fixAccuracy": "Last known fix accuracy",
-  "status.fixAccuracyValue": "±{accuracy} m",
+  "status.fixAccuracyValue": "±{accuracy}\u00a0m",
   "status.fixAge": "Last known fix age",
   // translator: shown only for the accuracy and age of the last location
   // fix, when there is no fix at all.
   "status.notApplicableYet": "No location fix yet",
   "status.fixAge.seconds": "{seconds}s ago",
-  "status.fixAge.minutes": "{minutes} min ago",
+  "status.fixAge.minutes": "{minutes}\u00a0min ago",
 
   // --- Status: active session (backlog item 117) -------------------------
   // translator: each of these is a distinct, load-bearing state and none
@@ -1178,7 +1182,7 @@ export const en = {
   "status.testFailed": "Failed",
   // translator: `outcome` is the localised Succeeded/Failed word, `detail`
   // the provider-facing explanation and `elapsed` a machine number.
-  "status.testResult": "{outcome} — {detail} ({elapsed} ms)",
+  "status.testResult": "{outcome} — {detail} ({elapsed}\u00a0ms)",
   "status.stage": "Stage",
   "status.stageValue": "{stage} — {description}",
   "status.error": "Error",

@@ -72,13 +72,13 @@ function parseRouteMeta(text: string): {
   distanceKm: number;
   ascentMetres: number | null;
 } {
-  const match = /^(\d+\.\d) km · (.+)$/.exec(text);
+  const match = /^(\d+\.\d)\u00a0km · (.+)$/.exec(text);
   if (!match) throw new Error(`Unexpected route card meta text: ${text}`);
   const [, distanceText, ascentText] = match;
   if (ascentText === "ascent not available") {
     return { distanceKm: Number(distanceText), ascentMetres: null };
   }
-  const ascentMatch = /^(\d+) m ascent$/.exec(ascentText);
+  const ascentMatch = /^(\d+)\u00a0m ascent$/.exec(ascentText);
   if (!ascentMatch) throw new Error(`Unexpected ascent text: ${ascentText}`);
   return { distanceKm: Number(distanceText), ascentMetres: Number(ascentMatch[1]) };
 }

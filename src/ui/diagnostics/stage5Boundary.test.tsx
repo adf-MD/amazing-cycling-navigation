@@ -251,10 +251,10 @@ describe("dates, numbers and ages use an explicit locale", () => {
   });
 
   it("formats every figure from the translator's locale, not the host's", () => {
-    expect(formatDistanceKm(t, 61_500)).toBe("61.5 km");
-    expect(formatDistanceKm(t, 1_234_560)).toBe("1234.6 km");
-    expect(formatMetres(t, 1234.6)).toBe("1235 m");
-    expect(formatAscent(t, 993)).toBe("993 m ascent");
+    expect(formatDistanceKm(t, 61_500)).toBe("61.5\u00a0km");
+    expect(formatDistanceKm(t, 1_234_560)).toBe("1234.6\u00a0km");
+    expect(formatMetres(t, 1234.6)).toBe("1235\u00a0m");
+    expect(formatAscent(t, 993)).toBe("993\u00a0m ascent");
     expect(formatAscent(t, null)).toBe("ascent not available");
     expect(formatWholeNumber(t, 1500)).toBe("1,500");
     expect(formatWholeNumber(t, 80_000)).toBe("80,000");
@@ -265,8 +265,8 @@ describe("dates, numbers and ages use an explicit locale", () => {
     // Math.round rounds a half towards +infinity; String(-0) is "0"; and
     // toFixed(1) reads 0.15 as 0.1 because it is not exactly
     // representable. Intl agrees with none of the three on its own.
-    expect(formatMetres(t, -0.5)).toBe("0 m");
-    expect(formatMetres(t, -0.4)).toBe("0 m");
+    expect(formatMetres(t, -0.5)).toBe("0\u00a0m");
+    expect(formatMetres(t, -0.4)).toBe("0\u00a0m");
     expect(formatGradientPercent(t, 0.15)).toBe("+0.1%");
     expect(formatGradientPercent(t, -0.15)).toBe("-0.1%");
     // A shallow climb still shows its plus sign even though it rounds to

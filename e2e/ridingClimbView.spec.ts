@@ -520,7 +520,7 @@ test("auto-selects Climb view on entering each recognised climb, respects a manu
   // present in the quieter secondary area.
   await expect(progressPanel).toContainText("Distance to summit");
   await expect(progressPanel).toContainText("Elevation remaining");
-  await expect(progressPanel).toContainText(/Distance completed: \d+\.\d km/);
+  await expect(progressPanel).toContainText(/Distance completed: \d+\.\d\u00a0km/);
   // No percentage-complete value anywhere in the panel — the panel's only
   // legitimate "%" use is the current-gradient figure, e.g. "+6.0%".
   await expect(progressPanel.getByText(/\d+%\s*(complete|done)/i)).toHaveCount(0);
