@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RidingClimbSelector } from "./RidingClimbSelector.tsx";
 import type { ClimbFeature } from "../../navigation/routeFeatures.ts";
+import { LanguageProvider } from "../../i18n/LanguageProvider.tsx";
 
 function buildClimb(overrides: Partial<ClimbFeature>): ClimbFeature {
   return {
@@ -71,7 +72,7 @@ describe("RidingClimbSelector", () => {
     ).toBeInTheDocument();
   });
 
-  it("lists climbs in route order, numbered from 1, with an All route option first", () => {
+  it("lists climbs in route order by category and start, with an All route option first", () => {
     render(
       <RidingClimbSelector
         climbs={[climb1, climb2]}
@@ -83,8 +84,78 @@ describe("RidingClimbSelector", () => {
     const options = select.querySelectorAll("option");
     expect(options).toHaveLength(3);
     expect(options[0]?.textContent).toBe("All route");
-    expect(options[1]?.textContent).toBe("Climb 1 · Category 3 · starts at 2.0\u00a0km");
-    expect(options[2]?.textContent).toBe("Climb 2 · Category 2 · starts at 18.4\u00a0km");
+    expect(options[1]?.textContent).toBe("Category 3 · at 2.0\u00a0km");
+    expect(options[2]?.textContent).toBe("Category 2 · at 18.4\u00a0km");
+  });
+
+  // Item 113's 25 September 2026 follow-up. iOS shows the closed select's
+  // chosen option on one line and never wraps it; the old German label
+  // "Anstieg 1 · Kategorie 2 · beginnt bei 12,…" was clipped under the
+  // chevrons on the installed iPhone.
+  describe("short option labels", () => {
+    const ALL_CATEGORIES: ClimbFeature["category"][] = [
+      "uncategorised",
+      "category-4",
+      "category-3",
+      "category-2",
+      "category-1",
+      "hc",
+    ];
+
+    function renderIn(language: "en" | "de", climbs: readonly ClimbFeature[]) {
+      render(
+        <LanguageProvider
+          preference={language}
+          readLanguages={() => ["en-GB"]}
+          documentElement={{ lang: "" }}
+        >
+          <RidingClimbSelector
+            climbs={climbs}
+            selectedClimbId={null}
+            onSelectClimb={vi.fn()}
+          />
+        </LanguageProvider>,
+      );
+      return [...screen.getByRole("combobox").querySelectorAll("option")]
+        .slice(1)
+        .map((option) => option.textContent);
+    }
+
+    it("abbreviates an uncategorised climb and keeps the start distance", () => {
+      const uncategorised = buildClimb({
+        id: "climb-u",
+        startDistanceMetres: 12_300,
+        category: "uncategorised",
+      });
+      expect(renderIn("en", [uncategorised])).toEqual(["uncat. · at 12.3\u00a0km"]);
+    });
+
+    it("reads naturally in German", () => {
+      const uncategorised = buildClimb({
+        id: "climb-u",
+        startDistanceMetres: 12_300,
+        category: "uncategorised",
+      });
+      expect(renderIn("de", [climb2, uncategorised])).toEqual([
+        "Kategorie 2 · ab km\u00a018,4",
+        "Nicht kat. · ab km\u00a012,3",
+      ]);
+    });
+
+    for (const language of ["en", "de"] as const) {
+      it(`stays within a font-independent budget at the worst case (${language})`, () => {
+        // Every category at a three-digit start distance. 26 characters is
+        // a budget, not a fit: whether it fits is a device question, and
+        // the browser probe in e2e/climbSelectorFit.spec.ts measures it.
+        const worst = ALL_CATEGORIES.map((category) =>
+          buildClimb({ id: category, startDistanceMetres: 999_900, category }),
+        );
+        const segmenter = new Intl.Segmenter();
+        for (const label of renderIn(language, worst)) {
+          expect([...segmenter.segment(label)].length, label).toBeLessThanOrEqual(26);
+        }
+      });
+    }
   });
 
   it("shows the route-level climb count when All route is selected", () => {

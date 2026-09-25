@@ -608,9 +608,11 @@ test.describe("Riding", () => {
     await expect(select).toHaveValue("all");
     // The exact start distance is smoothing-driven edge rounding (see
     // routeFeatureColouring.spec.ts's own comment on the same fixture
-    // shape) — comfortably within 0.9-1.0 km, not exactly 1.0.
+    // shape) — comfortably within 0.9-1.0 km, not exactly 1.0. `\s`
+    // because Playwright normalises an accessible name's whitespace,
+    // including the label's non-breaking space, before matching.
     await expect(
-      page.getByRole("option", { name: /Climb 1 · Category 3 · starts at 0\.\d km/ }),
+      page.getByRole("option", { name: /^Category 3 · at 0\.\d\skm$/ }),
     ).toBeAttached();
     await expect(
       page.getByRole("heading", { name: "Climb 1 · Category 3" }),

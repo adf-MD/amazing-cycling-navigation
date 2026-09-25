@@ -18,8 +18,15 @@ const ALL_ROUTE_VALUE = "all";
 /**
  * Pre-ride-only "Recognised climbs" section: a native, keyboard- and
  * touch-friendly `<select>` listing every recognised climb in route
- * order, numbered from 1, plus an "All route" option that clears the
- * selection. Deliberately renders no details card of its own — the
+ * order, plus an "All route" option that clears the selection.
+ *
+ * Each option is short on purpose — category and start distance only,
+ * with "uncat." / "Nicht kat." for an uncategorised climb. iOS shows the
+ * closed select's chosen option on one line and never wraps it, and the
+ * German installed-iPhone pass (25 September 2026) found the old
+ * "Anstieg 1 · Kategorie 2 · beginnt bei 12,…" clipped under the
+ * chevrons. The climb number and the full wording appear in the details
+ * panel once a climb is chosen. Deliberately renders no details card of its own — the
  * caller's existing RouteFeatureDetailsPanel (already driven by the same
  * selection state, shared with map/chart-tap selection) is reused for
  * that, so there is only ever one climb-information card on screen by
@@ -61,11 +68,13 @@ export function RidingClimbSelector({
         }}
       >
         <option value={ALL_ROUTE_VALUE}>{t("climb.allRoute")}</option>
-        {climbs.map((climb, index) => (
+        {climbs.map((climb) => (
           <option key={climb.id} value={climb.id}>
             {t("climb.option", {
-              number: index + 1,
-              category: t(CLIMB_CATEGORY_NAME_KEYS[climb.category]),
+              category:
+                climb.category === "uncategorised"
+                  ? t("climb.optionUncategorised")
+                  : t(CLIMB_CATEGORY_NAME_KEYS[climb.category]),
               start: formatDistanceKmValue(translator, climb.startDistanceMetres),
             })}
           </option>

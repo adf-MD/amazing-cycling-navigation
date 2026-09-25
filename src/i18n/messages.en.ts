@@ -750,9 +750,18 @@ export const en = {
   "climb.empty":
     "No recognised climbs. A recognised climb must be at least 500\u00a0m long and average at least 3%.",
   "climb.allRoute": "All route",
-  // translator: {number} is the climb's position, {category} its category
-  // name, {start} a bare number of kilometres.
-  "climb.option": "Climb {number} · {category} · starts at {start}\u00a0km",
+  // translator: one option of the pre-ride climb selector. Its closed state
+  // is a single line on a phone that never wraps, so this stays short.
+  // {category} is a category name ("Category 2", "HC") or the short
+  // "climb.optionUncategorised"; {start} is a bare number of kilometres
+  // from the route start, which tells apart climbs of the same category.
+  // The climbs are listed in route order, and the details panel beside
+  // the selector names the climb number and every detail once one is
+  // chosen.
+  "climb.option": "{category} · at {start}\u00a0km",
+  // translator: the selector's short form of "Uncategorised", used only
+  // in "climb.option"; the details panel keeps the full word.
+  "climb.optionUncategorised": "uncat.",
   "climb.count": {
     one: "1 recognised climb on this route",
     other: "{count} recognised climbs on this route",

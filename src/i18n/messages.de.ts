@@ -700,7 +700,8 @@ export const de: Catalogue = {
   "climb.empty":
     "Keine erkannten Anstiege. Ein Anstieg wird erkannt, wenn er mindestens 500\u00a0m lang ist und eine durchschnittliche Steigung von mindestens 3% aufweist.",
   "climb.allRoute": "Gesamte Route",
-  "climb.option": "Anstieg {number} · {category} · beginnt bei {start}\u00a0km",
+  "climb.option": "{category} · ab km\u00a0{start}",
+  "climb.optionUncategorised": "Nicht kat.",
   "climb.count": {
     one: "1 erkannter Anstieg auf dieser Route",
     other: "{count} erkannte Anstiege auf dieser Route",
