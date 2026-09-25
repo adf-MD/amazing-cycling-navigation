@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { LanguageProvider } from "./LanguageProvider.tsx";
@@ -16,6 +16,9 @@ import type { PlannedRoute } from "../domain/types.ts";
 import { buildRoutePointsFromWaypoints } from "../test/fixtures/routeGeometry.ts";
 import { buildFakeGeolocationSource } from "../test/fixtures/geolocationSource.ts";
 import type { GeolocationFix } from "../platform/geolocation.ts";
+import { DiagnosticsScreen } from "../ui/diagnostics/DiagnosticsScreen.tsx";
+import { saveProviderKey } from "../storage/providerKeyRepository.ts";
+import { RoutingError } from "../routing/openRouteServiceErrors.ts";
 
 /**
  * Item 113's 25 September 2026 follow-up: a German render must not show
@@ -148,6 +151,8 @@ function headerEndButton(container: HTMLElement): HTMLElement {
 beforeEach(async () => {
   await db.routes.clear();
   await db.rideState.clear();
+  await db.providerKeys.clear();
+  await db.providerKeyVerifications.clear();
 });
 
 afterEach(() => {
@@ -277,5 +282,66 @@ describe("free roam renders no English in German", () => {
       expectLanguageClean(language, headerEndButton(container));
       expectCompactHeaderLabel(translator, headerEndButton(container));
     });
+  }
+});
+
+describe("the Status connection-test result renders no English in German", () => {
+  // Item 113's 25 September 2026 follow-up: on the installed iPhone the
+  // German Status screen read "Erfolgreich — Connected successfully and
+  // received a valid cycling route." and "Phase: success — …". The copied
+  // report stays English (decision R4); the screen follows the rider.
+  const OUTCOMES: readonly [string, () => Promise<PlannedRoute>][] = [
+    ["success", () => Promise.resolve(route)],
+    [
+      "a routing failure",
+      () =>
+        Promise.reject(
+          new RoutingError({
+            reason: "provider-unavailable",
+            message: "m",
+            httpStatus: 503,
+          }),
+        ),
+    ],
+    ["an unexpected error", () => Promise.reject(new Error("boom"))],
+  ];
+
+  for (const [name, behaviour] of OUTCOMES) {
+    for (const [language, translator] of LANGUAGES) {
+      it(`after ${name} (${language})`, async () => {
+        await saveProviderKey("dummy-test-key");
+        const user = userEvent.setup();
+        withLanguage(
+          language,
+          <DiagnosticsScreen routingProvider={{ calculateRoute: () => behaviour() }} />,
+        );
+        const testButton = await screen.findByRole("button", {
+          name: translator.t("status.testConnection"),
+        });
+        await waitFor(() => {
+          expect(testButton).toBeEnabled();
+        });
+        await user.click(testButton);
+
+        const result = await screen.findByText(
+          new RegExp(
+            `^(${translator.t("status.testSucceeded")}|${translator.t("status.testFailed")}) — `,
+          ),
+        );
+        const section = result.parentElement;
+        if (!section) throw new Error("no connection-test section");
+        expectLanguageClean(language, section);
+        // The Stage row shows the description only; the raw stage token is
+        // for the copied report.
+        const stageLabel = within(section).getByText(translator.t("status.stage"), {
+          selector: "dt",
+        });
+        const stageValue = stageLabel.nextElementSibling?.textContent ?? "";
+        expect(stageValue.length).toBeGreaterThan(0);
+        expect(stageValue).not.toMatch(
+          /success|http-response|route-processing|transport-response-unavailable/,
+        );
+      });
+    }
   }
 });

@@ -11,6 +11,7 @@ import {
 import {
   describeRoutingError,
   mapErrorReasonToOutcome,
+  type RoutingErrorDescription,
 } from "./routingErrorPresentation.ts";
 import { recordProviderKeyVerification } from "../storage/providerKeyRepository.ts";
 import { logError } from "../platform/errorLog.ts";
@@ -162,6 +163,39 @@ const NOT_ATTEMPTED_DISPATCH_MARKERS: DispatchMarkers = {
   responseReceived: false,
 };
 
+/** The connection test's outcome, as data. A routing error keeps only the
+ * fields its description reads — never the RoutingError instance, whose
+ * message is internal. */
+export type ConnectionTestDetail =
+  | { kind: "success" }
+  | { kind: "unexpected-error" }
+  | { kind: "routing-error"; error: RoutingErrorDescription };
+
+/**
+ * The result's one-sentence explanation, in the supplied language.
+ *
+ * Item 113's 25 September 2026 follow-up: the installed-iPhone German pass
+ * found the Status screen showing "Erfolgreich — Connected successfully
+ * and received a valid cycling route.", because the result carried an
+ * English sentence that the screen interpolated. The result now carries
+ * data, and both surfaces call this one function — the screen with the
+ * rider's translator, the copied report with `englishTranslator` — so they
+ * cannot drift, and the report stays English by construction.
+ */
+export function describeConnectionTestDetail(
+  translator: Translator,
+  detail: ConnectionTestDetail,
+): string {
+  switch (detail.kind) {
+    case "success":
+      return translator.t("connectionTest.detail.success");
+    case "unexpected-error":
+      return translator.t("connectionTest.detail.unexpectedError");
+    case "routing-error":
+      return describeRoutingError(translator, detail.error);
+  }
+}
+
 export interface RoutingConnectionTestResult {
   /** Identifies this specific test run — generated fresh each call. */
   attemptId: string;
@@ -170,7 +204,11 @@ export interface RoutingConnectionTestResult {
   reason: RoutingErrorReason | "success";
   httpStatus?: number;
   elapsedMs: number;
-  message: string;
+  /** What happened, kept as data rather than as a sentence so each surface
+   * can describe it in its own language: the Status screen in the
+   * rider's, the copied report in English (decision R4). See
+   * describeConnectionTestDetail. */
+  detail: ConnectionTestDetail;
   waypointCount: number;
   /** The adapter's own recorded values for this exact attempt — carried
    * directly through the thrown RoutingError (see
@@ -244,7 +282,7 @@ export async function runRoutingConnectionTest(
       stage: "success",
       reason: "success",
       elapsedMs: Date.now() - startedAt,
-      message: "Connected successfully and received a valid cycling route.",
+      detail: { kind: "success" },
       waypointCount: waypoints.length,
       ...SUCCESS_DISPATCH_MARKERS,
       ...environment,
@@ -259,7 +297,7 @@ export async function runRoutingConnectionTest(
         stage: "transport-response-unavailable",
         reason: "unknown",
         elapsedMs,
-        message: "An unexpected error occurred while testing the connection.",
+        detail: { kind: "unexpected-error" },
         waypointCount: waypoints.length,
         ...NOT_ATTEMPTED_DISPATCH_MARKERS,
         ...environment,
@@ -288,14 +326,14 @@ export async function runRoutingConnectionTest(
       reason: error.reason,
       httpStatus: error.httpStatus,
       elapsedMs,
-      // Backlog item 113 stage 3, approved decision R4: the copyable
-      // connection-test report stays English so it can be shared for
-      // support, and the enum values it embeds are language-neutral
-      // anyway. Passing the English translator explicitly makes that true
-      // BY CONSTRUCTION — this says the report is English on purpose,
-      // rather than leaving it English by nobody having localised it.
-      // Planning passes the rider's own translator to the same function.
-      message: describeRoutingError(englishTranslator, error),
+      detail: {
+        kind: "routing-error",
+        error: {
+          reason: error.reason,
+          httpStatus: error.httpStatus,
+          providerErrorCode: error.providerErrorCode,
+        },
+      },
       waypointCount: waypoints.length,
       headersConstructed: markers.headersConstructed,
       requestConstructed: markers.requestConstructed,
@@ -320,7 +358,9 @@ export function formatConnectionTestReport(result: RoutingConnectionTestResult):
     `Attempt ID: ${result.attemptId}`,
     `Outcome: ${result.outcome}`,
     `Stage: ${result.stage} — ${describeConnectionTestStage(englishTranslator, result.stage)}`,
-    `Detail: ${result.message}`,
+    // English by construction (decision R4): the same describer the
+    // Status screen uses, handed the English translator explicitly.
+    `Detail: ${describeConnectionTestDetail(englishTranslator, result.detail)}`,
     result.errorName
       ? `Error: ${result.errorName}${result.errorMessage ? `: ${result.errorMessage}` : ""}`
       : null,

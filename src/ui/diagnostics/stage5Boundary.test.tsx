@@ -9,6 +9,7 @@ import { describeProviderKeyStatus } from "../settings/providerKeyStatus.ts";
 import { describeRoutingAttempt } from "../../routing/routingDiagnostics.ts";
 import { describeMapAttempt } from "../../map/mapDiagnostics.ts";
 import {
+  describeConnectionTestDetail,
   describeConnectionTestStage,
   formatConnectionTestReport,
   type RoutingConnectionTestResult,
@@ -188,7 +189,8 @@ describe("the copied diagnostic report stays English (decision R4)", () => {
     attemptId: "attempt-1",
     outcome: "failure",
     stage: "transport-response-unavailable",
-    message: "OpenRouteService could not be reached.",
+    reason: "transport-failure",
+    detail: { kind: "routing-error", error: { reason: "transport-failure" } },
     elapsedMs: 340,
     waypointCount: 2,
     headersConstructed: true,
@@ -203,7 +205,7 @@ describe("the copied diagnostic report stays English (decision R4)", () => {
     isServiceWorkerControlled: true,
     isStandalone: false,
     activeServiceWorkerScriptUrl: "https://example.test/sw.js",
-  } as RoutingConnectionTestResult;
+  };
 
   it("keeps its field labels, machine tokens and URLs exactly as they were", () => {
     const report = formatConnectionTestReport(result);
@@ -223,17 +225,33 @@ describe("the copied diagnostic report stays English (decision R4)", () => {
     }
   });
 
-  it("reads its one shared sentence through the English translator", () => {
-    // The Status screen's own Stage row follows the rider; the report does
-    // not. One function, one sentence, two languages — which is what makes
-    // the report English by construction rather than by omission.
-    const german = createTranslator("en", catalogueFor("en"));
-    expect(describeConnectionTestStage(german, "success")).toBe(
-      describeConnectionTestStage(englishTranslator, "success"),
+  it("reads its shared sentences through the English translator", () => {
+    // The Status screen follows the rider; the report does not. One
+    // function per sentence, two languages — which is what makes the report
+    // English by construction rather than by omission.
+    //
+    // Until item 113's 25 September 2026 follow-up this test built its
+    // "German" translator from the English catalogue, so its comparison
+    // could never fail. With a real German translator the old assertion
+    // (German equals English) fails, which is the point: the two genuinely
+    // differ, and the report must hold the English one.
+    const german = createTranslator("de", catalogueFor("de"));
+    const stage = "transport-response-unavailable";
+    const report = formatConnectionTestReport(result);
+
+    expect(describeConnectionTestStage(german, stage)).not.toBe(
+      describeConnectionTestStage(englishTranslator, stage),
     );
-    expect(formatConnectionTestReport(result)).toContain(
-      describeConnectionTestStage(englishTranslator, "transport-response-unavailable"),
+    expect(report).toContain(describeConnectionTestStage(englishTranslator, stage));
+    expect(report).not.toContain(describeConnectionTestStage(german, stage));
+
+    expect(describeConnectionTestDetail(german, result.detail)).not.toBe(
+      describeConnectionTestDetail(englishTranslator, result.detail),
     );
+    expect(report).toContain(
+      describeConnectionTestDetail(englishTranslator, result.detail),
+    );
+    expect(report).not.toContain(describeConnectionTestDetail(german, result.detail));
   });
 });
 

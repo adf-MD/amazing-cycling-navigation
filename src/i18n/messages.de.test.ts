@@ -103,7 +103,7 @@ describe("shape parity", () => {
     };
     expect(count(de)).toEqual(count(en));
     // Pinned literally so a silently shrinking catalogue is visible.
-    expect(count(en)).toEqual({ plain: 729, plural: 18, rich: 2 });
+    expect(count(en)).toEqual({ plain: 730, plural: 18, rich: 2 });
   });
 
   it("gives every plural entry both German categories, non-empty", () => {
@@ -425,7 +425,6 @@ describe("no English residue where German was intended", () => {
     "segmentDetails.heading": "composition only",
     "routingLog.withDetail": "composition only",
     "status.testResult": "composition only",
-    "status.stageValue": "composition only",
     "status.errorValue": "composition only",
     "ride.gpsStatus": "composition plus the SI unit",
     "riding.elevationWindow": "SI unit",

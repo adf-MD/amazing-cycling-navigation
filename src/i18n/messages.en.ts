@@ -1052,6 +1052,13 @@ export const en = {
   "connectionTest.stage.routeProcessing":
     "A response was received and parsed, but the route itself could not be used.",
   "connectionTest.stage.success": "A valid cycling route was received.",
+  // translator: the connection test's own one-sentence result, shown on
+  // the Status screen after "Succeeded — " or "Failed — ". The copied
+  // diagnostic report always uses the English text (decision R4).
+  "connectionTest.detail.success":
+    "Connected successfully and received a valid cycling route.",
+  "connectionTest.detail.unexpectedError":
+    "An unexpected error occurred while testing the connection.",
 
   // --- Status: screen chrome and system status ---------------------------
   "status.landmarkLabel": "Status",
@@ -1193,7 +1200,6 @@ export const en = {
   // the provider-facing explanation and `elapsed` a machine number.
   "status.testResult": "{outcome} — {detail} ({elapsed}\u00a0ms)",
   "status.stage": "Stage",
-  "status.stageValue": "{stage} — {description}",
   "status.error": "Error",
   "status.errorValue": "{name}: {message}",
   "status.safeReasonCode": "Safe reason code",

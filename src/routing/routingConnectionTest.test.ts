@@ -6,9 +6,11 @@ import {
   type DispatchMarkers,
   type RoutingErrorReason,
 } from "./openRouteServiceErrors.ts";
+import { englishTranslator } from "../i18n/englishTranslator.ts";
 import {
   buildConnectionTestWaypoints,
   classifyConnectionTestStage,
+  describeConnectionTestDetail,
   formatConnectionTestReport,
   runRoutingConnectionTest,
   type RoutingConnectionTestStage,
@@ -179,9 +181,9 @@ describe("runRoutingConnectionTest", () => {
 
     expect(result.outcome).toBe("failure");
     expect(result.stage).toBe("transport-response-unavailable");
-    expect(result.message.toLowerCase()).not.toContain(
-      "cors headers were missing due to",
-    );
+    expect(
+      describeConnectionTestDetail(englishTranslator, result.detail).toLowerCase(),
+    ).not.toContain("cors headers were missing due to");
   });
 
   it("carries the exact dispatch markers the adapter attached to this specific error, not a re-derived guess", async () => {
@@ -328,7 +330,9 @@ describe("runRoutingConnectionTest", () => {
     );
 
     expect(result.stage).toBe("route-processing");
-    expect(result.message.toLowerCase()).toContain("working");
+    expect(
+      describeConnectionTestDetail(englishTranslator, result.detail).toLowerCase(),
+    ).toContain("working");
   });
 
   it("never includes coordinates or a key in the result's own fields", async () => {
@@ -402,4 +406,105 @@ describe("formatConnectionTestReport", () => {
     expect(report).toContain("Fetch returned a promise: yes");
     expect(report).toContain("HTTP response received: yes");
   });
+});
+
+describe("formatConnectionTestReport keeps its exact English lines (decision R4)", () => {
+  // Golden lines, pinned before item 113's 25 September 2026 follow-up
+  // moved the on-screen detail into the rider's language, and required to
+  // stay byte-identical through it: the copied report is English by
+  // construction and is compared across support conversations.
+  const CASES: readonly {
+    name: string;
+    behaviour: () => Promise<PlannedRoute>;
+    lines: readonly string[];
+  }[] = [
+    {
+      name: "success",
+      behaviour: () => Promise.resolve(buildRoute()),
+      lines: [
+        "Stage: success — A valid cycling route was received.",
+        "Detail: Connected successfully and received a valid cycling route.",
+      ],
+    },
+    {
+      name: "an unexpected error",
+      behaviour: () => Promise.reject(new Error("boom")),
+      lines: [
+        "Stage: transport-response-unavailable — The browser did not expose an HTTP response. Possible causes include CORS/preflight rejection, DNS, TLS, timeout, connectivity, or a provider response whose CORS headers were missing.",
+        "Detail: An unexpected error occurred while testing the connection.",
+      ],
+    },
+    {
+      name: "a 503",
+      behaviour: () =>
+        Promise.reject(
+          new RoutingError({
+            reason: "provider-unavailable",
+            message: "m",
+            httpStatus: 503,
+          }),
+        ),
+      lines: [
+        "Stage: http-response — An HTTP response was received from OpenRouteService.",
+        "Detail: OpenRouteService is temporarily unavailable (HTTP 503). Your waypoints have been retained. Try again later.",
+        "HTTP status: 503",
+      ],
+    },
+    {
+      name: "a provider error with a provider code",
+      behaviour: () =>
+        Promise.reject(
+          new RoutingError({
+            reason: "provider-error",
+            message: "m",
+            httpStatus: 500,
+            providerErrorCode: 2099,
+          }),
+        ),
+      lines: [
+        "Stage: http-response — An HTTP response was received from OpenRouteService.",
+        "Detail: The routing provider returned an unexpected error (HTTP 500). (provider code 2099)",
+        "HTTP status: 500",
+      ],
+    },
+    {
+      name: "a rate limit",
+      behaviour: () =>
+        Promise.reject(
+          new RoutingError({ reason: "rate-limited", message: "m", httpStatus: 429 }),
+        ),
+      lines: [
+        "Stage: http-response — An HTTP response was received from OpenRouteService.",
+        "Detail: The routing rate limit was reached. Try again shortly.",
+        "HTTP status: 429",
+      ],
+    },
+    {
+      name: "no route found",
+      behaviour: () =>
+        Promise.reject(
+          new RoutingError({
+            reason: "no-route-found",
+            message: "m",
+            httpStatus: 404,
+            providerErrorCode: 2009,
+          }),
+        ),
+      lines: [
+        "Stage: route-processing — A response was received and parsed, but the route itself could not be used.",
+        "Detail: No cycling route could be found between these waypoints — they may be separated by water, a barrier, or a gap in rideable roads. Your key and connection to OpenRouteService are working; try adjusting the route. (provider code 2009)",
+        "HTTP status: 404",
+      ],
+    },
+  ];
+
+  for (const { name, behaviour, lines } of CASES) {
+    it(`for ${name}`, async () => {
+      const result = await runRoutingConnectionTest(fakeAdapter(behaviour));
+      const report = formatConnectionTestReport(result)
+        .split("\n")
+        .filter((line) => /^(Stage|Detail|HTTP status):/.test(line));
+      expect(report).toEqual(lines);
+    });
+  }
 });

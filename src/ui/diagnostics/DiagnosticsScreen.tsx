@@ -15,6 +15,7 @@ import {
 import { OpenRouteServiceAdapter } from "../../routing/openRouteServiceAdapter.ts";
 import type { RoutingProvider } from "../../routing/provider.ts";
 import {
+  describeConnectionTestDetail,
   describeConnectionTestStage,
   formatConnectionTestReport,
   runRoutingConnectionTest,
@@ -487,30 +488,33 @@ export function DiagnosticsScreen({
         {connectionTestResult ? (
           <>
             <p className="status-row" role="status">
-              {/* `detail` is the provider-facing explanation the connection
-                  test itself produced, and `elapsed` a machine number.
-                  Both are interpolated as values, never re-parsed. */}
+              {/* `detail` is described in the rider's language from the
+                  result's own data (the copied report describes the same
+                  data in English), and `elapsed` is a machine number. Both
+                  are interpolated as values, never re-parsed. */}
               {t("status.testResult", {
                 outcome: t(
                   connectionTestResult.outcome === "success"
                     ? "status.testSucceeded"
                     : "status.testFailed",
                 ),
-                detail: connectionTestResult.message,
+                detail: describeConnectionTestDetail(
+                  translator,
+                  connectionTestResult.detail,
+                ),
                 elapsed: connectionTestResult.elapsedMs,
               })}
             </p>
             <dl className="diagnostics-definition-grid">
               <div className="diagnostics-definition-item">
                 <dt className="diagnostics-label">{t("status.stage")}</dt>
+                {/* The description only. The raw stage token is a machine
+                    identifier kept in the copied report for troubleshooting;
+                    on screen it added an English word to a German row
+                    without helping the reader (item 113's 25 September
+                    2026 follow-up). */}
                 <dd className="diagnostics-value">
-                  {t("status.stageValue", {
-                    stage: connectionTestResult.stage,
-                    description: describeConnectionTestStage(
-                      translator,
-                      connectionTestResult.stage,
-                    ),
-                  })}
+                  {describeConnectionTestStage(translator, connectionTestResult.stage)}
                 </dd>
               </div>
 

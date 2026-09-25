@@ -139,14 +139,32 @@ describe("category 2 — the copied diagnostic report stays English (decision R4
   });
 
   it("is English by construction, not by omission", () => {
-    // The one sentence the report shares with the Status screen is read
+    // The sentences the report shares with the Status screen are read
     // through the English translator explicitly. That keeps a single
     // source for the wording while the screen itself follows the rider.
     expect(report).toContain(
       "describeConnectionTestStage(englishTranslator, result.stage)",
     );
-    expect(report).toContain("describeRoutingError(englishTranslator, error)");
+    expect(report).toContain(
+      "describeConnectionTestDetail(englishTranslator, result.detail)",
+    );
     expect(report).not.toContain("useTranslate");
+  });
+
+  it("keeps no English sentence in the result itself", () => {
+    // Item 113's 25 September 2026 follow-up: the result used to carry an
+    // English `message` that the Status screen interpolated, so a German
+    // screen read "Erfolgreich — Connected successfully…". The result now
+    // carries data, and these two sentences live in the catalogue.
+    for (const literal of [
+      "Connected successfully and received a valid cycling route.",
+      "An unexpected error occurred while testing the connection.",
+    ]) {
+      expect(report, literal).not.toContain(literal);
+      expect(
+        en["connectionTest.detail.success"] + en["connectionTest.detail.unexpectedError"],
+      ).toContain(literal);
+    }
   });
 
   it("never passes a report or a raw diagnostic value back through the catalogue", () => {
@@ -163,7 +181,6 @@ describe("category 2 — the copied diagnostic report stays English (decision R4
     const RAW_VALUES = [
       "formatConnectionTestReport(connectionTestResult)",
       "formatDiagnosticsReportHeader()",
-      "connectionTestResult.message",
       "connectionTestResult.errorMessage",
       "connectionTestResult.errorName",
       "connectionTestResult.activeServiceWorkerScriptUrl",

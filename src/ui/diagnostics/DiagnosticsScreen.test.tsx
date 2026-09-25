@@ -18,6 +18,7 @@ import type { Clock } from "../../platform/clock.ts";
 import { saveProviderKey } from "../../storage/providerKeyRepository.ts";
 import type { RoutingProvider } from "../../routing/provider.ts";
 import { RoutingError } from "../../routing/openRouteServiceErrors.ts";
+import { describeConnectionTestStage } from "../../routing/routingConnectionTest.ts";
 import type { PlannedRoute } from "../../domain/types.ts";
 
 // jsdom doesn't implement a real WebGL context, so the real
@@ -768,7 +769,18 @@ describe("DiagnosticsScreen", () => {
       expect(
         screen.getByText(/browser or network may have blocked the request/i),
       ).toBeInTheDocument();
-      expect(screen.getByText(/transport-response-unavailable/)).toBeInTheDocument();
+      // The Stage row shows the stage's description only. The raw token is
+      // a machine identifier for the copied report (item 113's 25 September
+      // 2026 follow-up: on a German screen it was an English word).
+      expect(
+        screen.getByText(
+          describeConnectionTestStage(
+            englishTranslator,
+            "transport-response-unavailable",
+          ),
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/transport-response-unavailable/)).toBeNull();
       expect(screen.getByText("TypeError: Failed to fetch")).toBeInTheDocument();
       expect(screen.getByText("generic-fetch-rejection")).toBeInTheDocument();
     });

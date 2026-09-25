@@ -966,6 +966,10 @@ export const de: Catalogue = {
   "connectionTest.stage.routeProcessing":
     "Eine Antwort ist eingegangen und wurde verarbeitet, die Route selbst konnte jedoch nicht verwendet werden.",
   "connectionTest.stage.success": "Eine gültige Fahrradroute wurde empfangen.",
+  "connectionTest.detail.success":
+    "Verbindung hergestellt und eine gültige Fahrradroute empfangen.",
+  "connectionTest.detail.unexpectedError":
+    "Beim Testen der Verbindung ist ein unerwarteter Fehler aufgetreten.",
 
   // --- Status: screen chrome and system status ---------------------------
   "status.landmarkLabel": "Status",
@@ -1089,7 +1093,6 @@ export const de: Catalogue = {
   "status.testFailed": "Fehlgeschlagen",
   "status.testResult": "{outcome} — {detail} ({elapsed}\u00a0ms)",
   "status.stage": "Phase",
-  "status.stageValue": "{stage} — {description}",
   "status.error": "Fehler",
   "status.errorValue": "{name}: {message}",
   "status.safeReasonCode": "Sicherer Diagnosecode",

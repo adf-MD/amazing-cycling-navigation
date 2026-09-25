@@ -55,10 +55,23 @@ export function mapErrorReasonToOutcome(
   }
 }
 
+/** Just what `describeRoutingError` reads from a RoutingError. A plain
+ * snapshot of these fields describes it identically, which is what lets
+ * the connection test keep its result as data and describe it again in
+ * whichever language a surface needs (item 113's 25 September 2026
+ * follow-up). */
+export type RoutingErrorDescription = Pick<
+  RoutingError,
+  "reason" | "httpStatus" | "providerErrorCode"
+>;
+
 /** Appended to a message when the provider supplied a numeric error code
  * — a safe, concrete diagnostic detail (never the accompanying message
  * text; see RoutingError's own doc comment). */
-function formatProviderCode(translator: Translator, error: RoutingError): string {
+function formatProviderCode(
+  translator: Translator,
+  error: RoutingErrorDescription,
+): string {
   return error.providerErrorCode !== undefined
     ? translator.t("routingError.providerCodeSuffix", {
         code: error.providerErrorCode,
@@ -66,7 +79,10 @@ function formatProviderCode(translator: Translator, error: RoutingError): string
     : "";
 }
 
-function formatHttpStatus(translator: Translator, error: RoutingError): string {
+function formatHttpStatus(
+  translator: Translator,
+  error: RoutingErrorDescription,
+): string {
   return error.httpStatus !== undefined
     ? String(error.httpStatus)
     : translator.t("routingError.unknownStatus");
@@ -86,7 +102,7 @@ function formatHttpStatus(translator: Translator, error: RoutingError): string {
  */
 export function describeRoutingError(
   translator: Translator,
-  error: RoutingError,
+  error: RoutingErrorDescription,
 ): string {
   switch (error.reason) {
     case "no-api-key":
