@@ -233,3 +233,57 @@ _Category: Map controls_
      - If a resulting design removes the visible copy, `ride.map.waiting` should at that point be removed or redefined as accessibility-only in **both** catalogues, with the catalogue parity suites updated in the same change.
      - Note the transient state has **never been observed on the installed iPhone** in either language, in any session to date. It is not a confirmed field problem, and the item must not be written up as though it were.
      - Evidence required: measurement at 390 px portrait at ordinary **and** 200 % root text in the pinned container, in both languages, covering the touch-target floor, the accessible name in each state, and that the control's box does not change size between states. Physical acceptance on the installed iPhone Home Screen PWA is required for whatever ships. Physical Android verification is separately outstanding, as for most recent items.
+
+---
+
+<a id="item-121"></a>
+
+## Item 121 — Four-destination primary navigation with a Settings/Status switcher
+
+_Category: Navigation and information architecture_
+
+121. **Four-destination primary navigation with a Settings/Status switcher**
+     - Origin: a navigation decision the rider approved before item 113's first installed-iPhone German pass, recorded here on 25 September 2026 together with the evidence from that pass. **This is a new decision, and it explicitly reverses the shared-parent option that item 112's stage-5 gate rejected** ([`history/items-110-113.md#item-112`](history/items-110-113.md#item-112)). Item 112 rejected a shared parent for Settings and Status because ACN has no router, no URL/history and no focus management on screen transition, and because the failure case would cost an extra tap. The 25 September pass supplied new evidence: German `Einstellungen` wrapped its final `n` onto a second line of the five-tab bar at ordinary text on an iPhone 13, even though `e2e/language.spec.ts` asserts one line in the pinned container. Item 112's other decisions stand: the names `Status` and `Settings`, and Settings' `Preferences`/`Explanations` grouping.
+     - Approved scope:
+       - a **sticky primary navigation with four destinations**: `Routes / Ride / Plan / Settings` (German `Routen / Fahren / Planen / Einstellungen`);
+       - Status reached through a **non-sticky, two-button `Settings / Status` sibling switcher at the top** of both the Settings and Status screens;
+       - **the current contents of both screens preserved initially**, with nothing moved between them in this item;
+       - **an unfinished OpenRouteService key edit preserved in memory** when switching between the two siblings, so typing a key, checking Status and returning does not lose it. In memory only, never persisted, consistent with the project's key-storage rules.
+     - Constraints: no URL router (hash routing only if one becomes unavoidable, per the root rules); the switcher's active state never colour alone; established touch targets; the immersive riding shell keeps replacing the navigation exactly as today. Re-measure whether item 113's `:lang(de) .main-nav-button` containment rule is still needed, rather than assuming it.
+     - **Item 103 must not silently absorb this information-architecture change**, and item 102's symbol redesign then works over four destinations. Item 102's "do not restructure navigation destinations" clause is superseded for this item only, by this separate approval. Item 28 is unaffected.
+     - Evidence required:
+       - English and German at 320–430 px portrait, at ordinary and 200% root text, with no horizontal overflow contributed by the navigation or the switcher;
+       - labels inside their controls under the device-width stress item 113's follow-up introduced (a regression guard, not proof of iOS fit);
+       - a fail-first test that an unsaved key survives a Settings → Status → Settings round trip;
+       - keyboard and screen-reader semantics for the switcher, including focus on switching.
+     - Targeted English and German acceptance on the installed iPhone Home Screen PWA follows implementation. Physical Android verification is separately outstanding, as for most recent items.
+     - Placed **first** in the approved execution order: after item 113's follow-up and before item 114.
+
+---
+
+<a id="item-122"></a>
+
+## Item 122 — Planning map area on a phone (unscheduled design candidate)
+
+_Category: Planning layout_
+
+122. **Planning map area on a phone — unscheduled design candidate**
+     - Origin: item 113's first installed-iPhone pass, 25 September 2026. The Planning map felt too small for planning compared with free roam's map.
+     - **Unscheduled, and not part of the approved execution order.** Nothing about a new size is approved by this entry.
+     - Present fact: `.planning-map-container` is `clamp(280px, round(nearest, 44dvh, 20px), 460px)` behind an `@supports` fallback chain. The 20 px rounding is load-bearing: a fractional map-container height once left MapLibre's drag-rotate/pitch handler permanently active with no end event. That was found in CI during the interface migration's fifth slice, and it recurred in Planning ([`history/interface-accessibility-migration.md`](history/interface-accessibility-migration.md)).
+     - Any change must be **measured and tested as its own alternative**. That covers the gesture end events at the new heights; the waypoint list, profile, warnings and save controls remaining reachable; item 114's attribution/placement-control relationship; and the ordinary 390 px presentation. It must not be folded into item 103 or any other styling work.
+
+---
+
+<a id="item-123"></a>
+
+## Item 123 — A small touch pan can place a Planning waypoint (unscheduled investigation)
+
+_Category: Planning interaction_
+
+123. **A small touch pan can place a Planning waypoint — unscheduled investigation**
+     - Origin: item 113's first installed-iPhone pass, 25 September 2026. A pan on the phone sometimes placed a waypoint.
+     - **Unscheduled, and not part of the approved execution order.** No policy change is approved by this entry.
+     - Present fact: Planning places a map-tap waypoint from MapLibre's `click` event (`src/map/mapAdapter.ts`'s `onMapTap`), which MapLibre suppresses once a pointer has moved past its click tolerance. A small attempted pan can therefore still register as a tap.
+     - **Investigate on the device before changing anything.** Distinguish touch from mouse by pointer type, never by installed PWA versus browser, and keep useful desktop mouse clicks. Consider the crosshair placement control, which is unaffected by pan jitter, as part of the design space, but do not remove direct map-tap placement on the strength of this entry.
+     - Evidence required when it is worked on: a device reproduction first, then a real touch-gesture test (item 94's precedent used real two-finger touch gestures) that fails before any change and passes after it, plus a mouse-click control proving desktop placement is unchanged.

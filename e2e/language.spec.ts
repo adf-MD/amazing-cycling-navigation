@@ -257,6 +257,13 @@ test("the German navigation fits without horizontal overflow, at ordinary and 20
       // half alone leaves the wrap rule breaking `Einstellungen` onto two
       // lines at ORDINARY text — an ordinary-German regression that no
       // overflow assertion would catch, since it overflows nothing.
+      //
+      // Container-only evidence. On the installed iPhone 13 (25 September
+      // 2026, 0.4.41) `Einstellungen` DID wrap its final "n" onto a second
+      // line at ordinary text, against a 71.59px content box where this
+      // container measures about 65.5px: its fonts do not predict iOS
+      // widths. The fix is the four-destination navigation (item 121), not
+      // further tuning of this five-tab bar.
       expect(measured.lines, "German stays on one line at ordinary text").toEqual([
         1, 1, 1, 1, 1,
       ]);

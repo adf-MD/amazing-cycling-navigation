@@ -23,7 +23,7 @@ This file records verification evidence only; the behaviour contracts themselves
 
 ## Open installed-iPhone acceptance checklist (12 September 2026)
 
-**This is the only active list of presently actionable installed-iPhone checks.** Items 102, 103, 113, 114 and 119 are unimplemented and therefore out of scope. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
+**This is the only active list of presently actionable installed-iPhone checks.** Items 102, 103, 114, 119, 120 and 121 are unimplemented and therefore out of scope, and items 122 and 123 are unscheduled design candidates. Item 113 shipped German in `0.4.41`; its first physical pass (25 September 2026, recorded below) produced the `0.4.42` follow-up, whose targeted recheck is Session 4. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
 
 ### Session 1 — stationary, on the installed Home Screen PWA
 
@@ -56,20 +56,49 @@ Stationary or walking. Induce only what is deliberate and reproducible; everythi
 - [ ] The imagery-recovery row reads as one row — explanation on the left, `Retry map imagery` on the right — on both route Riding and free roam, with the full button label intact, and the slow-imagery row still spanning the full width with no action (item 115).
 - [ ] Online/Offline is comprehensible without relying on colour, and the recovery row clears itself once connectivity and imagery return, with no pan or zoom needed (item 83).
 
-### Session 4 — item 113's German interface, in both languages (unrun)
+### Session 4 — item 113's German interface: the `0.4.42` targeted recheck
 
-**Item 113 shipped German in `0.4.41` with no physical-device acceptance of any kind.** Everything behind it is automated: Vitest, Playwright in the pinned container, and a human linguistic review of the catalogue conducted by reading it, not by using it on a phone. Browser-root text scaling is **not** iOS Dynamic Type evidence.
+**Item 113's first installed-iPhone German pass ran on 25 September 2026 against `0.4.41`** (dated record below). Its confirmed defects were corrected in `0.4.42`, with automated evidence only. This session rechecks exactly those corrections on the phone, and then the original checks that pass never reached. Portrait, German unless stated. **Read the version and build from Status first.** The container's font-width stress tests are regression guards, not proof of fit on iOS, so these device checks are the real fit evidence.
 
-- Settings → `Optionen` shows `Language` first, with `Device language`, `English` and `Deutsch`; the current choice is visibly marked.
-- Choosing `Deutsch` changes the interface immediately, and the choice survives closing and reopening the app from the Home Screen.
-- Choosing `Device language` on a German-configured phone gives German, and on an English-configured phone gives English.
-- The five navigation labels read `Routen`, `Fahren`, `Planen`, `Status`, `Einstellungen`, complete and unclipped, with the navigation still usable with gloves.
-- In German: a route card, the tag manager, a destructive confirmation (delete a route, delete a tag, end a ride), Planning's warnings and route overview, and the Status screen all read naturally and fit the screen without horizontal scrolling.
-- Riding in German: the status card, the next-manoeuvre panel, the climb cue and an imagery message. **A route's stored turn instructions stay in whatever language they were saved in** — changing the interface language must not appear to translate or recalculate them.
-- The copied diagnostic report is still English, and the German interface says so beside the copy action.
-- Switching back to `English` restores every one of the above.
+- [ ] **Settings → Sprache:** `Gerätesprache` sits entirely inside its button (it may take a row of its own, with `English` and `Deutsch` beside or below it), with nothing protruding. In English, `Device language` still reads acceptably.
+- [ ] **Settings:** `Farbskala für lokale Steigungen` never splits `3 %`. The OpenRouteService introduction reads as an instruction (`Kopiere ihn anschließend … und füge ihn unten ein.`), and its link still opens HeiGIT sign-up. The General-cycling description reads naturally, in Settings and in Planning.
+- [ ] **Status → Test routing connection:** the result line is entirely German (`Erfolgreich — Verbindung hergestellt und eine gültige Fahrradroute empfangen. (… ms)`). `Phase` shows only the German description, with no `success`. **Copy the report and paste it somewhere:** it is still English, with `Stage: success — …` and `Detail: Connected successfully…`.
+- [ ] **Status wording:** `Kartendarstellung` / `Unterstützt`. The map-imagery heading (`Probleme und Wiederherstellung beim Kartenmaterial`) and its empty state no longer suggest that every map load is listed.
+- [ ] **Planning names:**
+  - a fresh draft is named `Geplante Route`;
+  - `Route umkehren` gives `… (umgekehrt)`, and Undo restores both the name and the order;
+  - Save with a blank name saves `Geplante Route`, and Export with a blank name produces `Geplante Route.gpx`;
+  - a draft started in English keeps `Planned route`.
+- [ ] **Planning warnings:**
+  - no ✓ when a row is selected;
+  - the selected row is still clearly marked by its ring, fill and details;
+  - the bullets remain;
+  - rows are full width and left-aligned;
+  - lengths such as `97 m` and `261 m` never split across lines.
+- [ ] **Planning placement:** `Wegpunkt hier setzen` fits on one line, and the Move/Insert-after labels are readable. Tapping still places a waypoint, and nothing collides with a marker or the attribution.
+- [ ] **Route pre-ride climb selector:**
+  - the closed state shows its whole option, e.g. `Kategorie 2 · ab km 12,3`, with nothing under the chevrons;
+  - the longest available label fits;
+  - an uncategorised climb shows `Nicht kat. …` (English `uncat. …`);
+  - **with VoiceOver on**, the options, including the abbreviations, read understandably. This is not yet established in either direction.
+- [ ] **Active route ride:**
+  - the header reads `Pause | <route name> | Beenden`;
+  - tapping `Beenden` opens `Diese Fahrt beenden?` with a full `Fahrt beenden` button, and `Abbrechen` works;
+  - a paused or restored ride's panel shows `Fahrt beenden`.
+- [ ] **Free roam:** `Freies Fahren` is readable in full beside `Beenden`, and the end confirmation reads `Die letzte Position und Kartenansicht dieser Fahrt werden verworfen.`
+- [ ] **English spot check:**
+  - the header keeps `End ride`;
+  - the climb selector reads e.g. `Category 2 · at 12.3 km`;
+  - the connection result is English;
+  - the Language card reads acceptably.
 
-Nothing here is claimed until it is actually run. No VoiceOver audit, no iOS Larger Text result and no physical-Android result is claimed for item 113 in either language.
+Carried over from the original checklist, **not reported in the 25 September pass**:
+
+- [ ] `Gerätesprache` on a German-configured phone gives German, and on an English-configured phone gives English.
+- [ ] Riding in German, outdoors: the status card, the next-manoeuvre panel, the climb cue and an imagery message. **A route's stored turn instructions stay in whatever language they were saved in**; changing the interface language must not appear to translate or recalculate them.
+- [ ] Switching back to `English` restores every screen above.
+
+No VoiceOver audit, no iOS Larger Text result and no physical-Android result is claimed for item 113 in either language.
 
 ### Opportunistic monitoring — watched for, never manufactured
 
@@ -78,6 +107,7 @@ Nothing here is claimed until it is actually run. No VoiceOver audit, no iOS Lar
 - Connectivity returning while imagery itself stays unreachable, and a later genuine retry succeeding after such a recovery (item 94).
 - Genuine wake-lock, routing-provider, storage-read or IndexedDB-write failures and their retry paths (items 72, 73, 82, 92, 100) — proved in tests, and not safely or deterministically inducible on the phone.
 - Longer battery and thermal behaviour over a long ride (items 42, 60).
+- German `Wird pausiert…` while a Pause is still being saved, which briefly narrows the riding header's title; and a `GPS ±N m` status line on the narrowest phones. Both are transient or width-dependent and are watched for rather than staged (item 113 follow-up).
 - The transient `Waiting…` state on the Location/Follow control, which a fast first fix may simply skip (item 110). It has never been observed on the device in either language; item 120 covers a possible pending-state treatment and must not be written up as though a field problem had been confirmed.
 
 None of these blocks acceptance of the item it came from. Record one if it occurs naturally; do not construct it.
@@ -95,6 +125,74 @@ None of these blocks acceptance of the item it came from. Record one if it occur
   This upgrades the earlier "consistent with" note for this file to a **measured, reproduced-on-baseline** finding: the class is pre-existing and is **not** attributable to item 113's pre-render IndexedDB read, which was the specific hypothesis worth ruling out, since that change does add a blocking database open before the first paint. No production change was made for it, and it remains monitored rather than fixed — if it is ever worked on, start from the artefacts item 116 retains.
 
 ## Dated acceptance record
+
+### Installed-iPhone German session, 25 September 2026 (item 113's first physical pass, batches 1–4)
+
+**Device and build.** iPhone 13, portrait, iOS 26.6.1, Larger Text and Bold Text off. Batch 1 read `0.4.41` / build `859a649` from Status. Batches 2–4 used the same device and German selection, but the build was not re-read in those reports. The rider marked each check `[x]` (checked and successful) or `[ ]` (checked and unsuccessful). Remarks under a successful check are observations, not necessarily failures. This is **stationary and short-walk evidence only**. No cycling, manoeuvre, off-route or climb-progress acceptance is claimed, and no VoiceOver, iOS Dynamic Type or physical Android result.
+
+**Accepted:**
+
+- **Batch 1:**
+  - the English five-tab navigation fitted, with no horizontal scrolling in either language;
+  - the language choice survived tab changes and closing/reopening the installed PWA;
+  - sticky navigation stayed usable while scrolling;
+  - Settings' five cards (three under `Optionen`, two under `Erklärungen`; the checklist's "Optionen with five cards" was ambiguous, and the rider's count is right), with no oversize heading;
+  - the saved-key deletion confirmation, the bottom of Settings, Status content and disclosures, and the German notice that the copied report stays English;
+  - a real OpenRouteService connection test succeeded (`636 ms`).
+- **Batch 2 — Routes, all eleven checks:** heading/search/sort, route cards including a long name, scrolling, card actions and their forms and confirmations, pin/unpin, matching and non-matching search, all four sort options, tag filters and the tag manager, spare GPX import, and the bottom of the screen. No awkward wording, clipping, horizontal scrolling or blocked control was reported. The rename, merge and delete **confirmations** were inspected; the final mutations were not acceptance-tested.
+- **Batch 3 — Planning, all eight groups:**
+  - map and waypoint controls;
+  - adding waypoints by map and by crosshair;
+  - selected-waypoint actions and Undo/Redo;
+  - the profile and ferry controls;
+  - a short route calculation;
+  - the overview, elevation and warnings;
+  - the save, export, reverse and clear affordances;
+  - the expanded screen.
+- **Batch 4 — Ride and Free roam:**
+  - the launch choices;
+  - the free-roam status and map;
+  - the wake-lock control;
+  - the end confirmation and pause/resume;
+  - PWA close/reopen;
+  - short-walk position accuracy, `Live` status and following after a pan;
+  - the route-backed Map/Profile switcher.
+
+**Confirmed defects, all corrected in `0.4.42` with automated evidence only** — see [`history/items-110-113.md`](history/items-110-113.md#item-113) for the mechanism and evidence behind each:
+
+- `Gerätesprache` protruded past its button's border.
+- The Status connection test showed `Erfolgreich — Connected successfully…` and `Phase: success — …` on the German screen (screenshot `IMG_7987.png`).
+- Generated Planning names were English: `Planned route` and ` (reversed)` (`IMG_7990.png`).
+- Number and unit split across lines: `3` / `%` in Settings; `97` / `m`, `74` / `m`, `261` / `m` in the warning rows (`IMG_7990.png`, `IMG_7991.png`).
+- The route-ride header's End action read English `End ride`.
+- The pre-ride climb selector's closed option was clipped under its chevrons (`01CDF0A7-…png`, a **climb** selector; no descent selector exists).
+- The free-roam header read `Pause | Freies Fa… | Fahrt beenden` (`IMG_7995.png`).
+- The map-imagery log's heading and empty state implied a record of every load; the log only records problems.
+- A Planning control correction to the warning rows: the ✓ on selection implied approval, a reserved slot for it narrowed every row, the browser's full list indent applied, and rows had uneven widths and centred text.
+- `Wegpunkt hier setzen` wrapped onto two lines inside the map.
+
+**Copy refinements requested and made:**
+
+- the stiff General-cycling description (`möglicherweise häufiger`; `Belag` → `Untergrund` in that sentence only);
+- the descriptive ORS introduction;
+- the free-roam end message's `gespeicherte Position` (a wording preference; the storage behaviour was accurate);
+- the repetitive `Unterstützung für die Kartendarstellung` / `Unterstützt`.
+
+**Aesthetic remarks, recorded only:**
+
+- `Schlüssel ersetzen` and `Schlüssel löschen` each take a line but remain usable.
+- The location accuracy/age labels are long but fit.
+- Moving the fetch-failure disclosure below the HTTP guide is an optional content idea, not a demonstrated defect.
+
+**Evidence for separate work, not fixed in the follow-up:**
+
+- German `Einstellungen` wrapped its final `n` onto a second line, making the navigation bar taller and uneven. It stayed readable and tappable. `e2e/language.spec.ts` asserts it stays on one line in the pinned container, which the phone contradicts. This is evidence for **item 121** (four-destination navigation), not a reason to tune the five-tab bar.
+- The Planning map felt small compared with free roam: **item 122**, unscheduled.
+- A small pan on the phone sometimes places a waypoint: **item 123**, unscheduled.
+
+**Unexplained, not dismissed.** A credible alpha tester reported a Planning name reading `Planned und Route`. It has not been reproduced or explained. The fresh default was assigned as one literal and could not have been built by concatenating catalogue fragments, and `0.4.42` now generates `Geplante Route` in German, which changes the conditions but explains nothing. **Evidence requested:** a screenshot, the build from Status, and whether it appeared on a fresh draft before editing, after keyboard interaction, or on a restored or copied draft.
+
+**Automated observation, not a device finding.** At 320 px and 200% root text the Settings document overflows by 13 px. The causes are the `OpenRouteService` panel heading, in English also the navigation's `Settings` label, and in German a gradient-legend entry; the overflow is identical with the segmented choice groups hidden. It was measured in the pinned container during the follow-up. 320 px is narrower than any phone iOS 26 supports, so no item is allocated; reconsider if a supported width or a device shows it.
 
 ### Installed-iPhone session, 14 September 2026 (item 118's conditional-reveal refinement accepted)
 
@@ -217,6 +315,7 @@ Context: the installed iPhone Home Screen PWA, portrait. The report did not reco
 - **No correction has been implemented**; the full specification is [`backlog.md#item-114`](backlog.md#item-114), and it is scheduled after item 113 and before items 102 and 103. It is **not** an installed-iPhone acceptance check and does not appear in the checklist above.
 - **The evidence is automated and precise about its own nature.** Measured in Chromium during item 109's layout verification at a 200% root text size: `.map-attribution` wraps to approximately **62.25 px** high, lifting its top edge above the placement control's fixed `bottom: 44px` and overlapping `.planning-crosshair-callout`'s border box by approximately **26.25 px**. Treat both as measurements of the tested fixture, not universal CSS constants. This is automated browser-text scaling, a different mechanism from iOS Larger Text.
 - **It predates item 109 and is not a regression from it** — the same overlap was measured against the item-109 **parent** (commit `27fa0c8`), before the 4 px marker-isolation halo existed, and a box-shadow never affects layout in any case. **No physical-device claim is made in either direction:** no corresponding failure has been observed on the installed iPhone, and the 11 September 2026 item-109 acceptance covered the ordinary portrait, default-text presentation and reported no collision with the controls or attribution there.
+- **25 September 2026 — the baseline moved, and the overlap did not.** Item 113's `0.4.42` follow-up let the placement control take its natural single-line width, bounded by the map container less a 16 px gutter on each side, instead of the half-container cap that `left: 50%` implied. German `Wegpunkt hier setzen` had wrapped on the installed iPhone. So the "ordinary 390 px presentation" item 114's own fix must preserve is now `0.4.42`'s: the English Add label is unchanged, and longer labels sit on one line wherever they fit. Measured in the pinned container at 200% root text, the attribution overlap is **26.3 px**, unchanged vertically from the 26.25 px recorded above. A long label wrapping within the wider bound now spans more of the attribution horizontally. `e2e/planningPlacementLabelFit.spec.ts` records this figure without asserting it; item 114 still owns the defect.
 
 ---
 
