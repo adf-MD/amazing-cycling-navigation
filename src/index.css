@@ -1253,17 +1253,26 @@ button:focus-visible {
  * box-shadow is never hit-testable, the map stays reachable immediately
  * outside the button rather than gaining an invisible blocking layer.
  *
- * No max-width is needed here and none was added: an absolutely
- * positioned, shrink-to-fit box with left:50% and no right can never grow
- * past the remaining half of .planning-map-container, so the longest
- * reachable label ("Insert after waypoint N") wraps rather than
- * overflowing — measured at 390px as 179px wide at ordinary text and
- * 180.3px at 200% browser text, both fully contained. */
+ * Width (item 113's 25 September 2026 follow-up). An absolutely positioned,
+ * shrink-to-fit box with left:50% and no right can never grow past the
+ * remaining HALF of .planning-map-container — about 179px at 390px — so
+ * German "Wegpunkt hier setzen" wrapped onto two lines on the installed
+ * iPhone and covered more of the map. width: max-content lets the label
+ * take its natural single-line width, and the max-width keeps the
+ * centred box, isolation band included, clear of the container's edges
+ * by more than a gutter; a label wider than that still wraps, and
+ * overflow-wrap breaks a word only if one alone exceeds it. The control
+ * stays centred by the transform, at the same bottom offset, so its
+ * vertical relationship to the attribution is unchanged (item 114 owns
+ * the separate 200%-text overlap with it). */
 .planning-crosshair-callout {
   position: absolute;
   bottom: 44px;
   left: 50%;
   transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 2 * var(--space-16));
+  overflow-wrap: break-word;
   z-index: 3;
   box-shadow: 0 0 0 var(--space-4) var(--colour-bg);
 }
