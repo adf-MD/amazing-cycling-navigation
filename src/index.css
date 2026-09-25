@@ -612,11 +612,30 @@ button:focus-visible {
 .cycling-profile-group {
   margin-top: 10px;
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-8);
 }
 
+/* Shared by Settings' Language and default-profile groups and Planning's
+ * profile group. On the installed iPhone (25 September 2026) German
+ * "Gerätesprache" protruded past its button's border: the global button
+ * rule's min-width: 44px replaces a flex item's automatic minimum, so an
+ * equal share could shrink below the label's longest word.
+ *
+ * min-width: auto restores that minimum (the longest word, plus padding
+ * and border), and flex-wrap above moves a button to another row only
+ * when its longest word genuinely needs the room — there is no forced line
+ * break, and wherever every minimum fits the equal share the row lays out
+ * exactly as before. max-width clamps the minimum to the row, and
+ * overflow-wrap: break-word (unlike anywhere, it leaves the minimum
+ * unchanged) breaks a word only if one ever exceeds the whole row. Every
+ * label here is far wider than the 44px touch-target floor this gives up.
+ * e2e/settingsChoiceFit.spec.ts guards it; it is not proof of iOS fit. */
 .cycling-profile-button {
   flex: 1 1 0;
+  min-width: auto;
+  max-width: 100%;
+  overflow-wrap: break-word;
 }
 
 /* Mirrors .route-warning-button.is-selected below: a darker neutral fill
