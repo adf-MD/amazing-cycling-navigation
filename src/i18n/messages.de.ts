@@ -570,6 +570,7 @@ export const de: Catalogue = {
   "ride.pause": "Pause",
   "ride.pausing": "Wird pausiert…",
   "ride.endRide": "Fahrt beenden",
+  "ride.endRideCompact": "Beenden",
   "ride.endingRide": "Fahrt wird beendet…",
   "ride.gpsError": "GPS-Fehler",
   "ride.waitingForFix": "Warten auf GPS-Position…",

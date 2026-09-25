@@ -607,6 +607,13 @@ export const en = {
   "ride.pause": "Pause",
   "ride.pausing": "Pausing…",
   "ride.endRide": "End ride",
+  // translator: the visible label of the End action in the compact riding
+  // header only, which shares one phone-width line with Pause and the
+  // screen title. The button's accessible name stays "ride.endRide", so
+  // this must be a word that name contains (label-in-name). English keeps
+  // the full label because it fits; German shortens it so a short fixed
+  // title such as free roam's stays readable.
+  "ride.endRideCompact": "End ride",
   "ride.endingRide": "Ending ride…",
   "ride.gpsError": "GPS error",
   "ride.waitingForFix": "Waiting for a GPS fix…",

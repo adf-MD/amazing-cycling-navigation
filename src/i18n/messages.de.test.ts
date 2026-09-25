@@ -103,7 +103,7 @@ describe("shape parity", () => {
     };
     expect(count(de)).toEqual(count(en));
     // Pinned literally so a silently shrinking catalogue is visible.
-    expect(count(en)).toEqual({ plain: 727, plural: 18, rich: 2 });
+    expect(count(en)).toEqual({ plain: 728, plural: 18, rich: 2 });
   });
 
   it("gives every plural entry both German categories, non-empty", () => {
@@ -541,4 +541,22 @@ describe("German is reachable", () => {
     expect(catalogueFor("fr")).toBe(en);
     expect(resolveLanguage("device", ["fr-FR"])).toBe("en");
   });
+});
+
+describe("compact labels stay inside their accessible names", () => {
+  // Item 113's 25 September 2026 follow-up: the riding header shows a
+  // compact End label while the button's accessible name stays the full
+  // one. WCAG 2.5.3 (label in name) needs the visible word inside the name,
+  // so a translation that drifted apart would fail speech-control users.
+  for (const [language, catalogue, locale] of [
+    ["en", en, "en-GB"],
+    ["de", de, "de-DE"],
+  ] as const) {
+    it(`ride.endRideCompact is contained in ride.endRide (${language})`, () => {
+      const compact = catalogue["ride.endRideCompact"].toLocaleLowerCase(locale);
+      const full = catalogue["ride.endRide"].toLocaleLowerCase(locale);
+      expect(compact.length).toBeGreaterThan(0);
+      expect(full).toContain(compact);
+    });
+  }
 });

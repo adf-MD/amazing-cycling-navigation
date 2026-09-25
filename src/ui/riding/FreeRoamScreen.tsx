@@ -365,8 +365,11 @@ export function FreeRoamScreen({
           ref={endRideTriggerRef}
           onClick={handleEndRideClick}
           disabled={isFinalizing || isPausePending}
+          // The compact header label, with the full accessible name — see
+          // RidingScreen.tsx's renderEndRideAction for why.
+          aria-label={t("ride.endRide")}
         >
-          {t("ride.endRide")}
+          {t("ride.endRideCompact")}
         </button>
         {finalizeError ? (
           <p className="field-error" role="alert">

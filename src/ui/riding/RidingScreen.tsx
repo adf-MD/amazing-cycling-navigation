@@ -1185,7 +1185,14 @@ export function RidingScreen({
   // only one of those two branches ever renders per commit (backlog item
   // 50's in-place confirmation morph, mirroring PlanningScreen.tsx's own
   // Clear-draft treatment from item 49).
-  function renderEndRideAction(): ReactNode {
+  //
+  // `placement` only changes the trigger's label. In the compact immersive
+  // header the visible text is the short `ride.endRideCompact` — German
+  // `Beenden` rather than `Fahrt beenden` — so the screen title keeps its
+  // room on a phone-width line (item 113's 25 September 2026 follow-up);
+  // the accessible name stays the full `ride.endRide`, which contains the
+  // visible word. The paused panel has the width for the full label.
+  function renderEndRideAction(placement: "header" | "panel"): ReactNode {
     if (isEndRideConfirmOpen) {
       return (
         <ConfirmDialog
@@ -1213,8 +1220,9 @@ export function RidingScreen({
           ref={endRideTriggerRef}
           onClick={handleEndRideClick}
           disabled={activeFinalizeSource !== null || isPausePending}
+          aria-label={placement === "header" ? t("ride.endRide") : undefined}
         >
-          {t("ride.endRide")}
+          {placement === "header" ? t("ride.endRideCompact") : t("ride.endRide")}
         </button>
         {finalizeError?.source === "end" ? (
           <p className="field-error" role="alert">
@@ -1649,7 +1657,7 @@ export function RidingScreen({
             }}
             pauseDisabled={isPausePending || activeFinalizeSource !== null}
             pauseButtonRef={pauseButtonRef}
-            endAction={!isEndRideConfirmOpen ? renderEndRideAction() : null}
+            endAction={!isEndRideConfirmOpen ? renderEndRideAction("header") : null}
           />
           {pauseError ? (
             <p className="field-error" role="alert">
@@ -1657,7 +1665,9 @@ export function RidingScreen({
             </p>
           ) : null}
           {isEndRideConfirmOpen ? (
-            <div className="ride-end-ride-confirm-row">{renderEndRideAction()}</div>
+            <div className="ride-end-ride-confirm-row">
+              {renderEndRideAction("header")}
+            </div>
           ) : null}
         </>
       )}
@@ -1746,7 +1756,9 @@ export function RidingScreen({
             onCancel={handleEditCopyCancel}
           />
           {nav.currentFix ? (
-            <div className="ride-end-ride-panel-row stack">{renderEndRideAction()}</div>
+            <div className="ride-end-ride-panel-row stack">
+              {renderEndRideAction("panel")}
+            </div>
           ) : null}
         </div>
       ) : null}

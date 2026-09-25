@@ -3,7 +3,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { LanguageProvider } from "./LanguageProvider.tsx";
-import { createTranslator } from "./translate.ts";
+import { createTranslator, type Translator } from "./translate.ts";
 import { en } from "./messages.en.ts";
 import { de } from "./messages.de.ts";
 import { ENGLISH_ONLY_PHRASES, findEnglishLeaks } from "../test/englishLeaks.ts";
@@ -59,6 +59,13 @@ function expectLanguageClean(language: "en" | "de", root: Element) {
   } else {
     expect(leaks).toEqual([]);
   }
+}
+
+/** The compact riding header shows `ride.endRideCompact` (German `Beenden`)
+ * while the button keeps the full `ride.endRide` as its accessible name. */
+function expectCompactHeaderLabel(translator: Translator, button: HTMLElement) {
+  expect(button).toHaveAccessibleName(translator.t("ride.endRide"));
+  expect(button.textContent).toBe(translator.t("ride.endRideCompact"));
 }
 
 const routePoints = buildRoutePointsFromWaypoints(
@@ -190,6 +197,7 @@ describe("route Riding renders no English in German", () => {
 
       expectLanguageClean(language, headerEndButton(container));
       expectLanguageClean(language, container);
+      expectCompactHeaderLabel(translator, headerEndButton(container));
     });
 
     it(`the paused panel (${language})`, async () => {
@@ -218,11 +226,13 @@ describe("route Riding renders no English in German", () => {
       await screen.findByRole("button", { name: translator.t("riding.resumeRide") });
       const panel = container.querySelector(".ride-end-ride-panel-row");
       if (!panel) throw new Error("no paused-panel End action");
-      expect(
-        within(panel as HTMLElement).getByRole("button", {
-          name: translator.t("ride.endRide"),
-        }),
-      ).toBeInTheDocument();
+      const panelButton = within(panel as HTMLElement).getByRole("button", {
+        name: translator.t("ride.endRide"),
+      });
+      // The panel has the width for the full label, so it needs no
+      // separate accessible name.
+      expect(panelButton).toHaveTextContent(translator.t("ride.endRide"));
+      expect(panelButton).not.toHaveAttribute("aria-label");
       expectLanguageClean(language, panel);
     });
 
@@ -265,6 +275,7 @@ describe("free roam renders no English in German", () => {
         screen.getByRole("button", { name: translator.t("ride.endRide") }),
       ).toBeInTheDocument();
       expectLanguageClean(language, headerEndButton(container));
+      expectCompactHeaderLabel(translator, headerEndButton(container));
     });
   }
 });
