@@ -421,9 +421,11 @@ export function fromStoredPlanningDraft(
   return {
     waypoints: stored.waypoints,
     // Rows written before these fields existed won't have them — default
-    // to the app's own existing defaults (PlanningScreen's initial
+    // to the app's defaults of that time (PlanningScreen's initial
     // routeName/avoidFerries/profile state), never an arbitrary blank/
-    // false/unvalidated value.
+    // false/unvalidated value. The name stays the English "Planned route"
+    // on purpose: such a row predates German, and storage is independent
+    // of the interface language (see db.ts's StoredPlanningDraft).
     routeName: stored.routeName ?? "Planned route",
     avoidFerries: stored.avoidFerries ?? true,
     // A real validity check, not a bare `??` — a corrupt or future-

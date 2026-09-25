@@ -292,6 +292,10 @@ export const en = {
   // --- GPX import ----------------------------------------------------
   "gpx.import": "Import GPX",
   "gpx.importFile": "Import GPX file",
+  // translator: the name given to an imported route whose file name is
+  // blank. Stored with the route, so it stays in the language it was
+  // generated in.
+  "gpx.importedRouteFallback": "Imported route",
 
   // --- Planning: screen chrome --------------------------------------
   "planning.landmarkLabel": "Planning",
@@ -346,6 +350,15 @@ export const en = {
   // --- Planning: crosshair placement --------------------------------
   // translator: the crosshair button always says exactly what the next tap
   // will do. {waypoint} is "the start" or "waypoint N".
+  // translator: the suggested name of a new Planning draft, and the name a
+  // route is saved or exported under when the name field is blank. Once a
+  // draft or route exists its name is the rider's and is never
+  // retranslated.
+  "planning.defaultRouteName": "Planned route",
+  // translator: the suggested name after "Reverse route". {name} is the
+  // draft's current name, which may be anything a rider typed; reversing
+  // twice legitimately gives "X (reversed) (reversed)".
+  "planning.reversedRouteName": "{name} (reversed)",
   "planning.place.addHere": "Add waypoint here",
   "planning.place.moveHere": "Move {waypoint} here",
   "planning.place.insertAfter": "Insert after {waypoint}",

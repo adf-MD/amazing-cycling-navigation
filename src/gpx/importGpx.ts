@@ -28,14 +28,21 @@ export interface GpxImportResult {
   notices: GpxImportNotice[];
 }
 
-function deriveRouteName(fileName: string): string {
+function deriveRouteName(fileName: string, fallbackName: string): string {
   const withoutExtension = fileName.replace(/\.gpx$/i, "");
-  return withoutExtension.trim() || "Imported route";
+  return withoutExtension.trim() || fallbackName;
 }
 
+/**
+ * `fallbackName` names a route whose file name is blank once `.gpx` is
+ * removed. The Route Library passes the localised "Imported route"
+ * (item 113's 25 September 2026 follow-up); direct callers keep the
+ * English default.
+ */
 export async function importGpxFile(
   file: File,
   clock: Clock = systemClock,
+  fallbackName = "Imported route",
 ): Promise<GpxImportResult> {
   validateGpxFile(file);
 
@@ -87,7 +94,7 @@ export async function importGpxFile(
   const route = buildPlannedRouteFromGpx(
     points,
     {
-      name: deriveRouteName(file.name),
+      name: deriveRouteName(file.name, fallbackName),
       createdAt: new Date(clock.now()).toISOString(),
     },
     trustedManoeuvres,

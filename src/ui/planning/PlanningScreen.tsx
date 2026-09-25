@@ -81,7 +81,7 @@ import { RouteSummaryPanel } from "./RouteSummaryPanel.tsx";
 import { usePlanningRoute } from "./usePlanningRoute.ts";
 import type { WaypointAction } from "./waypointHistory.ts";
 import {
-  INITIAL_WAYPOINT_HISTORY_STATE,
+  createInitialWaypointHistoryState,
   sameCoordinate,
   waypointHistoryReducer,
 } from "./waypointHistory.ts";
@@ -309,9 +309,15 @@ export function PlanningScreen({
     () => routingProvider ?? buildDefaultAdapter(),
   );
 
+  // The fresh draft's name is generated in the rider's language (item 113's
+  // 25 September 2026 follow-up: German drafts were named "Planned route").
+  // The language is resolved before the first paint, so `t` is already
+  // right here. A restored draft keeps its own stored name, whatever
+  // language it was created in.
   const [state, dispatch] = useReducer(
     waypointHistoryReducer,
-    INITIAL_WAYPOINT_HISTORY_STATE,
+    t("planning.defaultRouteName"),
+    createInitialWaypointHistoryState,
   );
   // Pre-hydration placeholder only — overwritten before the first paint
   // that matters by the draft-hydration effect below, either from a
@@ -1371,7 +1377,10 @@ export function PlanningScreen({
     if (state.present.waypoints.length < 2) return; // defensive; button disabled below this anyway
     setPendingWaypointAction(null);
     noteHydrationOverriddenByUserEdit("routeName");
-    dispatchWaypointAction({ type: "reverse" });
+    dispatchWaypointAction({
+      type: "reverse",
+      formatReversedName: (name) => t("planning.reversedRouteName", { name }),
+    });
     routing.reset();
   };
 
@@ -1397,7 +1406,7 @@ export function PlanningScreen({
 
     const routeToSave: PlannedRoute = {
       ...routing.state.route,
-      name: state.present.routeName.trim() || "Planned route",
+      name: state.present.routeName.trim() || t("planning.defaultRouteName"),
       planningProvenance: buildPlanningProvenance(
         state.present.waypoints,
         profile,
@@ -1415,7 +1424,7 @@ export function PlanningScreen({
         dispatchWaypointAction({
           type: "reset",
           waypoints: [],
-          routeName: "Planned route",
+          routeName: t("planning.defaultRouteName"),
         });
         setEditCopyMeta(null);
         onRouteSaved?.(routeToSave);
@@ -1518,7 +1527,7 @@ export function PlanningScreen({
         dispatchWaypointAction({
           type: "reset",
           waypoints: [],
-          routeName: "Planned route",
+          routeName: t("planning.defaultRouteName"),
         });
         setEditCopyMeta(null);
         setPendingWaypointAction(null);
@@ -1569,7 +1578,7 @@ export function PlanningScreen({
   const handleExport = () => {
     if (routing.state.kind !== "routed") return;
     setExportError(null);
-    const trimmedName = state.present.routeName.trim() || "Planned route";
+    const trimmedName = state.present.routeName.trim() || t("planning.defaultRouteName");
     const routeToExport: PlannedRoute = {
       ...routing.state.route,
       name: trimmedName,

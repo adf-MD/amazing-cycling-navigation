@@ -33,7 +33,11 @@ function readModule(name: string): string {
 }
 
 const MIGRATED_LITERALS: Readonly<Record<string, readonly string[]>> = {
+  // Item 113's 25 September 2026 follow-up: generated names were still
+  // English literals, found on the installed iPhone rather than by audit.
+  "waypointHistory.ts": ['"Planned route"', "(reversed)"],
   "PlanningScreen.tsx": [
+    '"Planned route"',
     '"Planning"',
     "Plan a route",
     "Loading your draft",

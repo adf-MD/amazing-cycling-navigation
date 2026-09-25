@@ -1,6 +1,5 @@
 import { createWaypointId } from "../../domain/id.ts";
 import { reverseEditableWaypoints } from "../../domain/editableWaypoints.ts";
-import { suggestReversedRouteName } from "../../domain/routeNaming.ts";
 import type { Coordinate, Waypoint } from "../../domain/types.ts";
 
 /**
@@ -50,17 +49,32 @@ export type WaypointAction =
   // Reverses waypoint order and the route name together as exactly one
   // undoable history entry — see the case body and reverseDraftWaypoints
   // below for why this can't be built from "reset" plus a separate rename.
-  | { type: "reverse" }
+  // `formatReversedName` suggests the reversed draft's name in the rider's
+  // language ("X (reversed)", German "X (umgekehrt)"); the reducer applies
+  // it to its own current name, so it stays pure and never reads a stale
+  // one (item 113's 25 September 2026 follow-up).
+  | { type: "reverse"; formatReversedName: (sourceName: string) => string }
   | { type: "undo" }
   | { type: "redo" }
   | { type: "reset"; waypoints: readonly Waypoint[]; routeName: string };
 
-export const INITIAL_WAYPOINT_HISTORY_STATE: WaypointHistoryState = {
-  past: [],
-  present: { waypoints: [], routeName: "Planned route" },
-  future: [],
-  selectedWaypointId: null,
-};
+/**
+ * A fresh draft, named `defaultRouteName` — the localised "Planned route"
+ * (German "Geplante Route"), passed in rather than hard-coded so this
+ * reducer stays free of the interface language. Used as `useReducer`'s
+ * initialiser, so a restored draft's own stored name, which replaces it
+ * during hydration, is never rewritten.
+ */
+export function createInitialWaypointHistoryState(
+  defaultRouteName: string,
+): WaypointHistoryState {
+  return {
+    past: [],
+    present: { waypoints: [], routeName: defaultRouteName },
+    future: [],
+    selectedWaypointId: null,
+  };
+}
 
 function resolveSelection(
   waypoints: readonly Waypoint[],
@@ -261,12 +275,17 @@ export function waypointHistoryReducer(
       // guard above.
       if (state.present.waypoints.length < 2) return state;
       const trimmedName = state.present.routeName.trim();
+      // The complete source name is passed on unmutated — no trimming, no
+      // language-aware suffix detection or removal — so reversing an
+      // already-reversed draft gives "X (reversed) (reversed)", which is
+      // expected rather than a bug: the rider can always edit the field.
+      // Duplicate names are an already-accepted Route Library condition.
       const newRouteName =
         trimmedName.length === 0
           ? // A blank/whitespace-only draft name stays exactly as-is —
             // there is nothing meaningful to suffix.
             state.present.routeName
-          : suggestReversedRouteName(state.present.routeName);
+          : action.formatReversedName(state.present.routeName);
       return {
         past: [...state.past, state.present],
         present: {

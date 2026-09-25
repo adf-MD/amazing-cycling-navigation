@@ -279,6 +279,7 @@ export const de: Catalogue = {
   // --- GPX import ----------------------------------------------------
   "gpx.import": "GPX importieren",
   "gpx.importFile": "GPX-Datei importieren",
+  "gpx.importedRouteFallback": "Importierte Route",
 
   // --- Planning: screen chrome --------------------------------------
   "planning.landmarkLabel": "Routenplanung",
@@ -324,6 +325,8 @@ export const de: Catalogue = {
   "planning.actions.addToEnd": "Wegpunkt abwählen",
 
   // --- Planning: crosshair placement --------------------------------
+  "planning.defaultRouteName": "Geplante Route",
+  "planning.reversedRouteName": "{name} (umgekehrt)",
   "planning.place.addHere": "Wegpunkt hier setzen",
   "planning.place.moveHere": "{waypoint} hierher verschieben",
   "planning.place.insertAfter": "Nach {waypoint} einfügen",

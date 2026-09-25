@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  INITIAL_WAYPOINT_HISTORY_STATE,
+  createInitialWaypointHistoryState,
   waypointHistoryReducer,
+  type WaypointAction,
   type WaypointHistoryState,
 } from "./waypointHistory.ts";
+import { englishTranslator } from "../../i18n/englishTranslator.ts";
+import { createTranslator } from "../../i18n/translate.ts";
+import { de } from "../../i18n/messages.de.ts";
 import type { Coordinate, Waypoint } from "../../domain/types.ts";
 
 const A: Coordinate = [0, 51];
@@ -11,6 +15,15 @@ const B: Coordinate = [0.001, 51];
 const C: Coordinate = [0.002, 51];
 
 const DEFAULT_NAME = "Planned route";
+const INITIAL_WAYPOINT_HISTORY_STATE = createInitialWaypointHistoryState(DEFAULT_NAME);
+
+/** The English reverse action, formatted through the real catalogue entry
+ * exactly as PlanningScreen does. */
+const REVERSE: WaypointAction = {
+  type: "reverse",
+  formatReversedName: (name) =>
+    englishTranslator.t("planning.reversedRouteName", { name }),
+};
 
 function stateWith(
   waypoints: Waypoint[],
@@ -367,7 +380,7 @@ describe("waypointHistoryReducer", () => {
         { id: "a", coordinate: A },
         { id: "b", coordinate: B },
       ]);
-      const result = waypointHistoryReducer(state, { type: "reverse" });
+      const result = waypointHistoryReducer(state, REVERSE);
 
       expect(result.present.waypoints.map((w) => w.coordinate)).toEqual([B, A]);
     });
@@ -378,7 +391,7 @@ describe("waypointHistoryReducer", () => {
         { id: "b", coordinate: B },
         { id: "c", coordinate: C },
       ]);
-      const result = waypointHistoryReducer(state, { type: "reverse" });
+      const result = waypointHistoryReducer(state, REVERSE);
 
       expect(result.present.waypoints.map((w) => w.coordinate)).toEqual([C, B, A]);
     });
@@ -389,14 +402,14 @@ describe("waypointHistoryReducer", () => {
         { id: "b", coordinate: B },
         { id: "c", coordinate: C },
       ]);
-      const result = waypointHistoryReducer(state, { type: "reverse" });
+      const result = waypointHistoryReducer(state, REVERSE);
 
       expect(result.present.waypoints.map((w) => w.id)).toEqual(["c", "b", "a"]);
     });
 
     it("reverses a closed loop, keeping the same value-equal start/finish coordinate", () => {
       const state = closedLoopState();
-      const result = waypointHistoryReducer(state, { type: "reverse" });
+      const result = waypointHistoryReducer(state, REVERSE);
 
       expect(result.present.waypoints.map((w) => w.coordinate)).toEqual([A, C, B, A]);
       // Value-equal, not id-equal: the reversed final waypoint is "w1" by
@@ -415,7 +428,7 @@ describe("waypointHistoryReducer", () => {
         { id: "b", coordinate: B },
       ];
       const state = stateWith(original);
-      waypointHistoryReducer(state, { type: "reverse" });
+      waypointHistoryReducer(state, REVERSE);
 
       expect(original.map((w) => w.coordinate)).toEqual([A, B]);
       expect(original.map((w) => w.id)).toEqual(["a", "b"]);
@@ -430,7 +443,7 @@ describe("waypointHistoryReducer", () => {
         null,
         "Evening loop",
       );
-      const result = waypointHistoryReducer(state, { type: "reverse" });
+      const result = waypointHistoryReducer(state, REVERSE);
 
       expect(result.present.routeName).toBe("Evening loop (reversed)");
     });
@@ -444,7 +457,7 @@ describe("waypointHistoryReducer", () => {
         null,
         "",
       );
-      const result = waypointHistoryReducer(state, { type: "reverse" });
+      const result = waypointHistoryReducer(state, REVERSE);
 
       expect(result.present.routeName).toBe("");
     });
@@ -458,7 +471,7 @@ describe("waypointHistoryReducer", () => {
         null,
         "   ",
       );
-      const result = waypointHistoryReducer(state, { type: "reverse" });
+      const result = waypointHistoryReducer(state, REVERSE);
 
       expect(result.present.routeName).toBe("   ");
     });
@@ -472,9 +485,78 @@ describe("waypointHistoryReducer", () => {
         null,
         "Loop (reversed)",
       );
-      const result = waypointHistoryReducer(state, { type: "reverse" });
+      const result = waypointHistoryReducer(state, REVERSE);
 
       expect(result.present.routeName).toBe("Loop (reversed) (reversed)");
+    });
+
+    // Item 113's 25 September 2026 follow-up: the suffix was hard-coded
+    // English, so a German draft became "Hausrunde (reversed)".
+    describe("in the rider's language", () => {
+      const german = createTranslator("de", de);
+      const REVERSE_DE: WaypointAction = {
+        type: "reverse",
+        formatReversedName: (name) => german.t("planning.reversedRouteName", { name }),
+      };
+
+      it("suggests the German reversed name", () => {
+        const state = stateWith(
+          [
+            { id: "a", coordinate: A },
+            { id: "b", coordinate: B },
+          ],
+          null,
+          "Hausrunde",
+        );
+        expect(waypointHistoryReducer(state, REVERSE_DE).present.routeName).toBe(
+          "Hausrunde (umgekehrt)",
+        );
+      });
+
+      it("keeps name and waypoints one undoable entry", () => {
+        const state = stateWith(
+          [
+            { id: "a", coordinate: A },
+            { id: "b", coordinate: B },
+          ],
+          null,
+          "Hausrunde",
+        );
+        const reversed = waypointHistoryReducer(state, REVERSE_DE);
+        const undone = waypointHistoryReducer(reversed, { type: "undo" });
+        expect(undone.present).toEqual(state.present);
+        const redone = waypointHistoryReducer(undone, { type: "redo" });
+        expect(redone.present).toEqual(reversed.present);
+      });
+
+      it("never rewrites an English name it did not generate", () => {
+        // A draft saved in English keeps its words; reversing only appends.
+        const state = stateWith(
+          [
+            { id: "a", coordinate: A },
+            { id: "b", coordinate: B },
+          ],
+          null,
+          "Planned route",
+        );
+        expect(waypointHistoryReducer(state, REVERSE_DE).present.routeName).toBe(
+          "Planned route (umgekehrt)",
+        );
+      });
+    });
+
+    it("passes a rider's name with catalogue-like braces through inertly", () => {
+      const state = stateWith(
+        [
+          { id: "a", coordinate: A },
+          { id: "b", coordinate: B },
+        ],
+        null,
+        "My {name} route",
+      );
+      expect(waypointHistoryReducer(state, REVERSE).present.routeName).toBe(
+        "My {name} route (reversed)",
+      );
     });
 
     it("pushes exactly one history entry and clears future", () => {
@@ -485,7 +567,7 @@ describe("waypointHistoryReducer", () => {
         ]),
         future: [{ waypoints: [{ id: "stale", coordinate: C }], routeName: "Stale" }],
       };
-      const result = waypointHistoryReducer(state, { type: "reverse" });
+      const result = waypointHistoryReducer(state, REVERSE);
 
       expect(result.past).toHaveLength(1);
       expect(result.past[0]).toEqual(state.present);
@@ -500,21 +582,21 @@ describe("waypointHistoryReducer", () => {
         ],
         "a",
       );
-      const result = waypointHistoryReducer(state, { type: "reverse" });
+      const result = waypointHistoryReducer(state, REVERSE);
 
       expect(result.selectedWaypointId).toBeNull();
     });
 
     it("is a no-op below two waypoints", () => {
       const state = stateWith([{ id: "a", coordinate: A }]);
-      const result = waypointHistoryReducer(state, { type: "reverse" });
+      const result = waypointHistoryReducer(state, REVERSE);
 
       expect(result).toBe(state);
     });
 
     it("is a no-op with zero waypoints", () => {
       const state = stateWith([]);
-      const result = waypointHistoryReducer(state, { type: "reverse" });
+      const result = waypointHistoryReducer(state, REVERSE);
 
       expect(result).toBe(state);
     });
@@ -528,7 +610,7 @@ describe("waypointHistoryReducer", () => {
         null,
         "Evening loop",
       );
-      const reversed = waypointHistoryReducer(original, { type: "reverse" });
+      const reversed = waypointHistoryReducer(original, REVERSE);
       expect(reversed.present.waypoints.map((w) => w.coordinate)).toEqual([B, A]);
       expect(reversed.present.routeName).toBe("Evening loop (reversed)");
 
@@ -550,7 +632,7 @@ describe("waypointHistoryReducer", () => {
         null,
         "Evening loop",
       );
-      const reversed = waypointHistoryReducer(original, { type: "reverse" });
+      const reversed = waypointHistoryReducer(original, REVERSE);
       const edited = waypointHistoryReducer(reversed, { type: "append", coordinate: C });
       expect(edited.present.waypoints.map((w) => w.coordinate)).toEqual([B, A, C]);
       expect(edited.present.routeName).toBe("Evening loop (reversed)");
@@ -575,7 +657,7 @@ describe("waypointHistoryReducer", () => {
         null,
         "Evening loop",
       );
-      const reversed = waypointHistoryReducer(original, { type: "reverse" });
+      const reversed = waypointHistoryReducer(original, REVERSE);
       const undone = waypointHistoryReducer(reversed, { type: "undo" });
       expect(undone.future).toHaveLength(1);
 
@@ -585,6 +667,17 @@ describe("waypointHistoryReducer", () => {
       });
 
       expect(afterNewAction.future).toEqual([]);
+    });
+  });
+
+  describe("createInitialWaypointHistoryState", () => {
+    it("names a fresh draft with the name it is given", () => {
+      expect(createInitialWaypointHistoryState("Geplante Route")).toEqual({
+        past: [],
+        present: { waypoints: [], routeName: "Geplante Route" },
+        future: [],
+        selectedWaypointId: null,
+      });
     });
   });
 

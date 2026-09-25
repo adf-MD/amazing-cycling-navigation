@@ -96,6 +96,31 @@ describe("category 5 — retained English that the interface no longer renders",
     expect(read("src/ui/planning/RouteSummaryPanel.tsx")).not.toContain("surface.label");
   });
 
+  it("keeps English route-name defaults only where no rider sees them", () => {
+    // Item 113's 25 September 2026 follow-up moved every generated name a
+    // rider sees into the catalogue. What remains is English on purpose:
+    // the routed result's placeholder name, overwritten by Save and
+    // Export and never displayed; storage's default for a draft row that
+    // predates the name field, and so predates German; and importGpx's
+    // default for direct callers, which the Route Library overrides.
+    expect(read("src/ui/planning/usePlanningRoute.ts")).toContain(
+      'name: "Planned route"',
+    );
+    expect(read("src/routing/openRouteServiceAdapter.ts")).toContain(
+      'name: "Planned route"',
+    );
+    expect(read("src/storage/mapping.ts")).toContain(
+      'stored.routeName ?? "Planned route"',
+    );
+    expect(read("src/gpx/importGpx.ts")).toContain('fallbackName = "Imported route"');
+    const planning = read("src/ui/planning/PlanningScreen.tsx");
+    expect(planning).toContain('t("planning.defaultRouteName")');
+    expect(planning).not.toContain('"Planned route"');
+    expect(read("src/ui/library/ImportGpxButton.tsx")).toContain(
+      't("gpx.importedRouteFallback")',
+    );
+  });
+
   it("keeps GeolocationError.message while both screens select from the reason", () => {
     expect(read("src/platform/geolocation.ts")).toContain(
       "Your location is currently unavailable.",

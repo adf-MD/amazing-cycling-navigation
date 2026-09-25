@@ -88,8 +88,11 @@ export interface StoredPlanningDraft {
   /** The rider's in-progress route name. Optional because rows written
    * before this field existed won't have it — src/storage/mapping.ts's
    * fromStoredPlanningDraft defaults a missing value to "Planned route",
-   * the same default PlanningScreen already used before any draft
-   * persisted a name at all. Not indexed, so adding it doesn't need a
+   * the default PlanningScreen used before any draft persisted a name at
+   * all. Deliberately English and language-independent: such a row
+   * predates German, and storage never depends on the interface language.
+   * A fresh draft's name now comes from the catalogue instead
+   * ("planning.defaultRouteName"). Not indexed, so adding it doesn't need a
    * schema version bump (see the version(1)/(2) comments below — same
    * convention as StoredRideState's camera fields). */
   routeName?: string;

@@ -3,6 +3,7 @@ import type { ChangeEvent } from "react";
 import { useTranslate } from "../../i18n/useTranslate.ts";
 import { importGpxFile, type GpxImportResult } from "../../gpx/importGpx.ts";
 import { saveRoute } from "../../storage/routesRepository.ts";
+import { systemClock } from "../../platform/clock.ts";
 
 export interface ImportGpxButtonProps {
   onImported: (result: GpxImportResult) => void;
@@ -18,7 +19,7 @@ export function ImportGpxButton({ onImported, onError }: ImportGpxButtonProps) {
     event.target.value = "";
     if (!file) return;
 
-    importGpxFile(file)
+    importGpxFile(file, systemClock, t("gpx.importedRouteFallback"))
       .then(async (result) => {
         await saveRoute(result.route);
         onImported(result);
