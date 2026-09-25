@@ -282,6 +282,44 @@ describe("category 7 — no genuine rider-facing copy is left inline", () => {
     }
   });
 
+  // Repository-wide, not scoped. The scoped list above missed the
+  // route-ride `End ride` trigger and the too-short-geometry hint in
+  // RidingScreen.tsx: neither module was listed, and `End ride` is two
+  // words, below the three-word sentence pattern. Both were found on the
+  // installed iPhone on 25 September 2026, not by any audit. A letter
+  // anywhere in JSX text is the stronger rule, and it has no false
+  // positives: the only `>…<` spans outside JSX are arrow-function return
+  // types such as `=> Promise<`, which the lookbehind excludes.
+  const JSX_TEXT_WITH_A_LETTER = /(?<![=-])>\s*[A-Za-z][^<>{}]*</g;
+  const LITERAL_ACCESSIBLE_ATTRIBUTE =
+    /\b(?:aria-label|title|placeholder|alt)="[^"]*[A-Za-z][^"]*"/g;
+  const TSX_SOURCES = Object.entries(SOURCES).filter(([path]) => path.endsWith(".tsx"));
+
+  it("the repository-wide rules match what they claim to", () => {
+    // Self-tests, so a regex that silently matches nothing fails here
+    // instead of passing everywhere else.
+    expect("<p>\n  End ride\n</p>".match(JSX_TEXT_WITH_A_LETTER)).toHaveLength(1);
+    expect("<b>Cancel</b>".match(JSX_TEXT_WITH_A_LETTER)).toHaveLength(1);
+    expect("(): Promise<void> => Promise<".match(JSX_TEXT_WITH_A_LETTER)).toBeNull();
+    expect('<p>{t("ride.endRide")}</p>'.match(JSX_TEXT_WITH_A_LETTER)).toBeNull();
+    expect('<b aria-label="Zoom in" />'.match(LITERAL_ACCESSIBLE_ATTRIBUTE)).toHaveLength(
+      1,
+    );
+    expect(TSX_SOURCES.length).toBeGreaterThan(40);
+  });
+
+  it("leaves no letter-bearing JSX text anywhere in production", () => {
+    for (const [path, source] of TSX_SOURCES) {
+      expect(source.match(JSX_TEXT_WITH_A_LETTER) ?? [], path).toEqual([]);
+    }
+  });
+
+  it("leaves no literal accessible-name attribute anywhere in production", () => {
+    for (const [path, source] of TSX_SOURCES) {
+      expect(source.match(LITERAL_ACCESSIBLE_ATTRIBUTE) ?? [], path).toEqual([]);
+    }
+  });
+
   it("leaves no English summary or heading text in a scoped disclosure", () => {
     for (const path of SCOPED) {
       const matches = read(path).match(/<(summary|h[1-6])>[A-Za-z][^<{]*</g) ?? [];

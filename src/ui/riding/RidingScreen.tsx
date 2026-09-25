@@ -1214,7 +1214,7 @@ export function RidingScreen({
           onClick={handleEndRideClick}
           disabled={activeFinalizeSource !== null || isPausePending}
         >
-          End ride
+          {t("ride.endRide")}
         </button>
         {finalizeError?.source === "end" ? (
           <p className="field-error" role="alert">
@@ -1727,9 +1727,7 @@ export function RidingScreen({
             {isEditCopyInFlight ? t("riding.creatingEditCopy") : t("riding.editCopy")}
           </button>
           {!canDeriveEditableWaypoints(route) ? (
-            <p className="field-hint">
-              This route doesn't have enough distinct geometry to create an editable copy.
-            </p>
+            <p className="field-hint">{t("riding.editCopyTooShort")}</p>
           ) : null}
           {editCopyError ? (
             <p className="field-error" role="alert">

@@ -97,6 +97,12 @@ const MIGRATED_LITERALS: Readonly<Record<string, readonly string[]>> = {
     "Your existing draft could not be checked. Try again.",
     "Elevation profile view",
     "Elevation profile for selected recognised descent",
+    // Both survived stage 4 because nobody listed them, and both were
+    // found on the installed iPhone rather than by any audit (25 September
+    // 2026): the route-ride End trigger read `End ride` in German, and the
+    // too-short-geometry hint stayed English beside German controls.
+    "End ride",
+    "enough distinct geometry",
   ],
   "FreeRoamScreen.tsx": [
     "Follow my location",
