@@ -1,6 +1,6 @@
 # Completed backlog items 118–
 
-This file continues the 100– numeric range and opens at item 118. It was started when item 118 was completed: adding it to what was then `items-110-NN.md` would have taken that file to 162,614 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md), so that file was closed at item 117 and renamed [`items-110-113.md`](items-110-113.md) instead of growing unbounded. No existing entry was moved, shortened or rewritten by that split — only the filename changed, plus that file's own intro paragraph and the inbound links that pointed at it. Stable item numbers never change regardless of which file their text lives in: item 118 was completed ahead of items 102, 103, 113, 114 and 119, all of which remain pending, so a number is an identifier and never a schedule.
+This file continues the 100– numeric range and opens at item 118. It was started when item 118 was completed: adding it to what was then `items-110-NN.md` would have taken that file to 162,614 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md), so that file was closed at item 117 and renamed [`items-110-113.md`](items-110-113.md) instead of growing unbounded. No existing entry was moved, shortened or rewritten by that split — only the filename changed, plus that file's own intro paragraph and the inbound links that pointed at it. Stable item numbers never change regardless of which file their text lives in: item 118 was completed ahead of items 102, 103, 113, 114 and 119, all of which remain pending, so a number is an identifier and never a schedule. Item 121 followed, completed in `0.4.44` ahead of items 102, 103, 114, 119 and 120, which remain pending.
 
 See [`README.md`](README.md) for the full history index, [`../backlog.md`](../backlog.md) for pending specifications, and [`../current-status.md`](../current-status.md) for the manual acceptance ledger.
 
@@ -203,3 +203,204 @@ This is **broad installed-iPhone portrait product-level acceptance** of the refi
 **Build context, stated separately from the physical evidence.** The refinement shipped as version `0.4.37` (commit `5bee225`) and was deployed before this report. **No app version or build was read from `Status` on the device during the session**, so nothing here asserts which build was installed; the deployed context is recorded alongside the report rather than as part of it.
 
 With this, item 118 is complete: the shipped same-card containment was accepted on 13 September 2026 and the conditional-reveal refinement on 14 September 2026.
+
+---
+
+<a id="item-121"></a>
+
+## Item 121 — Four-destination primary navigation with a Settings/Status switcher — done
+
+_Category: Navigation and information architecture_
+
+121. **Four-destination primary navigation with a Settings/Status switcher — done**
+     - Origin: a navigation decision the rider approved before item 113's first installed-iPhone German pass, recorded here on 25 September 2026 together with the evidence from that pass. **This is a new decision, and it explicitly reverses the shared-parent option that item 112's stage-5 gate rejected** ([`history/items-110-113.md#item-112`](items-110-113.md#item-112)). Item 112 rejected a shared parent for Settings and Status because ACN has no router, no URL/history and no focus management on screen transition, and because the failure case would cost an extra tap. The 25 September pass supplied new evidence: German `Einstellungen` wrapped its final `n` onto a second line of the five-tab bar at ordinary text on an iPhone 13, even though `e2e/language.spec.ts` asserts one line in the pinned container. Item 112's other decisions stand: the names `Status` and `Settings`, and Settings' `Preferences`/`Explanations` grouping.
+     - Approved scope:
+       - a **sticky primary navigation with four destinations**: `Routes / Ride / Plan / Settings` (German `Routen / Fahren / Planen / Einstellungen`);
+       - Status reached through a **non-sticky, two-button `Settings / Status` sibling switcher at the top** of both the Settings and Status screens;
+       - **the current contents of both screens preserved initially**, with nothing moved between them in this item;
+       - **an unfinished OpenRouteService key edit preserved in memory** when switching between the two siblings, so typing a key, checking Status and returning does not lose it. In memory only, never persisted, consistent with the project's key-storage rules.
+     - Constraints: no URL router (hash routing only if one becomes unavoidable, per the root rules); the switcher's active state never colour alone; established touch targets; the immersive riding shell keeps replacing the navigation exactly as today. Re-measure whether item 113's `:lang(de) .main-nav-button` containment rule is still needed, rather than assuming it.
+     - **Item 103 must not silently absorb this information-architecture change**, and item 102's symbol redesign then works over four destinations. Item 102's "do not restructure navigation destinations" clause is superseded for this item only, by this separate approval. Item 28 is unaffected.
+     - Evidence required:
+       - English and German at 320–430 px portrait, at ordinary and 200% root text, with no horizontal overflow contributed by the navigation or the switcher;
+       - labels inside their controls under the device-width stress item 113's follow-up introduced (a regression guard, not proof of iOS fit);
+       - a fail-first test that an unsaved key survives a Settings → Status → Settings round trip;
+       - keyboard and screen-reader semantics for the switcher, including focus on switching.
+     - Targeted English and German acceptance on the installed iPhone Home Screen PWA follows implementation. Physical Android verification is separately outstanding, as for most recent items.
+     - Placed **first** in the approved execution order: after item 113's follow-up and before item 114.
+
+### Decisions made with the rider before implementation (28 September 2026)
+
+The approved plan revised the backlog text above in the following ways. Each point was put to the rider and decided, not assumed.
+
+- **The Settings tab reopens the last-viewed view.** Within one app session it returns to whichever of Settings or Status was last shown. This is held in memory only, so a reload starts at Settings.
+  - Tapping it while Status is showing opens Settings.
+  - Tapping it while Settings is already showing does nothing, including to the scroll position.
+  - Planning's `Open Settings` always opens Settings, because the notice exists to get a key entered.
+- **The switcher is sticky and compact**, directly beneath the sticky primary navigation. This revises the backlog's "non-sticky" wording.
+- **An interim scroll rule.** The page starts at the top whenever navigation changes the rendered view: on entry from another tab, on a Settings ↔ Status switch, and when the tab is tapped from Status.
+  - It does not start at the top for updates within a view: a disclosure, a preference, a live-query refresh, typing, or a re-tap.
+  - No other screen's scroll behaviour changes.
+  - Item 125 is to replace this with a restored position for each view. A dated note to that effect was added to item 125 in `backlog.md`.
+- **The unfinished key edit survives a Settings ↔ Status switch only.**
+  - Leaving for another tab discards it, as before, and it is never persisted.
+  - The field is masked again on return.
+  - An armed Delete-key confirmation is dismissed by a switch, which is item 118's rule that an open confirmation is never silently set aside.
+- **A switcher label that cannot fit stacks the two buttons** rather than breaking a word.
+- **English `Settings` must fit inside its own tab at 200 %.** Remaining merely inside the viewport was not accepted.
+- **Both views' `h1`s are visually hidden but kept** as the semantic first heading.
+  - At ordinary size the top of Settings read `Einstellungen` three times: the tab, the switcher and the heading.
+  - The selected switcher button already names the view, and hiding the heading returns about 45px, which the sticky rows need.
+  - "Heading visible after a reset" therefore means the view's first visible heading: `Preferences`/`Optionen` on Settings, `System status`/`Systemstatus` on Status.
+- **A usability gate instead of a percentage cutoff.** The rider rejected an arbitrary 40 %-of-viewport stop rule in favour of three checks. The layout (A: the switcher inside the sticky header) had to pass all of them at 375×667, 390×844 and 430×932, in both languages, at 100 % and 200 %:
+  - **U1:** the first visible heading sits below the sticky rows after a reset.
+  - **U2:** the key field's label, the field and the Save row fit together above a stand-in for the portrait keyboard. The stand-in is about 260px at 375×667 and 336px otherwise, and it is a proxy, never device acceptance.
+  - **U3:** the Delete-key confirmation's actions end up fully visible.
+
+  A responsive alternative (R) was approved in advance for use if A failed. Two conditions were set that stop the work before any code change:
+  - an English whole-word fit that no contained layout could achieve;
+  - A and R both failing the gate.
+
+### Stage 0: measured on the unchanged parent, in the pinned container, Chromium and WebKit agreeing
+
+Four tabs were simulated by hiding the Status tab. The switcher was simulated by injecting a row through the DOM and CSSOM. All probes were temporary and never committed.
+
+**Navigation fit.**
+
+- **German, ordinary text:** `Einstellungen` stays on one line with four tabs at every width from 320 to 430px. The one exception is 320px under item 113's 12 % width stress.
+- **English, 200 %:** `Settings` still stuck out of its own tab. Unstressed it was out by 3.8px at 320px (3.7px in WebKit); stressed, by 8.6, 3.6 and 1.7px at 320, 360 and 375px.
+- **Horizontal padding cannot help.** The overhang is measured against the tab's border box, so removing padding changes nothing.
+- **The cause is the global `button { min-width: var(--touch-target-min) }`.** It replaces flexbox's content-based minimum with a flat 44px. Restoring `min-width: auto` on the tabs keeps every English label whole, on one line and inside its own tab, from 320 to 430px, at both text sizes, stressed or not.
+  - At ordinary text the tabs stay equal-width.
+  - The narrowest tab measured is 55px.
+  - German is unaffected, because its `overflow-wrap: anywhere` reduces its minimum to one character.
+- **Both halves of item 113's `:lang(de)` rule remain load-bearing.**
+  - Without the wrap half, German contributes 23px (at 430px) to 50px (at 320px) of overflow at 200 %.
+  - Without the padding half, `Einstellungen` wraps at ordinary text at 320px.
+
+**The switcher never stacks** anywhere from 320 to 430px unstressed, even at 200 %. At 320px German the row simply becomes unequal (182/114px). So R, as first defined (release only when stacked), behaved exactly like A.
+
+**The gate.** U1 and U3 passed everywhere, and everything passed at 390×844 and 430×932. U2 failed at 375×667 with 200 % text:
+
+| 375×667, 200 %, keyboard stand-in 260px | Required (Chromium / WebKit) | Available, A | Available, navigation only |
+| --------------------------------------- | ---------------------------- | ------------ | -------------------------- |
+| English                                 | 273 / 279px                  | 264px        | 324px                      |
+| German                                  | 317 / 323px                  | 233px        | 293px                      |
+
+The German shortfall **predates item 121**: today's five-tab app, with no switcher, fails the same check by 24–30px. At 200 % the key form alone is 317px tall: an 88px label, a 91px field row and a 106px Save row. Work stopped here and the measurements went back to the rider, who chose **"release while typing"**:
+
+- R's structure, with the switcher a sticky sibling beneath the header rather than a row inside it;
+- a new trigger: the switcher stops sticking while focus is inside the key form;
+- English then passes U2 (324px available), and the German shortfall is recorded as pre-existing and not made worse.
+
+**Other Stage 0 findings.**
+
+- **Focus under the header.** Shift+Tab onto a control 20px beneath the sticky header left it there, obscured, in both engines, because it still counts as in view.
+- **Fail-first evidence.** The unsaved key was confirmed lost on the parent after a Settings → Status → Settings round trip.
+
+### Implementation account
+
+**Types** (`src/ui/shared/screenTypes.ts`).
+
+- `Screen` is unchanged, so `"diagnostics"` stays Status's internal key, as item 112 established, and nothing is persisted.
+- New derived types: `PrimaryDestination = Exclude<Screen, "diagnostics">` and `SettingsSectionView`.
+- Pure helpers: `isSettingsSectionView`, `resolveSettingsTabTarget` and `navCurrentState`.
+
+**Navigation** (`MainNavigation.tsx`, `NavIcon.tsx`).
+
+- Four destinations, and `onNavigate` now takes a destination.
+- The Settings tab carries `aria-current="page"` on Settings and `"true"` on Status. The section is current, not the page the tab opens.
+- The CSS selected state lists both values explicitly, because a bare `[aria-current]` would also match `"false"`.
+- The pulse-line Status glyph is removed.
+
+**App** (`src/App.tsx`).
+
+- One `showScreen` wrapper records the last-viewed view. The primary-nav handler resolves the Settings tab through it.
+- **One render slot** holds both views. Because `SettingsSection` stays mounted across a switch, the key draft survives and the switcher's DOM node, and so its focus, survives too. Two slots would remount it, and a negative control proves that.
+- `handleNavigate`'s free-roam rule and the immersive shell are untouched.
+
+**`src/ui/settings/SettingsSection.tsx`** (new) owns three things:
+
+- the lifted `useProviderKeyDraft` state (`draftKey`, `isEditing`, `saveError`);
+- the top reset, a `useLayoutEffect` keyed on the view alone. It reuses item 95's reassertion loop, extracted unchanged to `src/ui/shared/scrollToTopAndSettle.ts`, and the ride hook's own tests still guard it;
+- a ResizeObserver that publishes `--app-header-block-size` and `--settings-switcher-block-size` on the root.
+
+`SettingsScreen` takes an optional `keyDraft` and falls back to its own instance of the same hook. That one documented shim keeps its 57 standalone test renders unchanged. Its reveal clears whichever of the header and switcher reaches lower.
+
+**`src/ui/settings/SettingsStatusSwitcher.tsx`** (new).
+
+- A `<nav>` named "Settings and Status" / "Einstellungen und Status", holding two native buttons.
+- The buttons reuse `nav.settings` and `nav.status`, so the tab and the switcher cannot disagree, and `nav.status` is not orphaned.
+- `aria-current="page"` marks the view showing. Pressing it does nothing, and it is not disabled.
+- Visually it takes Map/Profile's selected treatment (never colour alone), is compact (a 44px minimum, `0.875rem` bold), and is sticky beneath the header at z-index 9.
+- `.settings-section:has(form:focus-within)` releases it to `position: static`.
+- The fit uses `min-width: auto` with `break-word`, never `anywhere`, which would reduce the minimum to one character and stop the stacking.
+
+### Findings worth carrying forward
+
+1. **A root `scroll-padding-top` is unsafe with sticky chrome, for two measured reasons.**
+   - The padding covers the sticky rows themselves. Focusing one of their own controls then counts as out of view, and on a click in Chromium the page scrolled 448px.
+   - **WebKit answers a scroll-padding change with a scroll-anchoring adjustment.** The first implementation dropped the switcher's height from the padding while the key field had focus. Pressing Save moved focus out of the field, the padding grew by 61px, and WebKit scrolled the page by exactly −61px between the press and the release.
+
+     The release then landed on the field above, and **the key was never saved**. The existing CSP smoke test caught it, failing 6 of 6 in WebKit. Isolation showed that the padding change, not the switcher's position change, caused the jump, and that `overflow-anchor: none` also removed it. Chromium does not adjust.
+
+   The reservation is now a **constant** `scroll-margin-top` on the view's own content (`.settings-section > .screen *`). The release keys on `form:focus-within`, never on the field's own `:focus`, so moving focus to Save changes nothing mid-press.
+
+2. **A first regression test for the lost save did not discriminate.** It centred the field before pressing Save, and in that position the defect does not occur. It passed against the original rules. Rebuilt on the ordinary flow (fill, then press Save) at 390×844 and 375×667, it fails in WebKit against the original rules and passes against the fix.
+3. **Headless WebKit defers animation frames until pointer activity.** The section's arrival reset loop can therefore still be pending when a test scrolls programmatically, and it then re-flattens that scroll at the test's next click. A rider's touch or wheel ends the loop at once, and on a device it settles in about 50ms.
+
+   Tests that scroll after arriving first request a few frames (`settleArrival`). Without that, a Chromium test failed by the same race. The loop itself is unchanged: its abort events are still touch, pointer and wheel, not key presses.
+
+4. **A negative control that runs the reset on every render was not caught by the first e2e test.** A native `<details>` and a no-op tab press re-render nothing. Typing does, because the section owns the draft, so the test now types.
+5. **An unrelated unit observation, recorded, not attributed.** `App.test.tsx`'s "returns a resumed (still-idle) route screen to the launcher" failed once in 26 runs of four test files under parallel load on this branch. It passed 0 of 10 failures on the Stage 1 baseline, 12 of 12 in isolation, and was never reproduced again. Its path (import, open a route, back to Ride options) touches nothing this item changed.
+
+### Evidence
+
+**Fail-first.**
+
+- Four `SettingsSection.test.tsx` tests failed for their intended reasons before the draft was wired: the draft came back empty, the Replace form closed, and a save error was lost.
+- The Stage 0 probe showed the unsaved key lost on the parent in both engines.
+
+**Negative controls, every one run.** Where a control first failed to discriminate, it is reported and the test that was strengthened is named.
+
+| Control                                                   | Caught by                                                                                                        |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| The draft kept local in `SettingsScreen`                  | 5 unit tests (4 section, 1 App); both e2e round trips                                                            |
+| Two App slots instead of one                              | the App round trip; 3 e2e tests (both round trips, focus identity)                                               |
+| `key={view}` on the switcher                              | 2 unit focus tests; the e2e focus-identity test                                                                  |
+| Status restored to the navigation                         | 3 unit tests; 19 e2e tests                                                                                       |
+| The German wrap half removed                              | 4 of 6 widths (320–390px): with `min-width: auto`, the German tab can widen to its whole word at 414 and 430px   |
+| The German padding half removed                           | 320px only, as measured                                                                                          |
+| The English `min-width: auto` removed                     | 4 tests (320–375px)                                                                                              |
+| `overflow-wrap: anywhere` on the switcher                 | 5 German widths                                                                                                  |
+| The selection rings removed                               | the non-colour `box-shadow` check                                                                                |
+| The top reset removed                                     | 2 unit tests; 2 e2e tests                                                                                        |
+| The reset run on every render                             | 1 unit test; the e2e test **did not discriminate at first**, and was strengthened with a typing step (finding 4) |
+| The last-viewed view ignored                              | 2 unit tests; the e2e restore test                                                                               |
+| The scroll margin removed                                 | 3 tests (Chromium spec, Chromium smoke, WebKit smoke)                                                            |
+| A root scroll-padding instead                             | the focus-scrolls-the-page smoke test, both engines                                                              |
+| The original rules (field-only release plus padding flip) | the WebKit Save smoke, at both sizes (**after** the rebuild in finding 2); the WebKit CSP smoke                  |
+| Released on the field's focus only                        | the release test (focus moving to Reveal)                                                                        |
+| No release at all                                         | U2 at 375×667 in both languages; the release test                                                                |
+
+**Verification.**
+
+- `corepack npm run lint`, `corepack npm run typecheck`, `corepack npm test` (**4629/4629 across 200 files**) and `corepack npm run build` are clean.
+- The **full Playwright suite ran in the pinned container**: **538/538**, including the `webkit-smoke` project and the new `settingsStatusSwitcher.smoke.spec.ts`.
+- `corepack npm run format:check` was run last.
+- Local npm is the pinned `11.16.0`. Local Node is `v24.13.0` against `.nvmrc`, and CI is authoritative.
+
+### Limitations, stated plainly
+
+- No installed-iPhone evidence exists yet.
+  - The container's fonts do not predict iOS widths, so every stressed run is a regression guard.
+  - U2's keyboard is a stand-in.
+  - Whether iOS keeps the sticky rows visible with the real keyboard up is exactly what the device check must show.
+- **The German key form at 375×667 with 200 % text** is 24–30px taller than the space above the stand-in keyboard, with or without the switcher. This predates item 121, which releases the switcher so as to add nothing. No item is allocated.
+- **VoiceOver was not audited**, and it stays deferred, as for item 113.
+  - A change of `aria-current` on the focused switcher button is not reliably announced.
+  - The new view's heading is the next swipe.
+- A connection test still in flight when the rider switches away is lost from view and can be started again on return. This already happens through the primary navigation and was not changed.
+- Browser-root text scaling is not iOS Dynamic Type evidence.
+- The WebKit coverage is desktop WebKit in a container.
+- No physical-Android result is claimed.
