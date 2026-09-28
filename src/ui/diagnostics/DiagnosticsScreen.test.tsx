@@ -4,6 +4,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import pkg from "../../../package.json" with { type: "json" };
 import { DiagnosticsScreen } from "./DiagnosticsScreen.tsx";
+import { LanguageProvider } from "../../i18n/LanguageProvider.tsx";
 import { db } from "../../storage/db.ts";
 import { setActiveRideState } from "../../storage/rideStateRepository.ts";
 import { renameRoute } from "../../storage/routesRepository.ts";
@@ -648,6 +649,32 @@ describe("DiagnosticsScreen", () => {
     expect(
       screen.getByText(
         "No map imagery problems, retries or recoveries recorded this session. Successful loads are not listed.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("words the map-imagery list in German as problems and their remedy, never as a log of every load", () => {
+    // The 0.4.42 installed-iPhone recheck (September 2026) asked for plainer
+    // German. Accurate by src/map/mapDiagnostics.ts: the list records
+    // failures, fallback, manual and automatic retries and recovery — a
+    // problem or a step to remedy one — and never a normal successful load.
+    // English is unchanged.
+    render(
+      <LanguageProvider
+        preference="de"
+        readLanguages={() => ["de-DE"]}
+        documentElement={{ lang: "" }}
+      >
+        <DiagnosticsScreen />
+      </LanguageProvider>,
+    );
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Probleme mit dem Kartenmaterial" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "In dieser Sitzung gab es keine Einträge zu Problemen oder ihrer Behebung. Normale, erfolgreiche Ladevorgänge werden hier nicht angezeigt.",
       ),
     ).toBeInTheDocument();
   });

@@ -1117,9 +1117,9 @@ export const de: Catalogue = {
     "Automatisches Kopieren nicht möglich — markiere und kopiere den Berichtstext stattdessen manuell:",
 
   // --- Status: map imagery -----------------------------------------------
-  "status.recentMapAttempts": "Probleme und Wiederherstellung beim Kartenmaterial",
+  "status.recentMapAttempts": "Probleme mit dem Kartenmaterial",
   "status.noMapAttempts":
-    "In dieser Sitzung wurden keine Probleme, Wiederholungsversuche oder Wiederherstellungen beim Kartenmaterial erfasst. Erfolgreiche Ladevorgänge werden nicht aufgeführt.",
+    "In dieser Sitzung gab es keine Einträge zu Problemen oder ihrer Behebung. Normale, erfolgreiche Ladevorgänge werden hier nicht angezeigt.",
 
   // --- Application shell: the ride-switch prompt -------------------------
   // translator: `target` names a session and may be the rider's own route
