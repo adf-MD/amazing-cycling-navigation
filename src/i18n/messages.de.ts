@@ -30,15 +30,18 @@ import type { Catalogue } from "./translate.ts";
  */
 export const de: Catalogue = {
   // --- Primary navigation -------------------------------------------
-  // translator: these five labels each render in a fifth of the viewport
-  // width. "Einstellungen" is the longest and is kept whole deliberately;
-  // stage 6b adds the `:lang(de)` wrapping rule that makes it fit.
+  // translator: the four tab labels each render in about a quarter of the
+  // viewport width. "Einstellungen" is the longest and is kept whole
+  // deliberately; item 113's `:lang(de)` wrapping rule makes it fit at
+  // enlarged text, and item 121 re-measured it with four tabs. `nav.status`
+  // and `nav.settings` also label the Settings/Status switcher.
   "nav.landmarkLabel": "Hauptbereiche",
   "nav.routes": "Routen",
   "nav.ride": "Fahren",
   "nav.plan": "Planen",
   "nav.status": "Status",
   "nav.settings": "Einstellungen",
+  "settingsSection.switcherLabel": "Einstellungen und Status",
 
   // --- Settings: screen chrome --------------------------------------
   "settings.landmarkLabel": "Einstellungen",

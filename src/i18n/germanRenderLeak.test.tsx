@@ -17,6 +17,7 @@ import { buildRoutePointsFromWaypoints } from "../test/fixtures/routeGeometry.ts
 import { buildFakeGeolocationSource } from "../test/fixtures/geolocationSource.ts";
 import type { GeolocationFix } from "../platform/geolocation.ts";
 import { DiagnosticsScreen } from "../ui/diagnostics/DiagnosticsScreen.tsx";
+import { SettingsStatusSwitcher } from "../ui/settings/SettingsStatusSwitcher.tsx";
 import { saveProviderKey } from "../storage/providerKeyRepository.ts";
 import { RoutingError } from "../routing/openRouteServiceErrors.ts";
 
@@ -281,6 +282,24 @@ describe("free roam renders no English in German", () => {
       ).toBeInTheDocument();
       expectLanguageClean(language, headerEndButton(container));
       expectCompactHeaderLabel(translator, headerEndButton(container));
+    });
+  }
+});
+
+describe("the Settings/Status switcher renders no English in German", () => {
+  // Backlog item 121: the switcher is new copy on every view of the
+  // Settings section, including its landmark name.
+  for (const [language, translator] of LANGUAGES) {
+    it(`both buttons and the landmark (${language})`, () => {
+      withLanguage(
+        language,
+        <SettingsStatusSwitcher view="settings" onSelectView={vi.fn()} />,
+      );
+
+      const nav = screen.getByRole("navigation", {
+        name: translator.t("settingsSection.switcherLabel"),
+      });
+      expectLanguageClean(language, nav);
     });
   }
 });

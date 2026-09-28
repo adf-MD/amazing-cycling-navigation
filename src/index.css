@@ -254,23 +254,35 @@ header {
   color: var(--colour-text);
   font-size: 0.7rem;
   font-weight: 600;
+  /* Backlog item 121. Restores flexbox's content-based minimum, which the
+   * global `button { min-width: var(--touch-target-min) }` below otherwise
+   * replaces with a flat 44px. Without it a tab could shrink narrower than
+   * its own label: measured in the pinned container, English `Settings`
+   * at 200% root text stuck out of its tab by 3.8px at 320px, and under
+   * item 113's 12% width stress by 8.6/3.6/1.7px at 320/360/375px. With
+   * it, a tab whose single-word label cannot fit its equal share takes
+   * exactly the width that word needs from its neighbours, so every
+   * English label stays whole and inside its own tab from 320 to 430px at
+   * ordinary and 200% text, stressed or not. At ordinary text every label
+   * fits its share, so the tabs stay equal-width, as before; the narrowest
+   * tab measured is 55px, above the 44px floor. German is unaffected: its
+   * `overflow-wrap: anywhere` below makes its minimum a single character. */
+  min-width: auto;
 }
 
-/* Never colour alone: a soft accent surface plus an inset ring, mirroring
- * the existing .cycling-profile-button.is-selected convention below.
- * Keyed off aria-current directly rather than a parallel class, so there
- * is exactly one source of truth for which destination is active. */
-/* Backlog item 113 stage 6b: German-only navigation containment.
+/* Backlog item 113 stage 6b: German-only navigation containment,
+ * re-measured by item 121 for four tabs in the pinned container, Chromium
+ * and WebKit agreeing.
  *
- * `Einstellungen` is 131px wide at 200% root text against a 87.6px budget,
- * so German overflows the document by 22px without this — measured in the
- * pinned container, in Chromium and WebKit, agreeing within 0.03px.
+ * `Einstellungen` is 131px wide at 200% root text against a tab of 73px
+ * (at 320px) to 101px (at 430px), so German overflows the document by
+ * 23px (430px) to 50px (320px) without the wrap half — it still breaks
+ * inside its tab at 200%, which item 113 accepted.
  *
- * Both halves are load-bearing and both were measured. Removing the
- * horizontal padding takes the content box from 63.59px to 71.59px, which
- * is what keeps `Einstellungen` on ONE line at ordinary text; with the
- * padding kept, the wrap rule alone drops it to two lines at 100% and the
- * navigation grows from 58px to 72px — an ordinary-German regression.
+ * Both halves remain load-bearing. Without the padding half, the wrap
+ * rule breaks `Einstellungen` onto two lines at ORDINARY text at 320px
+ * (four tabs; it did so up to 390px with five) — an ordinary-German
+ * regression no overflow assertion catches, since it overflows nothing.
  *
  * `overflow-wrap: anywhere`, never `word-break: break-all`: `anywhere`
  * breaks only when there is no other opportunity, so it activates only
@@ -290,10 +302,112 @@ header {
   overflow-wrap: anywhere;
 }
 
-.main-nav-button[aria-current="page"] {
+/* Never colour alone: a soft accent surface plus an inset ring, mirroring
+ * the existing .cycling-profile-button.is-selected convention below.
+ * Keyed off aria-current directly rather than a parallel class, so there
+ * is exactly one source of truth for which destination is active. Both
+ * values are listed, never a bare [aria-current], which would also match
+ * "false": the Settings tab carries "true" while Status is showing (backlog
+ * item 121) — the section is current, not the page the tab opens. */
+.main-nav-button[aria-current="page"],
+.main-nav-button[aria-current="true"] {
   background: var(--colour-accent-soft);
   box-shadow: inset 0 0 0 2px var(--colour-accent);
   color: var(--colour-accent);
+}
+
+/* Backlog item 121: the Settings/Status switcher, directly beneath the
+ * sticky primary navigation on both views of the Settings section.
+ *
+ * Sticky, a sibling of that header rather than a row inside it, so it can
+ * be released on its own: `top` is the header's live height, published by
+ * SettingsSection.tsx from a ResizeObserver. Its containing block is
+ * `.settings-section`, which spans the whole view, so it stays stuck all
+ * the way down (a too-short wrapper would let it scroll away early).
+ * z-index 9 keeps it beneath the header (10) and above the content.
+ *
+ * Compact: the global 44px minimum rather than Map/Profile's 48px, 0.875rem
+ * bold labels, and 8px padding and gap. The labels sit on one row from 320
+ * to 430px even at 200% root text — at 320px German the row becomes unequal
+ * (182/114px) rather than breaking a word. If a label ever cannot fit, the
+ * two buttons stack: `min-width: auto` makes each button's minimum its
+ * whole word, and `break-word` (never `anywhere`, which would lower that
+ * minimum to a single character and stop the stacking) is only a last
+ * resort beyond the full row. The selected button reads without colour: a
+ * soft accent surface plus an inset ring, Map/Profile's treatment, keyed
+ * off aria-current. */
+.settings-status-switcher {
+  position: sticky;
+  top: var(--app-header-block-size, 0px);
+  z-index: 9;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  background: var(--colour-bg);
+  border-bottom: 1px solid var(--colour-border);
+}
+
+/* Released while focus is anywhere inside a form in the section — in
+ * practice the OpenRouteService key form, whose field raises the on-screen
+ * keyboard on a phone, taking the lower part of the screen. Measured at
+ * 375×667 with 200% root text and a 260px keyboard stand-in: the key form
+ * (label, field and Save row) needs 273px in English, and the sticky
+ * switcher left 264px; released, 324px. Becoming static changes no layout
+ * — a sticky box already occupies its place in the flow — it only stops
+ * following the scroll.
+ *
+ * `form:focus-within`, never the text field's own `:focus`: pressing Save
+ * (or Reveal, or Cancel) moves focus from the field to that button, and
+ * with a field-only condition the switcher re-stuck between the button's
+ * press and its release. Within the form, nothing changes mid-press; the
+ * switcher re-sticks only once focus genuinely leaves the form — for
+ * instance when a successful save replaces the form. */
+.settings-section:has(form:focus-within) > .settings-status-switcher {
+  position: static;
+}
+
+.settings-status-switcher-button {
+  flex: 1 1 0;
+  min-width: auto;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  padding: var(--space-4) var(--space-8);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.settings-status-switcher-button[aria-current="page"] {
+  background: var(--colour-accent-soft);
+  box-shadow: inset 0 0 0 2px var(--colour-accent);
+  color: var(--colour-accent);
+}
+
+/* Backlog item 121: keeps a keyboard-focused control from landing beneath
+ * the sticky rows. The browser scrolls a newly focused element into view
+ * only when it lies outside the scrollport, and a control partly beneath a
+ * sticky header is still inside it: measured on the parent, Shift+Tab onto
+ * a Settings control 20px beneath the header left it there, obscured, in
+ * Chromium and WebKit. A scroll margin as tall as the sticky rows makes the
+ * browser treat any part of the view's own content beneath them as out of
+ * view. Scoped to the view's content, so no other screen changes.
+ *
+ * On the content, never `scroll-padding-top` on the root — two measured
+ * reasons, both in the pinned container:
+ * - scroll padding covers the sticky rows themselves, so focusing one of
+ *   their own controls (a tab, or a switcher button, on click in Chromium)
+ *   counted as out of view and scrolled the page, 448px on one press;
+ * - WebKit answers a scroll-padding change with a scroll-anchoring
+ *   adjustment, so a version that dropped the switcher's height while the
+ *   key form had focus scrolled the page by exactly -61px between a press
+ *   on Save and its release, and Save never fired.
+ * Deliberately constant for the same reason: while the form has focus it
+ * over-reserves the released switcher's height, which costs nothing but a
+ * slightly lower focus position. */
+.settings-section > .screen * {
+  scroll-margin-top: calc(
+    var(--app-header-block-size, 0px) + var(--settings-switcher-block-size, 0px)
+  );
 }
 
 button {

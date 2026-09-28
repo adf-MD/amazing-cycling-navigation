@@ -48,7 +48,7 @@ import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
 import { applyConfirmationReveal } from "./confirmationRevealScroll.ts";
 import { describeProviderKeyStatus } from "./providerKeyStatus.ts";
-import { useProviderKeyDraft } from "./useProviderKeyDraft.ts";
+import { useProviderKeyDraft, type ProviderKeyDraft } from "./useProviderKeyDraft.ts";
 import { useLanguageContext, useTranslate } from "../../i18n/useTranslate.ts";
 import { RichText } from "../../i18n/RichText.tsx";
 
@@ -72,11 +72,23 @@ export interface SettingsScreenProps {
    * follow-up). Mirrors RouteLibrary/RouteListItem's identical prop —
    * App owns a page-chrome fact a screen component needs. */
   stickyHeaderRef?: RefObject<HTMLElement | null>;
+  /** Backlog item 121: the Settings/Status switcher, which sticks directly
+   * beneath the header. The reveal clears whichever of the two reaches
+   * lower, so the confirmation never lands beneath the switcher. */
+  stickySubheaderRef?: RefObject<HTMLElement | null>;
+  /** Backlog item 121: the unfinished key edit, owned by SettingsSection so
+   * it survives a switch to Status and back. When absent — a standalone
+   * render, as in this component's own tests — the screen owns an identical
+   * instance of the same hook, so both paths share one implementation and
+   * differ only in where the state lives. */
+  keyDraft?: ProviderKeyDraft;
 }
 
 export function SettingsScreen({
   clock = systemClock,
   stickyHeaderRef,
+  stickySubheaderRef,
+  keyDraft,
 }: SettingsScreenProps) {
   const translator = useTranslate();
   const { t } = translator;
@@ -95,8 +107,9 @@ export function SettingsScreen({
   const now = useNow(clock);
   const online = useOnlineStatus();
 
+  const ownKeyDraft = useProviderKeyDraft();
   const { draftKey, setDraftKey, isEditing, setIsEditing, saveError, setSaveError } =
-    useProviderKeyDraft();
+    keyDraft ?? ownKeyDraft;
   const [keyVisible, setKeyVisible] = useState(false);
   // Backlog item 118. The armed delete confirmation is bound to the exact
   // stored key it was armed for, never a bare boolean: `key` comes from a
@@ -306,13 +319,21 @@ export function SettingsScreen({
     if (!insetEl) return;
     applyConfirmationReveal(
       insetEl,
-      stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+      Math.max(
+        stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+        stickySubheaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+      ),
     );
-  }, [pendingDelete, stickyHeaderRef]);
+  }, [pendingDelete, stickyHeaderRef, stickySubheaderRef]);
 
   return (
     <section className="screen" aria-label={t("settings.landmarkLabel")}>
-      <h1 className="screen-title">{t("settings.title")}</h1>
+      {/* Backlog item 121. Still the page's first heading for assistive
+          technology, but no longer shown: the switcher's selected button
+          directly above already names this view, and the Settings tab above
+          that names the section, so a visible title would read the same
+          word a third time and cost the space the sticky rows need. */}
+      <h1 className="screen-title visually-hidden">{t("settings.title")}</h1>
 
       {!online ? (
         <p role="status" className="status-row status-row--info">

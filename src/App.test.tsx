@@ -88,15 +88,22 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const destinations: [string, string][] = [
-      ["Routes", "Routes"],
-      ["Status", "Status"],
-      ["Settings", "Settings"],
+    // Status is reached through the Settings/Status switcher (backlog item
+    // 121); its heading, like Settings', is visually hidden but remains the
+    // page's first heading for assistive technology.
+    const steps: [() => HTMLElement, string][] = [
+      [() => navButton("Routes"), "Routes"],
+      [() => navButton("Settings"), "Settings"],
+      [() => switcherButton("Status"), "Status"],
+      [() => switcherButton("Settings"), "Settings"],
+      [() => navButton("Routes"), "Routes"],
     ];
 
-    for (const [navLabel, headingName] of destinations) {
-      await user.click(screen.getByRole("button", { name: navLabel }));
-      expect(screen.getByRole("heading", { name: headingName })).toBeInTheDocument();
+    for (const [button, headingName] of steps) {
+      await user.click(button());
+      expect(
+        screen.getByRole("heading", { level: 1, name: headingName }),
+      ).toBeInTheDocument();
     }
   });
 
@@ -149,6 +156,23 @@ function buildNoopMapFactory(): MapFactory {
     };
     return map;
   };
+}
+
+/** A primary-navigation tab. Scoped to the "Main" landmark: since backlog
+ * item 121, the Settings and Status views also show a Settings/Status
+ * switcher, whose Settings button has the same name as the tab. */
+function navButton(name: string) {
+  return within(screen.getByRole("navigation", { name: "Main" })).getByRole("button", {
+    name,
+  });
+}
+
+/** A button of the Settings/Status switcher (backlog item 121), the only
+ * route to Status now that it is not a primary destination. */
+function switcherButton(name: "Settings" | "Status") {
+  return within(
+    screen.getByRole("navigation", { name: "Settings and Status" }),
+  ).getByRole("button", { name });
 }
 
 function installScrollToSpy() {
@@ -297,11 +321,15 @@ describe("App — document scroll around Ride content", () => {
     await user.click(screen.getByRole("button", { name: "Route A" }));
     expect(scrollToSpy).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole("button", { name: "Status" }));
-    await user.click(screen.getByRole("button", { name: "Ride" }));
+    // Settings applies its own interim top reset on entry (backlog item
+    // 121), so the count is taken after arriving there: what must not
+    // happen is a further reset when the rider returns to the open ride.
+    await user.click(navButton("Settings"));
+    const callsBeforeReturn = scrollToSpy.mock.calls.length;
+    await user.click(navButton("Ride"));
 
     expect(screen.getByRole("heading", { name: "Route A" })).toBeInTheDocument();
-    expect(scrollToSpy).toHaveBeenCalledTimes(1);
+    expect(scrollToSpy).toHaveBeenCalledTimes(callsBeforeReturn);
   });
 });
 
@@ -394,8 +422,13 @@ describe("App — immersive Riding shell", () => {
   it("keeps the header sticky on every top-level screen reachable without GPS, including the empty Ride state", async () => {
     const user = userEvent.setup();
     render(<App />);
-    for (const label of ["Ride", "Status", "Settings", "Routes"]) {
-      await user.click(screen.getByRole("button", { name: label }));
+    for (const button of [
+      () => navButton("Ride"),
+      () => navButton("Settings"),
+      () => switcherButton("Status"),
+      () => navButton("Routes"),
+    ]) {
+      await user.click(button());
       expect(stickyHeader()).toHaveClass("app-header--sticky");
     }
   });
@@ -414,8 +447,13 @@ describe("App — immersive Riding shell", () => {
   it("renders exactly one <nav aria-label='Main'>, regardless of screen", async () => {
     const user = userEvent.setup();
     render(<App />);
-    for (const label of ["Ride", "Status", "Settings", "Routes"]) {
-      await user.click(screen.getByRole("button", { name: label }));
+    for (const button of [
+      () => navButton("Ride"),
+      () => navButton("Settings"),
+      () => switcherButton("Status"),
+      () => navButton("Routes"),
+    ]) {
+      await user.click(button());
       expect(screen.getAllByRole("navigation", { name: "Main" })).toHaveLength(1);
     }
   });
@@ -578,8 +616,10 @@ describe("App — Route Library search restoration across navigation", () => {
       expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
     });
 
-    await user.click(screen.getByRole("button", { name: "Status" }));
-    expect(screen.getByRole("heading", { name: "Status" })).toBeInTheDocument();
+    await user.click(navButton("Settings"));
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Settings" }),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Routes" }));
 
@@ -710,8 +750,10 @@ describe("App — Route Library tag-filter restoration across navigation", () =>
       expect(screen.queryByRole("button", { name: "Zebra Loop" })).toBeNull();
     });
 
-    await user.click(screen.getByRole("button", { name: "Status" }));
-    expect(screen.getByRole("heading", { name: "Status" })).toBeInTheDocument();
+    await user.click(navButton("Settings"));
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Settings" }),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Routes" }));
 
@@ -788,8 +830,8 @@ describe("App — Route Library tag-filter restoration across navigation", () =>
     });
     expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Status" }));
-    await user.click(screen.getByRole("button", { name: "Routes" }));
+    await user.click(navButton("Settings"));
+    await user.click(navButton("Routes"));
 
     await waitFor(() => {
       expect(screen.getByLabelText("Search routes")).toHaveValue("alpine");
@@ -2550,14 +2592,188 @@ describe("App — Ride switch guard (item 73)", () => {
 
     // The sticky nav stays clickable throughout — this prompt is
     // deliberately not a true modal.
-    await user.click(screen.getByRole("button", { name: "Status" }));
+    await user.click(navButton("Settings"));
 
-    expect(screen.getByRole("heading", { name: "Status" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Settings" }),
+    ).toBeInTheDocument();
     const dialog = screen.getByRole("alertdialog");
     // The generic wording, never the named-route inline copy — this is
     // the page-level ConfirmDialog, not the inline card presentation.
     expect(
       within(dialog).getByText(/unfinished ride on another route/i),
     ).toBeInTheDocument();
+  });
+});
+
+describe("App — Settings section (backlog item 121)", () => {
+  beforeEach(async () => {
+    await db.routes.clear();
+    await db.rideState.clear();
+    await db.routeLibraryPreferences.clear();
+    await db.providerKeys.clear();
+    await db.providerKeyVerifications.clear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  function switcherLandmark() {
+    return screen.queryByRole("navigation", { name: "Settings and Status" });
+  }
+
+  it("shows the Settings/Status switcher on both views of the section and nowhere else", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    expect(switcherLandmark()).toBeNull();
+
+    await user.click(navButton("Settings"));
+    expect(switcherLandmark()).not.toBeNull();
+    await user.click(switcherButton("Status"));
+    expect(switcherLandmark()).not.toBeNull();
+
+    await user.click(navButton("Ride"));
+    expect(switcherLandmark()).toBeNull();
+  });
+
+  it("keeps an unsaved key across Status and back — by the switcher, and by the Settings tab from Status", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(navButton("Settings"));
+    const input = await screen.findByLabelText("OpenRouteService API key");
+    await user.type(input, "test-dummy-typed-in-app-0000");
+
+    await user.click(switcherButton("Status"));
+    await screen.findByRole("heading", { level: 1, name: "Status" });
+    await user.click(switcherButton("Settings"));
+    expect(await screen.findByLabelText("OpenRouteService API key")).toHaveValue(
+      "test-dummy-typed-in-app-0000",
+    );
+
+    await user.click(switcherButton("Status"));
+    await screen.findByRole("heading", { level: 1, name: "Status" });
+    await user.click(navButton("Settings"));
+    expect(await screen.findByLabelText("OpenRouteService API key")).toHaveValue(
+      "test-dummy-typed-in-app-0000",
+    );
+    expect(await db.providerKeys.count()).toBe(0);
+  });
+
+  it("reopens the last-viewed view from another tab, while the tab from Status opens Settings", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(navButton("Settings"));
+    await user.click(switcherButton("Status"));
+    await user.click(navButton("Routes"));
+    await user.click(navButton("Settings"));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Status" }),
+    ).toBeInTheDocument();
+    expect(switcherButton("Status")).toHaveAttribute("aria-current", "page");
+    expect(navButton("Settings")).toHaveAttribute("aria-current", "true");
+
+    await user.click(navButton("Settings"));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Settings" }),
+    ).toBeInTheDocument();
+    expect(navButton("Settings")).toHaveAttribute("aria-current", "page");
+
+    // The Settings view is now the last one seen.
+    await user.click(navButton("Routes"));
+    await user.click(navButton("Settings"));
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Settings" }),
+    ).toBeInTheDocument();
+  });
+
+  it("forgets the last-viewed view on a reload, starting at Settings", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(navButton("Settings"));
+    await user.click(switcherButton("Status"));
+    await user.click(navButton("Routes"));
+
+    cleanup();
+    render(<App />);
+    await user.click(navButton("Settings"));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Settings" }),
+    ).toBeInTheDocument();
+  });
+
+  it("starts each newly shown view at the top, but a tap on the Settings tab while Settings is showing changes nothing", async () => {
+    const user = userEvent.setup();
+    const scrollToSpy = installScrollToSpy();
+    render(<App />);
+    expect(scrollToSpy).not.toHaveBeenCalled();
+
+    await user.click(navButton("Settings"));
+    expect(scrollToSpy).toHaveBeenCalledTimes(1);
+    await user.click(switcherButton("Status"));
+    expect(scrollToSpy).toHaveBeenCalledTimes(2);
+    await user.click(navButton("Settings"));
+    expect(scrollToSpy).toHaveBeenCalledTimes(3);
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Settings" }),
+    ).toBeInTheDocument();
+
+    await user.click(navButton("Settings"));
+
+    expect(scrollToSpy).toHaveBeenCalledTimes(3);
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Settings" }),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves an open route session exactly where it was across a visit to Settings and Status", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    await importFixture(user, "Route A.gpx");
+    await user.click(screen.getByRole("button", { name: "Route A" }));
+    expect(screen.getByRole("heading", { name: "Route A" })).toBeInTheDocument();
+
+    await user.click(navButton("Settings"));
+    await user.click(switcherButton("Status"));
+    await user.click(navButton("Ride"));
+
+    expect(screen.getByRole("heading", { name: "Route A" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Start riding" }),
+    ).toBeInTheDocument();
+  });
+
+  it("still requires Resume free roam after a paused free-roam session visits Settings and Status", async () => {
+    const user = userEvent.setup();
+    const watchPositionSpy = vi.fn(() => 1);
+    vi.stubGlobal("navigator", {
+      onLine: navigator.onLine,
+      geolocation: {
+        watchPosition: watchPositionSpy,
+        getCurrentPosition: vi.fn(),
+        clearWatch: vi.fn(),
+      },
+    });
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    await user.click(navButton("Ride"));
+    await user.click(await screen.findByRole("button", { name: "Start free roam" }));
+    await user.click(await screen.findByRole("button", { name: "Pause" }));
+    await screen.findByRole("button", { name: "Resume free roam" });
+    const watchesBeforeVisit = watchPositionSpy.mock.calls.length;
+
+    await user.click(navButton("Settings"));
+    await user.click(switcherButton("Status"));
+    await user.click(navButton("Ride"));
+
+    expect(
+      await screen.findByRole("button", { name: "Resume free roam" }),
+    ).toBeInTheDocument();
+    expect(watchPositionSpy).toHaveBeenCalledTimes(watchesBeforeVisit);
   });
 });

@@ -28,6 +28,25 @@ function isHorizontallyWithin(inner: Box, outer: Box): boolean {
 test.use({ viewport: { width: 390, height: 844 } });
 
 /**
+ * Backlog item 121: Status is no longer a primary destination. It is
+ * reached through the Settings tab and then the Settings/Status switcher,
+ * both scoped by landmark, since the switcher's Settings button shares its
+ * name with the tab. Works from any screen: the tab is a no-op on Settings,
+ * and takes the rider to Settings from Status.
+ */
+async function openStatus(page: Page) {
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: "Settings", exact: true })
+    .click();
+  await page
+    .getByRole("navigation", { name: "Settings and Status" })
+    .getByRole("button", { name: "Status", exact: true })
+    .click();
+  await expect(page.getByRole("heading", { name: "Status", level: 1 })).toBeVisible();
+}
+
+/**
  * A browser-level stub for navigator.storage.estimate — Chromium/WebKit
  * already implement the real API, so "unsupported" must be produced by
  * explicitly overriding navigator.storage to undefined, not by doing
@@ -76,7 +95,7 @@ test("shows a non-blank storage estimate reaching an OK state, without horizonta
     quota: 500 * 1024 * 1024,
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Status", exact: true }).click();
+  await openStatus(page);
 
   const storageValue = storageDetailValue(page);
   await expect(storageValue).toContainText("OK (schema version");
@@ -93,7 +112,7 @@ test("flags exactly-90%-usage as an explicit storage pressure warning", async ({
 }) => {
   await stubStorageEstimate(page, { kind: "resolves", usage: 900, quota: 1000 });
   await page.goto("/");
-  await page.getByRole("button", { name: "Status", exact: true }).click();
+  await openStatus(page);
 
   const storageValue = storageDetailValue(page);
   await expect(storageValue).toContainText("(90%)");
@@ -107,7 +126,7 @@ test("falls back to an unavailable estimate without breaking the OK status when 
 }) => {
   await stubStorageEstimate(page, { kind: "rejects" });
   await page.goto("/");
-  await page.getByRole("button", { name: "Status", exact: true }).click();
+  await openStatus(page);
 
   const storageValue = storageDetailValue(page);
   await expect(storageValue).toContainText("OK (schema version");
@@ -124,8 +143,7 @@ test("Status renders its four sections without horizontal scrolling, with the fe
 }) => {
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Status", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Status", level: 1 })).toBeVisible();
+  await openStatus(page);
 
   const hasNoHorizontalScroll = await page.evaluate(
     () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
@@ -194,7 +212,7 @@ test("labels the session row Active session and points a missing key at Settings
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Status", exact: true }).click();
+  await openStatus(page);
 
   const sessionValue = page
     .getByText("Active session", { exact: true })
@@ -226,18 +244,21 @@ test("a key deleted through the real Settings confirmation disables the routing 
     page.getByText(/key saved on this device, not yet verified/i),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Status", exact: true }).click();
+  await openStatus(page);
   await expect(
     page.getByRole("button", { name: "Test routing connection" }),
   ).toBeEnabled();
   await expect(page.getByText(/No OpenRouteService key configured/)).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Settings and Status" })
+    .getByRole("button", { name: "Settings", exact: true })
+    .click();
   await page.getByRole("button", { name: "Delete key" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
   await expect(page.getByText("No key configured")).toBeVisible();
 
-  await page.getByRole("button", { name: "Status", exact: true }).click();
+  await openStatus(page);
   await expect(
     page.getByRole("button", { name: "Test routing connection" }),
   ).toBeDisabled();
@@ -250,7 +271,7 @@ test("explains HTTP statuses in a second, independently operable disclosure", as
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Status", exact: true }).click();
+  await openStatus(page);
 
   const routingRegion = page.getByRole("region", { name: "Routing diagnostics" });
   // exact: true throughout — the "No status shown" guidance row quotes
@@ -362,7 +383,7 @@ test.describe("200% text at ordinary phone width", () => {
     page,
   }) => {
     await page.goto("/");
-    await page.getByRole("button", { name: "Status", exact: true }).click();
+    await openStatus(page);
 
     await page.evaluate(() => {
       document.documentElement.style.fontSize = "200%";
@@ -482,11 +503,6 @@ function activeSessionValue(page: Page) {
   return page
     .getByText("Active session", { exact: true })
     .locator("xpath=following-sibling::dd[1]");
-}
-
-async function openStatus(page: Page) {
-  await page.getByRole("button", { name: "Status", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Status", level: 1 })).toBeVisible();
 }
 
 test("shows an active route-backed session by name, never by its identifier", async ({

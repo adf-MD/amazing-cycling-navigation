@@ -57,6 +57,25 @@ function immersiveHeaderLocator(page: Page) {
   return page.locator("header.riding-immersive-header");
 }
 
+/**
+ * Goes to a top-level screen by its visible name. Backlog item 121: Status
+ * is no longer a primary destination — it is reached through the Settings
+ * tab and then the Settings/Status switcher — and the switcher's Settings
+ * button shares its name with the tab, so every click is scoped by landmark.
+ */
+async function goTo(page: Page, label: string) {
+  const mainNav = page.getByRole("navigation", { name: "Main" });
+  if (label === "Status") {
+    await mainNav.getByRole("button", { name: "Settings", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Settings and Status" })
+      .getByRole("button", { name: "Status", exact: true })
+      .click();
+    return;
+  }
+  await mainNav.getByRole("button", { name: label, exact: true }).click();
+}
+
 test.use({ viewport: { width: 390, height: 844 } });
 
 // Requests handled by the app's own service worker never reach
@@ -133,7 +152,7 @@ test("stays pinned on the pre-ride/Resume screen while scrolled", async ({
 
 test("stays pinned on Status while scrolled", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Status", exact: true }).click();
+  await goTo(page, "Status");
   await expect(page.getByRole("heading", { name: "Status", exact: true })).toBeVisible();
 
   const header = headerLocator(page);
@@ -245,7 +264,7 @@ test("every top-level screen other than active Riding renders the header sticky"
   const header = headerLocator(page);
 
   for (const label of ["Routes", "Plan", "Status", "Settings", "Ride"]) {
-    await page.getByRole("button", { name: label }).click();
+    await goTo(page, label);
     await expect(header).toHaveCSS("position", "sticky");
   }
 
@@ -265,77 +284,100 @@ test("every top-level screen other than active Riding renders the header sticky"
  * Asserted as a differential rather than a bare document check, so it stays
  * attributable to the navigation regardless of what a screen's content does:
  * hiding .main-nav must leave document.scrollWidth exactly as it was. It
- * discriminates — a sixth destination, or a label long enough to push the
+ * discriminates — an extra destination, or a label long enough to push the
  * row past the viewport, breaks it.
+ *
+ * Backlog item 121 took the navigation to four destinations and made this
+ * stricter: from 320 to 430px, every label must also stay whole, on one
+ * line, inside its OWN tab — not merely inside the viewport. Measured on the
+ * parent, English `Settings` at 200% stuck out of its tab by 3.8px at 320px;
+ * index.css's `min-width: auto` on .main-nav-button is what now contains it.
  */
-test("the primary navigation contributes nothing to horizontal document extent at 200% text", async ({
-  page,
-}) => {
-  await page.goto("/");
-  // The role locator, not this file's own mainNavLocator helper, which is
-  // scoped to the synthetic-safe-area describe below.
-  const nav = page.getByRole("navigation", { name: "Main" });
-  await expect(nav).toBeVisible();
+for (const width of [320, 360, 375, 390, 414, 430]) {
+  test(`the primary navigation contributes nothing to horizontal document extent at 200% text, and every label fits its own tab (${String(width)}px)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/");
+    // The role locator, not this file's own mainNavLocator helper, which is
+    // scoped to the synthetic-safe-area describe below.
+    const nav = page.getByRole("navigation", { name: "Main" });
+    await expect(nav).toBeVisible();
 
-  await page.evaluate(() => {
-    document.documentElement.style.fontSize = "200%";
-  });
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "200%";
+    });
 
-  const measured = await nav.evaluate((navElement) => {
-    const doc = document.documentElement;
-    const withNav = doc.scrollWidth;
-    const original = navElement.style.display;
-    navElement.style.display = "none";
-    const withoutNav = doc.scrollWidth;
-    navElement.style.display = original;
-    const navRect = navElement.getBoundingClientRect();
-    const labels = [...navElement.querySelectorAll(".main-nav-button")].map((button) => {
-      const span = button.querySelector("span");
-      if (!span) throw new Error("expected every nav button to carry a label span");
-      // A Range over the span's contents, not scrollWidth: scrollWidth is an
-      // integer and never smaller than the element's own box, so it cannot
-      // measure painted text extent (item 111's recorded trap).
-      const range = document.createRange();
-      range.selectNodeContents(span);
-      const textRect = range.getBoundingClientRect();
-      const buttonRect = button.getBoundingClientRect();
+    const measured = await nav.evaluate((navElement) => {
+      const doc = document.documentElement;
+      const withNav = doc.scrollWidth;
+      const original = navElement.style.display;
+      navElement.style.display = "none";
+      const withoutNav = doc.scrollWidth;
+      navElement.style.display = original;
+      const navRect = navElement.getBoundingClientRect();
+      const labels = [...navElement.querySelectorAll(".main-nav-button")].map(
+        (button) => {
+          const span = button.querySelector("span");
+          if (!span) throw new Error("expected every nav button to carry a label span");
+          // A Range over the span's contents, not scrollWidth: scrollWidth is an
+          // integer and never smaller than the element's own box, so it cannot
+          // measure painted text extent (item 111's recorded trap).
+          const range = document.createRange();
+          range.selectNodeContents(span);
+          const textRect = range.getBoundingClientRect();
+          const lineTops = new Set(
+            [...range.getClientRects()]
+              .filter((rect) => rect.width > 0)
+              .map((rect) => Math.round(rect.top)),
+          );
+          const buttonRect = button.getBoundingClientRect();
+          return {
+            text: span.textContent,
+            textLeft: textRect.left,
+            textRight: textRect.right,
+            lines: lineTops.size,
+            buttonLeft: buttonRect.left,
+            buttonRight: buttonRect.right,
+            buttonWidth: buttonRect.width,
+            buttonHeight: buttonRect.height,
+          };
+        },
+      );
       return {
-        text: span.textContent,
-        textLeft: textRect.left,
-        textRight: textRect.right,
-        buttonWidth: buttonRect.width,
-        buttonHeight: buttonRect.height,
+        navContributes: withNav - withoutNav,
+        navLeft: navRect.left,
+        navRight: navRect.right,
+        clientWidth: doc.clientWidth,
+        labels,
       };
     });
-    return {
-      navContributes: withNav - withoutNav,
-      navLeft: navRect.left,
-      navRight: navRect.right,
-      clientWidth: doc.clientWidth,
-      labels,
-    };
+
+    expect(measured.navContributes).toBe(0);
+    expect(measured.navLeft).toBeGreaterThanOrEqual(0);
+    expect(measured.navRight).toBeLessThanOrEqual(measured.clientWidth + 1);
+
+    expect(measured.labels.map((label) => label.text)).toEqual([
+      "Routes",
+      "Ride",
+      "Plan",
+      "Settings",
+    ]);
+    for (const label of measured.labels) {
+      // Every label's painted text stays whole, on one line, inside its own
+      // tab (backlog item 121), and every tab keeps its touch target.
+      expect(label.lines, `${label.text} stays on one line`).toBe(1);
+      expect(label.textLeft, `${label.text} inside its tab`).toBeGreaterThanOrEqual(
+        label.buttonLeft - 0.5,
+      );
+      expect(label.textRight, `${label.text} inside its tab`).toBeLessThanOrEqual(
+        label.buttonRight + 0.5,
+      );
+      expect(label.buttonWidth, label.text).toBeGreaterThanOrEqual(44);
+      expect(label.buttonHeight, label.text).toBeGreaterThanOrEqual(44);
+    }
   });
-
-  expect(measured.navContributes).toBe(0);
-  expect(measured.navLeft).toBeGreaterThanOrEqual(0);
-  expect(measured.navRight).toBeLessThanOrEqual(measured.clientWidth + 1);
-
-  expect(measured.labels.map((label) => label.text)).toEqual([
-    "Routes",
-    "Ride",
-    "Plan",
-    "Status",
-    "Settings",
-  ]);
-  for (const label of measured.labels) {
-    // Every label's painted text stays inside the viewport even where it
-    // overhangs its own button, and every button keeps its touch target.
-    expect(label.textLeft, label.text).toBeGreaterThanOrEqual(-1);
-    expect(label.textRight, label.text).toBeLessThanOrEqual(measured.clientWidth + 1);
-    expect(label.buttonWidth, label.text).toBeGreaterThanOrEqual(44);
-    expect(label.buttonHeight, label.text).toBeGreaterThanOrEqual(44);
-  }
-});
+}
 
 // CLAUDE.md item 34: a real, confirmed field bug on the deployed iPhone
 // PWA — scrolled content was visible through the iOS status-bar safe-area
@@ -469,7 +511,7 @@ test.describe("synthetic safe-area inset (iOS status-bar strip coverage)", () =>
     const header = headerLocator(page);
 
     for (const label of ["Routes", "Plan", "Status", "Settings", "Ride"]) {
-      await page.getByRole("button", { name: label }).click();
+      await goTo(page, label);
       await expect(header).toHaveCSS("position", "sticky");
     }
 

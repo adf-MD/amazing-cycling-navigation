@@ -2,40 +2,34 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MainNavigation } from "./MainNavigation.tsx";
+import { navCurrentState } from "./screenTypes.ts";
 
 describe("MainNavigation", () => {
-  it("renders all five destinations with visible labels", () => {
+  it("renders all four destinations with visible labels", () => {
     render(<MainNavigation screen="library" onNavigate={vi.fn()} />);
 
-    for (const label of ["Routes", "Ride", "Plan", "Status", "Settings"]) {
+    for (const label of ["Routes", "Ride", "Plan", "Settings"]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
   });
 
-  // Backlog item 112 renamed the rider-facing label only. The internal screen
-  // key stays "diagnostics" (screenTypes.ts, App.tsx's render switch and
-  // NavIcon's glyph lookup all key off it), so these two assertions together
-  // are what prove the rename is presentation-deep and nothing more.
-  it("shows Status rather than Diagnostics, while still navigating by the internal diagnostics key", async () => {
-    const user = userEvent.setup();
-    const onNavigate = vi.fn();
-    render(<MainNavigation screen="library" onNavigate={onNavigate} />);
+  // Backlog item 121 moved Status out of the primary navigation: it is
+  // reached through the Settings/Status switcher at the top of the Settings
+  // section. Item 112's rename stands — no "Diagnostics" either.
+  it("offers no Status or Diagnostics destination", () => {
+    render(<MainNavigation screen="library" onNavigate={vi.fn()} />);
 
+    expect(screen.queryByRole("button", { name: "Status" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Diagnostics" })).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Status" }));
-
-    expect(onNavigate).toHaveBeenCalledWith("diagnostics");
   });
 
-  it("keeps the five destinations in their established order", () => {
+  it("keeps the four destinations in their established order", () => {
     render(<MainNavigation screen="library" onNavigate={vi.fn()} />);
 
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
       "Routes",
       "Ride",
       "Plan",
-      "Status",
       "Settings",
     ]);
   });
@@ -48,10 +42,30 @@ describe("MainNavigation", () => {
     expect(current[0]).toHaveAccessibleName("Plan");
   });
 
-  it("calls onNavigate with the corresponding screen when a destination is clicked", async () => {
+  it("marks the Settings tab as the current page while Settings is showing", () => {
+    render(<MainNavigation screen="settings" onNavigate={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  // Status belongs to the Settings section, so its tab stays current — but it
+  // is the section that is current, not the page the tab opens (from Status,
+  // the tab opens Settings), so the value is "true", never "page".
+  it("marks the Settings tab as the current section, not the current page, while Status is showing", () => {
+    render(<MainNavigation screen="diagnostics" onNavigate={vi.fn()} />);
+
+    const settingsTab = screen.getByRole("button", { name: "Settings" });
+    expect(settingsTab).toHaveAttribute("aria-current", "true");
+    expect(screen.queryAllByRole("button", { current: "page" })).toHaveLength(0);
+  });
+
+  it("calls onNavigate with the destination, never a resolved screen", async () => {
     const user = userEvent.setup();
     const onNavigate = vi.fn();
-    render(<MainNavigation screen="library" onNavigate={onNavigate} />);
+    render(<MainNavigation screen="diagnostics" onNavigate={onNavigate} />);
 
     await user.click(screen.getByRole("button", { name: "Settings" }));
 
@@ -64,9 +78,23 @@ describe("MainNavigation", () => {
     );
 
     const icons = container.querySelectorAll("svg");
-    expect(icons).toHaveLength(5);
+    expect(icons).toHaveLength(4);
     for (const icon of icons) {
       expect(icon).toHaveAttribute("aria-hidden", "true");
     }
+  });
+});
+
+describe("navCurrentState", () => {
+  it("is page for the destination showing, and absent for the others", () => {
+    expect(navCurrentState("planning", "planning")).toBe("page");
+    expect(navCurrentState("library", "planning")).toBeUndefined();
+    expect(navCurrentState("settings", "planning")).toBeUndefined();
+  });
+
+  it("is page for Settings on Settings, and true for Settings on Status", () => {
+    expect(navCurrentState("settings", "settings")).toBe("page");
+    expect(navCurrentState("settings", "diagnostics")).toBe("true");
+    expect(navCurrentState("library", "diagnostics")).toBeUndefined();
   });
 });

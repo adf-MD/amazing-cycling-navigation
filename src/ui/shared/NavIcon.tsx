@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import type { Screen } from "./screenTypes.ts";
+import type { PrimaryDestination } from "./screenTypes.ts";
 
 export interface NavIconProps {
-  screen: Screen;
+  destination: PrimaryDestination;
   sizePx?: number;
 }
 
@@ -58,19 +58,6 @@ function PlanGlyph() {
   );
 }
 
-function DiagnosticsGlyph() {
-  return (
-    <path
-      d="M3 13 H8 L10.5 6 L13.5 19 L16 13 H21"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  );
-}
-
 function SettingsGlyph() {
   return (
     <>
@@ -98,12 +85,14 @@ function SettingsGlyph() {
  *
  * The switch has a real, reachable `default` branch (falls back to the
  * Routes glyph) rather than being exhaustive-only, mirroring
- * ManoeuvreIcon's own defensive style even though `Screen` is a closed
- * union with no external/stored data feeding it today.
+ * ManoeuvreIcon's own defensive style even though `PrimaryDestination` is
+ * a closed union with no external/stored data feeding it today. Keyed on
+ * the four primary destinations since backlog item 121, which removed
+ * Status from the navigation and with it the pulse-line glyph.
  */
-export function NavIcon({ screen, sizePx = DEFAULT_SIZE_PX }: NavIconProps) {
+export function NavIcon({ destination, sizePx = DEFAULT_SIZE_PX }: NavIconProps) {
   let glyph: ReactNode;
-  switch (screen) {
+  switch (destination) {
     case "library":
       glyph = <RoutesGlyph />;
       break;
@@ -117,9 +106,6 @@ export function NavIcon({ screen, sizePx = DEFAULT_SIZE_PX }: NavIconProps) {
       break;
     case "planning":
       glyph = <PlanGlyph />;
-      break;
-    case "diagnostics":
-      glyph = <DiagnosticsGlyph />;
       break;
     case "settings":
       glyph = <SettingsGlyph />;

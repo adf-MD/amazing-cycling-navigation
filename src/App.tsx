@@ -15,15 +15,20 @@ import {
   classifyRideTransition,
   type RideSessionTarget,
 } from "./ui/riding/rideSessionTransition.ts";
-import { DiagnosticsScreen } from "./ui/diagnostics/DiagnosticsScreen.tsx";
 import { RouteLibrary, type PendingRouteSwitch } from "./ui/library/RouteLibrary.tsx";
 import { PlanningScreen } from "./ui/planning/PlanningScreen.tsx";
 import { FreeRoamScreen } from "./ui/riding/FreeRoamScreen.tsx";
 import { RidingLauncher } from "./ui/riding/RidingLauncher.tsx";
 import { RidingScreen } from "./ui/riding/RidingScreen.tsx";
-import { SettingsScreen } from "./ui/settings/SettingsScreen.tsx";
+import { SettingsSection } from "./ui/settings/SettingsSection.tsx";
 import { ConfirmDialog } from "./ui/shared/ConfirmDialog.tsx";
 import { MainNavigation, type Screen } from "./ui/shared/MainNavigation.tsx";
+import {
+  isSettingsSectionView,
+  resolveSettingsTabTarget,
+  type PrimaryDestination,
+  type SettingsSectionView,
+} from "./ui/shared/screenTypes.ts";
 import { useTranslate } from "./i18n/useTranslate.ts";
 import type { Translator } from "./i18n/translate.ts";
 import { isImmersiveRidingShell } from "./ui/shared/immersiveRidingShell.ts";
@@ -271,6 +276,12 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   const translator = useTranslate();
   const { t } = translator;
   const [screen, setScreen] = useState<Screen>("library");
+  // Backlog item 121: which of the Settings section's two views the rider
+  // last saw, so returning to the Settings tab from another tab reopens it.
+  // Memory only, so a reload starts at Settings. Recorded by showScreen
+  // below, the one setter every navigation into the section goes through.
+  const [lastSettingsView, setLastSettingsView] =
+    useState<SettingsSectionView>("settings");
   const [ridingContent, setRidingContent] = useState<RidingContent>(NONE_RIDING_CONTENT);
   const [isRidingActive, setIsRidingActive] = useState(false);
   const { needRefresh, updateNow, dismiss } = usePwaUpdate();
@@ -963,8 +974,17 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     resetRidingContentToLauncher();
   };
 
+  // Every navigation into the Settings section goes through here, so the
+  // last-viewed sibling is recorded in exactly one place (backlog item 121).
+  const showScreen = (nextScreen: Screen) => {
+    if (isSettingsSectionView(nextScreen)) setLastSettingsView(nextScreen);
+    setScreen(nextScreen);
+  };
+
+  // Planning's missing-key notice. Always Settings, whichever sibling view
+  // was last shown: the notice exists to get a key entered.
   const handleNavigateToSettings = () => {
-    setScreen("settings");
+    showScreen("settings");
   };
 
   const handleNavigateToPlanning = () => {
@@ -995,7 +1015,18 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         setRidingContent(NONE_RIDING_CONTENT);
       }
     }
-    setScreen(nextScreen);
+    showScreen(nextScreen);
+  };
+
+  // The primary navigation names destinations, not screens: the Settings tab
+  // resolves to one of the section's two views (backlog item 121) — Settings
+  // from inside the section, otherwise whichever was last shown.
+  const handlePrimaryNavigate = (destination: PrimaryDestination) => {
+    handleNavigate(
+      destination === "settings"
+        ? resolveSettingsTabTarget(screen, lastSettingsView)
+        : destination,
+    );
   };
 
   const pendingSwitchCopy = pendingRideSwitch
@@ -1044,7 +1075,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     <div className="app-shell">
       {isImmersive ? null : (
         <header className="app-header--sticky" ref={stickyHeaderRef}>
-          <MainNavigation screen={screen} onNavigate={handleNavigate} />
+          <MainNavigation screen={screen} onNavigate={handlePrimaryNavigate} />
         </header>
       )}
 
@@ -1123,8 +1154,18 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
             onRouteSaved={handleRouteSaved}
           />
         )}
-        {screen === "diagnostics" && <DiagnosticsScreen />}
-        {screen === "settings" && <SettingsScreen stickyHeaderRef={stickyHeaderRef} />}
+        {/* Backlog item 121: ONE slot for both of the Settings section's
+            views, so SettingsSection stays mounted across a Settings ↔
+            Status switch — which is what keeps an unfinished key edit and
+            the switcher's focus — and unmounts on any other tab. Two
+            separate slots would remount it on every switch. */}
+        {isSettingsSectionView(screen) && (
+          <SettingsSection
+            view={screen}
+            onSelectView={handleNavigate}
+            stickyHeaderRef={stickyHeaderRef}
+          />
+        )}
       </main>
     </div>
   );

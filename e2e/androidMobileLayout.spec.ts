@@ -56,9 +56,12 @@ test("no horizontal overflow, sticky header, and usable touch targets across the
   const header = page.locator("header.app-header--sticky");
 
   // Every MainNavigation destination: usable touch target, sticky header,
-  // no horizontal overflow.
-  for (const label of ["Routes", "Ride", "Plan", "Status", "Settings"]) {
-    const navButton = page.getByRole("button", { name: label });
+  // no horizontal overflow. Backlog item 121: four destinations, scoped to
+  // the navigation landmark because the Settings/Status switcher's Settings
+  // button shares its name with the tab.
+  const mainNav = page.getByRole("navigation", { name: "Main" });
+  for (const label of ["Routes", "Ride", "Plan", "Settings"]) {
+    const navButton = mainNav.getByRole("button", { name: label, exact: true });
     const box = await navButton.boundingBox();
     if (!box)
       throw new Error(`expected the "${label}" nav button to have a bounding box`);
@@ -70,26 +73,47 @@ test("no horizontal overflow, sticky header, and usable touch targets across the
     const widths = await readScrollWidths(page);
     expect(widths.documentWidth).toBeLessThanOrEqual(viewport.width);
     expect(widths.bodyWidth).toBeLessThanOrEqual(viewport.width);
-
-    // Item 92: genuine (unstubbed) Chromium storage-quota evidence under
-    // android-chrome emulation — the plain diagnostics.spec.ts additions
-    // only ever run under the chromium project, so this is the one place
-    // that makes a "Chromium-emulated Android" evidence claim true rather
-    // than inherited boilerplate. Requires the real numeric branch, not
-    // merely the disappearance of "Checking storage estimate…".
-    if (label === "Status") {
-      const storageValue = page
-        .getByText("Storage", { exact: true })
-        .locator("xpath=following-sibling::dd[1]");
-      await expect(storageValue).toContainText("OK (schema version");
-      await expect(storageValue).toContainText(/Estimated app storage: .+ used \(.+\)/);
-    }
   }
+
+  // Status, reached through the Settings/Status switcher on the Settings
+  // view the loop above ended on: the same touch-target, sticky-header and
+  // overflow checks, for both switcher buttons.
+  const switcher = page.getByRole("navigation", { name: "Settings and Status" });
+  for (const name of ["Settings", "Status"]) {
+    const box = await switcher.getByRole("button", { name, exact: true }).boundingBox();
+    if (!box)
+      throw new Error(`expected the "${name}" switcher button to have a bounding box`);
+    expect(box.width).toBeGreaterThanOrEqual(TOUCH_TARGET_MIN_PX);
+    expect(box.height).toBeGreaterThanOrEqual(TOUCH_TARGET_MIN_PX);
+  }
+  await switcher.getByRole("button", { name: "Status", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Status", level: 1 })).toBeVisible();
+  await expect(header).toHaveCSS("position", "sticky");
+  const statusWidths = await readScrollWidths(page);
+  expect(statusWidths.documentWidth).toBeLessThanOrEqual(viewport.width);
+  expect(statusWidths.bodyWidth).toBeLessThanOrEqual(viewport.width);
+
+  // Item 92: genuine (unstubbed) Chromium storage-quota evidence under
+  // android-chrome emulation — the plain diagnostics.spec.ts additions
+  // only ever run under the chromium project, so this is the one place
+  // that makes a "Chromium-emulated Android" evidence claim true rather
+  // than inherited boilerplate. Requires the real numeric branch, not
+  // merely the disappearance of "Checking storage estimate…".
+  //
+  // Unconditional since backlog item 121. It used to sit inside the loop
+  // above behind `if (label === "Status")`, so moving Status out of the
+  // navigation would have silently stopped it running — the trap item 112
+  // recorded for a label rename.
+  const storageValue = page
+    .getByText("Storage", { exact: true })
+    .locator("xpath=following-sibling::dd[1]");
+  await expect(storageValue).toContainText("OK (schema version");
+  await expect(storageValue).toContainText(/Estimated app storage: .+ used \(.+\)/);
 
   // Pre-ride/Resume screen: import a route and open it (never tap Start
   // riding here — this proves the idle row of the sticky-header contract,
   // not the active-tracking row).
-  await page.getByRole("button", { name: "Routes" }).click();
+  await mainNav.getByRole("button", { name: "Routes", exact: true }).click();
   await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
   await page.getByRole("button", { name: "smoke-route", exact: true }).click();
   await expect(page.getByRole("heading", { name: "smoke-route" })).toBeVisible();
@@ -167,7 +191,16 @@ test("Status shows an active route-backed session by name, not by its identifier
     offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
   });
 
-  await page.getByRole("button", { name: "Status", exact: true }).click();
+  // Backlog item 121: Status is reached through the Settings tab and then
+  // the Settings/Status switcher.
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: "Settings", exact: true })
+    .click();
+  await page
+    .getByRole("navigation", { name: "Settings and Status" })
+    .getByRole("button", { name: "Status", exact: true })
+    .click();
   await expect(page.getByRole("heading", { name: "Status", level: 1 })).toBeVisible();
 
   const sessionValue = page

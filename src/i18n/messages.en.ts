@@ -30,17 +30,24 @@
  */
 export const en = {
   // --- Primary navigation -------------------------------------------
-  // translator: these five labels each render in a fifth of the viewport
-  // width at 0.7rem, and are the most space-constrained copy in the
-  // application. Read the item's own measurements before changing one.
+  // translator: the four tab labels (Routes, Ride, Plan, Settings) each
+  // render in about a quarter of the viewport width at 0.7rem, and are the
+  // most space-constrained copy in the application. Read items 113's and
+  // 121's own measurements before changing one.
   "nav.landmarkLabel": "Main",
   "nav.routes": "Routes",
   "nav.ride": "Ride",
   "nav.plan": "Plan",
-  // translator: the destination showing system status, recent errors and
-  // the routing connection test — a status noun, never a verb.
+  // translator: the view showing system status, recent errors and the
+  // routing connection test — a status noun, never a verb. Since item 121
+  // it labels a button of the Settings/Status switcher, not a tab.
   "nav.status": "Status",
+  // translator: both the Settings tab and the Settings button of the
+  // Settings/Status switcher.
   "nav.settings": "Settings",
+  // translator: the accessible name of the two-button switcher between the
+  // Settings and Status views. Never shown.
+  "settingsSection.switcherLabel": "Settings and Status",
 
   // --- Settings: screen chrome --------------------------------------
   "settings.landmarkLabel": "Settings",

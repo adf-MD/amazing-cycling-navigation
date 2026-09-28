@@ -207,7 +207,10 @@ export function DiagnosticsScreen({
 
   return (
     <section className="screen diagnostics-screen" aria-label={t("status.landmarkLabel")}>
-      <h1 className="screen-title">{t("status.title")}</h1>
+      {/* Backlog item 121: the page's first heading for assistive
+          technology, not shown — the switcher's selected button directly
+          above already names this view (see SettingsScreen's own note). */}
+      <h1 className="screen-title visually-hidden">{t("status.title")}</h1>
 
       <section
         className="panel stack diagnostics-section"
