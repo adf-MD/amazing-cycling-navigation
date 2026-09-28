@@ -821,10 +821,13 @@ export function RidingScreen({
   // mirroring isEditCopyActionPendingRef above — the primary UX guard;
   // useRideNavigation's own finish() also guards re-entrancy defensively.
   const isFinalizeActionPendingRef = useRef(false);
-  // End-ride's trigger unmounts/remounts as its confirmation opens/closes
-  // (item 50's in-place confirmation morph — see renderEndRideAction
-  // below), so Cancel/Escape and a failed finalisation both record a
-  // pending focus request here instead of calling .focus() directly —
+  // End-ride's trigger is unavailable while its confirmation is open — it
+  // unmounts in the paused panel (item 50's in-place confirmation morph)
+  // and is concealed and disabled in the immersive header (see
+  // renderEndRideTrigger below) — so Cancel/Escape and a failed
+  // finalisation both record a pending focus request here, applied once the
+  // trigger is mounted and enabled again, instead of calling .focus()
+  // directly —
   // mirrors PlanningScreen.tsx's pendingClearDraftFocusRef exactly (item
   // 49). Finish-ride's own trigger never unmounts (RidingRouteCompletionPanel
   // has no confirmation dialog to swap in), so it keeps its own plain
@@ -923,10 +926,11 @@ export function RidingScreen({
       });
       setIsEndRideConfirmOpen(false);
       if (source === "end") {
-        // End-ride's trigger genuinely unmounts while its confirmation is
-        // open (item 50), so restoring focus is deferred to the pending-ref
-        // effect above rather than called directly here: the trigger is
-        // still disabled/absent in the DOM at this exact synchronous point
+        // End-ride's trigger is unavailable while its confirmation is open
+        // (unmounted in the paused panel, concealed and disabled in the
+        // header), so restoring focus is deferred to the pending-ref effect
+        // above rather than called directly here: the trigger is still
+        // disabled or absent in the DOM at this exact synchronous point
         // (activeFinalizeSource only resets to null in the finally block
         // below, and React doesn't commit that until this synchronous
         // catch/finally sequence finishes). Finish-ride's own trigger never
@@ -1193,25 +1197,43 @@ export function RidingScreen({
   // the accessible name stays the full `ride.endRide`, which contains the
   // visible word. The paused panel has the width for the full label.
   function renderEndRideAction(placement: "header" | "panel"): ReactNode {
-    if (isEndRideConfirmOpen) {
-      return (
-        <ConfirmDialog
-          open={isEndRideConfirmOpen}
-          title={t("riding.endConfirmTitle")}
-          message={t("riding.endConfirmMessage")}
-          confirmLabel={
-            activeFinalizeSource === "end" ? t("ride.endingRide") : t("ride.endRide")
-          }
-          cancelLabel={t("ride.cancel")}
-          confirmDisabled={activeFinalizeSource === "end"}
-          cancelDisabled={activeFinalizeSource === "end"}
-          onConfirm={() => {
-            void performFinalizeRide("end");
-          }}
-          onCancel={handleEndRideCancel}
-        />
-      );
-    }
+    if (!isEndRideConfirmOpen) return renderEndRideTrigger(placement);
+    return (
+      <ConfirmDialog
+        open={isEndRideConfirmOpen}
+        title={t("riding.endConfirmTitle")}
+        message={t("riding.endConfirmMessage")}
+        confirmLabel={
+          activeFinalizeSource === "end" ? t("ride.endingRide") : t("ride.endRide")
+        }
+        cancelLabel={t("ride.cancel")}
+        confirmDisabled={activeFinalizeSource === "end"}
+        cancelDisabled={activeFinalizeSource === "end"}
+        onConfirm={() => {
+          void performFinalizeRide("end");
+        }}
+        onCancel={handleEndRideCancel}
+      />
+    );
+  }
+
+  // The End-ride trigger itself. `concealed` keeps it mounted in the
+  // immersive header while its confirmation is open in the row below:
+  // invisible, outside the accessibility tree and the tab order, and
+  // disabled — so it cannot be acted on — but still occupying its own
+  // width. The 0.4.42 installed-iPhone recheck (September 2026) showed the
+  // title jumping sideways when the End slot emptied, because the title's
+  // flex item grew into the freed width; a concealed trigger keeps the
+  // header's geometry identical before, during and after the confirmation.
+  // It is deliberately not shown as a pressed or selected state: opening
+  // the confirmation has not ended the ride. An inline style rather than a
+  // class, mirroring this screen's hidden-but-mounted map pane, so the
+  // concealment also holds where stylesheets are not loaded (Vitest's
+  // `css: false`).
+  function renderEndRideTrigger(
+    placement: "header" | "panel",
+    concealed = false,
+  ): ReactNode {
     return (
       <>
         <button
@@ -1219,12 +1241,15 @@ export function RidingScreen({
           className="btn-danger"
           ref={endRideTriggerRef}
           onClick={handleEndRideClick}
-          disabled={activeFinalizeSource !== null || isPausePending}
+          disabled={concealed || activeFinalizeSource !== null || isPausePending}
           aria-label={placement === "header" ? t("ride.endRide") : undefined}
+          aria-hidden={concealed ? true : undefined}
+          tabIndex={concealed ? -1 : undefined}
+          style={concealed ? { visibility: "hidden" } : undefined}
         >
           {placement === "header" ? t("ride.endRideCompact") : t("ride.endRide")}
         </button>
-        {finalizeError?.source === "end" ? (
+        {!concealed && finalizeError?.source === "end" ? (
           <p className="field-error" role="alert">
             {finalizeError.message}
           </p>
@@ -1657,7 +1682,7 @@ export function RidingScreen({
             }}
             pauseDisabled={isPausePending || activeFinalizeSource !== null}
             pauseButtonRef={pauseButtonRef}
-            endAction={!isEndRideConfirmOpen ? renderEndRideAction("header") : null}
+            endAction={renderEndRideTrigger("header", isEndRideConfirmOpen)}
           />
           {pauseError ? (
             <p className="field-error" role="alert">

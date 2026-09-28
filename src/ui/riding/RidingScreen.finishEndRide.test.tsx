@@ -205,12 +205,15 @@ describe("RidingScreen Finish/End ride", () => {
 
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    // The trigger genuinely unmounts while the confirmation is open
-    // (backlog item 50's in-place confirmation morph), so the button
-    // re-queried here is a freshly remounted DOM node, not the one captured
-    // before the click — mirrors PlanningScreen.clearDraft.test.tsx's own
-    // established precedent for the identical scenario.
+    // The header trigger stays mounted, concealed, while the confirmation is
+    // open (0.4.42 installed-iPhone recheck), so the button re-queried here
+    // is the very node captured before the click — revealed, enabled and
+    // focused again.
     const restoredEndRideButton = screen.getByRole("button", { name: "End ride" });
+    expect(restoredEndRideButton).toBe(endRideButton);
+    expect(restoredEndRideButton).toBeEnabled();
+    expect(restoredEndRideButton).not.toHaveAttribute("aria-hidden");
+    expect(restoredEndRideButton.style.visibility).toBe("");
     expect(restoredEndRideButton).toHaveFocus();
     expect(await getActiveRideState()).toBeDefined();
 
@@ -238,16 +241,29 @@ describe("RidingScreen Finish/End ride", () => {
     });
     await user.click(await screen.findByRole("button", { name: "End ride" }));
 
-    // The immersive header's own End slot goes empty once the
-    // confirmation opens, and the confirmation renders as its own
-    // full-width row immediately after the header (backlog item 55
-    // restructures item 50's original .ride-end-ride-row container).
+    // The confirmation renders as its own full-width row immediately after
+    // the header (backlog item 55 restructures item 50's original
+    // .ride-end-ride-row container).
     const header = container.querySelector(".riding-immersive-header");
+    const endSlot = container.querySelector(".riding-immersive-header-end");
     const confirmRow = container.querySelector(".ride-end-ride-confirm-row");
     const dialog = await screen.findByRole("alertdialog");
     expect(header).not.toBeNull();
     expect(confirmRow).not.toBeNull();
     expect(confirmRow?.contains(dialog)).toBe(true);
+    expect(endSlot?.contains(dialog)).toBe(false);
+    // The header's own End trigger stays mounted while the confirmation is
+    // open — concealed, outside the accessibility tree and the tab order,
+    // and disabled — so the header keeps its geometry and the title never
+    // jumps (0.4.42 installed-iPhone recheck). It is the same element
+    // before, during and after the confirmation.
+    const concealedTrigger = endSlot?.querySelector("button");
+    expect(concealedTrigger).toBeInstanceOf(HTMLButtonElement);
+    expect(concealedTrigger).toHaveAttribute("aria-hidden", "true");
+    expect(concealedTrigger).toHaveAttribute("tabindex", "-1");
+    expect(concealedTrigger).toBeDisabled();
+    expect(concealedTrigger?.style.visibility).toBe("hidden");
+
     // The trigger never coexists with the confirmation — the only
     // "End ride"-named button left anywhere is the dialog's own confirm
     // button.

@@ -16,8 +16,10 @@ export interface RidingImmersiveHeaderProps {
   pauseDisabled: boolean;
   pauseButtonRef?: Ref<HTMLButtonElement>;
   /** Whatever the owning screen's own End-ride trigger currently renders
-   * (button + inline error), or null while its confirmation is shown
-   * elsewhere in the screen's own body instead. This component owns no
+   * (button + inline error). While its confirmation is shown elsewhere in
+   * the screen's own body, the screens pass the same trigger concealed and
+   * disabled rather than null, so this slot keeps its width and the title
+   * and Pause never move (0.4.42 installed-iPhone recheck). This component owns no
    * End-ride business logic, confirmation state, or error state —
    * layout/safe-area presentation only. */
   endAction: ReactNode;

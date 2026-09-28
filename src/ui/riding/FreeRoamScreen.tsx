@@ -222,10 +222,10 @@ export function FreeRoamScreen({
   // Synchronous guard against a rapid double End-ride submission, mirroring
   // RidingScreen.tsx's own isFinalizeActionPendingRef idiom.
   const isFinalizeActionPendingRef = useRef(false);
-  // The End-ride trigger unmounts/remounts as its confirmation opens/closes
-  // (item 50's in-place confirmation morph — see renderEndRideAction below),
-  // so Cancel/Escape and a failed finalisation both record a pending focus
-  // request here instead of calling .focus() directly — mirrors
+  // The End-ride trigger is concealed and disabled while its confirmation is
+  // open (see renderEndRideTrigger below), so Cancel/Escape and a failed
+  // finalisation both record a pending focus request here, applied once the
+  // trigger is enabled again, instead of calling .focus() directly — mirrors
   // PlanningScreen.tsx's pendingClearDraftFocusRef and RidingScreen.tsx's
   // identically-named ref exactly (items 49/50).
   const pendingEndRideFocusRef = useRef(false);
@@ -334,11 +334,10 @@ export function FreeRoamScreen({
     setIsEndRideConfirmOpen(false);
   };
 
-  // Renders the End-ride action in place: either the trigger button (plus
-  // any error) or the confirmation itself, never both — backlog item 50's
-  // in-place confirmation morph, mirroring RidingScreen.tsx's own
-  // renderEndRideAction and PlanningScreen.tsx's Clear-draft treatment
-  // (item 49).
+  // Renders the End-ride action for the confirmation row: the confirmation
+  // itself while it is open — backlog item 50's inline confirmation,
+  // mirroring RidingScreen.tsx's own renderEndRideAction and
+  // PlanningScreen.tsx's Clear-draft treatment (item 49) — or the trigger.
   function renderEndRideAction(): ReactNode {
     if (isEndRideConfirmOpen) {
       return (
@@ -357,6 +356,15 @@ export function FreeRoamScreen({
         />
       );
     }
+    return renderEndRideTrigger();
+  }
+
+  // The header's End-ride trigger. `concealed` keeps it mounted, invisible,
+  // outside the accessibility tree and the tab order, and disabled while
+  // the confirmation is open below, so the header's title and Pause never
+  // move — see RidingScreen.tsx's renderEndRideTrigger for the full
+  // rationale (0.4.42 installed-iPhone recheck).
+  function renderEndRideTrigger(concealed = false): ReactNode {
     return (
       <>
         <button
@@ -364,14 +372,17 @@ export function FreeRoamScreen({
           className="btn-danger"
           ref={endRideTriggerRef}
           onClick={handleEndRideClick}
-          disabled={isFinalizing || isPausePending}
+          disabled={concealed || isFinalizing || isPausePending}
           // The compact header label, with the full accessible name — see
           // RidingScreen.tsx's renderEndRideAction for why.
           aria-label={t("ride.endRide")}
+          aria-hidden={concealed ? true : undefined}
+          tabIndex={concealed ? -1 : undefined}
+          style={concealed ? { visibility: "hidden" } : undefined}
         >
           {t("ride.endRideCompact")}
         </button>
-        {finalizeError ? (
+        {!concealed && finalizeError ? (
           <p className="field-error" role="alert">
             {finalizeError}
           </p>
@@ -397,7 +408,7 @@ export function FreeRoamScreen({
         }}
         pauseDisabled={isPausePending || isFinalizing}
         pauseButtonRef={pauseButtonRef}
-        endAction={!isEndRideConfirmOpen ? renderEndRideAction() : null}
+        endAction={renderEndRideTrigger(isEndRideConfirmOpen)}
       />
       {pauseError ? (
         <p className="field-error" role="alert">

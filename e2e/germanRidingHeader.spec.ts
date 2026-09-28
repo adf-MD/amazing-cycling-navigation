@@ -41,6 +41,7 @@ const COPY = {
     endRideCompact: "End ride",
     pause: "Pause",
     pausing: "Pausing…",
+    cancel: "Cancel",
   },
   de: {
     nav: "Fahren",
@@ -51,6 +52,7 @@ const COPY = {
     endRideCompact: "Beenden",
     pause: "Pause",
     pausing: "Wird pausiert…",
+    cancel: "Abbrechen",
   },
 } as const;
 type Language = keyof typeof COPY;
@@ -404,5 +406,111 @@ for (const width of WIDTHS) {
         ).__resolveRideStateWriteDelay?.();
       });
     });
+  });
+}
+
+// The 0.4.42 installed-iPhone recheck (September 2026, IMG_8107/IMG_8108):
+// opening the End confirmation emptied the header's End slot, so the title's
+// flex item grew into the freed width and its centred text jumped right. The
+// trigger now stays mounted while the confirmation is open — concealed,
+// outside the accessibility tree and disabled — so nothing in the header
+// moves. Pause was visible in the capture and is asserted here anyway.
+interface HeaderSnapshot {
+  pause: { x: number; y: number; width: number; height: number };
+  titleText: { x: number; y: number; width: number; height: number };
+  endSlot: { x: number; y: number; width: number; height: number };
+}
+
+async function snapshotHeader(page: Page): Promise<HeaderSnapshot> {
+  return page.evaluate(() => {
+    const header = document.querySelector("header.riding-immersive-header");
+    const pause = header?.querySelector(".riding-immersive-header-start button");
+    const title = header?.querySelector(".riding-immersive-header-title");
+    const endSlot = header?.querySelector(".riding-immersive-header-end");
+    if (!pause || !title || !endSlot) throw new Error("incomplete immersive header");
+    const range = document.createRange();
+    range.selectNodeContents(title);
+    const box = (rect: DOMRect) => ({
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+    });
+    return {
+      pause: box(pause.getBoundingClientRect()),
+      titleText: box(range.getBoundingClientRect()),
+      endSlot: box(endSlot.getBoundingClientRect()),
+    };
+  });
+}
+
+function expectSameHeader(
+  actual: HeaderSnapshot,
+  expected: HeaderSnapshot,
+  when: string,
+) {
+  for (const part of ["pause", "titleText", "endSlot"] as const) {
+    for (const edge of ["x", "y", "width", "height"] as const) {
+      expect(
+        Math.abs(actual[part][edge] - expected[part][edge]),
+        `${when}: ${part}.${edge} ${JSON.stringify(actual[part])} vs ${JSON.stringify(expected[part])}`,
+      ).toBeLessThanOrEqual(0.5);
+    }
+  }
+}
+
+for (const width of [375, 390] as const) {
+  test.describe(`${String(width)}px portrait, End confirmation`, () => {
+    test.use({ viewport: { width, height: 844 } });
+
+    for (const language of ["en", "de"] as const) {
+      for (const session of ["route", "free roam"] as const) {
+        test(`the header stays still while the End confirmation opens and closes (${session}, ${language})`, async ({
+          page,
+          context,
+        }) => {
+          await installLocalMapStyle(page);
+          if (session === "route") {
+            await startRouteRide(page, context, language, "Abendrunde");
+          } else {
+            await startFreeRoam(page, context, language);
+          }
+          const copy = COPY[language];
+          const header = page.locator("header.riding-immersive-header");
+          const trigger = header.locator(".riding-immersive-header-end button");
+          const pause = header.getByRole("button", { name: copy.pause, exact: true });
+          await expect(trigger).toBeVisible();
+
+          const before = await snapshotHeader(page);
+
+          for (const close of ["Cancel", "Escape"] as const) {
+            await trigger.click();
+            const dialog = page.getByRole("alertdialog");
+            await expect(dialog).toBeVisible();
+            await expect(dialog.getByRole("button", { name: copy.cancel })).toBeFocused();
+
+            // While open: Pause is still there and usable, the header's own
+            // End trigger is concealed and has no role, and nothing moved.
+            await expect(pause).toBeVisible();
+            await expect(pause).toBeEnabled();
+            await expect(trigger).toBeHidden();
+            await expect(header.getByRole("button", { name: copy.endRide })).toHaveCount(
+              0,
+            );
+            expectSameHeader(await snapshotHeader(page), before, `open (${close})`);
+
+            if (close === "Cancel") {
+              await dialog.getByRole("button", { name: copy.cancel }).click();
+            } else {
+              await page.keyboard.press("Escape");
+            }
+            await expect(dialog).toBeHidden();
+            await expect(trigger).toBeVisible();
+            await expect(trigger).toBeFocused();
+            expectSameHeader(await snapshotHeader(page), before, `after ${close}`);
+          }
+        });
+      }
+    }
   });
 }
