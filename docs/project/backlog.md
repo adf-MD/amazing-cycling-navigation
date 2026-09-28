@@ -287,3 +287,104 @@ _Category: Planning interaction_
      - Present fact: Planning places a map-tap waypoint from MapLibre's `click` event (`src/map/mapAdapter.ts`'s `onMapTap`), which MapLibre suppresses once a pointer has moved past its click tolerance. A small attempted pan can therefore still register as a tap.
      - **Investigate on the device before changing anything.** Distinguish touch from mouse by pointer type, never by installed PWA versus browser, and keep useful desktop mouse clicks. Consider the crosshair placement control, which is unaffected by pan jitter, as part of the design space, but do not remove direct map-tap placement on the strength of this entry.
      - Evidence required when it is worked on: a device reproduction first, then a real touch-gesture test (item 94's precedent used real two-finger touch gestures) that fails before any change and passes after it, plus a mouse-click control proving desktop placement is unchanged.
+
+---
+
+<a id="item-124"></a>
+
+## Item 124 — One reveal rule for confirmations and expanding panels (unscheduled)
+
+_Category: Interface and accessibility consistency_
+
+124. **One reveal rule for confirmations and expanding panels — unscheduled**
+     - Origin: the rider's installed-iPhone observations, reported 28 September 2026. Opening Planning's **Clear draft** confirmation, or a Routes card's **Delete route** confirmation, left the expanded confirmation out of view.
+     - **Unscheduled, and not part of the approved execution order.** No implementation or cancellation behaviour is approved by this entry.
+     - **The mechanism in source is separate from what was observed.**
+       - **Source:** neither confirmation has a reveal of its own. Clear draft morphs in place, swapping its trigger row for `ConfirmDialog` (`src/ui/planning/PlanningScreen.tsx`); Planning receives no sticky-header reference. Delete route is a hand-rolled confirmation appended below the card's actions row (`src/ui/library/RouteListItem.tsx`), and `src/index.css` states that a card's delete confirmation deliberately has no scroll-into-view. In both, the only thing that can move the viewport is the Cancel button's `autoFocus`, through the browser's own focus scrolling.
+       - **Observed:** on the installed iPhone, the expanded confirmation **remained out of view**. Whatever the browser's focus scrolling did there, it did not reveal the confirmation. **No cause is claimed.**
+     - **Existing mechanisms, which do not agree with one another:**
+       - item 118's minimal-scroll helper, `src/ui/settings/confirmationRevealScroll.ts`: instant, aware of the sticky header and the safe-area inset, priority to the action row when the whole inset cannot fit. It runs in a `useLayoutEffect` and corrects only what the native focus scroll left;
+       - item 95's route-switch prompt: `scrollIntoView({ block: "end", behavior: "auto" })` when the card is not already fully visible;
+       - items 105 and 106's top-prioritising tag-editor reveal (`src/ui/library/routeCardTopReveal.ts`), after `runWhenViewportSettled`;
+       - the tag manager's smooth reveal for its merge and delete confirmations.
+
+       Only Routes and Settings receive the sticky header's reference (`stickyHeaderRef` in `src/App.tsx`).
+
+     - **Other expanding content with no reveal today:** Settings' and Status's disclosures, Settings' Replace-key form, Planning's routing options, the route card's rename and tag editors on opening, the Ride launcher's End/Discard confirmation, the paused Riding panel's End confirmation, and the page-level ride-switch dialog, which renders above `<main>`.
+     - **The rule to adopt:** keep the viewport still when the relevant new content fits; otherwise scroll only enough to reveal it, accounting for the sticky navigation and the bottom safe area.
+     - **Open, deliberately:**
+       - the implementation, including whether item 118's helper is generalised;
+       - which panels are in scope, and what "the relevant new content" is for each (the whole panel, or its action row first);
+       - motion, and reduced motion;
+       - focus and scroll on Cancel, Escape and close;
+       - how this interacts with item 119's dialog semantics and with item 125's per-screen scroll restoration.
+     - **Not approved:** any change to item 95's or item 118's accepted behaviour, which a common rule should subsume rather than regress.
+     - **Evidence required when implemented:** browser geometry before, while open and after cancelling, with the content both fitting and not fitting, at 390 px portrait at ordinary and 200% root text, with a sticky-header-aware assertion and a negative control; then the installed-iPhone recheck, since the observed failure is on iOS.
+
+---
+
+<a id="item-125"></a>
+
+## Item 125 — Per-screen scroll restoration (unscheduled)
+
+_Category: Navigation and information architecture_
+
+125. **Per-screen scroll restoration — unscheduled**
+     - Origin: the rider's observation, reported 28 September 2026: switching between screens should neither discard nor share their scroll positions.
+     - **Unscheduled, and not part of the approved execution order.**
+     - **Present facts, from source:**
+       - `src/App.tsx` keeps a single `screen` state, and a switch unmounts one screen and mounts the next.
+       - `window.scrollY` is carried over and clamped by the new page's height. Nothing resets or restores it on an ordinary switch between Routes, Plan, Settings and Status.
+       - The two existing exceptions:
+         - Ride's reset to the top when new ride content is requested (`src/ui/shared/useResetScrollForNewRideContent.ts`);
+         - Routes' one-shot restoration after a route opens. `routesScrollYRef` is captured in `openRideTarget`, restored by `RouteLibrary.tsx` once its data has loaded, held in memory only, and covered by `e2e/routeLibraryScroll.spec.ts`.
+     - **An unverified source observation, not a confirmed defect:** `openRideTarget` records the current `window.scrollY` for any route target, not only when leaving Routes — a Planning save and a launcher resume included. Routes may therefore later restore another screen's offset. It needs a browser reproduction before it is treated as a defect.
+     - **Coordination with item 121**, which is first in the approved order: the design discussion includes item 121's planned Settings/Status sibling views and whether they share or keep separate positions. **This entry adds no scope to item 121.** If item 121 ships first, this item accounts for the sibling views; if not, it must not presume their final structure.
+     - **Explicit design questions, deliberately open:**
+       - persistence across closing and reopening the PWA (memory only, or stored);
+       - resetting after substantial content changes (a filter or search change, an import, a delete, a new calculation);
+       - whether Planning and the riding screens take part;
+       - interaction with item 124's reveals and with restored focus.
+     - **Evidence required when implemented:** browser tests for each screen pair, both directions, including a screen shorter than the stored offset, plus the installed-iPhone recheck.
+
+---
+
+<a id="item-126"></a>
+
+## Item 126 — Climb distances at their boundaries (unscheduled investigation)
+
+_Category: Riding elevation enhancement_
+
+126. **Climb distances at their boundaries — unscheduled investigation**
+     - Origin: the rider's observation, reported 28 September 2026. The climb view can show `0.0 km` while "Starts in" or "remaining" still refers to a positive distance.
+     - **Unscheduled, and not part of the approved execution order.**
+     - **Present facts, from source:**
+       - Every climb distance goes through `formatDistanceKm` (`src/ui/shared/routeSummary.ts`), one decimal of a kilometre, so anything under 50 m prints `0.0 km` / `0,0 km`. The keys concerned are `climb.startsIn`, `climb.distanceToSummit` with its value, `climb.distanceCompleted`, `climb.cueRemaining`, `climb.remaining` and `climb.passedAgo`.
+       - **The state transition:**
+         - `findNextClimbAfterDistance` (`src/navigation/routeFeatures.ts`) treats a climb as upcoming only while its start is strictly ahead, so the preview's "Starts in" is always positive but can be below 50 m;
+         - `findFeatureAtDistance` treats both ends as inside the climb;
+         - `computeClimbProgressMetrics` (`src/navigation/climbElevationView.ts`) clamps to the climb, so "remaining" is 0–50 m just before the summit.
+       - **Existing tests:** none covers the 0–50 m range. `RidingClimbProgressPanel.test.tsx` pins `0.0 km` at exactly zero remaining.
+     - **A candidate, not a decision:** metres below 100 m at an appropriate precision. `formatManoeuvreDistance` already renders metres below 1 km with 5/10/50 m rounding, which could be reused or adapted. **Rounding the whole climb distance upwards is not approved.**
+     - **Open:** the threshold and precision; whether "Starts in" and "remaining" should hand over at a small distance rather than at exactly zero; and consistency with the manoeuvre panel's own distance display.
+     - **Evidence required when implemented:** unit tests at 0, 1, 49, 50, 99 and 100 m and at the transition, in both languages, plus the ride recheck.
+
+---
+
+<a id="item-127"></a>
+
+## Item 127 — Discovering "Insert after" in Planning (unscheduled design candidate)
+
+_Category: Planning interaction_
+
+127. **Discovering "Insert after" in Planning — unscheduled design candidate**
+     - Origin: the rider's observation, reported 28 September 2026. It is easy to miss that a waypoint can be inserted after an existing one.
+     - **Unscheduled, and not part of the approved execution order.** No general "How to use this app" section is committed to.
+     - **Present facts, from source (`src/ui/planning/WaypointList.tsx`, `PlanningScreen.tsx`, `planningInteractionMode.ts`):**
+       - **Where the action lives:** `Insert after` / `Danach einfügen` appears only on the **selected** row of the waypoint list, beside `Move` / `Verschieben`. A waypoint is selected only from the list, never by tapping its marker, and the list sits below the map, typically below the fold on a phone.
+       - **The disabled placement control:** while a waypoint is selected and no action is armed, the map's placement control still reads `Add waypoint here` / `Wegpunkt hier setzen` but is disabled, and nothing explains why.
+       - **Confirming the insert:** after `Insert after` is armed, the control that confirms it (`Insert after waypoint N` / `Nach Wegpunkt N einfügen`) is back on the map, above the list, and not brought into view.
+       - **No hint:** nothing explains insertion. The only hint is the empty-list one (`planning.waypoints.empty`).
+     - **The candidate:** a short cue at the point of use, for example at the disabled placement control or beside the selected row's actions. Its wording, placement and whether it persists are open.
+     - **Coordinate with:** items 122 (the map area) and 123 (touch-pan placement), item 114 (the placement control and the attribution at 200% text), and the placement-control width change in item 113's follow-up. A cue must not worsen item 114's overlap or item 123's gesture question.
+     - **Evidence required when implemented:** both languages at 390 px portrait at ordinary and 200% root text, with the cue and the placement control contained and readable, plus the installed-iPhone recheck.

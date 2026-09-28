@@ -23,7 +23,7 @@ This file records verification evidence only; the behaviour contracts themselves
 
 ## Open installed-iPhone acceptance checklist (12 September 2026)
 
-**This is the only active list of presently actionable installed-iPhone checks.** Items 102, 103, 114, 119, 120 and 121 are unimplemented and therefore out of scope, and items 122 and 123 are unscheduled design candidates. Item 113 shipped German in `0.4.41`. Its first physical pass (25 September 2026) produced the `0.4.42` follow-up, and that recheck (reported 28 September 2026, recorded below) passed apart from three findings corrected in `0.4.43`, whose rechecks are in Sessions 2 and 4. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
+**This is the only active list of presently actionable installed-iPhone checks.** Items 102, 103, 114, 119, 120 and 121 are unimplemented and therefore out of scope, and items 122–127 are unscheduled candidates. Item 113 shipped German in `0.4.41`. Its first physical pass (25 September 2026) produced the `0.4.42` follow-up. That recheck (reported 28 September 2026, recorded below) passed apart from three findings corrected in `0.4.43`. **The `0.4.43` Status-wording and End-confirmation rechecks passed on 28 September 2026**, and only the climb cue's recheck remains, in Session 2. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
 
 ### Session 1 — stationary, on the installed Home Screen PWA
 
@@ -42,7 +42,7 @@ This file records verification evidence only; the behaviour contracts themselves
 - [ ] The status card stays legible while mounted and moving, on route Riding and free roam alike, and `Screen on` is usable one-handed with gloves, read by its `On`/`Off` cue rather than by colour (items 75, 82).
 - [ ] The four-slot elevation-window selector is comfortable and equally sized with its selected ring uncut at both ends, and the recognised-climb picker is usable with gloves (items 76, 78, 79, 80).
 - [ ] Distance badges stay restrained and readable while genuinely moving: density across real zoom levels, a naturally advancing rolling window, passed badges disappearing, and none at all in free roam (item 84).
-- [ ] **The `0.4.43` climb-cue recheck (item 115, still open).** The `0.4.42` ride found the cue covering the blue position marker and the route next to it in a shorter map. On a ride with a recognised climb, check that:
+- [ ] **The `0.4.43` climb-cue recheck (item 115, still open).** The `0.4.42` ride found the cue covering the blue position marker and the route next to it in a shorter map. The 28 September 2026 recheck of `0.4.43` did **not** exercise the cue, so it remains pending. On a ride with a recognised climb, check that:
   - the cue in the map's lower right shows `Ansehen` / `View`, and leaves the marker and the nearby route visible, including in a **shorter map** (a status card carrying an imagery message, plus the manoeuvre panel);
   - `Ansehen` / `View` still opens the climb;
   - a manual gesture's `Folgemodus pausiert.` / `Map follow paused.` toast appears below the cue without either being obscured;
@@ -60,19 +60,18 @@ Stationary or walking. Induce only what is deliberate and reproducible; everythi
 - [ ] The imagery-recovery row reads as one row — explanation on the left, `Retry map imagery` on the right — on both route Riding and free roam, with the full button label intact, and the slow-imagery row still spanning the full width with no action (item 115).
 - [ ] Online/Offline is comprehensible without relying on colour, and the recovery row clears itself once connectivity and imagery return, with no pan or zoom needed (item 83).
 
-### Session 4 — item 113's German interface and the riding header: the `0.4.43` recheck
+### Session 4 — item 113's German interface: what remains
 
-**Item 113's `0.4.42` corrections were rechecked on the installed iPhone and passed**, apart from three findings (dated record below, reported 28 September 2026). The passed checks are recorded there and no longer appear here. The findings were corrected in `0.4.43` with automated evidence only; the climb cue's recheck is in Session 2. Portrait. **Read the version and build from Status first.** Browser measurements are regression evidence, not proof of fit on iOS.
+**Item 113's `0.4.42` corrections passed on the installed iPhone** (reported 28 September 2026), apart from three findings corrected in `0.4.43`. **The `0.4.43` Status-wording and End-confirmation rechecks then passed** (also reported 28 September 2026). Both dated records are below; the climb cue's recheck is in Session 2. Portrait. **Read the version and build from Status first.**
 
-- [ ] **Status wording, German:** the map-imagery heading reads `Probleme mit dem Kartenmaterial`, and its empty state `In dieser Sitzung gab es keine Einträge zu Problemen oder ihrer Behebung. Normale, erfolgreiche Ladevorgänge werden hier nicht angezeigt.`
-- [ ] **The End confirmation, on route riding and on free roam, in German and English:**
-  - tapping `Beenden` / `End ride` opens the confirmation below the header;
-  - **the header does not move**: the title and `Pause` stay exactly where they were, and the End area stays blank rather than showing a red or selected button;
-  - `Abbrechen` / `Cancel` is focused, and cancelling returns focus to `Beenden` / `End ride`;
-  - confirming still ends the ride.
 - [ ] **Carried over, still unreported:** `Gerätesprache` on a German-configured phone gives German, and on an English-configured phone gives English.
 
-**Deferred, not a blocker:** VoiceOver, including whether the climb selector's `Nicht kat.` / `uncat.` abbreviations read understandably. It was deliberately not tested and does not hold up item 113's follow-ups. No iOS Larger Text result and no physical-Android result is claimed for item 113 in either language.
+**Deferred or optional, not blockers:**
+
+- **VoiceOver**, including whether the climb selector's `Nicht kat.` / `uncat.` abbreviations read understandably. It was deliberately not tested and does not hold up item 113's follow-ups.
+- **The End confirmation's focus behaviour** (Cancel focused, focus returning to End) **and its English half.** Both have automated evidence only and were not claimed in the 28 September recheck; they are optional device checks.
+
+No iOS Larger Text result and no physical-Android result is claimed for item 113 in either language.
 
 ### Opportunistic monitoring — watched for, never manufactured
 
@@ -99,6 +98,36 @@ None of these blocks acceptance of the item it came from. Record one if it occur
   This upgrades the earlier "consistent with" note for this file to a **measured, reproduced-on-baseline** finding: the class is pre-existing and is **not** attributable to item 113's pre-render IndexedDB read, which was the specific hypothesis worth ruling out, since that change does add a blocking database open before the first paint. No production change was made for it, and it remains monitored rather than fixed — if it is ever worked on, start from the artefacts item 116 retains.
 
 ## Dated acceptance record
+
+### Installed-iPhone recheck of `0.4.43` (build `aab58c0`, reported 28 September 2026)
+
+**Device:** iPhone 13, installed Home Screen PWA, portrait.
+
+**Passed:**
+
+- **Build identification:** version `0.4.43`, build `aab58c0`.
+- **The German Status wording:** the map-imagery heading `Probleme mit dem Kartenmaterial` and its empty state.
+- **The End-confirmation checks on route riding and on free roam.**
+
+**Not claimed:** this record does not claim VoiceOver (still deferred, not a blocker), any particular keyboard-focus state (Cancel focused, or focus returning to End), the optional English half of the End checks, or any check beyond those reported.
+
+**Not exercised:** the climb cue. Its `0.4.43` recheck stays pending for a ride with a recognised climb (Session 2).
+
+**A question resolved from source, with no wording change requested.** A freshly calculated route in the German interface showed a turn instruction in the formal address, `Biegen Sie links auf … ab`. A read-only trace of the source and fixtures shows that **ACN passes openrouteservice's own German instruction through**:
+
+- The adapter asks for German with `language: "de"` (`src/routing/openRouteServiceAdapter.ts`).
+- `step.instruction` becomes the manoeuvre's instruction unchanged, apart from a 200-character limit (`src/routing/normalizeOpenRouteServiceRoute.ts`).
+- It is stored verbatim, in IndexedDB and in the GPX `acn:navigation` round trip.
+- Riding shows it, trimmed, in preference to ACN's own label (`RidingNextManoeuvrePanel.tsx`, `RidingCompactManoeuvreCue.tsx`).
+
+ACN's own German fallback labels are infinitives (`Links abbiegen`), and a manoeuvre has no road-name field, so ACN cannot have produced the text. This is item 113's rule that provider text is data, not copy. **Limit of the evidence:** no German openrouteservice response exists in the repository's fixtures, and no live request was made. **You have requested no wording change, so no backlog item is filed.**
+
+**New observations filed as unscheduled backlog items**, all outside the approved execution order:
+
+- [item 124](backlog.md#item-124): Clear draft and Delete route confirmations left out of view on the iPhone, and a common reveal rule;
+- [item 125](backlog.md#item-125): per-screen scroll restoration;
+- [item 126](backlog.md#item-126): `0.0 km` at climb boundaries;
+- [item 127](backlog.md#item-127): discovering `Insert after` in Planning.
 
 ### Installed-iPhone recheck of `0.4.42` (reported 28 September 2026)
 
