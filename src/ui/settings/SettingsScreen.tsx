@@ -48,6 +48,7 @@ import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
 import { applyConfirmationReveal } from "./confirmationRevealScroll.ts";
 import { describeProviderKeyStatus } from "./providerKeyStatus.ts";
+import { useProviderKeyDraft } from "./useProviderKeyDraft.ts";
 import { useLanguageContext, useTranslate } from "../../i18n/useTranslate.ts";
 import { RichText } from "../../i18n/RichText.tsx";
 
@@ -94,9 +95,9 @@ export function SettingsScreen({
   const now = useNow(clock);
   const online = useOnlineStatus();
 
-  const [draftKey, setDraftKey] = useState("");
+  const { draftKey, setDraftKey, isEditing, setIsEditing, saveError, setSaveError } =
+    useProviderKeyDraft();
   const [keyVisible, setKeyVisible] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
   // Backlog item 118. The armed delete confirmation is bound to the exact
   // stored key it was armed for, never a bare boolean: `key` comes from a
   // live query, so another tab can delete or replace it while this one
@@ -110,7 +111,6 @@ export function SettingsScreen({
   // indistinguishable here, which is a narrower race than the last-write-
   // wins one the storage row already has.
   const [armedDeleteSavedAt, setArmedDeleteSavedAt] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
   // The trigger to restore focus to when the confirmation is cancelled, and
   // the card's own heading to move focus to once a deletion has actually
   // succeeded and unmounted that trigger — see handleConfirmDelete.

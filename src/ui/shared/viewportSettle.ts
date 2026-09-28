@@ -7,13 +7,13 @@ const SETTLE_TOLERANCE_PX = 1;
 
 /** Consecutive in-tolerance animation frames required before the geometry
  * is considered settled — a condition-based completion, not a fixed frame
- * count. Mirrors useResetScrollForNewRideContent.ts's own constant. */
+ * count. Mirrors scrollToTopAndSettle.ts's own constant. */
 const STABLE_FRAMES_REQUIRED = 3;
 
 /** Elapsed-time backstop, in milliseconds — never the normal completion
  * path (the consecutive-in-tolerance-frames check above is), only a bound
  * on a pathological case that never stabilises. Same figure and rationale
- * as useResetScrollForNewRideContent.ts's REASSERT_SAFETY_CAP_MS. */
+ * as scrollToTopAndSettle.ts's REASSERT_SAFETY_CAP_MS. */
 const SETTLE_SAFETY_CAP_MS = 1000;
 
 /** DOM events that indicate genuine new user input, as distinct from a
@@ -21,7 +21,7 @@ const SETTLE_SAFETY_CAP_MS = 1000;
  * while the loop is active abandons it rather than acting against geometry
  * the user is actively changing. Deliberately excludes "scroll" itself,
  * which our own callers' corrective scrolls also fire and which would be
- * self-defeating to listen for (useResetScrollForNewRideContent.ts's own
+ * self-defeating to listen for (scrollToTopAndSettle.ts's own
  * established list and reasoning). */
 const GENUINE_SCROLL_INPUT_EVENTS = ["touchstart", "pointerdown", "wheel"] as const;
 
