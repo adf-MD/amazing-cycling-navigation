@@ -720,6 +720,7 @@ export const de: Catalogue = {
   "climb.cueActive": "Im Anstieg",
   "climb.cueRemaining": "noch {distance}",
   "climb.viewClimb": "Anstieg ansehen",
+  "climb.viewClimbCompact": "Ansehen",
   "climb.selectedFeatureLabel": "Übersicht des gewählten Abschnitts",
   "climb.recognisedDescent": "Erkannte Abfahrt",
   "climb.remaining": "noch {distance}",

@@ -792,6 +792,12 @@ export const en = {
   "climb.cueActive": "Climb active",
   "climb.cueRemaining": "{distance} remaining",
   "climb.viewClimb": "View climb",
+  // translator: the visible label of the map's climb-cue action only. The
+  // button's accessible name stays "climb.viewClimb", so this must be a
+  // word that name contains (label-in-name). Kept short so the cue in the
+  // map's lower right stays clear of the rider's position marker (0.4.42
+  // installed-iPhone recheck).
+  "climb.viewClimbCompact": "View",
   "climb.selectedFeatureLabel": "Selected feature summary",
   "climb.recognisedDescent": "Recognised descent",
   "climb.remaining": "{distance} remaining",

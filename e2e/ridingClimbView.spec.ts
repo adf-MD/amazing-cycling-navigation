@@ -1293,8 +1293,10 @@ test.describe("390×844 phone viewport", () => {
       const button = element?.closest("button");
       return button ? button.textContent.trim() : null;
     }, probePoint);
+    // The compact visible label (0.4.42 installed-iPhone recheck); the
+    // button's accessible name stays "View climb".
     expect(hitLabel, `nothing hit-testable at ${JSON.stringify(probePoint)}`).toBe(
-      "View climb",
+      "View",
     );
 
     await page.mouse.click(probePoint.x, probePoint.y);
@@ -1406,5 +1408,340 @@ test.describe("390×844 phone viewport", () => {
       (el) => getComputedStyle(el).outlineOffset,
     );
     expect(outlineOffset).toBe("-2px");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The 0.4.42 installed-iPhone recheck (September 2026, IMG_8005): in a
+// German ride on an iPhone 13 the lower-right cue — about 169px wide, its
+// widest line the action "Anstieg ansehen" — reached across the rider's
+// position marker. The map there was only about 371px tall, because the
+// status card carried an imagery message and a manoeuvre panel sat above
+// it; below roughly 426px of map height the marker (H/2 + 60) and the
+// bottom-anchored cue overlap vertically, so horizontal clearance decides.
+// Item 115's own placement test runs only at 390x844 in English, where the
+// map is 514px tall and the marker sits above the cue, so it could never
+// meet this case.
+//
+// The action now shows the compact "View" / "Ansehen" (accessible name
+// unchanged). This measures the cue against the PAINTED marker, the route
+// ahead and the attribution in both languages, at four portrait widths and
+// at two map heights — a tall one, and a short one that still takes the
+// lower-right placement — and then against the paused-Follow toast after a
+// real pan. Regression evidence in the pinned container, not proof of fit
+// on iOS; nor a claim that arbitrary route geometry can never pass beneath
+// an overlay — the fixture route is a straight line.
+const MARKER_CLEARANCE_PX = 8;
+const SHORT_MAP_HEIGHT_PX = 340;
+const CUE_COPY = {
+  en: {
+    visible: "View",
+    name: "View climb",
+    toast: "Map follow paused.",
+    start: "Start riding",
+  },
+  de: {
+    visible: "Ansehen",
+    name: "Anstieg ansehen",
+    toast: "Folgemodus pausiert.",
+    start: "Fahrt starten",
+  },
+} as const;
+
+/** Duplicated from language.spec.ts per this repo's no-shared-e2e-helpers
+ * convention: writes the app-preferences singleton directly. */
+async function seedCueLanguage(page: Page, language: string): Promise<void> {
+  await page.evaluate(async (language) => {
+    await new Promise<void>((resolve, reject) => {
+      // Dexie stores schema version N as IndexedDB version N*10.
+      const request = indexedDB.open("amazing-cycling-navigation", 50);
+      request.onsuccess = () => {
+        const db = request.result;
+        const tx = db.transaction("appPreferences", "readwrite");
+        tx.objectStore("appPreferences").put({ id: "app", language });
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          reject(new Error(tx.error?.message ?? "IndexedDB request failed"));
+        };
+      };
+      request.onerror = () => {
+        reject(new Error(request.error?.message ?? "IndexedDB request failed"));
+      };
+    });
+  }, language);
+}
+
+for (const width of [360, 375, 390, 430] as const) {
+  test.describe(`${String(width)}px portrait, climb cue clearance`, () => {
+    test.use({ viewport: { width, height: 844 } });
+
+    for (const language of ["en", "de"] as const) {
+      for (const mapHeight of ["tall", "short"] as const) {
+        test(`the cue keeps clear of the rider's marker, the route ahead, the attribution and the paused toast (${language}, ${mapHeight} map)`, async ({
+          page,
+          context,
+        }) => {
+          const copy = CUE_COPY[language];
+          await context.grantPermissions(["geolocation"]);
+          await context.setGeolocation({
+            latitude: FIXTURE_LAT,
+            longitude: lonAtMetresAlongFixture(CLIMB_1_MID_METRES),
+            accuracy: 5,
+          });
+          await installLocalMapStyle(page);
+          await page.goto("/");
+          await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
+          const routeButton = page.getByRole("button", {
+            name: "two-climbs-route",
+            exact: true,
+          });
+          await expect(routeButton).toBeVisible();
+          await seedCueLanguage(page, language);
+          await page.reload();
+          await page
+            .getByRole("button", { name: "two-climbs-route", exact: true })
+            .click();
+          await page.getByRole("button", { name: copy.start }).click();
+          await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+
+          const cueButton = page.getByRole("button", { name: copy.name });
+          await expect(cueButton).toBeVisible({ timeout: 15_000 });
+          await expect(cueButton).toHaveText(copy.visible);
+
+          const mapContainer = page.locator('[data-testid="map-container"]');
+          if (mapHeight === "short") {
+            const tallBox = await mapContainer.boundingBox();
+            if (!tallBox) throw new Error("expected the map to have a bounding box");
+            await page.setViewportSize({
+              width,
+              height: Math.round(844 - tallBox.height + SHORT_MAP_HEIGHT_PX),
+            });
+            await expect
+              .poll(async () => (await mapContainer.boundingBox())?.height ?? 0)
+              .toBeCloseTo(SHORT_MAP_HEIGHT_PX, -1);
+            // A resize alone keeps the rider where it was relative to the
+            // map's top edge — measured near the bottom of the short map — so
+            // a fresh fix is issued for the following camera to re-anchor
+            // the rider at its documented look-ahead position, as it is on
+            // a device whose map height is laid out before following.
+            await context.setGeolocation({
+              latitude: FIXTURE_LAT,
+              longitude: lonAtMetresAlongFixture(CLIMB_1_MID_METRES + 10),
+              accuracy: 5,
+            });
+          }
+          // Wait for the follow anchor: horizontally centred, 60px below the
+          // map's vertical centre (mapAdapter.ts's FOLLOW_VERTICAL_OFFSET_PX).
+          await expect
+            .poll(async () => {
+              const box = await mapContainer.boundingBox();
+              const x = Number(
+                await mapContainer.getAttribute("data-camera-follow-anchor-x"),
+              );
+              const y = Number(
+                await mapContainer.getAttribute("data-camera-follow-anchor-y"),
+              );
+              if (!box) return Number.POSITIVE_INFINITY;
+              return Math.max(
+                Math.abs(x - box.width / 2),
+                Math.abs(y - (box.height / 2 + 60)),
+              );
+            })
+            .toBeLessThan(2);
+
+          const cue = page.locator(".ride-climb-cue");
+          const [mapBox, cueBox, attributionBox] = await Promise.all([
+            mapContainer.boundingBox(),
+            cue.boundingBox(),
+            page.locator(".map-attribution").boundingBox(),
+          ]);
+          if (!mapBox || !cueBox || !attributionBox) {
+            throw new Error(
+              "expected the map, the cue and the attribution to have boxes",
+            );
+          }
+          // Still item 115's lower-right placement at both heights.
+          expect(mapBox.x + mapBox.width - (cueBox.x + cueBox.width)).toBeCloseTo(
+            MAP_OVERLAY_INSET_PX,
+            0,
+          );
+          expect(cueBox.y).toBeGreaterThan(mapBox.y + mapBox.height / 2);
+          expect(isFullyWithin(cueBox, mapBox)).toBe(true);
+          expect(intersects(cueBox, attributionBox)).toBe(false);
+          const buttonBox = await cueButton.boundingBox();
+          if (!buttonBox) throw new Error("expected the action to have a bounding box");
+          expect(buttonBox.width).toBeGreaterThanOrEqual(44);
+          expect(buttonBox.height).toBeGreaterThanOrEqual(44);
+
+          const capture = await captureMapPaint(page, mapContainer);
+          const background = modalColour(capture.image);
+          const marker = paintedExtent(
+            capture,
+            {
+              x0: mapBox.width / 2 - 60,
+              x1: mapBox.width / 2 + 60,
+              y0: mapBox.height / 2,
+              y1: mapBox.height / 2 + 120,
+            },
+            ([r, g, b]) => b > 150 && b - r > 80 && b - g > 40,
+          );
+          if (!marker) throw new Error("expected the rider's marker to be painted");
+          expect(marker.pixelCount).toBeGreaterThan(40);
+
+          const overlapsVertically =
+            marker.box.y < cueBox.y + cueBox.height &&
+            marker.box.y + marker.box.height > cueBox.y;
+          const clearance = cueBox.x - (marker.box.x + marker.box.width);
+          test.info().annotations.push({
+            type: "cue",
+            description: JSON.stringify({
+              map: { width: mapBox.width, height: mapBox.height },
+              cue: { x: cueBox.x - mapBox.x, width: cueBox.width, height: cueBox.height },
+              marker: { x: marker.box.x - mapBox.x, width: marker.box.width },
+              overlapsVertically,
+              clearance,
+            }),
+          });
+          expect(intersects(marker.box, cueBox)).toBe(false);
+          if (overlapsVertically) {
+            expect(
+              clearance,
+              "horizontal clearance from the marker",
+            ).toBeGreaterThanOrEqual(MARKER_CLEARANCE_PX);
+          }
+
+          const routeAhead = paintedExtent(
+            capture,
+            { x0: 0, x1: mapBox.width, y0: 0, y1: marker.box.y - mapBox.y },
+            (rgb) => colourDistance(rgb, background) > 24,
+          );
+          if (!routeAhead) throw new Error("expected the route ahead to be painted");
+          // In a tall map the cue sits wholly below the rider, and item 115's
+          // own 24px safety band around the painted route ahead applies. In
+          // a short map — a case item 115 never constrained, where the old
+          // German cue covered the marker itself — the cue's top rises beside
+          // the route ahead, and the requirement is the same clearance as
+          // the marker's: the painted route is never covered, with an 8px
+          // gap. Measured here, English keeps 8.4px at 360px, 15.4px at 375px
+          // and 23.4px at 390px from the painted route in a short map;
+          // German, being narrower, keeps the full 24px band everywhere.
+          const band =
+            mapHeight === "tall" ? ROUTE_CORRIDOR_SAFETY_BAND_PX : MARKER_CLEARANCE_PX;
+          const corridor: Box = {
+            x: routeAhead.box.x - band,
+            y: routeAhead.box.y - band,
+            width: routeAhead.box.width + 2 * band,
+            height: routeAhead.box.height + 2 * band,
+          };
+          test.info().annotations.push({
+            type: "corridor",
+            description: JSON.stringify({
+              routeAhead: {
+                x: routeAhead.box.x - mapBox.x,
+                width: routeAhead.box.width,
+                height: routeAhead.box.height,
+              },
+              band,
+              gap: cueBox.x - (routeAhead.box.x + routeAhead.box.width),
+            }),
+          });
+          expect(intersects(cueBox, corridor)).toBe(false);
+
+          // A real keyboard pan pauses Follow; the toast and the cue share the
+          // bottom of the map without either covering the other or the
+          // attribution.
+          const centreBefore = await mapContainer.getAttribute("data-camera-center");
+          await mapContainer.locator("canvas").focus();
+          await page.keyboard.press("ArrowRight");
+          await expect
+            .poll(() => mapContainer.getAttribute("data-camera-center"))
+            .not.toBe(centreBefore);
+          const toast = page.getByText(copy.toast);
+          await expect(toast).toBeVisible();
+          await expect(cue).toBeVisible();
+          const [pausedCueBox, toastBox, pausedAttributionBox] = await Promise.all([
+            cue.boundingBox(),
+            toast.boundingBox(),
+            page.locator(".map-attribution").boundingBox(),
+          ]);
+          if (!pausedCueBox || !toastBox || !pausedAttributionBox) {
+            throw new Error(
+              "expected the cue, the toast and the attribution to have boxes",
+            );
+          }
+          expect(intersects(pausedCueBox, toastBox)).toBe(false);
+          expect(intersects(pausedCueBox, pausedAttributionBox)).toBe(false);
+          expect(isFullyWithin(pausedCueBox, mapBox)).toBe(true);
+        });
+      }
+    }
+  });
+}
+
+test.describe("390×844 at 200% text, climb cue in German", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("the short-map fallback keeps the compact German action visible and working", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({
+      latitude: FIXTURE_LAT,
+      longitude: lonAtMetresAlongFixture(CLIMB_1_MID_METRES),
+      accuracy: 5,
+    });
+    await installLocalMapStyle(page);
+    await page.goto("/");
+    await page.getByLabel("Import GPX file").setInputFiles(FIXTURE_GPX_PATH);
+    await expect(
+      page.getByRole("button", { name: "two-climbs-route", exact: true }),
+    ).toBeVisible();
+    await seedCueLanguage(page, "de");
+    await page.reload();
+    await page.getByRole("button", { name: "two-climbs-route", exact: true }).click();
+    await page.getByRole("button", { name: "Fahrt starten" }).click();
+    await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+    const cueButton = page.getByRole("button", { name: "Anstieg ansehen" });
+    await expect(cueButton).toBeVisible({ timeout: 15_000 });
+
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "200%";
+    });
+    const mapContainer = page.locator('[data-testid="map-container"]');
+    await expect
+      .poll(async () => (await mapContainer.boundingBox())?.height ?? 0)
+      .toBeLessThan(14 * 32);
+
+    const [mapBox, cueBox, buttonBox] = await Promise.all([
+      mapContainer.boundingBox(),
+      page.locator(".ride-climb-cue").boundingBox(),
+      cueButton.boundingBox(),
+    ]);
+    if (!mapBox || !cueBox || !buttonBox) throw new Error("expected boxes");
+    // Item 115's fallback: top-anchored within the map, never pushed down
+    // into the attribution or the toast.
+    expect(cueBox.y - mapBox.y).toBeGreaterThanOrEqual(-0.5);
+    expect(cueBox.y - mapBox.y).toBeLessThanOrEqual(MAP_OVERLAY_INSET_PX + 0.5);
+    const visibleWidth =
+      Math.min(buttonBox.x + buttonBox.width, mapBox.x + mapBox.width) -
+      Math.max(buttonBox.x, mapBox.x);
+    const visibleHeight =
+      Math.min(buttonBox.y + buttonBox.height, mapBox.y + mapBox.height) -
+      Math.max(buttonBox.y, mapBox.y);
+    expect(visibleWidth).toBeGreaterThanOrEqual(44);
+    expect(visibleHeight).toBeGreaterThanOrEqual(44);
+    await expect(cueButton).toHaveText("Ansehen");
+
+    await page.mouse.click(
+      Math.max(buttonBox.x, mapBox.x) + visibleWidth / 2,
+      Math.max(buttonBox.y, mapBox.y) + visibleHeight / 2,
+    );
+    await expect(
+      page.getByRole("button", { name: "Profil", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 });

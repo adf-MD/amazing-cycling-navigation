@@ -41,6 +41,13 @@ export interface RidingClimbCueProps {
  * enough to hold the cue, the attribution and the paused-Follow toast
  * without collision. See `.ride-climb-cue-slot` in `src/index.css` for the
  * derivation and for why the base placement is deliberately unchanged.
+ *
+ * The action's visible label is the short `climb.viewClimbCompact` ("View" /
+ * "Ansehen") while its accessible name stays the full `climb.viewClimb`
+ * ("View climb" / "Anstieg ansehen"), which contains the visible word. On
+ * the installed iPhone (0.4.42 recheck) the German "Anstieg ansehen" made it
+ * the cue's widest line, and the cue — which shrinks to its content —
+ * reached across the rider's position marker in a short map.
  */
 export function RidingClimbCue({ metrics, onViewClimb }: RidingClimbCueProps) {
   const translator = useTranslate();
@@ -62,8 +69,9 @@ export function RidingClimbCue({ metrics, onViewClimb }: RidingClimbCueProps) {
           type="button"
           className="btn-primary ride-climb-cue-action"
           onClick={onViewClimb}
+          aria-label={t("climb.viewClimb")}
         >
-          {t("climb.viewClimb")}
+          {t("climb.viewClimbCompact")}
         </button>
       </div>
     </div>

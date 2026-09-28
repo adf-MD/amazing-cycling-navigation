@@ -103,7 +103,7 @@ describe("shape parity", () => {
     };
     expect(count(de)).toEqual(count(en));
     // Pinned literally so a silently shrinking catalogue is visible.
-    expect(count(en)).toEqual({ plain: 733, plural: 18, rich: 2 });
+    expect(count(en)).toEqual({ plain: 734, plural: 18, rich: 2 });
   });
 
   it("gives every plural entry both German categories, non-empty", () => {
@@ -551,11 +551,16 @@ describe("compact labels stay inside their accessible names", () => {
     ["en", en, "en-GB"],
     ["de", de, "de-DE"],
   ] as const) {
-    it(`ride.endRideCompact is contained in ride.endRide (${language})`, () => {
-      const compact = catalogue["ride.endRideCompact"].toLocaleLowerCase(locale);
-      const full = catalogue["ride.endRide"].toLocaleLowerCase(locale);
-      expect(compact.length).toBeGreaterThan(0);
-      expect(full).toContain(compact);
-    });
+    for (const [compactKey, fullKey] of [
+      ["ride.endRideCompact", "ride.endRide"],
+      ["climb.viewClimbCompact", "climb.viewClimb"],
+    ] as const) {
+      it(`${compactKey} is contained in ${fullKey} (${language})`, () => {
+        const compact = catalogue[compactKey].toLocaleLowerCase(locale);
+        const full = catalogue[fullKey].toLocaleLowerCase(locale);
+        expect(compact.length).toBeGreaterThan(0);
+        expect(full).toContain(compact);
+      });
+    }
   }
 });

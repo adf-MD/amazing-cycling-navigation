@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RidingClimbCue } from "./RidingClimbCue.tsx";
+import { LanguageProvider } from "../../i18n/LanguageProvider.tsx";
 import type { ClimbProgressMetrics } from "../../navigation/climbElevationView.ts";
 
 function buildMetrics(
@@ -116,7 +117,33 @@ describe("RidingClimbCue", () => {
     expect(cue).not.toBeNull();
     expect(cue?.parentElement).toBe(slot);
     expect(slot?.children).toHaveLength(1);
-    // Exactly the same visible text as before the wrapper existed.
-    expect(slot?.textContent).toBe("Climb active1.8\u00a0km remainingView climb");
+    // The visible text: the action shows the compact "View" (0.4.42
+    // installed-iPhone recheck); its accessible name stays "View climb".
+    expect(slot?.textContent).toBe("Climb active1.8\u00a0km remainingView");
   });
+
+  // The 0.4.42 installed-iPhone recheck: the full label made the German cue
+  // wide enough to cover the rider's position marker in a short map. The
+  // visible action is now the compact word, the accessible name unchanged —
+  // and the visible word stays inside the name (label-in-name).
+  for (const [language, visible, name] of [
+    ["en", "View", "View climb"],
+    ["de", "Ansehen", "Anstieg ansehen"],
+  ] as const) {
+    it(`shows the compact action label with the full accessible name (${language})`, () => {
+      render(
+        <LanguageProvider
+          preference={language}
+          readLanguages={() => ["en-GB"]}
+          documentElement={{ lang: "" }}
+        >
+          <RidingClimbCue metrics={buildMetrics()} onViewClimb={vi.fn()} />
+        </LanguageProvider>,
+      );
+
+      const button = screen.getByRole("button", { name });
+      expect(button.textContent).toBe(visible);
+      expect(name.toLowerCase()).toContain(visible.toLowerCase());
+    });
+  }
 });
