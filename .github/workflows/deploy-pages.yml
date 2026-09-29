@@ -76,10 +76,19 @@ jobs:
         with:
           path: dist
 
+  # Two shards rather than a longer timeout: backlog item 116 kept the
+  # 20-minute limit and asked for the suite to be optimised or sharded if it
+  # ever approached it. fail-fast is off so that one shard failing never
+  # cancels the other shard's run and failure evidence. Deploy's
+  # `needs: e2e` waits for, and requires success from, both shards.
   e2e:
-    name: End-to-end tests
+    name: End-to-end tests (shard ${{ matrix.shard }} of 2)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     container:
       image: mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48
     steps:
@@ -131,7 +140,7 @@ jobs:
 
       - name: End-to-end test suite
         id: e2e
-        run: npm run e2e
+        run: npm run e2e -- --shard=${{ matrix.shard }}/2
 
       # Backlog item 116. Playwright writes a trace, a screenshot and an
       # error context for a failed test only (see playwright.config.ts), and
@@ -149,7 +158,7 @@ jobs:
         if: ${{ failure() && steps.e2e.conclusion == 'failure' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: playwright-failures-${{ github.run_id }}-${{ github.run_attempt }}
+          name: playwright-failures-${{ github.run_id }}-${{ github.run_attempt }}-shard-${{ matrix.shard }}
           path: test-results/
           if-no-files-found: ignore
           retention-days: 7
