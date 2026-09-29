@@ -1,5 +1,6 @@
 import { useTranslate } from "../i18n/useTranslate.ts";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { StyleSpecification } from "maplibre-gl";
 import type { Coordinate, RoutePoint, RouteWarning } from "../domain/types.ts";
@@ -719,6 +720,18 @@ export interface MapViewProps {
    * generations of the same kind (e.g. fallback→fallback) would not
    * re-report there but must both be visible here. */
   onRecoveryFramingEligible?: (generation: number) => void;
+  /** Backlog item 114: where to render the map's own attribution and
+   * status/imagery overlay instead of inside the map. Omitted or null (every
+   * caller except Planning's enlarged-text layout) renders both inside the
+   * map exactly as before. When given, the very same subtree — same
+   * elements, roles, test ids and retry handler — renders into that element
+   * through a portal, so there is only ever one of each. Changing a target
+   * recreates that subtree rather than moving it (focus inside it is lost,
+   * and a visible alert is announced again); Planning only changes it when
+   * the text size crosses its enlarged-layout threshold. Neither prop feeds
+   * any effect, so the map canvas is never recreated by a change. */
+  attributionContainer?: HTMLElement | null;
+  statusOverlayContainer?: HTMLElement | null;
 }
 
 /**
@@ -758,6 +771,8 @@ export function MapView({
   imageryCopyContext = "route-riding",
   imageryRetryCommand = null,
   onRecoveryFramingEligible,
+  attributionContainer = null,
+  statusOverlayContainer = null,
 }: MapViewProps) {
   const translator = useTranslate();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -2523,28 +2538,35 @@ export function MapView({
           the four expressible kinds comes from the same
           describeMapImageryRecovery table the status cards use, so the
           in-map and hosted wordings cannot drift, and free roam's
-          route-free copy needed no second mapping. */}
-      <div className="map-status-overlay">
-        {loadState === "loading" &&
-        !styleStructurallyReady &&
-        !hasExternalImageryPresentation ? (
-          <div role="status" data-testid="map-loading" className="map-status-message">
-            {loadTimedOut ? translator.t("map.loadTimeout") : translator.t("map.loading")}
-          </div>
-        ) : null}
-        {slowImageryNoticeVisible && !hasExternalImageryPresentation ? (
-          <div
-            role="status"
-            data-testid="map-imagery-delayed-banner"
-            className="map-status-message"
-          >
-            {
-              describeMapImageryRecovery(translator, "delayed", imageryCopyContext)
-                .message
-            }
-          </div>
-        ) : null}
-        {/* Backlog item 83: each of these three terminal, retryable states
+          route-free copy needed no second mapping.
+
+          Backlog item 114: Planning's enlarged-text layout renders this
+          whole box, and the attribution after it, outside the map — see
+          attributionContainer/statusOverlayContainer and RenderInto. */}
+      <RenderInto target={statusOverlayContainer}>
+        <div className="map-status-overlay">
+          {loadState === "loading" &&
+          !styleStructurallyReady &&
+          !hasExternalImageryPresentation ? (
+            <div role="status" data-testid="map-loading" className="map-status-message">
+              {loadTimedOut
+                ? translator.t("map.loadTimeout")
+                : translator.t("map.loading")}
+            </div>
+          ) : null}
+          {slowImageryNoticeVisible && !hasExternalImageryPresentation ? (
+            <div
+              role="status"
+              data-testid="map-imagery-delayed-banner"
+              className="map-status-message"
+            >
+              {
+                describeMapImageryRecovery(translator, "delayed", imageryCopyContext)
+                  .message
+              }
+            </div>
+          ) : null}
+          {/* Backlog item 83: each of these three terminal, retryable states
             gains a "&& !hasExternalImageryPresentation" suppression clause
             whenever an external host (an active Riding/free-roam status
             card) has taken over presenting it via onImageryStatusChange —
@@ -2559,73 +2581,90 @@ export function MapView({
             silently hiding a banner that used to show. Item 108 added the
             same clause to the two transient messages above, but left this
             independence exactly as item 83 established it. */}
-        {loadState === "load-error" && !hasExternalImageryPresentation ? (
-          <div
-            role="alert"
-            data-testid="map-load-error"
-            className="map-status-message map-status-message--alert"
-          >
-            {
-              describeMapImageryRecovery(translator, "load-error", imageryCopyContext)
-                .message
-            }
-            <button
-              type="button"
-              onClick={handleRetryImagery}
-              data-testid="retry-map-imagery-button"
-              className="map-status-retry-button"
+          {loadState === "load-error" && !hasExternalImageryPresentation ? (
+            <div
+              role="alert"
+              data-testid="map-load-error"
+              className="map-status-message map-status-message--alert"
             >
-              {translator.t("map.retryImagery")}
-            </button>
-          </div>
-        ) : null}
-        {tileErrorMessage !== null && !hasExternalImageryPresentation ? (
-          <div
-            role="status"
-            data-testid="tiles-unavailable-banner"
-            className="map-status-message"
-          >
-            {
-              describeMapImageryRecovery(translator, "tile-error", imageryCopyContext)
-                .message
-            }
-            <button
-              type="button"
-              onClick={handleRetryImagery}
-              data-testid="retry-map-imagery-button"
-              className="map-status-retry-button"
+              {
+                describeMapImageryRecovery(translator, "load-error", imageryCopyContext)
+                  .message
+              }
+              <button
+                type="button"
+                onClick={handleRetryImagery}
+                data-testid="retry-map-imagery-button"
+                className="map-status-retry-button"
+              >
+                {translator.t("map.retryImagery")}
+              </button>
+            </div>
+          ) : null}
+          {tileErrorMessage !== null && !hasExternalImageryPresentation ? (
+            <div
+              role="status"
+              data-testid="tiles-unavailable-banner"
+              className="map-status-message"
             >
-              {translator.t("map.retryImagery")}
-            </button>
-          </div>
-        ) : null}
-        {usingFallbackStyle && ready && !hasExternalImageryPresentation ? (
-          <div
-            role="status"
-            data-testid="map-fallback-banner"
-            className="map-status-message"
-          >
-            {
-              describeMapImageryRecovery(translator, "fallback", imageryCopyContext)
-                .message
-            }
-            <button
-              type="button"
-              onClick={handleRetryImagery}
-              data-testid="retry-map-imagery-button"
-              className="map-status-retry-button"
+              {
+                describeMapImageryRecovery(translator, "tile-error", imageryCopyContext)
+                  .message
+              }
+              <button
+                type="button"
+                onClick={handleRetryImagery}
+                data-testid="retry-map-imagery-button"
+                className="map-status-retry-button"
+              >
+                {translator.t("map.retryImagery")}
+              </button>
+            </div>
+          ) : null}
+          {usingFallbackStyle && ready && !hasExternalImageryPresentation ? (
+            <div
+              role="status"
+              data-testid="map-fallback-banner"
+              className="map-status-message"
             >
-              {translator.t("map.retryImagery")}
-            </button>
-          </div>
-        ) : null}
-      </div>
-      <div className="map-attribution" data-testid="map-attribution">
-        ©{" "}
-        <a href={tileSource.attribution.url} target="_blank" rel="noreferrer">
-          {tileSource.attribution.text}
-        </a>
-      </div>
+              {
+                describeMapImageryRecovery(translator, "fallback", imageryCopyContext)
+                  .message
+              }
+              <button
+                type="button"
+                onClick={handleRetryImagery}
+                data-testid="retry-map-imagery-button"
+                className="map-status-retry-button"
+              >
+                {translator.t("map.retryImagery")}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </RenderInto>
+      <RenderInto target={attributionContainer}>
+        <div className="map-attribution" data-testid="map-attribution">
+          ©{" "}
+          <a href={tileSource.attribution.url} target="_blank" rel="noreferrer">
+            {tileSource.attribution.text}
+          </a>
+        </div>
+      </RenderInto>
     </div>
   );
+}
+
+/** Backlog item 114: renders `children` where it stands, or into `target`
+ * through a portal when one is given. Always the same component at the same
+ * position in MapView's root, so switching target recreates only these
+ * children and never disturbs the map canvas host beside them. */
+function RenderInto({
+  target,
+  children,
+}: {
+  target: HTMLElement | null;
+  children: ReactNode;
+}): ReactNode {
+  return target ? createPortal(children, target) : children;
 }

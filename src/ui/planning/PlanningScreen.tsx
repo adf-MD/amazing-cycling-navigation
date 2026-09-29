@@ -79,6 +79,7 @@ import {
 } from "./planningInteractionMode.ts";
 import { RouteSummaryPanel } from "./RouteSummaryPanel.tsx";
 import { usePlanningRoute } from "./usePlanningRoute.ts";
+import { useEnlargedTextLayout } from "./useEnlargedTextLayout.ts";
 import type { WaypointAction } from "./waypointHistory.ts";
 import {
   createInitialWaypointHistoryState,
@@ -438,6 +439,19 @@ export function PlanningScreen({
   const [locateStatus, setLocateStatus] = useState<"idle" | "locating" | "failed">(
     "idle",
   );
+  // Backlog item 114: at enlarged text the map is too small to hold its
+  // attribution, messages and the placement control together, so the
+  // attribution moves to a strip directly below the map and the messages
+  // into normal flow beneath it. The slots are callback refs into state so
+  // MapView only ever receives an element that is actually attached.
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const placementControlRef = useRef<HTMLButtonElement | null>(null);
+  const isEnlargedTextLayout = useEnlargedTextLayout(
+    mapContainerRef,
+    placementControlRef,
+  );
+  const [attributionSlot, setAttributionSlot] = useState<HTMLDivElement | null>(null);
+  const [mapMessageSlot, setMapMessageSlot] = useState<HTMLDivElement | null>(null);
   // False while a genuine user gesture (drag/pinch/rotate, including
   // momentum after the finger lifts) is still moving the camera —
   // crosshairCoordinate only updates on settle, so placing here mid-gesture
@@ -1688,6 +1702,29 @@ export function PlanningScreen({
     }
   };
 
+  // Planning's own map status messages. The same elements render inside the
+  // map at ordinary text and in normal flow below it at enlarged text
+  // (backlog item 114), so wording and announcements are identical in both.
+  const mapStatusMessages = (
+    <>
+      {locateStatus === "failed" ? (
+        <p role="status" className="planning-map-status-message">
+          {t("planning.map.locateFailed")}
+        </p>
+      ) : null}
+      {selectedWarningIndex !== null ? (
+        <p role="status" className="planning-map-status-message">
+          {t("planning.map.clearWarningFirst")}
+        </p>
+      ) : null}
+      {selectedRouteFeatureId !== null ? (
+        <p role="status" className="planning-map-status-message">
+          {t("planning.map.clearFeatureFirst")}
+        </p>
+      ) : null}
+    </>
+  );
+
   return (
     <section aria-label={t("planning.landmarkLabel")} className="screen planning-screen">
       <h1 className="screen-title">{t("planning.title")}</h1>
@@ -1724,8 +1761,17 @@ export function PlanningScreen({
         </p>
       ) : null}
 
-      <div className="planning-map-container">
+      <div
+        ref={mapContainerRef}
+        className={
+          isEnlargedTextLayout
+            ? "planning-map-container planning-map-container--enlarged-text"
+            : "planning-map-container"
+        }
+      >
         <MapView
+          attributionContainer={isEnlargedTextLayout ? attributionSlot : null}
+          statusOverlayContainer={isEnlargedTextLayout ? mapMessageSlot : null}
           points={mapPoints}
           currentPosition={currentPosition ?? undefined}
           mapFactory={mapFactory}
@@ -1755,6 +1801,7 @@ export function PlanningScreen({
           data-testid="planning-crosshair"
         />
         <button
+          ref={placementControlRef}
           type="button"
           className="planning-crosshair-callout"
           onClick={handlePlacementHere}
@@ -1816,24 +1863,25 @@ export function PlanningScreen({
             {locateStatus === "locating" ? t("planning.map.locating") : <CrosshairIcon />}
           </button>
         </div>
-        <div className="planning-map-status-overlay">
-          {locateStatus === "failed" ? (
-            <p role="status" className="planning-map-status-message">
-              {t("planning.map.locateFailed")}
-            </p>
-          ) : null}
-          {selectedWarningIndex !== null ? (
-            <p role="status" className="planning-map-status-message">
-              {t("planning.map.clearWarningFirst")}
-            </p>
-          ) : null}
-          {selectedRouteFeatureId !== null ? (
-            <p role="status" className="planning-map-status-message">
-              {t("planning.map.clearFeatureFirst")}
-            </p>
-          ) : null}
-        </div>
+        {isEnlargedTextLayout ? null : (
+          <div className="planning-map-status-overlay">{mapStatusMessages}</div>
+        )}
       </div>
+      {isEnlargedTextLayout ? (
+        // Backlog item 114's enlarged-text layout: the attribution strip
+        // sits flush against the map's bottom edge, and every map message
+        // follows in normal flow below it, so a message appearing never
+        // moves the map, its crosshair or the placement control. Rendered
+        // only in this layout: an empty block here would add a gap to the
+        // ordinary layout.
+        <div className="planning-map-below">
+          <div ref={setAttributionSlot} className="planning-map-attribution-strip" />
+          <div className="planning-map-messages">
+            <div ref={setMapMessageSlot} />
+            {mapStatusMessages}
+          </div>
+        </div>
+      ) : null}
 
       <div className="panel stack planning-section">
         <div role="group" aria-label={t("planning.actions.group")} className="row">

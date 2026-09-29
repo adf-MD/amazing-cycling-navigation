@@ -965,69 +965,72 @@ test.describe("Planning placement control containment (item 109)", () => {
     await expectReadableAndContained(callout, NARROW_PORTRAIT.width);
   });
 
-  test("at 200% browser text the longest label wraps rather than clipping or shrinking, stays a usable target, clears every other control and adds no horizontal overflow of its own", async ({
-    page,
-    context,
-  }) => {
-    await page.setViewportSize({ ...PHONE_PORTRAIT });
-    await preparePlanning(page, context);
-    const callout = page.locator(".planning-crosshair-callout");
-    await reachLongestLabel(page, callout);
+  for (const viewport of [PHONE_PORTRAIT, NARROW_PORTRAIT]) {
+    test(`at 200% browser text (${String(viewport.width)}px) the longest label wraps rather than clipping or shrinking, stays a usable target, clears every other control and the attribution, and adds no horizontal overflow of its own`, async ({
+      page,
+      context,
+    }) => {
+      await page.setViewportSize({ ...viewport });
+      await preparePlanning(page, context);
+      const callout = page.locator(".planning-crosshair-callout");
+      await reachLongestLabel(page, callout);
 
-    const fontBefore = await callout.evaluate((el) =>
-      parseFloat(getComputedStyle(el).fontSize),
-    );
-    await page.evaluate(() => {
-      document.documentElement.style.fontSize = "200%";
+      const fontBefore = await callout.evaluate((el) =>
+        parseFloat(getComputedStyle(el).fontSize),
+      );
+      await page.evaluate(() => {
+        document.documentElement.style.fontSize = "200%";
+      });
+      await page.waitForTimeout(300);
+      await expect(callout).toHaveText("Insert after waypoint 12");
+
+      await expectReadableAndContained(callout, viewport.width);
+      const fontAfter = await callout.evaluate((el) =>
+        parseFloat(getComputedStyle(el).fontSize),
+      );
+      expect(fontAfter).toBeGreaterThan(fontBefore);
+
+      // Clears every other piece of map chrome at this text size, isolation
+      // band included — now including .map-attribution. Item 109 had to
+      // exclude it: at 200% it wrapped to 62.25px and overlapped this
+      // control's border box by 26.25px, a pre-existing defect that became
+      // backlog item 114. Item 114's enlarged-text layout moves the
+      // attribution to a strip below the map, so the exclusion is gone.
+      // Planning's own status overlay is not rendered in that layout (its
+      // messages move below the map), hence the count guard.
+      const bandPx = await readIsolationBandWidth(callout);
+      const footprint = visualRect(
+        await rectOf(callout, "the placement control"),
+        bandPx,
+      );
+      for (const selector of [
+        ".planning-map-zoom-controls",
+        ".planning-map-controls",
+        ".planning-map-status-overlay",
+        ".map-attribution",
+      ]) {
+        const chrome = page.locator(selector).first();
+        if ((await page.locator(selector).count()) === 0) continue;
+        const chromeBox = await chrome.boundingBox();
+        if (!chromeBox || chromeBox.height === 0) continue;
+        expect(intersects(footprint, chromeBox), selector).toBe(false);
+      }
+      await expect(page.locator(".map-attribution")).toHaveCount(1);
+
+      // The honest, load-bearing assertion is that this control contributes nothing to the
+      // document's own scrollWidth: hiding the control must leave that value exactly as it
+      // was. This used to be framed around a primary-navigation overflow; that attribution
+      // was wrong — item 112 measured the navigation's own contribution to document
+      // scrollWidth at 200% text as zero, in Chromium, WebKit and the Pixel-7 preset.
+      const overflow = await callout.evaluate((el) => {
+        const withControl = document.documentElement.scrollWidth;
+        const original = el.style.display;
+        el.style.display = "none";
+        const withoutControl = document.documentElement.scrollWidth;
+        el.style.display = original;
+        return { withControl, withoutControl };
+      });
+      expect(overflow.withControl).toBe(overflow.withoutControl);
     });
-    await page.waitForTimeout(300);
-    await expect(callout).toHaveText("Insert after waypoint 12");
-
-    await expectReadableAndContained(callout, PHONE_PORTRAIT.width);
-    const fontAfter = await callout.evaluate((el) =>
-      parseFloat(getComputedStyle(el).fontSize),
-    );
-    expect(fontAfter).toBeGreaterThan(fontBefore);
-
-    // Clears every other map CONTROL at this text size, isolation band
-    // included.
-    //
-    // .map-attribution is deliberately excluded here, and only here. At
-    // 200% text it wraps to 62.25px tall, which lifts its top edge above
-    // this control's fixed `bottom: 44px` — measured on the item-109
-    // parent (commit 27fa0c8) as a 26.25px overlap of the control's own
-    // BORDER BOX, with no box-shadow in the picture at all: callout
-    // y -1663..-1493, attribution y -1519.25..-1457. That collision is
-    // pre-existing, is caused by the attribution's own enlarged-text
-    // height rather than by anything item 109 changed, and a box-shadow
-    // never affects layout, so asserting its absence here would be
-    // asserting someone else's defect. It is recorded as an out-of-scope
-    // measured finding in docs/project/current-status.md instead.
-    const bandPx = await readIsolationBandWidth(callout);
-    const footprint = visualRect(await rectOf(callout, "the placement control"), bandPx);
-    for (const selector of [
-      ".planning-map-zoom-controls",
-      ".planning-map-controls",
-      ".planning-map-status-overlay",
-    ]) {
-      const chromeBox = await page.locator(selector).first().boundingBox();
-      if (!chromeBox || chromeBox.height === 0) continue;
-      expect(intersects(footprint, chromeBox), selector).toBe(false);
-    }
-
-    // The honest, load-bearing assertion is that this control contributes nothing to the
-    // document's own scrollWidth: hiding the control must leave that value exactly as it
-    // was. This used to be framed around a primary-navigation overflow; that attribution
-    // was wrong — item 112 measured the navigation's own contribution to document
-    // scrollWidth at 200% text as zero, in Chromium, WebKit and the Pixel-7 preset.
-    const overflow = await callout.evaluate((el) => {
-      const withControl = document.documentElement.scrollWidth;
-      const original = el.style.display;
-      el.style.display = "none";
-      const withoutControl = document.documentElement.scrollWidth;
-      el.style.display = original;
-      return { withControl, withoutControl };
-    });
-    expect(overflow.withControl).toBe(overflow.withoutControl);
-  });
+  }
 });

@@ -574,7 +574,10 @@ button:focus-visible {
  * .ride-map-camera-controls — backlog item 53) sit at the top of the map,
  * clear of this bottom-left corner entirely; max-width is kept as a
  * general safeguard against attribution text running the full width of a
- * very narrow viewport, not to clear any specific control. Sits over
+ * very narrow viewport. In Planning it also sits below the bottom-centre
+ * placement control's 44px offset at ordinary text; at enlarged text
+ * Planning moves it into a strip below the map instead (backlog item 114,
+ * "Planning: enlarged-text layout"). Sits over
  * variable map imagery rather than the app's own background, so it uses a
  * fixed translucent-black/white pairing instead of --colour-bg/--colour-text
  * — those swap for the app's light/dark scheme, not the map underneath.
@@ -1332,7 +1335,10 @@ button:focus-visible {
  * untouched at the exact centre; this is purely the action control, never
  * the placement point. bottom:44 clears .map-attribution's bottom-left
  * corner on narrow phone widths, where a centred button would otherwise
- * sit underneath it.
+ * sit underneath it — at ordinary text. At enlarged text the attribution
+ * wraps taller than that offset allows for, so backlog item 114's
+ * enlarged-text layout moves it below the map and lowers this control
+ * (see "Planning: enlarged-text layout" below).
  *
  * z-index (backlog item 109): this control was the only piece of Planning
  * map chrome with no z-index of its own. Being position:absolute with a
@@ -1377,8 +1383,9 @@ button:focus-visible {
  * by more than a gutter; a label wider than that still wraps, and
  * overflow-wrap breaks a word only if one alone exceeds it. The control
  * stays centred by the transform, at the same bottom offset, so its
- * vertical relationship to the attribution is unchanged (item 114 owns
- * the separate 200%-text overlap with it). */
+ * vertical relationship to the attribution is unchanged (item 114 later
+ * resolved the separate 200%-text overlap with it — see the enlarged-text
+ * layout below). */
 .planning-crosshair-callout {
   position: absolute;
   bottom: 44px;
@@ -3204,6 +3211,91 @@ button:focus-visible {
   background-color: rgb(0 0 0 / 60%);
   color: #ffffff;
   font-size: 0.8rem;
+}
+
+/* --- Planning: enlarged-text layout (backlog item 114) ---
+ *
+ * At enlarged browser text Planning's map cannot hold its attribution, its
+ * messages and the placement control together. Measured at 200% text in the
+ * pinned Playwright container: the attribution wraps to about 62px and
+ * rises into the control, and the imagery banner grows to 265-405px tall
+ * inside a map of only 300-380px, covering the control, the attribution and
+ * the crosshair. No arrangement inside the map clears them all, so
+ * useEnlargedTextLayout switches to this layout once the map is small
+ * relative to the text (see enlargedTextLayout.ts for the threshold and how
+ * it was derived). Below that threshold nothing here applies and Planning
+ * is exactly its ordinary self.
+ *
+ * In this layout the attribution becomes a permanently visible strip
+ * directly below the map. OpenStreetMap's attribution guidelines allow
+ * attribution adjacent to an interactive map, provided it stays visible,
+ * legible and linked, and it is never shrunk, clipped or shortened here.
+ * The placement control stays bottom-centre inside the map but drops to the
+ * map's own 8px inset, because its usual 44px offset existed only to clear
+ * the attribution, which has left. That drop is what keeps a two- or
+ * three-line label below the crosshair at 320x844 and 375x667.
+ *
+ * Planning's imagery and status messages move into normal flow below the
+ * strip. This is a deliberate exception to backlog item 108, which keeps
+ * Planning's imagery explanation inside the map: at enlarged text that
+ * explanation is taller than the map's free area, so inside the map it
+ * cannot avoid covering the controls. Below the map, a message appearing
+ * never moves the map, its crosshair or the placement control. The same
+ * elements, wording, roles and Retry handler are used as inside the map —
+ * MapView renders its own overlay here through a portal. */
+.planning-map-container--enlarged-text .planning-crosshair-callout {
+  bottom: var(--space-8);
+}
+
+/* Cancels .screen's own flex gap so the strip sits flush against the map's
+ * bottom edge. The block only exists in the enlarged layout. */
+.planning-map-below {
+  margin-top: calc(-1 * var(--space-16));
+}
+
+/* The same attribution element MapView renders inside the map, restyled for
+ * the page rather than for map imagery: the page's own muted text colour on
+ * the page background (7.25:1 light, 9.58:1 dark, measured), at its
+ * unchanged size and line height, with its link unchanged. */
+.planning-map-attribution-strip .map-attribution {
+  position: static;
+  max-width: none;
+  padding: 2px 0;
+  border-radius: 0;
+  background-color: transparent;
+  color: var(--colour-text-muted);
+}
+
+/* MapView's overlay box, in flow. It holds at most one imagery message and
+ * no box of its own, so with no message it adds no height. */
+.planning-map-messages .map-status-overlay {
+  position: static;
+  display: block;
+  pointer-events: auto;
+}
+
+/* Every message is ordinary page status content here. Each carries its own
+ * top margin rather than the container a gap, so with no message showing no
+ * empty area is reserved. The alert variant keeps its left border, so the
+ * load error is not distinguished by colour alone. */
+.planning-map-messages .map-status-message,
+.planning-map-messages .planning-map-status-message {
+  margin: var(--space-8) 0 0;
+  padding: 4px 8px;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--colour-bg-elevated);
+  color: var(--colour-text);
+  font-size: 0.8rem;
+}
+
+.planning-map-messages .map-status-message--alert {
+  border-left: 4px solid var(--colour-danger);
+}
+
+.planning-map-messages .map-status-retry-button {
+  background: var(--colour-bg);
+  border-color: var(--colour-border-strong);
 }
 
 /* Constrains the non-map Planning sections to a readable text measure on

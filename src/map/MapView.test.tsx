@@ -420,6 +420,68 @@ describe("MapView", () => {
     expect(link?.textContent).toBe("OpenStreetMap contributors");
   });
 
+  // Backlog item 114: Planning's enlarged-text layout renders the map's own
+  // attribution and status overlay outside the map, through these targets.
+  it("renders exactly one attribution and one status overlay into supplied targets, and none inside the map", () => {
+    const attributionTarget = document.createElement("div");
+    const overlayTarget = document.createElement("div");
+    document.body.append(attributionTarget, overlayTarget);
+    try {
+      const { factory } = createMockMapFactory();
+      const { container } = render(
+        <MapView
+          points={points}
+          mapFactory={factory}
+          attributionContainer={attributionTarget}
+          statusOverlayContainer={overlayTarget}
+        />,
+      );
+
+      expect(screen.getAllByTestId("map-attribution")).toHaveLength(1);
+      expect(attributionTarget).toContainElement(screen.getByTestId("map-attribution"));
+      expect(overlayTarget.querySelectorAll(".map-status-overlay")).toHaveLength(1);
+      expect(overlayTarget).toContainElement(screen.getByTestId("map-loading"));
+      expect(container.querySelector(".map-attribution")).toBeNull();
+      expect(container.querySelector(".map-status-overlay")).toBeNull();
+    } finally {
+      attributionTarget.remove();
+      overlayTarget.remove();
+    }
+  });
+
+  it("returns both inside the map when the targets are withdrawn, without recreating the map", () => {
+    const attributionTarget = document.createElement("div");
+    const overlayTarget = document.createElement("div");
+    document.body.append(attributionTarget, overlayTarget);
+    try {
+      const mock = createMockMapFactory();
+      const factory = vi.fn(mock.factory);
+      const { container, rerender } = render(
+        <MapView
+          points={points}
+          mapFactory={factory}
+          attributionContainer={attributionTarget}
+          statusOverlayContainer={overlayTarget}
+        />,
+      );
+      const canvasHost = screen.getByTestId("map-container");
+
+      rerender(<MapView points={points} mapFactory={factory} />);
+
+      expect(screen.getByTestId("map-container")).toBe(canvasHost);
+      expect(factory).toHaveBeenCalledTimes(1);
+      expect(mock.removeSpy).not.toHaveBeenCalled();
+      expect(screen.getAllByTestId("map-attribution")).toHaveLength(1);
+      expect(container).toContainElement(screen.getByTestId("map-attribution"));
+      expect(container.querySelectorAll(".map-status-overlay")).toHaveLength(1);
+      expect(attributionTarget).toBeEmptyDOMElement();
+      expect(overlayTarget).toBeEmptyDOMElement();
+    } finally {
+      attributionTarget.remove();
+      overlayTarget.remove();
+    }
+  });
+
   it("shows a loading indicator until the map's first load fires", () => {
     const mock = createMockMapFactory();
     render(<MapView points={points} mapFactory={mock.factory} />);

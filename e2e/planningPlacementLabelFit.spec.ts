@@ -9,9 +9,11 @@ import { installLocalMapStyle } from "./support/localMapStyle.ts";
 //
 // A regression guard in the pinned container, not proof of fit on iOS;
 // the stressed runs widen the label by 12% (see
-// e2e/germanRidingHeader.spec.ts for the calibration). Item 114 owns the
-// separate 200%-text overlap with the attribution; this spec only records
-// it, so any change in it is visible.
+// e2e/germanRidingHeader.spec.ts for the calibration). At 200% text this
+// spec now asserts that the control clears the attribution too: backlog
+// item 114's enlarged-text layout moves the attribution to a strip below
+// the map (see e2e/planningEnlargedTextLayout.smoke.spec.ts for the full
+// 200% matrix).
 
 test.use({ serviceWorkers: "block" });
 
@@ -195,6 +197,7 @@ async function measureCallout(page: Page, stressed: boolean): Promise<Measuremen
         insideContainer:
           footprint.left >= containerBox.left - 1 &&
           footprint.right <= containerBox.right + 1 &&
+          footprint.top >= containerBox.top - 1 &&
           footprint.bottom <= containerBox.bottom + 1,
         collisions,
         attributionOverlapPx,
@@ -264,16 +267,26 @@ for (const width of [320, 360, 390, 430] as const) {
         }
 
         if (width === 390) {
-          // Recorded, not asserted: item 114's own 200%-text overlap.
+          // Backlog item 114: at 200% text the control clears everything,
+          // the attribution included — it recorded a 26.3px overlap here
+          // before item 114's enlarged-text layout.
           await page.evaluate(() => {
             document.documentElement.style.fontSize = "200%";
           });
+          await expect
+            .poll(() =>
+              page
+                .locator(".map-attribution")
+                .evaluate((el) => el.closest(".planning-map-container") === null),
+            )
+            .toBe(true);
           const enlarged = await measureCallout(page, false);
           test.info().annotations.push({
             type: "200% text",
             description: JSON.stringify(enlarged),
           });
-          expect(enlarged.insideContainer, JSON.stringify(enlarged)).toBe(true);
+          expectFits(enlarged, "200% text");
+          expect(enlarged.attributionOverlapPx, JSON.stringify(enlarged)).toBe(0);
         }
       });
     }
