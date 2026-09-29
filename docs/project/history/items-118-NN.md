@@ -404,3 +404,20 @@ The German shortfall **predates item 121**: today's five-tab app, with no switch
 - Browser-root text scaling is not iOS Dynamic Type evidence.
 - The WebKit coverage is desktop WebKit in a container.
 - No physical-Android result is claimed.
+
+### Installed-iPhone acceptance — reported 29 September 2026
+
+**Accepted.** Two reports the same day, on an iPhone 13, installed Home Screen PWA, portrait, version `0.4.44`, build `8027c6a` as reported, together cover every required device check:
+
+- all four German tabs fit and stay tappable, which settles the 25 September `Einstellungen` wrap on the device, and the tabs and switcher passed an English spot check;
+- the switcher stays beneath the navigation while scrolling without covering content, and the visible headings make sense without the large title;
+- the Settings tab reopens the last-viewed view, and opens Settings when tapped from Status; Planning's `Open Settings`, exercised with no key configured, opens Settings directly;
+- each newly selected Settings or Status view starts at the top, and re-tapping the tab on Settings keeps its scroll position;
+- an unsaved, non-secret placeholder survives Settings → Status → Settings masked, and is discarded by leaving for another tab;
+- with the real keyboard open, the key field and controls stay reachable, Show/Hide and dismissal cause no jump, and **a valid key saves on the first tap** and stays saved — the very press WebKit lost under the first implementation (finding 1);
+- the switcher scrolls away while the key form has focus and sticks again after it is left;
+- `Schlüssel löschen` reveals its confirmation and actions; the rider cancelled.
+
+This is **broad installed-iPhone portrait product-level acceptance**. It does not re-assert the automated measurements above, and the limitations recorded above describe the item as it stood at implementation. **Not claimed:** confirmed deletion, device-language resolution, 200% text or iOS Dynamic Type, the German key form on an SE-sized screen, VoiceOver, physical Android, and — not separately reported — colour-independent selection and whether a disclosure moves the page. **Glove use was removed** from this item's device checklist at the rider's decision, because it depends on the glove and the touchscreen; ordinary tappability passed.
+
+**One open device finding, kept for follow-up and not attributed to this item.** Tapping the key field zoomed the page in and saving did not restore it; no cause is claimed and none has been investigated. The same session observed that Ride and Plan keep the previous screen's scroll offset while Routes arrives at the top — this item's interim reset covers the Settings section only, and that behaviour is [item 125](../backlog.md#item-125)'s. The full record is in [`../current-status.md`](../current-status.md).
