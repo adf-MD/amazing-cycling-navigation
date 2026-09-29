@@ -23,7 +23,7 @@ This file records verification evidence only; the behaviour contracts themselves
 
 ## Open installed-iPhone acceptance checklist (12 September 2026)
 
-**This is the only active list of presently actionable installed-iPhone checks.** Items 102, 103, 119, 120 and 123 are unimplemented and therefore out of scope — item 123 is scheduled first — and items 122 and 124–129 are unscheduled candidates. **Item 114's one device check, ordinary-text Planning on `0.4.45`, passed on the installed iPhone on 29 September 2026 and no longer appears here**; its enlarged-text layout has automated evidence only, because it cannot be reached on the iPhone through Larger Text. **Item 121 (`0.4.44`) was accepted on the installed iPhone, reported 29 September 2026, and no longer appears here**; one open device finding from that session awaits investigation, in its own subsection below. Item 113 shipped German in `0.4.41`. Its first physical pass (25 September 2026) produced the `0.4.42` follow-up. That recheck (reported 28 September 2026, recorded below) passed apart from three findings corrected in `0.4.43`. **The `0.4.43` Status-wording and End-confirmation rechecks passed on 28 September 2026**, and only the climb cue's recheck remains, in Session 2. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
+**This is the only active list of presently actionable installed-iPhone checks.** Items 102, 103, 119 and 120 are unimplemented and therefore out of scope — item 119 is scheduled first — and items 122 and 124–129 are unscheduled candidates. **Item 123 (`0.4.46`) has shipped with automated evidence only; its device check is Session 5.** **Item 114's one device check, ordinary-text Planning on `0.4.45`, passed on the installed iPhone on 29 September 2026 and no longer appears here**; its enlarged-text layout has automated evidence only, because it cannot be reached on the iPhone through Larger Text. **Item 121 (`0.4.44`) was accepted on the installed iPhone, reported 29 September 2026, and no longer appears here**; one open device finding from that session awaits investigation, in its own subsection below. Item 113 shipped German in `0.4.41`. Its first physical pass (25 September 2026) produced the `0.4.42` follow-up. That recheck (reported 28 September 2026, recorded below) passed apart from three findings corrected in `0.4.43`. **The `0.4.43` Status-wording and End-confirmation rechecks passed on 28 September 2026**, and only the climb cue's recheck remains, in Session 2. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
 
 ### Session 1 — stationary, on the installed Home Screen PWA
 
@@ -73,10 +73,25 @@ Stationary or walking. Induce only what is deliberate and reproducible; everythi
 
 No iOS Larger Text result and no physical-Android result is claimed for item 113 in either language.
 
+### Session 5 — item 123's Planning touch placement
+
+Stationary, portrait, on the installed Home Screen PWA. **Read the version and build from Status first** (expect `0.4.46`). Start from a cleared draft so the empty list is visible.
+
+- [ ] The empty waypoint list reads `No waypoints yet. Use the crosshair to add one.`, and in German `Noch keine Wegpunkte. Nutze das Fadenkreuz, um einen Wegpunkt zu setzen.` (item 123).
+- [ ] On the Planning map, a single tap, a small deliberate pan, a two-finger pinch, a double-tap zoom and a double-tap-and-drag zoom each add **no** waypoint, and Undo stays as it was — both with an empty draft and with a calculated route (item 123).
+- [ ] The crosshair control's `Add waypoint here`, `Move … here` and `Insert after …` each act on the intended waypoint; with Move or Insert after pending, tapping the map does not complete it and the control's label stays unchanged (item 123).
+- [ ] Tapping a highlighted warning segment in Planning, and a recognised climb on the map in Riding before the ride, still selects it (item 123).
+
+**Optional, not blockers:** an Apple Pencil tap should behave like a finger; a mouse or trackpad click on an iPad should still place directly. No physical-Android or VoiceOver result is claimed for item 123.
+
 ### Open device findings — awaiting investigation (not checklist items)
 
 - **Tapping the OpenRouteService key field zoomed the installed page in, and saving did not restore normal zoom**; the rider had to zoom out by hand. Seen during item 121's acceptance on `0.4.44` (the dated record below). **No cause is established and no investigation has been made**, and it is **not** attributed to item 121 as a regression. It is kept here for follow-up rather than as a check to repeat.
 - **After denying location permission in the installed PWA, the rider did not find a way to grant it again during that session**; fully closing and reopening the PWA allowed another permission prompt. Seen during item 114's check on `0.4.45` (the dated record below) and filed as unscheduled [item 129](backlog.md#item-129). Nothing is established yet about how iOS handles a retry.
+
+### Open observation from automated testing — not a checklist item, not a numbered item
+
+- **A mouse double-click on the Planning map adds two waypoints and also zooms in.** Measured on `0.4.45` in the pinned Playwright container — desktop Chromium, Chromium with the Pixel-7 profile driven by a mouse, and desktop WebKit — during item 123's investigation: MapLibre fires a `click` for each press before its `dblclick` zoom, and Planning appends on each mouse click. **It is unchanged by item 123**, which keeps direct mouse placement exactly as it was, and it is recorded here so it does not disappear into item 123's history. No fix is approved and no item number is allocated; whether it matters is the rider's decision.
 
 ### Opportunistic monitoring — watched for, never manufactured
 
@@ -120,7 +135,7 @@ None of these blocks acceptance of the item it came from. Record one if it occur
 
 **Observation, filed as [item 129](backlog.md#item-129).** To exercise the `Locate me` failure message, the rider denied location permission in the installed PWA. The message appeared correctly — that is the check above — but the rider did not find a way to grant permission again during that PWA session; after fully closing and reopening the PWA, another permission prompt appeared. It is recorded as an unscheduled usability investigation; no claim is made that a denial is permanent or that no in-session way exists.
 
-**Decision the same day.** [Item 123](backlog.md#item-123) — accidental waypoint placement during touch panning or zooming in Planning — was promoted to the front of the approved execution order, with the rider's preferred design direction recorded in its entry.
+**Decision the same day.** [Item 123](history/items-118-NN.md#item-123) — accidental waypoint placement during touch panning or zooming in Planning — was promoted to the front of the approved execution order, with the rider's preferred design direction recorded in its entry.
 
 ### Installed-iPhone acceptance of `0.4.44` (build `8027c6a`, item 121, reported 29 September 2026)
 
@@ -423,6 +438,13 @@ Context: the installed iPhone Home Screen PWA, portrait. The report did not reco
   - from 110% text at 390×844 and from 145% at 430×932.
 
   Item 114 deliberately leaves the ordinary layout unchanged, so it does not reach this. The measurements are in [`backlog.md#item-128`](backlog.md#item-128).
+
+### Item 123 — shipped `0.4.46` with automated evidence only
+
+- **What shipped.** On the Planning map only a mouse click places, moves or inserts a waypoint, decided per click from the pointer sequence that produced it. Touch and pen place through the crosshair control only; touch still selects warnings and climbs; keyboard is unchanged. The empty-list hint no longer says to tap the map. The full record, including the measured Stage 1 event sequences, is [`history/items-118-NN.md`](history/items-118-NN.md#item-123).
+- **The evidence is automated.** Genuine CDP touch on Chromium with the Pixel-7 profile, and real touch taps on Playwright's Linux WebKit, in the pinned container; 14 of the 18 new end-to-end tests fail on `0.4.45` and all pass on `0.4.46`, with negative controls. **None of it is installed-iPhone evidence**, and the rider's 25 September 2026 report remains the only physical observation of the defect.
+- **Not reproduced, stated plainly.** A pan that both moves the map and places a waypoint could not be reproduced in any engine here: Chromium withholds `touchmove` inside its tap slop, and Playwright's WebKit cannot pan by touch. The change removes it by construction, since no touch click places.
+- **Device check:** Session 5 above. The separate mouse double-click observation is recorded above, under automated observations.
 
 ---
 

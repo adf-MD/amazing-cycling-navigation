@@ -1,6 +1,6 @@
 # Completed backlog items 118–
 
-This file continues the 100– numeric range and opens at item 118. It was started when item 118 was completed: adding it to what was then `items-110-NN.md` would have taken that file to 162,614 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md), so that file was closed at item 117 and renamed [`items-110-113.md`](items-110-113.md) instead of growing unbounded. No existing entry was moved, shortened or rewritten by that split — only the filename changed, plus that file's own intro paragraph and the inbound links that pointed at it. Stable item numbers never change regardless of which file their text lives in: item 118 was completed ahead of items 102, 103, 113, 114 and 119, all of which remain pending, so a number is an identifier and never a schedule. Item 121 followed, completed in `0.4.44` ahead of items 102, 103, 114, 119 and 120, which remain pending.
+This file continues the 100– numeric range and opens at item 118. It was started when item 118 was completed: adding it to what was then `items-110-NN.md` would have taken that file to 162,614 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md), so that file was closed at item 117 and renamed [`items-110-113.md`](items-110-113.md) instead of growing unbounded. No existing entry was moved, shortened or rewritten by that split — only the filename changed, plus that file's own intro paragraph and the inbound links that pointed at it. Stable item numbers never change regardless of which file their text lives in: item 118 was completed ahead of items 102, 103, 113, 114 and 119, all of which remain pending, so a number is an identifier and never a schedule. Item 121 followed, completed in `0.4.44` ahead of items 102, 103, 114, 119 and 120, which remain pending. Item 123 followed, completed in `0.4.46` ahead of items 102, 103, 119 and 120, which remain pending.
 
 See [`README.md`](README.md) for the full history index, [`../backlog.md`](../backlog.md) for pending specifications, and [`../current-status.md`](../current-status.md) for the manual acceptance ledger.
 
@@ -421,3 +421,120 @@ The German shortfall **predates item 121**: today's five-tab app, with no switch
 This is **broad installed-iPhone portrait product-level acceptance**. It does not re-assert the automated measurements above, and the limitations recorded above describe the item as it stood at implementation. **Not claimed:** confirmed deletion, device-language resolution, 200% text or iOS Dynamic Type, the German key form on an SE-sized screen, VoiceOver, physical Android, and — not separately reported — colour-independent selection and whether a disclosure moves the page. **Glove use was removed** from this item's device checklist at the rider's decision, because it depends on the glove and the touchscreen; ordinary tappability passed.
 
 **One open device finding, kept for follow-up and not attributed to this item.** Tapping the key field zoomed the page in and saving did not restore it; no cause is claimed and none has been investigated. The same session observed that Ride and Plan keep the previous screen's scroll offset while Routes arrives at the top — this item's interim reset covers the Settings section only, and that behaviour is [item 125](../backlog.md#item-125)'s. The full record is in [`../current-status.md`](../current-status.md).
+
+---
+
+<a id="item-123"></a>
+
+## Item 123 — A small touch pan can place a Planning waypoint — done
+
+_Category: Planning interaction_
+
+123. **A small touch pan can place a Planning waypoint — done**
+     - Origin: item 113's first installed-iPhone pass, 25 September 2026. A pan on the phone sometimes placed a waypoint.
+     - **Promoted on 29 September 2026** to the front of the approved execution order (root [`CLAUDE.md`](../../../CLAUDE.md)), immediately before item 119, by the rider's decision. It was unscheduled until then. The motivation is accidental waypoint placement during touch panning or zooming in Planning.
+     - **The rider's preferred design direction — to investigate and implement carefully, not a finished specification and not yet implemented:** touch interaction should place waypoints only through the deliberate crosshair placement control, while a desktop mouse keeps direct map-click placement. The work must settle, with evidence:
+       - how the pointer type is decided **per interaction** (for example pointer events' `pointerType`), never by device class or by installed PWA versus browser;
+       - hybrid devices: a touch-screen laptop, a tablet with a mouse or trackpad, and pen input;
+       - that two-finger pinch-zoom and panning never place a waypoint on touch;
+       - the empty-list hint `planning.waypoints.empty` ("No waypoints yet. Tap the map or use the crosshair to add one.") in both catalogues, which would no longer be true for touch.
+     - Present fact: Planning places a map-tap waypoint from MapLibre's `click` event (`src/map/mapAdapter.ts`'s `onMapTap`), which MapLibre suppresses once a pointer has moved past its click tolerance. A small attempted pan can therefore still register as a tap.
+     - **Investigate on the device before changing anything.** Distinguish touch from mouse by pointer type, never by installed PWA versus browser, and keep useful desktop mouse clicks. The crosshair placement control is unaffected by pan jitter. Removing direct map-tap placement for **touch only** is the rider's preferred direction above; direct placement by desktop mouse stays.
+     - Evidence required when it is worked on: a device reproduction first, then a real touch-gesture test (item 94's precedent used real two-finger touch gestures) that fails before any change and passes after it, plus a mouse-click control proving desktop placement is unchanged.
+
+### Decisions made with the rider (29 September 2026)
+
+The approved plan settled the open points of the entry above. Each was put to the rider and decided, not assumed.
+
+- **Pen follows touch.** A pen tap on the map never places, moves or inserts a waypoint. A pen pans by direct contact exactly as a finger does, and on iPad the Pencil also arrives through touch events and the browser's tap slop — the mechanism below.
+- **The empty-list hint names only the crosshair**: `No waypoints yet. Use the crosshair to add one.` / `Noch keine Wegpunkte. Nutze das Fadenkreuz, um einen Wegpunkt zu setzen.` A version mentioning mouse clicks was offered and not chosen.
+- **No time window.** A first plan would have ignored a mouse click made within one second of a finger lifting. The rider rejected it as contradicting the hybrid-device requirement: a mouse must place on its own interaction, even straight after a touch. The distinction had to come from the measured event sequence, and a missing distinction was to be brought back as a trade-off rather than papered over with a timer. None was needed (Stage 1).
+- **The device reproduction the entry asks for is the rider's own report.** No new physical reproduction was performed or is claimed. Reproducing the exact small-pan failure in a browser was **not** made a stop gate: it was enough to demonstrate genuine touch delivery and that a touch tap placed a waypoint on the unchanged build, and to report honestly whatever the pan itself did.
+
+### Stage 1: measured on the unchanged `0.4.45`, in the pinned container
+
+A temporary probe (never committed) recorded, in the capture phase on MapLibre's canvas container, every `pointerdown`, `touchstart`, `touchmove`, compatibility `mousedown`/`mouseup` and `click`, with the click's own constructor and `pointerType`, and counted the waypoint markers. Chromium ran as the `android-chrome` project (Pixel 7) with genuine touch through CDP `Input.dispatchTouchEvent`; WebKit ran as Playwright's Linux WebKit with `hasTouch`, whose `touchscreen.tap` is a real touch through WebKit's own pipeline but which cannot pan or pinch.
+
+| Gesture (0.4.45)                                                                | What reached the map                                                                                                                    | Waypoint placed      |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| Touch tap, Chromium                                                             | `pointerdown` (touch), `touchstart`, `touchend`, then compatibility `mousedown`, `mouseup` and a `click` whose `pointerType` is `touch` | yes                  |
+| Touch tap, WebKit                                                               | the same sequence, but the **`click` reports `pointerType` `mouse`**                                                                    | yes                  |
+| Touch movement of 2–14px, Chromium                                              | five `pointermove`, **no `touchmove`**; the camera did not move; a click                                                                | yes                  |
+| Touch movement of 16px or more, Chromium                                        | a `touchmove`; the camera moved; no click                                                                                               | no                   |
+| Double-tap zoom                                                                 | zoom +1; one click, from the first tap                                                                                                  | yes, one             |
+| Double-tap-and-drag zoom                                                        | zoom +0.63; one click, from the first tap                                                                                               | yes, one             |
+| Two-finger pinch, small and large; two-finger tap                               | zoom changed; no click                                                                                                                  | no                   |
+| Pen tap (CDP mouse event with `pointerType` `pen`)                              | `pointerdown` (pen) … `click` (pen)                                                                                                     | yes                  |
+| Touch tap, then a mouse click at once                                           | the touch sequence, then a new `pointerdown` (mouse) before the second click                                                            | yes, both            |
+| Mouse double-click, desktop Chromium, Pixel-7 Chromium with a mouse, and WebKit | two `pointerdown` (mouse) and two clicks, then `dblclick`                                                                               | **two**, and zoom +1 |
+
+Four results decided the design:
+
+- **Genuine touch delivery, and touch placement on the parent, were both demonstrated** in both engines — the only gate this stage had.
+- **The click itself cannot be trusted to say what it came from**: WebKit labels a touch-generated click `mouse`. The start of the sequence can: a touch tap begins with a touch `pointerdown` and a `touchstart`, and its compatibility mouse events are not pointer events at all, while a real mouse click always begins with its own mouse `pointerdown` and never has a `touchstart`. That is also what separates a mouse click made immediately after a finger lifts.
+- **The small pan that both moves the map and places a waypoint was not reproduced.** Chromium withholds `touchmove` inside its ~15px tap slop, and MapLibre pans from touch events, so a sub-slop movement places a waypoint without moving the camera and a larger one pans without any click. Playwright's WebKit cannot pan by touch. The rider's iPhone observation is consistent with WebKit delivering movement inside its own tap tolerance — an inference, not established here.
+- **The mouse double-click places two waypoints and zooms.** This is unchanged by item 123 and is recorded as a separate, visible observation in [`current-status.md`](../current-status.md), not as part of this item.
+
+**The mechanism, read from the installed MapLibre 6.6.0 source.** `map_event.ts` suppresses a click only when it lands at least its 3px click tolerance from the preceding `mousedown`; after touch that is the compatibility `mousedown`, delivered at the same point as the click, so the check never fires. The mouse drag handler calls `suppressClick`; `touch_pan.ts` never does. `tap_zoom.ts` cancels only the **second** tap's `touchend`, so the first tap's click always arrives, and two-finger gestures suppress their click. The entry's "present fact" above — that MapLibre suppresses the click once a pointer has moved past its tolerance — therefore holds for a mouse only; it is left as written and corrected here.
+
+### Implementation account (29 September 2026, `0.4.46`)
+
+- **`src/map/mapTapInput.ts` (new).** `MapTapInput` is `"mouse" | "touch" | "pen" | "unknown"`. `trackMapTapInput(target)` listens passively, in the capture phase, on MapLibre's canvas container — where every listener behind a MapLibre click is bound and where the markers live. A `pointerdown` starts a sequence typed by its `pointerType`; a `touchstart` marks its own sequence `touch` (a pen stays `pen`). `classify(click)` returns that sequence's type, and a click with no new sequence since the last classified one (a programmatic or assistive-technology click) is `unknown`. The click's own `pointerType` may withhold placement (`touch`, `pen`) but never grant it. Classification is idempotent per click event, so several listeners always agree.
+- **`src/map/mapAdapter.ts`.** `MapLibreLike.onMapTap`'s listener now receives `(coordinate, input)` — a required parameter, so the compiler listed every test double. The adapter creates one shared tracker lazily on the first `onMapTap` and disposes it in `remove()`. Its doc comment, which claimed MapLibre suppresses a click after any real pointer movement, now states the touch facts above.
+- **`src/map/MapView.tsx`.** The hit-test priority is unchanged and applies to **every** input: a touch tap still selects a warning or a climb or descent, in Planning and in Riding. Only the fall-through to Planning's placement callback carries the input.
+- **`src/ui/planning/`.** `mapTapPlacesWaypoint(input)` is `input === "mouse"`. `PlanningScreen`'s new `handleMapTap` returns before `handlePlacementAt` for any other input, so a touch, pen or unknown tap appends nothing, records no undo entry, triggers no recalculation, and leaves a pending Move or Insert after pending. The crosshair path is untouched. The event-priority comment gained rule 0 and lost its false claim that panning never reaches the tap handler.
+- **Copy.** `planning.waypoints.empty` in both catalogues, as decided; the translator comment now forbids "tap the map".
+
+**Behaviour chosen, per input.**
+
+- **Mouse** — including a trackpad, which reports as a mouse, and a mouse on a touch-capable device — places, moves and inserts directly on the map, as before, even immediately after a touch.
+- **Touch** never does; the crosshair control does. Touch still selects warnings and route features, which never changes the draft.
+- **Pen** follows touch, by the rider's decision.
+- **Keyboard** is unchanged: a focused map canvas produces no click from Enter or Space (asserted in both engines), and the crosshair control works by keyboard.
+- **Unknown** fails closed. The crosshair control remains reachable to every input and to assistive technology.
+
+### Findings worth carrying forward
+
+1. **WebKit's touch-generated click says it is a mouse click.** Only the sequence distinguishes it, and a negative control that trusted the click's own `pointerType` was caught by the WebKit touch test **alone** — Chromium's click honestly says `touch`, so a Chromium-only suite would have passed a design that fails on WebKit.
+2. **Chromium withholds `touchmove` inside its tap slop**, which makes the reported pan-and-place unreproducible there. The automated sub-slop case is the browser reading a small movement as a tap, which is the part of the mechanism a browser here can show.
+3. **Planning keeps the previous screen's scroll offset** (item 125's outstanding behaviour). The first fail-first run was invalid for that reason: after the key was entered in Settings, most gestures, and even a mouse click, missed the map, and re-measuring the map at the top of the page cured it. The specs now scroll to the top and re-measure the map before every gesture, and throw unless it is wholly in view.
+4. **CDP pacing is load-sensitive.** In a full parallel run, a double tap sent through a separate CDP session per tap once failed to register as a double tap — consistent with drifting outside MapLibre's 500ms window, though that was not measured. Sending the contacts unpaced was worse: 15 of 40 runs at 36 workers misbehaved, either not recognised or with both taps' clicks delivered. One session paced like a finger then passed 40 of 40 and, in the whole-spec stress, 10 of 10. The double-tap-and-drag case stayed load-dependent — its contacts took 3.6–5.6 seconds under that load, and 9 of 40 runs were not recognised — so it is **not automated**; its first tap is an ordinary touch tap, which is.
+5. **One missed WebKit tap on a waypoint-row toggle** — a selected waypoint's `Move` did not arm — was seen once, in a run under a negative-control build that could not have caused it. It did not recur in 144 later stress runs of the crosshair tests across all three projects, and no cause is claimed. Every row tap in the specs is now confirmed by the button's `aria-pressed` before the test continues, so a recurrence would be reported where it happens.
+
+### Evidence
+
+**New tests.** Unit: `mapTapInput.test.ts` (12), plus adapter, MapView and Planning cases for every input kind, including touch and pen still selecting a warning and a route feature. End-to-end: `androidPlanningTouchPlacement.spec.ts` (Pixel 7, genuine CDP touch, 8 tests) and `planningTouchPlacement.smoke.spec.ts` (Chromium and WebKit with `hasTouch`, 5 tests each). Every "places nothing" assertion is paired with a page-side recorder proving that the gesture arrived as touch or pen and whether a click reached the map, so a pass cannot mean "no click happened".
+
+**Fail-first, final spec versions against `0.4.45`: 14 of 18 failed, each for its intended reason.**
+
+- Failed: the touch tap, in all three projects (a waypoint was placed); the sub-slop movement; the double-tap zoom; the pen tap; the combined no-change test (2 waypoints became 4); the crosshair test, in all three projects (a touch tap on the map completed the pending Move); and the new hint, in both languages and both engines.
+- Passed, as labelled regression guards: the pan beyond the slop, the pinch and two-finger tap (no click even before the change), and the keyboard path in both engines.
+
+**Negative controls, every one run.**
+
+| Control                                                 | Caught by                                                                                           |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Classify by the click's own `pointerType`               | 7 unit tests; the WebKit touch-tap test (Chromium's does not discriminate — finding 1)              |
+| Suppress a mouse click within 1s of touch               | 1 unit test; the mouse-straight-after-touch test in all three projects                              |
+| Consume the classification destructively, not per click | 2 unit tests (tracker and adapter)                                                                  |
+| Filter non-mouse input in MapView before hit-testing    | 5 MapView tests (touch and pen selecting a warning or feature; forwarding)                          |
+| Remove Planning's gate                                  | 9 Planning unit tests; all 10 discriminating e2e tests, with the recorder showing the click arrived |
+| Gate on a global `navigator.maxTouchPoints` instead     | every hybrid mouse test in all three projects, and the existing `androidPlanning.spec.ts`           |
+
+**Verification.**
+
+- `npm run lint`, `npm run typecheck`, `npm test` (**4665/4665 across 202 files**) and `npm run build` are clean; `npm run format:check` was run last.
+- The **full Playwright suite ran in the pinned container**: **611/611**, including the `webkit-smoke` project.
+- Stress, at 36 workers: the Android spec 80/80 (ten repeats), the smoke spec 100/100 in both engines (ten repeats).
+- Local npm is the pinned `11.16.0`; local Node is `v24.13.0` against `.nvmrc`'s `24.18.0`, and CI is authoritative.
+
+### Limitations, stated plainly
+
+- **No installed-iPhone evidence exists yet**, and no new physical reproduction was made. iOS's event order is assumed from the Pointer Events contract and from desktop WebKit, which agree. If an iPhone ever sent a mouse-typed `pointerdown` for a touch tap's compatibility click with no `touchstart` in that sequence, a touch tap would still place; the device check is the evidence.
+- **The pan that both moves the map and places a waypoint was not reproduced** in any engine here (Stage 1). The change removes it by construction, since no touch click places, but that is reasoning, not a reproduction.
+- **WebKit coverage is Playwright's Linux WebKit**: real touch taps, but no touch pan, pinch or double tap.
+- **Double-tap-and-drag zoom** was measured in Stage 1 only (finding 4).
+- **A touch tap on open map now does nothing visible.** The empty-list hint and the control's own label are the only guidance; no extra feedback was added.
+- **An assistive-technology click on the canvas** is `unknown` and places nothing. A screen reader whose activation synthesises mouse-typed pointer events could still place at the canvas point it activates; that was not tested.
+- **The mouse double-click** still places two waypoints and zooms — a separate observation, deliberately left unchanged (Stage 1).
+- **Hybrid hardware** — a touch-screen laptop, an iPad with a trackpad or Pencil — was not tested physically, and no physical-Android result is claimed.
