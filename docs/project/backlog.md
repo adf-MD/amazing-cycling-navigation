@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence. Items 87–92 were added by the [release-readiness audit](release-readiness-audit.md) (item 86); items 87–92 have since been completed. Items 107–113 were added by the installed-iPhone field test of 10 September 2026 (see [current-status.md](current-status.md) for the dated evidence) and are all scheduled ahead of items 102 and 103, which keep their numbers; the authoritative execution order lives in the root [`CLAUDE.md`](../../CLAUDE.md)'s queue index and is deliberately not duplicated here. Items 107, 108, 109, 110, 111 and 112 of that group have since been completed and their full specifications have moved to [`history/`](history/README.md), so only item 113 remains below. Item 114 was added on 11 September 2026 from item 109's own Chromium verification work rather than from that field test, and is likewise scheduled ahead of items 102 and 103. Item 117 was added on 13 September 2026 from the installed-iPhone session that accepted item 112, which rejected the opaque route identifier that session's `Active session` row exposed, and has since been completed and moved to [`history/`](history/README.md). Item 118 was added on 13 September 2026 from a second installed-iPhone report the same day and has since been completed and moved to [`history/`](history/README.md); item 119 was added from the repository investigation that established item 118's ownership, and is scheduled ahead of items 102 and 103. Item 121 was recorded on 25 September 2026, placed first in the execution order, and has since been completed (`0.4.44`) and moved to [`history/`](history/README.md).
+Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence. Items 87–92 were added by the [release-readiness audit](release-readiness-audit.md) (item 86); items 87–92 have since been completed. Items 107–113 were added by the installed-iPhone field test of 10 September 2026 (see [current-status.md](current-status.md) for the dated evidence) and are all scheduled ahead of items 102 and 103, which keep their numbers; the authoritative execution order lives in the root [`CLAUDE.md`](../../CLAUDE.md)'s queue index and is deliberately not duplicated here. Items 107, 108, 109, 110, 111 and 112 of that group have since been completed and their full specifications have moved to [`history/`](history/README.md), so only item 113 remains below. Item 114 was added on 11 September 2026 from item 109's own Chromium verification work rather than from that field test, and has since been completed (`0.4.45`) and moved to [`history/`](history/README.md). Item 117 was added on 13 September 2026 from the installed-iPhone session that accepted item 112, which rejected the opaque route identifier that session's `Active session` row exposed, and has since been completed and moved to [`history/`](history/README.md). Item 118 was added on 13 September 2026 from a second installed-iPhone report the same day and has since been completed and moved to [`history/`](history/README.md); item 119 was added from the repository investigation that established item 118's ownership, and is scheduled ahead of items 102 and 103. Item 121 was recorded on 25 September 2026, placed first in the execution order, and has since been completed (`0.4.44`) and moved to [`history/`](history/README.md). Item 128 was recorded on 29 September 2026 from item 114's own measurements and is unscheduled.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Entries through item 93 reproduce their original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this). Items 94 and later are new post-0.4.0 specifications authored directly into this file, following the same structure and conventions.
 
@@ -157,45 +157,6 @@ _Category: Interface and accessibility consistency_
      - Split implementation into small component or pattern slices after the audit. Do not mechanically restyle every screen in one commit.
      - Coordinate with item 102 so the navigation choice and broader visual vocabulary converge, but do not make every item technically dependent on a complete application redesign.
      - No settings behaviour, routing preference semantics, persistence or navigation structure changes belong to this visual item.
-
----
-
-<a id="item-114"></a>
-
-## Item 114 — Prevent Planning attribution and placement-control overlap at 200% browser text
-
-_Category: Interface and accessibility consistency_
-
-114. **Prevent Planning attribution and placement-control overlap at 200% browser text**
-     - Origin: item 109's own Chromium layout verification at a 200% root text size, 11 September 2026 — **not** the 10 September 2026 installed-iPhone field test, and **not** an installed-iPhone observation. See [`current-status.md`](current-status.md) for the ledger entry.
-     - **This is a confirmed automated accessibility and containment defect.** At 200% browser text, `.map-attribution` wraps to approximately **62.25 px** high, which lifts its top edge above the placement control's fixed `bottom: 44px` and overlaps `.planning-crosshair-callout`'s border box by approximately **26.25 px**.
-     - **Treat both figures as measurements taken from the tested fixture, not as universal CSS constants.** Re-measure against live layout before designing a correction; do not encode either number as a threshold.
-     - **It is not an item-109 regression, and item 109 is not reopened.** The same overlap was measured against the item-109 **parent** (commit `27fa0c8`), before the new 4px marker-isolation halo existed — and a box-shadow never affects layout in any case. Item 109 therefore neither introduced nor changed this. Its waypoint-marker layering correction remains valid and is now **physically accepted on the installed iPhone** (11 September 2026, deployed `0.4.26`); see item 109 ([`history/items-104-109.md#item-109`](history/items-104-109.md#item-109)), which is the work during which this pre-existing defect was measured and deliberately left alone.
-     - **This is automated browser-text scaling, not iOS Dynamic Type or iOS Larger Text.** ACN has no Dynamic Type opt-in, so the iOS Larger Text setting does not resize this application at all and cannot serve as the acceptance mechanism. **No corresponding physical-device failure is claimed.**
-     - Required outcome — at the project's supported 200% browser-text condition, the eventual implementation must ensure that:
-       - Planning attribution and the placement control **do not overlap**;
-       - attribution remains **fully visible, legible and operable**;
-       - required attribution content is **never hidden, clipped or removed**;
-       - the Add, Move and Insert-after callout wording remains **fully visible and operable**, for the longest label `describeCrosshairAction` can render;
-       - item 109's **4 px marker-isolation band remains effective**;
-       - **waypoint-marker and distance-badge stacking remains unchanged** unless separately justified — item 84's coupled pair still must not be changed in isolation;
-       - the placement control **retains its touch target**;
-       - **map gestures remain available outside visible controls**;
-       - the fix introduces **no large invisible interaction-blocking layer**;
-       - ordinary **390 px portrait presentation remains unchanged or demonstrably equivalent**;
-       - the **narrowest supported portrait layout has no horizontal document overflow**;
-       - Planning **imagery/status overlays and map controls remain clear of both elements**.
-     - **The implementation must inspect responsive placement, wrapping and the reserved map-control areas before selecting a correction.** No particular offset, z-index, font reduction or relocation is prescribed here, deliberately.
-     - Explicitly rejected directions, none of which is an acceptable correction:
-       - hiding, shortening or clipping legally required attribution;
-       - reducing text size merely to fit;
-       - ellipsis;
-       - removing item 109's isolation band;
-       - moving geographic waypoint coordinates;
-       - relying on landscape;
-       - treating unsupported iOS Larger Text as the acceptance mechanism.
-     - Evidence required when this is implemented: **fail-first browser geometry at 200%**, demonstrating the overlap before the correction and its absence after, plus **ordinary-size compatibility controls** proving the 390 px portrait presentation is unchanged or demonstrably equivalent.
-     - Physical acceptance on the installed iPhone Home Screen PWA is required for whatever ships. Physical Android verification is separately outstanding, as for most recent items.
 
 ---
 
@@ -363,5 +324,24 @@ _Category: Planning interaction_
        - **Confirming the insert:** after `Insert after` is armed, the control that confirms it (`Insert after waypoint N` / `Nach Wegpunkt N einfügen`) is back on the map, above the list, and not brought into view.
        - **No hint:** nothing explains insertion. The only hint is the empty-list one (`planning.waypoints.empty`).
      - **The candidate:** a short cue at the point of use, for example at the disabled placement control or beside the selected row's actions. Its wording, placement and whether it persists are open.
-     - **Coordinate with:** items 122 (the map area) and 123 (touch-pan placement), item 114 (the placement control and the attribution at 200% text), and the placement-control width change in item 113's follow-up. A cue must not worsen item 114's overlap or item 123's gesture question.
+     - **Coordinate with:** items 122 (the map area) and 123 (touch-pan placement), item 114 (the placement control and the attribution at 200% text), and the placement-control width change in item 113's follow-up. A cue must not reintroduce item 114's overlap (resolved at enlarged text in `0.4.45`) or worsen item 123's gesture question.
      - **Evidence required when implemented:** both languages at 390 px portrait at ordinary and 200% root text, with the cue and the placement control contained and readable, plus the installed-iPhone recheck.
+
+---
+
+<a id="item-128"></a>
+
+## Item 128 — The imagery banner covers the Planning crosshair at ordinary text (unscheduled)
+
+_Category: Planning presentation_
+
+128. **The imagery banner covers the Planning crosshair at ordinary text — unscheduled**
+     - Origin: item 114's Stage 1 onset sweep, 29 September 2026, measured in the pinned Playwright container in Chromium and WebKit, which agreed. **An automated measurement, not an installed-iPhone observation.**
+     - **Unscheduled, and not part of the approved execution order. It is neither resolved nor accepted, and no fix is approved by this entry.**
+     - **What was measured.** At ordinary 100% text, Planning's in-map imagery banner (`.map-status-overlay` at `top: 72px`, `left/right: 64px`, here the fallback message with its `Retry map imagery` button) overlaps the red placement crosshair ring:
+       - **375×667** (map 343×300, ring 142–158px below the map's top): English, a banner 88px tall reaching 160px; German, 105px reaching 177px.
+       - **320×844** (map 288×380, ring 182–198px): German, 139px reaching 211px. English (105px, reaching 177px) clears it.
+       - **390×844 and 430×932** are clear at 100%; the overlap begins at 110% text (German) and 145% (English) respectively.
+     - The banner is `pointer-events: none` apart from its Retry button, so it hides the crosshair without blocking taps on the map beneath it. It appears only when map imagery is unavailable.
+     - **Item 114 does not reach it.** Item 114 changed only the enlarged-text layout, which engages from about 106–132% text depending on the size, and deliberately left the ordinary layout unchanged; below that threshold the banner stays in the map.
+     - Any change must keep item 108's product decision in view — Planning keeps its imagery explanation in the map at ordinary text, and item 114 made an enlarged-text-only exception — and must be measured at 375×667, 320×844 and 390×844 in both languages against the crosshair, the placement control and the attribution.
