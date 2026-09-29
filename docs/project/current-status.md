@@ -23,7 +23,7 @@ This file records verification evidence only; the behaviour contracts themselves
 
 ## Open installed-iPhone acceptance checklist (12 September 2026)
 
-**This is the only active list of presently actionable installed-iPhone checks.** Items 102, 103, 119 and 120 are unimplemented and therefore out of scope, and items 122–128 are unscheduled candidates. **Item 114 (`0.4.45`) has shipped with automated evidence only**; its one check here is the ordinary-text Planning layout in Session 1, because its enlarged-text layout cannot be reached on the iPhone through Larger Text. **Item 121 (`0.4.44`) was accepted on the installed iPhone, reported 29 September 2026, and no longer appears here**; one open device finding from that session awaits investigation, in its own subsection below. Item 113 shipped German in `0.4.41`. Its first physical pass (25 September 2026) produced the `0.4.42` follow-up. That recheck (reported 28 September 2026, recorded below) passed apart from three findings corrected in `0.4.43`. **The `0.4.43` Status-wording and End-confirmation rechecks passed on 28 September 2026**, and only the climb cue's recheck remains, in Session 2. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
+**This is the only active list of presently actionable installed-iPhone checks.** Items 102, 103, 119, 120 and 123 are unimplemented and therefore out of scope — item 123 is scheduled first — and items 122 and 124–129 are unscheduled candidates. **Item 114's one device check, ordinary-text Planning on `0.4.45`, passed on the installed iPhone on 29 September 2026 and no longer appears here**; its enlarged-text layout has automated evidence only, because it cannot be reached on the iPhone through Larger Text. **Item 121 (`0.4.44`) was accepted on the installed iPhone, reported 29 September 2026, and no longer appears here**; one open device finding from that session awaits investigation, in its own subsection below. Item 113 shipped German in `0.4.41`. Its first physical pass (25 September 2026) produced the `0.4.42` follow-up. That recheck (reported 28 September 2026, recorded below) passed apart from three findings corrected in `0.4.43`. **The `0.4.43` Status-wording and End-confirmation rechecks passed on 28 September 2026**, and only the climb cue's recheck remains, in Session 2. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
 
 ### Session 1 — stationary, on the installed Home Screen PWA
 
@@ -33,7 +33,6 @@ This file records verification evidence only; the behaviour contracts themselves
 - [ ] Route Library sorting: pinned routes keep their position under every order, a chosen sort survives a genuine reload, and a route with no recorded ascent reads as "ascent not available" and sorts last (item 99).
 - [ ] An imported untrusted GPX compacts its no-turn-cues warning after about ten seconds, keeps the compact control through a Map/Profile switch, and VoiceOver announces the warning once and describes the control's expanded/collapsed state (item 97).
 - [ ] Settings reads correctly with no route open: the `Riding` wake-lock explanation and the `Local gradient colours` disclosure (items 79, 82).
-- [ ] Planning at ordinary portrait text looks exactly as in `0.4.44`: the `© OpenStreetMap contributors` attribution in the map's bottom-left, `Add waypoint here` / `Wegpunkt hier setzen` in its usual bottom-centre place clear of it, the red crosshair visible, and a map message (for example after a failed `Locate me`) inside the map. Add, Move and Insert after still place correctly, and the map pans from just beside and just above the control (item 114). Read the version and build from Status first; the enlarged-text layout itself is automated evidence only and is not part of this check.
 
 ### Session 2 — one representative ride on a route with a recognised climb and descent
 
@@ -74,9 +73,10 @@ Stationary or walking. Induce only what is deliberate and reproducible; everythi
 
 No iOS Larger Text result and no physical-Android result is claimed for item 113 in either language.
 
-### Open device finding — awaiting investigation (not a checklist item)
+### Open device findings — awaiting investigation (not checklist items)
 
 - **Tapping the OpenRouteService key field zoomed the installed page in, and saving did not restore normal zoom**; the rider had to zoom out by hand. Seen during item 121's acceptance on `0.4.44` (the dated record below). **No cause is established and no investigation has been made**, and it is **not** attributed to item 121 as a regression. It is kept here for follow-up rather than as a check to repeat.
+- **After denying location permission in the installed PWA, the rider did not find a way to grant it again during that session**; fully closing and reopening the PWA allowed another permission prompt. Seen during item 114's check on `0.4.45` (the dated record below) and filed as unscheduled [item 129](backlog.md#item-129). Nothing is established yet about how iOS handles a retry.
 
 ### Opportunistic monitoring — watched for, never manufactured
 
@@ -103,6 +103,24 @@ None of these blocks acceptance of the item it came from. Record one if it occur
   This upgrades the earlier "consistent with" note for this file to a **measured, reproduced-on-baseline** finding: the class is pre-existing and is **not** attributable to item 113's pre-render IndexedDB read, which was the specific hypothesis worth ruling out, since that change does add a blocking database open before the first paint. No production change was made for it, and it remains monitored rather than fixed — if it is ever worked on, start from the artefacts item 116 retains.
 
 ## Dated acceptance record
+
+### Installed-iPhone check of `0.4.45` (build `bac3553`, item 114, reported 29 September 2026)
+
+**Device and build.** iPhone 13, installed Home Screen PWA, portrait, ordinary text size; version `0.4.45`, build `bac3553`, as reported.
+
+**Passed** — item 114's ordinary-text Planning check, and only that:
+
+- The OpenStreetMap attribution and the `Add waypoint here` placement button remain clear of each other.
+- The red crosshair is visible.
+- A failed `Locate me` shows its message inside the map.
+- Add, Move and Insert after place waypoints correctly.
+- The map pans when dragged beside and above the placement button.
+
+**Not claimed:** any physical acceptance of item 114's enlarged-text layout, which cannot be reached on the iPhone through Larger Text; its 200% browser-text evidence stays automated (Chromium and WebKit in the pinned container) and is never iOS Dynamic Type; its informative 250% limitations are unchanged; [item 128](backlog.md#item-128)'s ordinary-text imagery-banner collision with the crosshair was not rechecked and is neither resolved nor accepted; no VoiceOver audit; and no physical-Android result.
+
+**Observation, filed as [item 129](backlog.md#item-129).** To exercise the `Locate me` failure message, the rider denied location permission in the installed PWA. The message appeared correctly — that is the check above — but the rider did not find a way to grant permission again during that PWA session; after fully closing and reopening the PWA, another permission prompt appeared. It is recorded as an unscheduled usability investigation; no claim is made that a denial is permanent or that no in-session way exists.
+
+**Decision the same day.** [Item 123](backlog.md#item-123) — accidental waypoint placement during touch panning or zooming in Planning — was promoted to the front of the approved execution order, with the rider's preferred design direction recorded in its entry.
 
 ### Installed-iPhone acceptance of `0.4.44` (build `8027c6a`, item 121, reported 29 September 2026)
 
@@ -375,7 +393,7 @@ Context: the installed iPhone Home Screen PWA, portrait. The report did not reco
 - **6. The Diagnostics/Settings division may not be intuitive — a staged, decision-gated review ([item 112](history/items-110-113.md#item-112)).** The current division may mix explanatory material, status information and configurable properties in ways that are not always intuitive. Much of Diagnostics remains useful and must not be discarded merely because the application matures. **This is not approval to merge the two screens, and the name "Properties" is not approved.** The item inventories and classifies what each screen owns, evaluates whether they stay separate, are regrouped or share a clearer parent structure, recommends plain-language terminology and navigation, and then **returns that recommendation for product approval** before any broad navigation or naming change.
 - **7. German-language support is wanted, as a substantial staged feature ([item 113](history/items-110-113.md#item-113), since shipped in `0.4.41`).** Recorded as a staged feature rather than a copy-editing task, and scheduled preferably after item 112 so that strings are not migrated twice. It covers the string audit, a maintainable internationalisation boundary, English as a complete fallback, German translations, language selection and persistence, locale-sensitive formatting, document language and accessibility announcements, and tests for fallback and missing keys. **No German wording, no automatic language selection and no particular internationalisation library is approved** by this record; the device-language/default behaviour is to be brought back for explicit product approval.
 
-### Item 114 — shipped `0.4.45` with automated evidence only; item 128 recorded
+### Item 114 — shipped `0.4.45`; ordinary-text device check passed; enlarged-text layout automated only; item 128 recorded
 
 - **What shipped.** At enlarged browser text Planning uses its own layout:
   - the attribution is a permanently visible, linked strip directly below the map;
@@ -397,6 +415,8 @@ Context: the installed iPhone Home Screen PWA, portrait. The report did not reco
   - At 250% text (informative only) the enlarged layout covers the crosshair by 13px with some labels at 390×844 and 320×844, and its imagery message falls up to 38.8px below the screen.
   - WebKit here is desktop WebKit in a container.
   - Physical Android is outstanding under the umbrella above.
+- **The ordinary-text device check passed on 29 September 2026** (iPhone 13, portrait, `0.4.45`, build `bac3553`; the dated record above). It covers the ordinary-text layout only and claims nothing for the enlarged-text layout.
+- **Deployment.** The first push (`143da51`) was not deployed: its End-to-end test step succeeded after 1161 s, but the single CI job exceeded its 20-minute limit and was cancelled, so Deploy was skipped. `bac3553` (workflow only) split the suite into two parallel shards. In that commit's first run (attempt 1) shard 2 passed and shard 1 was cancelled after 630 s, well inside the limit; inspection of the original shard 1 job log showed test results still arriving immediately before the cancellation, and no cause is claimed. The rerun of shard 1 (attempt 2) passed and Deploy followed. The full record is in [`history/items-114-117.md`](history/items-114-117.md#item-116).
 - **Item 128, recorded, not resolved and not accepted.** Stage 1 found that at **ordinary** 100% text the in-map imagery banner already covers the crosshair:
   - at 375×667 in English (an 88px banner) and German (105px);
   - at 320×844 in German (139px);
