@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { PlanningScreen } from "./PlanningScreen.tsx";
 import type { Coordinate } from "../../domain/types.ts";
+import type { MapTapInput } from "../../map/mapTapInput.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import { computeBoundingBox } from "../../map/routeLayer.ts";
 import { db } from "../../storage/db.ts";
@@ -54,7 +55,7 @@ function createStubRoutingProvider(): {
 interface MockMapHandle {
   factory: MapFactory;
   triggerLoad: () => void;
-  triggerMapTap: (coordinate: Coordinate) => void;
+  triggerMapTap: (coordinate: Coordinate, input?: MapTapInput) => void;
   fitBoundsSpy: ReturnType<typeof vi.fn>;
 }
 
@@ -67,7 +68,7 @@ interface MockMapHandle {
 function createMockMapFactory(): MockMapHandle {
   let loadListener: (() => void) | undefined;
   let styleLoadedListener: (() => void) | undefined;
-  let mapTapListener: ((coordinate: Coordinate) => void) | undefined;
+  let mapTapListener: ((coordinate: Coordinate, input: MapTapInput) => void) | undefined;
   const sources = new Map<string, GeoJSON.FeatureCollection>();
   const fitBoundsSpy = vi.fn();
 
@@ -123,9 +124,9 @@ function createMockMapFactory(): MockMapHandle {
         loadListener?.();
       });
     },
-    triggerMapTap: (coordinate) => {
+    triggerMapTap: (coordinate, input = "mouse") => {
       act(() => {
-        mapTapListener?.(coordinate);
+        mapTapListener?.(coordinate, input);
       });
     },
     fitBoundsSpy,

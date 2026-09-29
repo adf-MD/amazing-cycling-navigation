@@ -9,6 +9,8 @@ import type { StyleSpecification } from "maplibre-gl";
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import type { Coordinate } from "../domain/types.ts";
 import type { BoundingBox } from "./routeLayer.ts";
+import { trackMapTapInput } from "./mapTapInput.ts";
+import type { MapTapInput, MapTapInputTracker } from "./mapTapInput.ts";
 import type { MapMarkerSpec, DistanceBadgeMarkerSpec } from "./mapMarkerTypes.ts";
 import {
   createWaypointMarkerElement,
@@ -354,11 +356,17 @@ export interface MapLibreLike {
    * on-screen size changes post-creation (e.g. iOS Safari/PWA chrome settling
    * after first paint) — otherwise fitBounds/camera maths use stale dimensions. */
   resize(): void;
-  /** Fires with the tapped/clicked coordinate for a genuine tap or click —
-   * never for a drag-then-release (MapLibre's own click-tolerance already
-   * suppresses `click` after real pointer movement, verified against the
-   * installed package's source), so Planning can use this directly for
-   * "tap to place a waypoint" without extra drag-distance tracking here.
+  /** Fires with the tapped/clicked coordinate for every MapLibre `click`,
+   * together with how that click's interaction began (see mapTapInput.ts —
+   * decided per click from its own pointer sequence, backlog item 123).
+   * For a mouse, MapLibre's click tolerance suppresses `click` after a
+   * drag. For touch it does not: MapLibre compares the compatibility
+   * mousedown with the click, which a touch tap delivers at the same point,
+   * and its touch pan never suppresses the click — so only the browser's
+   * own tap slop decides, and the first tap of a double-tap zoom always
+   * arrives here too (all verified against the installed package's
+   * source). A consumer that must not act on those — Planning's placement
+   * — has to check `input` itself.
    * Single map-wide listener — deliberately not layer-scoped, and this
    * method itself never calls queryRenderedFeatures. Warning-feature hit
    * testing (map-to-list warning tapping) is a separate, additional
@@ -366,7 +374,7 @@ export interface MapLibreLike {
    * with the same Coordinate this listener reports, before ever
    * forwarding to a planningOverlay's own onMapTap; see the event-priority
    * policy documented in PlanningScreen.tsx next to handlePlacementAt. */
-  onMapTap(listener: (coordinate: Coordinate) => void): void;
+  onMapTap(listener: (coordinate: Coordinate, input: MapTapInput) => void): void;
   /** Hit-tests only the given layer ids (never a layer the caller omits —
    * e.g. MapView must omit the selected-warning highlight layer) in a
    * small screen-space box of MAP_FEATURE_TAP_HIT_TOLERANCE_PX around
@@ -458,6 +466,9 @@ export class MapLibreAdapter implements MapLibreLike {
    * markersById, by construction, so the two marker groups can never
    * delete or recreate each other's entries. */
   private readonly badgeMarkersById = new Map<string, Marker>();
+  /** Created by the first onMapTap call and shared by any later one, so
+   * every listener gets the same classification for the same click. */
+  private tapInput: MapTapInputTracker | null = null;
 
   constructor(map: MapLibreGlMap) {
     this.map = map;
@@ -744,9 +755,13 @@ export class MapLibreAdapter implements MapLibreLike {
     this.map.resize();
   }
 
-  onMapTap(listener: (coordinate: Coordinate) => void): void {
+  onMapTap(listener: (coordinate: Coordinate, input: MapTapInput) => void): void {
+    const tapInput = (this.tapInput ??= trackMapTapInput(this.map.getCanvasContainer()));
     this.map.on("click", (event) => {
-      listener([event.lngLat.lng, event.lngLat.lat]);
+      listener(
+        [event.lngLat.lng, event.lngLat.lat],
+        tapInput.classify(event.originalEvent),
+      );
     });
   }
 
@@ -872,6 +887,8 @@ export class MapLibreAdapter implements MapLibreLike {
       marker.remove();
     }
     this.badgeMarkersById.clear();
+    this.tapInput?.dispose();
+    this.tapInput = null;
     this.map.remove();
   }
 }

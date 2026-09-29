@@ -328,9 +328,10 @@ export const en = {
   "planning.waypoints.heading": "Waypoints",
   "planning.waypoints.listLabel": "Waypoints",
   // translator: deliberately no directional word — this hint sits below the
-  // map while the crosshair is on it.
-  "planning.waypoints.empty":
-    "No waypoints yet. Tap the map or use the crosshair to add one.",
+  // map while the crosshair is on it. Never "tap the map": a touch tap on
+  // the map does not place a waypoint, only the crosshair control does
+  // (item 123).
+  "planning.waypoints.empty": "No waypoints yet. Use the crosshair to add one.",
   "planning.waypoints.start": "Start",
   // translator: {number} is the waypoint's position in the list, from 2.
   "planning.waypoints.numbered": "Waypoint {number}",

@@ -94,7 +94,7 @@ describe("WaypointList", () => {
     );
 
     expect(
-      screen.getByText("No waypoints yet. Tap the map or use the crosshair to add one."),
+      screen.getByText("No waypoints yet. Use the crosshair to add one."),
     ).toBeInTheDocument();
   });
 

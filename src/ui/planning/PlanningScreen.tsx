@@ -22,6 +22,7 @@ import {
   type ZoomCameraTarget,
 } from "../../map/MapView.tsx";
 import type { MapFactory } from "../../map/mapAdapter.ts";
+import type { MapTapInput } from "../../map/mapTapInput.ts";
 import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
 import { deriveWaypointRoles } from "../../map/planningLayer.ts";
 import { computeBoundingBox, type BoundingBox } from "../../map/routeLayer.ts";
@@ -75,6 +76,7 @@ import { NoApiKeyNotice } from "./NoApiKeyNotice.tsx";
 import {
   deriveInteractionMode,
   describeCrosshairAction,
+  mapTapPlacesWaypoint,
   type PendingWaypointAction,
 } from "./planningInteractionMode.ts";
 import { RouteSummaryPanel } from "./RouteSummaryPanel.tsx";
@@ -1274,8 +1276,16 @@ export function PlanningScreen({
     Math.abs(settledOrientation.pitchDegrees) <= NORTH_UP_PITCH_TOLERANCE_DEGREES;
 
   // --- Map-tap event-priority policy (implemented) ---
-  // A genuine map tap (never a drag-then-release — see mapAdapter.ts's
-  // onMapTap) resolves to exactly ONE of the following, in order:
+  // A map tap resolves to exactly ONE of the following, in order:
+  //   0. Whatever else follows, a map tap only ever appends, moves or
+  //      inserts a waypoint when it was a mouse click (item 123 — see
+  //      handleMapTap and mapTapPlacesWaypoint). A touch tap can be the
+  //      browser's reading of a small pan inside its tap slop, or the first
+  //      tap of a double-tap zoom, because MapLibre suppresses the click
+  //      after a mouse drag but never after a touch one (mapAdapter.ts's
+  //      onMapTap); a pen is treated as touch. Such a tap changes no
+  //      waypoint and leaves a pending move/insert-after pending — touch
+  //      and pen place through the crosshair control only.
   //   1. The tap hits a selectable warning feature — MapView hit-tests
   //      the warning category layers itself (see queryTopWarningFeatureAt/
   //      resolveWarningIndexHit) and calls handleSelectWarningFromMap
@@ -1291,13 +1301,14 @@ export function PlanningScreen({
   //      mode with no pending move/insert still does nothing on a bare
   //      tap, see below).
   //   4. Otherwise, the tap does nothing.
-  // Panning/zooming/dragging never go through onMapTap at all, so are
-  // unaffected.
+  // Rule 1 applies to every input kind: a touch tap still selects a warning
+  // or a route feature, which never changes the draft.
   //
   // Cases 2-4 are handlePlacementAt's own logic below, shared by both the
   // map tap and the crosshair button (so both behave identically for
-  // them); case 1 is map-tap-only — the crosshair always places/moves
-  // relative to the centre crosshair, never a warning feature. The
+  // them); cases 0 and 1 are map-tap-only — the crosshair is a button any
+  // input may press, and always places/moves relative to the centre
+  // crosshair, never a warning feature. The
   // `if (selectedWarningIndex !== null) return;` guard immediately below
   // stays as belt-and-suspenders for the crosshair path in particular
   // (which has no hit-testing of its own): once a warning is selected via
@@ -1342,6 +1353,14 @@ export function PlanningScreen({
       selectedRouteFeatureId,
       dispatchWaypointAction,
     ],
+  );
+
+  const handleMapTap = useCallback(
+    (coordinate: Coordinate, input: MapTapInput) => {
+      if (!mapTapPlacesWaypoint(input)) return;
+      handlePlacementAt(coordinate);
+    },
+    [handlePlacementAt],
   );
 
   const handlePlacementHere = () => {
@@ -1624,7 +1643,7 @@ export function PlanningScreen({
         ? []
         : state.present.waypoints.map((w) => w.coordinate),
     selectedWaypointIndex,
-    onMapTap: handlePlacementAt,
+    onMapTap: handleMapTap,
   };
 
   const mapPoints = routing.state.kind === "routed" ? routing.state.route.points : [];

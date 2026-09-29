@@ -11,6 +11,7 @@ import { db } from "../../storage/db.ts";
 import { setActiveRideState } from "../../storage/rideStateRepository.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import type { Coordinate, PlannedRoute, RoutePoint } from "../../domain/types.ts";
+import type { MapTapInput } from "../../map/mapTapInput.ts";
 import {
   OUT_AND_BACK_COINCIDENT_ROUTE_POINTS,
   OUT_AND_BACK_COINCIDENT_TURNAROUND_INDEX,
@@ -145,7 +146,7 @@ function buildMockMapFactory(): {
 } {
   let loadListener: (() => void) | undefined;
   let styleLoadedListener: (() => void) | undefined;
-  let mapTapListener: ((coordinate: Coordinate) => void) | undefined;
+  let mapTapListener: ((coordinate: Coordinate, input: MapTapInput) => void) | undefined;
   let nextRouteFeatureHit: string | null = null;
   const sources = new Map<string, GeoJSON.FeatureCollection>();
   const factory: MapFactory = () => {
@@ -205,7 +206,7 @@ function buildMockMapFactory(): {
       (sources.get(COMPLETED_SOURCE_ID)?.features ?? []) as unknown as LineFeature[],
     tapRouteFeature: (featureId: string) => {
       nextRouteFeatureHit = featureId;
-      mapTapListener?.([0, 51]);
+      mapTapListener?.([0, 51], "touch");
     },
   };
 }

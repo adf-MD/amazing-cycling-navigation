@@ -1,5 +1,6 @@
 import type { Translator } from "../../i18n/translate.ts";
 import type { Waypoint } from "../../domain/types.ts";
+import type { MapTapInput } from "../../map/mapTapInput.ts";
 
 /**
  * Explicit Planning interaction modes, replacing the old implicit
@@ -38,6 +39,17 @@ export function deriveInteractionMode(
     return { kind: "insert-after", waypointId: selectedWaypointId };
   }
   return { kind: "selected", waypointId: selectedWaypointId };
+}
+
+/** Whether a map tap may append, move or insert a waypoint (backlog item
+ * 123). Only a mouse click may: a touch tap can be the browser's reading
+ * of a small pan or the first tap of a double-tap zoom, a pen pans by
+ * direct contact the same way (the rider's decision, 29 September 2026),
+ * and an unclassifiable click fails closed. Touch, pen and keyboard
+ * placement all go through the crosshair control instead, which this
+ * never affects. */
+export function mapTapPlacesWaypoint(input: MapTapInput): boolean {
+  return input === "mouse";
 }
 
 function describeWaypointPhrase(

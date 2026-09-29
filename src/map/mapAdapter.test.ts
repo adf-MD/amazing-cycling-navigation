@@ -16,7 +16,11 @@ function buildFakeMapLibreMap(
   // webgl-init test below passes `painter: undefined`.
   options: { painter?: unknown } = {},
 ) {
+  const canvasContainer = document.createElement("div");
   const fake = {
+    canvasContainer,
+    getCanvasContainer: vi.fn(() => canvasContainer),
+    remove: vi.fn(),
     fitBounds: vi.fn(),
     easeTo: vi.fn(),
     jumpTo: vi.fn(),
@@ -199,16 +203,79 @@ describe("MapLibreAdapter", () => {
     });
   });
 
-  it("onMapTap reports the tapped coordinate from a real click event", () => {
+  // Backlog item 123: the listener learns how each click's pointer
+  // sequence began, watched on the real canvas container — see
+  // mapTapInput.test.ts for the classification itself.
+  it("onMapTap reports the clicked coordinate with how the click's pointer sequence began", () => {
     const fake = buildFakeMapLibreMap();
     const adapter = buildAdapter(fake);
     const listener = vi.fn();
 
     adapter.onMapTap(listener);
     const clickHandler = findHandler(fake, "click");
-    clickHandler({ lngLat: { lng: 7, lat: 8 } });
 
-    expect(listener).toHaveBeenCalledWith([7, 8]);
+    fake.canvasContainer.dispatchEvent(
+      new PointerEvent("pointerdown", { pointerType: "mouse" }),
+    );
+    clickHandler({
+      lngLat: { lng: 7, lat: 8 },
+      originalEvent: new PointerEvent("click", { pointerType: "mouse" }),
+    });
+    expect(listener).toHaveBeenLastCalledWith([7, 8], "mouse");
+
+    fake.canvasContainer.dispatchEvent(
+      new PointerEvent("pointerdown", { pointerType: "touch" }),
+    );
+    fake.canvasContainer.dispatchEvent(new TouchEvent("touchstart"));
+    clickHandler({ lngLat: { lng: 9, lat: 10 }, originalEvent: new MouseEvent("click") });
+    expect(listener).toHaveBeenLastCalledWith([9, 10], "touch");
+  });
+
+  it("onMapTap gives every listener the same classification for the same click", () => {
+    const fake = buildFakeMapLibreMap();
+    const adapter = buildAdapter(fake);
+    const first = vi.fn();
+    const second = vi.fn();
+
+    adapter.onMapTap(first);
+    adapter.onMapTap(second);
+    const clickHandlers = fake.on.mock.calls
+      .filter(([type]) => type === "click")
+      .map(([, handler]) => handler as (event: unknown) => void);
+    expect(clickHandlers).toHaveLength(2);
+
+    fake.canvasContainer.dispatchEvent(
+      new PointerEvent("pointerdown", { pointerType: "mouse" }),
+    );
+    const event = {
+      lngLat: { lng: 7, lat: 8 },
+      originalEvent: new PointerEvent("click", { pointerType: "mouse" }),
+    };
+    for (const handler of clickHandlers) handler(event);
+
+    expect(first).toHaveBeenCalledWith([7, 8], "mouse");
+    expect(second).toHaveBeenCalledWith([7, 8], "mouse");
+  });
+
+  it("remove() stops watching the canvas container for pointer sequences", () => {
+    const fake = buildFakeMapLibreMap();
+    const adapter = buildAdapter(fake);
+    const listener = vi.fn();
+
+    adapter.onMapTap(listener);
+    const clickHandler = findHandler(fake, "click");
+    adapter.remove();
+
+    fake.canvasContainer.dispatchEvent(
+      new PointerEvent("pointerdown", { pointerType: "mouse" }),
+    );
+    clickHandler({
+      lngLat: { lng: 7, lat: 8 },
+      originalEvent: new PointerEvent("click", { pointerType: "mouse" }),
+    });
+
+    expect(fake.remove).toHaveBeenCalled();
+    expect(listener).toHaveBeenCalledWith([7, 8], "unknown");
   });
 
   describe("queryTopWarningFeatureAt", () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveInteractionMode,
   describeCrosshairAction,
+  mapTapPlacesWaypoint,
 } from "./planningInteractionMode.ts";
 import type { Coordinate, Waypoint } from "../../domain/types.ts";
 import { englishTranslator } from "../../i18n/englishTranslator.ts";
@@ -94,5 +95,14 @@ describe("describeCrosshairAction", () => {
         WAYPOINTS,
       ),
     ).toBe("Insert after the start");
+  });
+});
+
+describe("mapTapPlacesWaypoint (backlog item 123)", () => {
+  it("lets only a mouse click place from the map", () => {
+    expect(mapTapPlacesWaypoint("mouse")).toBe(true);
+    expect(mapTapPlacesWaypoint("touch")).toBe(false);
+    expect(mapTapPlacesWaypoint("pen")).toBe(false);
+    expect(mapTapPlacesWaypoint("unknown")).toBe(false);
   });
 });

@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { PlanningScreen } from "./PlanningScreen.tsx";
 import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
+import type { MapTapInput } from "../../map/mapTapInput.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import type { RoutingProvider } from "../../routing/provider.ts";
 import { db } from "../../storage/db.ts";
@@ -52,7 +53,7 @@ const DRAFT_DEBOUNCE_MS = 900;
 interface MockMapHandle {
   factory: MapFactory;
   triggerLoad: () => void;
-  triggerMapTap: (coordinate: Coordinate) => void;
+  triggerMapTap: (coordinate: Coordinate, input?: MapTapInput) => void;
 }
 
 // A minimal local MapLibreLike stub, duplicated rather than shared per this
@@ -60,7 +61,7 @@ interface MockMapHandle {
 function createMockMapFactory(): MockMapHandle {
   let loadListener: (() => void) | undefined;
   let styleLoadedListener: (() => void) | undefined;
-  let mapTapListener: ((coordinate: Coordinate) => void) | undefined;
+  let mapTapListener: ((coordinate: Coordinate, input: MapTapInput) => void) | undefined;
   const sources = new Map<string, GeoJSON.FeatureCollection>();
 
   const factory: MapFactory = () => {
@@ -115,9 +116,9 @@ function createMockMapFactory(): MockMapHandle {
         loadListener?.();
       });
     },
-    triggerMapTap: (coordinate) => {
+    triggerMapTap: (coordinate, input = "mouse") => {
       act(() => {
-        mapTapListener?.(coordinate);
+        mapTapListener?.(coordinate, input);
       });
     },
   };

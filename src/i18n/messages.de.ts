@@ -306,7 +306,7 @@ export const de: Catalogue = {
   "planning.waypoints.heading": "Wegpunkte",
   "planning.waypoints.listLabel": "Wegpunkte",
   "planning.waypoints.empty":
-    "Noch keine Wegpunkte. Tippe auf die Karte oder nutze das Fadenkreuz, um einen Wegpunkt zu setzen.",
+    "Noch keine Wegpunkte. Nutze das Fadenkreuz, um einen Wegpunkt zu setzen.",
   "planning.waypoints.start": "Start",
   "planning.waypoints.numbered": "Wegpunkt {number}",
   "planning.waypoints.moveUp": "{waypoint} nach oben verschieben",

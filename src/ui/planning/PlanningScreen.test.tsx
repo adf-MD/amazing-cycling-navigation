@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { PlanningScreen } from "./PlanningScreen.tsx";
 import { NORTH_LETTER_PATH } from "../shared/northArrowGeometry.ts";
 import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
+import type { MapTapInput } from "../../map/mapTapInput.ts";
 import type { MapErrorCategory, MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import { computeLocalAreaBounds } from "../../map/localAreaBounds.ts";
 import {
@@ -31,7 +32,7 @@ interface MockMapHandle {
   /** Simulates a genuine user gesture (drag/pinch/rotate/pitch) — never
    * fired for MapView's own programmatic camera moves. */
   triggerUserCameraInteraction: () => void;
-  triggerMapTap: (coordinate: Coordinate) => void;
+  triggerMapTap: (coordinate: Coordinate, input?: MapTapInput) => void;
   /** Backlog item 94: simulates a genuine map error against whichever
    * instance was constructed most recently — a fatal
    * "style-request-or-parse" category (the default) drives MapView's real
@@ -65,7 +66,7 @@ function createMockMapFactory(): MockMapHandle {
         pitchDegrees: number;
       }) => void)
     | undefined;
-  let mapTapListener: ((coordinate: Coordinate) => void) | undefined;
+  let mapTapListener: ((coordinate: Coordinate, input: MapTapInput) => void) | undefined;
   let userCameraInteractionListener: (() => void) | undefined;
   let errorListener:
     ((info: { message: string; category: MapErrorCategory }) => void) | undefined;
@@ -168,9 +169,9 @@ function createMockMapFactory(): MockMapHandle {
         userCameraInteractionListener?.();
       });
     },
-    triggerMapTap: (coordinate) => {
+    triggerMapTap: (coordinate, input = "mouse") => {
       act(() => {
-        mapTapListener?.(coordinate);
+        mapTapListener?.(coordinate, input);
       });
     },
     triggerError: (info) => {
@@ -588,16 +589,113 @@ describe("PlanningScreen", () => {
     expect(onNavigateToSettings).toHaveBeenCalled();
   });
 
-  it("adds a waypoint via a direct map tap", async () => {
+  it("adds a waypoint via a direct mouse click on the map", async () => {
     const map = createMockMapFactory();
     render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
     map.triggerLoad();
 
-    map.triggerMapTap([0, 51]);
+    map.triggerMapTap([0, 51], "mouse");
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
     });
+  });
+
+  describe("backlog item 123: only a mouse click places a waypoint from the map", () => {
+    it.each(["touch", "pen", "unknown"] as const)(
+      "a %s map tap appends nothing and records no undo entry, and a mouse click straight after it still places",
+      async (input) => {
+        const map = createMockMapFactory();
+        render(
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+        );
+        map.triggerLoad();
+
+        map.triggerMapTap([0, 51], input);
+
+        expect(
+          screen.getByText("No waypoints yet. Use the crosshair to add one."),
+        ).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+
+        map.triggerMapTap([0, 51], "mouse");
+        await waitFor(() => {
+          expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
+        });
+      },
+    );
+
+    it.each(["touch", "pen", "unknown"] as const)(
+      "a %s map tap leaves a pending Move pending, and the crosshair control then completes it",
+      async (input) => {
+        const user = userEvent.setup();
+        const map = createMockMapFactory();
+        render(
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+        );
+        map.triggerLoad();
+
+        await addWaypointViaCrosshair(map, user, [0, 51]);
+        await addWaypointViaCrosshair(map, user, [0.01, 51]);
+        await user.click(screen.getByRole("button", { name: "Start" }));
+        await user.click(screen.getByRole("button", { name: "Move" }));
+
+        map.triggerMapTap([0.7, 51], input);
+        expect(
+          screen.getByRole("button", { name: "Move the start here" }),
+        ).toBeInTheDocument();
+
+        map.triggerCameraSettled([0.5, 51]);
+        await user.click(screen.getByRole("button", { name: "Move the start here" }));
+        await waitFor(
+          async () => {
+            const draft = await getDraft();
+            expect(draft?.waypoints.map((waypoint) => waypoint.coordinate)).toEqual([
+              [0.5, 51],
+              [0.01, 51],
+            ]);
+          },
+          { timeout: 3000 },
+        );
+      },
+    );
+
+    it.each(["touch", "pen", "unknown"] as const)(
+      "a %s map tap leaves a pending Insert after pending, and the crosshair control then completes it",
+      async (input) => {
+        const user = userEvent.setup();
+        const map = createMockMapFactory();
+        render(
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+        );
+        map.triggerLoad();
+
+        await addWaypointViaCrosshair(map, user, [0, 51]);
+        await addWaypointViaCrosshair(map, user, [0.01, 51]);
+        await user.click(screen.getByRole("button", { name: "Start" }));
+        await user.click(screen.getByRole("button", { name: "Insert after" }));
+
+        map.triggerMapTap([0.7, 51], input);
+        expect(
+          screen.getByRole("button", { name: "Insert after the start" }),
+        ).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Waypoint 3" })).toBeNull();
+
+        map.triggerCameraSettled([0.005, 51]);
+        await user.click(screen.getByRole("button", { name: "Insert after the start" }));
+        await waitFor(
+          async () => {
+            const draft = await getDraft();
+            expect(draft?.waypoints.map((waypoint) => waypoint.coordinate)).toEqual([
+              [0, 51],
+              [0.005, 51],
+              [0.01, 51],
+            ]);
+          },
+          { timeout: 3000 },
+        );
+      },
+    );
   });
 
   it("undo removes the most recently added waypoint", async () => {
@@ -611,7 +709,7 @@ describe("PlanningScreen", () => {
 
     await user.click(screen.getByRole("button", { name: "Undo" }));
     expect(
-      screen.getByText("No waypoints yet. Tap the map or use the crosshair to add one."),
+      screen.getByText("No waypoints yet. Use the crosshair to add one."),
     ).toBeInTheDocument();
   });
 
@@ -767,7 +865,7 @@ describe("PlanningScreen", () => {
     const draft = await getDraft();
     expect(draft).toBeUndefined();
     expect(
-      screen.getByText("No waypoints yet. Tap the map or use the crosshair to add one."),
+      screen.getByText("No waypoints yet. Use the crosshair to add one."),
     ).toBeInTheDocument();
 
     // Past the 900ms debounce the pre-save name edit would have armed —
@@ -2279,9 +2377,7 @@ describe("PlanningScreen", () => {
       expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
       expect(
-        screen.queryByText(
-          "No waypoints yet. Tap the map or use the crosshair to add one.",
-        ),
+        screen.queryByText("No waypoints yet. Use the crosshair to add one."),
       ).toBeNull();
     });
 

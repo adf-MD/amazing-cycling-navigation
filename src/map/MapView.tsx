@@ -21,6 +21,7 @@ import {
   type MapFactory,
   type MapLibreLike,
 } from "./mapAdapter.ts";
+import type { MapTapInput } from "./mapTapInput.ts";
 import { recordMapAttempt, type MapDiagnosticCategory } from "./mapDiagnostics.ts";
 import {
   describeMapImageryRecovery,
@@ -434,9 +435,12 @@ export interface PlanningOverlay {
   /** Index into `waypoints`, or null if none is selected. Out-of-range
    * values are treated the same as null. */
   selectedWaypointIndex: number | null;
-  /** Fired for a genuine tap/click on the map (never a drag) — see
-   * mapAdapter.ts's onMapTap. */
-  onMapTap: (coordinate: Coordinate) => void;
+  /** Fired for a map tap/click that hit no selectable warning or route
+   * feature, with how its interaction began — see mapAdapter.ts's
+   * onMapTap. A touch pan inside the browser's tap slop, or the first tap
+   * of a double-tap zoom, can arrive here too; deciding what an input may
+   * do is the consumer's (item 123). */
+  onMapTap: (coordinate: Coordinate, input: MapTapInput) => void;
 }
 
 /** Grouped, optional warning highlighting for Planning's route summary.
@@ -1658,7 +1662,7 @@ export function MapView({
         });
       });
 
-      map.onMapTap((coordinate) => {
+      map.onMapTap((coordinate, input) => {
         // A genuine tap resolves to exactly one action, tried in strict
         // priority order: (1) a selectable warning feature — surface
         // warnings always take priority over a climb/descent, per
@@ -1669,7 +1673,9 @@ export function MapView({
         // addRouteAndPositionLayers, only exist once that's true) so a
         // tap before the style is ready, or before the fallback style's
         // own layers are up, safely degrades to "no hit" rather than
-        // querying a not-yet-existent layer id.
+        // querying a not-yet-existent layer id. Every input kind can select
+        // a warning or route feature; only the placement callback receives
+        // `input`, because only placement treats inputs differently.
         if (layersAdded) {
           const warnings = warningsRef.current;
           if (warnings && warnings.length > 0) {
@@ -1700,7 +1706,7 @@ export function MapView({
             }
           }
         }
-        onMapTapRef.current?.(coordinate);
+        onMapTapRef.current?.(coordinate, input);
       });
 
       // Only a fatal style/WebGL failure destroys the style — a

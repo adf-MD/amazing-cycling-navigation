@@ -21,6 +21,7 @@ import {
   selectDistanceBadgeIntervalMetres,
 } from "./distanceBadgeLayer.ts";
 import type { Coordinate, RoutePoint, RouteWarning } from "../domain/types.ts";
+import type { MapTapInput } from "./mapTapInput.ts";
 import type { ClassifiedSegment } from "../navigation/gradient.ts";
 import type {
   ClimbFeature,
@@ -107,7 +108,7 @@ interface MockMapHandle {
     bearingDegrees: number;
     pitchDegrees: number;
   }) => void;
-  triggerMapTap: (coordinate: Coordinate) => void;
+  triggerMapTap: (coordinate: Coordinate, input?: MapTapInput) => void;
   sources: Map<string, GeoJSON.FeatureCollection>;
   layers: Set<string>;
   /** Registered images on whichever map instance was constructed most
@@ -172,7 +173,7 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
         pitchDegrees: number;
       }) => void)
     | undefined;
-  let mapTapListener: ((coordinate: Coordinate) => void) | undefined;
+  let mapTapListener: ((coordinate: Coordinate, input: MapTapInput) => void) | undefined;
   const sources = new Map<string, GeoJSON.FeatureCollection>();
   const layers = new Set<string>();
   const images = new Set<string>();
@@ -330,9 +331,9 @@ function createMockMapFactory(center: Coordinate = [1.23, 4.56]): MockMapHandle 
         cameraSettledListener?.(camera);
       });
     },
-    triggerMapTap: (coordinate) => {
+    triggerMapTap: (coordinate, input = "mouse") => {
       act(() => {
-        mapTapListener?.(coordinate);
+        mapTapListener?.(coordinate, input);
       });
     },
     sources,
@@ -2043,7 +2044,7 @@ describe("MapView", () => {
       expect(routeCall?.[2].lineDasharray).toBeUndefined();
     });
 
-    it("forwards a map tap as a coordinate to planningOverlay.onMapTap", () => {
+    it("forwards a map tap's coordinate and input kind to planningOverlay.onMapTap", () => {
       const mock = createMockMapFactory();
       const onMapTap = vi.fn();
       render(
@@ -2061,8 +2062,12 @@ describe("MapView", () => {
       mock.triggerLoad();
 
       mock.triggerMapTap([1.5, 52.5]);
+      expect(onMapTap).toHaveBeenLastCalledWith([1.5, 52.5], "mouse");
 
-      expect(onMapTap).toHaveBeenCalledWith([1.5, 52.5]);
+      // Backlog item 123: MapView passes the input on and decides nothing
+      // about it — whether a touch tap may place is Planning's call.
+      mock.triggerMapTap([1.6, 52.6], "touch");
+      expect(onMapTap).toHaveBeenLastCalledWith([1.6, 52.6], "touch");
     });
 
     it("never forwards a map tap when planningOverlay is absent (Riding mode)", () => {
@@ -5230,6 +5235,39 @@ describe("MapView", () => {
         expect(onMapTap).not.toHaveBeenCalled();
       });
 
+      it.each(["touch", "pen"] as const)(
+        "a %s tap still selects the hit feature (backlog item 123 gates placement only)",
+        (input) => {
+          const mock = createMockMapFactory();
+          const onSelectRouteFeature = vi.fn();
+          const onMapTap = vi.fn();
+          mock.queryTopRouteFeatureAtSpy.mockReturnValue({ routeFeatureId: "climb-0" });
+          render(
+            <MapView
+              points={warningPoints}
+              mapFactory={mock.factory}
+              planningOverlay={{
+                waypoints: [],
+                previewCoordinates: [],
+                selectedWaypointIndex: null,
+                onMapTap,
+              }}
+              routeFeatureOverlay={{
+                features,
+                selectedFeatureId: null,
+                onSelectRouteFeature,
+              }}
+            />,
+          );
+          mock.triggerLoad();
+
+          mock.triggerMapTap([0.001, 51], input);
+
+          expect(onSelectRouteFeature).toHaveBeenCalledWith("climb-0");
+          expect(onMapTap).not.toHaveBeenCalled();
+        },
+      );
+
       it("falls through to placement for a stale (non-matching) hit id", () => {
         const mock = createMockMapFactory();
         const onSelectRouteFeature = vi.fn();
@@ -5257,7 +5295,7 @@ describe("MapView", () => {
         mock.triggerMapTap([0.001, 51]);
 
         expect(onSelectRouteFeature).not.toHaveBeenCalled();
-        expect(onMapTap).toHaveBeenCalledWith([0.001, 51]);
+        expect(onMapTap).toHaveBeenCalledWith([0.001, 51], "mouse");
       });
 
       it("never attempts route-feature hit-testing when no routeFeatureOverlay is configured", () => {
@@ -5280,7 +5318,7 @@ describe("MapView", () => {
         mock.triggerMapTap([0.001, 51]);
 
         expect(mock.queryTopRouteFeatureAtSpy).not.toHaveBeenCalled();
-        expect(onMapTap).toHaveBeenCalledWith([0.001, 51]);
+        expect(onMapTap).toHaveBeenCalledWith([0.001, 51], "mouse");
       });
 
       it("a surface warning wins over an overlapping route feature — onSelectRouteFeature is not called", () => {
@@ -6683,6 +6721,35 @@ describe("MapView", () => {
         expect(onMapTap).not.toHaveBeenCalled();
       });
 
+      it.each(["touch", "pen"] as const)(
+        "a %s tap still selects the hit warning (backlog item 123 gates placement only)",
+        (input) => {
+          const mock = createMockMapFactory();
+          const onSelectWarning = vi.fn();
+          const onMapTap = vi.fn();
+          mock.queryTopWarningFeatureAtSpy.mockReturnValue({ warningIndex: 1 });
+          render(
+            <MapView
+              points={warningPoints}
+              mapFactory={mock.factory}
+              planningOverlay={{
+                waypoints: [],
+                previewCoordinates: [],
+                selectedWaypointIndex: null,
+                onMapTap,
+              }}
+              warningOverlay={{ warnings, selectedWarningIndex: null, onSelectWarning }}
+            />,
+          );
+          mock.triggerLoad();
+
+          mock.triggerMapTap([0.003, 51], input);
+
+          expect(onSelectWarning).toHaveBeenCalledWith(1);
+          expect(onMapTap).not.toHaveBeenCalled();
+        },
+      );
+
       it("falls through to placement for an out-of-range or malformed hit index", () => {
         const mock = createMockMapFactory();
         const onSelectWarning = vi.fn();
@@ -6706,7 +6773,7 @@ describe("MapView", () => {
         mock.triggerMapTap([0.003, 51]);
 
         expect(onSelectWarning).not.toHaveBeenCalled();
-        expect(onMapTap).toHaveBeenCalledWith([0.003, 51]);
+        expect(onMapTap).toHaveBeenCalledWith([0.003, 51], "mouse");
       });
 
       it("never attempts hit-testing when no warningOverlay is configured (Riding mode)", () => {
@@ -6729,7 +6796,7 @@ describe("MapView", () => {
         mock.triggerMapTap([0.003, 51]);
 
         expect(mock.queryTopWarningFeatureAtSpy).not.toHaveBeenCalled();
-        expect(onMapTap).toHaveBeenCalledWith([0.003, 51]);
+        expect(onMapTap).toHaveBeenCalledWith([0.003, 51], "mouse");
       });
 
       it("never hit-tests before the style/warning layers are structurally ready, and forwards straight through", () => {
@@ -6756,7 +6823,7 @@ describe("MapView", () => {
 
         expect(mock.queryTopWarningFeatureAtSpy).not.toHaveBeenCalled();
         expect(onSelectWarning).not.toHaveBeenCalled();
-        expect(onMapTap).toHaveBeenCalledWith([0.003, 51]);
+        expect(onMapTap).toHaveBeenCalledWith([0.003, 51], "mouse");
       });
 
       it("hit-testing still resolves correctly once the fallback style's own layers are ready", () => {
