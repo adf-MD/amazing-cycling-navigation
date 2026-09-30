@@ -23,7 +23,7 @@ This file records verification evidence only; the behaviour contracts themselves
 
 ## Open installed-iPhone acceptance checklist (12 September 2026)
 
-**This is the only active list of presently actionable installed-iPhone checks.** Items 103 and 120 are unimplemented and therefore out of scope — item 103 is scheduled next — and items 122 and 124–130 are unscheduled candidates. **Item 102 shipped in `0.4.49`; its device checks are Session 5.** **Item 123 (`0.4.46`) was accepted on the installed iPhone, reported 30 September 2026, and no longer appears here. Item 119 was accepted on the installed iPhone on `0.4.48`, reported 30 September 2026, and no longer appears here either.** **Item 114's one device check, ordinary-text Planning on `0.4.45`, passed on the installed iPhone on 29 September 2026 and no longer appears here**; its enlarged-text layout has automated evidence only, because it cannot be reached on the iPhone through Larger Text. **Item 121 (`0.4.44`) was accepted on the installed iPhone, reported 29 September 2026, and no longer appears here**; one open device finding from that session awaits investigation, in its own subsection below. Item 113 shipped German in `0.4.41`. Its first physical pass (25 September 2026) produced the `0.4.42` follow-up. That recheck (reported 28 September 2026, recorded below) passed apart from three findings corrected in `0.4.43`. **The `0.4.43` Status-wording and End-confirmation rechecks passed on 28 September 2026**, and only the climb cue's recheck remains, in Session 2. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
+**This is the only active list of presently actionable installed-iPhone checks.** Items 103, 120, 124 and 128 are unimplemented and therefore out of scope — item 128 is scheduled next, under the execution order revised on 30 September 2026 and held in the root [`CLAUDE.md`](../../CLAUDE.md) — and items 122, 125–127, 129 and 130 are unscheduled candidates. **Item 102 (`0.4.49`) was accepted on the installed iPhone, reported 30 September 2026, and no longer appears here.** **Item 123 (`0.4.46`) was accepted on the installed iPhone, reported 30 September 2026, and no longer appears here. Item 119 was accepted on the installed iPhone on `0.4.48`, reported 30 September 2026, and no longer appears here either.** **Item 114's one device check, ordinary-text Planning on `0.4.45`, passed on the installed iPhone on 29 September 2026 and no longer appears here**; its enlarged-text layout has automated evidence only, because it cannot be reached on the iPhone through Larger Text. **Item 121 (`0.4.44`) was accepted on the installed iPhone, reported 29 September 2026, and no longer appears here**; one open device finding from that session awaits investigation, in its own subsection below. Item 113 shipped German in `0.4.41`. Its first physical pass (25 September 2026) produced the `0.4.42` follow-up. That recheck (reported 28 September 2026, recorded below) passed apart from three findings corrected in `0.4.43`. **The `0.4.43` Status-wording and End-confirmation rechecks passed on 28 September 2026**, and only the climb cue's recheck remains, in Session 2. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
 
 ### Session 1 — stationary, on the installed Home Screen PWA
 
@@ -73,17 +73,6 @@ Stationary or walking. Induce only what is deliberate and reproducible; everythi
 
 No iOS Larger Text result and no physical-Android result is claimed for item 113 in either language.
 
-### Session 5 — item 102's navigation icons (`0.4.49`), stationary
-
-Portrait, in light and dark. **Read the version and build from Status first** (`0.4.49`). The rider chose these icons from the design-stage mock-ups: direction A's list, bicycle and gear, with Plan's dotted trail redrawn at A's line weight.
-
-- [ ] At a glance in English, the four icons read as Routes (a list), Ride (a bicycle), Plan (a dotted route) and Settings (a gear), and the dotted Plan trail does not look faint beside the other three.
-- [ ] Tapping each tab leaves the selected surface and ring as before, each icon stays centred above its label with nothing shifting, and with Settings → Status the Settings tab stays marked.
-- [ ] In German (`Routen / Fahren / Planen / Einstellungen`), the same glance and selection checks pass, and no label is clipped or has moved compared with `0.4.48`.
-- [ ] With iOS Dark Appearance, the four icons stay legible, selected and unselected.
-
-**Not claimed:** VoiceOver (the accessible names are unchanged and the icons stay hidden from assistive technology), iOS Larger Text, landscape and physical Android.
-
 ### Open device findings — awaiting investigation (not checklist items)
 
 - **Tapping the OpenRouteService key field zoomed the installed page in, and saving did not restore normal zoom**; the rider had to zoom out by hand. Seen during item 121's acceptance on `0.4.44` (the dated record below). **No cause is established and no investigation has been made**, and it is **not** attributed to item 121 as a regression. It is kept here for follow-up rather than as a check to repeat.
@@ -118,6 +107,20 @@ None of these blocks acceptance of the item it came from. Record one if it occur
   This upgrades the earlier "consistent with" note for this file to a **measured, reproduced-on-baseline** finding: the class is pre-existing and is **not** attributable to item 113's pre-render IndexedDB read, which was the specific hypothesis worth ruling out, since that change does add a blocking database open before the first paint. No production change was made for it, and it remains monitored rather than fixed — if it is ever worked on, start from the artefacts item 116 retains. The route-riding reconnection test in `mapImageryRecovery.spec.ts` now has its own unscheduled investigation, [item 130](backlog.md#item-130).
 
 ## Dated acceptance record
+
+### Installed-iPhone acceptance of item 102's navigation icons (`0.4.49`, reported 30 September 2026)
+
+**Device and build.** Installed Home Screen PWA, after item 102's icons shipped in `0.4.49`. The report stated no version, build or device model, so none is recorded as read from Status; the acceptance is associated with the shipped `0.4.49` work.
+
+**The rider's report**, verbatim: "All the icons look good and feel natural, the checks pass!" The rider explicitly authorised recording it as item 102's acceptance.
+
+**Accepted**, as broad product-level acceptance of the new navigation icons — the list, bicycle, dotted trail and gear — which **closes item 102's Session 5** and removes it from the checklist above. The report did not itemise that session's checks, so no individual result is recorded: not English or German separately, not light or dark appearance, and not selection behaviour.
+
+**Separate from the automated evidence.** The pixel comparison against the chosen artwork, and the navigation geometry and accessibility tree measured identical to `0.4.48`, are container evidence recorded in the item 102 entry below and in its [history](history/items-100-103.md#item-102). This report neither re-verifies nor replaces them.
+
+**Not claimed:** VoiceOver (the accessible names are unchanged and the icons stay hidden from assistive technology), iOS Larger Text, landscape and physical Android.
+
+**Decision the same day.** The rider approved a revised execution order, led by [item 128](backlog.md#item-128) and then [item 124](backlog.md#item-124); the root [`CLAUDE.md`](../../CLAUDE.md) holds the order and its rationale.
 
 ### Installed-iPhone acceptance of `0.4.48` (build `bf09776`, item 119, reported 30 September 2026)
 
@@ -493,11 +496,11 @@ Context: the installed iPhone Home Screen PWA, portrait. The report did not reco
 - **Accepted on the installed iPhone** (the two dated records above). The stale-prompt check and the representative confirmations passed on `0.4.47`, which also found that a switch confirmed from Ride opened the new route with the paused route's fix and progress; `0.4.48` keys the ride screen by route and guards the stored row, and its recheck (build `bf09776`) passed both overlapping-switch paths. VoiceOver stays deferred, and no physical-Android result is claimed.
 - **An unrelated end-to-end flake measured during the `0.4.48` follow-up** — `mapImageryRecovery.spec.ts`'s route-riding reconnection test — is filed as unscheduled [item 130](backlog.md#item-130). It is not attributed to item 119.
 
-### Item 102 — shipped `0.4.49`; installed-iPhone acceptance open
+### Item 102 — shipped `0.4.49`; accepted on the installed iPhone (reported 30 September 2026)
 
 - **What shipped.** New icons for the four primary-navigation tabs: direction A's list, bicycle and gear in one 2 px line, with Plan's dotted trail kept and redrawn at that weight. The rider chose them from measured mock-ups ([`docs/design/navigation-symbols/`](../design/navigation-symbols/README.md)). Labels, order, the selected treatment, the Settings/Status switcher, accessible names and behaviour are unchanged. The full record is [`history/items-100-103.md`](history/items-100-103.md#item-102).
 - **The evidence is automated.** In the pinned container the implemented header matches the chosen artwork: 114 of 120 icon boxes are pixel-identical and the rest differ only by antialiasing. Navigation geometry and the accessibility tree are identical to `0.4.48`, and the relevant Chromium, `webkit-smoke` and Android-emulation specs pass. **None of it is installed-iPhone evidence.**
-- **Installed-iPhone acceptance is open** — Session 5.
+- **Accepted on the installed iPhone** (the dated record above), at broad product level from the rider's report; no individual check is recorded as separately passed. **Not claimed:** VoiceOver, iOS Larger Text, landscape and physical Android.
 
 ---
 
