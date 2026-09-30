@@ -88,6 +88,31 @@ const CONDITIONS = [
   { key: "320-en-200", width: 320, lang: "en", text: 200, scheme: "light" },
   { key: "320-de-200", width: 320, lang: "de", text: 200, scheme: "light" },
 ];
+// The Planen refinement: A's Routes, Ride and Settings, fixed, with three
+// Planen options, judged in the 390 px navigation in light and dark.
+const PLAN_OPTIONS = [
+  { key: "a-p1", name: "1 · Current dotted path" },
+  { key: "a-p2", name: "2 · Revised route" },
+  { key: "a", name: "3 · A's original (reference)" },
+];
+const PLAN_SKETCHES = [
+  { key: "a-p2", name: "2 · Revised route (the option shown)" },
+  { key: "sketch-smooth", name: "Smoothed bends" },
+  { key: "sketch-deep", name: "Deeper dip" },
+  { key: "sketch-rings", name: "Ring ends" },
+  { key: "sketch-flat", name: "Flatter logo curve" },
+  { key: "sketch-serpentine", name: "Switchback" },
+  { key: "sketch-heavy-dots", name: "Current path, dotted at A's 2 px" },
+];
+const PLAN_CONDITIONS = [
+  { key: "390-de", width: 390, lang: "de", text: 100, scheme: "light" },
+  { key: "390-de-dark", width: 390, lang: "de", text: 100, scheme: "dark" },
+  { key: "390-en", width: 390, lang: "en", text: 100, scheme: "light" },
+];
+const PLAN_STATES = [
+  { ...STATES[2], label: "Planen selected" },
+  { ...STATES[0], label: "Planen unselected (Routen selected)" },
+];
 const STRESS_FACTOR = 1.12;
 const describe = (c) =>
   `${c.width} px · ${c.lang === "de" ? "German" : "English"}` +
@@ -230,6 +255,7 @@ async function measureInk(page) {
     const results = {};
     for (const [direction, { icons }] of Object.entries(DIRECTIONS)) {
       results[direction] = {};
+      const masks = {};
       for (const [destination, icon] of Object.entries(icons)) {
         for (const state of ["base", "selected"]) {
           const markup = state === "selected" ? (icon.selected ?? icon.base) : icon.base;
@@ -271,8 +297,23 @@ async function measureInk(page) {
             coverage: Math.round((sum / 255 / (24 * SCALE) ** 2) * 1000) / 10,
             bbox: [unit(minX), unit(minY), unit(maxX + 1), unit(maxY + 1)],
           };
+          masks[`${destination}:${state}`] = data
+            .filter((_, i) => i % 4 === 3)
+            .map((a) => (a > 64 ? 1 : 0));
         }
       }
+      // A coarse shape-distinctness figure: the intersection over union of
+      // the unselected Routes and Plan ink masks (0 = no shared ink).
+      const routes = masks["library:base"];
+      const plan = masks["planning:base"];
+      let intersection = 0;
+      let union = 0;
+      for (let i = 0; i < routes.length; i += 1) {
+        intersection += routes[i] & plan[i];
+        union += routes[i] | plan[i];
+      }
+      results[direction].routesPlanOverlap =
+        Math.round((intersection / union) * 1000) / 1000;
     }
     return results;
   });
@@ -309,7 +350,13 @@ function contrast(foreground, background) {
 }
 
 // ---------------------------------------------------------------- capture
-const results = { measurements: [], ink: null, tokens: {}, sizes: {} };
+const results = {
+  measurements: [],
+  planMeasurements: [],
+  ink: null,
+  tokens: {},
+  sizes: {},
+};
 const cell = (name) => path.join(CELLS, `${name}.png`);
 
 async function captureCells(browser) {
@@ -434,6 +481,84 @@ async function measureEngine(browser, engine) {
   }
 }
 
+/** The Planen refinement's cells: the options (and, at 2× in German, the
+ * rejected sketches) with Planen selected and unselected, at 2× for the
+ * review sheet and 3× for the phone-sized image. */
+async function capturePlanOptions(browser) {
+  for (const scheme of ["light", "dark"]) {
+    for (const dsf of [2, 3]) {
+      const context = await browser.newContext({
+        viewport: { width: 390, height: 844 },
+        deviceScaleFactor: dsf,
+        colorScheme: scheme,
+      });
+      const page = await context.newPage();
+      for (const condition of PLAN_CONDITIONS.filter((c) => c.scheme === scheme)) {
+        const keys = [
+          ...PLAN_OPTIONS.map((o) => o.key),
+          ...(dsf === 2 && condition.lang === "de"
+            ? PLAN_SKETCHES.map((k) => k.key)
+            : []),
+        ];
+        for (const key of new Set(keys)) {
+          for (const state of PLAN_STATES) {
+            await page.goto(url(key, state, condition));
+            await settle(page);
+            await page.screenshot({
+              ...SHOT,
+              path: cell(`plan-${key}-${condition.key}-${state.key}@${dsf}`),
+              clip: await stripClip(page),
+            });
+          }
+        }
+      }
+      if (scheme === "light" && dsf === 2) {
+        await page.setViewportSize({ width: 640, height: 844 });
+        for (const option of PLAN_OPTIONS) {
+          await page.goto(`${MOCKUP}?dir=${option.key}&view=specimen&lang=de`);
+          await settle(page);
+          await page
+            .locator(".specimen")
+            .screenshot({ ...SHOT, path: cell(`plan-${option.key}-specimen@2`) });
+        }
+      }
+      await context.close();
+    }
+  }
+}
+
+/** Geometry for the options, with Current as the baseline, in one engine. */
+async function measurePlanOptions(browser, engine) {
+  for (const scheme of ["light", "dark"]) {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      deviceScaleFactor: 1,
+      colorScheme: scheme,
+    });
+    const page = await context.newPage();
+    for (const condition of PLAN_CONDITIONS.filter((c) => c.scheme === scheme)) {
+      for (const key of ["current", ...PLAN_OPTIONS.map((o) => o.key)]) {
+        for (const state of PLAN_STATES) {
+          await page.goto(url(key, state, condition));
+          await settle(page);
+          for (const stress of [1, STRESS_FACTOR]) {
+            await applyWidthStress(page, stress);
+            results.planMeasurements.push({
+              engine,
+              condition: condition.key,
+              direction: key,
+              state: state.key,
+              stress,
+              ...(await measure(page)),
+            });
+          }
+        }
+      }
+    }
+    await context.close();
+  }
+}
+
 // ---------------------------------------------------------------- sheets
 const cellSrc = (name) => `/__cells/${name}.png`;
 const SHEET_STYLE = `
@@ -460,7 +585,7 @@ async function imageSize(page, name) {
   }, cellSrc(name));
 }
 
-async function renderSheet(browser, html, file, dsf, width) {
+async function renderSheet(browser, html, file, dsf, width, style = SHEET_STYLE) {
   const context = await browser.newContext({
     viewport: { width, height: 800 },
     deviceScaleFactor: dsf,
@@ -470,7 +595,7 @@ async function renderSheet(browser, html, file, dsf, width) {
   await page.goto(`${ORIGIN}/__cells/`); // same origin as the cells (404 is fine)
   await page.setContent(
     `<!doctype html><html lang="en-GB"><head><meta charset="utf-8">` +
-      `<style>${SHEET_STYLE}</style></head><body>${html}</body></html>`,
+      `<style>${style}</style></head><body>${html}</body></html>`,
   );
   await page.evaluate(() =>
     Promise.all([...document.images].map((image) => image.decode())),
@@ -498,14 +623,16 @@ const inkLine = (direction, state) =>
     })
     .join(" · ");
 
+const PROVENANCE =
+  "Design mock-up for backlog item 102 — not production. Rendered by Chromium in the pinned " +
+  "Playwright container (mcr.microsoft.com/playwright:v1.61.1-noble) with the app's own stylesheet " +
+  "at 0.4.48; container fonts are not iOS fonts, so this is not evidence of fit on an iPhone.";
+
 async function buildSheets(browser) {
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(`${ORIGIN}/__cells/`);
-  const provenance =
-    "Design mock-up for backlog item 102 — not production. Rendered by Chromium in the pinned " +
-    "Playwright container (mcr.microsoft.com/playwright:v1.61.1-noble) with the app's own stylesheet " +
-    "at 0.4.48; container fonts are not iOS fonts, so this is not evidence of fit on an iPhone.";
+  const provenance = PROVENANCE;
 
   // One matrix per direction: conditions as rows, the five states as columns.
   for (const direction of DIRECTIONS.filter((d) => d.key !== "current")) {
@@ -607,6 +734,111 @@ async function buildSheets(browser) {
   await context.close();
 }
 
+const PHONE_STYLE = `
+  body { margin: 0; background: #fff; color: #101010; font: 12px/1.35 system-ui, sans-serif; }
+  .intro { padding: 10px 8px 4px; color: #55575a; }
+  .group { padding: 14px 8px 2px; font-weight: 700; font-size: 13px; }
+  .cap { padding: 6px 8px 3px; color: #55575a; font-weight: 600; }
+  img { display: block; }
+`;
+
+async function buildPlanSheets(browser, provenance) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(`${ORIGIN}/__cells/`);
+  const inkNote = (key) => {
+    const ink = results.ink[key];
+    return (
+      `Ink at 3×, unselected: Plan ${ink["planning:base"].coverage}% beside ` +
+      `Routes ${ink["library:base"].coverage}%, Ride ${ink["riding:base"].coverage}%, ` +
+      `Settings ${ink["settings:base"].coverage}% · Routes–Plan overlap ${ink.routesPlanOverlap}`
+    );
+  };
+
+  // The review sheet: options as columns, the 22 px navigation first.
+  let rows = "";
+  for (const [conditionKey, label] of [
+    ["390-de", "390 px · German · light"],
+    ["390-de-dark", "390 px · German · dark"],
+    ["390-en", "390 px · English · light"],
+  ]) {
+    for (const state of PLAN_STATES) {
+      rows += `<tr><th class="row">${label}<div class="caption">${state.label}</div></th>`;
+      for (const option of PLAN_OPTIONS)
+        rows += `<td>${await img(page, `plan-${option.key}-${conditionKey}-${state.key}`, 2)}</td>`;
+      rows += "</tr>";
+    }
+  }
+  rows += `<tr><th class="row">Specimens, enlarged for inspection only: 22 px and 66 px</th>`;
+  for (const option of PLAN_OPTIONS)
+    rows += `<td>${await img(page, `plan-${option.key}-specimen`, 2)}<div class="ink">${inkNote(option.key)}</div></td>`;
+  rows += "</tr>";
+  await renderSheet(
+    browser,
+    `<h1>Item 102 — Planen options beside A's Routen, Fahren and Einstellungen</h1>` +
+      `<p class="note">${provenance} Shown at 2×. Judge the choice on the 22 px navigation strips; ` +
+      `planen-options-phone.png shows them at true size on a 390-pt iPhone.</p>` +
+      `<table><tr><th></th>${PLAN_OPTIONS.map((o) => `<th>${o.name}</th>`).join("")}</tr>${rows}</table>`,
+    path.join(IMAGES, "planen-options.png"),
+    2,
+    1760,
+  );
+
+  // The phone-sized image: exactly 390 CSS px wide at 3× (1170 px), so on a
+  // 390-pt iPhone, fitted to the screen width, the icons are at true size.
+  let phone =
+    `<div class="intro">Item 102 · Planen options (design mock-up, not the app). ` +
+    `Fit to the width of a 390-pt iPhone to see true size.</div>`;
+  for (const [conditionKey, label] of [
+    ["390-de", "Light"],
+    ["390-de-dark", "Dark"],
+  ]) {
+    for (const state of PLAN_STATES) {
+      phone += `<div class="group">${label} · ${state.label}</div>`;
+      for (const option of PLAN_OPTIONS)
+        phone +=
+          `<div class="cap">${option.name}</div>` +
+          (await img(page, `plan-${option.key}-${conditionKey}-${state.key}`, 3));
+    }
+  }
+  await renderSheet(
+    browser,
+    phone,
+    path.join(IMAGES, "planen-options-phone.png"),
+    3,
+    390,
+    PHONE_STYLE,
+  );
+
+  // The rejected sketches for option 2, so the reasoning can be checked.
+  let sketches = "";
+  for (const { key, name } of PLAN_SKETCHES) {
+    const ink = results.ink[key];
+    sketches +=
+      `<tr><th class="row">${name}<div class="caption">Plan ink ${ink["planning:base"].coverage}% · ` +
+      `Routes–Plan overlap ${ink.routesPlanOverlap}</div></th>`;
+    for (const [conditionKey, stateIndex] of [
+      ["390-de", 1],
+      ["390-de", 0],
+      ["390-de-dark", 1],
+    ])
+      sketches += `<td>${await img(page, `plan-${key}-${conditionKey}-${PLAN_STATES[stateIndex].key}`, 2)}</td>`;
+    sketches += "</tr>";
+  }
+  await renderSheet(
+    browser,
+    `<h1>Item 102 — continuous-line Planen sketches</h1>` +
+      `<p class="note">${provenance} Every continuous 2 px line through the current path's course read ` +
+      `as a chart, a connector or a letter at 22 px; the last row keeps the current dotted trail at A's weight.</p>` +
+      `<table><tr><th></th><th>German · light · Planen unselected</th><th>German · light · Planen selected</th>` +
+      `<th>German · dark · Planen unselected</th></tr>${sketches}</table>`,
+    path.join(IMAGES, "planen-sketches.png"),
+    2,
+    1440,
+  );
+  await context.close();
+}
+
 // ---------------------------------------------------------------- report
 function report() {
   const lines = [];
@@ -616,8 +848,8 @@ function report() {
       .filter((m) => m.direction === "current")
       .map((m) => [byKey(m), m]),
   );
-  const deviation = (m) => {
-    const b = baseline.get(byKey(m));
+  const deviation = (m, against = baseline) => {
+    const b = against.get(byKey(m));
     let max = 0;
     [...m.tabs, ...m.switcher].forEach((button, i) => {
       const other = [...b.tabs, ...b.switcher][i];
@@ -650,7 +882,7 @@ function report() {
             `${Math.max(...tabs.map((t) => t.lines))} | ` +
             `${Math.min(...tabs.map((t) => t.rect[2])).toFixed(1)} × ${Math.min(...tabs.map((t) => t.rect[3])).toFixed(1)} | ` +
             `${switchers.length ? Math.min(...switchers.map((t) => t.rect[3])).toFixed(1) : "—"} | ` +
-            `${Math.max(...rows.map(deviation)).toFixed(2)} |`,
+            `${Math.max(...rows.map((m) => deviation(m))).toFixed(2)} |`,
         );
       }
     }
@@ -690,6 +922,50 @@ function report() {
     );
   }
   lines.push("");
+  const planBaseline = new Map(
+    results.planMeasurements
+      .filter((m) => m.direction === "current")
+      .map((m) => [byKey(m), m]),
+  );
+  lines.push(
+    "| Planen option | Engine | Max deviation from Current | Header + switcher overflow | Labels or icons outside their button | Narrowest tab w × h |",
+  );
+  lines.push("| --- | --- | --- | --- | --- | --- |");
+  for (const option of PLAN_OPTIONS) {
+    for (const engine of ["chromium", "webkit"]) {
+      const rows = results.planMeasurements.filter(
+        (m) => m.engine === engine && m.direction === option.key,
+      );
+      const tabs = rows.flatMap((m) => m.tabs);
+      lines.push(
+        `| ${option.name} | ${engine} | ${Math.max(...rows.map((m) => deviation(m, planBaseline))).toFixed(2)} | ` +
+          `${Math.max(...rows.map((m) => m.chromeOverflow))} | ` +
+          `${tabs.filter((t) => !t.labelInside || !t.iconInside).length} | ` +
+          `${Math.min(...tabs.map((t) => t.rect[2])).toFixed(1)} × ${Math.min(...tabs.map((t) => t.rect[3])).toFixed(1)} |`,
+      );
+    }
+  }
+  lines.push("");
+  lines.push(
+    "| Planen set | Routes | Ride | Plan | Settings | Max / min | Plan ink bbox | Routes–Plan overlap |",
+  );
+  lines.push("| --- | --- | --- | --- | --- | --- | --- | --- |");
+  const planSets = [
+    ...PLAN_OPTIONS,
+    ...PLAN_SKETCHES.filter((sketch) => sketch.key !== "a-p2"),
+  ];
+  for (const { key, name } of planSets) {
+    const ink = results.ink[key];
+    const coverages = ["library", "riding", "planning", "settings"].map(
+      (d) => ink[`${d}:base`].coverage,
+    );
+    lines.push(
+      `| ${name} | ${coverages.map((c) => `${c}%`).join(" | ")} | ` +
+        `${(Math.max(...coverages) / Math.min(...coverages)).toFixed(2)} | ` +
+        `${ink["planning:base"].bbox.join(", ")} | ${ink.routesPlanOverlap} |`,
+    );
+  }
+  lines.push("");
   lines.push("| Image | Bytes |");
   lines.push("| --- | --- |");
   for (const [name, bytes] of Object.entries(results.sizes))
@@ -702,10 +978,14 @@ try {
   const chromiumBrowser = await chromium.launch();
   await captureCells(chromiumBrowser);
   await measureEngine(chromiumBrowser, "chromium");
+  await capturePlanOptions(chromiumBrowser);
+  await measurePlanOptions(chromiumBrowser, "chromium");
   const webkitBrowser = await webkit.launch();
   await measureEngine(webkitBrowser, "webkit");
+  await measurePlanOptions(webkitBrowser, "webkit");
   await webkitBrowser.close();
   await buildSheets(chromiumBrowser);
+  await buildPlanSheets(chromiumBrowser, PROVENANCE);
   await chromiumBrowser.close();
   fs.writeFileSync(
     path.join(SCRATCH, "measurements.json"),

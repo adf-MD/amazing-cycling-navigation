@@ -2,6 +2,8 @@
 
 **Status: design stage, awaiting the rider's choice.** This directory holds the mock-ups and measurements for backlog [item 102](../../project/backlog.md#item-102), prepared on 30 September 2026 against app version `0.4.48` (parent commit `d904e99`). No production icon, source file or app version has changed, and item 102 is **not** implemented. Nothing here approves or schedules item 28 (adaptive compact navigation), and nothing here restructures the navigation: the destinations, labels, order, touch targets, accessible names and behaviour are exactly as in `0.4.48`. Item 103's wider visual audit should take whichever direction is chosen into account; it does not depend on it.
 
+A later [Planen refinement](#planen-refinement), the same day, compares three Planen icons beside A's Routen, Fahren and Einstellungen, which the rider provisionally preferred. That is a recorded preference, not a selection.
+
 These are design references, not screenshots of implemented behaviour, and they are not device evidence (see [Limitations](#limitations)).
 
 ## Images
@@ -9,6 +11,7 @@ These are design references, not screenshots of implemented behaviour, and they 
 - [`images/comparison.png`](images/comparison.png) — the compact side-by-side view: Current and the three directions as columns; specimens at 22 px and 66 px, unselected and selected; the navigation at 390 px in English **and** German with each destination selected (the icons at their actual 22 px size); and one 320 px German 200%-text strip.
 - [`images/direction-a.png`](images/direction-a.png), [`images/direction-b.png`](images/direction-b.png), [`images/direction-c.png`](images/direction-c.png) — one full matrix per direction: 390 px and 320 px, English and German, light and dark, 200% root text, two greyscale rows, and a keyboard-focus cell, each with every destination selected in turn plus the Status view of Settings.
 - [`images/context.png`](images/context.png) — the sticky-header context: a 390 × 844 viewport with a 47 px simulated top safe-area inset, scrolled so content passes beneath the header (and, on Settings, beneath the stuck Settings/Status switcher), in light and dark.
+- [`images/planen-options.png`](images/planen-options.png), [`images/planen-options-phone.png`](images/planen-options-phone.png) and [`images/planen-sketches.png`](images/planen-sketches.png) — the [Planen refinement](#planen-refinement).
 
 ![Current and directions A, B and C side by side](images/comparison.png)
 
@@ -39,7 +42,7 @@ All three are project-owned vectors drawn for this item on the same 24-unit grid
 | Platform neutrality       | Project-owned, no system glyph or font; conventional on both iOS and Android.                                                                                             | As A.                                                                                                                                                                                                                                                         | As A; the brand motif is ACN's own.                                                                                                                                          |
 | Implementation cost       | Lowest: replace the four glyph functions in `NavIcon.tsx`; no API change. No existing test pins glyph shapes (`MainNavigation.test.tsx` asserts four `aria-hidden` SVGs). | As A; the knock-outs are `evenodd` compound paths, so no masks or ids.                                                                                                                                                                                        | Highest: two glyphs per destination and a `selected` prop threaded from `MainNavigation` into `NavIcon` (which already computes `aria-current`), with tests for both states. |
 
-**Recommendation: A · Line.** It separates Routes from Plan most clearly, makes Settings immediately recognisable, speaks the same line language as the app's other drawn controls, keeps the existing selected treatment (whose inset ring already carries the non-colour cue — see below), and is the smallest and safest production change. C's fill-on-selection is a genuine extra shape cue, and could be added to A later if wanted, but the non-colour requirement does not need it. **This is a recommendation only; the choice is yours** — A, B or C as drawn, a combination, or none.
+**Recommendation: A · Line.** It separates Routes from Plan most clearly, makes Settings immediately recognisable, speaks the same line language as the app's other drawn controls, keeps the existing selected treatment (whose inset ring already carries the non-colour cue — see below), and is the smallest and safest production change. C's fill-on-selection is a genuine extra shape cue, and could be added to A later if wanted, but the non-colour requirement does not need it. **This is a recommendation only; the choice is yours** — A, B or C as drawn, a combination, or none. A's own Planen was later found too small at 22 px; see the [Planen refinement](#planen-refinement).
 
 ### Rejected metaphors
 
@@ -54,6 +57,47 @@ All three are project-owned vectors drawn for this item on the same 24-unit grid
 | Bookmark                  | Collides with route pinning.                                                                |
 
 Three drafts were also discarded after rendering: a full diamond-frame bicycle, which merged into a blob at 22 px; short back-card edges, which read as a jar lid; and a back card drawn as a rounded top edge, which read as a bag handle.
+
+## Planen refinement
+
+After reviewing the three directions on 30 September 2026, the rider **provisionally preferred A's Routen, Fahren and Einstellungen**, but found A's Planen markers — the start disc, waypoint disc and ringed finish — too small to interpret at 22 px. That preference is recorded to frame this comparison; it is not a selection, and the rider chooses the final icons before any implementation. Three Planen options were compared, each beside A's three icons, unchanged:
+
+| Option                           | Planen icon                                                                                                                                                                                       |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1 · Current dotted path**      | Unchanged from `NavIcon.tsx` at `0.4.48`: a dotted 1.8-unit line with an r 2 dot at each end.                                                                                                     |
+| **2 · Revised route**            | The current path's course in A's continuous 2 px line with round joins, spanning the box (1.3 to 22.7 units across), its dip deepened from 2 to 2.6 units so the bend reads, with r 2.4 end dots. |
+| **3 · A's original (reference)** | As drawn in direction A.                                                                                                                                                                          |
+
+- [`images/planen-options.png`](images/planen-options.png) — the review sheet at 2×: the 390 px navigation in German, light and dark, and in English, light, each with Planen selected and unselected; enlarged specimens below, for inspection only.
+- [`images/planen-options-phone.png`](images/planen-options-phone.png) — the same German strips, stacked in an image exactly 1170 px wide, which is 390 CSS px at 3×. Opened fitted to the width of a 390-pt iPhone (the iPhone 13 to 16, for example), it shows the icons at their true 22-point size. It is a size aid rendered in the container, not device evidence.
+- [`images/planen-sketches.png`](images/planen-sketches.png) — the continuous-line sketches behind option 2, so the reasoning below can be checked.
+
+![Planen options 1, 2 and 3 beside A's Routen, Fahren and Einstellungen](images/planen-options.png)
+
+### What the drawing showed
+
+- **At 22 px, every continuous 2 px line through the current path's rising course read as a line chart** ("trending up") rather than a route: straight segments (option 2 as shown), smoothed bends, a deeper dip, and ring ends, which look like data points.
+- Leaving that course failed differently: a flatter version of the logo's curve read as a **connector** between two dots, and a switchback read as the **letter S**.
+- The end dots were not the problem. At r 2.4 they are clearly visible without overwhelming the 2 px line, and a smaller r 2.0 did not change the chart reading.
+- What makes the current icon read as a route is its **dotting**: a dotted line reads as a trail to follow; a continuous rising line reads as data. Dotting the current course at A's 2 px weight (the last sketch) keeps the trail reading and is slightly heavier.
+- Option 2 is therefore the most faithful drawing of the brief — the current course, A's line, a clear bend and a visible dot at each end — rather than a reshaped icon, because no reshaping tried escaped those readings. No flag, pencil or plus sign was used.
+
+### Measurements (supporting, not deciding)
+
+All three options leave every tab, label and icon exactly where Current puts them (**0.00 px** difference, in Chromium and WebKit, at 390 px German light and dark and English light, with and without the 1.12 width stress). Nothing overflows, nothing sits outside its button, and no tab is smaller than 90.5 × 57 px.
+
+| Planen                               | Routes | Ride  | Plan  | Settings | Max / min | Routes–Plan overlap |
+| ------------------------------------ | ------ | ----- | ----- | -------- | --------- | ------------------- |
+| 1 · Current dotted path              | 19.6%  | 31.9% | 7.3%  | 35.9%    | 4.92      | 0.169               |
+| 2 · Revised route                    | 19.6%  | 31.9% | 13.7% | 35.9%    | 2.62      | 0.190               |
+| 3 · A's original                     | 19.6%  | 31.9% | 17.1% | 35.9%    | 2.10      | 0.196               |
+| Sketch: current path, dotted at 2 px | 19.6%  | 31.9% | 9.5%  | 35.9%    | 3.78      | 0.164               |
+
+The percentages are ink coverage, unselected, as in the main measurements. The overlap is the intersection over union of the unselected Routen and Planen ink masks at 66 px: every option shares under a fifth of their combined ink with Routen (the switchback sketch, whose horizontal legs echo the list's rows, reached 0.276), and in every strip the diagonal Planen and the horizontal list are plainly different shapes. Option 1 is visibly the lightest icon in A's company; option 2 sits closer to Routen.
+
+### Recommendation: option 1, the current dotted path
+
+Option 1 is the only Planen that reads as a route at 22 px, in light and dark, selected and unselected. Option 2 matches A's line and weight better, but it reads as a chart — and in a navigation bar a chart suggests statistics or activity, which ACN does not have. Option 3's markers remain too small, as the rider found. Option 1's weakness is that it is lighter than A's other three icons. If that matters in use, the last sketch — the same dotted course at A's 2 px weight — is a possible small refinement of option 1, but it is not one of the three options and nothing here adopts it. **The choice is the rider's.**
 
 ## Measurements
 
@@ -88,7 +132,7 @@ Three drafts were also discarded after rendering: a full diamond-frame bicycle, 
 
 **Selected state without colour.** The selected tab keeps the app's own treatment: a soft accent surface plus a 2 px inset ring. The surface alone barely differs from the page (1.15:1 light, 1.45:1 dark); the **ring** is what carries the state, at 7.76:1 against the page in light and 11.24:1 in dark, and the greyscale rows in every matrix show it survives with colour removed. The icon colours meet WCAG 1.4.11's 3:1 in every state: unselected 19.03:1 (light) and 17.83:1 (dark); selected, on the soft surface, 6.75:1 and 7.74:1. C adds a change of shape on top of this. Keyboard focus keeps the global `button:focus-visible` outline (the focus cell in each matrix).
 
-**Image sizes.** `comparison.png` 668,427 bytes; `direction-a.png` 352,833; `direction-b.png` 344,386; `direction-c.png` 349,939; `context.png` 230,539 — about 1.95 MB in all. Rendering is deterministic: re-running the capture after formatting the sources produced byte-identical images.
+**Image sizes.** `comparison.png` 668,427 bytes; `direction-a.png` 352,833; `direction-b.png` 344,386; `direction-c.png` 349,939; `context.png` 230,539; and, from the Planen refinement, `planen-options.png` 401,723, `planen-options-phone.png` 367,195 and `planen-sketches.png` 384,041 — about 3.1 MB in all. Rendering is deterministic: re-running the capture after formatting the sources produced byte-identical images, and adding the Planen refinement left the first five images byte-identical to their `de71601` versions.
 
 ## Provenance and licence
 
@@ -105,7 +149,7 @@ All artwork here is project-owned and was drawn for this item; **no external ico
 
 ## Viewing and regenerating
 
-GitHub does not render HTML, so open [`mockup.html`](mockup.html) in a browser from a local checkout (it loads the stylesheet from disk; any static server at the repository root works too). With no query string it shows an index of every direction; `?dir=a&selected=planning&lang=de&text=200` shows one navigation state, and the full parameter list is at the top of the file. The artwork is the `DIRECTIONS` object between the `ICONS:BEGIN` and `ICONS:END` markers.
+GitHub does not render HTML, so open [`mockup.html`](mockup.html) in a browser from a local checkout (it loads the stylesheet from disk; any static server at the repository root works too). With no query string it shows an index of every direction; `?dir=a&selected=planning&lang=de&text=200` shows one navigation state, and the full parameter list is at the top of the file. The Planen refinement's options are `dir=a-p1` and `dir=a-p2` (option 3 is `dir=a`), and its sketches are the `sketch-*` entries. The artwork is the `DIRECTIONS` object between the `ICONS:BEGIN` and `ICONS:END` markers.
 
 To regenerate the images and the measurements (about a minute and a half), from the repository root:
 
