@@ -291,6 +291,7 @@ _Category: Planning presentation_
      - The banner is `pointer-events: none` apart from its Retry button, so it hides the crosshair without blocking taps on the map beneath it. It appears only when map imagery is unavailable.
      - **Item 114 does not reach it.** Item 114 changed only the enlarged-text layout, which engages from about 106–132% text depending on the size, and deliberately left the ordinary layout unchanged; below that threshold the banner stays in the map.
      - Any change must keep item 108's product decision in view — Planning keeps its imagery explanation in the map at ordinary text, and item 114 made an enlarged-text-only exception — and must be measured at 375×667, 320×844 and 390×844 in both languages against the crosshair, the placement control and the attribution.
+     - **Design stage, 30 September 2026:** a measured comparison of eight candidate corrections is in [`../design/planning-imagery-banner/README.md`](../design/planning-imagery-banner/README.md), against `0.4.49`. It reproduces the recorded overlaps exactly, and adds more: Retry sits on the crosshair point; the tile-error state overlaps too; every measured size overlaps, in at least one language, just below item 114's switch; and Planning's own message collides with the banner. It recommends keeping the imagery message in the map at the top and moving Planning's own three messages below the map, **pending the rider's decision**. Nothing is chosen or implemented, and the contract above is unchanged.
 
 ---
 
