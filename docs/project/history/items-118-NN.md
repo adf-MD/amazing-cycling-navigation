@@ -323,9 +323,19 @@ The same switch confirmed from the Routes card opened B with **Start riding**, l
 - **After the fix**, all three assert B's **Start riding** with no **Resume ride**, **no stored row** sampled three times after the switch, and nothing to resume after a reload or remount. That storage assertion is the result observed, not a prerequisite.
 - **Negative controls.** Removing the key fails the App test — the guard alone keeps storage clean but not the screen. Removing the guard fails only the hook test, since the key already protects App. Removing both fails both.
 - **Verification.** `npm run lint`, `npm run typecheck`, `npm test` (4682/4682), `npm run build`, the full Playwright suite in the pinned container (623/623) and `npm run format:check`.
-- **An unrelated, pre-existing flake**, measured rather than assumed. `mapImageryRecovery.spec.ts`'s route-riding reconnection test failed once in the first full run, on its follow-anchor tolerance. Repeating that whole spec ten times at 36 workers, in eight interleaved rounds, it failed **16 of 80 on `0.4.47` and 20 of 80 with this change**. That is not a difference beyond noise, and no route changes in that test. It is recorded here and not attributed to this follow-up.
+- **An unrelated, pre-existing flake**, measured rather than assumed. `mapImageryRecovery.spec.ts`'s route-riding reconnection test failed once in the first full run, on its follow-anchor tolerance. Repeating that whole spec ten times at 36 workers, in eight interleaved rounds, it failed **16 of 80 on `0.4.47` and 20 of 80 with this change**. These runs do not establish a regression attributable to `0.4.48`, and no route changes in that test. It is recorded here and not attributed to this follow-up. It is now tracked as unscheduled [item 130](../backlog.md#item-130).
 
 **Limitations.** No installed-iPhone evidence of the fix yet (Session 5 in [`current-status.md`](../current-status.md)); the browser evidence is desktop WebKit and Chromium in a container.
+
+### Installed-iPhone acceptance — reported 30 September 2026
+
+**Accepted.** On the installed Home Screen PWA, version `0.4.48`, build `bf09776` as reported, both remaining overlapping-switch paths passed:
+
+- with a route ride paused and another route's switch prompt armed, **End and switch pressed from Ride** opened the new route fresh, with **Start riding** and none of the paused route's progress — the `0.4.47` finding, corrected on the device;
+- with the same prompt armed, the Settings **Delete key** confirmation overlapped it, each Cancel closed only its own confirmation, and the switch prompt returned inside its route card on Routes;
+- after each switch, closing and reopening the app offered nothing to resume.
+
+The `0.4.47` check's passes — the stale-prompt check and the representative single confirmations — stand and were not repeated. This is **broad installed-iPhone product-level acceptance**. It does not re-assert the automated measurements above, and the limitations recorded above describe the item as it stood at implementation. **Not claimed:** VoiceOver, which stays deferred, and physical Android. The dated record is in [`current-status.md`](../current-status.md).
 
 ---
 

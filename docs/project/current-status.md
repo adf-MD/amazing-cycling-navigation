@@ -23,7 +23,7 @@ This file records verification evidence only; the behaviour contracts themselves
 
 ## Open installed-iPhone acceptance checklist (12 September 2026)
 
-**This is the only active list of presently actionable installed-iPhone checks.** Items 102, 103 and 120 are unimplemented and therefore out of scope — item 102 is scheduled first — and items 122 and 124–129 are unscheduled candidates. **Item 123 (`0.4.46`) was accepted on the installed iPhone, reported 30 September 2026, and no longer appears here. Item 119's installed-iPhone check of `0.4.47` passed its stale-prompt and representative-confirmation checks and found a route-session defect, fixed in `0.4.48`; its overlapping-switch check remains, in Session 5.** **Item 114's one device check, ordinary-text Planning on `0.4.45`, passed on the installed iPhone on 29 September 2026 and no longer appears here**; its enlarged-text layout has automated evidence only, because it cannot be reached on the iPhone through Larger Text. **Item 121 (`0.4.44`) was accepted on the installed iPhone, reported 29 September 2026, and no longer appears here**; one open device finding from that session awaits investigation, in its own subsection below. Item 113 shipped German in `0.4.41`. Its first physical pass (25 September 2026) produced the `0.4.42` follow-up. That recheck (reported 28 September 2026, recorded below) passed apart from three findings corrected in `0.4.43`. **The `0.4.43` Status-wording and End-confirmation rechecks passed on 28 September 2026**, and only the climb cue's recheck remains, in Session 2. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
+**This is the only active list of presently actionable installed-iPhone checks.** Items 102, 103 and 120 are unimplemented and therefore out of scope — item 102 is scheduled first — and items 122 and 124–130 are unscheduled candidates. **Item 123 (`0.4.46`) was accepted on the installed iPhone, reported 30 September 2026, and no longer appears here. Item 119 was accepted on the installed iPhone on `0.4.48`, reported 30 September 2026, and no longer appears here either.** **Item 114's one device check, ordinary-text Planning on `0.4.45`, passed on the installed iPhone on 29 September 2026 and no longer appears here**; its enlarged-text layout has automated evidence only, because it cannot be reached on the iPhone through Larger Text. **Item 121 (`0.4.44`) was accepted on the installed iPhone, reported 29 September 2026, and no longer appears here**; one open device finding from that session awaits investigation, in its own subsection below. Item 113 shipped German in `0.4.41`. Its first physical pass (25 September 2026) produced the `0.4.42` follow-up. That recheck (reported 28 September 2026, recorded below) passed apart from three findings corrected in `0.4.43`. **The `0.4.43` Status-wording and End-confirmation rechecks passed on 28 September 2026**, and only the climb cue's recheck remains, in Session 2. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
 
 ### Session 1 — stationary, on the installed Home Screen PWA
 
@@ -73,17 +73,6 @@ Stationary or walking. Induce only what is deliberate and reproducible; everythi
 
 No iOS Larger Text result and no physical-Android result is claimed for item 113 in either language.
 
-### Session 5 — item 119's overlapping switch, rechecked on `0.4.48`
-
-Stationary, portrait, on the installed Home Screen PWA. **Read the version and build from Status first** (expect `0.4.48`). Item 119's stale-prompt check and its representative confirmations passed on `0.4.47` (the dated record below) and are not repeated.
-
-- [ ] With a route ride paused (its screen still under Ride), tap another route's card to open its switch prompt, then:
-  - go to **Ride** and press End and switch there: the new route opens with **Start riding**, no **Resume ride** and no progress;
-  - separately, go to **Settings** and open Delete key: each Cancel closes only its own confirmation, the switch prompt returns inside the card on Routes, and End and switch opens the new route fresh;
-  - after either, closing and reopening the app offers nothing to resume (item 119).
-
-**Deferred, not claimed:** VoiceOver announcing each confirmation's own title and message. No physical-Android result is claimed for item 119.
-
 ### Open device findings — awaiting investigation (not checklist items)
 
 - **Tapping the OpenRouteService key field zoomed the installed page in, and saving did not restore normal zoom**; the rider had to zoom out by hand. Seen during item 121's acceptance on `0.4.44` (the dated record below). **No cause is established and no investigation has been made**, and it is **not** attributed to item 121 as a regression. It is kept here for follow-up rather than as a check to repeat.
@@ -115,9 +104,23 @@ None of these blocks acceptance of the item it came from. Record one if it occur
 
 - **The contention-sensitive map/camera e2e class is confirmed present on the parent commit (14 September 2026, measured during item 113 stage 1).** Under 36-worker full-suite runs in the pinned container, the parent commit `df2e6c0` failed **exactly one test in each of three consecutive full runs** (380 passed, 1 failed, every time), with the failures landing in `e2e/mapImageryRecovery.spec.ts`'s reconnection-recovery camera-anchor test, `e2e/ridingActiveDirectionLayer.spec.ts`'s overlapping-return-leg test and `e2e/fetchInvocation.spec.ts`. The item 113 branch produced the **same tests** at a comparable rate across its own runs, and each passed **6/6 in isolation**. `anchorWithinTolerance` returns `false` when an anchor reads as `null`, so an unresolved read under contention presents as a tolerance failure rather than as a timeout.
 
-  This upgrades the earlier "consistent with" note for this file to a **measured, reproduced-on-baseline** finding: the class is pre-existing and is **not** attributable to item 113's pre-render IndexedDB read, which was the specific hypothesis worth ruling out, since that change does add a blocking database open before the first paint. No production change was made for it, and it remains monitored rather than fixed — if it is ever worked on, start from the artefacts item 116 retains.
+  This upgrades the earlier "consistent with" note for this file to a **measured, reproduced-on-baseline** finding: the class is pre-existing and is **not** attributable to item 113's pre-render IndexedDB read, which was the specific hypothesis worth ruling out, since that change does add a blocking database open before the first paint. No production change was made for it, and it remains monitored rather than fixed — if it is ever worked on, start from the artefacts item 116 retains. The route-riding reconnection test in `mapImageryRecovery.spec.ts` now has its own unscheduled investigation, [item 130](backlog.md#item-130).
 
 ## Dated acceptance record
+
+### Installed-iPhone acceptance of `0.4.48` (build `bf09776`, item 119, reported 30 September 2026)
+
+**Device and build.** Installed Home Screen PWA, stationary and portrait as Session 5 specified; version `0.4.48`, build `bf09776`, as reported.
+
+**Passed** — both remaining Session 5 paths, so that session is complete for this device:
+
+- with a route ride paused and another route's switch prompt armed, **End and switch pressed from Ride** opened the new route fresh, with **Start riding** and none of the paused route's progress — the `0.4.47` finding below, corrected;
+- with the same prompt armed, the Settings **Delete key** confirmation overlapped it, each Cancel closed only its own confirmation, and the switch prompt returned inside its route card on Routes;
+- after each switch, closing and reopening the app offered nothing to resume.
+
+Together with the `0.4.47` passes below — the stale-prompt check and the representative single confirmations, which stand and were not repeated — this **accepts item 119 on this iPhone**, at product level.
+
+**Not claimed:** VoiceOver announcing each confirmation's own title and message, which stays deferred; physical Android.
 
 ### Installed-iPhone check of `0.4.47` (build `187b752`, item 119, reported 30 September 2026)
 
@@ -472,11 +475,12 @@ Context: the installed iPhone Home Screen PWA, portrait. The report did not reco
 - **Not reproduced, stated plainly.** A pan that both moves the map and places a waypoint could not be reproduced in any engine here: Chromium withholds `touchmove` inside its tap slop, and Playwright's WebKit cannot pan by touch. The change removes it by construction, since no touch click places.
 - **Accepted on the installed iPhone** (iPhone 13, portrait, `0.4.46`, build `94a4488`; the dated record above) — all four checks, at product level. The separate mouse double-click observation is recorded above, under automated observations.
 
-### Item 119 — shipped `0.4.47`, follow-up `0.4.48`; device acceptance incomplete
+### Item 119 — shipped `0.4.47`, follow-up `0.4.48`; accepted on the installed iPhone (reported 30 September 2026)
 
 - **What shipped.** Every confirmation is a named, described, non-modal `role="dialog"` with its own title and description ids, so two open at once each announce their own title. A pending route-switch prompt now yields to a newer ride choice, never clears storage once superseded, makes a newer ride choice wait for any clear already in flight, and returns inside its card when the rider comes back to Routes. The full record, including the Stage 0 measurements, is [`history/items-118-NN.md`](history/items-118-NN.md#item-119).
 - **The evidence is automated**: unit tests, and browser-computed names and descriptions in Chromium and WebKit in the pinned container. **None of it is VoiceOver evidence**, which is deferred.
-- **Device result so far** (the dated record above): the stale-prompt check and the representative confirmations passed on `0.4.47`. A switch confirmed from Ride opened the new route with the paused route's fix and progress; `0.4.48` keys the ride screen by route and guards the stored row. The overlapping-switch check remains in Session 5.
+- **Accepted on the installed iPhone** (the two dated records above). The stale-prompt check and the representative confirmations passed on `0.4.47`, which also found that a switch confirmed from Ride opened the new route with the paused route's fix and progress; `0.4.48` keys the ride screen by route and guards the stored row, and its recheck (build `bf09776`) passed both overlapping-switch paths. VoiceOver stays deferred, and no physical-Android result is claimed.
+- **An unrelated end-to-end flake measured during the `0.4.48` follow-up** — `mapImageryRecovery.spec.ts`'s route-riding reconnection test — is filed as unscheduled [item 130](backlog.md#item-130). It is not attributed to item 119.
 
 ---
 
