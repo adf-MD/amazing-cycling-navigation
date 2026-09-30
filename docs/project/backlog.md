@@ -139,6 +139,7 @@ _Category: Interface design_
      - Present the alternatives for explicit user choice. Production implementation, screenshots and physical-device acceptance follow only after a direction is approved, in a separate bounded slice if appropriate.
      - Cross-reference item 28 ("Optional adaptive compact navigation while scrolling", pending, not approved/scheduled — candidate only): this item's symbol redesign does not approve, schedule or implement item 28's adaptive scroll-based compaction. The two are independent — one is visual language, the other is a still-unapproved behavioural change to the navigation itself.
      - Do not use this item as permission to redesign every screen or restructure navigation destinations.
+     - **Design stage, 30 September 2026:** three measured mock-up directions (A · Line, B · Solid, C · ACN mark), each compared with the current icons, are in [`../design/navigation-symbols/README.md`](../design/navigation-symbols/README.md) for the rider's explicit choice. No direction has been chosen and nothing is implemented; the contract above is unchanged.
 
 ---
 
