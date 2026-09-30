@@ -254,6 +254,13 @@ export function useRideNavigation(
   // in flight; nothing in this hook's own public contract is required to
   // independently re-prove that guarantee.
   const isFinalizingRef = useRef(false);
+  // The route this hook's session belongs to (item 119 follow-up). Its
+  // fix, progress and startedAt are only ever meaningful for that route,
+  // and callers remount per route (App keys RidingScreen by route id), so
+  // a different route.id here means a caller changed the route in place:
+  // the persistence effect and pause() then refuse to write rather than
+  // store one route's fix and progress under another route's id.
+  const sessionRouteIdRef = useRef(route.id);
   const routePoints = route.points;
 
   const setStatus = useCallback((next: GeolocationWatchStatus) => {
@@ -419,6 +426,7 @@ export function useRideNavigation(
   // pause anyway.
   const pause = useCallback(async () => {
     if (isPausingRef.current || isFinalizingRef.current) return;
+    if (route.id !== sessionRouteIdRef.current) return;
     isPausingRef.current = true;
     try {
       // A Pause before the first fix must still create a valid resumable
@@ -525,6 +533,7 @@ export function useRideNavigation(
   // than depending on it directly (see the option's doc comment).
   useEffect(() => {
     if (isFinalizingRef.current || isPausingRef.current) return;
+    if (route.id !== sessionRouteIdRef.current) return;
     if (currentFix === null || startedAtRef.current === null) return;
     setActiveRideState(
       toStoredRideState(

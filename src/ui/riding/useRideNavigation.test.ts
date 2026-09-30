@@ -750,6 +750,38 @@ describe("useRideNavigation restoration lifecycle (backlog item 72)", () => {
     expect(result.current.geolocationStatus).toBe("idle");
   });
 
+  // Item 119 follow-up: the hook's session belongs to the route it was
+  // created for (App keys RidingScreen by route id). Even if a caller
+  // changed the route in place, one route's fix and progress must never be
+  // stored under another route's id — by the persistence effect or pause().
+  it("never stores one route's fix or progress under another route's id when the route changes in place", async () => {
+    await setActiveRideState(RESUMABLE_ROW);
+    const fake = buildFakeGeolocationSource();
+    const { result, rerender } = renderHook(
+      ({ current }: { current: PlannedRoute }) =>
+        useRideNavigation(current, { geolocationSource: fake.source }),
+      { initialProps: { current: route } },
+    );
+    await waitFor(() => {
+      expect(result.current.restoredForThisRoute).toBe(true);
+    });
+    // A confirmed switch clears the row before the next route opens.
+    await rideStateRepository.clearActiveRideState();
+    const writeSpy = vi.spyOn(rideStateRepository, "setActiveRideState");
+
+    rerender({ current: elevatedRoute });
+    await waitFor(() => {
+      expect(result.current.restorationStatus).toBe("ready");
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await act(async () => {
+      await result.current.pause();
+    });
+
+    expect(writeSpy).not.toHaveBeenCalled();
+    expect(await getActiveRideState()).toBeUndefined();
+  });
+
   it("reaches ready with restoredForThisRoute false when no row exists at all, leaving fields at fresh defaults", async () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>

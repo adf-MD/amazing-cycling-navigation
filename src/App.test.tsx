@@ -2916,6 +2916,104 @@ describe("App — Ride switch guard (item 73)", () => {
       expect(openConfirmations()).toEqual([]);
       expect(await getActiveRideState()).toBeUndefined();
     });
+
+    // Item 119 follow-up (installed-iPhone check of 0.4.47): after a Pause
+    // the paused route's own screen stays mounted under Ride, and an End
+    // and switch confirmed there swapped its route in place, carrying A's
+    // fix and progress into B's pre-ride — and into storage under B's id.
+    async function openPausedRouteAThenArmBAndGoToRide(
+      user: ReturnType<typeof userEvent.setup>,
+    ) {
+      const armed = await armSwitchFromRouteCard(user);
+      await user.click(
+        within(getListItemByRouteId(armed.routeB.id)).getByRole("button", {
+          name: "Cancel",
+        }),
+      );
+      await user.click(screen.getByRole("button", { name: "Route A" }));
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "Route A" }),
+      ).toBeInTheDocument();
+      expect(
+        await screen.findByRole("button", { name: "Resume ride" }),
+      ).toBeInTheDocument();
+      await user.click(navButton("Routes"));
+      await user.click(await screen.findByRole("button", { name: "Route B" }));
+      await waitFor(() => {
+        expect(openConfirmations()).toHaveLength(1);
+      });
+      await user.click(navButton("Ride"));
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Route A" }),
+      ).toBeInTheDocument();
+      return armed;
+    }
+
+    it("End and switch confirmed from Ride opens the new route as its own session, with nothing of the paused route stored or resumable", async () => {
+      const user = userEvent.setup();
+      const watchPositionSpy = stubGeolocationWatch();
+      const { unmount } = render(<App mapFactory={buildNoopMapFactory()} />);
+      await openPausedRouteAThenArmBAndGoToRide(user);
+
+      await user.click(
+        within(confirmationNamed('Switch to "Route B"?')).getByRole("button", {
+          name: "End and switch",
+        }),
+      );
+
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "Route B" }),
+      ).toBeInTheDocument();
+      expect(
+        await screen.findByRole("button", { name: "Start riding" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
+      expect(watchPositionSpy).not.toHaveBeenCalled();
+      // Sampled more than once: a write carrying A's state would land after
+      // the switch's own clear, not before it.
+      for (let sample = 0; sample < 3; sample += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(await getActiveRideState()).toBeUndefined();
+      }
+
+      // A fresh App over the same storage stands in for a reload.
+      unmount();
+      render(<App mapFactory={buildNoopMapFactory()} />);
+      await user.click(navButton("Ride"));
+      expect(
+        await screen.findByRole("button", { name: "Choose a route" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
+    });
+
+    it("End and switch confirmed from the Routes card opens the new route fresh as well (control)", async () => {
+      const user = userEvent.setup();
+      stubGeolocationWatch();
+      render(<App mapFactory={buildNoopMapFactory()} />);
+      const { routeB } = await openPausedRouteAThenArmBAndGoToRide(user);
+      await user.click(navButton("Routes"));
+      await waitFor(() => {
+        expect(
+          getListItemByRouteId(routeB.id).querySelector('[role="dialog"]'),
+        ).not.toBeNull();
+      });
+
+      await user.click(
+        within(getListItemByRouteId(routeB.id)).getByRole("button", {
+          name: "End and switch",
+        }),
+      );
+
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "Route B" }),
+      ).toBeInTheDocument();
+      expect(
+        await screen.findByRole("button", { name: "Start riding" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(await getActiveRideState()).toBeUndefined();
+    });
   });
 });
 

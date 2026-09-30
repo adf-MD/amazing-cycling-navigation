@@ -288,4 +288,91 @@ test.describe("Confirmation dialogs (item 119)", () => {
       startedAt: "2026-01-01T08:00:00.000Z",
     });
   });
+
+  // Item 119 follow-up (installed-iPhone check of 0.4.47): with route A
+  // paused, its own screen stays mounted under Ride. Measured on 0.4.47 in
+  // both engines: an End and switch confirmed there opened B showing
+  // "Resume ride" with A's remaining distance, stored A's fix, progress and
+  // startedAt under B's route id, and after a reload the launcher offered to
+  // resume B.
+  async function pauseRouteAThenArmBFromRide(page: Page): Promise<string> {
+    await importRoute(page, "Route A");
+    await importRoute(page, "Route B");
+    const routeAId = await readSavedRouteId(page, "Route A");
+    const routeBId = await readSavedRouteId(page, "Route B");
+    if (!routeAId || !routeBId) throw new Error("expected saved ids for Routes A and B");
+    await writeActiveRideStateRow(page, {
+      id: "active",
+      routeId: routeAId,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: {
+        coordinate: [-0.1 + 400 / METRES_PER_DEGREE_LON, 51.5],
+        accuracyMetres: 6,
+        timestampMs: 1000,
+      },
+      lastMatchedPointIndex: 4,
+      matchedDistanceFromStartMetres: 400,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+    });
+    await page.getByRole("button", { name: "Route A", exact: true }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Route A" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Resume ride" })).toBeVisible();
+    await navButton(page, "Routes").click();
+    await page.getByRole("button", { name: "Route B", exact: true }).click();
+    await expect(
+      page
+        .locator(`[data-route-id="${routeBId}"]`)
+        .getByRole("dialog", { name: SWITCH_TITLE }),
+    ).toBeVisible();
+    return routeBId;
+  }
+
+  async function expectFreshRouteBAndNothingStored(page: Page): Promise<void> {
+    await expect(page.getByRole("heading", { level: 1, name: "Route B" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start riding" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Resume ride" })).toHaveCount(0);
+    // Sampled more than once: a write carrying A's state would land after
+    // the switch's own clear.
+    for (let sample = 0; sample < 3; sample += 1) {
+      await page.waitForTimeout(300);
+      expect(await readActiveRideStateRow(page)).toBeNull();
+    }
+    await page.reload();
+    await navButton(page, "Ride").click();
+    await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Resume ride" })).toHaveCount(0);
+    expect(await readActiveRideStateRow(page)).toBeNull();
+  }
+
+  test("End and switch confirmed from Ride, over the paused route's own screen, opens the new route as its own session", async ({
+    page,
+  }) => {
+    await installLocalMapStyle(page);
+    await page.goto("/");
+    await pauseRouteAThenArmBFromRide(page);
+    await navButton(page, "Ride").click();
+    await expect(page.getByRole("heading", { level: 1, name: "Route A" })).toBeVisible();
+
+    await confirmation(page, SWITCH_TITLE)
+      .getByRole("button", { name: "End and switch" })
+      .click();
+
+    await expectFreshRouteBAndNothingStored(page);
+  });
+
+  test("End and switch confirmed from the Routes card opens the new route as its own session too (control)", async ({
+    page,
+  }) => {
+    await installLocalMapStyle(page);
+    await page.goto("/");
+    const routeBId = await pauseRouteAThenArmBFromRide(page);
+
+    await page
+      .locator(`[data-route-id="${routeBId}"]`)
+      .getByRole("dialog", { name: SWITCH_TITLE })
+      .getByRole("button", { name: "End and switch" })
+      .click();
+
+    await expectFreshRouteBAndNothingStored(page);
+  });
 });

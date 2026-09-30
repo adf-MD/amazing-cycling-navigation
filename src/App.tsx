@@ -1222,7 +1222,13 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         )}
         {screen === "riding" &&
           (ridingContent.kind === "route" ? (
+            // Keyed by route id (item 119 follow-up): a RidingScreen and its
+            // navigation hook hold one route's session, so a different
+            // route — e.g. End and switch confirmed from Ride while a
+            // paused route's screen is still mounted — must be a fresh
+            // instance, never the old one with its fix and progress.
             <RidingScreen
+              key={ridingContent.route.id}
               route={ridingContent.route}
               resumeIntentToken={ridingContent.resumeIntentToken}
               mapFactory={mapFactory}
