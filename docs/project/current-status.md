@@ -23,7 +23,7 @@ This file records verification evidence only; the behaviour contracts themselves
 
 ## Open installed-iPhone acceptance checklist (12 September 2026)
 
-**This is the only active list of presently actionable installed-iPhone checks.** Items 102, 103, 119 and 120 are unimplemented and therefore out of scope — item 119 is scheduled first — and items 122 and 124–129 are unscheduled candidates. **Item 123 (`0.4.46`) has shipped with automated evidence only; its device check is Session 5.** **Item 114's one device check, ordinary-text Planning on `0.4.45`, passed on the installed iPhone on 29 September 2026 and no longer appears here**; its enlarged-text layout has automated evidence only, because it cannot be reached on the iPhone through Larger Text. **Item 121 (`0.4.44`) was accepted on the installed iPhone, reported 29 September 2026, and no longer appears here**; one open device finding from that session awaits investigation, in its own subsection below. Item 113 shipped German in `0.4.41`. Its first physical pass (25 September 2026) produced the `0.4.42` follow-up. That recheck (reported 28 September 2026, recorded below) passed apart from three findings corrected in `0.4.43`. **The `0.4.43` Status-wording and End-confirmation rechecks passed on 28 September 2026**, and only the climb cue's recheck remains, in Session 2. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
+**This is the only active list of presently actionable installed-iPhone checks.** Items 102, 103 and 120 are unimplemented and therefore out of scope — item 102 is scheduled first — and items 122 and 124–129 are unscheduled candidates. **Item 123 (`0.4.46`) was accepted on the installed iPhone, reported 30 September 2026, and no longer appears here. Item 119 (`0.4.47`) has shipped with automated evidence only; its device checks are Session 5.** **Item 114's one device check, ordinary-text Planning on `0.4.45`, passed on the installed iPhone on 29 September 2026 and no longer appears here**; its enlarged-text layout has automated evidence only, because it cannot be reached on the iPhone through Larger Text. **Item 121 (`0.4.44`) was accepted on the installed iPhone, reported 29 September 2026, and no longer appears here**; one open device finding from that session awaits investigation, in its own subsection below. Item 113 shipped German in `0.4.41`. Its first physical pass (25 September 2026) produced the `0.4.42` follow-up. That recheck (reported 28 September 2026, recorded below) passed apart from three findings corrected in `0.4.43`. **The `0.4.43` Status-wording and End-confirmation rechecks passed on 28 September 2026**, and only the climb cue's recheck remains, in Session 2. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
 
 ### Session 1 — stationary, on the installed Home Screen PWA
 
@@ -73,16 +73,15 @@ Stationary or walking. Induce only what is deliberate and reproducible; everythi
 
 No iOS Larger Text result and no physical-Android result is claimed for item 113 in either language.
 
-### Session 5 — item 123's Planning touch placement
+### Session 5 — item 119's confirmations
 
-Stationary, portrait, on the installed Home Screen PWA. **Read the version and build from Status first** (expect `0.4.46`). Start from a cleared draft so the empty list is visible.
+Stationary, portrait, on the installed Home Screen PWA. **Read the version and build from Status first** (expect `0.4.47`).
 
-- [ ] The empty waypoint list reads `No waypoints yet. Use the crosshair to add one.`, and in German `Noch keine Wegpunkte. Nutze das Fadenkreuz, um einen Wegpunkt zu setzen.` (item 123).
-- [ ] On the Planning map, a single tap, a small deliberate pan, a two-finger pinch, a double-tap zoom and a double-tap-and-drag zoom each add **no** waypoint, and Undo stays as it was — both with an empty draft and with a calculated route (item 123).
-- [ ] The crosshair control's `Add waypoint here`, `Move … here` and `Insert after …` each act on the intended waypoint; with Move or Insert after pending, tapping the map does not complete it and the control's label stays unchanged (item 123).
-- [ ] Tapping a highlighted warning segment in Planning, and a recognised climb on the map in Riding before the ride, still selects it (item 123).
+- [ ] With a route ride paused, tapping another route's card, going to Settings and opening Delete key shows both confirmations; each Cancel closes only its own; back on Routes the switch prompt reappears inside the card; and End and switch from Settings opens the new route (item 119).
+- [ ] With a switch to another route pending, resuming the paused ride from the Ride launcher leaves no switch prompt behind, and the ride resumes with its progress (item 119).
+- [ ] Single confirmations behave as before: route delete, the in-card switch prompt, a tag merge or delete, Clear draft, Delete key (including its reveal), End ride paused and while riding, the launcher's End and Discard, and free roam's End (item 119).
 
-**Optional, not blockers:** an Apple Pencil tap should behave like a finger; a mouse or trackpad click on an iPad should still place directly. No physical-Android or VoiceOver result is claimed for item 123.
+**Deferred, not claimed:** VoiceOver announcing each confirmation's own title and message, including two at once. No physical-Android result is claimed for item 119.
 
 ### Open device findings — awaiting investigation (not checklist items)
 
@@ -118,6 +117,19 @@ None of these blocks acceptance of the item it came from. Record one if it occur
   This upgrades the earlier "consistent with" note for this file to a **measured, reproduced-on-baseline** finding: the class is pre-existing and is **not** attributable to item 113's pre-render IndexedDB read, which was the specific hypothesis worth ruling out, since that change does add a blocking database open before the first paint. No production change was made for it, and it remains monitored rather than fixed — if it is ever worked on, start from the artefacts item 116 retains.
 
 ## Dated acceptance record
+
+### Installed-iPhone acceptance of `0.4.46` (build `94a4488`, item 123, reported 30 September 2026)
+
+**Device and build.** iPhone 13, installed Home Screen PWA, portrait; version `0.4.46`, build `94a4488`, as reported.
+
+**Passed** — all four of item 123's Session 5 checks, so that session is complete for this device:
+
+- the empty-draft hint in English and German;
+- a tap, a small pan, a pinch, a double-tap zoom and a double-tap-and-drag zoom add no waypoint and no Undo entry, with an empty draft and with a calculated route;
+- the crosshair control's Add, Move and Insert after act on the intended waypoint, and a map tap while Move or Insert after is pending neither completes it nor changes the label;
+- a Planning warning and a recognised climb on the Riding map before the ride still select on a tap.
+
+**Not claimed:** VoiceOver, landscape, enlarged text, physical Android, an Apple Pencil, or an external mouse or trackpad. The mouse double-click observation above is unchanged and remains separate.
 
 ### Installed-iPhone check of `0.4.45` (build `bac3553`, item 114, reported 29 September 2026)
 
@@ -313,7 +325,7 @@ ACN's own German fallback labels are infinitives (`Links abbiegen`), and a manoe
 - **Item 117 — broad installed-iPhone portrait acceptance.** All four checks were reported positive: with no active session `Active session` reads `None`; during free roam it reads `Free roam`; with a saved route selected it reads that route's own human-readable name, with no opaque identifier anywhere on the screen; and a long route name wraps without clipping or horizontal scrolling. Recorded as acceptance of item 117's intended presentation, **not** as a claim that its other automated branches — a deleted route's `Route unavailable`, an unrecognised stored session kind's `Session unavailable`, or the resolution-tagging that stops a previous route's name rendering briefly after a session change — were reproduced physically.
 - **Item 112's residual check — closed, completing its installed-iPhone acceptance.** The user removed the OpenRouteService key on the device and confirmed that `Test routing connection` is disabled without a key, with everything else in that checklist positive. This closes the one clause the first 13 September session could not exercise, so item 112 no longer appears on the checklist above.
 - **Key-deletion confirmation containment — a new finding, filed as [item 118](history/items-118-NN.md#item-118).** The user reports that the **Delete key** confirmation appears visually separate from the OpenRouteService card. The approved correction expands that same card to contain the confirmation directly beneath the action that opened it. **Ownership was established from source before a number was allocated, and this is not an item 112 regression**: `<ConfirmDialog>` is the last child of `<section className="screen">` — outside every panel — in item 112's parent `2eca824` (the OpenRouteService `.panel` closes at line 388, the dialog opens at line 475), in item 112's own `64ae976` (403 and 498) and in current `e52e9a8` (identical; `git diff 64ae976 e52e9a8 -- src/ui/settings/SettingsScreen.tsx` is empty). Item 112 wrapped the four panels in two `.settings-group` sections and demoted panel headings to `h3`; **it never changed the visual containment**, which was equally absent before and after. Item 112 is therefore not reopened, and acceptance merely exposed a pre-existing defect.
-- **A second, unrelated defect found while investigating item 118, filed as [item 119](backlog.md#item-119).** Not field evidence — reproduced in this repository. `ConfirmDialog` hardcodes `aria-labelledby="confirm-dialog-title"`, and `App.tsx` renders a page-level ride-switch dialog outside the screen switch while navigating away from Routes does not clear it. Arming a switch from a route card, navigating to Settings and opening **Delete key** puts **two** elements carrying that id in the document, and **both dialogs resolve their accessible name to `Switch to "Route B"?`** — so the key-deletion confirmation is announced as the ride-switch prompt. This is a **confirmed accessibility defect, not a monitored observation**, it is pre-existing and unchanged by item 118, and it is deliberately **not** implemented in item 118's slice.
+- **A second, unrelated defect found while investigating item 118, filed as [item 119](history/items-118-NN.md#item-119).** Not field evidence — reproduced in this repository. `ConfirmDialog` hardcodes `aria-labelledby="confirm-dialog-title"`, and `App.tsx` renders a page-level ride-switch dialog outside the screen switch while navigating away from Routes does not clear it. Arming a switch from a route card, navigating to Settings and opening **Delete key** puts **two** elements carrying that id in the document, and **both dialogs resolve their accessible name to `Switch to "Route B"?`** — so the key-deletion confirmation is announced as the ride-switch prompt. This is a **confirmed accessibility defect, not a monitored observation**, it is pre-existing and unchanged by item 118, and it is deliberately **not** implemented in item 118's slice.
 - **What this session does not assert, stated precisely.** No VoiceOver audit and no keyboard-only interaction were performed. No 200% browser-root text result is claimed, and no iOS Dynamic Type acceptance — ACN has no Dynamic Type opt-in, and the enlarged-text evidence for these screens is automated browser-text measurement only. No physical-Android result is claimed, under the umbrella above. No version or build was read from the device, as stated above.
 
 ### Installed-iPhone session, 13 September 2026 (first report: item 112's Status and Settings presentation)
@@ -439,12 +451,18 @@ Context: the installed iPhone Home Screen PWA, portrait. The report did not reco
 
   Item 114 deliberately leaves the ordinary layout unchanged, so it does not reach this. The measurements are in [`backlog.md#item-128`](backlog.md#item-128).
 
-### Item 123 — shipped `0.4.46` with automated evidence only
+### Item 123 — shipped `0.4.46`; accepted on the installed iPhone (reported 30 September 2026)
 
 - **What shipped.** On the Planning map only a mouse click places, moves or inserts a waypoint, decided per click from the pointer sequence that produced it. Touch and pen place through the crosshair control only; touch still selects warnings and climbs; keyboard is unchanged. The empty-list hint no longer says to tap the map. The full record, including the measured Stage 1 event sequences, is [`history/items-118-NN.md`](history/items-118-NN.md#item-123).
 - **The evidence is automated.** Genuine CDP touch on Chromium with the Pixel-7 profile, and real touch taps on Playwright's Linux WebKit, in the pinned container; 14 of the 18 new end-to-end tests fail on `0.4.45` and all pass on `0.4.46`, with negative controls. **None of it is installed-iPhone evidence**, and the rider's 25 September 2026 report remains the only physical observation of the defect.
 - **Not reproduced, stated plainly.** A pan that both moves the map and places a waypoint could not be reproduced in any engine here: Chromium withholds `touchmove` inside its tap slop, and Playwright's WebKit cannot pan by touch. The change removes it by construction, since no touch click places.
-- **Device check:** Session 5 above. The separate mouse double-click observation is recorded above, under automated observations.
+- **Accepted on the installed iPhone** (iPhone 13, portrait, `0.4.46`, build `94a4488`; the dated record above) — all four checks, at product level. The separate mouse double-click observation is recorded above, under automated observations.
+
+### Item 119 — shipped `0.4.47` with automated evidence only
+
+- **What shipped.** Every confirmation is a named, described, non-modal `role="dialog"` with its own title and description ids, so two open at once each announce their own title. A pending route-switch prompt now yields to a newer ride choice, never clears storage once superseded, makes a newer ride choice wait for any clear already in flight, and returns inside its card when the rider comes back to Routes. The full record, including the Stage 0 measurements, is [`history/items-118-NN.md`](history/items-118-NN.md#item-119).
+- **The evidence is automated**: unit tests, and browser-computed names and descriptions in Chromium and WebKit in the pinned container. **None of it is VoiceOver evidence**, which is deferred.
+- **Device checks:** Session 5 above.
 
 ---
 

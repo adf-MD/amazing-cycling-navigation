@@ -1,6 +1,6 @@
 # Completed backlog items 118–
 
-This file continues the 100– numeric range and opens at item 118. It was started when item 118 was completed: adding it to what was then `items-110-NN.md` would have taken that file to 162,614 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md), so that file was closed at item 117 and renamed [`items-110-113.md`](items-110-113.md) instead of growing unbounded. No existing entry was moved, shortened or rewritten by that split — only the filename changed, plus that file's own intro paragraph and the inbound links that pointed at it. Stable item numbers never change regardless of which file their text lives in: item 118 was completed ahead of items 102, 103, 113, 114 and 119, all of which remain pending, so a number is an identifier and never a schedule. Item 121 followed, completed in `0.4.44` ahead of items 102, 103, 114, 119 and 120, which remain pending. Item 123 followed, completed in `0.4.46` ahead of items 102, 103, 119 and 120, which remain pending.
+This file continues the 100– numeric range and opens at item 118. It was started when item 118 was completed: adding it to what was then `items-110-NN.md` would have taken that file to 162,614 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md), so that file was closed at item 117 and renamed [`items-110-113.md`](items-110-113.md) instead of growing unbounded. No existing entry was moved, shortened or rewritten by that split — only the filename changed, plus that file's own intro paragraph and the inbound links that pointed at it. Stable item numbers never change regardless of which file their text lives in: item 118 was completed ahead of items 102, 103, 113, 114 and 119, all of which remain pending, so a number is an identifier and never a schedule. Item 121 followed, completed in `0.4.44` ahead of items 102, 103, 114, 119 and 120, which remain pending. Item 123 followed, completed in `0.4.46` ahead of items 102, 103, 119 and 120. Item 119 was completed next, in `0.4.47`, and is filed between items 118 and 121 in numeric order; items 102, 103 and 120 remain pending.
 
 See [`README.md`](README.md) for the full history index, [`../backlog.md`](../backlog.md) for pending specifications, and [`../current-status.md`](../current-status.md) for the manual acceptance ledger.
 
@@ -203,6 +203,100 @@ This is **broad installed-iPhone portrait product-level acceptance** of the refi
 **Build context, stated separately from the physical evidence.** The refinement shipped as version `0.4.37` (commit `5bee225`) and was deployed before this report. **No app version or build was read from `Status` on the device during the session**, so nothing here asserts which build was installed; the deployed context is recorded alongside the report rather than as part of it.
 
 With this, item 118 is complete: the shipped same-card containment was accepted on 13 September 2026 and the conditional-reveal refinement on 14 September 2026.
+
+---
+
+<a id="item-119"></a>
+
+## Item 119 — Unique confirmation-dialog titles and truthful overlapping-dialog semantics — done
+
+_Category: Interface and accessibility consistency_
+
+119. **Unique confirmation-dialog titles and truthful overlapping-dialog semantics — done**
+     - Origin: the repository investigation that established item 118's ownership, 13 September 2026 — **not** an installed-iPhone observation, and **not** field evidence. See [`current-status.md`](../current-status.md) for the dated record.
+     - **This is a confirmed accessibility defect, reproduced in this repository, not a monitored reliability observation.** `ui/shared/ConfirmDialog.tsx` hardcodes `aria-labelledby="confirm-dialog-title"` on a fixed element id. `App.tsx` renders the page-level ride-switch `ConfirmDialog` above and outside the screen switch, and navigating away from Routes deliberately does not clear `pendingRideSwitch` — the documented fallback so a mid-prompt navigation does not make the prompt vanish silently. Arming a switch from a route card, navigating to Settings and opening **Delete key** therefore puts **two** elements carrying that id in one document. Measured in a real render: two `alertdialog`s, two nodes with that id reading `Switch to "Route B"?` and `Delete OpenRouteService key`, and **both dialogs resolving their accessible name to `Switch to "Route B"?`** — so the key-deletion confirmation is announced as the ride-switch prompt.
+     - **It is not an item 118 regression, and item 118 is not reopened.** The same hardcoded id and the same reachable path exist before item 118; item 118 changes where the Settings confirmation renders, not how it is named.
+     - Scope approved for the eventual implementation:
+       - **unique dialog-title ids**, so no two simultaneously rendered confirmations can share one, and each dialog resolves to its own accessible name;
+       - **truthful modal semantics** — `ConfirmDialog` asserts `aria-modal="true"` while nothing behind it is inert and the primary navigation stays live, which the two in-card precedents (`RouteListItem.tsx`, `RouteTagManager.tsx`) deliberately omit;
+       - the **overlapping-dialog lifecycle** — whether two confirmations should ever be open at once, and if not, which one yields.
+     - **The implementation must survey every `ConfirmDialog` call site before choosing a correction**, since a change here reaches riding-critical dialogs: `App.tsx`, `PlanningScreen.tsx`, `RidingScreen.tsx` (two), `FreeRoamScreen.tsx` and `RidingLauncher.tsx`, plus Settings. No particular mechanism — `useId()`, a required prop, a focus trap, or a single-dialog policy — is prescribed here, deliberately.
+     - Explicitly rejected directions: removing the documented page-level fallback that keeps a mid-navigation prompt visible; suppressing one dialog merely to make the duplicate id unreachable without addressing naming; and asserting modality that the implementation does not actually enforce.
+     - Evidence required when this is implemented: a **fail-first test rendering the real overlapping path** and asserting each dialog's own accessible name, plus compatibility guards proving the six existing call sites are unchanged.
+     - Physical acceptance on the installed iPhone Home Screen PWA is required for whatever ships, including a VoiceOver check that each confirmation announces its own title. Physical Android verification is separately outstanding, as for most recent items.
+
+### Decisions made with the rider (30 September 2026)
+
+Each was put to the rider and decided, not assumed.
+
+- **Every confirmation is a named, described, non-modal `role="dialog"`**: the shared `ConfirmDialog` at all seven call sites and the three hand-rolled in-card confirmations. The page stays operable around every one of them — the page-level switch prompt exists precisely because the primary navigation stays live — so none may claim `aria-modal`, and none is an `alertdialog`, which ARIA expects to be modal. Switching only the shared component was offered and rejected, because two coexisting confirmations would then carry different roles.
+- **The stale switch prompt is fixed within this item if reproduced**, with a newer ride choice withdrawing the older prompt and the destructive path guarded however it is invoked. The planning review then tightened it twice: the supersession guard must come **before** any busy-state update or storage call, with every later update conditional on the same request still owning the prompt; and a newer ride choice made while an older End and switch is still clearing must never open a ride the clear can then erase — the newer transition waits for the clear and classifies against fresh storage, with clear failure covered too. Possible loss of a newly opened ride was not to be recorded as a limitation.
+- **Automated accessibility checks use what the repository already has** — browser-computed names and descriptions through Playwright in Chromium and WebKit, and jest-dom in the unit suite — with no axe dependency for this slice, and tests that do not lock to `alertdialog`.
+
+### Stage 0: measured on the unchanged `0.4.46`
+
+A temporary probe (never committed) ran in the pinned container, Chromium and WebKit agreeing throughout; the in-flight clear was reproduced at unit level against the real App and storage, since IndexedDB's clear is too fast to hold in a browser.
+
+- **The reported overlap, exactly.** Arming a switch on Route B's card, leaving Routes for Settings and opening Delete key left two `alertdialog`s with `aria-modal="true"`, both `aria-labelledby="confirm-dialog-title"`, the id present twice, and **both computing their name as `Switch to "Route B"?`**. Planning's Clear draft produced the same. Inside RidingScreen's paused panel, Edit copy and End ride open together gave the End-ride confirmation the name `Replace your current draft?`.
+- **Interaction, recorded as it was.** Focus went to the newest confirmation's Cancel; Escape closed only the dialog holding focus and returned focus to its trigger (Delete key), or to the document body for the switch prompt, whose card trigger had unmounted with Routes; the navigation stayed live with both open.
+- **The stale prompt, worse than the code reading suggested.** After the Ride launcher's Resume, the switch prompt stayed on screen **above the immersive riding shell**; its End and switch cleared the resumed ride's stored row and then stuck in `Ending…` with both actions disabled, without opening Route B. RidingScreen's own Start riding left the prompt above the immersive shell the same way.
+- **A further lifecycle defect, found while probing.** Returning to Routes silently dropped a pending switch the rider had left Routes with: the Route Library's "target missing" safety net ran while its live query was still `undefined`, saw an empty list and cancelled the switch.
+- **The in-flight clear.** Holding the clear and choosing Resume ride classified against the not-yet-cleared row, so Route A resumed (Pause, one location watch) while the switch prompt stayed stuck above it. The resumed screen then re-wrote A's row after the clear, so storage happened to agree with the screen by write order alone, which nothing guaranteed.
+
+### Implementation account (30 September 2026, `0.4.47`)
+
+- **`ConfirmDialog`.** `useId()` supplies `headingId` and `descriptionId` (called before the `open` early return); the root is `role="dialog"` with `aria-labelledby` and `aria-describedby`, and `aria-modal` is gone. Focus (`autoFocus` Cancel), Escape, `headingLevel`, `containerRef`, item 118's reveal and every caller's focus return are unchanged. The doc comment now states why the dialog is non-modal and that several may be open, each acting only on its own subject.
+- **The in-card confirmations** in `RouteListItem` (delete, and item 95's switch prompt) and `RouteTagManager` (merge and delete) change role only; their `useId()` naming, focus handling and item 95/106 reveals are untouched. Comments that said "alertdialog", and `RouteTagManager`'s note about the old hardcoded id, were corrected.
+- **The overlap policy is independence.** More than one confirmation may be open; each is named and described by itself, Escape and Cancel act on the one holding focus, and none is suppressed to hide an id. The page-level fallback when leaving Routes is kept.
+- **The switch prompt yields (`App.tsx`).**
+  - A proceed or resume outcome in `requestRouteTransition` or `requestFreeRoamTransition` that opens a ride withdraws every older prompt (`withdrawPromptsOlderThan`).
+  - Starting to ride — reported by RidingScreen or FreeRoamScreen through a now-stable `handleRidingActiveChange` — withdraws any prompt and takes a new request id, so an older switch action still in flight cannot open its target over the ride.
+  - Every pending-switch action (`confirmPendingSwitch`, the check retry, the free-roam write retry, `returnToPausedRide`) returns before any busy-state update or storage call when it no longer owns its request, withdrawing only its own prompt; every later update goes through `updateOwnPrompt`, which changes the prompt only while the same request still owns it.
+  - The clear and the fresh free-roam writes a switch action starts are tracked (`trackSwitchStorageMutation`); a new transition takes its request id at once, then waits for any such mutation to settle before classifying. After a successful clear, Resume ride finds no row and opens Route A as an ordinary pre-ride with no restored progress and no GPS auto-start; after a failed clear it finds A's row and resumes A with its progress. The launcher refresh token is bumped after any successful clear, superseded or not.
+- **`RouteLibrary`** reports a missing switch target only once its routes have loaded, so a pending switch returns inside its card when the rider comes back to Routes.
+
+### Findings worth carrying forward
+
+1. **`aria-modal` was never enforced anywhere**, and the page-level switch prompt's whole reason to exist — surviving a navigation away from Routes — depends on the page staying operable. A truthful dialog here is necessarily non-modal.
+2. **The stale prompt was a riding-critical defect hiding behind an accessibility item.** It sat above the immersive shell after a resume, and its destructive action cleared the resumed ride's row. The request-id counter already existed; the prompt simply did not follow it.
+3. **The in-flight clear had to be closed at the classification, not the prompt.** Guarding the prompt cannot recall a clear already started; making every newer transition wait for it, then read fresh storage, is what keeps screen and storage in agreement.
+4. **The Route Library's safety net ran during loading.** An empty list while a live query is still `undefined` is not evidence of a missing target.
+5. **Two mechanisms withdraw the prompt on a launcher Resume** — the resumed ride's own start, and the transition's open. Removing either alone was still caught by a different test (below), so each has its own discriminating evidence.
+6. **React's `useId()` values come from a counter shared across renders**, so `ConfirmDialog.test.tsx`'s byte-identical comparison of two separate renders now replaces each generated id by its position first.
+
+### Evidence
+
+**Fail-first, against `0.4.46`.**
+
+- **Unit (written before the change):** the role-agnostic overlap test in `App.test.tsx` failed on the Delete-key confirmation's name (`Switch to "Route B"?`); RidingScreen's two-open test and `ConfirmDialog`'s two-instance test failed the same way. Of the eight lifecycle tests, seven failed for their intended reasons — the prompt not withdrawn after a launcher Resume or after riding started, a busy `Ending…` state on a superseded prompt, a resumed ride instead of a pre-ride after the in-flight clear, a stuck prompt after a failed clear, a prompt for Route C instead of opening it, and a pending switch dropped on the return to Routes. One, an older failed clear never replacing a newer prompt, passed on `0.4.46` as well, because the existing post-await request-id checks already prevented it; it is kept as a regression guard.
+- **End-to-end:** all eight tests in the new `confirmationDialogs.smoke.spec.ts` fail on `0.4.46` in both engines, but at the new `role="dialog"` requirement, before any name is compared. The naming defect's browser evidence is therefore Stage 0's probe, measured in both engines, and the role-agnostic unit tests.
+
+**New and focused tests.** `confirmationDialogs.smoke.spec.ts` (Chromium and WebKit) checks, on the real overlapping path, each confirmation's browser-computed name and description, unique ids with exactly one target inside the dialog for every `aria-labelledby`/`aria-describedby`, `role="dialog"` without `aria-modal`, focus on opening, Escape and Cancel closing only their own dialog with focus back on Delete key, the navigation staying live and the switch returning inside B's card, End and switch from the Settings fallback opening Route B with the row cleared, a route card's delete confirmation, and the launcher-Resume path. Focused unit tests cover each hand-rolled confirmation's role, name, description, initial focus and Escape. About 340 existing role queries in 33 test files moved from `alertdialog` to `dialog`, and those suites keep covering every single-dialog path (Cancel, Escape, confirmation, navigation).
+
+**Negative controls, every one run.**
+
+| Control                                                          | Caught by                                                                                                                                                      |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The fixed `confirm-dialog-title` id restored                     | the three role-agnostic overlap tests (App, RidingScreen, ConfirmDialog)                                                                                       |
+| `aria-modal="true"` restored                                     | the same three                                                                                                                                                 |
+| `role="alertdialog"` restored                                    | the same three                                                                                                                                                 |
+| Older prompts not withdrawn when a newer transition opens a ride | both in-flight-clear tests (Route A pre-ride, Route C); the launcher-Resume test alone does not discriminate, since riding starting also withdraws (finding 5) |
+| The supersession guard removed from End and switch               | the superseded-confirmation test                                                                                                                               |
+| The deferral removed                                             | both in-flight-clear tests                                                                                                                                     |
+| Riding start no longer withdrawing                               | the RidingScreen Start riding test                                                                                                                             |
+| The Route Library loading guard removed                          | the return-to-Routes test                                                                                                                                      |
+| Unconditional, non-owner-checked prompt updates                  | **not discriminated**: the existing request-id checks after every await already stop each reachable case, so the owner check is defence in depth               |
+
+**Verification.** `npm run lint`, `npm run typecheck`, `npm test` (**4679/4679 across 202 files**, three full runs), `npm run build`, and the **full Playwright suite in the pinned container (619/619)**, with `npm run format:check` last. The new spec with the switch-guard and Settings specs passed 195/195 at 36 workers (five repeats). One `App.test.tsx` run failed a single test whose name was not captured; it did not recur in 16 isolated runs of that file or 3 full-suite runs, and it is not attributed. Local npm is the pinned `11.16.0`; local Node is `v24.13.0` against `.nvmrc`'s `24.18.0`, and CI is authoritative.
+
+### Limitations, stated plainly
+
+- **VoiceOver was not tested** and is deferred: no claim is made about how iOS announces a non-modal `dialog`, or two at once. The browser-computed names and descriptions are Chromium's and WebKit's, not VoiceOver's.
+- **No installed-iPhone evidence exists yet**; the device checks are in [`current-status.md`](../current-status.md).
+- **Escape in the page-level switch prompt after leaving Routes leaves focus on the document body**, because the card that opened it has unmounted. This predates item 119 and is unchanged.
+- **Two confirmations open at once remain possible by design**, each independent. Whether a rider is ever better served by one yielding to the other was not in scope beyond the stale switch prompt.
+- **The owner-conditional updates are defence in depth** (the table above).
+- The WebKit coverage is desktop WebKit in a container, and no physical-Android result is claimed.
 
 ---
 
@@ -538,3 +632,14 @@ Four results decided the design:
 - **An assistive-technology click on the canvas** is `unknown` and places nothing. A screen reader whose activation synthesises mouse-typed pointer events could still place at the canvas point it activates; that was not tested.
 - **The mouse double-click** still places two waypoints and zooms — a separate observation, deliberately left unchanged (Stage 1).
 - **Hybrid hardware** — a touch-screen laptop, an iPad with a trackpad or Pencil — was not tested physically, and no physical-Android result is claimed.
+
+### Installed-iPhone acceptance — reported 30 September 2026
+
+**Accepted.** On an iPhone 13, installed Home Screen PWA, portrait, version `0.4.46`, build `94a4488`, all four device checks passed:
+
+- the empty-draft hint reads correctly in English and German;
+- a tap, a small pan, a pinch, a double-tap zoom and a double-tap-and-drag zoom add no waypoint and no Undo entry, both with an empty draft and with a calculated route;
+- the crosshair control's Add, Move and Insert after act on the intended waypoint, and tapping the map while Move or Insert after is pending neither completes it nor changes the control's label;
+- tapping a Planning warning, and a recognised climb on the Riding map before the ride, still selects it.
+
+This is **broad installed-iPhone portrait product-level acceptance**. It does not re-assert the automated measurements above; in particular the pan that both moves the map and places a waypoint remains unreproduced in a browser, and the device check is the evidence that touch no longer places. **Not claimed:** VoiceOver, landscape, enlarged text, physical Android, an Apple Pencil, or an external mouse or trackpad. The separate mouse double-click observation is unchanged and recorded in [`current-status.md`](../current-status.md).
