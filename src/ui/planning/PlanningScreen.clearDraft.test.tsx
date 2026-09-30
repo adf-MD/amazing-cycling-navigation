@@ -309,7 +309,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
 
     fireEvent.click(clearDraftTriggerButton());
 
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     expect(dialog).toHaveTextContent("Clear this draft?");
     expect(dialog).toHaveTextContent(
       "This removes all waypoints, the calculated route and other unsaved draft details. Saved routes are not affected.",
@@ -325,10 +325,10 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     await renderWithMeaningfulDraft(map);
 
     fireEvent.click(clearDraftTriggerButton());
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     // The trigger genuinely unmounts while the dialog is open (backlog
     // item 49's in-place morph), so the button re-queried here is a
     // freshly remounted DOM node, not the one captured before the click.
@@ -348,10 +348,10 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     await renderWithMeaningfulDraft(map);
 
     fireEvent.click(clearDraftTriggerButton());
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     fireEvent.keyDown(dialog, { key: "Escape" });
 
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(mockedClearDraft).not.toHaveBeenCalled();
     expect(screen.getByDisplayValue("Evening loop")).toBeInTheDocument();
   });
@@ -395,7 +395,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     });
 
     fireEvent.click(clearDraftTriggerButton());
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Clear draft" }));
 
     await waitUntil(
@@ -405,7 +405,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
 
     expect(mockedClearDraft).toHaveBeenCalledTimes(1);
     expect(mockedGetPlanningPreferences).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByText(/no waypoints yet/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
@@ -438,7 +438,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     mockedGetPlanningPreferences.mockRejectedValueOnce(new Error("boom"));
 
     fireEvent.click(clearDraftTriggerButton());
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Clear draft" }));
 
     await waitUntil(
@@ -466,7 +466,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     mockedClearDraft.mockRejectedValueOnce(new Error("boom"));
 
     fireEvent.click(clearDraftTriggerButton());
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Clear draft" }));
 
     await waitUntil(
@@ -477,7 +477,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "The draft could not be cleared on this device. Try again.",
     );
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     // Nothing was touched: the draft is exactly as it was.
     expect(screen.getByDisplayValue("Evening loop")).toBeInTheDocument();
     expect(
@@ -495,7 +495,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
 
     // Retry succeeds.
     fireEvent.click(triggerAfterFailure);
-    const retryDialog = screen.getByRole("alertdialog");
+    const retryDialog = screen.getByRole("dialog");
     fireEvent.click(within(retryDialog).getByRole("button", { name: "Clear draft" }));
     await waitUntil(
       () => screen.queryByDisplayValue("Planned route") !== null,
@@ -512,7 +512,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     mockedClearDraft.mockReturnValue(promise);
 
     fireEvent.click(clearDraftTriggerButton());
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     const confirmButton = within(dialog).getByRole("button", { name: "Clear draft" });
     fireEvent.click(confirmButton);
     fireEvent.click(confirmButton);
@@ -555,7 +555,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     // (e.g. a future regression removing the disabled attribute) must
     // still be rejected by the synchronous isSavingRef guard.
     fireEvent.click(clearDraftTriggerButton());
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
     await act(async () => {
       resolveSave(undefined);
@@ -578,7 +578,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     });
 
     fireEvent.click(clearDraftTriggerButton());
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Clear draft" }));
     await waitUntil(
       () => screen.queryByDisplayValue("Planned route") !== null,
@@ -616,7 +616,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     expect(screen.getByText(/loading your draft/i)).toBeInTheDocument();
 
     fireEvent.click(clearDraftTriggerButton());
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Clear draft" }));
     await waitUntil(
       () => screen.queryByDisplayValue("Planned route") !== null,
@@ -652,7 +652,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     expect(screen.getByRole("button", { name: /calculating/i })).toBeInTheDocument();
 
     fireEvent.click(clearDraftTriggerButton());
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Clear draft" }));
     await waitUntil(
       () => screen.queryByDisplayValue("Planned route") !== null,
@@ -693,7 +693,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
       avoidFerriesByDefault: true,
     });
     fireEvent.click(clearDraftTriggerButton());
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Clear draft" }));
     await waitUntil(
       () => screen.queryByDisplayValue("Planned route") !== null,
@@ -782,7 +782,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     // was inserted between the routing disclosure and it, and the only
     // "Clear draft"-named button left anywhere is the dialog's own
     // confirm button — the trigger itself is gone, not merely duplicated.
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     expect(changeDetails.nextElementSibling).toBe(dialog);
     expect(screen.getAllByRole("button", { name: "Clear draft" })).toEqual([
       within(dialog).getByRole("button", { name: "Clear draft" }),

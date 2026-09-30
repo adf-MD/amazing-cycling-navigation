@@ -233,7 +233,7 @@ test("ends a ride, returns to the empty Ride launcher, and survives a reload wit
   await expect(endRideButton).toBeVisible();
   await endRideButton.click();
 
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("End this ride?")).toBeVisible();
   await expect(
     dialog.getByText(
@@ -250,7 +250,7 @@ test("ends a ride, returns to the empty Ride launcher, and survives a reload wit
     const header = document.querySelector(".riding-immersive-header");
     const endSlot = document.querySelector(".riding-immersive-header-end");
     const confirmRow = document.querySelector(".ride-end-ride-confirm-row");
-    const alertDialog = document.querySelector('[role="alertdialog"]');
+    const alertDialog = document.querySelector('[role="dialog"]');
     if (!header || !endSlot || !confirmRow || !alertDialog) return false;
     return (
       !endSlot.contains(alertDialog) &&
@@ -385,11 +385,11 @@ test("confirms route completion on a closed loop without snapping progress back 
   const finishButton = page.getByRole("button", { name: "Finish ride" });
   await expect(finishButton).toBeVisible();
   // Finish ride stays confirmation-free and separate from End ride's own
-  // in-place morph (backlog item 50) — no alertdialog exists before the
+  // in-place morph (backlog item 50) — no dialog exists before the
   // click, and clicking finalises directly with no confirmation appearing.
-  await expect(page.getByRole("alertdialog")).toBeHidden();
+  await expect(page.getByRole("dialog")).toBeHidden();
   await finishButton.click();
-  await expect(page.getByRole("alertdialog")).toBeHidden();
+  await expect(page.getByRole("dialog")).toBeHidden();
 
   await expect(page.getByRole("heading", { name: "Ride" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
@@ -552,14 +552,14 @@ test.describe("390px phone viewport", () => {
     expect(triggerBox?.height ?? 0).toBeGreaterThanOrEqual(44);
 
     await endRideButton.click();
-    const dialog = page.getByRole("alertdialog");
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 
     const dialogFollowsHeaderDirectly = await page.evaluate(() => {
       const header = document.querySelector(".riding-immersive-header");
       const endSlot = document.querySelector(".riding-immersive-header-end");
       const confirmRow = document.querySelector(".ride-end-ride-confirm-row");
-      const alertDialog = document.querySelector('[role="alertdialog"]');
+      const alertDialog = document.querySelector('[role="dialog"]');
       if (!header || !endSlot || !confirmRow || !alertDialog) return false;
       return (
         !endSlot.contains(alertDialog) &&

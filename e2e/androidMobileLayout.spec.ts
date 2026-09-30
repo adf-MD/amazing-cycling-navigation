@@ -235,7 +235,7 @@ test("the Settings key-deletion confirmation stays inside its card at 200% text"
   });
   await page.getByRole("button", { name: "Delete key" }).click();
 
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   expect(
     await dialog.evaluate((element) =>
@@ -299,11 +299,11 @@ test("the key-deletion confirmation's actions are brought fully into the usable 
     if (!btn) throw new Error("expected a Delete key button");
     btn.click();
   });
-  await expect(page.getByRole("alertdialog")).toBeVisible();
+  await expect(page.getByRole("dialog")).toBeVisible();
 
   const measured = await page.evaluate(() => {
     const GAP = 8;
-    const dialog = document.querySelector('[role="alertdialog"]');
+    const dialog = document.querySelector('[role="dialog"]');
     if (!dialog) throw new Error("expected the confirmation to be rendered");
     const header = document.querySelector("header.app-header--sticky");
     const vv = window.visualViewport;

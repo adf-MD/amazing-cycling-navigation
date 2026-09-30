@@ -150,13 +150,13 @@ describe("SettingsSection: the unfinished key edit", () => {
     const user = userEvent.setup();
     render(<Harness />);
     await user.click(await screen.findByRole("button", { name: "Delete key" }));
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     await switchTo(user, "Status");
     await switchTo(user, "Settings");
 
     await screen.findByRole("button", { name: "Delete key" });
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect((await getProviderKey())?.apiKey).toBe(STORED_KEY);
   });
 

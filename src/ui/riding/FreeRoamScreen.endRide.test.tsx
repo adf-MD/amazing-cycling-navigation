@@ -85,7 +85,7 @@ describe("FreeRoamScreen End ride", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "End ride" }));
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("End this ride?")).toBeInTheDocument();
     expect(
       within(dialog).getByText(
@@ -117,7 +117,7 @@ describe("FreeRoamScreen End ride", () => {
     const endRideButton = screen.getByRole("button", { name: "End ride" });
     await user.click(endRideButton);
     await user.click(await screen.findByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     // The header trigger stays mounted, concealed, while the confirmation is
     // open (0.4.42 installed-iPhone recheck), so the button re-queried here
     // is the very node captured before the click — revealed, enabled and
@@ -132,11 +132,11 @@ describe("FreeRoamScreen End ride", () => {
 
     await user.click(restoredEndRideButton);
     await user.keyboard("{Escape}");
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("button", { name: "End ride" })).toHaveFocus();
   });
 
-  it("the alertdialog replaces the End-ride trigger in the header's own End slot, appearing as its own row immediately below, with the heading, status and map staying mounted (backlog item 50, restructured by item 55)", async () => {
+  it("the dialog replaces the End-ride trigger in the header's own End slot, appearing as its own row immediately below, with the heading, status and map staying mounted (backlog item 50, restructured by item 55)", async () => {
     const user = userEvent.setup();
     const fake = buildFakeGeolocationSource();
     const { container } = render(
@@ -163,7 +163,7 @@ describe("FreeRoamScreen End ride", () => {
     const header = container.querySelector(".riding-immersive-header");
     const endSlot = container.querySelector(".riding-immersive-header-end");
     const confirmRow = container.querySelector(".ride-end-ride-confirm-row");
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     expect(header).not.toBeNull();
     expect(endSlot?.contains(dialog)).toBe(false);
     expect(confirmRow?.contains(dialog)).toBe(true);
@@ -215,7 +215,7 @@ describe("FreeRoamScreen End ride", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "End ride" }));
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "End ride" }));
 
     await waitFor(async () => {
@@ -255,13 +255,13 @@ describe("FreeRoamScreen End ride", () => {
 
     const endRideButton = screen.getByRole("button", { name: "End ride" });
     await user.click(endRideButton);
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "End ride" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The ride could not be ended on this device. Try again.",
     );
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(await getActiveRideState()).toBeDefined();
     expect(onRideFinalized).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "End ride" })).toHaveFocus();
@@ -269,7 +269,7 @@ describe("FreeRoamScreen End ride", () => {
     clearSpy.mockRestore();
 
     await user.click(screen.getByRole("button", { name: "End ride" }));
-    const retryDialog = await screen.findByRole("alertdialog");
+    const retryDialog = await screen.findByRole("dialog");
     await user.click(within(retryDialog).getByRole("button", { name: "End ride" }));
     await waitFor(async () => {
       expect(await getActiveRideState()).toBeUndefined();
@@ -291,7 +291,7 @@ describe("FreeRoamScreen End ride", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "End ride" }));
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     const confirmButton = within(dialog).getByRole("button", { name: "End ride" });
     await user.dblClick(confirmButton);
 
@@ -316,7 +316,7 @@ describe("FreeRoamScreen End ride", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "End ride" }));
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "End ride" }));
 
     await waitFor(async () => {

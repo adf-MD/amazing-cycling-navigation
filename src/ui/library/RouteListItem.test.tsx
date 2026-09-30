@@ -342,13 +342,13 @@ describe("RouteListItem", () => {
   it("renders no inline confirmation when isDeletePending is false", () => {
     renderItem({ isDeletePending: false });
 
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("renders the inline confirmation with the route's name, the explanation and both actions when isDeletePending is true", () => {
     renderItem({ isDeletePending: true });
 
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Delete “Evening loop”?")).toBeInTheDocument();
     expect(
       within(dialog).getByText(
@@ -364,7 +364,7 @@ describe("RouteListItem", () => {
   it("gives the confirmation route-scoped labelling and no aria-modal", () => {
     renderItem({ isDeletePending: true });
 
-    const dialog = screen.getByRole("alertdialog", { name: "Delete “Evening loop”?" });
+    const dialog = screen.getByRole("dialog", { name: "Delete “Evening loop”?" });
     expect(dialog).not.toHaveAttribute("aria-modal");
     expect(dialog).toHaveAccessibleDescription(
       "This route will be permanently deleted from this device. This cannot be undone.",
@@ -397,6 +397,27 @@ describe("RouteListItem", () => {
     expect(screen.getByRole("button", { name: "Delete" })).toHaveFocus();
   });
 
+  // Backlog item 119: like every confirmation, a named, described,
+  // non-modal dialog — never an alertdialog, which ARIA expects to be modal
+  // while the rest of the Route Library stays operable around this one.
+  it("item 119: the delete confirmation is a named, described, non-modal dialog that takes focus and gives it back on Escape", async () => {
+    const user = userEvent.setup();
+    const { route, onDeleteCancel } = renderItem({ isDeletePending: true });
+
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    const dialog = screen.getByRole("dialog", { name: "Delete “Evening loop”?" });
+    expect(dialog).not.toHaveAttribute("aria-modal");
+    expect(dialog).toHaveAccessibleDescription(
+      "This route will be permanently deleted from this device. This cannot be undone.",
+    );
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+
+    expect(onDeleteCancel).toHaveBeenCalledWith(route.id);
+    expect(screen.getByRole("button", { name: "Delete" })).toHaveFocus();
+  });
+
   it("clicking Delete route calls onDeleteConfirm with the route id", async () => {
     const user = userEvent.setup();
     const { route, onDeleteConfirm } = renderItem({ isDeletePending: true });
@@ -422,7 +443,7 @@ describe("RouteListItem", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "That route could not be deleted.",
     );
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("clicking Rename while this route's delete confirmation is open cancels the pending delete first, then enters rename mode", async () => {
@@ -433,7 +454,7 @@ describe("RouteListItem", () => {
 
     expect(onDeleteCancel).toHaveBeenCalledWith(route.id);
     expect(screen.getByLabelText("Route name")).toBeInTheDocument();
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("clicking Rename does not call onDeleteCancel when isDeletePending is false", async () => {
@@ -455,7 +476,7 @@ describe("RouteListItem", () => {
 
     expect(screen.getByRole("button", { name: longName })).toBeInTheDocument();
     expect(
-      within(screen.getByRole("alertdialog")).getByText(`Delete “${longName}”?`),
+      within(screen.getByRole("dialog")).getByText(`Delete “${longName}”?`),
     ).toBeInTheDocument();
   });
 
@@ -907,7 +928,7 @@ describe("RouteListItem", () => {
 
       expect(onDeleteCancel).toHaveBeenCalledWith(route.id);
       expect(screen.getByRole("button", { name: "Save tags" })).toBeInTheDocument();
-      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
     });
 
     it("opening the tag editor while this card's switch prompt is busy does nothing", async () => {
@@ -946,7 +967,7 @@ describe("RouteListItem", () => {
       expect(screen.queryByRole("button", { name: "Export" })).toBeNull();
       expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
       expect(screen.queryByRole("button", { name: "Pin Evening loop" })).toBeNull();
-      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
     });
 
     it("renders a very long tag's text in full", () => {
@@ -1657,13 +1678,13 @@ describe("RouteListItem", () => {
     it("renders no panel when switchPrompt is null", () => {
       renderItem({ switchPrompt: null });
 
-      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
     });
 
     it("renders the title, message and three actions in order (End and switch, Return to paused ride, Cancel) when offerReturn is true", () => {
       renderItem({ switchPrompt: buildSwitchPrompt({ offerReturn: true }) });
 
-      const dialog = screen.getByRole("alertdialog");
+      const dialog = screen.getByRole("dialog");
       expect(within(dialog).getByText('Switch to "Route B"?')).toBeInTheDocument();
       expect(
         within(dialog).getByText(
@@ -1681,7 +1702,7 @@ describe("RouteListItem", () => {
     it("renders only the confirm action and Cancel, in that order, when offerReturn is false", () => {
       renderItem({ switchPrompt: buildSwitchPrompt({ offerReturn: false }) });
 
-      const dialog = screen.getByRole("alertdialog");
+      const dialog = screen.getByRole("dialog");
       const buttons = within(dialog).getAllByRole("button");
       expect(buttons.map((button) => button.textContent)).toEqual([
         "End and switch",
@@ -1695,7 +1716,7 @@ describe("RouteListItem", () => {
     it("gives the panel its own route-scoped labelling and no aria-modal", () => {
       renderItem({ switchPrompt: buildSwitchPrompt() });
 
-      const dialog = screen.getByRole("alertdialog", { name: 'Switch to "Route B"?' });
+      const dialog = screen.getByRole("dialog", { name: 'Switch to "Route B"?' });
       expect(dialog).not.toHaveAttribute("aria-modal");
       expect(dialog).toHaveAccessibleDescription(
         '"Route A" is paused. Return to it, or end it and switch to "Route B".',
@@ -1736,6 +1757,27 @@ describe("RouteListItem", () => {
       expect(focusSpy).not.toHaveBeenCalled();
     });
 
+    // Backlog item 119. Focus goes back to the card title through App
+    // (App.test.tsx covers that path); this proves the semantics and the
+    // prompt's own focus behaviour.
+    it("item 119: the switch prompt is a named, described, non-modal dialog that takes focus and cancels on Escape", async () => {
+      const user = userEvent.setup();
+      const switchPrompt = buildSwitchPrompt();
+      renderItem({ switchPrompt });
+
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      const dialog = screen.getByRole("dialog", { name: 'Switch to "Route B"?' });
+      expect(dialog).not.toHaveAttribute("aria-modal");
+      expect(dialog).toHaveAccessibleDescription(
+        '"Route A" is paused. Return to it, or end it and switch to "Route B".',
+      );
+      expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+
+      await user.keyboard("{Escape}");
+
+      expect(switchPrompt.onCancel).toHaveBeenCalledTimes(1);
+    });
+
     it("clicking Return to paused ride calls onReturn", async () => {
       const user = userEvent.setup();
       const switchPrompt = buildSwitchPrompt();
@@ -1759,7 +1801,7 @@ describe("RouteListItem", () => {
     it("disables every rendered action while busy", () => {
       renderItem({ switchPrompt: buildSwitchPrompt({ busy: true }) });
 
-      const dialog = screen.getByRole("alertdialog");
+      const dialog = screen.getByRole("dialog");
       for (const button of within(dialog).getAllByRole("button")) {
         expect(button).toBeDisabled();
       }
@@ -1874,7 +1916,7 @@ describe("RouteListItem", () => {
         expect(calls).toHaveLength(1);
         const card = document.querySelector(`[data-route-id="${route.id}"]`);
         expect(calls[0]?.target).toBe(card);
-        expect(calls[0]?.target).not.toBe(screen.getByRole("alertdialog"));
+        expect(calls[0]?.target).not.toBe(screen.getByRole("dialog"));
         // "auto" since the item 95 interaction-safety correction — see the
         // per-preference test below for why the reveal is never animated.
         expect(calls[0]?.options).toEqual(

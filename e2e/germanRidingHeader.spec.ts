@@ -485,7 +485,7 @@ for (const width of [375, 390] as const) {
 
           for (const close of ["Cancel", "Escape"] as const) {
             await trigger.click();
-            const dialog = page.getByRole("alertdialog");
+            const dialog = page.getByRole("dialog");
             await expect(dialog).toBeVisible();
             await expect(dialog.getByRole("button", { name: copy.cancel })).toBeFocused();
 

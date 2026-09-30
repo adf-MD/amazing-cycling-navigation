@@ -1,4 +1,4 @@
-import type { KeyboardEvent, RefObject } from "react";
+import { useId, type KeyboardEvent, type RefObject } from "react";
 
 export interface ConfirmDialogProps {
   open: boolean;
@@ -50,11 +50,21 @@ export interface ConfirmDialogProps {
 const TITLE_TAGS = { 2: "h2", 3: "h3", 4: "h4" } as const;
 
 /**
- * The app's shared, reusable confirmation pattern — a non-modal (in DOM
- * terms; `aria-modal="true"` is the ARIA hint only) alertdialog. Focus
- * moves to Cancel as soon as it opens (plain `autoFocus`, no effect
- * needed), and Escape anywhere inside it cancels, mirroring
- * RouteListItem.tsx's own hand-rolled per-row delete confirmation exactly.
+ * The app's shared, reusable confirmation pattern: a named, described,
+ * **non-modal** `role="dialog"` (backlog item 119). It renders in the
+ * page's flow and leaves everything around it operable — the page-level
+ * ride-switch prompt depends on the primary navigation staying live so a
+ * rider can leave Routes mid-prompt — so it never claims `aria-modal`,
+ * which would tell assistive technology the rest of the page is inert when
+ * it is not. For the same reason it is not an `alertdialog`, which ARIA
+ * expects to be modal.
+ *
+ * More than one may be open at once (that page-level prompt beside a
+ * screen's own confirmation, or two in RidingScreen's paused panel), so
+ * every instance takes its own title and description ids from `useId()`
+ * and is announced by its own title and message; each acts only on its
+ * own subject. Focus moves to Cancel as soon as it opens (plain
+ * `autoFocus`, no effect needed), and Escape inside it cancels it alone.
  * Focus-restore to whatever triggered the dialog is the caller's own
  * responsibility (typically via a ref to that trigger, called from
  * onCancel/onConfirm) — this component has no notion of what opened it.
@@ -72,6 +82,10 @@ export function ConfirmDialog({
   headingLevel = 2,
   containerRef,
 }: ConfirmDialogProps) {
+  // Called before the early return below, as hooks must be.
+  const headingId = useId();
+  const descriptionId = useId();
+
   if (!open) {
     return null;
   }
@@ -86,15 +100,15 @@ export function ConfirmDialog({
 
   return (
     <div
-      role="alertdialog"
-      aria-modal="true"
-      aria-labelledby="confirm-dialog-title"
+      role="dialog"
+      aria-labelledby={headingId}
+      aria-describedby={descriptionId}
       className="route-delete-confirm"
       onKeyDown={handleKeyDown}
       ref={containerRef}
     >
-      <Title id="confirm-dialog-title">{title}</Title>
-      <p>{message}</p>
+      <Title id={headingId}>{title}</Title>
+      <p id={descriptionId}>{message}</p>
       <div className="route-delete-confirm-actions">
         <button
           type="button"

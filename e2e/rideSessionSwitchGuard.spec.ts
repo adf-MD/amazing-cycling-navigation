@@ -194,7 +194,7 @@ test("route A unfinished + opening route B shows a confirmation before any repla
   // follow-up: the prompt is a descendant of B's own card, names A
   // directly, and offers Return to paused ride.
   await expect(page.getByRole("heading", { name: routeBName, exact: true })).toBeHidden();
-  const dialog = routeBCard.getByRole("alertdialog");
+  const dialog = routeBCard.getByRole("dialog");
   await expect(
     dialog.getByText(
       `"${routeAName}" is paused. Return to it, or end it and switch to "${routeBName}". Ending it will clear ride progress; the saved route will remain in Routes.`,
@@ -203,7 +203,7 @@ test("route A unfinished + opening route B shows a confirmation before any repla
   await expect(
     dialog.getByRole("button", { name: "Return to paused ride" }),
   ).toBeVisible();
-  await expect(page.getByRole("alertdialog")).toHaveCount(1);
+  await expect(page.getByRole("dialog")).toHaveCount(1);
   expect(await readActiveRideStateRow(page)).toEqual(routeARowBefore);
   expect(await readWatchPositionCallCount(page)).toBe(0);
 
@@ -214,7 +214,7 @@ test("route A unfinished + opening route B shows a confirmation before any repla
   await expect(routeBButton).toBeFocused();
 
   await routeBButton.click();
-  const confirmDialog = routeBCard.getByRole("alertdialog");
+  const confirmDialog = routeBCard.getByRole("dialog");
   await confirmDialog.getByRole("button", { name: "End and switch" }).click();
 
   await waitForClearedRideState(page);
@@ -267,7 +267,7 @@ test("a stale launcher render exposing Start free roam is still guarded once a r
   await startFreeRoamButton.click();
 
   // Guarded, not silently overwritten.
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog.getByText(/unfinished ride on another route/i)).toBeVisible();
   expect(await readActiveRideStateRow(page)).toEqual(injectedRouteRow);
   expect(await readWatchPositionCallCount(page)).toBe(0);
@@ -315,7 +315,7 @@ test("free roam unfinished + opening a route shows the same confirmation lifecyc
   const routeButton = page.getByRole("button", { name: routeName, exact: true });
   await routeButton.click();
 
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog.getByText(/unfinished free roam session/i)).toBeVisible();
   expect(await readActiveRideStateRow(page)).toEqual(freeRoamRowBefore);
 
@@ -323,7 +323,7 @@ test("free roam unfinished + opening a route shows the same confirmation lifecyc
   expect(await readActiveRideStateRow(page)).toEqual(freeRoamRowBefore);
 
   await routeButton.click();
-  const confirmDialog = page.getByRole("alertdialog");
+  const confirmDialog = page.getByRole("dialog");
   await confirmDialog.getByRole("button", { name: "End and switch" }).click();
 
   await waitForClearedRideState(page);
@@ -359,12 +359,12 @@ test("resuming the exact same unfinished route via the launcher starts exactly o
   const resumeButton = page.getByRole("button", { name: "Resume ride" });
   await expect(resumeButton).toBeVisible();
   expect(await readWatchPositionCallCount(page)).toBe(0);
-  await expect(page.getByRole("alertdialog")).toBeHidden();
+  await expect(page.getByRole("dialog")).toBeHidden();
 
   await resumeButton.click();
 
   await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
-  await expect(page.getByRole("alertdialog")).toBeHidden();
+  await expect(page.getByRole("dialog")).toBeHidden();
   await expect.poll(() => readWatchPositionCallCount(page)).toBe(1);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
@@ -400,12 +400,12 @@ test("resuming the exact same unfinished free-roam session starts exactly one wa
   const resumeFreeRoamButton = page.getByRole("button", { name: "Resume free roam" });
   await expect(resumeFreeRoamButton).toBeVisible();
   expect(await readWatchPositionCallCount(page)).toBe(0);
-  await expect(page.getByRole("alertdialog")).toBeHidden();
+  await expect(page.getByRole("dialog")).toBeHidden();
 
   await resumeFreeRoamButton.click();
 
   await expect(page.getByRole("heading", { level: 1, name: "Free roam" })).toBeVisible();
-  await expect(page.getByRole("alertdialog")).toBeHidden();
+  await expect(page.getByRole("dialog")).toBeHidden();
   await expect.poll(() => readWatchPositionCallCount(page)).toBe(1);
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
@@ -507,7 +507,7 @@ test("a Planning save while a different route is unfinished shows the same confi
     page.getByRole("heading", { name: savedRouteName, exact: true }),
   ).toBeHidden();
 
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog.getByText(/unfinished ride on another route/i)).toBeVisible();
   expect(await readActiveRideStateRow(page)).toEqual(existingRowBefore);
 
@@ -561,9 +561,9 @@ test("on a long Routes list, selecting a lower route while another is paused exp
 
   // The prompt must be a descendant of route B's own card, not a global,
   // page-level dialog detached from the card the rider actually tapped.
-  const dialog = routeBCard.getByRole("alertdialog");
+  const dialog = routeBCard.getByRole("dialog");
   await expect(dialog).toBeVisible();
-  await expect(page.getByRole("alertdialog")).toHaveCount(1);
+  await expect(page.getByRole("dialog")).toHaveCount(1);
   const returnButton = dialog.getByRole("button", { name: "Return to paused ride" });
   await expect(returnButton).toBeVisible();
   expect(await readActiveRideStateRow(page)).toEqual(routeARowBefore);
@@ -657,7 +657,7 @@ async function installActionGeometryRecorder(page: Page, recordMs: number) {
     const onClick = (event: MouseEvent) => {
       const target = event.target;
       const button = target instanceof Element ? target.closest("button") : null;
-      const inPrompt = button?.closest('[role="alertdialog"]') ?? null;
+      const inPrompt = button?.closest('[role="dialog"]') ?? null;
       if (recorder.activatedLabel === null && button && inPrompt) {
         recorder.activatedLabel = button.textContent.trim();
         recorder.clickAt = performance.now() - start;
@@ -667,7 +667,7 @@ async function installActionGeometryRecorder(page: Page, recordMs: number) {
 
     const tick = () => {
       const now = performance.now() - start;
-      const dialog = document.querySelector('[role="alertdialog"]');
+      const dialog = document.querySelector('[role="dialog"]');
       if (dialog) {
         recorder.frames.push({
           t: now,
@@ -814,7 +814,7 @@ test("Return activated as soon as the switch prompt is actionable: the prompt's 
   await installActionGeometryRecorder(page, ACTION_GEOMETRY_RECORD_MS);
 
   await page.getByRole("button", { name: routeBName, exact: true }).click();
-  const dialog = routeBCard.getByRole("alertdialog");
+  const dialog = routeBCard.getByRole("dialog");
   await expect(dialog).toBeVisible();
   const returnButton = dialog.getByRole("button", { name: "Return to paused ride" });
   await expect(returnButton).toBeVisible();
@@ -1043,7 +1043,7 @@ test("the switch prompt's actions are already settled in the first frame a rider
   await installActionGeometryRecorder(page, ACTION_GEOMETRY_RECORD_MS);
 
   await page.getByRole("button", { name: routeBName, exact: true }).click();
-  const dialog = routeBCard.getByRole("alertdialog");
+  const dialog = routeBCard.getByRole("dialog");
   await expect(dialog).toBeVisible();
   const returnButton = dialog.getByRole("button", { name: "Return to paused ride" });
   await expect(returnButton).toBeVisible();
@@ -1079,7 +1079,7 @@ test("Return activated after the initial item 95 scroll has fully settled still 
   );
 
   await page.getByRole("button", { name: routeBName, exact: true }).click();
-  const dialog = routeBCard.getByRole("alertdialog");
+  const dialog = routeBCard.getByRole("dialog");
   await expect(dialog).toBeVisible();
   const returnButton = dialog.getByRole("button", { name: "Return to paused ride" });
   await expect(returnButton).toBeVisible();
@@ -1184,7 +1184,7 @@ test("End and switch activated as soon as the switch prompt is actionable: the p
   await installActionGeometryRecorder(page, ACTION_GEOMETRY_RECORD_MS);
 
   await page.getByRole("button", { name: routeBName, exact: true }).click();
-  const dialog = routeBCard.getByRole("alertdialog");
+  const dialog = routeBCard.getByRole("dialog");
   await expect(dialog).toBeVisible();
   const confirmButton = dialog.getByRole("button", { name: "End and switch" });
   await expect(confirmButton).toBeVisible();
@@ -1262,7 +1262,7 @@ test("at an iPhone-sized portrait viewport, the inline switch prompt stays insid
   const routeBButton = page.getByRole("button", { name: routeBName, exact: true });
   await routeBButton.click();
 
-  const dialog = routeBCard.getByRole("alertdialog");
+  const dialog = routeBCard.getByRole("dialog");
   await expect(dialog).toBeVisible();
 
   const header = page.locator("header.app-header--sticky");
@@ -1350,7 +1350,7 @@ test("at 844x390 short landscape, the inline switch prompt stays inside its own 
   const routeBCard = page.locator(`[data-route-id="${routeBId}"]`);
   await page.getByRole("button", { name: routeBName, exact: true }).click();
 
-  const dialog = routeBCard.getByRole("alertdialog");
+  const dialog = routeBCard.getByRole("dialog");
   await expect(dialog).toBeVisible();
 
   const header = page.locator("header.app-header--sticky");
@@ -1416,7 +1416,7 @@ test("at 200% enlarged text, the inline switch prompt (including the longer Retu
   const routeBCard = page.locator(`[data-route-id="${routeBId}"]`);
   await page.getByRole("button", { name: routeBName, exact: true }).click();
 
-  const dialog = routeBCard.getByRole("alertdialog");
+  const dialog = routeBCard.getByRole("dialog");
   await expect(dialog).toBeVisible();
 
   // Scoped to the switch prompt's own card/actions, not the whole document: this test
@@ -1436,7 +1436,7 @@ test("at 200% enlarged text, the inline switch prompt (including the longer Retu
       const rect = el.getBoundingClientRect();
       return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
     };
-    const dialogEl = cardEl.querySelector('[role="alertdialog"]');
+    const dialogEl = cardEl.querySelector('[role="dialog"]');
     if (!dialogEl) return null;
     const buttonEls = Array.from(dialogEl.querySelectorAll("button"));
     const headerEl = document.querySelector("header.app-header--sticky");
@@ -1538,7 +1538,7 @@ test("opening the switch prompt on a card that is already fully visible does not
 
   await page.getByRole("button", { name: routeBName, exact: true }).click();
 
-  const dialog = routeBCard.getByRole("alertdialog");
+  const dialog = routeBCard.getByRole("dialog");
   await expect(dialog).toBeVisible();
 
   const cardBoxAfter = await routeBCard.boundingBox();
@@ -1594,7 +1594,7 @@ test("a genuine storage-clear failure during a confirmed switch preserves the or
   const routeBCard = page.locator(`[data-route-id="${routeBId}"]`);
 
   await page.getByRole("button", { name: routeBName, exact: true }).click();
-  const dialog = routeBCard.getByRole("alertdialog");
+  const dialog = routeBCard.getByRole("dialog");
   await dialog.getByRole("button", { name: "End and switch" }).click();
 
   await expect(dialog.getByText(/could not be ended on this device/i)).toBeVisible();

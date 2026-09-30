@@ -189,7 +189,7 @@ describe("RidingScreen route-completion arming", () => {
 
     const endRideButton = await screen.findByRole("button", { name: "End ride" });
     await user.click(endRideButton);
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "End ride" }));
 
     await waitFor(async () => {
@@ -221,7 +221,7 @@ describe("RidingScreen route-completion arming", () => {
 
     const endRideButton = await screen.findByRole("button", { name: "End ride" });
     await user.click(endRideButton);
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "End ride" }));
 
     await waitFor(async () => {
@@ -262,7 +262,7 @@ describe("RidingScreen route-completion arming", () => {
     // End it.
     const endRideButton = screen.getByRole("button", { name: "End ride" });
     await user.click(endRideButton);
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "End ride" }));
     await waitFor(async () => {
       expect(await getActiveRideState()).toBeUndefined();

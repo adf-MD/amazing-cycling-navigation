@@ -394,7 +394,7 @@ test.describe("390×844 phone viewport", () => {
     await switchToProfile(page);
 
     await page.getByRole("button", { name: "End ride" }).click();
-    const dialog = page.getByRole("alertdialog");
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Cancel" })).toBeVisible();
     await expect(dialog.getByRole("button", { name: "End ride" })).toBeVisible();

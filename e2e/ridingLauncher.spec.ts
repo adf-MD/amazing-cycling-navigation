@@ -240,7 +240,7 @@ test("the launcher can end an unfinished ride directly, without ever resuming GP
   await expect(endRideButton).toBeVisible();
   await endRideButton.click();
 
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("End this ride?")).toBeVisible();
 
   // .ride-launcher-clear-row is a persistent action-slot container
@@ -249,7 +249,7 @@ test("the launcher can end an unfinished ride directly, without ever resuming GP
   // page. Resume ride and the route's own info stay visible around it.
   const dialogInsideClearRow = await page.evaluate(() => {
     const row = document.querySelector(".ride-launcher-clear-row");
-    const alertDialog = document.querySelector('[role="alertdialog"]');
+    const alertDialog = document.querySelector('[role="dialog"]');
     return Boolean(row && alertDialog && row.contains(alertDialog));
   });
   expect(dialogInsideClearRow).toBe(true);
@@ -463,7 +463,7 @@ test("a session whose route has been deleted offers only a confirmed Discard, dr
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
 
   await page.getByRole("button", { name: "Delete" }).click();
-  const deleteDialog = page.getByRole("alertdialog");
+  const deleteDialog = page.getByRole("dialog");
   await expect(deleteDialog.getByText(`Delete “${routeName}”?`)).toBeVisible();
   await deleteDialog.getByRole("button", { name: "Delete route" }).click();
   await expect(page.getByRole("button", { name: routeName, exact: true })).toBeHidden();
@@ -480,7 +480,7 @@ test("a session whose route has been deleted offers only a confirmed Discard, dr
   await expect(discardButton).toBeVisible();
 
   await discardButton.click();
-  const cancelDialog = page.getByRole("alertdialog");
+  const cancelDialog = page.getByRole("dialog");
   await expect(cancelDialog.getByText("Discard unfinished ride?")).toBeVisible();
 
   // .ride-launcher-clear-row is a persistent action-slot container
@@ -490,7 +490,7 @@ test("a session whose route has been deleted offers only a confirmed Discard, dr
   // visible around it.
   const dialogInsideClearRow = await page.evaluate(() => {
     const row = document.querySelector(".ride-launcher-clear-row");
-    const alertDialog = document.querySelector('[role="alertdialog"]');
+    const alertDialog = document.querySelector('[role="dialog"]');
     return Boolean(row && alertDialog && row.contains(alertDialog));
   });
   expect(dialogInsideClearRow).toBe(true);
@@ -506,7 +506,7 @@ test("a session whose route has been deleted offers only a confirmed Discard, dr
   await expect(discardButton).toBeFocused();
 
   await discardButton.click();
-  const confirmDialog = page.getByRole("alertdialog");
+  const confirmDialog = page.getByRole("dialog");
   await confirmDialog.getByRole("button", { name: "Discard unfinished ride" }).click();
 
   await waitForClearedRideState(page);

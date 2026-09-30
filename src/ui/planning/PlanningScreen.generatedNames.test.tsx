@@ -299,7 +299,7 @@ describe("generated Planning names follow the rider's language", () => {
     fireEvent.click(
       screen.getByRole("button", { name: translator.t("planning.clearDraft") }),
     );
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     fireEvent.click(
       within(dialog).getByRole("button", { name: translator.t("planning.clearDraft") }),
     );

@@ -40,7 +40,7 @@ function openRouteServiceCard() {
 async function openDeleteConfirmation(user: ReturnType<typeof userEvent.setup>) {
   await waitFor(() => screen.getByRole("button", { name: "Delete key" }));
   await user.click(screen.getByRole("button", { name: "Delete key" }));
-  return screen.getByRole("alertdialog");
+  return screen.getByRole("dialog");
 }
 
 function buildFixedClock(startMs: number): Clock {
@@ -166,7 +166,7 @@ describe("SettingsScreen", () => {
     // state", asserted by identity rather than by re-querying.
     expect(within(card).getByText("No key configured")).toBeInTheDocument();
     expect(within(card).getByLabelText("OpenRouteService API key")).toBeInTheDocument();
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   // ---------------------------------------------------------------------
@@ -183,8 +183,8 @@ describe("SettingsScreen", () => {
     render(<SettingsScreen />);
     const dialog = await openDeleteConfirmation(user);
 
-    expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
-    expect(within(openRouteServiceCard()).getByRole("alertdialog")).toBe(dialog);
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(within(openRouteServiceCard()).getByRole("dialog")).toBe(dialog);
     // The nearest owning section is the OpenRouteService card itself — a
     // relationship assertion, so a peer rendered anywhere else on the
     // screen fails it however it is classed.
@@ -239,7 +239,7 @@ describe("SettingsScreen", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect((await getProviderKey())?.apiKey).toBe(DUMMY_KEY);
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("button", { name: "Delete key" })).toHaveFocus();
   });
 
@@ -252,7 +252,7 @@ describe("SettingsScreen", () => {
     await user.keyboard("{Escape}");
 
     expect((await getProviderKey())?.apiKey).toBe(DUMMY_KEY);
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("button", { name: "Delete key" })).toHaveFocus();
   });
 
@@ -292,7 +292,7 @@ describe("SettingsScreen", () => {
     await user.click(screen.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
-      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
     });
     expect((await getProviderKey())?.apiKey).toBe(DUMMY_KEY);
     expect(
@@ -311,12 +311,12 @@ describe("SettingsScreen", () => {
     await openDeleteConfirmation(user);
 
     await user.click(screen.getByRole("button", { name: "Replace key" }));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
 
     // ...and cancelling the edit does not bring it back.
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => screen.getByRole("button", { name: "Delete key" }));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("a key deleted in another tab disarms the confirmation, which cannot resurrect over a newly saved key", async () => {
@@ -328,11 +328,11 @@ describe("SettingsScreen", () => {
     await deleteProviderKey();
 
     await waitFor(() => {
-      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
     });
     await saveKeyWithDistinctTimestamp(REPLACEMENT_KEY);
     await waitFor(() => screen.getByRole("button", { name: "Delete key" }));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect((await getProviderKey())?.apiKey).toBe(REPLACEMENT_KEY);
   });
 
@@ -383,7 +383,7 @@ describe("SettingsScreen", () => {
       header = { top: 0, bottom: 0 },
     ) {
       Element.prototype.getBoundingClientRect = function (this: Element) {
-        if (this.getAttribute("role") === "alertdialog") {
+        if (this.getAttribute("role") === "dialog") {
           return rect(inset.top, inset.bottom);
         }
         if (this.tagName === "HEADER") return rect(header.top, header.bottom);
@@ -525,7 +525,7 @@ describe("SettingsScreen", () => {
       await saveProviderKey(DUMMY_KEY);
       let insetBottom = 900;
       Element.prototype.getBoundingClientRect = function (this: Element) {
-        if (this.getAttribute("role") === "alertdialog") {
+        if (this.getAttribute("role") === "dialog") {
           return rect(insetBottom - 300, insetBottom);
         }
         return rect(0, 0);
@@ -573,7 +573,7 @@ describe("SettingsScreen", () => {
       await saveProviderKey(DUMMY_KEY);
       let inset = { top: 600, bottom: 900 };
       Element.prototype.getBoundingClientRect = function (this: Element) {
-        return this.getAttribute("role") === "alertdialog"
+        return this.getAttribute("role") === "dialog"
           ? rect(inset.top, inset.bottom)
           : rect(0, 0);
       };
@@ -582,7 +582,7 @@ describe("SettingsScreen", () => {
       expect(calls).toHaveLength(1);
 
       await user.click(screen.getByRole("button", { name: "Cancel" }));
-      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
       // The rider has scrolled; the confirmation now opens lower down, so
       // a different correction is required.
       inset = { top: 700, bottom: 1000 };
@@ -640,7 +640,7 @@ describe("SettingsScreen", () => {
     await saveKeyWithDistinctTimestamp(REPLACEMENT_KEY);
 
     await waitFor(() => {
-      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
     });
     // The replacement is still there — the armed confirmation was bound to
     // the key it was armed for, so it disarmed rather than deleting a key

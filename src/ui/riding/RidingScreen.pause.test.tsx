@@ -135,7 +135,7 @@ describe("RidingScreen Pause (backlog item 55)", () => {
     ).toBeInTheDocument();
   });
 
-  it("has no confirmation — pressing Pause never shows an alertdialog", async () => {
+  it("has no confirmation — pressing Pause never shows a dialog", async () => {
     const user = userEvent.setup();
     const fake = buildFakeGeolocationSource();
     render(
@@ -152,7 +152,7 @@ describe("RidingScreen Pause (backlog item 55)", () => {
     });
     await user.click(await screen.findByRole("button", { name: "Pause" }));
 
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("a successful Pause writes a resumable row and calls onRidePaused only after nav.pause() resolves", async () => {
@@ -341,7 +341,7 @@ describe("RidingScreen Pause (backlog item 55)", () => {
     });
     await user.click(await screen.findByRole("button", { name: "End ride" }));
 
-    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     await waitFor(() => {

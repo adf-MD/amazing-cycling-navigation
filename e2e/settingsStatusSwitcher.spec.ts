@@ -342,7 +342,7 @@ test("keyboard focus never lands beneath the sticky rows, including after a key 
   await page.getByLabel("OpenRouteService API key").fill("dummy-e2e-key");
   await page.getByRole("button", { name: "Save on this device" }).click();
   await page.getByRole("button", { name: "Delete key" }).click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
   const heading = page.getByRole("heading", { name: "OpenRouteService", level: 3 });
   await expect(heading).toBeFocused();
   const headingTop = await heading.evaluate(
@@ -483,7 +483,7 @@ for (const lang of ["en", "de"] as const) {
         await page.getByLabel(COPY[lang].keyLabel).fill("dummy-e2e-key");
         await page.getByRole("button", { name: COPY[lang].save }).click();
         await page.getByRole("button", { name: COPY[lang].deleteKey }).click();
-        const dialog = page.getByRole("alertdialog");
+        const dialog = page.getByRole("dialog");
         const actions = await dialog.evaluate((element) => {
           const rects = [...element.querySelectorAll("button")].map((b) =>
             b.getBoundingClientRect(),

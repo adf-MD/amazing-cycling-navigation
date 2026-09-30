@@ -2150,7 +2150,7 @@ describe("RidingScreen", () => {
       const header = container.querySelector(".riding-immersive-header");
       const endSlot = container.querySelector(".riding-immersive-header-end");
       const confirmRow = container.querySelector(".ride-end-ride-confirm-row");
-      const dialog = await screen.findByRole("alertdialog");
+      const dialog = await screen.findByRole("dialog");
       expect(endSlot?.contains(dialog)).toBe(false);
       expect(confirmRow?.contains(dialog)).toBe(true);
       expect(header?.nextElementSibling).toBe(confirmRow);
@@ -2408,7 +2408,7 @@ describe("RidingScreen", () => {
       expect(backButton).toBeEnabled();
 
       await user.click(screen.getByRole("button", { name: "End ride" }));
-      const dialog = await screen.findByRole("alertdialog");
+      const dialog = await screen.findByRole("dialog");
       await user.click(within(dialog).getByRole("button", { name: "End ride" }));
 
       expect(backButton).toBeDisabled();
@@ -7873,6 +7873,72 @@ describe("RidingScreen", () => {
       expect(draft?.avoidFerries).toBe(false);
     });
 
+    // Backlog item 119: in the paused panel both confirmations can be open
+    // at once, and each must be announced by its own title and message —
+    // queried role-agnostically so this describes the naming, not a role.
+    it("with End ride and Edit copy both open, each confirmation carries its own name and description", async () => {
+      const user = userEvent.setup();
+      await setActiveRideState({
+        id: "active",
+        routeId: route.id,
+        startedAt: "2026-01-01T08:00:00.000Z",
+        lastFix: { coordinate: [0, 51], accuracyMetres: 6, timestampMs: 1000 },
+        lastMatchedPointIndex: 0,
+        matchedDistanceFromStartMetres: 0,
+        offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+      });
+      await saveDraft({
+        waypoints: [
+          { id: "existing-a", coordinate: [1, 52] },
+          { id: "existing-b", coordinate: [1.01, 52] },
+        ],
+        routeName: "Unsaved plan",
+        avoidFerries: true,
+        profile: "cycling-road",
+      });
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          onNavigateToPlanning={vi.fn()}
+        />,
+      );
+
+      await user.click(await screen.findByRole("button", { name: "End ride" }));
+      await user.click(screen.getByRole("button", { name: "Edit copy" }));
+      await waitFor(() => {
+        expect(
+          document.querySelectorAll('[role="dialog"],[role="alertdialog"]'),
+        ).toHaveLength(2);
+      });
+
+      const byTitle = (title: string) => {
+        const match = [
+          ...document.querySelectorAll<HTMLElement>(
+            '[role="dialog"],[role="alertdialog"]',
+          ),
+        ].find((element) => element.querySelector("h2")?.textContent === title);
+        if (!match) throw new Error(`no confirmation titled ${title}`);
+        return match;
+      };
+      for (const title of ["End this ride?", "Replace your current draft?"]) {
+        expect(byTitle(title)).toHaveAttribute("role", "dialog");
+        expect(byTitle(title)).not.toHaveAttribute("aria-modal");
+      }
+      expect(byTitle("End this ride?")).toHaveAccessibleName("End this ride?");
+      expect(byTitle("Replace your current draft?")).toHaveAccessibleName(
+        "Replace your current draft?",
+      );
+      expect(byTitle("End this ride?")).toHaveAccessibleDescription(
+        /navigation progress for this ride will be cleared/i,
+      );
+      expect(byTitle("Replace your current draft?")).toHaveAccessibleDescription(
+        /replace your unsaved draft in planning/i,
+      );
+    });
+
     it("shows a confirmation before replacing a meaningful existing draft; Cancel preserves it and restores focus", async () => {
       const user = userEvent.setup();
       const onNavigateToPlanning = vi.fn();
@@ -7898,7 +7964,7 @@ describe("RidingScreen", () => {
       const editCopyButton = await screen.findByRole("button", { name: "Edit copy" });
       await user.click(editCopyButton);
 
-      const dialog = await screen.findByRole("alertdialog");
+      const dialog = await screen.findByRole("dialog");
       expect(dialog).toHaveTextContent("Replace your current draft?");
       expect(
         within(dialog).getByText(/replace your unsaved draft in planning/i),
@@ -7907,7 +7973,7 @@ describe("RidingScreen", () => {
 
       await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
-      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       expect(onNavigateToPlanning).not.toHaveBeenCalled();
       expect(editCopyButton).toHaveFocus();
 
@@ -7964,13 +8030,13 @@ describe("RidingScreen", () => {
       );
 
       await user.click(await screen.findByRole("button", { name: "Edit copy" }));
-      const dialog = await screen.findByRole("alertdialog");
+      const dialog = await screen.findByRole("dialog");
       await user.click(within(dialog).getByRole("button", { name: "Replace and edit" }));
 
       await waitFor(() => {
         expect(onNavigateToPlanning).toHaveBeenCalledTimes(1);
       });
-      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
       const draft = await getDraft();
       expect(draft?.routeName).toBe("Evening loop");

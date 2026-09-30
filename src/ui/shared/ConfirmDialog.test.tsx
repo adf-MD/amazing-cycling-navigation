@@ -3,6 +3,17 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 
+/** Replaces every generated id in `html`, and each reference to it, with
+ * its order of first appearance, so markup from two separate renders can be
+ * compared byte for byte. */
+function withPositionalIds(html: string): string {
+  const ids = [...html.matchAll(/ id="([^"]+)"/g)].map((match) => match[1] ?? "");
+  return ids.reduce(
+    (result, id, index) => result.split(id).join(`generated-id-${String(index)}`),
+    html,
+  );
+}
+
 describe("ConfirmDialog", () => {
   it("renders nothing when closed", () => {
     render(
@@ -16,7 +27,7 @@ describe("ConfirmDialog", () => {
         onCancel={vi.fn()}
       />,
     );
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("shows title and message when open, and calls the right handler per button", async () => {
@@ -36,7 +47,7 @@ describe("ConfirmDialog", () => {
       />,
     );
 
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText("This cannot be undone.")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Keep" }));
@@ -167,10 +178,10 @@ describe("ConfirmDialog", () => {
     expect(
       screen.getByRole("heading", { name: "Delete route", level: 4 }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("alertdialog")).toHaveAccessibleName("Delete route");
+    expect(screen.getByRole("dialog")).toHaveAccessibleName("Delete route");
   });
 
-  it("resolves containerRef to the alertdialog root, and renders identically without it (backlog item 118 follow-up)", () => {
+  it("resolves containerRef to the dialog root, and renders identically without it (backlog item 118 follow-up)", () => {
     const containerRef = { current: null as HTMLDivElement | null };
     const { unmount } = render(
       <ConfirmDialog
@@ -185,12 +196,15 @@ describe("ConfirmDialog", () => {
       />,
     );
 
-    expect(containerRef.current).toBe(screen.getByRole("alertdialog"));
-    const withRef = screen.getByRole("alertdialog").outerHTML;
+    expect(containerRef.current).toBe(screen.getByRole("dialog"));
+    const withRef = withPositionalIds(screen.getByRole("dialog").outerHTML);
     unmount();
 
     // The six other call sites omit the prop; their markup must be
-    // byte-identical to the same dialog rendered with it.
+    // byte-identical to the same dialog rendered with it — apart from the
+    // title and description ids (backlog item 119), which React's useId()
+    // draws from a counter shared by every render, so two separate renders
+    // never repeat them. Each is replaced by its position before comparing.
     render(
       <ConfirmDialog
         open
@@ -202,6 +216,50 @@ describe("ConfirmDialog", () => {
         onCancel={vi.fn()}
       />,
     );
-    expect(screen.getByRole("alertdialog").outerHTML).toBe(withRef);
+    expect(withPositionalIds(screen.getByRole("dialog").outerHTML)).toBe(withRef);
+  });
+
+  // Backlog item 119: two confirmations can be open at once (a pending
+  // ride switch's page-level fallback beside a screen's own confirmation),
+  // so every instance must name and describe itself with its own ids.
+  it("gives each open instance its own title and description ids, with no asserted modality", () => {
+    render(
+      <>
+        <ConfirmDialog
+          open
+          title="First title"
+          message="First message"
+          confirmLabel="Confirm"
+          cancelLabel="Cancel"
+          onConfirm={vi.fn()}
+          onCancel={vi.fn()}
+        />
+        <ConfirmDialog
+          open
+          title="Second title"
+          message="Second message"
+          confirmLabel="Confirm"
+          cancelLabel="Cancel"
+          onConfirm={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </>,
+    );
+
+    const dialogs = [
+      ...document.querySelectorAll<HTMLElement>('[role="dialog"],[role="alertdialog"]'),
+    ];
+    expect(dialogs).toHaveLength(2);
+    const [first, second] = dialogs;
+    expect(first).toHaveAccessibleName("First title");
+    expect(second).toHaveAccessibleName("Second title");
+    expect(first).toHaveAccessibleDescription("First message");
+    expect(second).toHaveAccessibleDescription("Second message");
+    const ids = [...document.querySelectorAll("[id]")].map((element) => element.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const dialog of dialogs) {
+      expect(dialog).toHaveAttribute("role", "dialog");
+      expect(dialog).not.toHaveAttribute("aria-modal");
+    }
   });
 });

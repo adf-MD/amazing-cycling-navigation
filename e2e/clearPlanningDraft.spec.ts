@@ -260,7 +260,7 @@ test("Clear draft wipes a populated, calculated, custom-routed, edit-copy-proven
 
   // Open the confirmation and check its exact required copy.
   await page.getByRole("button", { name: "Clear draft" }).click();
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("Clear this draft?");
   await expect(dialog).toContainText(
@@ -330,7 +330,7 @@ test("Cancel preserves a meaningful draft exactly, on screen and in storage, and
 
   const trigger = page.getByRole("button", { name: "Clear draft" });
   await trigger.click();
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Cancel" }).click();
 
@@ -367,7 +367,7 @@ test("reloading after Clear draft does not resurrect the old draft or its calcul
   });
 
   await page.getByRole("button", { name: "Clear draft" }).click();
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "Clear draft" }).click();
   await expect(dialog).not.toBeVisible();
   await assertPlanningDraftStaysCleared(page);
@@ -417,7 +417,7 @@ test("Clear draft makes the fresh-session regional camera framing available agai
   const centreAfterPan = await mapContainer.getAttribute("data-camera-center");
 
   await page.getByRole("button", { name: "Clear draft" }).click();
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "Clear draft" }).click();
   await expect(dialog).not.toBeVisible();
 
@@ -473,7 +473,7 @@ test.describe("phone viewport", () => {
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
 
     await trigger.click();
-    const dialog = page.getByRole("alertdialog");
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 
     scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -495,7 +495,7 @@ test.describe("phone viewport", () => {
 
   /** Reads whether the trigger's own action-card slot — the element
    * immediately following the "Change" routing disclosure itself —
-   * currently holds the alertdialog, mirroring
+   * currently holds the dialog, mirroring
    * PlanningScreen.clearDraft.test.tsx's nextElementSibling-based proof
    * of the same contract (backlog item 49). A post-deployment item 48
    * follow-up removed the single-child wrapper <div> this helper
@@ -533,9 +533,9 @@ test.describe("phone viewport", () => {
     expect(await readClearDraftSlotRole(page)).toBeNull();
 
     await trigger.click();
-    const dialog = page.getByRole("alertdialog");
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    expect(await readClearDraftSlotRole(page)).toBe("alertdialog");
+    expect(await readClearDraftSlotRole(page)).toBe("dialog");
     // Nothing else was inserted between the routing-summary block and
     // the confirmation — the trigger no longer exists anywhere.
     await expect(page.getByRole("button", { name: "Clear draft" })).toHaveCount(1);

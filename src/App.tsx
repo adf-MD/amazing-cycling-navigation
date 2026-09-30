@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { PlannedRoute } from "./domain/types.ts";
 import type { MapFactory } from "./map/mapAdapter.ts";
 import { systemClock, type Clock } from "./platform/clock.ts";
@@ -331,6 +331,29 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   const [pendingRideSwitch, setPendingRideSwitch] = useState<PendingRideSwitch | null>(
     null,
   );
+  // Backlog item 119: the storage mutation — the clear, or a fresh
+  // free-roam row — that a pending-switch action currently has in flight,
+  // settled to success or failure. A newer ride transition waits for it
+  // before classifying, so it never reads a row this mutation is about to
+  // change: Resume ride tapped while an older End and switch is still
+  // clearing must classify against the cleared table, not open the paused
+  // ride the clear is about to erase.
+  const switchStorageMutationRef = useRef<Promise<void> | null>(null);
+  // Backlog item 119: starting to ride is itself a newer ride choice, even
+  // when it happens on an already-open route's own screen without passing
+  // through requestRouteTransition. Any pending switch prompt is stale
+  // from that moment — it would sit above the immersive shell offering to
+  // end the ride now in progress — so it is withdrawn, and taking a new
+  // request id stops an older switch action already in flight from
+  // opening its target over the ride. Stable identity: RidingScreen and
+  // FreeRoamScreen report through an effect that depends on it.
+  const handleRidingActiveChange = useCallback((active: boolean) => {
+    setIsRidingActive(active);
+    if (active) {
+      transitionRequestIdRef.current += 1;
+      setPendingRideSwitch(null);
+    }
+  }, []);
   // Bumped once, immediately after any successful clearActiveRideState()
   // call inside the pending-switch flow, so a RidingLauncher already
   // mounted underneath (the originating screen for a Resume-route/
@@ -459,6 +482,47 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     }
   }
 
+  // Backlog item 119: a pending-switch action only ever changes the
+  // prompt its own request still owns, so an older async step can never
+  // erase or overwrite a newer request's prompt.
+  function updateOwnPrompt(
+    pending: PendingRideSwitch,
+    next: PendingRideSwitch | null,
+  ): void {
+    setPendingRideSwitch((current) =>
+      current?.requestId === pending.requestId ? next : current,
+    );
+  }
+
+  // Backlog item 119: a newer ride choice that opens a ride withdraws every
+  // older prompt — left on screen, its End and switch would act on a choice
+  // the rider has already replaced.
+  function withdrawPromptsOlderThan(requestId: number): void {
+    setPendingRideSwitch((current) =>
+      current !== null && current.requestId < requestId ? null : current,
+    );
+  }
+
+  function trackSwitchStorageMutation<T>(mutation: Promise<T>): Promise<T> {
+    const settled = mutation.then(
+      () => undefined,
+      () => undefined,
+    );
+    switchStorageMutationRef.current = settled;
+    void settled.then(() => {
+      if (switchStorageMutationRef.current === settled) {
+        switchStorageMutationRef.current = null;
+      }
+    });
+    return mutation;
+  }
+
+  async function waitForSwitchStorageMutation(): Promise<void> {
+    while (switchStorageMutationRef.current) {
+      await switchStorageMutationRef.current;
+    }
+  }
+
   // The shared guard entry point for every route-opening action: a Routes
   // card, a Planning save, or the launcher's own Resume ride. Re-reads
   // storage at the moment of the click rather than trusting any caller's
@@ -484,6 +548,13 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     const requestId = ++transitionRequestIdRef.current;
     const triggerElement = document.activeElement as HTMLElement | null;
     const target: RideSessionTarget = { kind: "route", route };
+    // Taking the request id above has already superseded any older
+    // pending-switch action; waiting here means this request classifies
+    // against storage that action has finished changing (item 119).
+    if (switchStorageMutationRef.current) {
+      await waitForSwitchStorageMutation();
+      if (transitionRequestIdRef.current !== requestId) return;
+    }
     const outcome = await checkRideTransition(target);
     if (transitionRequestIdRef.current !== requestId) return;
 
@@ -492,6 +563,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         options.stampResumeIntent && outcome.kind === "resume"
           ? (nextResumeIntentTokenRef.current += 1)
           : undefined;
+      withdrawPromptsOlderThan(requestId);
       openRideTarget(target, { resumeIntentToken });
       return;
     }
@@ -531,6 +603,14 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     const target: RideSessionTarget = { kind: "free-roam" };
     setFreeRoamTransitionError(null);
     setFreeRoamTransitionPending(true);
+    // As in requestRouteTransition (item 119).
+    if (switchStorageMutationRef.current) {
+      await waitForSwitchStorageMutation();
+      if (transitionRequestIdRef.current !== requestId) {
+        setFreeRoamTransitionPending(false);
+        return;
+      }
+    }
     const outcome = await checkRideTransition(target);
     if (transitionRequestIdRef.current !== requestId) {
       setFreeRoamTransitionPending(false);
@@ -539,6 +619,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
 
     if (outcome.kind === "resume") {
       setFreeRoamTransitionPending(false);
+      withdrawPromptsOlderThan(requestId);
       openRideTarget(target);
       return;
     }
@@ -551,6 +632,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
       }
       setFreeRoamTransitionPending(false);
       if (wroteState) {
+        withdrawPromptsOlderThan(requestId);
         openRideTarget(target);
       } else {
         setFreeRoamTransitionError(t("switch.startFreeRoamFailed"));
@@ -607,46 +689,53 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // before mounting, exactly like the direct "no conflict" path.
   async function confirmPendingSwitch(pending: PendingRideSwitch): Promise<void> {
     if (isPendingSwitchActionPendingRef.current) return;
+    // A superseded prompt never clears storage and never shows a busy
+    // state, however it is invoked (item 119).
+    if (transitionRequestIdRef.current !== pending.requestId) {
+      updateOwnPrompt(pending, null);
+      return;
+    }
     isPendingSwitchActionPendingRef.current = true;
     try {
-      setPendingRideSwitch({ ...pending, status: "clearing", errorMessage: null });
+      updateOwnPrompt(pending, { ...pending, status: "clearing", errorMessage: null });
       try {
-        await clearActiveRideState();
+        await trackSwitchStorageMutation(clearActiveRideState());
       } catch (error) {
         if (transitionRequestIdRef.current !== pending.requestId) return;
         logError("app-clear-ride-for-switch", error);
-        setPendingRideSwitch({
+        updateOwnPrompt(pending, {
           ...pending,
           status: "clear-failed",
           errorMessage: t("switch.clearFailed"),
         });
         return;
       }
-      if (transitionRequestIdRef.current !== pending.requestId) return;
       // The clear genuinely succeeded — bump this regardless of what
-      // happens next, so a stale RidingLauncher underneath (if that's
-      // where this switch originated) never continues showing the
-      // just-cleared session, even if the steps below fail.
+      // happens next, even if a newer request has superseded this one, so
+      // a stale RidingLauncher underneath (if that's where this switch
+      // originated) never continues showing the just-cleared session, even
+      // if the steps below fail.
       setLauncherSessionRefreshToken((token) => token + 1);
+      if (transitionRequestIdRef.current !== pending.requestId) return;
 
       if (pending.target.kind === "route") {
-        setPendingRideSwitch(null);
+        updateOwnPrompt(pending, null);
         openRideTarget(pending.target);
         return;
       }
 
-      setPendingRideSwitch({
+      updateOwnPrompt(pending, {
         ...pending,
         status: "starting-free-roam",
         errorMessage: null,
       });
-      const wroteState = await writeFreshFreeRoamState();
+      const wroteState = await trackSwitchStorageMutation(writeFreshFreeRoamState());
       if (transitionRequestIdRef.current !== pending.requestId) return;
       if (wroteState) {
-        setPendingRideSwitch(null);
+        updateOwnPrompt(pending, null);
         openRideTarget(pending.target);
       } else {
-        setPendingRideSwitch({
+        updateOwnPrompt(pending, {
           ...pending,
           status: "start-free-roam-failed",
           errorMessage: t("switch.startFreeRoamFailed"),
@@ -663,13 +752,18 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // itself already used.
   async function retryPendingSwitchCheck(pending: PendingRideSwitch): Promise<void> {
     if (isPendingSwitchActionPendingRef.current) return;
+    // As in confirmPendingSwitch (item 119).
+    if (transitionRequestIdRef.current !== pending.requestId) {
+      updateOwnPrompt(pending, null);
+      return;
+    }
     isPendingSwitchActionPendingRef.current = true;
     try {
       const outcome = await checkRideTransition(pending.target);
       if (transitionRequestIdRef.current !== pending.requestId) return;
 
       if (outcome.kind === "resume") {
-        setPendingRideSwitch(null);
+        updateOwnPrompt(pending, null);
         openRideTarget(pending.target);
         return;
       }
@@ -679,22 +773,22 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         // requestFreeRoamTransition's own "proceed" branch, not
         // shortcut-able just because this retry came from a dialog.
         if (pending.target.kind === "route") {
-          setPendingRideSwitch(null);
+          updateOwnPrompt(pending, null);
           openRideTarget(pending.target);
           return;
         }
-        setPendingRideSwitch({
+        updateOwnPrompt(pending, {
           ...pending,
           status: "starting-free-roam",
           errorMessage: null,
         });
-        const wroteState = await writeFreshFreeRoamState();
+        const wroteState = await trackSwitchStorageMutation(writeFreshFreeRoamState());
         if (transitionRequestIdRef.current !== pending.requestId) return;
         if (wroteState) {
-          setPendingRideSwitch(null);
+          updateOwnPrompt(pending, null);
           openRideTarget(pending.target);
         } else {
-          setPendingRideSwitch({
+          updateOwnPrompt(pending, {
             ...pending,
             status: "start-free-roam-failed",
             errorMessage: t("switch.startFreeRoamFailed"),
@@ -711,7 +805,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
           : null;
       if (transitionRequestIdRef.current !== pending.requestId) return;
 
-      setPendingRideSwitch({
+      updateOwnPrompt(pending, {
         ...pending,
         existing: outcome.kind === "read-failed" ? null : outcome.existing,
         existingRouteId,
@@ -732,20 +826,25 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     pending: PendingRideSwitch,
   ): Promise<void> {
     if (isPendingSwitchActionPendingRef.current) return;
+    // As in confirmPendingSwitch (item 119).
+    if (transitionRequestIdRef.current !== pending.requestId) {
+      updateOwnPrompt(pending, null);
+      return;
+    }
     isPendingSwitchActionPendingRef.current = true;
     try {
-      setPendingRideSwitch({
+      updateOwnPrompt(pending, {
         ...pending,
         status: "starting-free-roam",
         errorMessage: null,
       });
-      const wroteState = await writeFreshFreeRoamState();
+      const wroteState = await trackSwitchStorageMutation(writeFreshFreeRoamState());
       if (transitionRequestIdRef.current !== pending.requestId) return;
       if (wroteState) {
-        setPendingRideSwitch(null);
+        updateOwnPrompt(pending, null);
         openRideTarget(pending.target);
       } else {
-        setPendingRideSwitch({
+        updateOwnPrompt(pending, {
           ...pending,
           status: "start-free-roam-failed",
           errorMessage: t("switch.startFreeRoamFailed"),
@@ -774,10 +873,15 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // only way back to a fresh, actionable state.
   async function returnToPausedRide(pending: PendingRideSwitch): Promise<void> {
     if (isPendingSwitchActionPendingRef.current) return;
+    // As in confirmPendingSwitch (item 119).
+    if (transitionRequestIdRef.current !== pending.requestId) {
+      updateOwnPrompt(pending, null);
+      return;
+    }
     if (pending.existing !== "route" || !pending.existingRouteId) return;
     isPendingSwitchActionPendingRef.current = true;
     try {
-      setPendingRideSwitch({ ...pending, status: "returning", errorMessage: null });
+      updateOwnPrompt(pending, { ...pending, status: "returning", errorMessage: null });
 
       let stored;
       try {
@@ -785,7 +889,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
       } catch (error) {
         if (transitionRequestIdRef.current !== pending.requestId) return;
         logError("app-return-to-paused-ride", error);
-        setPendingRideSwitch({
+        updateOwnPrompt(pending, {
           ...pending,
           existingRoute: null,
           status: "return-failed",
@@ -800,7 +904,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         isStoredRouteRideState(stored) &&
         stored.routeId === pending.existingRouteId;
       if (!stillMatches) {
-        setPendingRideSwitch({
+        updateOwnPrompt(pending, {
           ...pending,
           existingRoute: null,
           status: "return-failed",
@@ -815,7 +919,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
       } catch (error) {
         if (transitionRequestIdRef.current !== pending.requestId) return;
         logError("app-return-to-paused-ride", error);
-        setPendingRideSwitch({
+        updateOwnPrompt(pending, {
           ...pending,
           existingRoute: null,
           status: "return-failed",
@@ -825,7 +929,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
       }
       if (transitionRequestIdRef.current !== pending.requestId) return;
       if (!route) {
-        setPendingRideSwitch({
+        updateOwnPrompt(pending, {
           ...pending,
           existingRoute: null,
           status: "return-failed",
@@ -834,7 +938,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         return;
       }
 
-      setPendingRideSwitch(null);
+      updateOwnPrompt(pending, null);
       openRideTarget({ kind: "route", route });
     } finally {
       isPendingSwitchActionPendingRef.current = false;
@@ -1122,7 +1226,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
               route={ridingContent.route}
               resumeIntentToken={ridingContent.resumeIntentToken}
               mapFactory={mapFactory}
-              onRidingActiveChange={setIsRidingActive}
+              onRidingActiveChange={handleRidingActiveChange}
               onNavigateToPlanning={handleNavigateToPlanning}
               onRideFinalized={handleRideFinalized}
               onReturnToRideLauncher={handleReturnToRideLauncher}
@@ -1131,7 +1235,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
           ) : ridingContent.kind === "free-roam" ? (
             <FreeRoamScreen
               mapFactory={mapFactory}
-              onRidingActiveChange={setIsRidingActive}
+              onRidingActiveChange={handleRidingActiveChange}
               onRideFinalized={handleRideFinalized}
               onRidePaused={handleRidePaused}
             />

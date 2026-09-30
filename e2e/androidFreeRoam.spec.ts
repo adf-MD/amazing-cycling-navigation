@@ -84,7 +84,7 @@ test("End ride from the active screen clears the session and returns to the empt
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
 
   await page.getByRole("button", { name: "End ride" }).click();
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "End ride" }).click();
 

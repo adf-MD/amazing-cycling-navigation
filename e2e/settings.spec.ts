@@ -232,10 +232,10 @@ test("the delete confirmation opens inside the OpenRouteService card and grows i
 
   await page.getByRole("button", { name: "Delete key" }).click();
 
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
-  await expect(page.getByRole("alertdialog")).toHaveCount(1);
-  await expect(card.getByRole("alertdialog")).toHaveCount(1);
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await expect(card.getByRole("dialog")).toHaveCount(1);
 
   // The nearest owning section is this very card — a relationship, so a
   // peer rendered elsewhere fails regardless of how it is classed.
@@ -304,23 +304,23 @@ test("Cancel keeps the key and returns focus to Delete key; Confirm removes it a
 
   const card = openRouteServiceCard(page);
   await page.getByRole("button", { name: "Delete key" }).click();
-  await expect(page.getByRole("alertdialog")).toBeVisible();
+  await expect(page.getByRole("dialog")).toBeVisible();
 
   // Clicking rather than dispatching is itself the proof that the sticky
   // header does not cover the action: Playwright's actionability check
   // fails on pointer interception.
-  await page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
 
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
     page.getByText(/key saved on this device, not yet verified/i),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Delete key" })).toBeFocused();
 
   await page.getByRole("button", { name: "Delete key" }).click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
 
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(card.getByText("No key configured")).toBeVisible();
   await expect(card.getByLabel("OpenRouteService API key")).toBeVisible();
 });
@@ -331,13 +331,13 @@ test("the confirmation keeps item 112's heading outline while it is open", async
   await openSettings(page);
   await saveKey(page);
   await page.getByRole("button", { name: "Delete key" }).click();
-  await expect(page.getByRole("alertdialog")).toBeVisible();
+  await expect(page.getByRole("dialog")).toBeVisible();
 
   await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
   await expect(page.getByRole("heading", { level: 2 })).toHaveCount(2);
   await expect(page.getByRole("heading", { level: 3 })).toHaveCount(5);
   await expect(page.getByRole("heading", { level: 4 })).toHaveCount(1);
-  await expect(page.getByRole("alertdialog")).toHaveAccessibleName(
+  await expect(page.getByRole("dialog")).toHaveAccessibleName(
     "Delete OpenRouteService key",
   );
 });
@@ -351,7 +351,7 @@ test("the open confirmation stays contained and operable at ordinary and 200% te
   for (const rootSize of ["100%", "200%"]) {
     await setRootTextSize(page, rootSize);
     await page.getByRole("button", { name: "Delete key" }).click();
-    const dialog = page.getByRole("alertdialog");
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 
     expect(await documentOverflow(page), rootSize).toBeLessThanOrEqual(0);
@@ -405,7 +405,7 @@ test("the open confirmation stays contained and operable at ordinary and 200% te
     expect(overlaps, rootSize).toBe(false);
 
     await dialog.getByRole("button", { name: "Cancel" }).click();
-    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
   }
 });
 
@@ -456,7 +456,7 @@ function deliberateScrolls(page: Page) {
 function measureReveal(page: Page) {
   return page.evaluate(() => {
     const GAP = 8;
-    const dialog = document.querySelector('[role="alertdialog"]');
+    const dialog = document.querySelector('[role="dialog"]');
     const header = document.querySelector("header.app-header--sticky");
     const box = (n: Element | null | undefined) => {
       if (!n) return null;
@@ -549,7 +549,7 @@ async function openAt(page: Page, margin: number) {
     if (!btn) throw new Error("expected a Delete key button");
     btn.click();
   });
-  await expect(page.getByRole("alertdialog")).toBeVisible();
+  await expect(page.getByRole("dialog")).toBeVisible();
   await settleScroll(page);
 }
 
@@ -576,8 +576,8 @@ test("does not scroll at all when the whole confirmation already fits", async ({
   await openAt(page, 600);
   const first = await measureReveal(page);
   if (!first.inset) throw new Error("expected the confirmation to be measurable");
-  await page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 
   await openAt(page, first.inset.height + 80);
   const after = await measureReveal(page);
@@ -636,8 +636,8 @@ test("moves the minimum needed when the confirmation clears the layout viewport 
   await openAt(page, 600);
   const first = await measureReveal(page);
   if (!first.inset) throw new Error("expected the confirmation to be measurable");
-  await page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 
   await openAt(page, 30 + first.inset.height);
   const after = await measureReveal(page);
@@ -664,8 +664,8 @@ test("scrolls back up to restore the action row when the rider has scrolled past
   await constrainViewport(page);
 
   await openAt(page, 20);
-  await page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 
   // The rider scrolls well past where the confirmation will appear, so the
   // reopened inset's bottom — and its actions — start above the band.
@@ -682,7 +682,7 @@ test("scrolls back up to restore the action row when the rider has scrolled past
     if (!btn) throw new Error("expected a Delete key button");
     btn.click();
   });
-  await expect(page.getByRole("alertdialog")).toBeVisible();
+  await expect(page.getByRole("dialog")).toBeVisible();
   await settleScroll(page);
   const after = await measureReveal(page);
   if (!after.inset) throw new Error("expected the confirmation to be measurable");
@@ -735,8 +735,8 @@ test("prioritises the action row when the confirmation cannot fit, keeping both 
 
   // Playwright's actionability check is the hit-test proof: a clipped or
   // covered button cannot be clicked.
-  await page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   // Cancel preserved the key and returned focus to a trigger the rider can
   // actually see — the consequence of revealing an oversized inset.
   await expect(
@@ -778,7 +778,7 @@ async function installActionGeometryRecorder(page: Page, limitMs: number) {
     w.__acnActions = recorder;
     const findDialog = () =>
       document.querySelector(
-        'section[aria-labelledby="ors-settings-heading"] [role="alertdialog"]',
+        'section[aria-labelledby="ors-settings-heading"] [role="dialog"]',
       );
     const onClick = (event: MouseEvent) => {
       const target = event.target;
@@ -882,7 +882,7 @@ test("the confirmation's actions are already settled in the first frame a rider 
 
   await installActionGeometryRecorder(page, ACTION_RECORD_MS);
   await page.getByRole("button", { name: "Delete key" }).click();
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   const cancel = dialog.getByRole("button", { name: "Cancel" });
   await expect(cancel).toBeVisible();
@@ -890,7 +890,7 @@ test("the confirmation's actions are already settled in the first frame a rider 
   await cancel.click();
 
   expectStableActionGeometry(await readActionGeometry(page), "Cancel");
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
     page.getByText(/key saved on this device, not yet verified/i),
   ).toBeVisible();
@@ -923,7 +923,7 @@ test("the actions stay settled even on a heavily throttled device, because the r
   await installActionGeometryRecorder(page, ACTION_RECORD_MS);
 
   await page.getByRole("button", { name: "Delete key" }).click();
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   const cancel = dialog.getByRole("button", { name: "Cancel" });
   await expect(cancel).toBeVisible();

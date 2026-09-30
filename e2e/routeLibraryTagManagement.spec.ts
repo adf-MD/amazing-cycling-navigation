@@ -183,7 +183,7 @@ test("renaming, merging and deleting a tag globally, with filter reconciliation,
     getManager(page).getByText("Merge “Trail” into “Road” on 2 routes."),
   ).toBeVisible();
   await getManager(page).getByRole("button", { name: "Merge tags", exact: true }).click();
-  const mergeDialog = page.getByRole("alertdialog");
+  const mergeDialog = page.getByRole("dialog");
   await expect(mergeDialog).toContainText("Merge “Trail” into “Road”?");
   await expect(mergeDialog).toContainText("2 routes");
   await expect(mergeDialog).toContainText("No route is deleted.");
@@ -202,7 +202,7 @@ test("renaming, merging and deleting a tag globally, with filter reconciliation,
   // Deleting the last remaining tag leaves a coherent empty state with
   // every route still present and focus on a stable control.
   await getManager(page).getByRole("button", { name: "Delete tag", exact: true }).click();
-  const deleteDialog = page.getByRole("alertdialog");
+  const deleteDialog = page.getByRole("dialog");
   await expect(deleteDialog).toContainText("Delete the tag “Road”?");
   await expect(deleteDialog).toContainText("routes themselves are not deleted");
   await deleteDialog.getByRole("button", { name: "Delete tag", exact: true }).click();
@@ -254,14 +254,14 @@ test("cancelling a confirmation, with Escape and with Cancel, changes nothing", 
   await chooseTag(page, "Gravel (1 route)");
   await getManager(page).getByRole("button", { name: "Delete tag", exact: true }).click();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
     getListItemForName(page, "Alpine Climb").getByText("Gravel"),
   ).toBeVisible();
 
   await getManager(page).getByRole("button", { name: "Delete tag", exact: true }).click();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
     getManager(page).getByRole("button", { name: "Delete tag", exact: true }),
   ).toBeFocused();
@@ -569,7 +569,7 @@ test.describe("Manage tags panel reveal (item 105)", () => {
     await chooseTag(page, "Gravel (2 routes)");
     const deleteTag = getManager(page).getByRole("button", { name: "Delete tag" });
     await deleteTag.click();
-    await expect(page.getByRole("alertdialog")).toBeVisible();
+    await expect(page.getByRole("dialog")).toBeVisible();
     await waitForScrollToSettle(page);
 
     // Escape rather than a Cancel click: dismissing by keyboard needs no
@@ -578,7 +578,7 @@ test.describe("Manage tags panel reveal (item 105)", () => {
     await instrumentDeliberateScrolls(page);
     const beforeCancel = await measurePanelGeometry(page);
     await page.keyboard.press("Escape");
-    await expect(page.getByRole("alertdialog")).toBeHidden();
+    await expect(page.getByRole("dialog")).toBeHidden();
     await expect(deleteTag).toBeFocused();
     await waitForScrollToSettle(page);
     expect((await measurePanelGeometry(page)).scrollY).toBe(beforeCancel.scrollY);

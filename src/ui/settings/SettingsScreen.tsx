@@ -175,7 +175,7 @@ export function SettingsScreen({
     // invisible, behind the replace form — the stored key is unchanged at
     // this point, so the identity binding above would still match and the
     // confirmation would reappear on Cancel. Mirrors RouteListItem's own
-    // openRename/handlePinClick precedent: an open alertdialog is never
+    // openRename/handlePinClick precedent: an open confirmation is never
     // silently moved aside instead of being resolved.
     setArmedDeleteSavedAt(null);
     setIsEditing(true);

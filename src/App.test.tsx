@@ -5,6 +5,7 @@ import App from "./App.tsx";
 import type { MapFactory, MapLibreLike } from "./map/mapAdapter.ts";
 import { db } from "./storage/db.ts";
 import { getActiveRideState, setActiveRideState } from "./storage/rideStateRepository.ts";
+import { saveProviderKey } from "./storage/providerKeyRepository.ts";
 import * as rideStateRepository from "./storage/rideStateRepository.ts";
 import * as routesRepository from "./storage/routesRepository.ts";
 import { trackWithElevationGpx } from "./test/fixtures/gpx.ts";
@@ -931,7 +932,7 @@ describe("App — Ride launcher session recovery", () => {
     expect(await screen.findByRole("button", { name: "Pause" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
     expect(watchPositionSpy).toHaveBeenCalledOnce();
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(clearSpy).not.toHaveBeenCalled();
   });
 
@@ -961,7 +962,7 @@ describe("App — Ride launcher session recovery", () => {
     const scrollCallsBeforeEndRide = scrollToSpy.mock.calls.length;
 
     await user.click(screen.getByRole("button", { name: "End ride" }));
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "End ride" }));
 
     await waitFor(async () => {
@@ -1007,7 +1008,7 @@ describe("App — Ride launcher session recovery", () => {
       .mockRejectedValueOnce(new Error("boom"));
 
     await user.click(screen.getByRole("button", { name: "End ride" }));
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "End ride" }));
 
     expect(await screen.findByRole("alert")).toBeInTheDocument();
@@ -1179,7 +1180,7 @@ describe("App — Free roam", () => {
     expect(errorText).toHaveTextContent(
       "Free roam could not be started on this device. Try again.",
     );
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(
       screen.getByText(
         "No route selected yet. Choose a route from Routes to start riding.",
@@ -1222,7 +1223,7 @@ describe("App — Free roam", () => {
     const scrollCallsBeforeEndRide = scrollToSpy.mock.calls.length;
 
     await user.click(screen.getByRole("button", { name: "End ride" }));
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "End ride" }));
 
     await waitFor(async () => {
@@ -1327,7 +1328,7 @@ describe("App — Free roam", () => {
     expect(screen.queryByRole("heading", { name: "Route A" })).toBeNull();
     expect(screen.getByRole("heading", { name: "Routes" })).toBeInTheDocument();
     const routeACard = getListItemByRouteId(routeA.id);
-    const dialog = await within(routeACard).findByRole("alertdialog");
+    const dialog = await within(routeACard).findByRole("dialog");
     expect(within(dialog).getByText(/unfinished free roam session/i)).toBeInTheDocument();
     // No Return action — there's no resolvable paused ROUTE to return to.
     expect(
@@ -1340,14 +1341,14 @@ describe("App — Free roam", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     // Cancel preserves the row exactly and restores focus to the trigger.
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(await getActiveRideState()).toEqual(freeRoamRow);
     expect(screen.getByRole("heading", { name: "Routes" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Route A" })).toHaveFocus();
 
     // Confirming clears the free-roam session before the route opens.
     await user.click(screen.getByRole("button", { name: "Route A" }));
-    const confirmDialog = await within(routeACard).findByRole("alertdialog");
+    const confirmDialog = await within(routeACard).findByRole("dialog");
     await user.click(
       within(confirmDialog).getByRole("button", { name: "End and switch" }),
     );
@@ -1377,9 +1378,7 @@ describe("App — Free roam", () => {
     // follow-up: still inline inside Route A's own card.
     expect(screen.queryByRole("heading", { name: "Route A" })).toBeNull();
     expect(screen.getByRole("heading", { name: "Routes" })).toBeInTheDocument();
-    const dialog = await within(getListItemByRouteId(routeA.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog = await within(getListItemByRouteId(routeA.id)).findByRole("dialog");
     // Distinct, honest copy for a read failure — never worded as a
     // confirmed conflict ("Switch to...?", "must be ended").
     expect(
@@ -1395,7 +1394,7 @@ describe("App — Free roam", () => {
     readSpy.mockRestore();
     await user.click(within(dialog).getByRole("button", { name: "Retry" }));
 
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(await screen.findByRole("heading", { name: "Route A" })).toBeInTheDocument();
   });
 
@@ -1489,7 +1488,7 @@ describe("App — Ride switch guard (item 73)", () => {
 
     expect(await screen.findByRole("heading", { name: "Route A" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(clearSpy).not.toHaveBeenCalled();
   });
 
@@ -1514,7 +1513,7 @@ describe("App — Ride switch guard (item 73)", () => {
     // Item 73 follow-up: the prompt is a descendant of B's own card, not a
     // page-level dialog, and names the paused route directly.
     const routeBCard = getListItemByRouteId(routeB.id);
-    const dialog = await within(routeBCard).findByRole("alertdialog");
+    const dialog = await within(routeBCard).findByRole("dialog");
     expect(
       within(dialog).getByText(
         '"Route A" is paused. Return to it, or end it and switch to "Route B". Ending it will clear ride progress; the saved route will remain in Routes.',
@@ -1523,13 +1522,13 @@ describe("App — Ride switch guard (item 73)", () => {
     expect(
       within(dialog).getByRole("button", { name: "Return to paused ride" }),
     ).toBeInTheDocument();
-    expect(screen.queryAllByRole("alertdialog")).toHaveLength(1);
+    expect(screen.queryAllByRole("dialog")).toHaveLength(1);
     expect(await getActiveRideState()).toEqual(routeARow);
     expect(watchPositionSpy).not.toHaveBeenCalled();
 
     // Cancel preserves everything exactly and restores focus.
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(await getActiveRideState()).toEqual(routeARow);
     expect(screen.getByRole("heading", { name: "Routes" })).toBeInTheDocument();
     expect(routeBButton).toHaveFocus();
@@ -1537,7 +1536,7 @@ describe("App — Ride switch guard (item 73)", () => {
 
     // Confirming clears exactly once, then opens B idle with no watch.
     await user.click(routeBButton);
-    const confirmDialog = await within(routeBCard).findByRole("alertdialog");
+    const confirmDialog = await within(routeBCard).findByRole("dialog");
     await user.click(
       within(confirmDialog).getByRole("button", { name: "End and switch" }),
     );
@@ -1570,9 +1569,7 @@ describe("App — Ride switch guard (item 73)", () => {
     stubOffscreenCardGeometry();
 
     await user.click(screen.getByRole("button", { name: "Route B" }));
-    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
     // Opening the prompt is itself an actionable, non-busy state that
     // must genuinely have scrolled the (deliberately off-screen) card
     // into view — the baseline this test's later assertion compares
@@ -1634,7 +1631,7 @@ describe("App — Ride switch guard (item 73)", () => {
     // The guard re-reads storage at click time rather than trusting the
     // stale render — it must not silently overwrite the route row.
     expect(readSpy.mock.calls.length).toBeGreaterThan(readCallsBeforeClick);
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     expect(
       within(dialog).getByText(/unfinished ride on another route/i),
     ).toBeInTheDocument();
@@ -1681,7 +1678,7 @@ describe("App — Ride switch guard (item 73)", () => {
 
     const routeBCard = getListItemByRouteId(routeB.id);
     await user.click(screen.getByRole("button", { name: "Route B" }));
-    const dialog = await within(routeBCard).findByRole("alertdialog");
+    const dialog = await within(routeBCard).findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "End and switch" }));
 
     expect(
@@ -1738,7 +1735,7 @@ describe("App — Ride switch guard (item 73)", () => {
       .mockRejectedValueOnce(new Error("boom"));
 
     await user.click(startFreeRoamButton);
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "End and switch" }));
 
     expect(
@@ -1813,7 +1810,7 @@ describe("App — Ride switch guard (item 73)", () => {
       .mockImplementationOnce(() => new Promise(() => {}));
 
     await user.click(startFreeRoamButton);
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "End and switch" }));
 
     expect(await screen.findByText("Starting free roam…")).toBeInTheDocument();
@@ -1869,12 +1866,10 @@ describe("App — Ride switch guard (item 73)", () => {
 
     // Only C's own (newer) outcome may ever be applied — inside C's own
     // card, never B's (a stale result must never reopen an older card).
-    const dialog = await within(getListItemByRouteId(routeC.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog = await within(getListItemByRouteId(routeC.id)).findByRole("dialog");
     expect(within(dialog).getByText(/Switch to "Route C"/)).toBeInTheDocument();
-    expect(within(getListItemByRouteId(routeB.id)).queryByRole("alertdialog")).toBeNull();
-    expect(screen.queryAllByRole("alertdialog")).toHaveLength(1);
+    expect(within(getListItemByRouteId(routeB.id)).queryByRole("dialog")).toBeNull();
+    expect(screen.queryAllByRole("dialog")).toHaveLength(1);
     expect(screen.queryByRole("heading", { name: "Route B" })).toBeNull();
   });
 
@@ -1921,15 +1916,13 @@ describe("App — Ride switch guard (item 73)", () => {
     // real lookup would have returned.
     resolveFirstGetRoute?.(routeA);
 
-    const dialog = await within(getListItemByRouteId(routeC.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog = await within(getListItemByRouteId(routeC.id)).findByRole("dialog");
     expect(within(dialog).getByText('Switch to "Route C"?')).toBeInTheDocument();
     expect(
       within(dialog).getByRole("button", { name: "Return to paused ride" }),
     ).toBeInTheDocument();
-    expect(within(getListItemByRouteId(routeB.id)).queryByRole("alertdialog")).toBeNull();
-    expect(screen.queryAllByRole("alertdialog")).toHaveLength(1);
+    expect(within(getListItemByRouteId(routeB.id)).queryByRole("dialog")).toBeNull();
+    expect(screen.queryAllByRole("dialog")).toHaveLength(1);
     expect(screen.queryByRole("heading", { name: "Route B" })).toBeNull();
   });
 
@@ -1949,9 +1942,7 @@ describe("App — Ride switch guard (item 73)", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Route A" }));
-    const dialog = await within(getListItemByRouteId(routeA.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog = await within(getListItemByRouteId(routeA.id)).findByRole("dialog");
     expect(
       within(dialog).getByText("Couldn't check for an unfinished ride"),
     ).toBeInTheDocument();
@@ -1964,7 +1955,7 @@ describe("App — Ride switch guard (item 73)", () => {
     await user.click(within(dialog).getByRole("button", { name: "Retry" }));
 
     const conflictDialog = await within(getListItemByRouteId(routeA.id)).findByRole(
-      "alertdialog",
+      "dialog",
     );
     expect(within(conflictDialog).getByText('Switch to "Route A"?')).toBeInTheDocument();
     expect(
@@ -1981,7 +1972,7 @@ describe("App — Ride switch guard (item 73)", () => {
     expect(await getActiveRideState()).toEqual(routeBRow);
 
     await user.click(within(conflictDialog).getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(await getActiveRideState()).toEqual(routeBRow);
   });
 
@@ -2001,7 +1992,7 @@ describe("App — Ride switch guard (item 73)", () => {
     );
 
     await user.click(startFreeRoamButton);
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     expect(
       within(dialog).getByText("Couldn't check for an unfinished ride"),
     ).toBeInTheDocument();
@@ -2056,9 +2047,7 @@ describe("App — Ride switch guard (item 73)", () => {
 
     await user.click(screen.getByRole("button", { name: "Route B" }));
 
-    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
     expect(
       within(dialog).getByText(/can't be recovered by this version of the app/i),
     ).toBeInTheDocument();
@@ -2093,9 +2082,7 @@ describe("App — Ride switch guard (item 73)", () => {
 
     await user.click(screen.getByRole("button", { name: "Route B" }));
 
-    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
     expect(
       within(dialog).getByText(/unfinished ride on another route/i),
     ).toBeInTheDocument();
@@ -2124,9 +2111,7 @@ describe("App — Ride switch guard (item 73)", () => {
     if (!routeARow) throw new Error("expected a seeded route row");
 
     await user.click(screen.getByRole("button", { name: "Route B" }));
-    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
     await user.click(
       within(dialog).getByRole("button", { name: "Return to paused ride" }),
     );
@@ -2135,7 +2120,7 @@ describe("App — Ride switch guard (item 73)", () => {
     expect(
       await screen.findByRole("button", { name: "Resume ride" }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     // RidingScreen's own restoration independently enriches the row with
     // camera/view defaults on mount — unrelated to Return's own no-clear
     // guarantee, so this checks the original progress fields are still
@@ -2168,9 +2153,7 @@ describe("App — Ride switch guard (item 73)", () => {
 
     window.scrollY = 4000; // simulates a meaningful scrolled Library position
     await user.click(screen.getByRole("button", { name: "Route B" }));
-    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
     // Opening the prompt is itself an actionable, non-busy state that
     // must genuinely have scrolled the (deliberately off-screen) card
     // into view — the baseline this test's later assertion compares
@@ -2252,9 +2235,7 @@ describe("App — Ride switch guard (item 73)", () => {
     await screen.findByRole("button", { name: "Route B" });
 
     await user2.click(screen.getByRole("button", { name: "Route B" }));
-    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
     await user2.click(
       within(dialog).getByRole("button", { name: "Return to paused ride" }),
     );
@@ -2280,9 +2261,7 @@ describe("App — Ride switch guard (item 73)", () => {
     await seedRouteRow(routeA.id);
 
     await user.click(screen.getByRole("button", { name: "Route B" }));
-    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
 
     // The stored session changes after the prompt opened but before Return
     // is pressed — the row is gone entirely.
@@ -2321,9 +2300,7 @@ describe("App — Ride switch guard (item 73)", () => {
     await seedRouteRow(routeA.id);
 
     await user.click(screen.getByRole("button", { name: "Route B" }));
-    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
 
     // Route A's saved route is deleted after the prompt opened but before
     // Return is pressed — the stored session row still matches by id, but
@@ -2340,7 +2317,7 @@ describe("App — Ride switch guard (item 73)", () => {
 
     // Cancel remains usable and preserves the (still-present) session row.
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("heading", { name: "Routes" })).toBeInTheDocument();
   });
 
@@ -2357,9 +2334,7 @@ describe("App — Ride switch guard (item 73)", () => {
     const routeARow = await seedRouteRow(routeA.id);
 
     await user.click(screen.getByRole("button", { name: "Route B" }));
-    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
     // Only the Return click's own status-check read fails — not the
     // conflict check that already opened this dialog and resolved
     // existingRoute for it.
@@ -2391,7 +2366,7 @@ describe("App — Ride switch guard (item 73)", () => {
     await user.click(checkAgainButton);
 
     const conflictDialog = await within(getListItemByRouteId(routeB.id)).findByRole(
-      "alertdialog",
+      "dialog",
     );
     expect(within(conflictDialog).getByText('Switch to "Route B"?')).toBeInTheDocument();
     expect(
@@ -2416,9 +2391,7 @@ describe("App — Ride switch guard (item 73)", () => {
     const routeARow = await seedRouteRow(routeA.id);
 
     await user.click(screen.getByRole("button", { name: "Route B" }));
-    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
     // Only the Return click's own route lookup fails — not the conflict
     // check's own earlier getRoute() call, which already resolved
     // successfully to power this dialog's "Route A is paused..." copy.
@@ -2442,7 +2415,7 @@ describe("App — Ride switch guard (item 73)", () => {
     expect(await getActiveRideState()).toEqual(routeARow);
 
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("heading", { name: "Routes" })).toBeInTheDocument();
   });
 
@@ -2460,22 +2433,18 @@ describe("App — Ride switch guard (item 73)", () => {
 
     const routeBButton = screen.getByRole("button", { name: "Route B" });
     await user.click(routeBButton);
-    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog = await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(routeBButton).toHaveFocus();
 
     await user.click(routeBButton);
-    const dialog2 = await within(getListItemByRouteId(routeB.id)).findByRole(
-      "alertdialog",
-    );
+    const dialog2 = await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
     await user.keyboard("{Escape}");
     expect(routeBButton).toHaveFocus();
     expect(dialog2).not.toBeInTheDocument();
   });
 
-  it("A-card/B-card: a switch prompt appearing on B cancels A's own open delete confirmation — only one alertdialog exists throughout", async () => {
+  it("A-card/B-card: a switch prompt appearing on B cancels A's own open delete confirmation — only one dialog exists throughout", async () => {
     const user = userEvent.setup();
     render(<App mapFactory={buildNoopMapFactory()} />);
 
@@ -2490,21 +2459,21 @@ describe("App — Ride switch guard (item 73)", () => {
       within(getListItemByRouteId(routeA.id)).getByRole("button", { name: "Delete" }),
     );
     expect(
-      within(getListItemByRouteId(routeA.id)).getByRole("alertdialog"),
+      within(getListItemByRouteId(routeA.id)).getByRole("dialog"),
     ).toBeInTheDocument();
-    expect(screen.queryAllByRole("alertdialog")).toHaveLength(1);
+    expect(screen.queryAllByRole("dialog")).toHaveLength(1);
 
     // Route A itself is the one paused, and selecting B is what produces
     // the conflict — the field defect's own A-card/B-card scenario.
     await seedRouteRow(routeA.id);
     await user.click(screen.getByRole("button", { name: "Route B" }));
 
-    await within(getListItemByRouteId(routeB.id)).findByRole("alertdialog");
-    expect(within(getListItemByRouteId(routeA.id)).queryByRole("alertdialog")).toBeNull();
-    expect(screen.queryAllByRole("alertdialog")).toHaveLength(1);
+    await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
+    expect(within(getListItemByRouteId(routeA.id)).queryByRole("dialog")).toBeNull();
+    expect(screen.queryAllByRole("dialog")).toHaveLength(1);
   });
 
-  it("the reverse: requesting delete on A while B's switch prompt is open cancels B's switch prompt first, then opens A's own delete confirmation — only one alertdialog exists throughout", async () => {
+  it("the reverse: requesting delete on A while B's switch prompt is open cancels B's switch prompt first, then opens A's own delete confirmation — only one dialog exists throughout", async () => {
     const user = userEvent.setup();
     render(<App mapFactory={buildNoopMapFactory()} />);
 
@@ -2517,18 +2486,18 @@ describe("App — Ride switch guard (item 73)", () => {
     await seedRouteRow(routeA.id);
 
     await user.click(screen.getByRole("button", { name: "Route B" }));
-    await within(getListItemByRouteId(routeB.id)).findByRole("alertdialog");
-    expect(screen.queryAllByRole("alertdialog")).toHaveLength(1);
+    await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
+    expect(screen.queryAllByRole("dialog")).toHaveLength(1);
 
     await user.click(
       within(getListItemByRouteId(routeA.id)).getByRole("button", { name: "Delete" }),
     );
 
-    expect(within(getListItemByRouteId(routeB.id)).queryByRole("alertdialog")).toBeNull();
+    expect(within(getListItemByRouteId(routeB.id)).queryByRole("dialog")).toBeNull();
     expect(
       within(getListItemByRouteId(routeA.id)).getByText("Delete “Route A”?"),
     ).toBeInTheDocument();
-    expect(screen.queryAllByRole("alertdialog")).toHaveLength(1);
+    expect(screen.queryAllByRole("dialog")).toHaveLength(1);
   });
 
   it("handleSwitchTargetMissing: an inline switch prompt cancels safely (no dialog anywhere) when its target route is filtered out of search, and does not reappear merely because the route becomes visible again", async () => {
@@ -2544,7 +2513,7 @@ describe("App — Ride switch guard (item 73)", () => {
     const routeARow = await seedRouteRow(routeA.id);
 
     await user.click(screen.getByRole("button", { name: "Route B" }));
-    await within(getListItemByRouteId(routeB.id)).findByRole("alertdialog");
+    await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
 
     // Route B itself is filtered out of the current search results — its
     // card, and the prompt inside it, are no longer renderable at all.
@@ -2555,7 +2524,7 @@ describe("App — Ride switch guard (item 73)", () => {
     // Not conclusive on its own — a filtered-out card has no dialog either
     // way, whether or not handleSwitchTargetMissing actually ran. The
     // re-appearance check below is the load-bearing proof.
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(await getActiveRideState()).toEqual(routeARow);
 
     // Clearing the search makes Route B's card renderable again. If
@@ -2563,13 +2532,13 @@ describe("App — Ride switch guard (item 73)", () => {
     // this is exactly where a stale prompt would silently reappear.
     await user.click(screen.getByRole("button", { name: "Clear search" }));
     const routeBButton = await screen.findByRole("button", { name: "Route B" });
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
 
     // The coordinator isn't wedged — a fresh, unrelated request against the
     // same target still works normally afterwards.
     await user.click(routeBButton);
     const freshDialog = await within(getListItemByRouteId(routeB.id)).findByRole(
-      "alertdialog",
+      "dialog",
     );
     expect(within(freshDialog).getByText('Switch to "Route B"?')).toBeInTheDocument();
     expect(await getActiveRideState()).toEqual(routeARow);
@@ -2588,7 +2557,7 @@ describe("App — Ride switch guard (item 73)", () => {
     await seedRouteRow(routeA.id);
 
     await user.click(screen.getByRole("button", { name: "Route B" }));
-    await within(getListItemByRouteId(routeB.id)).findByRole("alertdialog");
+    await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
 
     // The sticky nav stays clickable throughout — this prompt is
     // deliberately not a true modal.
@@ -2597,12 +2566,356 @@ describe("App — Ride switch guard (item 73)", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Settings" }),
     ).toBeInTheDocument();
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     // The generic wording, never the named-route inline copy — this is
     // the page-level ConfirmDialog, not the inline card presentation.
     expect(
       within(dialog).getByText(/unfinished ride on another route/i),
     ).toBeInTheDocument();
+  });
+
+  // Backlog item 119. Confirmations are queried role-agnostically here
+  // (dialog or dialog) so these tests describe the defect itself —
+  // duplicate title ids, one dialog announced as another, an asserted
+  // modality nothing enforces, a switch prompt outliving the ride choice
+  // that superseded it — rather than one particular role.
+  describe("item 119: confirmation naming and a pending switch that yields", () => {
+    beforeEach(async () => {
+      await db.providerKeys.clear();
+    });
+
+    function openConfirmations(): HTMLElement[] {
+      return [
+        ...document.querySelectorAll<HTMLElement>('[role="dialog"],[role="alertdialog"]'),
+      ];
+    }
+
+    function confirmationNamed(name: string | RegExp): HTMLElement {
+      const match = openConfirmations().find((element) =>
+        typeof name === "string"
+          ? element.querySelector("h2,h3,h4")?.textContent === name
+          : name.test(element.querySelector("h2,h3,h4")?.textContent ?? ""),
+      );
+      if (!match) throw new Error(`no open confirmation titled ${String(name)}`);
+      return match;
+    }
+
+    function expectIdReferencesIntact(): void {
+      const ids = [...document.querySelectorAll("[id]")].map((element) => element.id);
+      expect(ids.filter((id, index) => ids.indexOf(id) !== index)).toEqual([]);
+      for (const confirmation of openConfirmations()) {
+        for (const attribute of ["aria-labelledby", "aria-describedby"]) {
+          const references = (confirmation.getAttribute(attribute) ?? "")
+            .split(" ")
+            .filter(Boolean);
+          expect(references.length, attribute).toBeGreaterThan(0);
+          for (const id of references) {
+            expect(
+              document.querySelectorAll(`[id="${id}"]`),
+              `${attribute} ${id}`,
+            ).toHaveLength(1);
+            expect(confirmation.contains(document.getElementById(id))).toBe(true);
+          }
+        }
+      }
+    }
+
+    function deferred() {
+      let release: () => void = () => undefined;
+      let fail: (error: Error) => void = () => undefined;
+      const promise = new Promise<void>((resolve, reject) => {
+        release = resolve;
+        fail = reject;
+      });
+      return { promise, release, fail };
+    }
+
+    async function armSwitchFromRouteCard(user: ReturnType<typeof userEvent.setup>) {
+      await importFixture(user, "Route A.gpx");
+      await importFixture(user, "Route B.gpx");
+      const routes = await db.routes.toArray();
+      const routeA = routes.find((route) => route.name === "Route A");
+      const routeB = routes.find((route) => route.name === "Route B");
+      if (!routeA || !routeB) throw new Error("expected Route A and Route B");
+      const seededRow = await seedRouteRow(routeA.id);
+      await user.click(screen.getByRole("button", { name: "Route B" }));
+      await waitFor(() => {
+        expect(
+          getListItemByRouteId(routeB.id).querySelector(
+            '[role="dialog"],[role="alertdialog"]',
+          ),
+        ).not.toBeNull();
+      });
+      return { routeA, routeB, seededRow };
+    }
+
+    it("the switch prompt's page-level fallback and Settings' Delete key confirmation each carry their own name and description, with unique ids and no asserted modality", async () => {
+      const user = userEvent.setup();
+      await saveProviderKey("dummy-key");
+      render(<App mapFactory={buildNoopMapFactory()} />);
+      await armSwitchFromRouteCard(user);
+
+      await user.click(navButton("Settings"));
+      await user.click(await screen.findByRole("button", { name: "Delete key" }));
+
+      expect(openConfirmations()).toHaveLength(2);
+      const switchPrompt = confirmationNamed('Switch to "Route B"?');
+      const deleteKey = confirmationNamed("Delete OpenRouteService key");
+      expect(switchPrompt).toHaveAccessibleName('Switch to "Route B"?');
+      expect(deleteKey).toHaveAccessibleName("Delete OpenRouteService key");
+      expect(switchPrompt).toHaveAccessibleDescription(
+        /unfinished ride on another route/i,
+      );
+      expect(deleteKey).toHaveAccessibleDescription(
+        /removes your saved key from this device/i,
+      );
+      for (const confirmation of openConfirmations()) {
+        expect(confirmation).toHaveAttribute("role", "dialog");
+        expect(confirmation).not.toHaveAttribute("aria-modal");
+      }
+      expectIdReferencesIntact();
+    });
+
+    it("returning to Routes brings the pending switch back inside its card instead of dropping it", async () => {
+      const user = userEvent.setup();
+      render(<App mapFactory={buildNoopMapFactory()} />);
+      const { routeB } = await armSwitchFromRouteCard(user);
+
+      await user.click(navButton("Settings"));
+      expect(confirmationNamed('Switch to "Route B"?')).toBeInTheDocument();
+      await user.click(navButton("Routes"));
+
+      await waitFor(() => {
+        expect(
+          getListItemByRouteId(routeB.id).querySelector(
+            '[role="dialog"],[role="alertdialog"]',
+          ),
+        ).not.toBeNull();
+      });
+      expect(openConfirmations()).toHaveLength(1);
+    });
+
+    it("resuming the paused ride from the launcher withdraws the older switch prompt and keeps the paused ride", async () => {
+      const user = userEvent.setup();
+      const watchPositionSpy = stubGeolocationWatch();
+      const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+      render(<App mapFactory={buildNoopMapFactory()} />);
+      const { routeA } = await armSwitchFromRouteCard(user);
+
+      await user.click(navButton("Ride"));
+      expect(confirmationNamed('Switch to "Route B"?')).toBeInTheDocument();
+      await user.click(await screen.findByRole("button", { name: "Resume ride" }));
+
+      expect(await screen.findByRole("button", { name: "Pause" })).toBeInTheDocument();
+      expect(openConfirmations()).toEqual([]);
+      expect(watchPositionSpy).toHaveBeenCalledOnce();
+      expect(clearSpy).not.toHaveBeenCalled();
+      expect(await getActiveRideState()).toMatchObject({ routeId: routeA.id });
+    });
+
+    it("starting to ride the open paused route from its own screen withdraws the older switch prompt", async () => {
+      const user = userEvent.setup();
+      stubGeolocationWatch();
+      const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+      render(<App mapFactory={buildNoopMapFactory()} />);
+      const { routeB } = await armSwitchFromRouteCard(user);
+
+      // Put Route A's own screen behind the Ride tab, then arm B again.
+      await user.click(
+        within(getListItemByRouteId(routeB.id)).getByRole("button", { name: "Cancel" }),
+      );
+      await user.click(screen.getByRole("button", { name: "Route A" }));
+      await screen.findByRole("heading", { name: "Route A" });
+      await user.click(navButton("Routes"));
+      await user.click(await screen.findByRole("button", { name: "Route B" }));
+      await waitFor(() => {
+        expect(openConfirmations()).toHaveLength(1);
+      });
+      await user.click(navButton("Ride"));
+      expect(confirmationNamed('Switch to "Route B"?')).toBeInTheDocument();
+
+      await user.click(
+        await screen.findByRole("button", { name: /^(Resume ride|Start riding)$/ }),
+      );
+
+      expect(await screen.findByRole("button", { name: "Pause" })).toBeInTheDocument();
+      expect(openConfirmations()).toEqual([]);
+      expect(clearSpy).not.toHaveBeenCalled();
+    });
+
+    it("a superseded prompt's End and switch never shows a busy state and never clears storage", async () => {
+      const user = userEvent.setup();
+      stubGeolocationWatch();
+      const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+      render(<App mapFactory={buildNoopMapFactory()} />);
+      const { routeA, seededRow } = await armSwitchFromRouteCard(user);
+      await user.click(navButton("Ride"));
+      const resumeButton = await screen.findByRole("button", { name: "Resume ride" });
+
+      // Hold the newer request's storage read, so the older prompt is
+      // still on screen after that request has superseded it.
+      const readGate = deferred();
+      const realGetActiveRideState = rideStateRepository.getActiveRideState;
+      vi.spyOn(rideStateRepository, "getActiveRideState").mockImplementationOnce(
+        async () => {
+          await readGate.promise;
+          return realGetActiveRideState();
+        },
+      );
+      await user.click(resumeButton);
+      const stalePrompt = confirmationNamed('Switch to "Route B"?');
+      await user.click(
+        within(stalePrompt).getByRole("button", { name: "End and switch" }),
+      );
+
+      expect(screen.queryByRole("button", { name: "Ending…" })).toBeNull();
+      expect(clearSpy).not.toHaveBeenCalled();
+      expect(await getActiveRideState()).toEqual(seededRow);
+
+      readGate.release();
+      expect(await screen.findByRole("button", { name: "Pause" })).toBeInTheDocument();
+      expect(openConfirmations()).toEqual([]);
+      expect(clearSpy).not.toHaveBeenCalled();
+      expect(await getActiveRideState()).toMatchObject({ routeId: routeA.id });
+    });
+
+    it("Resume ride during an older End and switch's clear waits for it, then opens a plain pre-ride that agrees with the emptied storage", async () => {
+      const user = userEvent.setup();
+      const watchPositionSpy = stubGeolocationWatch();
+      render(<App mapFactory={buildNoopMapFactory()} />);
+      await armSwitchFromRouteCard(user);
+      await user.click(navButton("Ride"));
+      const resumeButton = await screen.findByRole("button", { name: "Resume ride" });
+
+      const clearGate = deferred();
+      const realClear = rideStateRepository.clearActiveRideState;
+      const clearSpy = vi
+        .spyOn(rideStateRepository, "clearActiveRideState")
+        .mockImplementationOnce(async () => {
+          await clearGate.promise;
+          await realClear();
+        });
+      await user.click(
+        within(confirmationNamed('Switch to "Route B"?')).getByRole("button", {
+          name: "End and switch",
+        }),
+      );
+      expect(clearSpy).toHaveBeenCalledOnce();
+      await user.click(resumeButton);
+
+      clearGate.release();
+
+      expect(
+        await screen.findByRole("button", { name: "Start riding" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Route A" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { level: 1, name: "Route B" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
+      expect(openConfirmations()).toEqual([]);
+      expect(watchPositionSpy).not.toHaveBeenCalled();
+      expect(await getActiveRideState()).toBeUndefined();
+    });
+
+    it("Resume ride during an older End and switch whose clear then fails reopens the paused ride with its progress and its row intact", async () => {
+      const user = userEvent.setup();
+      const watchPositionSpy = stubGeolocationWatch();
+      render(<App mapFactory={buildNoopMapFactory()} />);
+      const { routeA, seededRow } = await armSwitchFromRouteCard(user);
+      await user.click(navButton("Ride"));
+      const resumeButton = await screen.findByRole("button", { name: "Resume ride" });
+
+      const clearGate = deferred();
+      vi.spyOn(rideStateRepository, "clearActiveRideState").mockImplementationOnce(
+        async () => {
+          await clearGate.promise;
+        },
+      );
+      await user.click(
+        within(confirmationNamed('Switch to "Route B"?')).getByRole("button", {
+          name: "End and switch",
+        }),
+      );
+      await user.click(resumeButton);
+
+      clearGate.fail(new Error("clear failed"));
+
+      expect(await screen.findByRole("button", { name: "Pause" })).toBeInTheDocument();
+      expect(watchPositionSpy).toHaveBeenCalledOnce();
+      expect(openConfirmations()).toEqual([]);
+      expect(await getActiveRideState()).toMatchObject({ routeId: routeA.id });
+      expect(await getActiveRideState()).toMatchObject({
+        startedAt: seededRow?.startedAt,
+      });
+    });
+
+    it("an older clear that fails after a newer route request has raised its own prompt never replaces that prompt", async () => {
+      const user = userEvent.setup();
+      stubGeolocationWatch();
+      render(<App mapFactory={buildNoopMapFactory()} />);
+      await importFixture(user, "Route C.gpx");
+      const { seededRow } = await armSwitchFromRouteCard(user);
+
+      const clearGate = deferred();
+      vi.spyOn(rideStateRepository, "clearActiveRideState").mockImplementationOnce(
+        async () => {
+          await clearGate.promise;
+        },
+      );
+      await user.click(
+        within(confirmationNamed('Switch to "Route B"?')).getByRole("button", {
+          name: "End and switch",
+        }),
+      );
+      await user.click(screen.getByRole("button", { name: "Route C" }));
+
+      clearGate.fail(new Error("clear failed"));
+
+      await waitFor(() => {
+        expect(confirmationNamed('Switch to "Route C"?')).toBeInTheDocument();
+      });
+      const newerPrompt = confirmationNamed('Switch to "Route C"?');
+      expect(
+        within(newerPrompt).getByRole("button", { name: "End and switch" }),
+      ).toBeEnabled();
+      expect(screen.queryByText(/could not be ended/i)).toBeNull();
+      expect(openConfirmations()).toHaveLength(1);
+      expect(screen.queryByRole("heading", { level: 1, name: "Route B" })).toBeNull();
+      expect(await getActiveRideState()).toEqual(seededRow);
+    });
+
+    it("an older clear that succeeds after a newer route request has started opens only the newer route, against the emptied storage", async () => {
+      const user = userEvent.setup();
+      stubGeolocationWatch();
+      render(<App mapFactory={buildNoopMapFactory()} />);
+      await importFixture(user, "Route C.gpx");
+      await armSwitchFromRouteCard(user);
+
+      const clearGate = deferred();
+      const realClear = rideStateRepository.clearActiveRideState;
+      vi.spyOn(rideStateRepository, "clearActiveRideState").mockImplementationOnce(
+        async () => {
+          await clearGate.promise;
+          await realClear();
+        },
+      );
+      await user.click(
+        within(confirmationNamed('Switch to "Route B"?')).getByRole("button", {
+          name: "End and switch",
+        }),
+      );
+      await user.click(screen.getByRole("button", { name: "Route C" }));
+
+      clearGate.release();
+
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "Route C" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
+      expect(openConfirmations()).toEqual([]);
+      expect(await getActiveRideState()).toBeUndefined();
+    });
   });
 });
 

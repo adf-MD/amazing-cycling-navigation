@@ -604,15 +604,20 @@ export function RouteLibrary({
   // (search-filtered) list — deleted entirely, or merely no longer
   // matching the search text — report it rather than leaving an invisible
   // actionable prompt or fabricating a card that doesn't match the query.
+  //
+  // Only once the routes have actually loaded (backlog item 119): on a
+  // return to Routes the live query is briefly undefined, the list is
+  // empty for that render, and reporting then silently cancelled a switch
+  // the rider had left Routes with instead of bringing it back inline.
   useEffect(() => {
-    if (!pendingRouteSwitch) return;
+    if (!pendingRouteSwitch || routes === undefined) return;
     const stillVisible = viewRoutes.some(
       (route) => route.id === pendingRouteSwitch.routeId,
     );
     if (!stillVisible) {
       pendingRouteSwitch.onTargetMissing(pendingRouteSwitch.routeId);
     }
-  }, [pendingRouteSwitch, viewRoutes]);
+  }, [pendingRouteSwitch, routes, viewRoutes]);
 
   const handleImported = (result: GpxImportResult) => {
     setNotices(result.notices);
@@ -1108,7 +1113,7 @@ export function RouteLibrary({
   // isCardAlreadyFullyVisible plus an end-aligned scrollIntoView — rather
   // than the top-prioritising delta path, which would happily leave the
   // buttons off-screen. Focus is immediate and the scroll alone waits, so
-  // an open alertdialog is never left focused on its now-disabled trigger.
+  // an open confirmation is never left focused on its now-disabled trigger.
   useLayoutEffect(() => {
     let cancelConfirmReveal: (() => void) | null = null;
     if (tagLifecycleConfirm !== null) {

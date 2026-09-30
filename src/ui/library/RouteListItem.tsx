@@ -518,7 +518,7 @@ export function RouteListItem({
   };
 
   // Mirrors openRename's own "cancel a pending delete confirmation (and
-  // switch prompt) first" precedent above, so an open alertdialog never
+  // switch prompt) first" precedent above, so an open confirmation never
   // gets silently moved into a different group instead of being resolved.
   const handlePinClick = () => {
     if (isDeletePending) {
@@ -855,9 +855,11 @@ export function RouteListItem({
             </button>
           </div>
           {isDeletePending ? (
+            // A named, described, non-modal dialog, like every confirmation
+            // (backlog item 119): the page stays operable around it.
             <div
               className="route-delete-confirm"
-              role="alertdialog"
+              role="dialog"
               aria-labelledby={headingId}
               aria-describedby={descriptionId}
               onKeyDown={handleConfirmKeyDown}
@@ -895,7 +897,7 @@ export function RouteListItem({
           {switchPrompt ? (
             <div
               className="route-delete-confirm"
-              role="alertdialog"
+              role="dialog"
               aria-labelledby={switchHeadingId}
               aria-describedby={switchDescriptionId}
               onKeyDown={(event) => {

@@ -144,7 +144,7 @@ describe("RouteTagManager", () => {
       confirmRef,
       confirmCancelButtonRef,
     });
-    const dialog = screen.getByRole("alertdialog", { name: "Delete the tag “Gravel”?" });
+    const dialog = screen.getByRole("dialog", { name: "Delete the tag “Gravel”?" });
     expect(dialog).toHaveTextContent("Gone.");
     expect(confirmRef.current).toBe(dialog);
     expect(confirmCancelButtonRef.current).toBe(

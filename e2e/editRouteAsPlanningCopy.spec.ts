@@ -444,7 +444,7 @@ test("shows a confirmation before replacing a meaningful existing Planning draft
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
 
   await page.getByRole("button", { name: "Edit copy" }).click();
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
 
@@ -468,9 +468,9 @@ test("shows a confirmation before replacing a meaningful existing Planning draft
   await page.getByRole("button", { name: "Routes" }).click();
   await page.getByRole("button", { name: routeName, exact: true }).click();
   await page.getByRole("button", { name: "Edit copy" }).click();
-  await expect(page.getByRole("alertdialog")).toBeVisible();
+  await expect(page.getByRole("dialog")).toBeVisible();
   await page
-    .getByRole("alertdialog")
+    .getByRole("dialog")
     .getByRole("button", { name: "Replace and edit" })
     .click();
 

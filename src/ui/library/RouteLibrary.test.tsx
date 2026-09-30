@@ -778,7 +778,7 @@ describe("RouteLibrary", () => {
 
       const [route] = (await db.routes.toArray()) as [PlannedRoute];
       const listItem = getListItemByRouteId(route.id);
-      expect(within(listItem).getByRole("alertdialog")).toBeInTheDocument();
+      expect(within(listItem).getByRole("dialog")).toBeInTheDocument();
       expect(within(listItem).getByText("Delete “Evening Ride”?")).toBeInTheDocument();
     });
 
@@ -790,7 +790,7 @@ describe("RouteLibrary", () => {
       await user.click(screen.getByRole("button", { name: "Delete" }));
       await user.click(screen.getByRole("button", { name: "Cancel" }));
 
-      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
       expect(screen.getByRole("button", { name: "Evening Ride" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Delete" })).toHaveFocus();
     });
@@ -803,7 +803,7 @@ describe("RouteLibrary", () => {
       await user.click(screen.getByRole("button", { name: "Delete" }));
       await user.keyboard("{Escape}");
 
-      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
       expect(screen.getByRole("button", { name: "Evening Ride" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Delete" })).toHaveFocus();
     });
@@ -859,20 +859,18 @@ describe("RouteLibrary", () => {
       await user.click(
         within(getListItemByRouteId(routeA.id)).getByRole("button", { name: "Delete" }),
       );
-      expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
+      expect(screen.getAllByRole("dialog")).toHaveLength(1);
 
       await user.click(
         within(getListItemByRouteId(routeB.id)).getByRole("button", { name: "Delete" }),
       );
 
-      const dialogs = screen.getAllByRole("alertdialog");
+      const dialogs = screen.getAllByRole("dialog");
       expect(dialogs).toHaveLength(1);
       expect(
-        within(getListItemByRouteId(routeB.id)).getByRole("alertdialog"),
+        within(getListItemByRouteId(routeB.id)).getByRole("dialog"),
       ).toBeInTheDocument();
-      expect(
-        within(getListItemByRouteId(routeA.id)).queryByRole("alertdialog"),
-      ).toBeNull();
+      expect(within(getListItemByRouteId(routeA.id)).queryByRole("dialog")).toBeNull();
     });
 
     it("deleting one of two routes moves focus to the next surviving route's name button", async () => {
@@ -961,7 +959,7 @@ describe("RouteLibrary", () => {
       await waitFor(() => {
         expect(screen.getByRole("alert")).toHaveTextContent("Delete failed.");
       });
-      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Evening Ride" })).toBeInTheDocument();
 
       // Recoverable without reopening: the confirmation stayed open after
@@ -1403,11 +1401,11 @@ describe("RouteLibrary", () => {
       await importFixture(user, "Alpine Climb.gpx");
 
       await user.click(screen.getByRole("button", { name: "Delete" }));
-      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: "Pin Alpine Climb" }));
 
-      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
       await waitFor(() => {
         expect(
           screen.getByRole("button", { name: "Unpin Alpine Climb" }),
@@ -1880,10 +1878,10 @@ describe("RouteLibrary — pending route switch", () => {
     );
 
     expect(
-      within(getListItemByRouteId(routeB.id)).getByRole("alertdialog"),
+      within(getListItemByRouteId(routeB.id)).getByRole("dialog"),
     ).toBeInTheDocument();
-    expect(within(getListItemByRouteId(routeA.id)).queryByRole("alertdialog")).toBeNull();
-    expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
+    expect(within(getListItemByRouteId(routeA.id)).queryByRole("dialog")).toBeNull();
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
   });
 
   it("forwards onCancel, onReturn and onConfirm to the matching card's own buttons", async () => {
@@ -1916,7 +1914,7 @@ describe("RouteLibrary — pending route switch", () => {
       <RouteLibrary onOpenRoute={vi.fn()} pendingRouteSwitch={pendingRouteSwitch} />,
     );
     expect(
-      within(getListItemByRouteId(route.id)).getByRole("alertdialog"),
+      within(getListItemByRouteId(route.id)).getByRole("dialog"),
     ).toBeInTheDocument();
 
     await user.type(screen.getByLabelText(/search/i), "no such route");
@@ -1979,7 +1977,7 @@ describe("RouteLibrary — pending route switch", () => {
     rerender(
       <RouteLibrary onOpenRoute={vi.fn()} pendingRouteSwitch={pendingRouteSwitch} />,
     );
-    expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
 
     await user.click(
       within(getListItemByRouteId(routeA.id)).getByRole("button", { name: "Delete" }),
@@ -2002,7 +2000,7 @@ describe("RouteLibrary — pending route switch", () => {
       within(getListItemByRouteId(routeA.id)).getByRole("button", { name: "Delete" }),
     );
     expect(
-      within(getListItemByRouteId(routeA.id)).getByRole("alertdialog"),
+      within(getListItemByRouteId(routeA.id)).getByRole("dialog"),
     ).toBeInTheDocument();
 
     rerender(
@@ -2012,11 +2010,11 @@ describe("RouteLibrary — pending route switch", () => {
       />,
     );
 
-    expect(within(getListItemByRouteId(routeA.id)).queryByRole("alertdialog")).toBeNull();
+    expect(within(getListItemByRouteId(routeA.id)).queryByRole("dialog")).toBeNull();
     expect(
-      within(getListItemByRouteId(routeB.id)).getByRole("alertdialog"),
+      within(getListItemByRouteId(routeB.id)).getByRole("dialog"),
     ).toBeInTheDocument();
-    expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
   });
 
   it("does not cancel or interrupt a busy switch prompt merely because Delete was requested elsewhere", async () => {
@@ -2038,9 +2036,9 @@ describe("RouteLibrary — pending route switch", () => {
     );
 
     expect(pendingRouteSwitch.onCancel).not.toHaveBeenCalled();
-    expect(within(getListItemByRouteId(routeA.id)).queryByRole("alertdialog")).toBeNull();
+    expect(within(getListItemByRouteId(routeA.id)).queryByRole("dialog")).toBeNull();
     expect(
-      within(getListItemByRouteId(routeB.id)).getByRole("alertdialog"),
+      within(getListItemByRouteId(routeB.id)).getByRole("dialog"),
     ).toBeInTheDocument();
   });
 });
@@ -2719,7 +2717,7 @@ describe("RouteLibrary — tag filtering", () => {
       <RouteLibrary onOpenRoute={vi.fn()} pendingRouteSwitch={pendingRouteSwitch} />,
     );
     expect(
-      within(getListItemForName("Alpine Climb")).getByRole("alertdialog"),
+      within(getListItemForName("Alpine Climb")).getByRole("dialog"),
     ).toBeInTheDocument();
 
     // A filter Alpine Climb DOES carry must not cancel the prompt.

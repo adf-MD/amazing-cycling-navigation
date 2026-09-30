@@ -494,7 +494,7 @@ test("End ride from the active screen clears the row and returns to the empty la
 
   const endRideButton = page.getByRole("button", { name: "End ride" });
   await endRideButton.click();
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(
     dialog.getByText("Your saved position and map view for Free roam will be cleared."),
   ).toBeVisible();
@@ -508,7 +508,7 @@ test("End ride from the active screen clears the row and returns to the empty la
     const header = document.querySelector(".riding-immersive-header");
     const endSlot = document.querySelector(".riding-immersive-header-end");
     const confirmRow = document.querySelector(".ride-end-ride-confirm-row");
-    const alertDialog = document.querySelector('[role="alertdialog"]');
+    const alertDialog = document.querySelector('[role="dialog"]');
     if (!header || !endSlot || !confirmRow || !alertDialog) return false;
     return (
       !endSlot.contains(alertDialog) &&
@@ -526,8 +526,8 @@ test("End ride from the active screen clears the row and returns to the empty la
   await expect(endRideButton).toBeFocused();
 
   await endRideButton.click();
-  await expect(page.getByRole("alertdialog")).toBeVisible();
-  await page.getByRole("alertdialog").getByRole("button", { name: "End ride" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "End ride" }).click();
 
   await waitForClearedRideState(page);
   await expect(page.getByRole("button", { name: "Choose a route" })).toBeVisible();
@@ -554,7 +554,7 @@ test("End ride from the unresumed launcher works directly, without ever resuming
   await expect(resumeButton).toBeVisible();
   const endRideButton = page.getByRole("button", { name: "End ride" });
   await endRideButton.click();
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
 
   // .ride-launcher-clear-row is a persistent action-slot container
@@ -563,7 +563,7 @@ test("End ride from the unresumed launcher works directly, without ever resuming
   // around it, unaffected.
   const dialogInsideClearRow = await page.evaluate(() => {
     const row = document.querySelector(".ride-launcher-clear-row");
-    const alertDialog = document.querySelector('[role="alertdialog"]');
+    const alertDialog = document.querySelector('[role="dialog"]');
     return Boolean(row && alertDialog && row.contains(alertDialog));
   });
   expect(dialogInsideClearRow).toBe(true);
@@ -623,7 +623,7 @@ test("a saved route cannot silently replace an unfinished free-roam session — 
   // than redirecting to Ride to show a blocked-open explanation. The
   // original free-roam row stays exactly intact until confirmed.
   const freeRoamRowBefore = await readActiveRideStateRow(page);
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog.getByText(/unfinished free roam session/i)).toBeVisible();
   expect(await readActiveRideStateRow(page)).toEqual(freeRoamRowBefore);
   // exact:true — the dialog's own title ("Switch to
@@ -875,7 +875,7 @@ test.describe("390px phone viewport", () => {
     expect(intersects(zoomOutBox, followBox)).toBe(false);
 
     await endRideButton.click();
-    const dialog = page.getByRole("alertdialog");
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     const scrollWidthWithDialog = await page.evaluate(
       () => document.documentElement.scrollWidth,

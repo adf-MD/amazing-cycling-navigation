@@ -299,9 +299,9 @@ test("active route Riding hides the global nav; Pause stops the watch, persists 
   const pauseButton = page.getByRole("button", { name: "Pause" });
   await expect(pauseButton).toBeVisible();
 
-  // Pause is a single, confirmation-free tap — no alertdialog anywhere
+  // Pause is a single, confirmation-free tap — no dialog anywhere
   // before, during, or immediately after (contrast with End ride).
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await pauseButton.click();
 
   // Global nav restored; immersive header gone — the SAME route screen
@@ -313,7 +313,7 @@ test("active route Riding hides the global nav; Pause stops the watch, persists 
   const resumeButton = page.getByRole("button", { name: "Resume ride" });
   await expect(resumeButton).toBeVisible();
   await expect(page.getByRole("button", { name: "Start riding" })).toBeHidden();
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 
   // Storage retains a full resumable snapshot — never cleared by Pause
   // (contrast with End/Finish ride, which always clear it first).
@@ -423,14 +423,14 @@ test("the End-ride confirmation renders inline directly beneath the immersive he
 
   const endRideButton = page.getByRole("button", { name: "End ride" });
   await endRideButton.click();
-  const dialog = page.getByRole("alertdialog");
+  const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
 
   const dialogFollowsHeaderDirectly = await page.evaluate(() => {
     const header = document.querySelector(".riding-immersive-header");
     const endSlot = document.querySelector(".riding-immersive-header-end");
     const confirmRow = document.querySelector(".ride-end-ride-confirm-row");
-    const alertDialog = document.querySelector('[role="alertdialog"]');
+    const alertDialog = document.querySelector('[role="dialog"]');
     if (!header || !endSlot || !confirmRow || !alertDialog) return false;
     return (
       !endSlot.contains(alertDialog) &&
@@ -576,7 +576,7 @@ test("Pause on active free roam releases the wake lock, persists a resumable sna
   await toggle.click();
   await expect(page.getByText("Screen staying awake.")).toBeAttached();
 
-  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Pause" }).click();
 
   await expect(immersiveHeaderLocator(page)).toHaveCount(0);

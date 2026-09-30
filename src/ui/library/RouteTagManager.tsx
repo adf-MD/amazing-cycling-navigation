@@ -74,12 +74,12 @@ export interface RouteTagManagerProps {
  *
  * The confirmation is hand-rolled here rather than reusing
  * ui/shared/ConfirmDialog.tsx, mirroring RouteListItem's own per-card
- * delete confirmation (which that shared component's doc comment itself
- * cites as its precedent): ConfirmDialog hardcodes
- * aria-labelledby="confirm-dialog-title", and App.tsx can render its own
- * page-level ConfirmDialog for a pending ride switch while the Route
- * Library is on screen, so two dialogs could share one id. useId() here
- * makes that impossible.
+ * delete confirmation. It was written when ConfirmDialog still hardcoded
+ * aria-labelledby="confirm-dialog-title" (corrected by backlog item 119),
+ * while App.tsx can render its own page-level ConfirmDialog for a pending
+ * ride switch with the Route Library on screen, so two dialogs could have
+ * shared one id. useId() here makes that impossible, and like every
+ * confirmation it is a non-modal role="dialog".
  */
 export function RouteTagManager({
   panelId,
@@ -249,7 +249,7 @@ export function RouteTagManager({
           {confirmation ? (
             <div
               className="route-delete-confirm tag-manager-confirm"
-              role="alertdialog"
+              role="dialog"
               aria-labelledby={confirmHeadingId}
               aria-describedby={confirmDescriptionId}
               onKeyDown={handleConfirmKeyDown}

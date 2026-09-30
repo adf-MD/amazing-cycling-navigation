@@ -180,11 +180,11 @@ describe("RidingLauncher", () => {
 
     const endRideButton = await screen.findByRole("button", { name: "End ride" });
     await user.click(endRideButton);
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("End this ride?")).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     // The trigger genuinely unmounts while the confirmation is open
     // (backlog item 50's in-place confirmation morph), so the button
     // re-queried here is a freshly remounted DOM node, not the one captured
@@ -195,7 +195,7 @@ describe("RidingLauncher", () => {
 
     await user.click(restoredEndRideButton);
     await user.keyboard("{Escape}");
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("button", { name: "End ride" })).toHaveFocus();
     expect(await getActiveRideState()).toBeDefined();
   });
@@ -219,7 +219,7 @@ describe("RidingLauncher", () => {
     // stays mounted and now contains the confirmation directly, rather than
     // the confirmation being appended elsewhere on the page.
     const clearRow = container.querySelector(".ride-launcher-clear-row");
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     expect(clearRow).not.toBeNull();
     expect(clearRow?.contains(dialog)).toBe(true);
     // The trigger never coexists with the confirmation — the only
@@ -253,7 +253,7 @@ describe("RidingLauncher", () => {
     await user.click(await screen.findByRole("button", { name: "End ride" }));
 
     const clearRow = container.querySelector(".ride-launcher-clear-row");
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     expect(clearRow).not.toBeNull();
     expect(clearRow?.contains(dialog)).toBe(true);
     expect(screen.getAllByRole("button", { name: "End ride" })).toEqual([
@@ -279,7 +279,7 @@ describe("RidingLauncher", () => {
     );
 
     const clearRow = container.querySelector(".ride-launcher-clear-row");
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     expect(clearRow).not.toBeNull();
     expect(clearRow?.contains(dialog)).toBe(true);
     expect(screen.getAllByRole("button", { name: "Discard unfinished ride" })).toEqual([
@@ -306,7 +306,7 @@ describe("RidingLauncher", () => {
     );
 
     await user.click(await screen.findByRole("button", { name: "End ride" }));
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "End ride" }));
 
     await waitFor(async () => {
@@ -337,20 +337,20 @@ describe("RidingLauncher", () => {
 
     const endRideButton = await screen.findByRole("button", { name: "End ride" });
     await user.click(endRideButton);
-    const dialog = await screen.findByRole("alertdialog");
+    const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "End ride" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The ride could not be ended on this device. Try again.",
     );
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(await getActiveRideState()).toBeDefined();
     expect(screen.getByRole("button", { name: "End ride" })).toHaveFocus();
 
     clearSpy.mockRestore();
 
     await user.click(screen.getByRole("button", { name: "End ride" }));
-    const retryDialog = await screen.findByRole("alertdialog");
+    const retryDialog = await screen.findByRole("dialog");
     await user.click(within(retryDialog).getByRole("button", { name: "End ride" }));
     await waitFor(async () => {
       expect(await getActiveRideState()).toBeUndefined();
@@ -399,7 +399,7 @@ describe("RidingLauncher", () => {
       name: "Discard unfinished ride",
     });
     await user.click(discardButton);
-    const cancelDialog = await screen.findByRole("alertdialog");
+    const cancelDialog = await screen.findByRole("dialog");
     expect(
       within(cancelDialog).getByText("Discard unfinished ride?"),
     ).toBeInTheDocument();
@@ -418,7 +418,7 @@ describe("RidingLauncher", () => {
       .spyOn(rideStateRepository, "clearActiveRideState")
       .mockRejectedValueOnce(new Error("boom"));
     await user.click(restoredDiscardButton);
-    const failDialog = await screen.findByRole("alertdialog");
+    const failDialog = await screen.findByRole("dialog");
     await user.click(
       within(failDialog).getByRole("button", { name: "Discard unfinished ride" }),
     );
@@ -429,7 +429,7 @@ describe("RidingLauncher", () => {
     clearSpy.mockRestore();
 
     await user.click(screen.getByRole("button", { name: "Discard unfinished ride" }));
-    const confirmDialog = await screen.findByRole("alertdialog");
+    const confirmDialog = await screen.findByRole("dialog");
     await user.click(
       within(confirmDialog).getByRole("button", { name: "Discard unfinished ride" }),
     );
@@ -642,7 +642,7 @@ describe("RidingLauncher", () => {
       );
 
       await user.click(await screen.findByRole("button", { name: "End ride" }));
-      const dialog = await screen.findByRole("alertdialog");
+      const dialog = await screen.findByRole("dialog");
       expect(within(dialog).getByText("End this ride?")).toBeInTheDocument();
       expect(within(dialog).queryByText(/saved route/i)).toBeNull();
     });
@@ -665,7 +665,7 @@ describe("RidingLauncher", () => {
       );
 
       await user.click(await screen.findByRole("button", { name: "End ride" }));
-      const dialog = await screen.findByRole("alertdialog");
+      const dialog = await screen.findByRole("dialog");
       await user.click(within(dialog).getByRole("button", { name: "End ride" }));
 
       await waitFor(async () => {

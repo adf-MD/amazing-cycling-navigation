@@ -838,7 +838,7 @@ test.describe("Riding: pre-ride climb chart layout", () => {
     expect(headerPrecedesMap).toBe(true);
 
     await immersiveHeader.getByRole("button", { name: "End ride" }).click();
-    const endRideDialog = page.getByRole("alertdialog");
+    const endRideDialog = page.getByRole("dialog");
     await expect(endRideDialog).toBeVisible();
     // The header's own End slot goes empty once the confirmation opens
     // (backlog item 55's "replace the End trigger with the confirmation
@@ -849,7 +849,7 @@ test.describe("Riding: pre-ride climb chart layout", () => {
       const header = document.querySelector(".riding-immersive-header");
       const endSlot = document.querySelector(".riding-immersive-header-end");
       const confirmRow = document.querySelector(".ride-end-ride-confirm-row");
-      const alertDialog = document.querySelector('[role="alertdialog"]');
+      const alertDialog = document.querySelector('[role="dialog"]');
       if (!header || !endSlot || !confirmRow || !alertDialog) return false;
       return (
         !endSlot.contains(alertDialog) &&

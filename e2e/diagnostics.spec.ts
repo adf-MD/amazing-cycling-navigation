@@ -255,7 +255,7 @@ test("a key deleted through the real Settings confirmation disables the routing 
     .getByRole("button", { name: "Settings", exact: true })
     .click();
   await page.getByRole("button", { name: "Delete key" }).click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
   await expect(page.getByText("No key configured")).toBeVisible();
 
   await openStatus(page);
@@ -528,10 +528,7 @@ test("falls back honestly when the session's route has been deleted", async ({
   // active ride state — so the dangling reference this asserts against is
   // the one a rider can actually produce.
   await page.getByRole("button", { name: "Delete", exact: true }).click();
-  await page
-    .getByRole("alertdialog")
-    .getByRole("button", { name: "Delete route" })
-    .click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete route" }).click();
   await expect(
     page.getByRole("button", { name: "Evening loop", exact: true }),
   ).toHaveCount(0);

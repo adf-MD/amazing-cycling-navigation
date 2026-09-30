@@ -259,7 +259,7 @@ describe("RouteLibrary — global tag management", () => {
     ).toBeVisible();
     await user.click(within(getManager()).getByRole("button", { name: "Merge tags" }));
 
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Merge “Gravel” into “Road”?")).toBeVisible();
     expect(dialog).toHaveTextContent("2 routes");
     expect(dialog).toHaveTextContent("No route is deleted.");
@@ -311,7 +311,7 @@ describe("RouteLibrary — global tag management", () => {
     await chooseTag(user, "Gravel (2 routes)");
     await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
 
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Delete the tag “Gravel”?")).toBeVisible();
     expect(dialog).toHaveTextContent("removed from 2 routes");
     expect(dialog).toHaveTextContent("routes themselves are not deleted");
@@ -341,14 +341,14 @@ describe("RouteLibrary — global tag management", () => {
     await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
     expect(lifecycle).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(
       within(getManager()).getByRole("button", { name: "Delete tag" }),
     ).toHaveFocus();
 
     await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
     await user.keyboard("{Escape}");
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(lifecycle).not.toHaveBeenCalled();
     expect(within(getListItemForName("Alpine Climb")).getByText("Gravel")).toBeVisible();
   });
@@ -486,7 +486,7 @@ describe("RouteLibrary — global tag management, write/live-query orderings", (
     live.start();
     await user.click(within(getManager()).getByRole("button", { name: "Merge tags" }));
     await user.click(
-      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Merge tags" }),
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Merge tags" }),
     );
 
     // The write has settled and the target identity already existed all
@@ -528,7 +528,7 @@ describe("RouteLibrary — global tag management, write/live-query orderings", (
     await user.type(within(getManager()).getByLabelText("New name"), "Road");
     await user.click(within(getManager()).getByRole("button", { name: "Merge tags" }));
     await user.click(
-      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Merge tags" }),
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Merge tags" }),
     );
 
     await expandTagFilters(user);
@@ -583,7 +583,7 @@ describe("RouteLibrary — global tag management, write/live-query orderings", (
     await chooseTag(user, "Gravel (1 route)");
     await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
     await user.click(
-      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete tag" }),
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Delete tag" }),
     );
 
     await waitFor(() => {
@@ -783,14 +783,14 @@ describe("RouteLibrary — global tag management, failures and the one-at-a-time
     await openManager(user);
     await chooseTag(user, "Gravel (1 route)");
     await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
-    const confirmButton = within(screen.getByRole("alertdialog")).getByRole("button", {
+    const confirmButton = within(screen.getByRole("dialog")).getByRole("button", {
       name: "Delete tag",
     });
     fireEvent.click(confirmButton);
     fireEvent.click(confirmButton);
 
     await waitFor(() => {
-      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     expect(lifecycle).toHaveBeenCalledTimes(1);
   });
@@ -1051,13 +1051,13 @@ describe("RouteLibrary — global tag management, the final-tag empty state", ()
     holding = true;
     await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
     await user.click(
-      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete tag" }),
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Delete tag" }),
     );
 
     // The write has settled but the corpus has not caught up, so the
     // manager must still be on screen — completion waits for both.
     await waitFor(() => {
-      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     expect(getManager()).toBeInTheDocument();
 
@@ -1093,7 +1093,7 @@ describe("RouteLibrary — global tag management, the final-tag empty state", ()
     await chooseTag(user, "Gravel (1 route)");
     await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
     await user.click(
-      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete tag" }),
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Delete tag" }),
     );
 
     // The corpus is already tagless — the filter region and the entry
@@ -1367,7 +1367,7 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
     await user.type(within(getManager()).getByLabelText("New name"), "Road");
     await user.click(within(getManager()).getByRole("button", { name: "Merge tags" }));
     await user.click(
-      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Merge tags" }),
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Merge tags" }),
     );
     // Completion is read from the manager's own option list, which comes
     // from the full corpus: expanding the filter chooser would close the
@@ -1398,7 +1398,7 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
     await chooseTag(user, "Gravel (2 routes)");
     await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
     await user.click(
-      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete tag" }),
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Delete tag" }),
     );
     await waitFor(() => {
       expect(
@@ -1460,7 +1460,7 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
     await chooseTag(user, "Gravel (1 route)");
     await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
     await user.click(
-      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete tag" }),
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Delete tag" }),
     );
     await waitFor(() => {
       expect(queryManager()).not.toBeInTheDocument();
@@ -1484,7 +1484,7 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
 
     await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
     await user.click(
-      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel" }),
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }),
     );
     await waitFor(() => {
       expect(
@@ -1503,6 +1503,55 @@ describe("RouteLibrary — global tag management, the manager-panel reveal (item
     });
     await settleViewport();
     expect(scrollCalls).toHaveLength(0);
+  });
+
+  // Backlog item 119: both tag confirmations are named, described,
+  // non-modal dialogs — never alertdialogs — with focus handed to Cancel
+  // on opening and back to the action that opened them on Escape.
+  it("item 119: the delete and merge confirmations are named, described, non-modal dialogs that take focus and give it back on Escape", async () => {
+    const user = userEvent.setup();
+    stubPanelGeometry(framedPanelGeometry.panel, framedPanelGeometry.heading);
+    render(<RouteLibrary onOpenRoute={vi.fn()} />);
+    await seedTwoTags(user);
+    await openManager(user);
+    await chooseTag(user, "Gravel (2 routes)");
+
+    await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    const deleteDialog = screen.getByRole("dialog", { name: "Delete the tag “Gravel”?" });
+    expect(deleteDialog).not.toHaveAttribute("aria-modal");
+    expect(deleteDialog).toHaveAccessibleDescription(
+      "“Gravel” will be removed from 2 routes. The routes themselves are not deleted and stay in your library.",
+    );
+    await waitFor(() => {
+      expect(within(deleteDialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    });
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(
+        within(getManager()).getByRole("button", { name: "Delete tag" }),
+      ).toHaveFocus();
+    });
+
+    await user.type(within(getManager()).getByLabelText("New name"), "Road");
+    await user.click(within(getManager()).getByRole("button", { name: "Merge tags" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    const mergeDialog = screen.getByRole("dialog", {
+      name: "Merge “Gravel” into “Road”?",
+    });
+    expect(mergeDialog).not.toHaveAttribute("aria-modal");
+    expect(mergeDialog).toHaveAccessibleDescription(
+      "“Road” already exists, so this merges the two tags on 2 routes. “Gravel” will no longer exist. No route is deleted.",
+    );
+    await waitFor(() => {
+      expect(within(mergeDialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    });
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(
+        within(getManager()).getByRole("button", { name: "Merge tags" }),
+      ).toHaveFocus();
+    });
   });
 
   it("restores focus without any deliberate scroll when the operation fails", async () => {
@@ -1701,7 +1750,7 @@ describe("RouteLibrary — Manage tags confirmation reveal (item 106)", () => {
     await openManager(user);
     await chooseTag(user, "Gravel (2 routes)");
     await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     await settleViewport();
     expect(scrollCalls).toHaveLength(1);
@@ -1721,7 +1770,7 @@ describe("RouteLibrary — Manage tags confirmation reveal (item 106)", () => {
     await chooseTag(user, "Gravel (2 routes)");
     await user.type(within(getManager()).getByLabelText("New name"), "Road");
     await user.click(within(getManager()).getByRole("button", { name: "Merge tags" }));
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     await settleViewport();
     expect(scrollCalls).toHaveLength(1);
@@ -1740,8 +1789,8 @@ describe("RouteLibrary — Manage tags confirmation reveal (item 106)", () => {
     await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
 
     // No frames driven yet: focus must NOT wait for the settle loop, or an
-    // open alertdialog would be left focused on its now-disabled trigger.
-    const dialog = screen.getByRole("alertdialog");
+    // open dialog would be left focused on its now-disabled trigger.
+    const dialog = screen.getByRole("dialog");
     const cancel = within(dialog).getByRole("button", { name: "Cancel" });
     expect(cancel).toHaveFocus();
     const cancelFocusCall = focusCalls.filter((call) => call.target === cancel).at(-1);
@@ -1759,7 +1808,7 @@ describe("RouteLibrary — Manage tags confirmation reveal (item 106)", () => {
     await chooseTag(user, "Gravel (2 routes)");
     await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
 
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
 
     await settleViewport();
@@ -1785,7 +1834,7 @@ describe("RouteLibrary — Manage tags confirmation reveal (item 106)", () => {
     };
     await user.keyboard("{Escape}");
     await waitFor(() => {
-      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     await settleViewport();
 
@@ -1885,13 +1934,13 @@ describe("RouteLibrary — tag-control disclosures (item 106)", () => {
     await openManager(user);
     await chooseTag(user, "Gravel (2 routes)");
     await user.click(within(getManager()).getByRole("button", { name: "Delete tag" }));
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     await user.click(filterDisclosure());
     await waitFor(() => {
       expect(queryManager()).not.toBeInTheDocument();
     });
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(filterDisclosure()).toHaveAttribute("aria-expanded", "true");
     expect(filterDisclosure()).toHaveFocus();
   });
