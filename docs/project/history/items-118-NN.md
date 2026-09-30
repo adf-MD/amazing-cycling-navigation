@@ -298,6 +298,35 @@ A temporary probe (never committed) ran in the pinned container, Chromium and We
 - **The owner-conditional updates are defence in depth** (the table above).
 - The WebKit coverage is desktop WebKit in a container, and no physical-Android result is claimed.
 
+### Route-session isolation follow-up (30 September 2026, `0.4.48`)
+
+**The device finding.** The installed-iPhone check of `0.4.47` (build `187b752`, reported 30 September 2026) passed the stale-prompt check and the representative confirmations, but with route A paused, a switch to route B armed from Routes and **End and switch pressed from Ride** opened B showing **Resume ride** instead of the fresh **Start riding**. The rider asked for it to be treated as a route-session isolation defect, not button copy, and fixed before item 102. Item 119's device acceptance stays open.
+
+**Reproduced in a browser before any change** (a temporary probe in the pinned container, Chromium and WebKit identical). With A's paused row seeded with a fix and 400 m of progress, opening A from its card, arming B, going to Ride and confirming there:
+
+- opened B with **Resume ride**, A's remaining distance (0.6 km of 1.0 km) and A's stale fix;
+- left a stored row with **B's route id and A's `startedAt`, fix, point index and 400 m of progress**;
+- after a reload, the Ride launcher offered "You have an unfinished ride on this route. Resume ride" for B.
+
+The same switch confirmed from the Routes card opened B with **Start riding**, left no row, and offered nothing after a reload.
+
+**Cause.** After a Pause, `App.handleRidePaused` deliberately keeps route A's `RidingScreen` mounted under Ride (item 72). The screen was rendered **without a key**, so `openRideTarget(B)` swapped its `route` prop in place — against the "route's identity is stable for the component's lifetime" assumption that `RidingScreen` and `useRideNavigation` both document. The hook's restoration effect, keyed on the route id, found no row for B and reset nothing. Its persistence effect, also keyed on the route id, then ran with A's retained fix and `startedAt` and wrote them under B's id, just after the switch's own clear. Every other entry point was unaffected because leaving the Ride screen unmounts `RidingScreen`.
+
+**The fix.**
+
+- `App.tsx` keys `RidingScreen` by route id, so a different route is always a fresh screen and navigation hook. A route updated in place under the same id is not remounted.
+- As defence in depth for stored data, `useRideNavigation` records the route its session belongs to, and its persistence effect and `pause()` refuse to write under any other route id.
+
+**Evidence.**
+
+- **Fail-first.** The App test on the exact path failed on `0.4.47` for want of **Start riding**. The hook test failed with two writes under the new route (the persistence effect and `pause()`). The new browser test on the exact path failed in both engines at **Start riding**. The Routes-card controls passed before and after, as expected.
+- **After the fix**, all three assert B's **Start riding** with no **Resume ride**, **no stored row** sampled three times after the switch, and nothing to resume after a reload or remount. That storage assertion is the result observed, not a prerequisite.
+- **Negative controls.** Removing the key fails the App test — the guard alone keeps storage clean but not the screen. Removing the guard fails only the hook test, since the key already protects App. Removing both fails both.
+- **Verification.** `npm run lint`, `npm run typecheck`, `npm test` (4682/4682), `npm run build`, the full Playwright suite in the pinned container (623/623) and `npm run format:check`.
+- **An unrelated, pre-existing flake**, measured rather than assumed. `mapImageryRecovery.spec.ts`'s route-riding reconnection test failed once in the first full run, on its follow-anchor tolerance. Repeating that whole spec ten times at 36 workers, in eight interleaved rounds, it failed **16 of 80 on `0.4.47` and 20 of 80 with this change**. That is not a difference beyond noise, and no route changes in that test. It is recorded here and not attributed to this follow-up.
+
+**Limitations.** No installed-iPhone evidence of the fix yet (Session 5 in [`current-status.md`](../current-status.md)); the browser evidence is desktop WebKit and Chromium in a container.
+
 ---
 
 <a id="item-121"></a>
