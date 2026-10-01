@@ -868,3 +868,7 @@ _Category: Planning presentation_
   - After it, the whole spec passed 14/14 at two workers, and its three helper users passed 60/60 at `--repeat-each=20`.
   - An ineffective trigger fails at the new identity check after its 15s bound (`Expected: false`, `Received: true`).
 - **A separate failure, out of scope here.** A 36-worker local run of shard 2 also failed item 123's double-tap zoom test once; that test has known load sensitivity.
+
+### Installed-iPhone acceptance — reported 1 October 2026
+
+Accepted on `0.4.50`, build `3ebf4ce`, in English and German: all three device checks passed. The report, and exactly what it does and does not assert, are recorded only in [`current-status.md`](../current-status.md). The limitations above describe the item as it stood at implementation; the 320×568 German overlap among them is unchanged by this acceptance.

@@ -23,7 +23,7 @@ This file records verification evidence only; the behaviour contracts themselves
 
 ## Open installed-iPhone acceptance checklist (12 September 2026)
 
-**This is the only active list of presently actionable installed-iPhone checks.** Items 103, 120, 122 and 124 are unimplemented and therefore out of scope — item 124 is next, under the execution order revised on 1 October 2026 and held in the root [`CLAUDE.md`](../../CLAUDE.md), and item 122 is scheduled for its design stage — and items 125–127, 129 and 130 are unscheduled candidates. **Item 128 shipped in `0.4.50`; its device check is Session 5, pending.** **Item 102 (`0.4.49`) was accepted on the installed iPhone, reported 30 September 2026, and no longer appears here.** **Item 123 (`0.4.46`) was accepted on the installed iPhone, reported 30 September 2026, and no longer appears here. Item 119 was accepted on the installed iPhone on `0.4.48`, reported 30 September 2026, and no longer appears here either.** **Item 114's one device check, ordinary-text Planning on `0.4.45`, passed on the installed iPhone on 29 September 2026 and no longer appears here**; its enlarged-text layout has automated evidence only, because it cannot be reached on the iPhone through Larger Text. **Item 121 (`0.4.44`) was accepted on the installed iPhone, reported 29 September 2026, and no longer appears here**; one open device finding from that session awaits investigation, in its own subsection below. Item 113 shipped German in `0.4.41`. Its first physical pass (25 September 2026) produced the `0.4.42` follow-up. That recheck (reported 28 September 2026, recorded below) passed apart from three findings corrected in `0.4.43`. **The `0.4.43` Status-wording and End-confirmation rechecks passed on 28 September 2026**, and only the climb cue's recheck remains, in Session 2. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
+**This is the only active list of presently actionable installed-iPhone checks.** Items 103, 120, 122 and 124 are unimplemented and therefore out of scope — item 124 is next, under the execution order revised on 1 October 2026 and held in the root [`CLAUDE.md`](../../CLAUDE.md), and item 122 is scheduled for its design stage — and items 125–127, 129 and 130 are unscheduled candidates. **Item 128 (`0.4.50`) was accepted on the installed iPhone in English and German, reported 1 October 2026, and no longer appears here.** **Item 102 (`0.4.49`) was accepted on the installed iPhone, reported 30 September 2026, and no longer appears here.** **Item 123 (`0.4.46`) was accepted on the installed iPhone, reported 30 September 2026, and no longer appears here. Item 119 was accepted on the installed iPhone on `0.4.48`, reported 30 September 2026, and no longer appears here either.** **Item 114's one device check, ordinary-text Planning on `0.4.45`, passed on the installed iPhone on 29 September 2026 and no longer appears here**; its enlarged-text layout has automated evidence only, because it cannot be reached on the iPhone through Larger Text. **Item 121 (`0.4.44`) was accepted on the installed iPhone, reported 29 September 2026, and no longer appears here**; one open device finding from that session awaits investigation, in its own subsection below. Item 113 shipped German in `0.4.41`. Its first physical pass (25 September 2026) produced the `0.4.42` follow-up. That recheck (reported 28 September 2026, recorded below) passed apart from three findings corrected in `0.4.43`. **The `0.4.43` Status-wording and End-confirmation rechecks passed on 28 September 2026**, and only the climb cue's recheck remains, in Session 2. **Item 118 is complete and no longer appears at all**: its shipped same-card containment was accepted on the iPhone on 13 September 2026, and its **conditional-reveal refinement** on 14 September 2026. Items 42, 93, 98, 104, 107, 108, 109, 110, 111, 112 and 117 are accepted on the iPhone and deliberately do not appear here, and so is item 95's `0.4.33` interaction-safety correction, accepted on 12 September 2026. **Item 112's acceptance completed on 13 September 2026**, when its missing-key hint was finally exercised, and **item 117 was accepted the same day**; neither has a check left here. Item 95's broader switch-prompt scope still appears in Session 1, and its own earlier acceptance is unchanged and is not reopened. Item 115 has shipped with automated evidence only and does appear, in Sessions 2 and 3. Bracketed item numbers are for traceability only — each item's own detail lives in [`history/`](history/README.md).
 
 ### Session 1 — stationary, on the installed Home Screen PWA
 
@@ -73,16 +73,6 @@ Stationary or walking. Induce only what is deliberate and reproducible; everythi
 
 No iOS Larger Text result and no physical-Android result is claimed for item 113 in either language.
 
-### Session 5 — item 128's Planning imagery layout (`0.4.50`), stationary — pending
-
-Portrait, at the phone's ordinary text size. **Read the version and build from Status first** (`0.4.50`). Map imagery must be unavailable, for example in flight mode with Planning opened after the map's style has failed, so that the in-map imagery message with Retry is showing.
-
-- [ ] With the imagery message showing at the top of the Planning map, the red placement crosshair is fully visible below it, and **Retry map imagery** still retries when tapped (item 128).
-- [ ] A failed **Locate me**, a selected warning and a selected recognised climb each show their message **below the map**, readable, never on top of the imagery message (item 128).
-- [ ] When each of those messages clears, the space below the map closes again, with no leftover gap, and the map does not move (item 128).
-
-**Not claimed:** VoiceOver, iOS Larger Text, landscape and physical Android; nor the smallest German case at 320×568, which still overlaps the crosshair by 15 px in automated measurement.
-
 ### Open device findings — awaiting investigation (not checklist items)
 
 - **Tapping the OpenRouteService key field zoomed the installed page in, and saving did not restore normal zoom**; the rider had to zoom out by hand. Seen during item 121's acceptance on `0.4.44` (the dated record below). **No cause is established and no investigation has been made**, and it is **not** attributed to item 121 as a regression. It is kept here for follow-up rather than as a check to repeat.
@@ -117,6 +107,24 @@ None of these blocks acceptance of the item it came from. Record one if it occur
   This upgrades the earlier "consistent with" note for this file to a **measured, reproduced-on-baseline** finding: the class is pre-existing and is **not** attributable to item 113's pre-render IndexedDB read, which was the specific hypothesis worth ruling out, since that change does add a blocking database open before the first paint. No production change was made for it, and it remains monitored rather than fixed — if it is ever worked on, start from the artefacts item 116 retains. The route-riding reconnection test in `mapImageryRecovery.spec.ts` now has its own unscheduled investigation, [item 130](backlog.md#item-130).
 
 ## Dated acceptance record
+
+### Installed-iPhone acceptance of `0.4.50` (build `3ebf4ce`, item 128, reported 1 October 2026)
+
+**Device and build.** Installed Home Screen PWA, portrait, at the phone's ordinary text size; version `0.4.50`, build `3ebf4ce`, as reported. That build is the deployed `0.4.50`: `3ebf4ce` is a test-only commit following `47f8c40`, whose own run did not deploy ([history](history/items-118-NN.md#item-128)).
+
+**Passed in English and in German** — all three of item 128's Session 5 checks, so that session is complete for this device:
+
+- with map imagery unavailable, the red placement crosshair stays fully visible below Planning's imagery message, and **Retry map imagery** still retries;
+- a failed **Locate me**, a selected warning and a selected recognised climb each show their message below the map, readable and without overlapping the imagery message;
+- when each of those messages clears, its space closes with no leftover gap, and the map frame does not move.
+
+This **accepts item 128 on the installed iPhone in both languages**, at product level.
+
+**Separate from the automated evidence.** The ring-clearance measurements, fail-first runs and negative controls, in Chromium and WebKit in the pinned container, are recorded in item 128's [history](history/items-118-NN.md#item-128) and its [design record](../design/planning-imagery-banner/README.md). This report neither re-verifies nor replaces them, and they remain automated evidence.
+
+**Item 129 stays open.** The failed-Locate-me check passing does not resolve [item 129](backlog.md#item-129)'s finding about recovering from a denied location permission in the installed PWA.
+
+**Not claimed:** VoiceOver, iOS Larger Text, landscape, physical Android, or a separately tested light or dark appearance. Nor does it resolve the informative 320×568 German case, which still overlaps the crosshair by 15 px in automated measurement and is carried into [item 122](backlog.md#item-122).
 
 ### Installed-iPhone acceptance of item 102's navigation icons (`0.4.49`, reported 30 September 2026)
 
@@ -485,7 +493,7 @@ Context: the installed iPhone Home Screen PWA, portrait. The report did not reco
   - Physical Android is outstanding under the umbrella above.
 - **The ordinary-text device check passed on 29 September 2026** (iPhone 13, portrait, `0.4.45`, build `bac3553`; the dated record above). It covers the ordinary-text layout only and claims nothing for the enlarged-text layout.
 - **Deployment.** The first push (`143da51`) was not deployed: its End-to-end test step succeeded after 1161 s, but the single CI job exceeded its 20-minute limit and was cancelled, so Deploy was skipped. `bac3553` (workflow only) split the suite into two parallel shards. In that commit's first run (attempt 1) shard 2 passed and shard 1 was cancelled after 630 s, well inside the limit; inspection of the original shard 1 job log showed test results still arriving immediately before the cancellation, and no cause is claimed. The rerun of shard 1 (attempt 2) passed and Deploy followed. The full record is in [`history/items-114-117.md`](history/items-114-117.md#item-116).
-- **Item 128, recorded, not resolved and not accepted.** Stage 1 found that at **ordinary** 100% text the in-map imagery banner already covers the crosshair:
+- **Item 128, recorded then, and neither resolved nor accepted at the time** — since shipped in `0.4.50` and accepted on the installed iPhone, reported 1 October 2026 (its own entry below). Stage 1 found that at **ordinary** 100% text the in-map imagery banner already covers the crosshair:
   - at 375×667 in English (an 88px banner) and German (105px);
   - at 320×844 in German (139px);
   - from 110% text at 390×844 and from 145% at 430×932.
@@ -512,10 +520,11 @@ Context: the installed iPhone Home Screen PWA, portrait. The report did not reco
 - **The evidence is automated.** In the pinned container the implemented header matches the chosen artwork: 114 of 120 icon boxes are pixel-identical and the rest differ only by antialiasing. Navigation geometry and the accessibility tree are identical to `0.4.48`, and the relevant Chromium, `webkit-smoke` and Android-emulation specs pass. **None of it is installed-iPhone evidence.**
 - **Accepted on the installed iPhone** (the dated record above), at broad product level from the rider's report; no individual check is recorded as separately passed. **Not claimed:** VoiceOver, iOS Larger Text, landscape and physical Android.
 
-### Item 128 — shipped `0.4.50`; installed-iPhone check pending
+### Item 128 — shipped `0.4.50`; accepted on the installed iPhone (reported 1 October 2026)
 
 - **What shipped**, the rider's C6 choice of 1 October 2026: at ordinary text Planning's imagery message and Retry stay inside the map at its top, and Planning's own three messages sit below the map. The record is [`history/items-118-NN.md`](history/items-118-NN.md#item-128).
-- **Automated evidence only** (Chromium and WebKit in the pinned container). The informative 320×568 German case still overlaps the crosshair by 15 px. The device checks are Session 5, above, and nothing is accepted yet.
+- **The automated evidence** is Chromium and WebKit in the pinned container. The informative 320×568 German case still overlaps the crosshair by 15 px; the device acceptance does not resolve it, and item 122 carries it forward.
+- **Accepted on the installed iPhone** (`0.4.50`, build `3ebf4ce`; the dated record above) — all three checks, in English and German, at product level. **Not claimed:** VoiceOver, iOS Larger Text, landscape, physical Android and a separately tested light or dark appearance.
 
 ---
 
