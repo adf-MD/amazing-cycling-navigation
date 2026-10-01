@@ -983,6 +983,26 @@ button:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* Backlog item 124, slice 3: Planning's inline switch confirmation titles
+ * itself an h3 beneath the save area's own h2. Scoped to Planning rather
+ * than widening the rules above, since RouteTagManager's confirmation is
+ * an h3 inside .route-delete-confirm too and has never been styled by
+ * them. Same two declarations as the h2/h4 rules, for the same reasons:
+ * the UA heading margin, and a long unbreakable route name in the title. */
+.planning-section .route-delete-confirm h3 {
+  margin: 0 0 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+/* Backlog item 124, slice 3: Planning's saved-route feedback. The message
+ * wraps a long route name, and sits beside Open saved route where there
+ * is room and above it where there is not (.row already wraps). */
+.planning-saved-route-message {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Reserves breathing room below the global tag manager's own confirmation
  * when it is scrolled into view (backlog item 106), so the end-aligned
  * scrollIntoView() doesn't pin its actions flush against the visible

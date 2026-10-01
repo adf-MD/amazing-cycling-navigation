@@ -194,9 +194,11 @@ function saveButton(): HTMLElement {
  * hasn't resolved yet would hang instead of failing fast — flushAsync is
  * called repeatedly instead, mirroring PlanningScreen.draftHydration.test.tsx's
  * own established synchronous-getBy-after-flushing convention. */
-async function establishRoutedPlan(
-  onRouteSaved?: (route: PlannedRoute) => void,
-): Promise<{ map: MockMapHandle; route: PlannedRoute; unmount: () => void }> {
+async function establishRoutedPlan(): Promise<{
+  map: MockMapHandle;
+  route: PlannedRoute;
+  unmount: () => void;
+}> {
   mockedGetDraft.mockResolvedValueOnce(undefined);
   mockedGetPlanningPreferences.mockResolvedValueOnce({
     avoidFerriesByDefault: true,
@@ -210,7 +212,6 @@ async function establishRoutedPlan(
   const { unmount } = render(
     <PlanningScreen
       onNavigateToSettings={vi.fn()}
-      onRouteSaved={onRouteSaved}
       mapFactory={map.factory}
       routingProvider={provider}
     />,
@@ -278,8 +279,7 @@ describe("PlanningScreen Save-versus-autosave coordination (backlog item 30)", (
   });
 
   it("writes no autosave for the whole successful Save sequence, and never resurrects the draft afterward", async () => {
-    const onRouteSaved = vi.fn();
-    await establishRoutedPlan(onRouteSaved);
+    await establishRoutedPlan();
     const { promise: clearPromise, resolve: resolveClear } =
       createControlledPromise<undefined>();
     mockedClearDraft.mockReturnValue(clearPromise);
@@ -294,7 +294,9 @@ describe("PlanningScreen Save-versus-autosave coordination (backlog item 30)", (
     // meantime.
     await advancePastDebounce();
     expect(mockedSaveDraft).not.toHaveBeenCalled();
-    expect(onRouteSaved).not.toHaveBeenCalled();
+    // Save only saves (item 124, slice 3): its success is shown only once
+    // the draft has genuinely been cleared.
+    expect(screen.queryByText(/is saved in Routes/)).not.toBeInTheDocument();
 
     await act(async () => {
       resolveClear(undefined);
@@ -302,7 +304,7 @@ describe("PlanningScreen Save-versus-autosave coordination (backlog item 30)", (
       await Promise.resolve();
     });
 
-    expect(onRouteSaved).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByText(/is saved in Routes/)).toHaveLength(1);
     expect(mockedClearDraft).toHaveBeenCalledTimes(1);
 
     // The post-reset autosave (state.present is now []) is a harmless,
@@ -416,9 +418,24 @@ describe("PlanningScreen Save-versus-autosave coordination (backlog item 30)", (
     );
   });
 
-  it("discards a Save attempt's continuation that resolves after unmount", async () => {
-    const onRouteSaved = vi.fn();
-    const { unmount } = await establishRoutedPlan(onRouteSaved);
+  it("discards a Save attempt's continuation that resolves after unmount, leaving no listener attached", async () => {
+    const { unmount } = await establishRoutedPlan();
+    // The saved-feedback reveal guard (item 124, slice 3) listens for newer
+    // rider input from Save until it is consumed or abandoned; unmounting
+    // mid-save must abandon it.
+    const added: string[] = [];
+    const removed: string[] = [];
+    const addSpy = vi.spyOn(window, "addEventListener").mockImplementation(function (
+      this: Window,
+      type: string,
+    ) {
+      added.push(type);
+    });
+    const removeSpy = vi
+      .spyOn(window, "removeEventListener")
+      .mockImplementation(function (this: Window, type: string) {
+        removed.push(type);
+      });
     const { promise: saveRoutePromise, resolve: resolveSave } =
       createControlledPromise<undefined>();
     mockedSaveRoute.mockReturnValue(saveRoutePromise);
@@ -435,7 +452,14 @@ describe("PlanningScreen Save-versus-autosave coordination (backlog item 30)", (
     });
     await advancePastDebounce();
 
-    expect(onRouteSaved).not.toHaveBeenCalled();
+    const guardTypes = ["wheel", "touchstart", "pointerdown", "keydown"];
+    for (const type of guardTypes) {
+      expect(added.filter((t) => t === type)).toHaveLength(1);
+      expect(removed.filter((t) => t === type)).toHaveLength(1);
+    }
+    expect(screen.queryByText(/is saved in Routes/)).not.toBeInTheDocument();
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
   });
 
   it("never fires a pending autosave timer after unmount", async () => {

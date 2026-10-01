@@ -1429,12 +1429,15 @@ describe("App — Free roam", () => {
 // free-roam-blocks-route/check-failed directions are covered by the
 // "App — Ride launcher session recovery" and "App — Free roam" describe
 // blocks above (some of those existing tests were themselves rewritten for
-// the new dialog-based lifecycle). handleOpenRoute and handleRouteSaved
-// both route through the identical requestRouteTransition(route, {
-// stampResumeIntent: false }) call (see App.tsx) — a Planning-save conflict
-// is therefore covered by the route-to-route/free-roam-to-route scenarios
-// below at the code level, and separately by a real-browser scenario in
-// e2e/rideSessionSwitchGuard.spec.ts; PlanningScreen cannot be mounted in
+// the new dialog-based lifecycle). handleOpenRoute and
+// handleOpenSavedRoute both route through requestRouteTransition(route, {
+// stampResumeIntent: false }) (see App.tsx), differing only in the
+// prompt's origin — since item 124's slice 3, Planning's Open saved route,
+// not Save itself, reaches the guard. Its own placement, anchor and busy
+// handling are covered by App.planningSavedRoute.test.tsx (with Planning
+// stubbed) and by real-browser scenarios in
+// e2e/rideSessionSwitchGuard.spec.ts and
+// e2e/planningSavedRoute.smoke.spec.ts; PlanningScreen cannot be mounted in
 // this jsdom suite without a mock map factory that App.tsx does not
 // currently thread through to it (confirmed empirically — a real,
 // unmocked MapView throws in jsdom on unmount), so this file does not

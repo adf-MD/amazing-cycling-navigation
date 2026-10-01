@@ -412,7 +412,7 @@ test("resuming the exact same unfinished free-roam session starts exactly one wa
   expect(consoleErrors).toEqual([]);
 });
 
-test("a Planning save while a different route is unfinished shows the same confirmation; Cancel preserves both the old session and the newly saved route", async ({
+test("a Planning save while a different route is unfinished only saves; opening the saved route shows the same confirmation beneath the Open action, and Cancel preserves both the old session and the newly saved route", async ({
   page,
   context,
 }) => {
@@ -496,11 +496,24 @@ test("a Planning save while a different route is unfinished shows the same confi
   await expect(saveButton).toBeEnabled();
   await saveButton.click();
 
-  // Save itself always succeeds — the guard only decides whether Riding
-  // opens next. It must not redirect merely to show the confirmation; the
-  // save flow lands with the confirmation shown in place.
+  // Saving alone only saves (backlog item 124, slice 3): it stays in
+  // Planning, announces the saved route, asks nothing and leaves the
+  // unfinished ride's row untouched.
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: `“${savedRouteName}” is saved in Routes.` }),
+  ).toBeVisible();
   const savedRouteId = await readSavedRouteId(page, savedRouteName);
   expect(savedRouteId).not.toBeNull();
+  await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(await readActiveRideStateRow(page)).toEqual(existingRowBefore);
+
+  // Opening it is a separate action, and the guard's confirmation appears
+  // in Planning, directly beneath that action — not above the page.
+  const openButton = page.getByRole("button", { name: "Open saved route" });
+  await openButton.click();
   // exact:true — the dialog's own title ("Switch to "savedRouteName"?")
   // would otherwise substring-match this same query while it's open.
   await expect(
@@ -509,9 +522,18 @@ test("a Planning save while a different route is unfinished shows the same confi
 
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText(/unfinished ride on another route/i)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  const openBox = await openButton.boundingBox();
+  const dialogBox = await dialog.boundingBox();
+  if (!openBox || !dialogBox)
+    throw new Error("expected the action and its confirmation to lay out");
+  expect(dialogBox.y).toBeGreaterThanOrEqual(openBox.y + openBox.height);
   expect(await readActiveRideStateRow(page)).toEqual(existingRowBefore);
 
   await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(openButton).toBeFocused();
+  await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
   expect(await readActiveRideStateRow(page)).toEqual(existingRowBefore);
   expect(await readSavedRouteId(page, savedRouteName)).toBe(savedRouteId);
 

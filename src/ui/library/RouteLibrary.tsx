@@ -599,6 +599,37 @@ export function RouteLibrary({
     }
   }
 
+  // Backlog item 124, slice 3 (inventory D-03): an unconfirmed Delete whose
+  // route the search or tag filters have removed from the visible list is
+  // dismissed. Otherwise the parent kept it pending, the card remounted
+  // with it open when the route came back, and the remounted card took
+  // focus to Cancel and scrolled to it — mid-search, taking the rider's
+  // keystrokes and closing the iPhone keyboard.
+  //
+  // Adjusted during rendering, like the block above: React re-renders
+  // before committing, so no committed render ever holds a hidden card
+  // still pending, the card never sees a pending-to-closed transition, and
+  // nothing returns focus or scrolls — focus stays on the search field or
+  // chip being used. Sorting and pinning only reorder viewRoutes, so they
+  // never dismiss. The guards keep everything else exactly as it was:
+  // - `routes !== undefined`: loading never clears anything (item 119's
+  //   own lesson for the switch prompt below);
+  // - `!isDeleting`: a deletion already running continues normally —
+  //   hiding its card must not pretend to cancel the storage operation;
+  // - `deleteError === null`: only a confirmed deletion's failure sets it
+  //   (and opening Delete clears it), so a failed confirmed deletion keeps
+  //   its confirmation and visible error, hidden or not — the deferred D-02
+  //   failure presentation is untouched.
+  const isUnconfirmedDeleteHidden =
+    pendingDeleteId !== null &&
+    !isDeleting &&
+    deleteError === null &&
+    routes !== undefined &&
+    !viewRoutes.some((route) => route.id === pendingDeleteId);
+  if (isUnconfirmedDeleteHidden) {
+    setPendingDeleteId(null);
+  }
+
   // Search/sort/pin/delete safety net for backlog item 73 follow-up: if
   // the pending switch's target route stops being visible in the current
   // (search-filtered) list — deleted entirely, or merely no longer

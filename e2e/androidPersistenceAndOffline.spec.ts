@@ -122,6 +122,12 @@ test("a genuine reload lands back on Routes, not Riding; reopening the same rout
   const routeName = "Android Reload Recovery Route";
   await page.getByLabel("Route name").fill(routeName);
   await page.getByRole("button", { name: /save route/i }).click();
+  // Saving alone stays in Planning (backlog item 124, slice 3); open the
+  // saved route explicitly.
+  await expect(
+    page.getByRole("status").filter({ hasText: `“${routeName}” is saved in Routes.` }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Open saved route" }).click();
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
 
   await page.getByRole("button", { name: "Start riding" }).click();

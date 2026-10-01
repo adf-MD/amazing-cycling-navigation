@@ -100,9 +100,43 @@ import {
 } from "./waypointHistory.ts";
 import { WaypointList } from "./WaypointList.tsx";
 
+/** App's ride-switch prompt for the route this Planning visit has just
+ * saved (backlog item 124, slice 3; inventory C-14). App owns the request,
+ * its supersession, busy and failure states and its storage ordering; this
+ * screen only presents it inline beneath Open saved route. `requestId`
+ * identifies the very request, so a report about it can never act on a
+ * newer one, even for the same route. */
+export interface SavedRouteSwitchPrompt {
+  requestId: number;
+  routeId: string;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  /** Reported when this screen no longer shows the saved-route feedback
+   * the prompt belongs beneath (after a remount); App decides whether to
+   * withdraw it or keep it page-level. */
+  onAnchorMissing: (requestId: number) => void;
+}
+
+/** What Planning shows after a successful Save (item 124, slice 3): the
+ * saved route itself — never a later draft or calculated result — and the
+ * name the draft was reset to, against which "a new draft has begun" is
+ * judged. Local to this mount and never persisted. */
+interface SavedRouteFeedback {
+  route: PlannedRoute;
+  resetName: string;
+}
+
 export interface PlanningScreenProps {
   onNavigateToSettings: () => void;
-  onRouteSaved?: (route: PlannedRoute) => void;
+  /** Opens the route this visit has just saved, through App's
+   * ride-transition guard (item 124, slice 3). Saving alone never calls
+   * it: Save only saves. */
+  onOpenSavedRoute?: (route: PlannedRoute) => void;
+  savedRouteSwitchPrompt?: SavedRouteSwitchPrompt | null;
   mapFactory?: MapFactory;
   /** Injectable for tests; defaults to a real OpenRouteServiceAdapter
    * reading the user's stored key fresh on every request. */
@@ -122,6 +156,16 @@ export interface PlanningScreenProps {
  * draft — the same debounce boundary usePlanningRoute applies to
  * recalculation, so a rapid burst of edits writes once, not per edit. */
 const DRAFT_DEBOUNCE_MS = 900;
+
+/** Rider input that, arriving between pressing Save and the saved-route
+ * feedback appearing, means the rider has moved on — so the feedback is
+ * then not scrolled into view (item 124, slice 3). */
+const SAVED_FEEDBACK_REVEAL_INTERRUPTIONS = [
+  "wheel",
+  "touchstart",
+  "pointerdown",
+  "keydown",
+] as const;
 
 /** "loading" until the initial draft read resolves (successfully or not);
  * "ready" once either a restored draft, or genuinely-fresh defaults, have
@@ -312,7 +356,8 @@ function describeCurrentDraftRoutingSummary(
  */
 export function PlanningScreen({
   onNavigateToSettings,
-  onRouteSaved,
+  onOpenSavedRoute,
+  savedRouteSwitchPrompt = null,
   mapFactory,
   routingProvider,
   requestApproximateLocation = getApproximateLocationOnce,
@@ -366,6 +411,13 @@ export function PlanningScreen({
   } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [savedRouteFeedback, setSavedRouteFeedback] = useState<SavedRouteFeedback | null>(
+    null,
+  );
+  // Set by a successful Clear draft: an explicit start-over also dismisses
+  // the saved-route feedback (see the lifecycle note below).
+  const [isSavedFeedbackDismissRequested, setIsSavedFeedbackDismissRequested] =
+    useState(false);
   const [crosshairCoordinate, setCrosshairCoordinate] = useState<Coordinate | null>(null);
   // The rider's last successfully resolved approximate-location fix, shown
   // as a plain dot via MapView's existing currentPosition/acn-position
@@ -1442,6 +1494,161 @@ export function PlanningScreen({
     routing.reset();
   };
 
+  // ---- Saved-route feedback (backlog item 124, slice 3; inventory C-14) ----
+  //
+  // Save only saves. The feedback that follows — the saved route's name and
+  // Open saved route, beneath which App's switch prompt for it appears — has
+  // a deliberately narrow lifecycle, never persisted:
+  // - set by a successful Save, and replaced by the next one;
+  // - cleared once a new draft begins (its first waypoint, or a name edited
+  //   away from the one the draft was reset to), or by a successful Clear
+  //   draft — an explicit start-over;
+  // - never cleared while the switch prompt for that saved route is shown,
+  //   so the anchor of a switch the rider may already have authorised can't
+  //   vanish under it: the clearing simply happens once the prompt closes;
+  // - gone with the component when Planning is left.
+  const isSavedRouteSwitchShown =
+    savedRouteSwitchPrompt !== null &&
+    savedRouteFeedback !== null &&
+    savedRouteSwitchPrompt.routeId === savedRouteFeedback.route.id;
+  const hasNewDraftBegun =
+    savedRouteFeedback !== null &&
+    (state.present.waypoints.length > 0 ||
+      state.present.routeName !== savedRouteFeedback.resetName ||
+      isSavedFeedbackDismissRequested);
+  // Adjusted during rendering, like RouteLibrary's own derived resets
+  // (react.dev, "adjusting some state when a prop changes").
+  if (hasNewDraftBegun && !isSavedRouteSwitchShown) {
+    setSavedRouteFeedback(null);
+    setIsSavedFeedbackDismissRequested(false);
+  }
+
+  const savedFeedbackRef = useRef<HTMLDivElement>(null);
+  const openSavedRouteButtonRef = useRef<HTMLButtonElement>(null);
+  // The save area's own heading: the stable fallback that focus returns to
+  // when Open saved route is itself about to disappear (see the Cancel
+  // handler below). Programmatically focusable only (tabIndex -1), never in
+  // the tab order and never activated by the keyboard — the precedent of
+  // Settings' OpenRouteService card heading (item 118).
+  const saveHeadingRef = useRef<HTMLHeadingElement>(null);
+  const savedRouteSwitchRef = useRef<HTMLDivElement>(null);
+  const savedRouteSwitchActionsRef = useRef<HTMLDivElement>(null);
+  const savedRouteSwitchCloseFocusRef = useRef<HTMLElement | null>(null);
+
+  // The feedback appears beneath Save, which may have been near the bottom
+  // of the screen; it is brought into view once, by the minimum (none when
+  // it already shows). Armed when Save is pressed and disarmed by any
+  // newer rider input, through a listener that stays attached until the
+  // reveal is consumed (the commit that shows the feedback) or abandoned
+  // (a failed save, a newer save, or unmount) — never merely until the
+  // save promise settles, which would leave the interval before React
+  // commits the feedback unguarded.
+  const savedFeedbackRevealGuardRef = useRef<{
+    armed: boolean;
+    detach: () => void;
+  } | null>(null);
+  const abandonSavedFeedbackReveal = () => {
+    savedFeedbackRevealGuardRef.current?.detach();
+    savedFeedbackRevealGuardRef.current = null;
+  };
+  const armSavedFeedbackReveal = () => {
+    abandonSavedFeedbackReveal();
+    const guard = { armed: true, detach: () => undefined };
+    const disarm = () => {
+      guard.armed = false;
+    };
+    for (const type of SAVED_FEEDBACK_REVEAL_INTERRUPTIONS) {
+      window.addEventListener(type, disarm, { capture: true, passive: true });
+    }
+    guard.detach = () => {
+      for (const type of SAVED_FEEDBACK_REVEAL_INTERRUPTIONS) {
+        window.removeEventListener(type, disarm, { capture: true });
+      }
+    };
+    savedFeedbackRevealGuardRef.current = guard;
+  };
+  useEffect(() => {
+    const guardRef = savedFeedbackRevealGuardRef;
+    return () => {
+      guardRef.current?.detach();
+      guardRef.current = null;
+    };
+  }, []);
+  useLayoutEffect(() => {
+    if (savedRouteFeedback === null) return;
+    const guard = savedFeedbackRevealGuardRef.current;
+    if (!guard) return;
+    savedFeedbackRevealGuardRef.current = null;
+    guard.detach();
+    const block = savedFeedbackRef.current;
+    if (!guard.armed || !block) return;
+    applyConfirmationReveal(
+      block,
+      stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+    );
+  }, [savedRouteFeedback, stickyHeaderRef]);
+
+  const handleOpenSavedRoute = () => {
+    if (savedRouteFeedback === null) return;
+    onOpenSavedRoute?.(savedRouteFeedback.route);
+  };
+
+  // The switch prompt's reveal and focus return, under item 124's rule —
+  // slice 1's pattern. Opening: ConfirmDialog has already focused Cancel
+  // with preventScroll; the confirmation is then revealed once, by the
+  // minimum, its action row first when it cannot fit. Closing after
+  // Cancel/Escape: focus has already moved, without scrolling, to the
+  // target chosen in handleSavedRouteSwitchCancel; after the collapse has
+  // committed the page moves only as far as reveals that target, and only
+  // while it still has focus. Keyed on a primitive, so no other render
+  // repeats either.
+  useLayoutEffect(() => {
+    const headerBottom = stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0;
+    if (isSavedRouteSwitchShown) {
+      savedRouteSwitchCloseFocusRef.current = null;
+      const insetEl = savedRouteSwitchRef.current;
+      if (insetEl) {
+        applyConfirmationReveal(
+          insetEl,
+          headerBottom,
+          savedRouteSwitchActionsRef.current,
+        );
+      }
+      return;
+    }
+    const target = savedRouteSwitchCloseFocusRef.current;
+    if (!target) return;
+    savedRouteSwitchCloseFocusRef.current = null;
+    if (!target.isConnected || document.activeElement !== target) return;
+    applyConfirmationReveal(target, headerBottom);
+  }, [isSavedRouteSwitchShown, stickyHeaderRef]);
+
+  // Cancel and Escape. Focus moves before the prompt closes, without the
+  // browser's own focus scroll: to Open saved route, or — when a new draft
+  // began while the prompt was open, so closing it will also clear the
+  // feedback and unmount that button — to the save area's heading, a stable
+  // target that is never activated. App returns no focus for this origin.
+  const handleSavedRouteSwitchCancel = () => {
+    const prompt = savedRouteSwitchPrompt;
+    if (prompt === null || prompt.busy) return;
+    const target = hasNewDraftBegun
+      ? saveHeadingRef.current
+      : openSavedRouteButtonRef.current;
+    target?.focus({ preventScroll: true });
+    savedRouteSwitchCloseFocusRef.current = target;
+    prompt.onCancel();
+  };
+
+  // A prompt arriving with no feedback to sit beneath (after a remount) is
+  // reported, never withdrawn here: App knows whether an action of it is
+  // still running and keeps it represented if so.
+  useEffect(() => {
+    const prompt = savedRouteSwitchPrompt;
+    if (prompt === null) return;
+    if (savedRouteFeedback?.route.id === prompt.routeId) return;
+    prompt.onAnchorMissing(prompt.requestId);
+  }, [savedRouteSwitchPrompt, savedRouteFeedback]);
+
   const handleSave = () => {
     if (routing.state.kind !== "routed" || isSavingRef.current || isClearingRef.current)
       return;
@@ -1473,6 +1680,7 @@ export function PlanningScreen({
     };
     setSaveError(null);
     setIsSaving(true);
+    armSavedFeedbackReveal();
     saveRoute(routeToSave)
       .then(() => clearDraft())
       .then(() => {
@@ -1485,10 +1693,17 @@ export function PlanningScreen({
           routeName: t("planning.defaultRouteName"),
         });
         setEditCopyMeta(null);
-        onRouteSaved?.(routeToSave);
+        // Save only saves (item 124, slice 3): no ride transition is
+        // requested, so a stored unfinished ride is never touched here.
+        setSavedRouteFeedback({
+          route: routeToSave,
+          resetName: t("planning.defaultRouteName"),
+        });
+        setIsSavedFeedbackDismissRequested(false);
       })
       .catch((error: unknown) => {
         if (saveGenerationRef.current !== attemptGeneration) return;
+        abandonSavedFeedbackReveal();
         logError("planning-save-route", error);
         setSaveError(t("planning.save.failed"));
       })
@@ -1701,6 +1916,7 @@ export function PlanningScreen({
         setPendingWaypointHydrationBounds(null);
         setFreshSessionFramingToken((token) => token + 1);
         setIsClearDraftConfirmOpen(false);
+        setIsSavedFeedbackDismissRequested(true);
       })
       .catch((error: unknown) => {
         // Only reachable for a genuine clearDraft() rejection — the
@@ -2277,7 +2493,9 @@ export function PlanningScreen({
       ) : null}
 
       <div className="panel stack planning-section">
-        <h2>{t("planning.save.heading")}</h2>
+        <h2 ref={saveHeadingRef} tabIndex={-1}>
+          {t("planning.save.heading")}
+        </h2>
         <div className="stack">
           <label htmlFor="planning-route-name">{t("planning.save.nameLabel")}</label>
           <input
@@ -2328,6 +2546,38 @@ export function PlanningScreen({
             {t("planning.save.export")}
           </button>
         </div>
+        {savedRouteFeedback ? (
+          <div className="row planning-saved-route" ref={savedFeedbackRef}>
+            <p className="status-row planning-saved-route-message" role="status">
+              {t("planning.save.saved", { name: savedRouteFeedback.route.name })}
+            </p>
+            <button
+              type="button"
+              className="btn-secondary"
+              ref={openSavedRouteButtonRef}
+              onClick={handleOpenSavedRoute}
+            >
+              {t("planning.save.openSaved")}
+            </button>
+          </div>
+        ) : null}
+        {isSavedRouteSwitchShown ? (
+          <ConfirmDialog
+            open
+            headingLevel={3}
+            focusCancelWithoutScroll
+            containerRef={savedRouteSwitchRef}
+            actionsRef={savedRouteSwitchActionsRef}
+            title={savedRouteSwitchPrompt.title}
+            message={savedRouteSwitchPrompt.message}
+            confirmLabel={savedRouteSwitchPrompt.confirmLabel}
+            cancelLabel={t("switch.cancel")}
+            confirmDisabled={savedRouteSwitchPrompt.busy}
+            cancelDisabled={savedRouteSwitchPrompt.busy}
+            onConfirm={savedRouteSwitchPrompt.onConfirm}
+            onCancel={handleSavedRouteSwitchCancel}
+          />
+        ) : null}
       </div>
     </section>
   );

@@ -972,6 +972,214 @@ describe("RouteLibrary", () => {
     });
   });
 
+  // Backlog item 124, slice 3 (inventory D-03): when the search or tag
+  // filters remove a route whose Delete is still unconfirmed, that
+  // confirmation is dismissed — it stays closed when the route returns,
+  // and focus never leaves the control being used. A deletion already
+  // running, and a confirmed deletion that failed, are left exactly as
+  // they were.
+  describe("dismissing a hidden, unconfirmed Delete (item 124, D-03)", () => {
+    async function importTwo(user: ReturnType<typeof userEvent.setup>) {
+      render(<RouteLibrary onOpenRoute={vi.fn()} />);
+      await importFixture(user, "Evening Ride.gpx");
+      await importFixture(user, "Alpine Climb.gpx");
+    }
+
+    function eveningItem(): HTMLElement | null {
+      return (
+        screen.queryByRole("button", { name: "Evening Ride" })?.closest("li") ?? null
+      );
+    }
+
+    it("dismisses it when a search hides the route; it stays closed on return and the search keeps every keystroke", async () => {
+      const user = userEvent.setup();
+      const deleteSpy = vi.spyOn(routesRepository, "deleteRoute");
+      await importTwo(user);
+
+      const evening = eveningItem();
+      if (!evening) throw new Error("expected Evening Ride");
+      await user.click(within(evening).getByRole("button", { name: "Delete" }));
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      const search = screen.getByLabelText("Search routes");
+      await user.click(search);
+      await user.type(search, "Alp");
+      expect(eveningItem()).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
+
+      await user.type(search, "{Backspace}{Backspace}{Backspace}");
+      expect(eveningItem()).not.toBeNull();
+      // Returned closed, and the search field never lost focus.
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(search).toHaveFocus();
+      await user.keyboard("x");
+      expect(search).toHaveValue("x");
+      expect(search).toHaveFocus();
+
+      expect(deleteSpy).not.toHaveBeenCalled();
+      expect(await db.routes.count()).toBe(2);
+    });
+
+    it("dismisses it when a tag filter hides the route, keeping focus on the chip", async () => {
+      const user = userEvent.setup();
+      await importTwo(user);
+      const alpine = (await db.routes.toArray()).find(
+        (route) => route.name === "Alpine Climb",
+      );
+      if (!alpine) throw new Error("expected Alpine Climb");
+      await db.routes.update(alpine.id, { tags: ["climb"] });
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Filter by tags" }),
+        ).toBeInTheDocument();
+      });
+
+      const evening = eveningItem();
+      if (!evening) throw new Error("expected Evening Ride");
+      await user.click(within(evening).getByRole("button", { name: "Delete" }));
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Filter by tags" }));
+      const chip = within(
+        screen.getByRole("group", { name: "Filter by tags" }),
+      ).getByRole("button", { name: /climb/ });
+      await user.click(chip);
+      expect(eveningItem()).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
+
+      await user.click(chip);
+      expect(eveningItem()).not.toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(chip).toHaveFocus();
+      expect(await db.routes.count()).toBe(2);
+    });
+
+    it("keeps it open when the route stays visible: changing the sort order, or pinning another route", async () => {
+      const user = userEvent.setup();
+      await importTwo(user);
+      const evening = eveningItem();
+      if (!evening) throw new Error("expected Evening Ride");
+      await user.click(within(evening).getByRole("button", { name: "Delete" }));
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      await user.selectOptions(screen.getByLabelText("Sort by"), "Name A–Z");
+      await waitFor(() => {
+        expect(getVisibleRouteNames()).toEqual(["Alpine Climb", "Evening Ride"]);
+      });
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Pin Alpine Climb" }));
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Unpin Alpine Climb" }),
+        ).toBeInTheDocument();
+      });
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    it("leaves a deletion already running alone while a search hides it: it completes, and is never shown as cancelled", async () => {
+      const user = userEvent.setup();
+      let releaseDelete: () => void = () => undefined;
+      const deleteHeld = new Promise<void>((resolve) => {
+        releaseDelete = resolve;
+      });
+      vi.spyOn(routesRepository, "deleteRoute").mockImplementation(async (id: string) => {
+        await deleteHeld;
+        await db.routes.delete(id);
+      });
+      await importTwo(user);
+      const evening = eveningItem();
+      if (!evening) throw new Error("expected Evening Ride");
+      await user.click(within(evening).getByRole("button", { name: "Delete" }));
+      await user.click(screen.getByRole("button", { name: "Delete route" }));
+      expect(screen.getByRole("button", { name: "Deleting…" })).toBeDisabled();
+
+      const search = screen.getByLabelText("Search routes");
+      await user.click(search);
+      await user.type(search, "Alp");
+      expect(eveningItem()).toBeNull();
+      // Brought back while still running: the confirmation was not
+      // dismissed, and still shows the deletion in progress.
+      await user.clear(search);
+      expect(eveningItem()).not.toBeNull();
+      expect(screen.getByRole("button", { name: "Deleting…" })).toBeDisabled();
+
+      await user.type(search, "Alp");
+      releaseDelete();
+      await waitFor(async () => {
+        expect(await db.routes.count()).toBe(1);
+      });
+      await user.clear(search);
+      await waitFor(() => {
+        expect(eveningItem()).toBeNull();
+      });
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("keeps a confirmed deletion's failure, and its confirmation, when it fails while a search hides the route", async () => {
+      const user = userEvent.setup();
+      let rejectDelete: (error: Error) => void = () => undefined;
+      const deleteHeld = new Promise<void>((_resolve, reject) => {
+        rejectDelete = reject;
+      });
+      vi.spyOn(routesRepository, "deleteRoute").mockImplementation(async () => {
+        await deleteHeld;
+      });
+      await importTwo(user);
+      const evening = eveningItem();
+      if (!evening) throw new Error("expected Evening Ride");
+      await user.click(within(evening).getByRole("button", { name: "Delete" }));
+      await user.click(screen.getByRole("button", { name: "Delete route" }));
+
+      const search = screen.getByLabelText("Search routes");
+      await user.click(search);
+      await user.type(search, "Alp");
+      expect(eveningItem()).toBeNull();
+      rejectDelete(new Error("Delete failed."));
+      await waitFor(() => {
+        expect(screen.queryByRole("button", { name: "Deleting…" })).toBeNull();
+      });
+
+      // The failure is not dismissed by the filter: the route returns with
+      // its confirmation and visible error, as D-02 presents it today.
+      await user.clear(search);
+      await waitFor(() => {
+        expect(eveningItem()).not.toBeNull();
+      });
+      const returned = eveningItem();
+      if (!returned) throw new Error("expected Evening Ride back");
+      expect(within(returned).getByRole("dialog")).toBeInTheDocument();
+      expect(within(returned).getByRole("alert")).toHaveTextContent("Delete failed.");
+      expect(await db.routes.count()).toBe(2);
+    });
+
+    it("keeps a failed confirmed deletion's error when a search later hides and returns the route", async () => {
+      const user = userEvent.setup();
+      vi.spyOn(routesRepository, "deleteRoute").mockRejectedValueOnce(
+        new Error("Delete failed."),
+      );
+      await importTwo(user);
+      const evening = eveningItem();
+      if (!evening) throw new Error("expected Evening Ride");
+      await user.click(within(evening).getByRole("button", { name: "Delete" }));
+      await user.click(screen.getByRole("button", { name: "Delete route" }));
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toHaveTextContent("Delete failed.");
+      });
+
+      const search = screen.getByLabelText("Search routes");
+      await user.click(search);
+      await user.type(search, "Alp");
+      expect(eveningItem()).toBeNull();
+      await user.clear(search);
+
+      const returned = eveningItem();
+      if (!returned) throw new Error("expected Evening Ride back");
+      expect(within(returned).getByRole("dialog")).toBeInTheDocument();
+      expect(within(returned).getByRole("alert")).toHaveTextContent("Delete failed.");
+    });
+  });
+
   describe("pinning", () => {
     it("shows one continuous list, with no group headings, when nothing is pinned", async () => {
       const user = userEvent.setup();

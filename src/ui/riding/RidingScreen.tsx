@@ -274,7 +274,7 @@ export function RidingScreen({
   // above), so a mid-ride error stays part of one continuous ride
   // session. This is App's first use of a callback prop to receive state
   // back from a child screen — mirrors the existing
-  // onOpenRoute/onRouteSaved/onNavigateToSettings convention rather than
+  // onOpenRoute/onOpenSavedRoute/onNavigateToSettings convention rather than
   // introducing React context. The cleanup path resets App's copy to
   // false the instant the rider navigates away from Riding entirely:
   // this screen always fully unmounts on every screen switch (no `key`

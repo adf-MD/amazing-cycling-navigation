@@ -1,7 +1,8 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
+import { readActiveRideStateRow, readSavedRouteId } from "./support/rideStateDb.ts";
 
-// Backlog item 124, slice 1 — Chromium only (CDP CPU throttling, and to
+// Backlog item 124, slices 1 and 3 — Chromium only (CDP CPU throttling, and to
 // keep CI cost down; the cross-engine geometry is in
 // confirmationReveal.smoke.spec.ts).
 //
@@ -397,4 +398,148 @@ test("Delete route: a render caused by another tab renaming a different route do
   expect(await page.evaluate(() => window.scrollY)).toBe(scrollYOpen);
   await expect(cancel).toBeFocused();
   await other.close();
+});
+
+// --------------------------------------------------------------------------
+// Slice 3: the switch confirmation that Planning's Open saved route shows
+// beneath itself when another ride is unfinished. The same narrow claim as
+// above: sampled stability of its actions only.
+
+const SAVE_PANEL = ".planning-section:has(#planning-route-name)";
+const SAVED_ROUTE_SWITCH: Surface = {
+  dialog: `${SAVE_PANEL} > [role="dialog"]`,
+  trigger: `${SAVE_PANEL} > .planning-saved-route > button`,
+};
+
+async function openPlanningWithSavedRouteAndPausedRide(
+  page: Page,
+  context: BrowserContext,
+): Promise<Record<string, unknown> | null> {
+  await page.addInitScript(() => {
+    const originalFetch = fetch;
+    globalThis.fetch = (...args: Parameters<typeof fetch>) => originalFetch(...args);
+  });
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
+  await installLocalMapStyle(page);
+  await page.route("https://api.heigit.org/**", async (route) => {
+    const body = route.request().postDataJSON() as { coordinates: number[][] } | null;
+    const [start = [-0.1, 51.5], end = [-0.099, 51.501]] = body?.coordinates ?? [];
+    const coordinates = Array.from({ length: 6 }, (_, index) => {
+      const t = index / 5;
+      return [
+        (start[0] ?? 0) + t * ((end[0] ?? 0) - (start[0] ?? 0)),
+        (start[1] ?? 0) + t * ((end[1] ?? 0) - (start[1] ?? 0)),
+        10,
+      ];
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: { summary: { distance: 100, duration: 20 } },
+            geometry: { type: "LineString", coordinates },
+          },
+        ],
+      }),
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByLabel("OpenRouteService API key").fill("dummy-e2e-key");
+  await page.getByRole("button", { name: "Save on this device" }).click();
+  await expect(
+    page.getByText(/key saved on this device, not yet verified/i),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Routes", exact: true }).click();
+  await page.getByLabel("Import GPX file").setInputFiles({
+    name: "Paused ride.gpx",
+    mimeType: "application/gpx+xml",
+    buffer: Buffer.from(buildRouteGpx()),
+  });
+  await expect(
+    page.getByRole("button", { name: "Paused ride", exact: true }),
+  ).toBeVisible();
+  const pausedId = await readSavedRouteId(page, "Paused ride");
+  // Written without a reload, so the app does not restore the ride; the
+  // guard reads storage at the moment Open saved route is pressed.
+  await page.evaluate(
+    (routeId) =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open("amazing-cycling-navigation");
+        request.onerror = () => {
+          reject(new Error("IndexedDB open failed"));
+        };
+        request.onsuccess = () => {
+          const db = request.result;
+          const tx = db.transaction("rideState", "readwrite");
+          tx.objectStore("rideState").put({
+            id: "active",
+            kind: "route",
+            routeId,
+            startedAt: "2026-01-01T08:00:00.000Z",
+            lastFix: null,
+            lastMatchedPointIndex: 0,
+            matchedDistanceFromStartMetres: 0,
+            offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+          });
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => {
+            db.close();
+            reject(new Error("IndexedDB write failed"));
+          };
+        };
+      }),
+    pausedId,
+  );
+  const rideRow = await readActiveRideStateRow(page);
+
+  await page.getByRole("button", { name: "Plan", exact: true }).click();
+  const map = page.getByTestId("map-container");
+  await expect(map).toHaveAttribute("data-map-ready", "true", { timeout: 20_000 });
+  await map.click({ position: { x: 100, y: 100 } });
+  await map.click({ position: { x: 200, y: 150 } });
+  await page.getByRole("button", { name: "Calculate route" }).click();
+  const save = page.getByRole("button", { name: "Save route" });
+  await expect(save).toBeEnabled({ timeout: 15_000 });
+  await page.locator("#planning-route-name").fill("Saved beside a paused ride");
+  await save.click();
+  await expect(page.locator(SAVED_ROUTE_SWITCH.trigger)).toBeVisible();
+  return rideRow;
+}
+
+test("Planning's saved-route switch confirmation: the actions showed no drift across the sampled frames from opening to the rider's click", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(90_000);
+  const rideRow = await openPlanningWithSavedRouteAndPausedRide(page, context);
+  await expectSettledActionsThenCancel(page, SAVED_ROUTE_SWITCH, "Cancel");
+  expect(await readActiveRideStateRow(page)).toEqual(rideRow);
+});
+
+test("Planning's saved-route switch confirmation: no sampled drift under a 20x CPU throttle either (sampling only; this does not separate effect timing)", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(120_000);
+  await openPlanningWithSavedRouteAndPausedRide(page, context);
+  const cpu = await context.newCDPSession(page);
+  await cpu.send("Emulation.setCPUThrottlingRate", { rate: 20 });
+  try {
+    await expectSettledActionsThenCancel(page, SAVED_ROUTE_SWITCH, "Cancel", {
+      recordMs: THROTTLED_ACTION_RECORD_MS,
+      frameWaitMs: 10_000,
+    });
+  } finally {
+    await cpu.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  }
 });

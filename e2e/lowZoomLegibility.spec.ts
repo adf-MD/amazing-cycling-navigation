@@ -347,7 +347,12 @@ test.describe("Planning and Riding: route rendering across zoom", () => {
     await expect(saveButton).toBeEnabled();
     await saveButton.click();
 
-    // Saving switches to the pre-ride overview for the new route.
+    // Saving alone stays in Planning (backlog item 124, slice 3); opening
+    // the saved route switches to the pre-ride overview for it.
+    await expect(
+      page.getByRole("status").filter({ hasText: `“${routeName}” is saved in Routes.` }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Open saved route" }).click();
     await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
     const ridingMapContainer = page.locator('[data-testid="map-container"]');
     await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
@@ -515,7 +520,12 @@ test.describe("Planning and Riding: surface-warning legibility across zoom (back
     await expect(saveButton).toBeEnabled();
     await saveButton.click();
 
-    // Saving switches to the pre-ride overview for the new route.
+    // Saving alone stays in Planning (backlog item 124, slice 3); opening
+    // the saved route switches to the pre-ride overview for it.
+    await expect(
+      page.getByRole("status").filter({ hasText: `“${routeName}” is saved in Routes.` }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Open saved route" }).click();
     await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
     const ridingMapContainer = page.locator('[data-testid="map-container"]');
     await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });

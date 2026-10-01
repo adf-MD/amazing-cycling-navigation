@@ -814,16 +814,16 @@ describe("PlanningScreen", () => {
     expect(screen.queryByText(/not yet verified/i)).not.toBeInTheDocument();
   });
 
-  it("saving clears the draft, resets waypoints and notifies the caller", async () => {
+  it("saving clears the draft, resets waypoints and stays in Planning with the saved route's feedback, opening nothing", async () => {
     const user = userEvent.setup();
     await saveProviderKey("dummy-test-key");
     const map = createMockMapFactory();
     const route = buildRoute(10);
-    const onRouteSaved = vi.fn();
+    const onOpenSavedRoute = vi.fn();
     render(
       <PlanningScreen
         onNavigateToSettings={vi.fn()}
-        onRouteSaved={onRouteSaved}
+        onOpenSavedRoute={onOpenSavedRoute}
         mapFactory={map.factory}
         routingProvider={buildResolvedAdapter(route)}
       />,
@@ -852,11 +852,15 @@ describe("PlanningScreen", () => {
     });
     await user.click(screen.getByRole("button", { name: /save route/i }));
 
+    // Save only saves (item 124, slice 3): it shows which route was saved
+    // and offers to open it, and requests no ride transition by itself.
     await waitFor(() => {
-      expect(onRouteSaved).toHaveBeenCalledTimes(1);
+      expect(
+        screen.getByText("“Renamed right before Save” is saved in Routes."),
+      ).toHaveAttribute("role", "status");
     });
-    const saved = onRouteSaved.mock.calls[0]?.[0] as PlannedRoute;
-    expect(saved.name).toBe("Renamed right before Save");
+    expect(screen.getByRole("button", { name: "Open saved route" })).toBeInTheDocument();
+    expect(onOpenSavedRoute).not.toHaveBeenCalled();
 
     const routes = await listRoutes();
     expect(routes).toHaveLength(1);

@@ -2,6 +2,8 @@
 
 **Status (1 October 2026): completed inventory, awaiting the rider's review.** Slice 2 changes no application behaviour. Slice 1 (Clear draft and Delete route) is approved, shipped in `0.4.51` and accepted on the installed iPhone; this inventory itself is authorised. **No additional surfaces are approved for behaviour changes**: only a later slice may extend the common rule, and only to the surfaces the rider confirms in the [checklist](#manual-review-checklist) below.
 
+**Update (1 October 2026): two cases decided.** The rider approved [C-14](#c-14--switch-to-another-ride-page-level-dialog) and [D-03](#d-03--a-route-card-remounts-while-its-delete-is-pending) for change, and both shipped as item 124's slice 3 in `0.4.52` ([Decisions and delivery](#decisions-and-delivery)). Every other case still awaits the rider's review, and no other surface is approved for behaviour changes. The measurements below are kept as made against `04639cb`, before that change.
+
 **What this is.** Every confirmation in the app, every expanding card, form, editor and disclosure that could reasonably fall under the rider's "pop-up cards" request, and the conditional and failure states that change what would need revealing — each with a stable review ID, its labels in English and German, how to reach it, what it does today, where that is in the source and tests, what was measured, and a recommendation.
 
 **The rule under review** ([item 124](../../project/backlog.md#item-124)): no movement when the newly opened content fits between the sticky navigation and the bottom safe area; otherwise only enough to reveal it; and when it cannot fit, only enough to show its complete action row. On Cancel and Escape: keep the page where the rider has left it, moving only as far as needed to reveal the opening control.
@@ -21,6 +23,7 @@
 - [Reproduction gaps](#reproduction-gaps)
 - [Method and reproducing](#method-and-reproducing)
 - [Limitations](#limitations)
+- [Decisions and delivery](#decisions-and-delivery)
 
 ## How to read this
 
@@ -232,6 +235,8 @@ Labels are quoted from `src/i18n/messages.en.ts` and `messages.de.ts`. All confi
 - **Tests:** `App.test.tsx` (item 119 block); e2e `rideSessionSwitchGuard.spec.ts`, `confirmationDialogs.smoke.spec.ts`.
 - **Evidence:** [M] row C-14; [U] on the installed iPhone the browser's focus scroll may not reveal it (the original item 124 observation for C-01 and C-05 was "out of view"; no cause was ever established).
 - **Recommendation:** **candidate for change.** Opened from Planning's Save route, it appears at the page's top and only the browser's own focus scroll brings it into view — about 1,070 px of movement in both desktop engines — and after Escape focus is lost and the rider is left far from Save. Where it should appear (near its trigger, or at the top with a deliberate reveal) and where focus should return **needs the rider's decision**.
+- **[D] device report, 1 October 2026** (build and language not stated): saving caused no automatic movement; the dialog appeared at the top of Planning and had to be found by scrolling up; Cancel removed it without moving the view, and the original ride stayed resumable ([ledger](../../project/current-status.md)).
+- **Decided and delivered, 1 October 2026:** approved for change — Save only saves, and a separate **Open saved route** shows this confirmation directly beneath itself under the common rule; shipped in slice 3, `0.4.52`. Its other entry paths, (b) and (c) above, are unchanged ([Decisions and delivery](#decisions-and-delivery)).
 
 ## Expanding cards, forms, editors and disclosures, P-01 to P-35
 
@@ -410,6 +415,8 @@ Geolocation **Try again**, **Retry map imagery**, the wake-lock failure row, the
      The same happens with **Filter by tags**: select a tag the card lacks, then deselect it.
 - **Evidence:** [M] row D-03.
 - **Recommendation:** **candidate for change** — not by changing the reveal, but by deciding what a pending delete should do when its card leaves the list (for example, cancel it). Needs the rider's decision.
+- **[D] device report, 1 October 2026** (build and language not stated): removing the search text made the keyboard vanish and brought the confirmation into the top third of the screen; both routes remained saved after Cancel ([ledger](../../project/current-status.md)).
+- **Decided and delivered, 1 October 2026:** approved — an unconfirmed Delete is dismissed when the search or a tag filter hides its route, and stays closed when it returns; a deletion already running, or a confirmed one that failed (D-02), is left alone. Shipped in slice 3, `0.4.52` ([Decisions and delivery](#decisions-and-delivery)).
 
 ### D-04 — Activating Clear draft or Delete while the button is above the viewport
 
@@ -496,7 +503,7 @@ Reported here so they are not lost; nothing was changed.
 | C-11                                     | End ride, paused panel                                           | already complies as measured                                                    |
 | C-12                                     | Edit copy                                                        | already complies (reveal); see D-06                                             |
 | C-13                                     | End ride, free-roam header                                       | already complies                                                                |
-| C-14                                     | Switch to another ride, page-level                               | **candidate for change**                                                        |
+| C-14                                     | Switch to another ride, page-level                               | **candidate for change** — approved; shipped in slice 3 (`0.4.52`)              |
 | P-01                                     | Rename                                                           | needs discussion                                                                |
 | P-02                                     | Add / Edit tags                                                  | preserve existing behaviour (protected)                                         |
 | P-03                                     | Filter by tags                                                   | preserve existing behaviour (protected)                                         |
@@ -516,7 +523,7 @@ Reported here so they are not lost; nothing was changed.
 | P-33                                     | Update prompt                                                    | not a candidate; its placement needs discussion                                 |
 | D-01                                     | Clear draft fails                                                | needs discussion                                                                |
 | D-02                                     | Delete route fails                                               | **candidate for change**                                                        |
-| D-03                                     | Card remounts while a delete is pending                          | **candidate for change**                                                        |
+| D-03                                     | Card remounts while a delete is pending                          | **candidate for change** — approved; shipped in slice 3 (`0.4.52`)              |
 | D-04                                     | Activation above the viewport                                    | already complies as measured                                                    |
 | D-05                                     | Focused control destroyed                                        | needs discussion                                                                |
 | D-06                                     | Edit copy's busy guard and failure focus                         | **candidate for change**                                                        |
@@ -528,8 +535,8 @@ For each line, please mark **confirm** (adopt the common rule in a later slice),
 
 C-01 (Delete route) and C-05 (Clear draft) are slice 1 — already approved and accepted on the iPhone — so they need no decision here.
 
-1. **C-14 — the switch dialog from Planning.** With a route ride paused, plan a route in **Plan**, calculate it, and tap **Save route** near the bottom of the screen. The "Switch to …?" dialog appears at the very top of Planning, and after Cancel or Escape you are left there. _Should this dialog follow the common rule (appear where you are, keep your place on Cancel)?_ — confirm / exclude / discuss.
-2. **D-03 — a delete left open while searching.** In **Routes**, tap **Delete** on a route, then type in **Search routes** so that route disappears, then delete one letter. The route reappears with its confirmation open, focus jumps to Cancel, and the page scrolls. _Should a pending Delete be cancelled when its route leaves the list, or kept as now?_ — confirm a change / exclude / discuss.
+1. **C-14 — the switch dialog from Planning.** With a route ride paused, plan a route in **Plan**, calculate it, and tap **Save route** near the bottom of the screen. The "Switch to …?" dialog appears at the very top of Planning, and after Cancel or Escape you are left there. _Should this dialog follow the common rule (appear where you are, keep your place on Cancel)?_ — confirm / exclude / discuss. **Decided 1 October 2026: confirmed, as a separate Open saved route — shipped in slice 3 (`0.4.52`).**
+2. **D-03 — a delete left open while searching.** In **Routes**, tap **Delete** on a route, then type in **Search routes** so that route disappears, then delete one letter. The route reappears with its confirmation open, focus jumps to Cancel, and the page scrolls. _Should a pending Delete be cancelled when its route leaves the list, or kept as now?_ — confirm a change / exclude / discuss. **Decided 1 October 2026: confirmed, for an unconfirmed Delete — shipped in slice 3 (`0.4.52`).**
 3. **D-02 — Delete route fails.** Not reproducible on demand; it needs the device's storage to fail. When it does, the confirmation grows, its buttons can drop below the screen, focus is lost, and the message is technical English. _Should the buttons be kept in view and the message be the ordinary "That route could not be deleted."?_ — confirm / exclude / discuss.
 4. **D-01 — Clear draft fails.** Not reproducible on demand. The message "The draft could not be cleared on this device. Try again." appears beside Clear draft. _Should that message itself be revealed if it falls off-screen?_ — confirm / exclude / discuss.
 5. **D-06 — Edit copy.** With a draft in Planning, open a route's ride screen, tap **Edit copy**, and see "Replace your current draft?". Its buttons are never disabled while working, and after a failure focus is probably lost. _Fix as a separate defect?_ — confirm / exclude / discuss.
@@ -585,3 +592,12 @@ Branches flagged as difficult to reach or apparently unreachable. No steps are i
 - Synthetic IndexedDB faults show what the interface does once a write fails; they do not show that such a failure occurs on a device.
 - No VoiceOver, landscape, physical-Android or physical-keyboard result.
 - Line numbers are approximate pointers into `04639cb`.
+
+## Decisions and delivery
+
+**1 October 2026 — two cases approved, and shipped as item 124's slice 3 (`0.4.52`).** The rider approved these, with corrections, and nothing else from this inventory:
+
+- **C-14, Planning's entry path only.** **Save route** now only saves: it stays in Planning and shows `“{name}” is saved in Routes.` / `„{name}“ ist unter „Routen“ gespeichert.` in the save area, with a separate **Open saved route** / **Gespeicherte Route öffnen**. Opening goes through the existing ride-transition guard; when another ride is unfinished, the switch confirmation appears directly beneath that action, under the common rule, and Cancel or Escape keep the original ride and the rider's position. The dialog's other entry paths — a route card's prompt followed off Routes, and a stale launcher — are unchanged and still page-level, as is item 95's inline prompt.
+- **D-03.** An unconfirmed Delete is dismissed when the search or a tag filter hides its route, quietly — no focus moved, nothing scrolled — and stays closed when the route returns. A deletion already running continues, and a confirmed deletion that failed keeps its confirmation and error (D-02's state, which is not decided).
+
+**Still awaiting the rider's review:** every other case in this document, including checklist items 3 onwards. The full record of slice 3 — mechanism, evidence, baseline and controls, findings and limitations — is in [item 124](../../project/backlog.md#item-124); its device check is Session 5 in [`current-status.md`](../../project/current-status.md).

@@ -380,6 +380,8 @@ export const de: Catalogue = {
     "Berechne eine vollständige Route, bevor du sie speicherst oder exportierst.",
   "planning.save.failed":
     "Die Route konnte auf diesem Gerät nicht gespeichert werden. Versuch es noch einmal.",
+  "planning.save.saved": "„{name}“ ist unter „Routen“ gespeichert.",
+  "planning.save.openSaved": "Gespeicherte Route öffnen",
   "planning.export.failed": "Die Route konnte nicht exportiert werden.",
   "planning.clearDraft": "Entwurf verwerfen",
   "planning.clearDraft.clearing": "Wird verworfen…",

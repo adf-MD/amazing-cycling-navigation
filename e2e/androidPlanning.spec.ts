@@ -100,7 +100,12 @@ test("configures a key, plans a route via a mocked ORS response, saves it, and r
   await page.getByLabel("Route name").fill(routeName);
   await page.getByRole("button", { name: /save route/i }).click();
 
-  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+  // Saving alone stays in Planning and announces the saved route (backlog
+  // item 124, slice 3).
+  await expect(
+    page.getByRole("status").filter({ hasText: `“${routeName}” is saved in Routes.` }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
 
   // Reopening a saved route must never need the provider — unroute the
   // mock and fail loudly if anything still tries to reach it.

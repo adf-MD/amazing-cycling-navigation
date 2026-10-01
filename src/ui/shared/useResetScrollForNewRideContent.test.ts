@@ -72,7 +72,7 @@ describe("useResetScrollForNewRideContent", () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
-  it("fires again on a second bump — the mechanism handleRouteSaved shares with handleOpenRoute", () => {
+  it("fires again on a second bump — the mechanism handleOpenSavedRoute shares with handleOpenRoute", () => {
     const spy = installScrollToSpy();
     const { result, rerender } = renderHook(
       ({ screen }: { screen: Screen }) => useResetScrollForNewRideContent(screen),

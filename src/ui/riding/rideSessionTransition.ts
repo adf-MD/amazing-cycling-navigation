@@ -8,8 +8,8 @@ import {
 
 /**
  * What the rider is attempting to open/resume/start — one of App.tsx's
- * five ride-content entry points (a Routes-card open, a Planning save that
- * opens Riding, the launcher's Resume ride, and Start/Resume free roam).
+ * five ride-content entry points (a Routes-card open, Planning's Open saved
+ * route, the launcher's Resume ride, and Start/Resume free roam).
  * Carries the full PlannedRoute (not just an id) so a caller can both
  * classify against it and open it directly on a favourable outcome with no
  * second repository lookup.

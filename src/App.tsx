@@ -16,7 +16,10 @@ import {
   type RideSessionTarget,
 } from "./ui/riding/rideSessionTransition.ts";
 import { RouteLibrary, type PendingRouteSwitch } from "./ui/library/RouteLibrary.tsx";
-import { PlanningScreen } from "./ui/planning/PlanningScreen.tsx";
+import {
+  PlanningScreen,
+  type SavedRouteSwitchPrompt,
+} from "./ui/planning/PlanningScreen.tsx";
 import { FreeRoamScreen } from "./ui/riding/FreeRoamScreen.tsx";
 import { RidingLauncher } from "./ui/riding/RidingLauncher.tsx";
 import { RidingScreen } from "./ui/riding/RidingScreen.tsx";
@@ -82,9 +85,12 @@ const NONE_RIDING_CONTENT: RidingContent = { kind: "none" };
  * caller — never re-derived from the currently rendered `screen` — and is
  * never reassigned by any later status transition. "route-card" means this
  * came from a Routes-list card tap (the only origin with a card to expand
- * into); "global" covers Planning-save and every Riding-launcher entry
- * point, which keep the page-level ConfirmDialog unchanged. Deriving this
- * from `screen` instead would be wrong: the sticky nav stays clickable
+ * into); "planning" (backlog item 124, slice 3) means Planning's own Open
+ * saved route action, whose prompt Planning presents inline beneath that
+ * action; "global" covers every Riding-launcher entry point, which keep
+ * the page-level ConfirmDialog unchanged. Saving in Planning no longer
+ * requests a transition at all. Deriving this from `screen` instead would
+ * be wrong: the sticky nav stays clickable
  * while an inline card prompt is showing (it isn't a true modal), so a
  * rider could navigate away from Routes mid-prompt — a screen-derived
  * check would then leave the pending switch with no presentation at all
@@ -103,7 +109,7 @@ const NONE_RIDING_CONTENT: RidingContent = { kind: "none" };
 interface PendingRideSwitch {
   requestId: number;
   target: RideSessionTarget;
-  origin: "route-card" | "global";
+  origin: "route-card" | "planning" | "global";
   existing: "route" | "free-roam" | "unsupported" | null;
   existingRouteId: string | null;
   existingRoute: PlannedRoute | null;
@@ -328,6 +334,12 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // three different mounted components (RouteLibrary, PlanningScreen,
   // RidingLauncher) depending on entry point.
   const pendingSwitchTriggerRef = useRef<HTMLElement | null>(null);
+  // Backlog item 124, slice 3: the Planning-origin request, if any, whose
+  // anchor vanished while one of its actions was running, so it is shown
+  // page-level rather than withdrawn (see handlePlanningAnchorMissing).
+  const [anchorlessPlanningRequestId, setAnchorlessPlanningRequestId] = useState<
+    number | null
+  >(null);
   const [pendingRideSwitch, setPendingRideSwitch] = useState<PendingRideSwitch | null>(
     null,
   );
@@ -524,10 +536,10 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   }
 
   // The shared guard entry point for every route-opening action: a Routes
-  // card, a Planning save, or the launcher's own Resume ride. Re-reads
-  // storage at the moment of the click rather than trusting any caller's
-  // own already-hydrated state, so a stale launcher view (or any other
-  // stale in-memory assumption) can never bypass this check.
+  // card, Planning's Open saved route, or the launcher's own Resume ride.
+  // Re-reads storage at the moment of the click rather than trusting any
+  // caller's own already-hydrated state, so a stale launcher view (or any
+  // other stale in-memory assumption) can never bypass this check.
   //
   // stampResumeIntent is true only for the launcher's own Resume ride
   // action; even then, the one-use resumeIntentToken (backlog item 72) is
@@ -543,7 +555,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // here — see PendingRideSwitch's own doc comment for why.
   async function requestRouteTransition(
     route: PlannedRoute,
-    options: { stampResumeIntent: boolean; origin: "route-card" | "global" },
+    options: { stampResumeIntent: boolean; origin: "route-card" | "planning" | "global" },
   ): Promise<void> {
     const requestId = ++transitionRequestIdRef.current;
     const triggerElement = document.activeElement as HTMLElement | null;
@@ -664,8 +676,13 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     });
   };
 
-  const handleRouteSaved = (route: PlannedRoute) => {
-    void requestRouteTransition(route, { stampResumeIntent: false, origin: "global" });
+  // Backlog item 124, slice 3 (inventory C-14): Planning's Open saved route
+  // action. Saving alone no longer reaches App; opening is this explicit
+  // second step, through the same guard as every other entry point, with
+  // no resume intent — opening a saved route never starts location
+  // tracking.
+  const handleOpenSavedRoute = (route: PlannedRoute) => {
+    void requestRouteTransition(route, { stampResumeIntent: false, origin: "planning" });
   };
 
   const handleResumeRoute = (route: PlannedRoute) => {
@@ -971,10 +988,41 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     // must never appear cancellable.
     if (isPendingSwitchActionPendingRef.current) return;
     setPendingRideSwitch(null);
+    // A Planning-origin prompt's focus is returned by Planning itself,
+    // already, without the browser's own focus scroll (item 124's
+    // cancellation rule); every other origin is unchanged.
+    if (pendingRideSwitch?.origin === "planning") return;
     const trigger = pendingSwitchTriggerRef.current;
     if (trigger?.isConnected) {
       trigger.focus();
     }
+  };
+
+  // Backlog item 124, slice 3: Planning reports that the anchor its prompt
+  // would sit beneath — the saved-route feedback — no longer exists. That
+  // happens only when Planning has remounted (the rider left and came
+  // back), since Planning never clears the feedback while the prompt shows.
+  // - A stale report never acts: request ids are unique and monotonic, so
+  //   one naming an older request can never touch a newer prompt, even for
+  //   the same route.
+  // - While an action of this prompt is running (an End and switch clear,
+  //   a Retry's read, a free-roam write), nothing is withdrawn: the request
+  //   is marked anchorless instead, so the existing page-level dialog keeps
+  //   representing the running operation and then its outcome. The
+  //   continuations check only the request id, so withdrawing here could
+  //   otherwise let a Retry still open the route behind a vanished prompt.
+  // - An idle prompt, which nothing has authorised yet, is withdrawn, and
+  //   its request is invalidated first so no continuation of it can act.
+  const handlePlanningAnchorMissing = (requestId: number) => {
+    if (transitionRequestIdRef.current !== requestId) return;
+    if (isPendingSwitchActionPendingRef.current) {
+      setAnchorlessPlanningRequestId(requestId);
+      return;
+    }
+    transitionRequestIdRef.current += 1;
+    setPendingRideSwitch((current) =>
+      current?.requestId === requestId && current.origin === "planning" ? null : current,
+    );
   };
 
   // Item 73 follow-up: RouteLibrary reports back when the pending switch's
@@ -1152,6 +1200,35 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     pendingRideSwitch.target.kind === "route" &&
     screen === "library";
 
+  // Backlog item 124, slice 3: Planning's Open saved route prompt sits inline
+  // beneath that action while Planning is the rendered screen and still
+  // shows its anchor; off Planning, or once anchorless while an action
+  // runs, it falls back to the page-level dialog — the same fallback the
+  // route-card prompt has had since item 73's follow-up.
+  const canShowPlanningInline =
+    pendingRideSwitch !== null &&
+    pendingRideSwitch.origin === "planning" &&
+    pendingRideSwitch.target.kind === "route" &&
+    screen === "planning" &&
+    anchorlessPlanningRequestId !== pendingRideSwitch.requestId;
+
+  const savedRouteSwitchPrompt: SavedRouteSwitchPrompt | null =
+    canShowPlanningInline &&
+    pendingRideSwitch.target.kind === "route" &&
+    pendingSwitchCopy
+      ? {
+          requestId: pendingRideSwitch.requestId,
+          routeId: pendingRideSwitch.target.route.id,
+          title: pendingSwitchCopy.title,
+          message: pendingSwitchCopy.message,
+          confirmLabel: pendingSwitchCopy.confirmLabel,
+          busy: isPendingSwitchBusy,
+          onConfirm: handlePendingSwitchConfirm,
+          onCancel: handlePendingSwitchCancel,
+          onAnchorMissing: handlePlanningAnchorMissing,
+        }
+      : null;
+
   const routeSwitchPrompt: PendingRouteSwitch | null =
     canShowInline && pendingRideSwitch.target.kind === "route" && pendingSwitchCopy
       ? {
@@ -1183,7 +1260,10 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         </header>
       )}
 
-      {pendingRideSwitch && pendingSwitchCopy && !canShowInline ? (
+      {pendingRideSwitch &&
+      pendingSwitchCopy &&
+      !canShowInline &&
+      !canShowPlanningInline ? (
         <ConfirmDialog
           open
           title={pendingSwitchCopy.title}
@@ -1261,7 +1341,8 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         {screen === "planning" && (
           <PlanningScreen
             onNavigateToSettings={handleNavigateToSettings}
-            onRouteSaved={handleRouteSaved}
+            onOpenSavedRoute={handleOpenSavedRoute}
+            savedRouteSwitchPrompt={savedRouteSwitchPrompt}
             stickyHeaderRef={stickyHeaderRef}
           />
         )}

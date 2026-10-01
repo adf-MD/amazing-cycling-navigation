@@ -138,6 +138,23 @@ async function openPlanningAndAwaitFraming(page: Page): Promise<void> {
   await page.waitForTimeout(500);
 }
 
+/** Saving alone stays in Planning and announces the saved route (backlog
+ * item 124, slice 3) — asserted at every Save in this file. */
+async function expectSavedInPlanning(page: Page, routeName: string): Promise<void> {
+  await expect(
+    page.getByRole("status").filter({ hasText: `“${routeName}” is saved in Routes.` }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
+}
+
+/** Opens the just-saved route's Riding pre-ride panel through Planning's
+ * explicit "Open saved route" action — called by name wherever a test
+ * needs that panel, never folded into the save helpers. */
+async function openSavedRouteFromPlanning(page: Page, routeName: string): Promise<void> {
+  await page.getByRole("button", { name: "Open saved route" }).click();
+  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+}
+
 async function planAndSaveTwoWaypointRoute(page: Page, routeName: string): Promise<void> {
   await openPlanningAndAwaitFraming(page);
 
@@ -155,7 +172,7 @@ async function planAndSaveTwoWaypointRoute(page: Page, routeName: string): Promi
 
   await page.getByLabel("Route name").fill(routeName);
   await page.getByRole("button", { name: /save route/i }).click();
-  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+  await expectSavedInPlanning(page, routeName);
   await assertPlanningDraftStaysCleared(page);
 }
 
@@ -190,7 +207,7 @@ async function planAndSaveClosedLoopRoute(page: Page, routeName: string): Promis
 
   await page.getByLabel("Route name").fill(routeName);
   await page.getByRole("button", { name: /save route/i }).click();
-  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+  await expectSavedInPlanning(page, routeName);
   await assertPlanningDraftStaysCleared(page);
 }
 
@@ -284,6 +301,7 @@ test("Reverse route inside Planning issues zero requests until Calculate — eve
   await planAndSaveTwoWaypointRoute(page, originalName);
   expect(requestedCoordinatePairs).toHaveLength(1); // the original save's own single leg
 
+  await openSavedRouteFromPlanning(page, originalName);
   await expect(page.getByRole("button", { name: "Edit copy" })).toBeEnabled();
   await editCopyThenReverseInPlanning(page);
 
@@ -343,6 +361,7 @@ test("Calculate after Reverse route sends the reversed leg coordinates, and Save
   await planAndSaveTwoWaypointRoute(page, originalName);
   expect(requestedCoordinatePairs).toHaveLength(1);
 
+  await openSavedRouteFromPlanning(page, originalName);
   await editCopyThenReverseInPlanning(page);
   expect(requestedCoordinatePairs).toHaveLength(1);
 
@@ -359,9 +378,7 @@ test("Calculate after Reverse route sends the reversed leg coordinates, and Save
   expect(requestedCoordinatePairs[1]).toEqual([...requestedCoordinatePairs[0]].reverse());
 
   await page.getByRole("button", { name: /save route/i }).click();
-  await expect(
-    page.getByRole("heading", { name: `${originalName} (reversed)` }),
-  ).toBeVisible();
+  await expectSavedInPlanning(page, `${originalName} (reversed)`);
   await assertPlanningDraftStaysCleared(page);
 
   // The original route remains unchanged and independently reopenable —
@@ -395,6 +412,7 @@ test("exporting and offline re-importing a reversed route, then Edit copy, recov
   const originalName = "Round Trip Reversal Route";
   await planAndSaveTwoWaypointRoute(page, originalName);
 
+  await openSavedRouteFromPlanning(page, originalName);
   await editCopyThenReverseInPlanning(page);
   await expect(page.getByText(EXACT_EDIT_COPY_NOTICE)).toBeVisible();
 
@@ -407,7 +425,7 @@ test("exporting and offline re-importing a reversed route, then Edit copy, recov
 
   const reversedName = `${originalName} (reversed)`;
   await page.getByRole("button", { name: /save route/i }).click();
-  await expect(page.getByRole("heading", { name: reversedName })).toBeVisible();
+  await expectSavedInPlanning(page, reversedName);
   await assertPlanningDraftStaysCleared(page);
 
   await page.getByRole("button", { name: "Routes" }).click();
@@ -506,6 +524,7 @@ test("reversing a closed-loop draft inside Planning retains the same start/finis
   // Three legs for the original 4-waypoint closed loop (A-B, B-C, C-A).
   expect(requestedCoordinatePairs).toHaveLength(3);
 
+  await openSavedRouteFromPlanning(page, loopName);
   await editCopyThenReverseInPlanning(page);
   expect(requestedCoordinatePairs).toHaveLength(3);
 
@@ -556,6 +575,7 @@ test("reloading after reversing a draft inside Planning restores it without an a
   await planAndSaveTwoWaypointRoute(page, originalName);
   expect(requestedCoordinatePairs).toHaveLength(1);
 
+  await openSavedRouteFromPlanning(page, originalName);
   await editCopyThenReverseInPlanning(page);
   await expect(page.getByLabel("Route name")).toHaveValue(`${originalName} (reversed)`);
   // Confirms the reversed draft's own fields are genuinely persisted
@@ -602,6 +622,7 @@ test.describe("phone viewport", () => {
     const originalName = "Phone Viewport Reverse Route";
     await planAndSaveTwoWaypointRoute(page, originalName);
 
+    await openSavedRouteFromPlanning(page, originalName);
     await page.getByRole("button", { name: "Edit copy" }).click();
     await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
     await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });

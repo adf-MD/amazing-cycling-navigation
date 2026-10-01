@@ -193,7 +193,12 @@ async function planAndSaveTwoWaypointRoute(page: Page, routeName: string): Promi
 
   await page.getByLabel("Route name").fill(routeName);
   await page.getByRole("button", { name: /save route/i }).click();
-  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+  // Saving alone stays in Planning and announces the saved route (backlog
+  // item 124, slice 3); opening it is a separate, explicit step.
+  await expect(
+    page.getByRole("status").filter({ hasText: `“${routeName}” is saved in Routes.` }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
   await assertPlanningDraftStaysCleared(page);
 }
 
@@ -266,6 +271,8 @@ test("recovers exact planning waypoints with zero routing requests until Calcula
   const originalName = "ACN Original Route";
   await planAndSaveTwoWaypointRoute(page, originalName);
   expect(requestedCoordinatePairs).toHaveLength(1); // the original save's own single leg
+  await page.getByRole("button", { name: "Open saved route" }).click();
+  await expect(page.getByRole("heading", { name: originalName })).toBeVisible();
 
   // Opening the copy (no pre-existing draft) must navigate directly, with
   // no confirmation, and issue zero routing requests.
@@ -349,7 +356,9 @@ test("recovers exact planning waypoints with zero routing requests until Calcula
   const editedName = "ACN Edited Copy";
   await page.getByLabel("Route name").fill(editedName);
   await page.getByRole("button", { name: /save route/i }).click();
-  await expect(page.getByRole("heading", { name: editedName })).toBeVisible();
+  await expect(
+    page.getByRole("status").filter({ hasText: `“${editedName}” is saved in Routes.` }),
+  ).toBeVisible();
 
   // The original route remains unchanged and independently reopenable —
   // two distinct routes now exist in the library.
@@ -404,7 +413,9 @@ test("derives at most 20 waypoints from an arbitrary GPX with no ACN extension, 
   const savedName = "Derived Copy Route";
   await page.getByLabel("Route name").fill(savedName);
   await page.getByRole("button", { name: /save route/i }).click();
-  await expect(page.getByRole("heading", { name: savedName })).toBeVisible();
+  await expect(
+    page.getByRole("status").filter({ hasText: `“${savedName}” is saved in Routes.` }),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "Routes" }).click();
   await expect(

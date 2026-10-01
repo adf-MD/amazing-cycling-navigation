@@ -377,10 +377,18 @@ test("configures a key, plans a route via a mocked ORS response, saves it, and r
   await nameInput.fill(routeName);
   await saveButton.click();
 
-  // Saving switches straight to Riding mode with the new route, from the
-  // top of the document — by this point Planning's own long form (map,
-  // waypoints, route options, overview, save/export) has scrolled the page
-  // well below 0.
+  // Saving alone stays in Planning and announces the saved route (backlog
+  // item 124, slice 3); it opens nothing.
+  await expect(
+    page.getByRole("status").filter({ hasText: `“${routeName}” is saved in Routes.` }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
+
+  // Opening it is a separate, explicit step that switches to Riding mode
+  // with the new route, from the top of the document — by this point
+  // Planning's own long form (map, waypoints, route options, overview,
+  // save/export) has scrolled the page well below 0.
+  await page.getByRole("button", { name: "Open saved route" }).click();
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
 

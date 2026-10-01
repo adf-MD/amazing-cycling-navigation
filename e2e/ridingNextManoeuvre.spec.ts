@@ -304,7 +304,12 @@ test("shows the next trusted manoeuvre in Riding, advances with progress, become
   await page.getByLabel("Route name").fill(routeName);
   await page.getByRole("button", { name: /save route/i }).click();
 
-  // Saving switches straight to Riding mode with the new route.
+  // Saving alone stays in Planning (backlog item 124, slice 3); opening
+  // the saved route switches to Riding mode with it.
+  await expect(
+    page.getByRole("status").filter({ hasText: `“${routeName}” is saved in Routes.` }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Open saved route" }).click();
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
 
   // The rider starts well before the turn.
@@ -614,7 +619,12 @@ test("skips a synthetic waypoint-seam manoeuvre from a genuinely stitched multi-
   await page.getByLabel("Route name").fill(routeName);
   await page.getByRole("button", { name: /save route/i }).click();
 
-  // Saving switches straight to Riding mode with the new route.
+  // Saving alone stays in Planning (backlog item 124, slice 3); opening
+  // the saved route switches to Riding mode with it.
+  await expect(
+    page.getByRole("status").filter({ hasText: `“${routeName}” is saved in Routes.` }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Open saved route" }).click();
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
 
   await context.setGeolocation({ latitude: ROUTE_LAT, longitude: lonAtMetres(50) });

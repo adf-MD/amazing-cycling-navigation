@@ -497,7 +497,11 @@ export function RouteListItem({
   // of it, and when it cannot fit, only enough to show its complete
   // Cancel/Delete route row (none when that row already shows). It also
   // runs when the card mounts with the confirmation already pending, as
-  // autoFocus did.
+  // autoFocus did. Since item 124's slice 3, filtering no longer reaches
+  // that path for an unconfirmed Delete — RouteLibrary dismisses one whose
+  // route the filters hide — but a confirmed deletion that failed keeps
+  // its confirmation and error (the deferred D-02 state), so a filtered-out
+  // card in that state can still remount pending, by design.
   //
   // Closing after Cancel/Escape: focus has already returned to Delete,
   // without scrolling, in handleCancelDelete — before the focused Cancel is

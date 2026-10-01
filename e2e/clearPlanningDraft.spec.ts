@@ -166,7 +166,12 @@ async function planAndSaveTwoWaypointRoute(page: Page, routeName: string): Promi
 
   await page.getByLabel("Route name").fill(routeName);
   await page.getByRole("button", { name: /save route/i }).click();
-  await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
+  // Saving alone stays in Planning and announces the saved route (backlog
+  // item 124, slice 3); opening it is a separate, explicit step.
+  await expect(
+    page.getByRole("status").filter({ hasText: `“${routeName}” is saved in Routes.` }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
   await assertPlanningDraftStaysCleared(page);
 }
 
@@ -213,10 +218,11 @@ test("Clear draft wipes a populated, calculated, custom-routed, edit-copy-proven
   const sourceName = "Source Route For Clear Draft";
   await planAndSaveTwoWaypointRoute(page, sourceName);
 
-  // planAndSaveTwoWaypointRoute's own Save already lands on this route's
-  // Riding pre-ride panel — arrive at a meaningful draft via "Edit copy"
-  // from here, populating editCopySourceRouteId/editCopyWaypointsOrigin/
-  // editCopyOperation.
+  // Open the saved route's Riding pre-ride panel explicitly — saving alone
+  // stays in Planning since item 124's slice 3 — and arrive at a
+  // meaningful draft via "Edit copy" from there, populating
+  // editCopySourceRouteId/editCopyWaypointsOrigin/editCopyOperation.
+  await page.getByRole("button", { name: "Open saved route" }).click();
   await expect(page.getByRole("heading", { name: sourceName })).toBeVisible();
   await page.getByRole("button", { name: "Edit copy" }).click();
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();

@@ -423,6 +423,8 @@ export const en = {
   "planning.save.export": "Export GPX",
   "planning.save.hint": "Calculate a complete routed result before saving or exporting.",
   "planning.save.failed": "The route could not be saved on this device. Try again.",
+  "planning.save.saved": "“{name}” is saved in Routes.",
+  "planning.save.openSaved": "Open saved route",
   "planning.export.failed": "The route could not be exported.",
   "planning.clearDraft": "Clear draft",
   "planning.clearDraft.clearing": "Clearing…",
