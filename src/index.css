@@ -617,16 +617,17 @@ button:focus-visible {
  * mis-stated that height as "two lines plus var(--space-8) padding", which
  * item 82 had already changed.)
  *
- * The 72px VALUE is nonetheless deliberately unchanged, for a different and
- * still-live reason: the contexts that do still render this box are
- * Planning and Riding's own pre-ride overview, and Planning's separate
- * .planning-map-status-overlay occupies exactly top:8px/left:64px/right:64px
- * inside the same map container. Moving this box to 8px would stack the two
- * overlays on an identical rectangle. Anyone revisiting the value must test
- * Planning's own context, not merely Riding's.
+ * Item 108 then kept 72px because Planning's own messages occupied
+ * top:8px in the same map. Backlog item 128 moved those messages below the
+ * map, and Planning now uses 8px (the Planning-scoped rule below): at 72px
+ * the banner and its Retry covered the placement crosshair on smaller
+ * phones. The 72px value remains only for Riding's pre-ride overview,
+ * deliberately unchanged by item 128 and to be measured on its own before
+ * anyone changes it.
  *
- * left/right: 64px mirrors .planning-map-status-overlay's own established
- * 48px-button-column-plus-two-8px-insets arithmetic, so this never collides
+ * left/right: 64px is the 48px-button-column-plus-two-8px-insets
+ * arithmetic first established by the former .planning-map-status-overlay
+ * (retired by item 128), so this never collides
  * with the zoom or camera/orientation control clusters on any of
  * Planning/Riding/free roam. Reasoned values, not real-device verified —
  * see CLAUDE.md's own item 23/53 precedent for this same humility about
@@ -652,10 +653,19 @@ button:focus-visible {
   pointer-events: none;
 }
 
-/* Same fixed translucent-black/white pairing as .map-attribution/
- * .planning-map-status-message, for the same reason: this sits over
- * variable map imagery, not the app's own background, so it must not
- * swap with the light/dark colour scheme. */
+/* Backlog item 128 (C6): in Planning the imagery message takes the top
+ * slot between the two control clusters, the one band where its tallest
+ * German form (139px at 320x844) clears the crosshair, because Planning's
+ * own messages now sit below the map. Scoped to the Planning map so
+ * Riding's pre-ride overview keeps 72px. At enlarged text this overlay is
+ * portalled below the map (item 114) and this rule never applies. */
+.planning-map-container .map-status-overlay {
+  top: var(--space-8);
+}
+
+/* Same fixed translucent-black/white pairing as .map-attribution, for the
+ * same reason: this sits over variable map imagery, not the app's own
+ * background, so it must not swap with the light/dark colour scheme. */
 .map-status-message {
   margin: 0;
   padding: 3px 6px;
@@ -1355,7 +1365,8 @@ button:focus-visible {
  * values without touching either of them (that pair is explicitly coupled
  * — see .planning-waypoint-marker), and strictly below the 5 every other
  * map overlay uses (.planning-map-controls, .planning-map-zoom-controls,
- * .planning-map-status-overlay, .map-attribution, .map-status-overlay).
+ * .map-attribution, .map-status-overlay; Planning's own messages left the
+ * map with item 128).
  * Joining that 5 tier would instead have made painting order fall back to
  * DOM order within it, silently lifting this button above .map-attribution
  * and .map-status-overlay, which are DOM-earlier because they live inside
@@ -2487,8 +2498,8 @@ button:focus-visible {
  * slot with .ride-map-paused-toast above (a manual gesture pausing Follow
  * can genuinely co-occur with an active climb) — this avoided needing a
  * fragile pixel-offset stack against a transient sibling entirely. The
- * 64px left inset and the matching 128px max-width mirror
- * .planning-map-status-overlay's own established arithmetic (48px
+ * 64px left inset and the matching 128px max-width mirror the arithmetic
+ * the former .planning-map-status-overlay established (48px
  * .ride-map-control button column + 8px inset + 8px overlay inset) on both
  * sides, which applies identically here since Riding's own
  * .ride-map-zoom-controls/.ride-map-camera-controls use the same 48px
@@ -3179,40 +3190,6 @@ button:focus-visible {
   }
 }
 
-/* Absorbs the three locate-failed/warning-selected/route-feature-selected
- * blocking messages that used to sit in normal document flow inside the
- * fixed-height map wrapper, where they could overflow below the visible
- * map area exactly like .map-attribution's own comment already warns
- * against for attribution text. right:64px clears .planning-map-controls'
- * 48px button column plus its own 8px inset and the overlay's own 8px
- * inset; left:64px clears the new .planning-map-zoom-controls' identical
- * 48px column plus insets (backlog item 52) by the same 8+48+8 arithmetic
- * — both share z-index:5 and this overlay is a later DOM sibling, so
- * without this an active status message would render on top of the new
- * Zoom in/out buttons. */
-.planning-map-status-overlay {
-  position: absolute;
-  top: 8px;
-  left: 64px;
-  right: 64px;
-  z-index: 5;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-/* Same fixed translucent-black/white pairing as .map-attribution, for the
- * same reason: this sits over variable map imagery, not the app's own
- * background, so it must not swap with the light/dark colour scheme. */
-.planning-map-status-message {
-  margin: 0;
-  padding: 4px 8px;
-  border-radius: 4px;
-  background-color: rgb(0 0 0 / 60%);
-  color: #ffffff;
-  font-size: 0.8rem;
-}
-
 /* --- Planning: enlarged-text layout (backlog item 114) ---
  *
  * At enlarged browser text Planning's map cannot hold its attribution, its
@@ -3235,20 +3212,24 @@ button:focus-visible {
  * the attribution, which has left. That drop is what keeps a two- or
  * three-line label below the crosshair at 320x844 and 375x667.
  *
- * Planning's imagery and status messages move into normal flow below the
- * strip. This is a deliberate exception to backlog item 108, which keeps
- * Planning's imagery explanation inside the map: at enlarged text that
- * explanation is taller than the map's free area, so inside the map it
- * cannot avoid covering the controls. Below the map, a message appearing
- * never moves the map, its crosshair or the placement control. The same
- * elements, wording, roles and Retry handler are used as inside the map —
- * MapView renders its own overlay here through a portal. */
+ * Planning's imagery message moves into normal flow below the strip,
+ * ahead of Planning's own messages, which sit below the map at every text
+ * size since backlog item 128. This is a deliberate exception to item 108,
+ * which keeps Planning's imagery explanation inside the map: at enlarged
+ * text that explanation is taller than the map's free area, so inside the
+ * map it cannot avoid covering the controls. Below the map, a message
+ * appearing never moves the map, its crosshair or the placement control.
+ * The same elements, wording, roles and Retry handler are used as inside
+ * the map — MapView renders its own overlay here through a portal. */
 .planning-map-container--enlarged-text .planning-crosshair-callout {
   bottom: var(--space-8);
 }
 
-/* Cancels .screen's own flex gap so the strip sits flush against the map's
- * bottom edge. The block only exists in the enlarged layout. */
+/* Cancels .screen's own flex gap so the block sits flush against the map's
+ * bottom edge: the strip at enlarged text, and at every text size the
+ * Planning messages, each with its own 8px top margin (item 128). With no
+ * strip and no message the block has no height, so 16 - 16 + 0 + 16 leaves
+ * exactly the ordinary .screen gap before the next section. */
 .planning-map-below {
   margin-top: calc(-1 * var(--space-16));
 }

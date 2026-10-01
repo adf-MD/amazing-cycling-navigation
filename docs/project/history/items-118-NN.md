@@ -1,6 +1,6 @@
 # Completed backlog items 118–
 
-This file continues the 100– numeric range and opens at item 118. It was started when item 118 was completed: adding it to what was then `items-110-NN.md` would have taken that file to 162,614 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md), so that file was closed at item 117 and renamed [`items-110-113.md`](items-110-113.md) instead of growing unbounded. No existing entry was moved, shortened or rewritten by that split — only the filename changed, plus that file's own intro paragraph and the inbound links that pointed at it. Stable item numbers never change regardless of which file their text lives in: item 118 was completed ahead of items 102, 103, 113, 114 and 119, all of which remain pending, so a number is an identifier and never a schedule. Item 121 followed, completed in `0.4.44` ahead of items 102, 103, 114, 119 and 120, which remain pending. Item 123 followed, completed in `0.4.46` ahead of items 102, 103, 119 and 120. Item 119 was completed next, in `0.4.47`, and is filed between items 118 and 121 in numeric order; items 102, 103 and 120 remain pending.
+This file continues the 100– numeric range and opens at item 118. It was started when item 118 was completed: adding it to what was then `items-110-NN.md` would have taken that file to 162,614 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md), so that file was closed at item 117 and renamed [`items-110-113.md`](items-110-113.md) instead of growing unbounded. No existing entry was moved, shortened or rewritten by that split — only the filename changed, plus that file's own intro paragraph and the inbound links that pointed at it. Stable item numbers never change regardless of which file their text lives in: item 118 was completed ahead of items 102, 103, 113, 114 and 119, all of which remain pending, so a number is an identifier and never a schedule. Item 121 followed, completed in `0.4.44` ahead of items 102, 103, 114, 119 and 120, which remain pending. Item 123 followed, completed in `0.4.46` ahead of items 102, 103, 119 and 120. Item 119 was completed next, in `0.4.47`, and is filed between items 118 and 121 in numeric order; items 102, 103 and 120 remain pending. Item 128 followed, completed in `0.4.50` after item 102; items 103, 120, 122 and 124 remain pending.
 
 See [`README.md`](README.md) for the full history index, [`../backlog.md`](../backlog.md) for pending specifications, and [`../current-status.md`](../current-status.md) for the manual acceptance ledger.
 
@@ -694,3 +694,152 @@ Four results decided the design:
 - tapping a Planning warning, and a recognised climb on the Riding map before the ride, still selects it.
 
 This is **broad installed-iPhone portrait product-level acceptance**. It does not re-assert the automated measurements above; in particular the pan that both moves the map and places a waypoint remains unreproduced in a browser, and the device check is the evidence that touch no longer places. **Not claimed:** VoiceOver, landscape, enlarged text, physical Android, an Apple Pencil, or an external mouse or trackpad. The separate mouse double-click observation is unchanged and recorded in [`current-status.md`](../current-status.md).
+
+---
+
+<a id="item-128"></a>
+
+## Item 128 — The imagery banner covers the Planning crosshair at ordinary text — done
+
+_Category: Planning presentation_
+
+128. **The imagery banner covers the Planning crosshair at ordinary text — done**
+     - Origin: item 114's Stage 1 onset sweep, 29 September 2026, measured in the pinned Playwright container in Chromium and WebKit, which agreed. **An automated measurement, not an installed-iPhone observation.**
+     - **Placed first in the approved execution order on 30 September 2026** (root [`CLAUDE.md`](../../../CLAUDE.md)), by the rider's decision; it was unscheduled until then. It is a measured crosshair-obscuring problem at ordinary text on smaller phones, and the crosshair matters more since [item 123](#item-123) made touch placement go through the crosshair control. **It is still neither resolved nor accepted, and scheduling approves no fix:** the work begins by reproducing it on the current build and comparing a narrowly scoped correction that respects items 108 and 114 and preserves the placement control and the attribution.
+     - **What was measured.** At ordinary 100% text, Planning's in-map imagery banner (`.map-status-overlay` at `top: 72px`, `left/right: 64px`, here the fallback message with its `Retry map imagery` button) overlaps the red placement crosshair ring:
+       - **375×667** (map 343×300, ring 142–158px below the map's top): English, a banner 88px tall reaching 160px; German, 105px reaching 177px.
+       - **320×844** (map 288×380, ring 182–198px): German, 139px reaching 211px. English (105px, reaching 177px) clears it.
+       - **390×844 and 430×932** are clear at 100%; the overlap begins at 110% text (German) and 145% (English) respectively.
+     - The banner is `pointer-events: none` apart from its Retry button, so it hides the crosshair without blocking taps on the map beneath it. It appears only when map imagery is unavailable.
+     - **Item 114 does not reach it.** Item 114 changed only the enlarged-text layout, which engages from about 106–132% text depending on the size, and deliberately left the ordinary layout unchanged; below that threshold the banner stays in the map.
+     - Any change must keep item 108's product decision in view — Planning keeps its imagery explanation in the map at ordinary text, and item 114 made an enlarged-text-only exception — and must be measured at 375×667, 320×844 and 390×844 in both languages against the crosshair, the placement control and the attribution.
+     - **Design stage, 30 September 2026:** a measured comparison of eight candidate corrections is in [`../design/planning-imagery-banner/README.md`](../../design/planning-imagery-banner/README.md), against `0.4.49`. It reproduces the recorded overlaps exactly, and adds more: Retry sits on the crosshair point; the tile-error state overlaps too; every measured size overlaps, in at least one language, just below item 114's switch; and Planning's own message collides with the banner. It recommends keeping the imagery message in the map at the top and moving Planning's own three messages below the map, **pending the rider's decision**. Nothing is chosen or implemented, and the contract above is unchanged.
+
+### Decisions made with the rider (1 October 2026)
+
+- **C6**, from the measured design comparison in [`../../design/planning-imagery-banner/`](../../design/planning-imagery-banner/README.md). At ordinary text:
+  - Planning's imagery message and Retry stay inside the map, which keeps item 108's decision, but take the top slot;
+  - Planning's own three messages — Locate failed, clear the selected warning, clear the selected route feature — move below the map.
+- **The execution order** was revised the same day to 128 → 124 → 122 → 103 → 120 (root [`CLAUDE.md`](../../../CLAUDE.md)).
+- **The known smallest-screen overlap was accepted knowingly.** At 320×568, the map's 280 px height floor, the German fallback banner still overlaps the crosshair by 15 px. That size was an informative case outside the required matrix. The map size was not changed to hide it, and item 122 carries it forward.
+- **Approving C6 is not installed-iPhone acceptance.**
+
+### Implementation account (1 October 2026, `0.4.50`)
+
+- **Outcome.** At ordinary text:
+  - the imagery message sits at the top of the Planning map, between the two control clusters, and clears the crosshair in every required case;
+  - Retry no longer lands on the crosshair point;
+  - Planning's own messages appear below the map.
+
+  Item 114's enlarged layout, thresholds and hysteresis are unchanged.
+
+- **`src/ui/planning/PlanningScreen.tsx`.**
+  - The in-map `.planning-map-status-overlay` is gone.
+  - `.planning-map-below` now renders at every text size and always holds `mapStatusMessages`. The attribution strip and the imagery portal slot stay enlarged-only, and at ordinary text MapView's imagery portal target stays `null`, as before.
+  - Because `mapStatusMessages` keeps its child position, Planning's messages are no longer recreated when the layout switches.
+- **`src/index.css`.**
+  - A Planning-scoped `.planning-map-container .map-status-overlay { top: var(--space-8) }`. Riding's pre-ride overview keeps the base 72 px.
+  - `.planning-map-status-overlay` and the base `.planning-map-status-message` rule are retired; the second was wholly overridden by item 114's below-map rule.
+  - Four comments that named the retired class, and the 72 px, below-map and enlarged-layout comments, are rewritten.
+- **No change** to:
+  - map sizing and its rounding and fallback rules;
+  - copy, roles or touch targets;
+  - imagery timing and recovery;
+  - routing or persistence;
+  - item 123's placement rules;
+  - MapView.
+- **Version** `0.4.49` → `0.4.50`, as literal edits with no dependency change.
+
+### Evidence
+
+**New tests.**
+
+- **`e2e/planningImageryBanner.smoke.spec.ts`:** 21 tests, run in Chromium and `webkit-smoke`.
+  - **Ordinary text at 375×667, 320×844, 390×844 and 430×932, English and German.** The fallback banner alone, then Locate failed appearing and clearing, then live text just below item 114's switch. The checks:
+    - the imagery box clears the ring;
+    - the crosshair point and the imagery text reach the map;
+    - Retry is on top and at least 44×112;
+    - Planning's message is below the map, in view and unclipped;
+    - the empty block is 0 px with the next panel 16 px below the map;
+    - the map box, the canvas node, the control and the ring are unchanged as the message comes and goes.
+  - **Tile-error and delayed** at 375×667 (English and German) and 320×844 (German).
+  - **The selected warning and selected feature** at 375×667 and 320×844, in both languages. The feature is selected for real through the elevation chart's own tap path, which does not depend on where the warning selection framed the map, and its details region and exact catalogue string are asserted.
+  - **Live switching** across item 114's engage (17), hysteresis (17.1) and release (17.3) ratios. One overlay, one attribution and one canvas throughout, and the same Planning message node across both switches.
+  - **Riding's pre-ride overlay** at 72 px.
+- **A `PlanningScreen.test.tsx` case:** all three messages render inside `.planning-map-messages` and outside the map.
+
+**Updated, each keeping its guarantee.**
+
+- **`planningEnlargedTextLayout.spec.ts`'s ordinary signature:**
+  - asserts Planning's messages are below the map;
+  - asserts there is no in-map status overlay;
+  - asserts an empty, 0 px below-map block;
+  - measures the 16 px gap through that block.
+- **`planningPlacementControlLayering.spec.ts`'s chrome lists** check `.map-status-overlay`, MapView's in-map overlay at z-index 5, in place of the retired class.
+- **`planningPlacementLabelFit.spec.ts` and `distanceBadges.spec.ts`** lose a dead selector.
+- **`androidMapCameraGestureRace.spec.ts`** has a comment updated.
+
+**Fail-first against `0.4.49`'s own built bundle, served from a saved copy.**
+
+- **34 of the new spec's 42 browser runs fail:**
+  - every ordinary-text test, in both engines;
+  - tile-error at 375×667 in both languages, and at 320×844 in German;
+  - the warning and feature tests;
+  - both switching tests.
+- **The 8 that pass are labelled guards.**
+  - The delayed state already cleared the ring at 100%, since it has no Retry: 6 runs.
+  - Riding's 72 px: 2 runs.
+- **At 390×844 and 430×932** the parent fails first on the empty-block assertion, because the block did not exist there. Their ring overlap appears just below the switch; control 1 shows it.
+- **The other two.** The updated ordinary signature fails on the parent, which has no below-map block. The unit case fails on the in-map overlay's presence.
+
+**Negative controls.** Each was rebuilt, run in Chromium and restored byte-for-byte (`cmp`):
+
+| Control                                                          | Result                                                                                                                                                                                                                                       |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Planning's offset back to 72 px                               | 13 of 18 fail on ring overlap: 375×667 in both languages, 320×844 in German, 390×844 and 430×932 just below the switch, tile-error, and the warning case. The 5 that pass are consistent with the measurements: 320×844 English, and delayed |
+| 2. Planning's messages back inside the map (the old JSX and CSS) | 6 of 10 fail. A Planning message at top 8 px covers the imagery text and takes pointer events, so the click-through assertion fails first. The tile-error and delayed tests, which have no Planning message, rightly pass                    |
+| 3. The 8 px offset applied without Planning scoping              | Riding's 72 px test fails; the Planning test passes                                                                                                                                                                                          |
+| 4. `pointer-events: auto` on `.map-status-overlay`               | 9 of 9 fail on click-through                                                                                                                                                                                                                 |
+| 5. `.planning-map-below`'s −16 px margin removed                 | The gap reads 32 px in place of 16: 3 ordinary-signature tests and 2 new tests                                                                                                                                                               |
+
+**The design probe re-run on the implemented build.** `capture.mjs` ran with `ITEM128_CANDIDATES=C0`, meaning no prototype override, into a separate results directory. It covered 216 measured cases, plus 16 transition runs and 12 appear/change/clear sequences, in Chromium and WebKit, which agreed in every case. Ring clearance, in px:
+
+| Size    | Fallback, 100% (EN / DE) | With Locate failed or a warning | Just below the switch | Tile-error  | Load-error **layout proxy** | Delayed     |
+| ------- | ------------------------ | ------------------------------- | --------------------- | ----------- | --------------------------- | ----------- |
+| 375×667 | +46 / +29                | +46 / +29                       | +23 / +23             | +46 / +23   | +46 / +29                   | +77 / +77   |
+| 320×844 | +69 / +35                | +69 / +35                       | +66 / +30             | +69 / +52   | +69 / +52                   | +100 / +83  |
+| 390×844 | +86 / +69                | +86 / +69                       | +51 / +28             | +86 / +86   | +86 / +69                   | +117 / +117 |
+| 430×932 | +106 / +106              | +106 / +106                     | +62 / +62             | +123 / +106 | +123 / +106                 | +154 / +137 |
+
+- **The informative corners:** 375×812 is +76 (EN) and +59 (DE); 320×568 is +19 (EN) and **−15 (DE)**.
+- **Transitions:** 80 steps clean.
+- **Appear, change and clear:** 12 sequences, with no frame showing a message over the ring and the imagery message at 8 px throughout.
+- **The load-error case is a layout proxy only.** It is the fallback banner with the load-error string, and proves neither the production fatal-error state nor its recovery.
+- **Screenshots** of the implemented layout are [`implemented-0.4.50.png`](../../design/planning-imagery-banner/images/implemented-0.4.50.png). They are labelled with their build context, and the design-stage sheets beside them are unchanged.
+
+**Verification.**
+
+- On the pinned Node 24.18.0 and npm 11.16.0, run from a checksum-verified tarball rather than the host's 24.13.0:
+  - `npm run lint`, `typecheck` and `build`;
+  - `npm test`: **4683/4683**.
+- **In the pinned Playwright container, by digest:**
+  - the new spec 42/42, and 210/210 at `--repeat-each=5`;
+  - the affected existing specs 165/165, in their Chromium, `webkit-smoke` and `android-chrome` projects;
+  - `planningEnlargedTextLayout*`, the layering and label-fit specs, `distanceBadges`, `mapImageryRecovery`, `mapImageryCameraFraming`, `planning`, `planningWarningRows`, `planningTouchPlacement.smoke`, and the Android Planning and gesture specs.
+
+### Findings worth carrying forward
+
+1. **An empty `.planning-map-below` adds no space,** as 16 − 16 + 0 + 16. That was measured, and control 5 shows the margin is load-bearing. It corrects item 114's comment, which said an empty block would add a gap.
+2. **Planning's messages now keep their node across the enlarged-layout switch,** because they no longer move between two containers. Test 4 proves it.
+3. **The elevation chart is the deterministic way to select a route feature in a browser.** A projected map tap depends on how the camera was last framed.
+4. **A first-failing assertion is not always the one you expect.** Control 2 and the 390/430 fail-first runs each failed on an earlier assertion than the one named in the plan; both are reported as they ran.
+
+### Limitations, stated plainly
+
+- **The smallest screen.** At 320×568 in German, the 280 px floor, the banner still overlaps the crosshair by 15 px, and Retry sits on its point. It is informative and outside the required matrix, and is carried into item 122.
+- **The load-error state** is measured as a layout proxy only.
+- **The evidence is automated only:** desktop Chromium and desktop WebKit in the pinned container, whose fonts are not iOS's. Browser-root text scaling is not iOS Larger Text.
+  - **No installed-iPhone result yet:** its check is pending in [`current-status.md`](../current-status.md).
+  - **No physical-Android result** is claimed.
+- **Riding's pre-ride overview keeps 72 px.** It was not re-measured here.
+- **The Locate-failed message now appears below the map,** some distance from the Locate me button at the top right. It is in view with the map in view, but the device check is the evidence that it is noticed.

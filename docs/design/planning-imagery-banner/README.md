@@ -1,13 +1,15 @@
 # Item 128 — Planning's imagery banner and the placement crosshair
 
-**Design stage. No correction is chosen and nothing is implemented.** This directory holds the measured comparison for [backlog item 128](../../project/backlog.md#item-128). It was prepared on 30 September 2026 against app version `0.4.49` at commit `1dd8c1a`. No application source, test, stylesheet or version changed. Every candidate below is a disposable browser override applied to the unchanged production build, and each was restored after it was measured.
+**Status (1 October 2026): C6 chosen and implemented in `0.4.50`.** The rider chose C6 on 1 October 2026, and it shipped in `0.4.50`. The implementation record is [item 128's history entry](../../project/history/items-118-NN.md#item-128), and its installed-iPhone check is pending in [`current-status.md`](../../project/current-status.md). The implemented layout is shown in [Implemented in `0.4.50`](#implemented-in-0450) at the end of this document. Everything else here is the design-stage record as written on 30 September 2026, kept unchanged apart from annotations marking the decisions it asked for. The 320×568 German overlap of 15 px it reported remains, and is not hidden.
+
+**Design-stage summary (30 September 2026).** _At that stage no correction was chosen and nothing was implemented._ This directory holds the measured comparison for [item 128](../../project/history/items-118-NN.md#item-128). It was prepared on 30 September 2026 against app version `0.4.49` at commit `1dd8c1a`. No application source, test, stylesheet or version changed. Every candidate below is a disposable browser override applied to the unchanged production build, and each was restored after it was measured.
 
 **Recommendation: C6.**
 
 - **What changes:** Planning's imagery message stays inside the map, moves to the top slot at 8px, and becomes the only message in the map. Planning's own three messages (Locate failed, clear the selected warning, clear the selected feature) move below the map at ordinary text. That is where item 114 already puts them at enlarged text.
 - **What it passes:** every required and control case, in Chromium and WebKit, in English and German, in every imagery state, at 100% text and just below item 114's switch, with Planning's own messages showing and without.
 - **What it keeps:** item 108's decision.
-- **Decision needed:** whether the rider approves moving Planning's own messages below the map at ordinary text.
+- **Decision needed:** whether the rider approves moving Planning's own messages below the map at ordinary text. _Decided on 1 October 2026: approved._
 - **Alternative:** if the messages should stay in the map, the only passing candidate is **C3**. C3 moves the imagery message below the map instead, which revises item 108 for Planning at ordinary text. See [Recommendation](#recommendation).
 
 These are automated browser measurements in the pinned Playwright container, never installed-iPhone evidence (see [Limitations](#limitations)).
@@ -355,7 +357,7 @@ At 375×667 **without a routing key**, the no-key notice pushes the map down (ma
 
 **Trade-offs, stated plainly:**
 
-- **Decision needed.** It changes where Planning's own three messages appear at ordinary text. They were put inside the map by the fourth slice of the interface migration ([history](../../project/history/interface-accessibility-migration.md)), because they then sat in flow _inside_ the fixed-height map wrapper and could overflow below it. Below the map, outside the wrapper, that cannot happen.
+- **Decision needed** (_approved by the rider on 1 October 2026_). It changes where Planning's own three messages appear at ordinary text. They were put inside the map by the fourth slice of the interface migration ([history](../../project/history/interface-accessibility-migration.md)), because they then sat in flow _inside_ the fixed-height map wrapper and could overflow below it. Below the map, outside the wrapper, that cannot happen.
   - Item 114's ordinary-text device check observed "a failed Locate me message appeared inside the map". That was a check that `0.4.45` left ordinary text unchanged, not a product decision; it would need rechecking on the device.
   - The Locate-failed message then appears below the map, about 300px from the Locate me button at the top right. It is visible with the map in view.
 - **The banner still covers a band at the top of the map,** between the clusters, where Planning's own box already sat. The text is click-through there; only Retry takes pointer events.
@@ -377,7 +379,7 @@ At 375×667 **without a routing key**, the no-key notice pushes the map down (ma
 
 ## Provisional implementation scope and regression checks
 
-**Provisional:** written for C6, to be revisited if a different correction is chosen. Nothing here is implemented.
+**Provisional:** written for C6, to be revisited if a different correction is chosen. Nothing here is implemented. _C6 was chosen, and this scope was implemented in `0.4.50`; see [Implemented in `0.4.50`](#implemented-in-0450)._
 
 **Production (C6):**
 
@@ -458,3 +460,32 @@ done
 - `-e ITEM128_CANDIDATES=…` chooses Stage 4's candidates (default `C0,C3,C6,C7`).
 
 **Output.** The results are written to `/tmp/item128/results/*.json` and the screenshots to `/tmp/item128/shots/`. Only the composed sheets are kept, here in [`images/`](images/). The stages ran in 13 to 151 seconds each.
+
+## Implemented in `0.4.50`
+
+**Added on 1 October 2026.** This section records the implementation, separately from the design-stage record above. The C6 outline above was followed:
+
+- Planning-scoped `top: 8px`, with Riding's pre-ride overview kept at 72px;
+- Planning's own messages in item 114's below-map block at every text size;
+- the in-map Planning overlay retired.
+
+The full account, including fail-first evidence and negative controls, is [item 128's history entry](../../project/history/items-118-NN.md#item-128).
+
+![Implemented C6, 0.4.50](images/implemented-0.4.50.png)
+
+**What the sheet is.** These are real screenshots of a local production build of the `0.4.50` working tree on `8aeb8ec`, taken before commit, with **no prototype override applied**. The CSS and JSX are the committed ones. The design-stage sheets above are unchanged.
+
+**The probe re-run.** [`capture.mjs`](capture.mjs) was re-run on that build with `ITEM128_CANDIDATES=C0`, which now means "no override", into a separate results directory. Chromium and WebKit agreed in every case.
+
+- **Ring clearance at 100% text:** at least **+29 px** in every required case, in every imagery state, with or without Planning's own message. That includes the load-error case, which is still a **layout proxy** only.
+- **Just below item 114's switch:** at least **+23 px**.
+- **Transitions and sequences:**
+  - 80 live transition steps were clean;
+  - 12 appear, change and clear sequences showed no frame with a message over the ring.
+- **The informative corners:**
+  - 375×812 is +76 (EN) and +59 (DE);
+  - **320×568 German still overlaps the crosshair by 15 px**, with Retry on its point. That case is at the map's 280px height floor and outside the required matrix, and is carried into item 122.
+
+**Regression test.** The committed test is `e2e/planningImageryBanner.smoke.spec.ts`.
+
+**Evidence limits.** None of this is installed-iPhone evidence.

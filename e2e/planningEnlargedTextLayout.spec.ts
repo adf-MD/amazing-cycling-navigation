@@ -62,10 +62,12 @@ async function expectOrdinary(page: Page): Promise<void> {
   await expect.poll(() => attributionIsInsideMap(page)).toBe(true);
 }
 
-/** The ordinary Planning layout, as it has always been: attribution in the
- * map's bottom-left at its 8px insets on one line, the placement control
- * centred 44px above the map's bottom edge, both message overlays inside
- * the map, and the next panel one ordinary 16px gap below the map. */
+/** The ordinary Planning layout: attribution in the map's bottom-left at
+ * its 8px insets on one line, the placement control centred 44px above the
+ * map's bottom edge, MapView's imagery overlay inside the map, Planning's
+ * own messages below it (item 128), and — with no message showing — the
+ * empty below-map block adding nothing, so the next panel is still one
+ * ordinary 16px gap below the map. */
 async function readOrdinarySignature(page: Page) {
   return page.evaluate(() => {
     const need = (selector: string): HTMLElement => {
@@ -76,7 +78,9 @@ async function readOrdinarySignature(page: Page) {
     const map = need(".planning-map-container");
     const control = need(".planning-crosshair-callout");
     const attribution = need(".map-attribution");
-    const next = map.nextElementSibling;
+    const messages = need(".planning-map-messages");
+    const below = map.nextElementSibling;
+    const next = below?.nextElementSibling ?? null;
     const m = map.getBoundingClientRect();
     const c = control.getBoundingClientRect();
     const a = attribution.getBoundingClientRect();
@@ -99,9 +103,12 @@ async function readOrdinarySignature(page: Page) {
       imageryOverlayInsideMap: map.contains(
         document.querySelector(".map-status-overlay"),
       ),
-      statusOverlayInsideMap: map.contains(
-        document.querySelector(".planning-map-status-overlay"),
-      ),
+      planningMessagesBelowMap:
+        !map.contains(messages) &&
+        below?.classList.contains("planning-map-below") === true &&
+        below.contains(messages),
+      inMapStatusOverlays: map.querySelectorAll(".planning-map-status-overlay").length,
+      belowBlockHeight: below ? below.getBoundingClientRect().height : Number.NaN,
       nextIsPanel: next?.classList.contains("planning-section") ?? false,
       gapToNextPanel: next ? next.getBoundingClientRect().top - m.bottom : Number.NaN,
       attributionNodes: document.querySelectorAll(".map-attribution").length,
@@ -122,7 +129,9 @@ function expectOrdinarySignature(
   expect(signature.controlBottomOffset, report).toBeCloseTo(44, 0);
   expect(Math.abs(signature.controlCentreOffset), report).toBeLessThanOrEqual(0.5);
   expect(signature.imageryOverlayInsideMap, report).toBe(true);
-  expect(signature.statusOverlayInsideMap, report).toBe(true);
+  expect(signature.planningMessagesBelowMap, report).toBe(true);
+  expect(signature.inMapStatusOverlays, report).toBe(0);
+  expect(signature.belowBlockHeight, report).toBe(0);
   expect(signature.nextIsPanel, report).toBe(true);
   expect(signature.gapToNextPanel, report).toBeCloseTo(16, 0);
 }

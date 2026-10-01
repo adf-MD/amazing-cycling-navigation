@@ -168,7 +168,7 @@ async function measureCallout(page: Page, stressed: boolean): Promise<Measuremen
       for (const selector of [
         ".planning-map-zoom-controls",
         ".planning-map-controls",
-        ".planning-map-status-overlay",
+        ".map-status-overlay",
         ".map-attribution",
       ]) {
         for (const element of document.querySelectorAll<HTMLElement>(selector)) {

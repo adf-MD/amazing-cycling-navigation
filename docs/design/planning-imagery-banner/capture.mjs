@@ -20,6 +20,13 @@
 // wider, textsize, transitions, sequence, sheets. Each writes
 // <scratch>/results/<stage>.json and screenshots under <scratch>/shots/;
 // `sheets` composes the labelled review images into ./images/.
+//
+// Re-run on a later build (item 128's implemented C6 in 0.4.50): use a
+// separate scratch directory and ITEM128_CANDIDATES=C0, where C0 then means
+// "no prototype override" — the implementation itself, not the old
+// baseline. ITEM128_LABEL replaces the sheets' build caption, and
+// ITEM128_SHEETS=implemented composes only images/implemented-<version>.png,
+// leaving the design-stage sheets untouched.
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -69,6 +76,9 @@ const CONTROL_SIZES = ["430x932"];
 const LANGUAGES = ["en", "de"];
 const CANDIDATES = ["C0", "C1a", "C1b", "C2", "C3", "C4", "C5", "C6", "C7"];
 const CONCURRENCY = Number(process.env.ITEM128_CONCURRENCY ?? 4);
+const SHEET_LABEL =
+  process.env.ITEM128_LABEL ??
+  "Real screenshots of the unchanged 0.4.49 build; candidates are disposable overrides.";
 
 // Two questionable surface stretches then paved — the same fixture shape as
 // e2e/planningWarningRows.spec.ts, duplicated per the repo's per-spec
@@ -1208,7 +1218,12 @@ const STAGES = {
     }));
     return pool(cases, CONCURRENCY, (spec) =>
       runCase(browsers, spec, async ({ page }, id) => ({
-        candidates: await measureCandidates(page, id, CANDIDATES, "map-fallback-banner"),
+        candidates: await measureCandidates(
+          page,
+          id,
+          process.env.ITEM128_CANDIDATES ? chosenCandidates() : CANDIDATES,
+          "map-fallback-banner",
+        ),
       })),
     );
   },
@@ -1241,7 +1256,7 @@ const STAGES = {
           candidates: await measureCandidates(
             page,
             id,
-            CANDIDATES,
+            process.env.ITEM128_CANDIDATES ? chosenCandidates() : CANDIDATES,
             "map-fallback-banner",
           ),
         };
@@ -1708,6 +1723,30 @@ function buildSheetSpecs({
       (r) =>
         r.engine === engine && r.size === size && r.language === language && extra(r),
     );
+  if (process.env.ITEM128_SHEETS === "implemented") {
+    // Item 128's implemented C6: "C0" here is the build itself, with no
+    // prototype override applied.
+    const version = process.env.ITEM128_VERSION ?? "implemented";
+    const own = (results, size, tag, label) =>
+      cellFor(
+        pick(results, "chromium", size, "de", (r) => (tag ? r.tag === tag : true)),
+        "C0",
+        label,
+      );
+    sheets.push({
+      file: `implemented-${version}`,
+      title: `Implemented C6, ${version}: German, 100% text, Chromium (WebKit measured identical)`,
+      rows: ["375x667", "320x844"].map((size) => ({
+        title: size,
+        cells: [
+          own(baseline, size, null, "imagery message alone"),
+          own(cooccurrence, size, "locate", "with Locate failed"),
+          own(cooccurrence, size, "warning", "with a selected warning"),
+        ],
+      })),
+    });
+    return sheets;
+  }
   if (baseline) {
     sheets.push({
       file: "baseline",
@@ -1867,7 +1906,7 @@ function sheetHtml(sheet) {
     .empty { width: 120px; color: #888; }
   </style></head><body><main>
     <h1>${esc(sheet.title)}</h1>
-    <p class="key">Outlines: green dashed = crosshair ring box, magenta = imagery message, orange = Planning's own message, blue dashed = placement control incl. its 4px band. Real screenshots of the unchanged 0.4.49 build; candidates are disposable overrides.</p>
+    <p class="key">Outlines: green dashed = crosshair ring box, magenta = imagery message, orange = Planning's own message, blue dashed = placement control incl. its 4px band. ${esc(SHEET_LABEL)}</p>
     ${sheet.rows.map((row) => `<div class="row"><h2>${esc(row.title)}</h2>${row.cells.map(cell).join("")}</div>`).join("")}
   </main></body></html>`;
 }

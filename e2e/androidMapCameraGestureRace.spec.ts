@@ -256,11 +256,13 @@ async function openPlanningOffline(
 // past the container's own bottom edge, on the "planning-section" panel
 // below the map instead. x/y here are chosen to sit below every
 // top-anchored control cluster (.planning-map-zoom-controls top:8px/
-// left:8px, .planning-map-controls top:8px/right:8px, .map-status-overlay
-// top:72px whose retry button can wrap down further on this narrower
-// viewport than mapImageryCameraFraming.spec.ts's own {150,150} — written
-// for the wide desktop chromium project — ever collides with there) while
-// staying safely inside the container's own shortest observed height.
+// left:8px, .planning-map-controls top:8px/right:8px, and Planning's
+// .map-status-overlay, top:8px since item 128 and top:72px when these
+// positions were chosen, whose retry button can wrap down further on this
+// narrower viewport than mapImageryCameraFraming.spec.ts's own {150,150} —
+// written for the wide desktop chromium project — ever collides with
+// there) while staying safely inside the container's own shortest
+// observed height.
 const SAFE_MAP_TAP_POSITION = { x: 190, y: 250 };
 
 async function placeWaypoint(mapContainer: Locator, page: Page): Promise<void> {

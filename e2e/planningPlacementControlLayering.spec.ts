@@ -793,7 +793,7 @@ test.describe("Planning placement control layering (item 109)", () => {
     for (const selector of [
       ".planning-map-zoom-controls",
       ".planning-map-controls",
-      ".planning-map-status-overlay",
+      ".map-status-overlay",
       ".map-attribution",
     ]) {
       const chrome = page.locator(selector).first();
@@ -835,7 +835,7 @@ test.describe("Planning placement control layering (item 109)", () => {
     for (const selector of [
       ".planning-map-zoom-controls",
       ".planning-map-controls",
-      ".planning-map-status-overlay",
+      ".map-status-overlay",
       ".map-attribution",
     ]) {
       const overlayZ = Number(
@@ -996,8 +996,9 @@ test.describe("Planning placement control containment (item 109)", () => {
       // control's border box by 26.25px, a pre-existing defect that became
       // backlog item 114. Item 114's enlarged-text layout moves the
       // attribution to a strip below the map, so the exclusion is gone.
-      // Planning's own status overlay is not rendered in that layout (its
-      // messages move below the map), hence the count guard.
+      // MapView's imagery overlay moves below the map in that layout too,
+      // and Planning's own messages are below it at every size (item 128),
+      // hence the count guard.
       const bandPx = await readIsolationBandWidth(callout);
       const footprint = visualRect(
         await rectOf(callout, "the placement control"),
@@ -1006,7 +1007,7 @@ test.describe("Planning placement control containment (item 109)", () => {
       for (const selector of [
         ".planning-map-zoom-controls",
         ".planning-map-controls",
-        ".planning-map-status-overlay",
+        ".map-status-overlay",
         ".map-attribution",
       ]) {
         const chrome = page.locator(selector).first();

@@ -1721,9 +1721,11 @@ export function PlanningScreen({
     }
   };
 
-  // Planning's own map status messages. The same elements render inside the
-  // map at ordinary text and in normal flow below it at enlarged text
-  // (backlog item 114), so wording and announcements are identical in both.
+  // Planning's own map status messages. They render in normal flow below the
+  // map at every text size (backlog item 128's C6), so they never share the
+  // map with the imagery message or cover the crosshair, and they keep the
+  // same position in the tree when the enlarged-text layout (item 114)
+  // switches on or off.
   const mapStatusMessages = (
     <>
       {locateStatus === "failed" ? (
@@ -1882,25 +1884,24 @@ export function PlanningScreen({
             {locateStatus === "locating" ? t("planning.map.locating") : <CrosshairIcon />}
           </button>
         </div>
-        {isEnlargedTextLayout ? null : (
-          <div className="planning-map-status-overlay">{mapStatusMessages}</div>
-        )}
       </div>
-      {isEnlargedTextLayout ? (
-        // Backlog item 114's enlarged-text layout: the attribution strip
-        // sits flush against the map's bottom edge, and every map message
-        // follows in normal flow below it, so a message appearing never
-        // moves the map, its crosshair or the placement control. Rendered
-        // only in this layout: an empty block here would add a gap to the
-        // ordinary layout.
-        <div className="planning-map-below">
+      {/* Planning's own messages follow the map in normal flow at every
+       * text size (item 128), so a message appearing never moves the map,
+       * its crosshair or the placement control. Only in item 114's
+       * enlarged-text layout does the attribution strip sit flush against
+       * the map's bottom edge, with MapView's imagery message portalled in
+       * ahead of Planning's own. With no strip and no message the block has
+       * no height, and its negative margin cancels the extra .screen gap, so
+       * it adds no space to the ordinary layout. */}
+      <div className="planning-map-below">
+        {isEnlargedTextLayout ? (
           <div ref={setAttributionSlot} className="planning-map-attribution-strip" />
-          <div className="planning-map-messages">
-            <div ref={setMapMessageSlot} />
-            {mapStatusMessages}
-          </div>
+        ) : null}
+        <div className="planning-map-messages">
+          {isEnlargedTextLayout ? <div ref={setMapMessageSlot} /> : null}
+          {mapStatusMessages}
         </div>
-      ) : null}
+      </div>
 
       <div className="panel stack planning-section">
         <div role="group" aria-label={t("planning.actions.group")} className="row">

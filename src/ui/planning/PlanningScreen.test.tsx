@@ -3642,6 +3642,61 @@ describe("PlanningScreen", () => {
       // like today, and append mode (no waypoint selected) appends.
       expect(screen.getByRole("button", { name: "Waypoint 3" })).toBeInTheDocument();
     });
+
+    it("renders all three of Planning's own map messages below the map, never inside it (item 128)", async () => {
+      const user = userEvent.setup();
+      const map = createMockMapFactory();
+      const requestApproximateLocation = vi.fn().mockResolvedValue(null);
+      await saveProviderKey("dummy-test-key");
+      const { container } = render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          routingProvider={buildResolvedAdapter(buildRouteWithClimb())}
+          requestApproximateLocation={requestApproximateLocation}
+        />,
+      );
+      map.triggerLoad();
+      await addWaypointViaCrosshair(map, user, [0, 51]);
+      await addWaypointViaCrosshair(map, user, [0.01, 51]);
+      const calculateButton = await waitFor(() => {
+        const button = screen.getByRole("button", { name: /calculate route/i });
+        expect(button).toBeEnabled();
+        return button;
+      });
+      await user.click(calculateButton);
+      await screen.findByRole("region", { name: "Route summary" });
+
+      const mapContainer = container.querySelector(".planning-map-container");
+      expect(mapContainer).not.toBeNull();
+      // The in-map overlay that used to hold these messages is gone.
+      expect(container.querySelector(".planning-map-status-overlay")).toBeNull();
+      const expectBelowTheMap = (message: HTMLElement) => {
+        expect(message).toHaveAttribute("role", "status");
+        expect(mapContainer?.contains(message)).toBe(false);
+        expect(
+          message.closest(".planning-map-below .planning-map-messages"),
+        ).not.toBeNull();
+      };
+
+      await user.click(screen.getByRole("button", { name: "Locate me" }));
+      expectBelowTheMap(
+        await screen.findByText("Your location could not be determined."),
+      );
+
+      map.setWarningHit(0);
+      map.triggerMapTap([0.001, 51]);
+      expectBelowTheMap(
+        screen.getByText("Clear the selected warning to place or move a waypoint."),
+      );
+
+      map.setWarningHit(null);
+      map.setRouteFeatureHit("climb-0");
+      map.triggerMapTap([0.005, 51]);
+      expectBelowTheMap(
+        screen.getByText("Clear the selected route feature to place or move a waypoint."),
+      );
+    });
   });
 
   it("restores an old waypoint-only draft with routeName and avoidFerries defaulted", async () => {

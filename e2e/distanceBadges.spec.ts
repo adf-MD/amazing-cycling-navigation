@@ -424,7 +424,6 @@ async function pickNonOverlappingBadge(page: Page): Promise<Locator> {
     page.locator(".planning-waypoint-marker"),
     page.locator(".planning-map-controls"),
     page.locator(".planning-map-zoom-controls"),
-    page.locator(".planning-map-status-overlay"),
     page.locator(".map-status-overlay"),
     page.locator(".map-attribution"),
     page.locator(".ride-map-zoom-controls"),
