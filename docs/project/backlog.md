@@ -179,7 +179,7 @@ _Category: Planning layout_
 
 _Category: Interface and accessibility consistency_
 
-> **Staged delivery — slice 1 shipped (`0.4.51`) and accepted on the installed iPhone, slice 2 next.**
+> **Staged delivery — slice 1 shipped (`0.4.51`) and accepted on the installed iPhone; slice 2's inventory is complete and awaits the rider's review.**
 > This item ships in slices and stays **pending** here until its final
 > slice. Nothing about it enters [`history/`](history/README.md) before
 > then. The original specification, under its own heading below, is kept
@@ -189,8 +189,8 @@ _Category: Interface and accessibility consistency_
 > | Slice     | Content                                                                                                                                                 | Status                                                                                                                                            |
 > | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 > | 1         | Planning's **Clear draft** and a Routes card's **Delete route** confirmations: the reveal rule on opening and the approved cancellation rule            | **Shipped — `0.4.51`** (1 October 2026); **accepted on the installed iPhone**, reported 1 October 2026 ([`current-status.md`](current-status.md)) |
-> | 2         | Inventory and review of every confirmation surface and every candidate expanding card or panel. **No behaviour change**; ends at the rider's own review | **Next** — stops for the rider's explicit scope confirmation                                                                                      |
-> | 3 onwards | The common rule extended only to the surfaces the rider approves in slice 2                                                                             | Not started; nothing approved                                                                                                                     |
+> | 2         | Inventory and review of every confirmation surface and every candidate expanding card or panel. **No behaviour change**; ends at the rider's own review | **Completed inventory — awaiting the rider's review** ([inventory](../design/reveal-inventory/README.md)); wider implementation not approved      |
+> | 3 onwards | The common rule extended only to the surfaces the rider approves in slice 2                                                                             | Not started; no additional surfaces are approved for behaviour changes                                                                            |
 
 ### Decisions recorded on 1 October 2026
 
@@ -232,6 +232,7 @@ _Category: Interface and accessibility consistency_
 
 - **The rider's observation was not reproduced in desktop engines, and no cause is claimed.** On the unchanged build both desktop engines _did_ bring each confirmation into view — by over-shooting — which is a different failure from the iPhone's "stayed out of view".
 - **Scroll anchoring can move the page with no scroll call.** With a button placed above the viewport — reachable by neither tap nor Tab — opening Clear draft moved the page 644 px in Chromium with no deliberate scroll: the browser's own scroll anchoring compensating for content that grew above its anchor. Every reachable position keeps the button inside the viewport, where this does not arise; no `overflow-anchor` change was made, and it is recorded for slice 2.
+- **Correction, 1 October 2026 (slice 2).** The finding above is kept as recorded, but its "reachable by neither tap nor Tab" is wrong: a rider can focus the button — the app itself returns focus to it after Cancel or Escape — scroll it above the viewport and press Enter or Space. Slice 2 measured exactly that in both engines: the browser's scroll anchoring moves the page first, and the reveal then brings the confirmation, complete, to the band's top ([D-04](../design/reveal-inventory/README.md#d-04--activating-clear-draft-or-delete-while-the-button-is-above-the-viewport)).
 - **For a route card, the "oversized but its whole action row already shows" case is narrow.** Delete sits 94 px above its confirmation at 200% text, so with the button still inside the viewport the case exists only when the confirmation exceeds the band by a few pixels. The test sizes a synthetic inset from the measured height so that it does, and there item 118's bottom-anchoring would have moved the page 24 px where the rule moves none; for Clear draft the same case differs by about 69 px.
 - **The `preventScroll` control discriminates in Chromium but not in WebKit.** WebKit's own focus reveal appears to be satisfied by the deliberate reveal that has already happened, so replacing `preventScroll` changed nothing measurable there.
 
@@ -240,11 +241,13 @@ _Category: Interface and accessibility consistency_
 - **Opening while the software keyboard closes is unverified.** Desktop engines have no software keyboard; the browser tests prove only the hand-off from the focused route-name field (it blurs, Cancel takes focus, the reveal is minimal, the name is kept). The reveal measures the band as it is when the confirmation opens. On the installed iPhone this path **passed** (reported 1 October 2026; the dated record in [`current-status.md`](current-status.md)).
 - **The frame recorder shows only that the actions did not move by more than 1 px across the frames it sampled.** It proves neither pre-paint ordering nor anything about layout versus passive effects: item 118's negative control for exactly that did not discriminate at 20× or 50×, and that finding stands.
 - Browser root-text scaling is not iOS Larger Text, and the synthetic safe-area insets are not physical-device evidence. No VoiceOver, landscape or physical-Android result is claimed.
-- **Not decided here, and listed for slice 2:** a reveal policy for Clear draft's failure message; Delete route's confirmation growing when a delete fails, which is not revealed again because only an opening reveals; and a route card remounting while its delete is pending — for example a search that hides it and then shows it again — which takes focus to Cancel and reveals it as on opening, much as the former `autoFocus` already took focus.
+- **Not decided here, and listed for slice 2:** a reveal policy for Clear draft's failure message; Delete route's confirmation growing when a delete fails, which is not revealed again because only an opening reveals; and a route card remounting while its delete is pending — for example a search that hides it and then shows it again — which takes focus to Cancel and reveals it as on opening, much as the former `autoFocus` already took focus. Slice 2 inventories these as [D-01, D-02 and D-03](../design/reveal-inventory/README.md#conditional-and-failure-states-d-01-to-d-07), with their reachability established.
 
 **Installed-iPhone acceptance, reported 1 October 2026.** All six device checks passed on `0.4.51` (build `04639cb`), in portrait at ordinary text size, the keyboard-open path included. This accepts slice 1 only; the dated record, with what it does not claim, is in [`current-status.md`](current-status.md).
 
-### Slice 2 — inventory and review (next; no behaviour change; stops for the rider)
+### Slice 2 — inventory and review (completed 1 October 2026; awaiting the rider's review)
+
+**The inventory:** [`docs/design/reveal-inventory/README.md`](../design/reveal-inventory/README.md) — 14 confirmations, 35 expanding cards, forms, editors and disclosures, and 7 conditional and failure states, each with a stable ID, its labels in English and German, reproduction steps, current behaviour, source and tests, measured evidence where needed, and a recommendation, ending in a numbered review checklist. No application behaviour changed, and no additional surfaces are approved for behaviour changes until the rider confirms them.
 
 **Purpose:** establish, before any broader unification, every surface that could fall under "one reveal rule", so the rider can confirm which of them should adopt it. **Slice 2 changes no behaviour**, and it ends at the rider's explicit review: automated checks do not replace that confirmation, and only a later slice may extend the behaviour, to the surfaces the rider approves.
 
