@@ -179,18 +179,18 @@ _Category: Planning layout_
 
 _Category: Interface and accessibility consistency_
 
-> **Staged delivery — slice 1 shipped (`0.4.51`), slice 2 next.**
+> **Staged delivery — slice 1 shipped (`0.4.51`) and accepted on the installed iPhone, slice 2 next.**
 > This item ships in slices and stays **pending** here until its final
 > slice. Nothing about it enters [`history/`](history/README.md) before
 > then. The original specification, under its own heading below, is kept
 > exactly as scheduled on 30 September 2026; everything above it records
 > what has since been decided and shipped.
 >
-> | Slice     | Content                                                                                                                                                 | Status                                                                                                                          |
-> | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-> | 1         | Planning's **Clear draft** and a Routes card's **Delete route** confirmations: the reveal rule on opening and the approved cancellation rule            | **Shipped — `0.4.51`** (1 October 2026); installed-iPhone check pending (Session 5 of [`current-status.md`](current-status.md)) |
-> | 2         | Inventory and review of every confirmation surface and every candidate expanding card or panel. **No behaviour change**; ends at the rider's own review | **Next** — stops for the rider's explicit scope confirmation                                                                    |
-> | 3 onwards | The common rule extended only to the surfaces the rider approves in slice 2                                                                             | Not started; nothing approved                                                                                                   |
+> | Slice     | Content                                                                                                                                                 | Status                                                                                                                                            |
+> | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+> | 1         | Planning's **Clear draft** and a Routes card's **Delete route** confirmations: the reveal rule on opening and the approved cancellation rule            | **Shipped — `0.4.51`** (1 October 2026); **accepted on the installed iPhone**, reported 1 October 2026 ([`current-status.md`](current-status.md)) |
+> | 2         | Inventory and review of every confirmation surface and every candidate expanding card or panel. **No behaviour change**; ends at the rider's own review | **Next** — stops for the rider's explicit scope confirmation                                                                                      |
+> | 3 onwards | The common rule extended only to the surfaces the rider approves in slice 2                                                                             | Not started; nothing approved                                                                                                                     |
 
 ### Decisions recorded on 1 October 2026
 
@@ -237,10 +237,12 @@ _Category: Interface and accessibility consistency_
 
 **Limitations, stated plainly.**
 
-- **Opening while the software keyboard closes is unverified.** Desktop engines have no software keyboard; the browser tests prove only the hand-off from the focused route-name field (it blurs, Cancel takes focus, the reveal is minimal, the name is kept). The reveal measures the band as it is when the confirmation opens. Session 5 of [`current-status.md`](current-status.md) checks this on the iPhone; if it fails there, it returns as a decision, not as an engineered guess.
+- **Opening while the software keyboard closes is unverified.** Desktop engines have no software keyboard; the browser tests prove only the hand-off from the focused route-name field (it blurs, Cancel takes focus, the reveal is minimal, the name is kept). The reveal measures the band as it is when the confirmation opens. On the installed iPhone this path **passed** (reported 1 October 2026; the dated record in [`current-status.md`](current-status.md)).
 - **The frame recorder shows only that the actions did not move by more than 1 px across the frames it sampled.** It proves neither pre-paint ordering nor anything about layout versus passive effects: item 118's negative control for exactly that did not discriminate at 20× or 50×, and that finding stands.
 - Browser root-text scaling is not iOS Larger Text, and the synthetic safe-area insets are not physical-device evidence. No VoiceOver, landscape or physical-Android result is claimed.
 - **Not decided here, and listed for slice 2:** a reveal policy for Clear draft's failure message; Delete route's confirmation growing when a delete fails, which is not revealed again because only an opening reveals; and a route card remounting while its delete is pending — for example a search that hides it and then shows it again — which takes focus to Cancel and reveals it as on opening, much as the former `autoFocus` already took focus.
+
+**Installed-iPhone acceptance, reported 1 October 2026.** All six device checks passed on `0.4.51` (build `04639cb`), in portrait at ordinary text size, the keyboard-open path included. This accepts slice 1 only; the dated record, with what it does not claim, is in [`current-status.md`](current-status.md).
 
 ### Slice 2 — inventory and review (next; no behaviour change; stops for the rider)
 
