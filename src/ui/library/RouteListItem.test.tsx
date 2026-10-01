@@ -2051,3 +2051,308 @@ describe("RouteListItem", () => {
     });
   });
 });
+
+// Backlog item 124, slice 1: the Delete-route confirmation's reveal on
+// opening and its focus return on Cancel/Escape. jsdom has no layout, so
+// geometry is stubbed per element, as the item 118 Settings reveal tests
+// do; real-browser geometry is in e2e/confirmationReveal.smoke.spec.ts.
+describe("RouteListItem delete confirmation reveal and focus return (backlog item 124)", () => {
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalFocus = HTMLElement.prototype.focus;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalScrollBy = window.scrollBy;
+
+  afterEach(() => {
+    Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    HTMLElement.prototype.focus = originalFocus;
+    window.scrollBy = originalScrollBy;
+    document.querySelectorAll("body > header").forEach((node) => {
+      node.remove();
+    });
+  });
+
+  function rect(top: number, bottom: number): DOMRect {
+    return {
+      top,
+      bottom,
+      left: 0,
+      right: 358,
+      width: 358,
+      height: bottom - top,
+      x: 0,
+      y: top,
+      toJSON: () => "",
+    };
+  }
+
+  interface Geometry {
+    inset: { top: number; bottom: number };
+    actions: { top: number; bottom: number };
+    trigger: { top: number; bottom: number };
+  }
+
+  /** jsdom: innerHeight 768, no visualViewport. With the 60px header
+   * below, the usable band is 68..760. */
+  function stubGeometry(initial: Partial<Geometry> = {}): Geometry {
+    const geometry: Geometry = {
+      inset: { top: 400, bottom: 600 },
+      actions: { top: 540, bottom: 584 },
+      trigger: { top: 340, bottom: 384 },
+      ...initial,
+    };
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this.getAttribute("role") === "dialog") {
+        return rect(geometry.inset.top, geometry.inset.bottom);
+      }
+      if (this.classList.contains("route-delete-confirm-actions")) {
+        return rect(geometry.actions.top, geometry.actions.bottom);
+      }
+      if (this.tagName === "HEADER") return rect(0, 60);
+      if (this.tagName === "BUTTON" && this.textContent.trim() === "Delete") {
+        return rect(geometry.trigger.top, geometry.trigger.bottom);
+      }
+      return rect(0, 0);
+    };
+    return geometry;
+  }
+
+  function captureLog() {
+    const log: string[] = [];
+    HTMLElement.prototype.focus = function focus(
+      this: HTMLElement,
+      options?: FocusOptions,
+    ) {
+      log.push(
+        `focus:${this.textContent.trim().slice(0, 12)}:${options?.preventScroll === true ? "noscroll" : "scroll"}`,
+      );
+      originalFocus.call(this, options);
+    };
+    window.scrollBy = (options?: ScrollToOptions | number) => {
+      if (typeof options === "object") {
+        log.push(
+          `scrollBy:${String(options.top)}:${String(options.left)}:${String(options.behavior)}`,
+        );
+      }
+    };
+    return log;
+  }
+
+  const scrolls = (log: string[]) => log.filter((entry) => entry.startsWith("scrollBy"));
+
+  function headerRef() {
+    const header = document.createElement("header");
+    document.body.appendChild(header);
+    return { current: header };
+  }
+
+  it("on opening, focuses Cancel without scrolling and then reveals the confirmation by the minimum below the header", () => {
+    stubGeometry({
+      inset: { top: 620, bottom: 820 },
+      actions: { top: 760, bottom: 804 },
+    });
+    const log = captureLog();
+    const route = buildRoute();
+    const stickyHeaderRef = headerRef();
+    const { rerender } = render(buildElement(route, { stickyHeaderRef }));
+
+    rerender(buildElement(route, { stickyHeaderRef, isDeletePending: true }));
+
+    expect(log).toEqual(["focus:Cancel:noscroll", "scrollBy:60:0:auto"]);
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+  });
+
+  it("does not move the page when the confirmation fits, nor for an oversized one whose action row already shows", () => {
+    stubGeometry({ inset: { top: 400, bottom: 600 } });
+    const log = captureLog();
+    const route = buildRoute();
+    const stickyHeaderRef = headerRef();
+    const { rerender } = render(buildElement(route, { stickyHeaderRef }));
+    rerender(buildElement(route, { stickyHeaderRef, isDeletePending: true }));
+    expect(scrolls(log)).toEqual([]);
+
+    rerender(buildElement(route, { stickyHeaderRef, isDeletePending: false }));
+    stubGeometry({
+      inset: { top: -200, bottom: 740 },
+      actions: { top: 680, bottom: 724 },
+    });
+    rerender(buildElement(route, { stickyHeaderRef, isDeletePending: true }));
+    expect(scrolls(log)).toEqual([]);
+  });
+
+  it("also takes focus and reveals when the card mounts with the confirmation already pending, as autoFocus did", () => {
+    stubGeometry({
+      inset: { top: 620, bottom: 820 },
+      actions: { top: 760, bottom: 804 },
+    });
+    const log = captureLog();
+
+    renderItem({ isDeletePending: true, stickyHeaderRef: headerRef() });
+
+    expect(log).toEqual(["focus:Cancel:noscroll", "scrollBy:60:0:auto"]);
+  });
+
+  it("does not reveal again on an unrelated re-render, and re-measures on reopening", () => {
+    const geometry = stubGeometry({
+      inset: { top: 620, bottom: 820 },
+      actions: { top: 760, bottom: 804 },
+    });
+    const log = captureLog();
+    const route = buildRoute();
+    const stickyHeaderRef = headerRef();
+    const { rerender } = render(
+      buildElement(route, { stickyHeaderRef, isDeletePending: true }),
+    );
+    expect(scrolls(log)).toEqual(["scrollBy:60:0:auto"]);
+
+    // Unrelated prop changes: a new name from a live-query re-emission, and
+    // a pin toggled elsewhere.
+    rerender(
+      buildElement(buildRoute({ name: "Evening loop renamed" }), {
+        stickyHeaderRef,
+        isDeletePending: true,
+        isPinned: true,
+      }),
+    );
+    expect(scrolls(log)).toEqual(["scrollBy:60:0:auto"]);
+
+    rerender(buildElement(route, { stickyHeaderRef, isDeletePending: false }));
+    geometry.inset = { top: 640, bottom: 840 };
+    rerender(buildElement(route, { stickyHeaderRef, isDeletePending: true }));
+    expect(scrolls(log)).toEqual(["scrollBy:60:0:auto", "scrollBy:80:0:auto"]);
+  });
+
+  it.each([
+    [
+      "Cancel",
+      async (user: ReturnType<typeof userEvent.setup>) => {
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+      },
+    ],
+    [
+      "Escape",
+      async (user: ReturnType<typeof userEvent.setup>) => {
+        await user.keyboard("{Escape}");
+      },
+    ],
+  ])(
+    "%s returns focus to Delete without scrolling, then corrects only by the minimum once the collapse has committed",
+    async (_label, close) => {
+      const geometry = stubGeometry();
+      const onDeleteCancel = vi.fn<(id: string) => void>();
+      const route = buildRoute();
+      const stickyHeaderRef = headerRef();
+      const { rerender } = render(
+        buildElement(route, { stickyHeaderRef, isDeletePending: true, onDeleteCancel }),
+      );
+      const user = userEvent.setup();
+      const log = captureLog();
+      // The rider scrolled while it was open: Delete is 30px under the header.
+      geometry.trigger = { top: 38, bottom: 82 };
+
+      await close(user);
+
+      expect(onDeleteCancel).toHaveBeenCalledWith(route.id);
+      expect(screen.getByRole("button", { name: "Delete" })).toHaveFocus();
+      // Nothing scrolls until the parent actually closes the confirmation.
+      expect(scrolls(log)).toEqual([]);
+
+      rerender(
+        buildElement(route, { stickyHeaderRef, isDeletePending: false, onDeleteCancel }),
+      );
+      expect(scrolls(log)).toEqual(["scrollBy:-30:0:auto"]);
+      expect(log.filter((entry) => entry.startsWith("focus:Delete"))).toEqual([
+        "focus:Delete:noscroll",
+      ]);
+
+      // Consumed once: later renders never repeat it.
+      rerender(
+        buildElement(route, { stickyHeaderRef, isDeletePending: false, isPinned: true }),
+      );
+      expect(scrolls(log)).toEqual(["scrollBy:-30:0:auto"]);
+    },
+  );
+
+  it("keeps the current position when Delete is already visible after Cancel", async () => {
+    stubGeometry({ trigger: { top: 340, bottom: 384 } });
+    const route = buildRoute();
+    const stickyHeaderRef = headerRef();
+    const { rerender } = render(
+      buildElement(route, { stickyHeaderRef, isDeletePending: true }),
+    );
+    const user = userEvent.setup();
+    const log = captureLog();
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    rerender(buildElement(route, { stickyHeaderRef, isDeletePending: false }));
+
+    expect(scrolls(log)).toEqual([]);
+    expect(screen.getByRole("button", { name: "Delete" })).toHaveFocus();
+  });
+
+  it("does not scroll when focus has moved away from Delete before the close commits", async () => {
+    const geometry = stubGeometry();
+    const route = buildRoute();
+    const stickyHeaderRef = headerRef();
+    const { rerender } = render(
+      buildElement(route, { stickyHeaderRef, isDeletePending: true }),
+    );
+    const user = userEvent.setup();
+    const log = captureLog();
+    geometry.trigger = { top: 38, bottom: 82 };
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    screen.getByRole("button", { name: "Rename" }).focus();
+    rerender(buildElement(route, { stickyHeaderRef, isDeletePending: false }));
+
+    expect(scrolls(log)).toEqual([]);
+    expect(screen.getByRole("button", { name: "Rename" })).toHaveFocus();
+  });
+
+  it("never reveals Delete when the confirmation closes for another reason", () => {
+    const geometry = stubGeometry();
+    const route = buildRoute();
+    const stickyHeaderRef = headerRef();
+    const { rerender } = render(
+      buildElement(route, { stickyHeaderRef, isDeletePending: true }),
+    );
+    const log = captureLog();
+    geometry.trigger = { top: 38, bottom: 82 };
+    screen.getByRole("button", { name: "Delete" }).focus();
+
+    // e.g. a switch prompt appearing, or the tag manager opening.
+    rerender(buildElement(route, { stickyHeaderRef, isDeletePending: false }));
+
+    expect(scrolls(log)).toEqual([]);
+  });
+
+  it("keeps Escape inert while a delete is in flight: no cancel, no focus move, no scroll", async () => {
+    stubGeometry();
+    const onDeleteCancel = vi.fn<(id: string) => void>();
+    const route = buildRoute();
+    const stickyHeaderRef = headerRef();
+    const { rerender } = render(
+      buildElement(route, { stickyHeaderRef, isDeletePending: true, onDeleteCancel }),
+    );
+    // Cancel holds focus from opening; the delete then starts. jsdom keeps
+    // focus on a button that becomes disabled, so Escape still reaches the
+    // dialog's own handler — which is exactly the guard under test.
+    rerender(
+      buildElement(route, {
+        stickyHeaderRef,
+        isDeletePending: true,
+        isDeleting: true,
+        onDeleteCancel,
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    const log = captureLog();
+    const user = userEvent.setup();
+
+    await user.keyboard("{Escape}");
+
+    expect(onDeleteCancel).not.toHaveBeenCalled();
+    expect(log).toEqual([]);
+  });
+});

@@ -262,4 +262,84 @@ describe("ConfirmDialog", () => {
       expect(dialog).not.toHaveAttribute("aria-modal");
     }
   });
+
+  // Backlog item 124: an opt-in for a caller that reveals the dialog
+  // itself. Cancel is still focused on opening, but never by a focus that
+  // scrolls, and never again on an unrelated re-render.
+  it("focuses Cancel once with preventScroll when the caller opts in, and not again on a re-render", () => {
+    const focusSpy = vi.spyOn(HTMLElement.prototype, "focus");
+    const dialog = (
+      <ConfirmDialog
+        open
+        focusCancelWithoutScroll
+        title="Clear this draft?"
+        message="This removes all waypoints."
+        confirmLabel="Clear draft"
+        cancelLabel="Cancel"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+    const { rerender } = render(dialog);
+
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(cancel).toHaveFocus();
+    const cancelFocusCalls = focusSpy.mock.contexts.filter(
+      (context) => context === cancel,
+    );
+    expect(cancelFocusCalls).toHaveLength(1);
+    expect(focusSpy.mock.calls[focusSpy.mock.contexts.indexOf(cancel)]).toEqual([
+      { preventScroll: true },
+    ]);
+
+    // Focus moves elsewhere; an unrelated re-render must not pull it back.
+    const elsewhere = document.createElement("button");
+    document.body.append(elsewhere);
+    elsewhere.focus();
+    rerender(dialog);
+    expect(elsewhere).toHaveFocus();
+    expect(focusSpy.mock.contexts.filter((context) => context === cancel)).toHaveLength(
+      1,
+    );
+
+    elsewhere.remove();
+    focusSpy.mockRestore();
+  });
+
+  it("resolves actionsRef to the action row, and the item 124 props leave the markup unchanged", () => {
+    const actionsRef = { current: null as HTMLDivElement | null };
+    const { unmount } = render(
+      <ConfirmDialog
+        open
+        actionsRef={actionsRef}
+        focusCancelWithoutScroll
+        title="Delete route"
+        message="Are you sure?"
+        confirmLabel="Confirm"
+        cancelLabel="Cancel"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    const actions = actionsRef.current;
+    expect(actions).not.toBeNull();
+    expect(actions?.querySelectorAll("button")).toHaveLength(2);
+    expect(actions?.lastElementChild).toHaveTextContent("Confirm");
+    const withProps = withPositionalIds(screen.getByRole("dialog").outerHTML);
+    unmount();
+
+    render(
+      <ConfirmDialog
+        open
+        title="Delete route"
+        message="Are you sure?"
+        confirmLabel="Confirm"
+        cancelLabel="Cancel"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(withPositionalIds(screen.getByRole("dialog").outerHTML)).toBe(withProps);
+  });
 });

@@ -112,3 +112,68 @@ describe("computeConfirmationRevealDelta", () => {
     );
   });
 });
+
+// Backlog item 124's opt-in refinement of the overflow branch. Only a
+// caller that names its action row reaches it; every case above, which is
+// item 118's Settings contract, passes none and is unchanged.
+describe("computeConfirmationRevealDelta with an action row (item 124)", () => {
+  function deltaWithRow(
+    inset: { top: number; bottom: number },
+    row: { top: number; bottom: number },
+  ) {
+    return computeConfirmationRevealDelta(
+      inset,
+      HEADER_BOTTOM,
+      CUSHION,
+      VISIBLE_TOP,
+      VISIBLE_BOTTOM,
+      REVEAL_GAP_PX,
+      row,
+    );
+  }
+
+  it("does not move an oversized inset whose complete action row is already inside the band", () => {
+    // 900px inset, top above the band, actions comfortably inside it: the
+    // state a keyboard user reaches by activating a header-covered trigger.
+    const inset = { top: -100, bottom: 800 };
+    const row = { top: 720, bottom: 776 };
+    expect(deltaWithRow(inset, row)).toBe(0);
+    // Discriminating: item 118's bottom-anchoring would have moved it.
+    expect(delta(inset)).toBe(800 - BAND_BOTTOM);
+    expect(delta(inset)).not.toBe(0);
+  });
+
+  it("moves an oversized inset only as far as brings a clipped action row to the band's bottom", () => {
+    const inset = { top: 100, bottom: 1000 };
+    const row = { top: 930, bottom: 986 };
+    expect(deltaWithRow(inset, row)).toBe(986 - BAND_BOTTOM);
+    // Less than bottom-anchoring the inset, by exactly the inset's own
+    // padding below the row.
+    expect(deltaWithRow(inset, row)).toBeLessThan(delta(inset));
+  });
+
+  it("moves an oversized inset only as far back up as brings a passed action row to the band's top", () => {
+    const inset = { top: -900, bottom: 60 };
+    const row = { top: -10, bottom: 46 };
+    expect(deltaWithRow(inset, row)).toBe(-10 - BAND_TOP);
+  });
+
+  it("leaves the fit branch exactly as it was", () => {
+    // An inset that fits is revealed whole; the row plays no part.
+    expect(
+      deltaWithRow({ top: 400, bottom: BAND_BOTTOM + 120 }, { top: 0, bottom: 0 }),
+    ).toBe(120);
+    expect(deltaWithRow({ top: 300, bottom: 500 }, { top: 440, bottom: 496 })).toBe(0);
+  });
+
+  it("is a minimal-movement band fit for a small element such as the opening button", () => {
+    // Visible: no movement.
+    expect(delta({ top: 400, bottom: 444 })).toBe(0);
+    // Under the sticky header: up by exactly the shortfall.
+    expect(delta({ top: HEADER_BOTTOM - 20, bottom: HEADER_BOTTOM + 24 })).toBe(
+      HEADER_BOTTOM - 20 - BAND_TOP,
+    );
+    // Inside the bottom cushion: down by exactly the shortfall.
+    expect(delta({ top: VISIBLE_BOTTOM - 44, bottom: VISIBLE_BOTTOM })).toBe(CUSHION);
+  });
+});

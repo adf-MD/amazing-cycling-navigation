@@ -1,4 +1,10 @@
-import { useId, type KeyboardEvent, type RefObject } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 
 export interface ConfirmDialogProps {
   open: boolean;
@@ -43,6 +49,20 @@ export interface ConfirmDialogProps {
    * an explicit `*Ref` prop. Undefined for all six other callers, so their
    * rendering and behaviour are byte-identical. */
   containerRef?: RefObject<HTMLDivElement | null>;
+  /** A handle onto the Cancel/Confirm action row, for a caller whose
+   * reveal prioritises that row when the whole dialog cannot fit (backlog
+   * item 124's Clear draft). Same explicit-`*Ref` convention as
+   * `containerRef`; undefined for every other caller. */
+  actionsRef?: RefObject<HTMLDivElement | null>;
+  /** Backlog item 124. Cancel still receives focus the moment the dialog
+   * opens, but with `preventScroll`, for a caller that performs its own
+   * deliberate reveal in a layout effect: the browser's own focus scroll
+   * centres Cancel (item 118 measured 619px of movement where ~240px was
+   * the minimum), so leaving it on would mean two mechanisms moving the
+   * page for one opening, and more movement than the reveal rule allows.
+   * Undefined/false for every other caller, which keep plain `autoFocus`
+   * exactly as before. */
+  focusCancelWithoutScroll?: boolean;
 }
 
 /** Keeps the rendered tag a real JSX intrinsic rather than a computed
@@ -63,8 +83,10 @@ const TITLE_TAGS = { 2: "h2", 3: "h3", 4: "h4" } as const;
  * screen's own confirmation, or two in RidingScreen's paused panel), so
  * every instance takes its own title and description ids from `useId()`
  * and is announced by its own title and message; each acts only on its
- * own subject. Focus moves to Cancel as soon as it opens (plain
- * `autoFocus`, no effect needed), and Escape inside it cancels it alone.
+ * own subject. Focus moves to Cancel as soon as it opens — plain
+ * `autoFocus` by default, or a `preventScroll` focus from a layout effect
+ * when the caller opts in with `focusCancelWithoutScroll` (item 124) — and
+ * Escape inside it cancels it alone.
  * Focus-restore to whatever triggered the dialog is the caller's own
  * responsibility (typically via a ref to that trigger, called from
  * onCancel/onConfirm) — this component has no notion of what opened it.
@@ -81,10 +103,24 @@ export function ConfirmDialog({
   cancelDisabled,
   headingLevel = 2,
   containerRef,
+  actionsRef,
+  focusCancelWithoutScroll = false,
 }: ConfirmDialogProps) {
   // Called before the early return below, as hooks must be.
   const headingId = useId();
   const descriptionId = useId();
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  // Keyed on two primitives only, so this runs when the dialog opens and
+  // never again on an unrelated re-render — Planning re-renders every
+  // second through useNow, and an unstable dependency here would pull
+  // focus back to Cancel each time. A child's layout effects run before
+  // its parent's, so a caller's own reveal effect already finds Cancel
+  // focused, and the page unmoved by it.
+  useLayoutEffect(() => {
+    if (!open || !focusCancelWithoutScroll) return;
+    cancelRef.current?.focus({ preventScroll: true });
+  }, [open, focusCancelWithoutScroll]);
 
   if (!open) {
     return null;
@@ -109,11 +145,12 @@ export function ConfirmDialog({
     >
       <Title id={headingId}>{title}</Title>
       <p id={descriptionId}>{message}</p>
-      <div className="route-delete-confirm-actions">
+      <div className="route-delete-confirm-actions" ref={actionsRef}>
         <button
           type="button"
           className="btn-secondary"
-          autoFocus
+          autoFocus={!focusCancelWithoutScroll}
+          ref={cancelRef}
           onClick={onCancel}
           disabled={cancelDisabled}
         >

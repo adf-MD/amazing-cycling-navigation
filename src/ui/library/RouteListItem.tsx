@@ -14,6 +14,7 @@ import { PinIcon } from "./PinIcon.tsx";
 import { runWhenViewportSettled } from "../shared/viewportSettle.ts";
 import { applyTopRevealScroll } from "./routeCardTopReveal.ts";
 import { isCardAlreadyFullyVisible } from "./routeSwitchCardVisibility.ts";
+import { applyConfirmationReveal } from "../shared/confirmationRevealScroll.ts";
 
 /** The inline, route-card-scoped presentation of backlog item 73's
  * unfinished-session switch guard (item 73 follow-up) — a ready-made view
@@ -154,6 +155,14 @@ export function RouteListItem({
   const [isSavingTags, setIsSavingTags] = useState(false);
   const [tagsSaveError, setTagsSaveError] = useState<string | null>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const deleteConfirmRef = useRef<HTMLDivElement>(null);
+  const deleteActionsRef = useRef<HTMLDivElement>(null);
+  const deleteCancelRef = useRef<HTMLButtonElement>(null);
+  // Set only by Cancel/Escape (handleCancelDelete), never inferred from
+  // isDeletePending going false, which a rename, pin, tag editor, switch
+  // prompt or tag manager also does — and consumed on every transition, so
+  // no request can survive into a later, unrelated close.
+  const revealDeleteTriggerOnCloseRef = useRef(false);
   const renameButtonRef = useRef<HTMLButtonElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const wasRenamingRef = useRef(false);
@@ -479,6 +488,49 @@ export function RouteListItem({
     cardEl.scrollIntoView({ block: "end", behavior: "auto" });
   }, [switchPrompt, stickyHeaderRef]);
 
+  // The delete confirmation's own reveal and focus return (backlog item
+  // 124). Opening: Cancel takes focus with preventScroll — replacing the
+  // plain autoFocus, whose browser focus scroll centres the button and so
+  // moves the page further than the rule allows — and the confirmation is
+  // then revealed under item 118's rule: no movement when it fits between
+  // the sticky header and the safe area, otherwise only enough to show all
+  // of it, and when it cannot fit, only enough to show its complete
+  // Cancel/Delete route row (none when that row already shows). It also
+  // runs when the card mounts with the confirmation already pending, as
+  // autoFocus did.
+  //
+  // Closing after Cancel/Escape: focus has already returned to Delete,
+  // without scrolling, in handleCancelDelete — before the focused Cancel is
+  // destroyed. Here, after the collapse has committed (so any clamping of
+  // the shorter document has already happened), the page moves only as far
+  // as reveals that button, and not at all when it is visible: the rider's
+  // current position, including scrolling done while it was open, is kept
+  // and the pre-opening position is never restored. Only while Delete
+  // still has focus, so nothing scrolls once the rider has moved on.
+  //
+  // Keyed on the primitive isDeletePending, so it runs on its transitions
+  // only — never on an unrelated re-render — and a reopening re-measures.
+  // A layout effect with an instant scroll: item 95's interaction-safety
+  // pair, so the actions should not still be moving once they can be
+  // touched.
+  useLayoutEffect(() => {
+    const headerBottom = stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0;
+    if (isDeletePending) {
+      revealDeleteTriggerOnCloseRef.current = false;
+      deleteCancelRef.current?.focus({ preventScroll: true });
+      const insetEl = deleteConfirmRef.current;
+      if (insetEl) {
+        applyConfirmationReveal(insetEl, headerBottom, deleteActionsRef.current);
+      }
+      return;
+    }
+    if (!revealDeleteTriggerOnCloseRef.current) return;
+    revealDeleteTriggerOnCloseRef.current = false;
+    const trigger = deleteButtonRef.current;
+    if (!trigger || document.activeElement !== trigger) return;
+    applyConfirmationReveal(trigger, headerBottom);
+  }, [isDeletePending, stickyHeaderRef]);
+
   const openRename = () => {
     if (requestInlineEditorOpen && !requestInlineEditorOpen()) return;
     if (isDeletePending) {
@@ -513,8 +565,12 @@ export function RouteListItem({
 
   const handleCancelDelete = () => {
     if (isDeleting) return;
+    // Focus returns synchronously, before the focused Cancel is destroyed,
+    // but without the browser's own focus scroll: the layout effect above
+    // makes the only, minimal, correction once the collapse has committed.
+    deleteButtonRef.current?.focus({ preventScroll: true });
+    revealDeleteTriggerOnCloseRef.current = true;
     onDeleteCancel(route.id);
-    deleteButtonRef.current?.focus();
   };
 
   // Mirrors openRename's own "cancel a pending delete confirmation (and
@@ -863,17 +919,20 @@ export function RouteListItem({
               aria-labelledby={headingId}
               aria-describedby={descriptionId}
               onKeyDown={handleConfirmKeyDown}
+              ref={deleteConfirmRef}
             >
               <h2 id={headingId}>
                 {t("routes.card.deleteConfirmTitle", { name: route.name })}
               </h2>
               <p id={descriptionId}>{t("routes.card.deleteConfirmBody")}</p>
               {deleteError ? <p role="alert">{deleteError}</p> : null}
-              <div className="route-delete-confirm-actions">
+              <div className="route-delete-confirm-actions" ref={deleteActionsRef}>
+                {/* Focused on opening by the item 124 layout effect above,
+                    with preventScroll, rather than by autoFocus. */}
                 <button
                   type="button"
                   className="btn-secondary"
-                  autoFocus
+                  ref={deleteCancelRef}
                   disabled={isDeleting}
                   onClick={handleCancelDelete}
                 >

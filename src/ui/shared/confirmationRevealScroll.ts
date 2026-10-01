@@ -40,9 +40,13 @@ export function readSafeAreaInsetBottomPx(): number {
 }
 
 /**
- * The vertical delta (for `window.scrollBy`) that brings the Settings
- * key-deletion confirmation into the usable band, or 0 when no movement is
- * warranted.
+ * The vertical delta (for `window.scrollBy`) that brings an element into
+ * the usable band, or 0 when no movement is warranted. Written for the
+ * Settings key-deletion confirmation (backlog item 118); backlog item 124
+ * reuses it, unchanged in the fit branch, for Planning's Clear-draft and a
+ * route card's Delete-route confirmations on opening, and for returning
+ * focus to their opening button on Cancel/Escape — a 44px button always
+ * fits, so for that use it is simply a minimal-movement band fit.
  *
  * **Bottom-prioritising**, and therefore a third code path alongside
  * routeCardTopReveal.ts's top-prioritising `computeTopRevealScrollDelta`
@@ -69,6 +73,14 @@ export function readSafeAreaInsetBottomPx(): number {
  * No clamping: `window.scrollBy` already clamps to the document's own
  * scrollable range, so a page with too little room below degrades to a
  * best-effort partial move rather than needing arithmetic here.
+ *
+ * `actionRowRect` is item 124's opt-in refinement of the overflow branch
+ * only. Bottom-anchoring the inset moves the page even when its complete
+ * action row is already inside the band — the state a keyboard user
+ * reaches by activating a trigger the sticky header covers — so a caller
+ * that supplies its action row gets the minimal movement that makes that
+ * row complete instead, which is none when it already is. Settings passes
+ * no row and so keeps item 118's accepted bottom-anchoring exactly.
  */
 export function computeConfirmationRevealDelta(
   insetRect: { top: number; bottom: number },
@@ -77,6 +89,7 @@ export function computeConfirmationRevealDelta(
   visibleTopPx: number,
   visibleBottomPx: number,
   gapPx: number = REVEAL_GAP_PX,
+  actionRowRect?: { top: number; bottom: number },
 ): number {
   // The sticky header's bottom is scroll-invariant (position: sticky;
   // top: 0), which is what makes a single-pass delta correct rather than
@@ -100,6 +113,17 @@ export function computeConfirmationRevealDelta(
       delta = insetRect.bottom - effectiveBottom;
     } else if (insetRect.top < effectiveTop) {
       delta = insetRect.top - effectiveTop;
+    }
+  } else if (actionRowRect) {
+    // It cannot fit, and the caller named its action row (item 124): move
+    // only as far as makes that row complete, and not at all when it
+    // already is. The explanation above stays reachable by scrolling. A
+    // row taller than the band is unreachable for the same reason given
+    // above, and would simply be bottom-aligned by the first branch.
+    if (actionRowRect.bottom > effectiveBottom) {
+      delta = actionRowRect.bottom - effectiveBottom;
+    } else if (actionRowRect.top < effectiveTop) {
+      delta = actionRowRect.top - effectiveTop;
     }
   } else {
     // It cannot fit: the actions win, and whatever title and warning fit
@@ -128,10 +152,14 @@ export function computeConfirmationRevealDelta(
  *
  * Returns the applied delta (0 when nothing was needed) so callers and
  * tests can assert the decision rather than only its side effect.
+ *
+ * `actionRowEl` opts into item 124's overflow refinement described on
+ * computeConfirmationRevealDelta; omitted, the behaviour is item 118's.
  */
 export function applyConfirmationReveal(
   insetEl: HTMLElement,
   headerBottomPx: number,
+  actionRowEl?: HTMLElement | null,
 ): number {
   const visualViewport = window.visualViewport;
   const visibleTop = visualViewport?.offsetTop ?? 0;
@@ -144,6 +172,8 @@ export function applyConfirmationReveal(
     readSafeAreaInsetBottomPx() + REVEAL_GAP_PX,
     visibleTop,
     visibleBottom,
+    REVEAL_GAP_PX,
+    actionRowEl?.getBoundingClientRect(),
   );
   if (delta !== 0) {
     window.scrollBy({ top: delta, left: 0, behavior: "auto" });

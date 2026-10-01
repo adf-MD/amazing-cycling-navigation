@@ -807,3 +807,433 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     expect(clearDraftTriggerButton()).toHaveFocus();
   });
 });
+
+// Backlog item 124, slice 1: the Clear-draft confirmation's reveal on
+// opening and its focus return on Cancel/Escape. jsdom has no layout, so
+// geometry is stubbed per element exactly as SettingsScreen.test.tsx's
+// item 118 reveal tests do; real-browser geometry is proved in
+// e2e/confirmationReveal.smoke.spec.ts.
+describe("PlanningScreen Clear draft reveal and focus return (backlog item 124)", () => {
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalFocus = HTMLElement.prototype.focus;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalScrollBy = window.scrollBy;
+
+  afterEach(() => {
+    Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    HTMLElement.prototype.focus = originalFocus;
+    window.scrollBy = originalScrollBy;
+  });
+
+  function rect(top: number, bottom: number): DOMRect {
+    return {
+      top,
+      bottom,
+      left: 0,
+      right: 358,
+      width: 358,
+      height: bottom - top,
+      x: 0,
+      y: top,
+      toJSON: () => "",
+    };
+  }
+
+  interface Geometry {
+    header: { top: number; bottom: number };
+    inset: { top: number; bottom: number };
+    actions: { top: number; bottom: number };
+    trigger: { top: number; bottom: number };
+  }
+
+  /** Mutable, so a test can change what the next measurement sees (a
+   * reopen, or the remounted trigger's position) between steps. jsdom's
+   * window.innerHeight is 768 and it has no visualViewport, so with a 60px
+   * header the usable band is 68..760 (the 8px gap below the header; an 8px
+   * cushion above the bottom, with no safe-area inset). */
+  function stubGeometry(initial: Partial<Geometry> = {}): Geometry {
+    const geometry: Geometry = {
+      header: { top: 0, bottom: 60 },
+      inset: { top: 200, bottom: 500 },
+      actions: { top: 440, bottom: 484 },
+      trigger: { top: 300, bottom: 344 },
+      ...initial,
+    };
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this.getAttribute("role") === "dialog") {
+        return rect(geometry.inset.top, geometry.inset.bottom);
+      }
+      if (this.classList.contains("route-delete-confirm-actions")) {
+        return rect(geometry.actions.top, geometry.actions.bottom);
+      }
+      if (this.tagName === "HEADER") {
+        return rect(geometry.header.top, geometry.header.bottom);
+      }
+      if (
+        this.tagName === "BUTTON" &&
+        this.textContent.trim() === "Clear draft" &&
+        this.closest('[role="dialog"]') === null
+      ) {
+        return rect(geometry.trigger.top, geometry.trigger.bottom);
+      }
+      return rect(0, 0);
+    };
+    return geometry;
+  }
+
+  /** Focus and deliberate scrolls in one ordered log, with each focus's
+   * options, so "focused without scrolling, then one deliberate scroll"
+   * is pinned as a fact. Delegates to the real focus. */
+  function captureLog() {
+    const log: string[] = [];
+    HTMLElement.prototype.focus = function focus(
+      this: HTMLElement,
+      options?: FocusOptions,
+    ) {
+      const name =
+        this.tagName === "SUMMARY" ? "summary" : this.textContent.trim().slice(0, 12);
+      log.push(
+        `focus:${name}:${options?.preventScroll === true ? "noscroll" : "scroll"}`,
+      );
+      originalFocus.call(this, options);
+    };
+    window.scrollBy = (options?: ScrollToOptions | number) => {
+      if (typeof options === "object") {
+        log.push(
+          `scrollBy:${String(options.top)}:${String(options.left)}:${String(options.behavior)}`,
+        );
+      }
+    };
+    return log;
+  }
+
+  const scrolls = (log: string[]) => log.filter((entry) => entry.startsWith("scrollBy"));
+
+  async function renderWithHeader(
+    map: MockMapHandle,
+    options: { provider?: RoutingProvider } = {},
+  ): Promise<void> {
+    const header = document.createElement("header");
+    document.body.appendChild(header);
+    const draft = buildMeaningfulDraftContent();
+    mockedGetDraft.mockResolvedValueOnce(draft);
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={
+          options.provider ?? {
+            calculateRoute: () => Promise.reject(new Error("unused")),
+          }
+        }
+        stickyHeaderRef={{ current: header }}
+      />,
+    );
+    map.triggerLoad();
+    await waitUntil(
+      () => screen.queryByDisplayValue(draft.routeName) !== null,
+      "restored draft to hydrate",
+    );
+  }
+
+  afterEach(() => {
+    document.querySelectorAll("body > header").forEach((node) => {
+      node.remove();
+    });
+  });
+
+  it("focuses Cancel without scrolling, then makes one instant minimal reveal measured below the sticky header", async () => {
+    const map = createMockMapFactory();
+    await renderWithHeader(map);
+    // Fits the 692px band, but its bottom is 140px below it.
+    stubGeometry({
+      inset: { top: 600, bottom: 900 },
+      actions: { top: 840, bottom: 884 },
+    });
+    const log = captureLog();
+
+    fireEvent.click(clearDraftTriggerButton());
+
+    expect(log).toEqual(["focus:Cancel:noscroll", "scrollBy:140:0:auto"]);
+    expect(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }),
+    ).toHaveFocus();
+  });
+
+  it("parks focus on the routing disclosure first when the trigger itself held focus", async () => {
+    const map = createMockMapFactory();
+    await renderWithHeader(map);
+    stubGeometry();
+    clearDraftTriggerButton().focus();
+    const log = captureLog();
+
+    fireEvent.click(clearDraftTriggerButton());
+
+    // The trigger is destroyed by the swap; focus never falls to <body>.
+    expect(log).toEqual(["focus:summary:noscroll", "focus:Cancel:noscroll"]);
+  });
+
+  it("does not move the page when the whole confirmation already fits", async () => {
+    const map = createMockMapFactory();
+    await renderWithHeader(map);
+    stubGeometry({ inset: { top: 200, bottom: 500 } });
+    const log = captureLog();
+
+    fireEvent.click(clearDraftTriggerButton());
+
+    expect(scrolls(log)).toEqual([]);
+  });
+
+  it("does not move an oversized confirmation whose complete action row already shows, and otherwise moves only the row into the band", async () => {
+    const map = createMockMapFactory();
+    await renderWithHeader(map);
+    const geometry = stubGeometry({
+      inset: { top: -100, bottom: 760 },
+      actions: { top: 690, bottom: 734 },
+    });
+    const log = captureLog();
+
+    fireEvent.click(clearDraftTriggerButton());
+    expect(scrolls(log)).toEqual([]);
+
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }),
+    );
+    // Oversized again, but now the row is 40px below the band: exactly
+    // that much, not the inset's own bottom padding as well.
+    geometry.inset = { top: 100, bottom: 1000 };
+    geometry.actions = { top: 756, bottom: 800 };
+    log.length = 0;
+    fireEvent.click(clearDraftTriggerButton());
+    expect(scrolls(log)).toEqual(["scrollBy:40:0:auto"]);
+  });
+
+  it("does not reveal again on an unrelated re-render, and re-measures on reopening", async () => {
+    const map = createMockMapFactory();
+    await renderWithHeader(map);
+    const geometry = stubGeometry({
+      inset: { top: 600, bottom: 900 },
+      actions: { top: 840, bottom: 884 },
+    });
+    const log = captureLog();
+
+    fireEvent.click(clearDraftTriggerButton());
+    expect(scrolls(log)).toEqual(["scrollBy:140:0:auto"]);
+
+    // A real state change in PlanningScreen while the confirmation is open.
+    fireEvent.change(screen.getByLabelText("Route name"), {
+      target: { value: "Renamed while open" },
+    });
+    expect(screen.getByDisplayValue("Renamed while open")).toBeInTheDocument();
+    expect(scrolls(log)).toEqual(["scrollBy:140:0:auto"]);
+    expect(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }),
+    ).toHaveFocus();
+
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }),
+    );
+    geometry.inset = { top: 650, bottom: 950 };
+    geometry.actions = { top: 890, bottom: 934 };
+    fireEvent.click(clearDraftTriggerButton());
+    expect(scrolls(log)).toEqual(["scrollBy:140:0:auto", "scrollBy:190:0:auto"]);
+  });
+
+  it.each([
+    [
+      "Cancel",
+      (dialog: HTMLElement) => {
+        fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      },
+    ],
+    [
+      "Escape",
+      (dialog: HTMLElement) => {
+        fireEvent.keyDown(dialog, { key: "Escape" });
+      },
+    ],
+  ])(
+    "%s: parks focus, reveals the remounted button itself by the minimum, then focuses it without scrolling",
+    async (_label, close) => {
+      const map = createMockMapFactory();
+      await renderWithHeader(map);
+      const geometry = stubGeometry();
+      const log = captureLog();
+      fireEvent.click(clearDraftTriggerButton());
+      expect(scrolls(log)).toEqual([]);
+
+      // The rider scrolled while it was open: the button will remount 30px
+      // under the sticky header.
+      geometry.trigger = { top: 38, bottom: 82 };
+      log.length = 0;
+      close(screen.getByRole("dialog"));
+
+      expect(log).toEqual([
+        "focus:summary:noscroll",
+        "scrollBy:-30:0:auto",
+        "focus:Clear draft:noscroll",
+      ]);
+      expect(clearDraftTriggerButton()).toHaveFocus();
+      expect(mockedClearDraft).not.toHaveBeenCalled();
+      expect(screen.getByDisplayValue("Evening loop")).toBeInTheDocument();
+    },
+  );
+
+  it("keeps the current position when the remounted button is already visible", async () => {
+    const map = createMockMapFactory();
+    await renderWithHeader(map);
+    stubGeometry({ trigger: { top: 300, bottom: 344 } });
+    const log = captureLog();
+    fireEvent.click(clearDraftTriggerButton());
+    log.length = 0;
+
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }),
+    );
+
+    expect(scrolls(log)).toEqual([]);
+    expect(clearDraftTriggerButton()).toHaveFocus();
+  });
+
+  it("neither scrolls nor takes focus when focus is not at the park as the confirmation closes", async () => {
+    const map = createMockMapFactory();
+    await renderWithHeader(map);
+    const geometry = stubGeometry();
+    const log = captureLog();
+    fireEvent.click(clearDraftTriggerButton());
+    geometry.trigger = { top: 38, bottom: 82 };
+    // Simulates focus being elsewhere when the close commits: the park's
+    // own focus() does nothing, so the destroyed Cancel drops focus to
+    // <body> rather than to the park.
+    HTMLElement.prototype.focus = function focus(
+      this: HTMLElement,
+      options?: FocusOptions,
+    ) {
+      if (this.tagName === "SUMMARY") return;
+      originalFocus.call(this, options);
+    };
+    log.length = 0;
+
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }),
+    );
+
+    expect(scrolls(log)).toEqual([]);
+    expect(clearDraftTriggerButton()).not.toHaveFocus();
+  });
+
+  it("corrects once while focus waits for a disabled button, never again, and drops the focus once the rider moves it", async () => {
+    await saveProviderKey("dummy-test-key");
+    const map = createMockMapFactory();
+    const route = buildRoute();
+    await renderWithHeader(map, {
+      provider: { calculateRoute: () => Promise.resolve(route) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /calculate route/i }));
+    await waitUntil(
+      () => screen.queryByRole("region", { name: "Route summary" }) !== null,
+      "Route summary to appear",
+    );
+    const geometry = stubGeometry();
+    const log = captureLog();
+    fireEvent.click(clearDraftTriggerButton());
+
+    // A Save started while the confirmation is open keeps the remounted
+    // button disabled after Cancel.
+    const { promise: saveRoutePromise, resolve: resolveSave } =
+      createControlledPromise<undefined>();
+    mockedSaveRoute.mockReturnValue(saveRoutePromise);
+    fireEvent.click(saveButton());
+    await flushAsync();
+
+    geometry.trigger = { top: 38, bottom: 82 };
+    log.length = 0;
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }),
+    );
+    expect(clearDraftTriggerButton()).toBeDisabled();
+    // The correction happened in the close commit, once.
+    expect(log).toEqual(["focus:summary:noscroll", "scrollBy:-30:0:auto"]);
+
+    // Further renders while it waits never repeat it.
+    fireEvent.change(screen.getByLabelText("Route name"), {
+      target: { value: "Renamed while waiting" },
+    });
+    expect(scrolls(log)).toEqual(["scrollBy:-30:0:auto"]);
+
+    // The rider moves on before the Save finishes.
+    screen.getByLabelText("Route name").focus();
+    await act(async () => {
+      resolveSave(undefined);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await flushAsync();
+
+    expect(clearDraftTriggerButton()).toBeEnabled();
+    expect(clearDraftTriggerButton()).not.toHaveFocus();
+    expect(screen.getByLabelText("Route name")).toHaveFocus();
+    expect(scrolls(log)).toEqual(["scrollBy:-30:0:auto"]);
+  });
+
+  it("moves focus to the button once it is enabled when the rider has not moved focus meanwhile, without scrolling", async () => {
+    await saveProviderKey("dummy-test-key");
+    const map = createMockMapFactory();
+    const route = buildRoute();
+    await renderWithHeader(map, {
+      provider: { calculateRoute: () => Promise.resolve(route) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /calculate route/i }));
+    await waitUntil(
+      () => screen.queryByRole("region", { name: "Route summary" }) !== null,
+      "Route summary to appear",
+    );
+    stubGeometry();
+    const log = captureLog();
+    fireEvent.click(clearDraftTriggerButton());
+    const { promise: saveRoutePromise, resolve: resolveSave } =
+      createControlledPromise<undefined>();
+    mockedSaveRoute.mockReturnValue(saveRoutePromise);
+    fireEvent.click(saveButton());
+    await flushAsync();
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }),
+    );
+    expect(clearDraftTriggerButton()).not.toHaveFocus();
+    log.length = 0;
+
+    await act(async () => {
+      resolveSave(undefined);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await flushAsync();
+
+    expect(clearDraftTriggerButton()).toHaveFocus();
+    expect(log.filter((entry) => entry.startsWith("focus:Clear draft"))).toEqual([
+      "focus:Clear draft:noscroll",
+    ]);
+    expect(scrolls(log)).toEqual([]);
+  });
+
+  it("leaves the failure path's focus return exactly as before: a plain focus, and no reveal", async () => {
+    const map = createMockMapFactory();
+    await renderWithHeader(map);
+    mockedClearDraft.mockRejectedValueOnce(new Error("boom"));
+    const geometry = stubGeometry();
+    const log = captureLog();
+
+    fireEvent.click(clearDraftTriggerButton());
+    geometry.trigger = { top: 38, bottom: 82 };
+    log.length = 0;
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Clear draft" }),
+    );
+    await waitUntil(() => screen.queryByRole("alert") !== null, "the failure alert");
+
+    expect(clearDraftTriggerButton()).toHaveFocus();
+    expect(log).toEqual(["focus:Clear draft:scroll"]);
+  });
+});

@@ -863,8 +863,10 @@ button:focus-visible {
  * end-aligned scrollIntoView() that brings the card into view doesn't pin
  * its actions flush against the visible viewport's bottom/safe area.
  * Scoped to this modifier, not the base .route-card above, since ordinary
- * cards (including one showing the unrelated delete-confirmation panel)
- * have no scroll-into-view behaviour of their own to reserve space for. */
+ * cards have no scroll-into-view behaviour of their own to reserve space
+ * for. A card's delete confirmation does reveal itself (backlog item 124),
+ * but by computing its own delta from --safe-area-inset-bottom, not by
+ * letting the browser scroll, so it needs no scroll-margin either. */
 .route-card--switch-pending {
   scroll-margin-bottom: calc(var(--safe-area-inset-bottom) + var(--space-8));
 }
@@ -986,8 +988,10 @@ button:focus-visible {
  * scrollIntoView() doesn't pin its actions flush against the visible
  * viewport's bottom/safe area. Deliberately scoped to this modifier rather
  * than the shared .route-delete-confirm base: a route card's own delete
- * confirmation has no scroll-into-view behaviour to reserve space for, and
- * the card that contains it already carries item 95's own cushion. Same
+ * confirmation, and the ConfirmDialogs that share this class, either have
+ * no deliberate scroll of their own or compute their own reveal delta from
+ * --safe-area-inset-bottom (backlog items 118 and 124), and scroll-margin
+ * is not inert — it would also feed the browser's own focus scroll. Same
  * value and rationale as .route-card--switch-pending's. */
 .tag-manager-confirm {
   scroll-margin-bottom: calc(var(--safe-area-inset-bottom) + var(--space-8));

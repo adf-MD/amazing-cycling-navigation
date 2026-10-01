@@ -46,7 +46,7 @@ import { DescentLocalLegend } from "../shared/DescentLocalLegend.tsx";
 import { formatMetres, formatWholeNumber } from "../shared/routeSummary.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
-import { applyConfirmationReveal } from "./confirmationRevealScroll.ts";
+import { applyConfirmationReveal } from "../shared/confirmationRevealScroll.ts";
 import { describeProviderKeyStatus } from "./providerKeyStatus.ts";
 import { useProviderKeyDraft, type ProviderKeyDraft } from "./useProviderKeyDraft.ts";
 import { useLanguageContext, useTranslate } from "../../i18n/useTranslate.ts";

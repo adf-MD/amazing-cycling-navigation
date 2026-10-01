@@ -1262,6 +1262,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
           <PlanningScreen
             onNavigateToSettings={handleNavigateToSettings}
             onRouteSaved={handleRouteSaved}
+            stickyHeaderRef={stickyHeaderRef}
           />
         )}
         {/* Backlog item 121: ONE slot for both of the Settings section's

@@ -1,7 +1,16 @@
 import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { Translator } from "../../i18n/translate.ts";
 import { describeGpxExportFailure } from "../library/gpxMessages.ts";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import type {
   Coordinate,
   PlannedRoute,
@@ -64,6 +73,7 @@ import { getPlanningPreferences } from "../../storage/planningPreferencesReposit
 import { saveRoute } from "../../storage/routesRepository.ts";
 import type { EditCopyOperation } from "../../storage/mapping.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
+import { applyConfirmationReveal } from "../shared/confirmationRevealScroll.ts";
 import { CrosshairIcon } from "../shared/CrosshairIcon.tsx";
 import { NorthArrowIcon } from "../shared/NorthArrowIcon.tsx";
 import { ZoomIcon } from "../shared/ZoomIcon.tsx";
@@ -101,6 +111,11 @@ export interface PlanningScreenProps {
    * location request (see getApproximateLocationOnce). */
   requestApproximateLocation?: () => Promise<Coordinate | null>;
   clock?: Clock;
+  /** The app's sticky navigation header (backlog item 124), measured so
+   * the Clear-draft confirmation and its opening button are revealed below
+   * it rather than beneath it. The same ref Routes and Settings already
+   * receive; optional so tests without a header measure from the top. */
+  stickyHeaderRef?: RefObject<HTMLElement | null>;
 }
 
 /** How long to wait, after a settled waypoint edit, before persisting the
@@ -302,6 +317,7 @@ export function PlanningScreen({
   routingProvider,
   requestApproximateLocation = getApproximateLocationOnce,
   clock = systemClock,
+  stickyHeaderRef,
 }: PlanningScreenProps) {
   const translator = useTranslate();
   const { t } = translator;
@@ -905,6 +921,15 @@ export function PlanningScreen({
   const [clearDraftError, setClearDraftError] = useState<string | null>(null);
   const [isClearDraftConfirmOpen, setIsClearDraftConfirmOpen] = useState(false);
   const clearDraftTriggerRef = useRef<HTMLButtonElement>(null);
+  const clearDraftConfirmRef = useRef<HTMLDivElement>(null);
+  const clearDraftActionsRef = useRef<HTMLDivElement>(null);
+  // Where focus waits while the Clear-draft slot swaps between its button
+  // and its confirmation (backlog item 124): the routing disclosure's
+  // <summary>, directly before that slot, natively focusable and mounted
+  // throughout. The swap destroys whichever control holds focus, and a
+  // focused element destroyed mid-event drops focus to <body> — item 106
+  // measured Chromium jumping from scrollY 339 to 0 exactly then.
+  const clearDraftFocusParkRef = useRef<HTMLElement>(null);
   useEffect(() => {
     return () => {
       saveGenerationRef.current += 1;
@@ -1492,18 +1517,100 @@ export function PlanningScreen({
   // triggering state change lands in one commit (Cancel/Escape, a single
   // synchronous close) or two (the async .catch()/.finally() pair below,
   // which in principle need not land in the same commit).
-  const pendingClearDraftFocusRef = useRef(false);
+  //
+  // The two requests differ (backlog item 124):
+  //
+  // - "cancel" (Cancel/Escape) waits with focus parked on the routing
+  //   disclosure's <summary>. In the first layout pass that remounts the
+  //   trigger — the close commit itself — it moves the page only as far
+  //   as reveals that button below the sticky header and above the safe
+  //   area, and not at all when it is already visible, so the rider's
+  //   current position (including any scrolling they did while the
+  //   confirmation was open) is kept. That correction is consumed there
+  //   and then, exactly once, even if focus itself must wait for a
+  //   disabled button (a Save still in flight): a later render can never
+  //   scroll. The focus that follows uses preventScroll, so it can never
+  //   compete with that correction either. Both are dropped outright the
+  //   moment focus has left the park, so nothing here ever takes focus or
+  //   moves the page after the rider has moved on.
+  // - "failure" (the .catch() below) keeps its plain focus() once the
+  //   trigger is enabled, with no park and no reveal; the only difference
+  //   is that it now runs here, before paint, rather than in a passive
+  //   effect after it. A reveal policy for the failure message is a
+  //   separate question item 124 has not settled.
+  //
+  // A layout effect, so the "cancel" correction lands before the remounted
+  // trigger is painted rather than as a visible jump one frame later.
+  const pendingClearDraftFocusRef = useRef<"cancel" | "failure" | null>(null);
+  const pendingClearDraftCancelRevealRef = useRef(false);
 
-  useEffect(() => {
-    if (!pendingClearDraftFocusRef.current) return;
+  useLayoutEffect(() => {
+    const request = pendingClearDraftFocusRef.current;
+    if (request === null) return;
     const trigger = clearDraftTriggerRef.current;
-    if (!trigger || trigger.disabled) return;
-    pendingClearDraftFocusRef.current = false;
-    trigger.focus();
+    if (!trigger) return;
+    if (request === "failure") {
+      if (trigger.disabled) return;
+      pendingClearDraftFocusRef.current = null;
+      trigger.focus();
+      return;
+    }
+    if (document.activeElement !== clearDraftFocusParkRef.current) {
+      pendingClearDraftFocusRef.current = null;
+      pendingClearDraftCancelRevealRef.current = false;
+      return;
+    }
+    if (pendingClearDraftCancelRevealRef.current) {
+      pendingClearDraftCancelRevealRef.current = false;
+      applyConfirmationReveal(
+        trigger,
+        stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+      );
+    }
+    if (trigger.disabled) return;
+    pendingClearDraftFocusRef.current = null;
+    trigger.focus({ preventScroll: true });
   });
+
+  /**
+   * Reveals the Clear-draft confirmation when it opens (backlog item 124),
+   * under the same rule as item 118's Settings confirmation: no movement
+   * when it fits between the sticky header and the safe area; otherwise
+   * only enough to show all of it; and when it cannot fit at all, only
+   * enough to show its complete Cancel/Clear draft row — none when that
+   * row is already showing — leaving the explanation reachable above.
+   *
+   * Unlike Settings, nothing else moves the page first: ConfirmDialog
+   * focuses Cancel with preventScroll (`focusCancelWithoutScroll`), because
+   * the browser's own focus scroll centres the button and so moves the
+   * page further than this rule allows. A child's layout effects run
+   * before its parent's, so Cancel already has focus here.
+   *
+   * Keyed on the primitive open boolean, so it runs on opening and never
+   * on any other render — including useNow's once-a-second tick — and a
+   * reopening re-measures whatever geometry then exists. `useLayoutEffect`
+   * and `behavior: "auto"` (inside applyConfirmationReveal) are item 95's
+   * interaction-safety pair: the actions should not still be moving once
+   * they can be touched.
+   */
+  useLayoutEffect(() => {
+    if (!isClearDraftConfirmOpen) return;
+    const insetEl = clearDraftConfirmRef.current;
+    if (!insetEl) return;
+    applyConfirmationReveal(
+      insetEl,
+      stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+      clearDraftActionsRef.current,
+    );
+  }, [isClearDraftConfirmOpen, stickyHeaderRef]);
 
   const handleClearDraftClick = () => {
     if (isClearDraftConfirmOpen || isClearingRef.current || isSavingRef.current) return;
+    // The swap below destroys this button; if it holds focus, park focus
+    // first so its destruction never drops focus to <body> (item 124).
+    if (document.activeElement === clearDraftTriggerRef.current) {
+      clearDraftFocusParkRef.current?.focus({ preventScroll: true });
+    }
     setClearDraftError(null);
     setIsClearDraftConfirmOpen(true);
   };
@@ -1511,7 +1618,11 @@ export function PlanningScreen({
   const handleClearDraftCancel = () => {
     // Escape can bypass a disabled Cancel button, so guard here too.
     if (isClearingRef.current) return;
-    pendingClearDraftFocusRef.current = true;
+    // Park before the close destroys the focused Cancel (item 124); the
+    // effect above returns focus to the remounted trigger from here.
+    clearDraftFocusParkRef.current?.focus({ preventScroll: true });
+    pendingClearDraftFocusRef.current = "cancel";
+    pendingClearDraftCancelRevealRef.current = true;
     setIsClearDraftConfirmOpen(false);
   };
 
@@ -1597,7 +1708,7 @@ export function PlanningScreen({
         if (saveGenerationRef.current !== attemptGeneration) return;
         logError("planning-clear-draft", error);
         setClearDraftError(t("planning.clearDraft.failed"));
-        pendingClearDraftFocusRef.current = true;
+        pendingClearDraftFocusRef.current = "failure";
         setIsClearDraftConfirmOpen(false);
       })
       .finally(() => {
@@ -2001,7 +2112,7 @@ export function PlanningScreen({
         </div>
 
         <details className="settings-disclosure settings-disclosure--compact">
-          <summary>
+          <summary ref={clearDraftFocusParkRef}>
             <span className="planning-routing-disclosure-header">
               <span className="planning-routing-disclosure-value">
                 {describeCurrentDraftRoutingSummary(translator, profile, avoidFerries)}
@@ -2070,6 +2181,9 @@ export function PlanningScreen({
         {isClearDraftConfirmOpen ? (
           <ConfirmDialog
             open={isClearDraftConfirmOpen}
+            containerRef={clearDraftConfirmRef}
+            actionsRef={clearDraftActionsRef}
+            focusCancelWithoutScroll
             title={t("planning.clearDraft.confirmTitle")}
             message={t("planning.clearDraft.confirmMessage")}
             confirmLabel={
