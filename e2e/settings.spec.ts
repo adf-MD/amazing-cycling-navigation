@@ -831,6 +831,27 @@ const ACTION_STABLE_TOLERANCE_PX = 1;
  * satisfy any stability check trivially. */
 const MIN_ACTIONABLE_FRAMES = 3;
 
+/** Waits until the recorder holds MIN_ACTIONABLE_FRAMES frames of the open
+ * confirmation before anything is activated, so the stability check below
+ * never runs on too few samples: Playwright's click can otherwise land
+ * after only two frames. It reads the original recording, from before the
+ * confirmation opened, and changes nothing in it, and it waits for samples
+ * — never for the actions to stop moving. A failure reports the count. */
+async function waitForActionableFrames(page: Page) {
+  await expect
+    .poll(
+      async () =>
+        (await readActionGeometry(page)).frames.filter(
+          (frame) => frame.actions.length > 0,
+        ).length,
+      {
+        message: `the recorder to capture ${String(MIN_ACTIONABLE_FRAMES)} frames of the open confirmation before Cancel`,
+        timeout: 2_000,
+      },
+    )
+    .toBeGreaterThanOrEqual(MIN_ACTIONABLE_FRAMES);
+}
+
 function expectStableActionGeometry(
   recorded: ActionGeometryRecording,
   expectedLabel: string,
@@ -886,6 +907,7 @@ test("the confirmation's actions are already settled in the first frame a rider 
   await expect(dialog).toBeVisible();
   const cancel = dialog.getByRole("button", { name: "Cancel" });
   await expect(cancel).toBeVisible();
+  await waitForActionableFrames(page);
 
   await cancel.click();
 
@@ -927,6 +949,7 @@ test("the actions stay settled even on a heavily throttled device, because the r
   await expect(dialog).toBeVisible();
   const cancel = dialog.getByRole("button", { name: "Cancel" });
   await expect(cancel).toBeVisible();
+  await waitForActionableFrames(page);
   await cancel.click();
 
   expectStableActionGeometry(await readActionGeometry(page), "Cancel");

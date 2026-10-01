@@ -204,6 +204,18 @@ This is **broad installed-iPhone portrait product-level acceptance** of the refi
 
 With this, item 118 is complete: the shipped same-card containment was accepted on 13 September 2026 and the conditional-reveal refinement on 14 September 2026.
 
+### Recorder-synchronisation follow-up (1 October 2026, test-only)
+
+CI run [36739426686](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/36739426686) failed "the confirmation's actions are already settled in the first frame a rider can touch" on the `MIN_ACTIONABLE_FRAMES` floor, not on movement. Its retained trace recorded two frames, at about 46.5 ms and 62.9 ms, before Cancel was activated at 69 ms, with both actions at exactly 628.625 px. Both recorder tests now wait, before Cancel, until the recording holds three frames of the open confirmation.
+
+- **How the wait behaves.** It reads the original recording, from before the confirmation opened, and changes nothing in it. It waits for samples, not for stillness. It is capped at 2 s and reports the count it received.
+- **What is unchanged:** the three-frame minimum and the 1 px tolerance.
+- **Repeated 30 times each in the pinned container: 60/60.** The unrepaired spec also passed 60/60 locally, so the race was not reproduced here; the CI trace is the evidence.
+- **A temporary drift control.** A 400 ms entry animation on the confirmation, from 24 px to 0, failed all six runs on the drift assertion ("Cancel moved 2.0px by t=91ms" onwards), after the new wait had passed. **It demonstrates drift detection only.** It does not change the finding above that these tests do not distinguish `useEffect` from `useLayoutEffect`: pre-paint ordering remains unproved.
+- **A temporary bounded-failure control.** A recorder stopped after one tick failed both tests at the new wait after 2 s, with `Received: 0`.
+
+No production change and no version bump.
+
 ---
 
 <a id="item-119"></a>

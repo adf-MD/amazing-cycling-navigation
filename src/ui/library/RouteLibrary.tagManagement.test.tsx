@@ -530,6 +530,11 @@ describe("RouteLibrary — global tag management, write/live-query orderings", (
     await user.click(
       within(screen.getByRole("dialog")).getByRole("button", { name: "Merge tags" }),
     );
+    // The chooser refuses to open while the write is busy, so wait for the
+    // operation's own completion message before opening it.
+    expect(
+      await screen.findByText("Merged “Gravel” into “Road” on 1 route."),
+    ).toBeInTheDocument();
 
     await expandTagFilters(user);
     await waitFor(() => {
@@ -555,6 +560,11 @@ describe("RouteLibrary — global tag management, write/live-query orderings", (
     await chooseTag(user, "Gravel (1 route)");
     await user.type(within(getManager()).getByLabelText("New name"), "Trail");
     await user.click(within(getManager()).getByRole("button", { name: "Rename tag" }));
+    // The chooser refuses to open while the write is busy, so wait for the
+    // operation's own completion message before opening it.
+    expect(
+      await screen.findByText("Renamed “Gravel” to “Trail” on 1 route."),
+    ).toBeInTheDocument();
 
     await expandTagFilters(user);
     await waitFor(() => {
@@ -663,6 +673,11 @@ describe("RouteLibrary — global tag management, failures and the one-at-a-time
     ).toHaveFocus();
 
     await user.click(within(getManager()).getByRole("button", { name: "Rename tag" }));
+    // The chooser refuses to open while the write is busy, so wait for the
+    // operation's own completion message before opening it.
+    expect(
+      await screen.findByText("Renamed “Gravel” to “Trail” on 1 route."),
+    ).toBeInTheDocument();
     await expandTagFilters(user);
     await waitFor(() => {
       expect(getTagFilterButton("Trail")).toHaveAttribute("aria-pressed", "true");
