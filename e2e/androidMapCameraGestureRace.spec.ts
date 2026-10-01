@@ -379,13 +379,16 @@ async function recoverViaOnlineEvent(
 /** Item 94 follow-up v2: attempts recovery via `trigger` WITHOUT ever
  * calling styleController.succeedStyle() first, so the retry's own
  * attempt to reach the real remote style genuinely fails again — the
- * "sustained offline" reproduction. Proves, in order: (1) the fallback
- * genuinely unmounts, synchronously with the triggering action, well
- * before its own remote-style request could possibly resolve — a stale
- * leftover banner could never satisfy this; (2) a genuinely NEW
- * remote-style request was attempted and failed (styleController's own
- * failedStyleRequestCount, a real network-level proof, not DOM state);
- * (3) a fresh fallback generation subsequently completed and its camera
+ * "sustained offline" reproduction. Proves, in order: (1) the original
+ * fallback banner node is removed — observed by that element's own
+ * identity, not by the locator, which also matches the replacement banner
+ * the next fallback generation renders, so the original's brief absence
+ * can come and go between two locator polls (CI run 36852150376, 1
+ * October 2026); a stale leftover banner can never satisfy this; (2) a
+ * genuinely NEW remote-style request was attempted and failed
+ * (styleController's own failedStyleRequestCount, a real network-level
+ * proof, not DOM state); (3) a fresh fallback generation subsequently
+ * completed — its banner visible and the map ready — and its camera
  * genuinely settled. Does NOT call succeedStyle() — the style endpoint
  * stays unavailable throughout, matching the field report's "press Retry
  * map imagery" (or, for the online-triggered variant, "connectivity
@@ -398,13 +401,26 @@ async function attemptFailingRecoveryToFallback(
 ): Promise<void> {
   const failedBefore = styleController.failedStyleRequestCount();
   const banner = page.getByTestId("map-fallback-banner");
-  await trigger();
-  await expect(banner).not.toBeAttached({ timeout: 15_000 });
-  await expect
-    .poll(() => styleController.failedStyleRequestCount())
-    .toBeGreaterThan(failedBefore);
-  await expect(banner).toBeVisible({ timeout: 15_000 });
-  await waitForCameraToSettle(mapContainer);
+  await expect(banner).toBeAttached();
+  const original = await banner.elementHandle();
+  if (!original) throw new Error("expected the original fallback banner");
+  try {
+    await trigger();
+    await expect
+      .poll(() => original.evaluate((el) => el.isConnected), { timeout: 15_000 })
+      .toBe(false);
+    await expect
+      .poll(() => styleController.failedStyleRequestCount())
+      .toBeGreaterThan(failedBefore);
+    // The replacement banner, from the next fallback generation.
+    await expect(banner).toBeVisible({ timeout: 15_000 });
+    await expect(mapContainer).toHaveAttribute("data-map-ready", "true", {
+      timeout: 15_000,
+    });
+    await waitForCameraToSettle(mapContainer);
+  } finally {
+    await original.dispose();
+  }
 }
 
 // --- Planning: case 1 — newly placed waypoint, offline from the start ---

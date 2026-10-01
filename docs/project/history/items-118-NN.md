@@ -843,3 +843,28 @@ _Category: Planning presentation_
   - **No physical-Android result** is claimed.
 - **Riding's pre-ride overview keeps 72 px.** It was not re-measured here.
 - **The Locate-failed message now appears below the map,** some distance from the Locate me button at the top right. It is in view with the map in view, but the device check is the evidence that it is noticed.
+
+### Deployment (1 October 2026)
+
+**Deployment of `0.4.50` was blocked once by a test defect, recorded here rather than folded in silently.**
+
+- **What failed.** Commit `47f8c40`'s CI run [36852150376](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/36852150376) failed in E2E shard 2, and Deploy was skipped. The failing test was `androidMapCameraGestureRace.spec.ts`'s "Planning (cached-location-framed, two separated waypoints): small pinch survives a retry whose own remote-style attempt also fails…". It failed in its `attemptFailingRecoveryToFallback` helper, at `expect(banner).not.toBeAttached()`.
+- **What the retained trace showed.**
+  - The retry's style request was attempted and aborted, and the original fallback banner went.
+  - A **replacement** banner from the next fallback generation appeared before the locator assertion observed the absence. The `map-fallback-banner` locator matches that replacement too, so the brief gap was missed.
+  - At failure the map was ready, with the post-pinch camera.
+- **Not attributed to item 128.** The helper and MapView's recovery code were unchanged by item 128, and the failure is not attributed to C6.
+- **The repair.** The helper captures the original banner's element handle before the trigger, and then requires, in order:
+  - that node's `isConnected` to become false, which stays observable after the replacement appears;
+  - a new failed style request;
+  - the replacement visible;
+  - `data-map-ready="true"`;
+  - the existing camera settle.
+
+  Every caller's camera assertions, gestures, triggers and later genuine recovery are unchanged. The helper's comment no longer claims the unmount is synchronous with the trigger, which the test never established.
+
+- **No local reproduction is claimed.**
+  - Shard 2 passed 332/332 at two workers before the repair.
+  - After it, the whole spec passed 14/14 at two workers, and its three helper users passed 60/60 at `--repeat-each=20`.
+  - An ineffective trigger fails at the new identity check after its 15s bound (`Expected: false`, `Received: true`).
+- **A separate failure, out of scope here.** A 36-worker local run of shard 2 also failed item 123's double-tap zoom test once; that test has known load sensitivity.
