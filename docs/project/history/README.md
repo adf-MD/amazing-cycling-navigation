@@ -19,7 +19,7 @@ Thirteen files, each covering a contiguous range of item numbers in ascending or
 - [`items-104-109.md`](items-104-109.md) — continues the 100– range and closes at item 109; holds items 104, 105, 106, 107, 108 and 109, with 104 having been implemented ahead of items 100–103 (see each file's own intro)
 - [`items-110-113.md`](items-110-113.md) — continues the 100– range; holds items 110, 111, 112 and 113, all completed ahead of items 102 and 103
 - [`items-114-117.md`](items-114-117.md) — continues the 100– range; holds items 114, 115, 116 and 117, with item 114 completed last (`0.4.45`) and filed first
-- [`items-118-NN.md`](items-118-NN.md) — continues the 100– range; holds items 118, 119, 121 and 123, completed ahead of items 102, 103 and 120, item 128, completed after item 102, and item 131, completed ahead of item 124's remaining slices
+- [`items-118-NN.md`](items-118-NN.md) — continues the 100– range; holds items 118, 119, 121 and 123, completed ahead of items 102, 103 and 120, item 128, completed after item 102, and item 131, completed ahead of item 124's remaining slices, and item 133, a CI-only change
 
 When a new item is completed, append it to whichever of these files its number naturally continues (in ascending numeric order). If that would push a file past roughly 150,000 characters, start a new range file (e.g. `items-74-NN.md`) instead of letting an existing file grow unbounded, and add it to the list above.
 

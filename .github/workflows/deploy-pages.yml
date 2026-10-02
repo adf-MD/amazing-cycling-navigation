@@ -76,19 +76,22 @@ jobs:
         with:
           path: dist
 
-  # Two shards rather than a longer timeout: backlog item 116 kept the
-  # 20-minute limit and asked for the suite to be optimised or sharded if it
-  # ever approached it. fail-fast is off so that one shard failing never
-  # cancels the other shard's run and failure evidence. Deploy's
-  # `needs: e2e` waits for, and requires success from, both shards.
+  # Shards rather than a longer timeout: backlog item 116 kept the 20-minute
+  # limit and asked for the suite to be optimised or sharded if it ever
+  # approached it. Two shards since bac3553; four since item 133, when the
+  # longer shard's job reached 15 min 56 s. The denominator appears in the
+  # job name, the matrix and the --shard argument, and all three must agree.
+  # fail-fast is off so that one shard failing never cancels another shard's
+  # run and failure evidence. Deploy's `needs: e2e` waits for, and requires
+  # success from, every shard.
   e2e:
-    name: End-to-end tests (shard ${{ matrix.shard }} of 2)
+    name: End-to-end tests (shard ${{ matrix.shard }} of 4)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     container:
       image: mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48
     steps:
@@ -140,7 +143,7 @@ jobs:
 
       - name: End-to-end test suite
         id: e2e
-        run: npm run e2e -- --shard=${{ matrix.shard }}/2
+        run: npm run e2e -- --shard=${{ matrix.shard }}/4
 
       # Backlog item 116. Playwright writes a trace, a screenshot and an
       # error context for a failed test only (see playwright.config.ts), and

@@ -1,6 +1,6 @@
 # Completed backlog items 118–
 
-This file continues the 100– numeric range and opens at item 118. It was started when item 118 was completed: adding it to what was then `items-110-NN.md` would have taken that file to 162,614 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md), so that file was closed at item 117 and renamed [`items-110-113.md`](items-110-113.md) instead of growing unbounded. No existing entry was moved, shortened or rewritten by that split — only the filename changed, plus that file's own intro paragraph and the inbound links that pointed at it. Stable item numbers never change regardless of which file their text lives in: item 118 was completed ahead of items 102, 103, 113, 114 and 119, all of which remain pending, so a number is an identifier and never a schedule. Item 121 followed, completed in `0.4.44` ahead of items 102, 103, 114, 119 and 120, which remain pending. Item 123 followed, completed in `0.4.46` ahead of items 102, 103, 119 and 120. Item 119 was completed next, in `0.4.47`, and is filed between items 118 and 121 in numeric order; items 102, 103 and 120 remain pending. Item 128 followed, completed in `0.4.50` after item 102; items 103, 120, 122 and 124 remain pending.
+This file continues the 100– numeric range and opens at item 118. It was started when item 118 was completed: adding it to what was then `items-110-NN.md` would have taken that file to 162,614 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md), so that file was closed at item 117 and renamed [`items-110-113.md`](items-110-113.md) instead of growing unbounded. No existing entry was moved, shortened or rewritten by that split — only the filename changed, plus that file's own intro paragraph and the inbound links that pointed at it. Stable item numbers never change regardless of which file their text lives in: item 118 was completed ahead of items 102, 103, 113, 114 and 119, all of which remain pending, so a number is an identifier and never a schedule. Item 121 followed, completed in `0.4.44` ahead of items 102, 103, 114, 119 and 120, which remain pending. Item 123 followed, completed in `0.4.46` ahead of items 102, 103, 119 and 120. Item 119 was completed next, in `0.4.47`, and is filed between items 118 and 121 in numeric order; items 102, 103 and 120 remain pending. Item 128 followed, completed in `0.4.50` after item 102; items 103, 120, 122 and 124 remain pending. Item 131 followed, completed in `0.4.53` ahead of item 124's remaining slices, and then item 133, a CI-only change with no version bump.
 
 See [`README.md`](README.md) for the full history index, [`../backlog.md`](../backlog.md) for pending specifications, and [`../current-status.md`](../current-status.md) for the manual acceptance ledger.
 
@@ -944,3 +944,71 @@ _Category: Riding lifecycle_
 ### Installed-iPhone acceptance — reported 2 October 2026
 
 Accepted on `0.4.53`, build `64bde8d`, in German and English: all five device checks passed. The report, and exactly what it does and does not assert, are recorded only in [`current-status.md`](../current-status.md).
+
+---
+
+<a id="item-133"></a>
+
+## Item 133 — Four end-to-end CI shards instead of two — done
+
+_Category: CI infrastructure_
+
+**Status when recorded (2 October 2026): configured for four shards; CI verification pending.** The workflow change and its local verification are below. The first four-shard CI run had not happened when this record was written, so its outcome, each shard's test-step and whole-job duration against run 37048604312, and the deployed build are not recorded here.
+
+133. **Four end-to-end CI shards instead of two — done**
+     - Origin: the rider's decision, 2 October 2026, after item 124's D-06 repair (`0.4.54`) deployed. **Scheduled first** in the approved execution order (root [`CLAUDE.md`](../../../CLAUDE.md)), ahead of [item 132](../backlog.md#item-132). **CI infrastructure only:** no application behaviour, test, assertion or version change.
+     - **Why now.** The latest successful run, [37048604312](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37048604312) (`041da6c`, `0.4.54`), took **14 min 48 s** (888 s) in its End-to-end test step and **15 min 56 s** (956 s) for the whole shard job, both in shard 2, against the E2E job's `timeout-minutes: 20`. Shard 1 took 603 s and 678 s. The suite was first split into two shards on 29 September 2026 (`bac3553`), when a single job reached that limit; [item 116](items-114-117.md#item-116) had kept the limit and asked for the suite to be optimised or sharded rather than given a bigger budget.
+     - **Present facts, read from `.github/workflows/deploy-pages.yml` and `playwright.config.ts` at `041da6c`:**
+       - the `e2e` job is a matrix `shard: [1, 2]`, named `End-to-end tests (shard N of 2)`, running `npm run e2e -- --shard=N/2` in the pinned Playwright container, with `fail-fast: false` and `timeout-minutes: 20`;
+       - each shard uploads its failure evidence as `playwright-failures-<run id>-<attempt>-shard-<N>`;
+       - Deploy's `needs: [verify, e2e]` requires Verify and build and every shard;
+       - Playwright runs `fullyParallel` with no `workers` or `retries` setting, so each runner keeps Playwright's default worker count and no retries;
+       - `playwright test --list` selects **792 tests** — 622 `chromium`, 124 `webkit-smoke`, 46 `android-chrome` — and `--shard=N/4` gives **198 per shard**. Shard 4 holds all the `webkit-smoke` and `android-chrome` tests plus 28 `chromium` tests; shards 1–3 are `chromium` only. Sharding divides by test count, so equal counts do not guarantee equal durations.
+     - **Approved change:** four shards, through Playwright's existing `--shard` mechanism: the matrix, the shard denominator, the job names, and the current documentation that describes two shards.
+     - **Must stay unchanged:** the 20-minute job limit; per-runner worker behaviour; every browser project and test; retries; failure traces, screenshots and uniquely named per-shard artefacts; `fail-fast: false`; Deploy requiring Verify and build and every E2E shard; the pinned toolchain, container and dependencies; the application version.
+     - **Not approved:** test-flake repairs, assertion changes, a new reporting system, a timeout change, or any part of item 132.
+     - **Evidence required:**
+       - the unsharded test inventory equal to the combined inventories of shards 1/4 to 4/4, with every test/project combination exactly once;
+       - workflow and formatting validation;
+       - a CI run of the commit in which Verify and build and all four shards pass and Deploy succeeds, the deployed version still `0.4.54` and the build ID that commit's;
+       - each shard's test-step and whole-job duration, compared with run 37048604312.
+
+       Timings from four shards competing on one local machine are not evidence of GitHub runner performance. **No halving is promised**: if the longest shard stays close to the limit, its measured bottleneck is explained before any further change is proposed.
+
+     - **No installed-iPhone check:** nothing on the device changes.
+
+### Implementation account (2 October 2026)
+
+- **The change**, in `.github/workflows/deploy-pages.yml` only: the `e2e` matrix becomes `shard: [1, 2, 3, 4]`, the job name `End-to-end tests (shard N of 4)`, and the test step `npm run e2e -- --shard=N/4`. The comment above the job now records two shards since `bac3553`, four since this item, and that the denominator appears in three places that must agree.
+- **Unchanged:**
+  - the job's `timeout-minutes: 20` and `fail-fast: false`;
+  - the pinned container image and digest, the toolchain and `expected_playwright` checks, `npm ci` and the build;
+  - the failure-evidence upload, whose name `playwright-failures-<run id>-<attempt>-shard-<N>` is already unique per shard;
+  - `playwright.config.ts`, so each runner keeps the default worker count, no retries, CI-only traces, failure screenshots and every project;
+  - the Verify and build and Deploy jobs. Deploy's `needs: [verify, e2e]` requires every matrix shard;
+  - the application version, `0.4.54`.
+- **Other consumers checked.** `main`'s branch protection requires no status checks, and its ruleset only blocks deletion and non-fast-forward pushes, so the renamed jobs break nothing on GitHub. `.github/dependabot.yml` names no job, and nothing else in the repository reads the job names or the shard count.
+- **Not changed:** no test, assertion, timeout, retry or reporter; no flake repair; nothing of item 132.
+
+### Evidence — local, before the push
+
+- **Test inventory.** `CI=1 playwright test --list --reporter=json`, unsharded and for each of `--shard=1/4` to `4/4`, each test keyed by project, file, line, column and title path:
+  - 792 tests in 77 files unsharded — 622 `chromium`, 124 `webkit-smoke`, 46 `android-chrome`;
+  - 198 tests in each shard; shards 1–3 are `chromium` only, and shard 4 holds all 124 `webkit-smoke` and 46 `android-chrome` tests plus 28 `chromium`;
+  - the four shards together equal the unsharded set: none missing, none extra, none in two shards and none twice within a shard. The two-shard split (396 + 396) matches in the same way, as a control.
+  - **The checker's own controls fail as they must:** shards 1–3 alone report 198 missing, shard 1 counted twice reports 198 duplicated, and one test removed from shard 4 reports 1 missing.
+- **Workflow structure**, parsed with PyYAML and compared with the parent commit:
+  - the matrix is `[1, 2, 3, 4]`, and the denominators in the job name and in `--shard` equal its length;
+  - `fail-fast` is false and the limit is 20 minutes;
+  - the container, the upload step, the Verify and build and Deploy jobs, the triggers and the permissions are identical, and nothing else in the `e2e` job differs.
+
+  Three controls each fail the check: a `/2` denominator, a three-entry matrix and `fail-fast: true`. `actionlint` is not available here and was not run.
+
+- **Formatting:** `npm run format:check` and `git diff --check`.
+- **No local end-to-end run** was made for this workflow-only change, and no local four-shard timings were taken: four shards competing on one machine say nothing about GitHub's runners.
+
+### Limitations, stated plainly
+
+- **Equal counts, not equal durations.** Playwright divides `fullyParallel` tests by count, so shard 4 carries every `webkit-smoke` and `android-chrome` test. Whether that makes it the longest shard, and how much headroom four shards leave under the 20-minute limit, is for the CI timings to show. No halving of runtime is claimed.
+- **The counts will change** as tests are added. They are recorded here as measured on 2 October 2026, not as a standing rule.
+- **Four runners per push instead of two.** Each shard repeats container start-up, `npm ci` and the build — about 70 s per shard in run 37048604312.
