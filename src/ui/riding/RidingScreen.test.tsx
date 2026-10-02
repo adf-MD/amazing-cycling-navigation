@@ -14,7 +14,7 @@ import {
 import * as rideStateRepository from "../../storage/rideStateRepository.ts";
 import * as planningPreferencesRepository from "../../storage/planningPreferencesRepository.ts";
 import * as confirmationRevealScroll from "../shared/confirmationRevealScroll.ts";
-import * as guardModule from "./editCopyInteractionGuard.ts";
+import * as guardModule from "../shared/operationInteractionGuard.ts";
 import type {
   GeolocationError,
   GeolocationFix,
@@ -9049,8 +9049,8 @@ describe("RidingScreen", () => {
       it("detaches every interaction guard it arms, however the attempt ends", async () => {
         const user = userEvent.setup();
         const armed: { detach: ReturnType<typeof vi.fn> }[] = [];
-        const arm = guardModule.armEditCopyInteractionGuard;
-        vi.spyOn(guardModule, "armEditCopyInteractionGuard").mockImplementation(
+        const arm = guardModule.armOperationInteractionGuard;
+        vi.spyOn(guardModule, "armOperationInteractionGuard").mockImplementation(
           (getGroup) => {
             const guard = arm(getGroup);
             const detach = vi.fn(() => {
@@ -9081,7 +9081,7 @@ describe("RidingScreen", () => {
         });
         // A write still in flight when the screen unmounts.
         vi.restoreAllMocks();
-        vi.spyOn(guardModule, "armEditCopyInteractionGuard").mockImplementation(
+        vi.spyOn(guardModule, "armOperationInteractionGuard").mockImplementation(
           (getGroup) => {
             const guard = arm(getGroup);
             const detach = vi.fn(() => {

@@ -78,6 +78,10 @@ import { CrosshairIcon } from "../shared/CrosshairIcon.tsx";
 import { NorthArrowIcon } from "../shared/NorthArrowIcon.tsx";
 import { ZoomIcon } from "../shared/ZoomIcon.tsx";
 import { downloadTextFile } from "../shared/downloadTextFile.ts";
+import {
+  armOperationInteractionGuard,
+  type OperationInteractionGuard,
+} from "../shared/operationInteractionGuard.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
 import { describeProviderKeyStatus } from "../settings/providerKeyStatus.ts";
 import { canSaveOrExportPlan } from "./canSaveOrExportPlan.ts";
@@ -975,6 +979,12 @@ export function PlanningScreen({
   const clearDraftTriggerRef = useRef<HTMLButtonElement>(null);
   const clearDraftConfirmRef = useRef<HTMLDivElement>(null);
   const clearDraftActionsRef = useRef<HTMLDivElement>(null);
+  // The button's own row — the button and, after a failure, its message —
+  // which a failure reveals (backlog item 124, D-01).
+  const clearDraftRowRef = useRef<HTMLDivElement>(null);
+  // The confirmation's title, focusable by script only, where focus waits
+  // while a confirmed clear runs (D-01, as D-06 does for Edit copy).
+  const clearDraftTitleRef = useRef<HTMLHeadingElement>(null);
   // Where focus waits while the Clear-draft slot swaps between its button
   // and its confirmation (backlog item 124): the routing disclosure's
   // <summary>, directly before that slot, natively focusable and mounted
@@ -1719,57 +1729,41 @@ export function PlanningScreen({
       });
   };
 
-  // Restores focus to the Clear-draft trigger once it has genuinely
-  // remounted AND become enabled. Backlog item 49 replaced the trigger's
-  // always-mounted row with a ternary that swaps it for the confirmation
-  // in place, so the trigger now genuinely unmounts while the dialog is
-  // open — an immediate .focus() call inside handleClearDraftCancel or
-  // the confirm-failure .catch() block below would target a ref that's
-  // still null/stale at that exact synchronous point. This effect
-  // re-checks the ref's live readiness on every render (no dependency
-  // array), rather than consuming the request unconditionally on the
-  // first post-set commit, so it is correct regardless of whether the
-  // triggering state change lands in one commit (Cancel/Escape, a single
-  // synchronous close) or two (the async .catch()/.finally() pair below,
-  // which in principle need not land in the same commit).
+  // Restores focus to the Clear-draft trigger after Cancel/Escape once it
+  // has genuinely remounted AND become enabled. Backlog item 49 replaced
+  // the trigger's always-mounted row with a ternary that swaps it for the
+  // confirmation in place, so the trigger genuinely unmounts while the
+  // dialog is open — an immediate .focus() call inside
+  // handleClearDraftCancel would target a ref that's still null/stale at
+  // that exact synchronous point. This effect re-checks the ref's live
+  // readiness on every render (no dependency array), rather than consuming
+  // the request unconditionally on the first post-set commit.
   //
-  // The two requests differ (backlog item 124):
+  // Cancel/Escape waits with focus parked on the routing disclosure's
+  // <summary> (backlog item 124). In the first layout pass that remounts
+  // the trigger — the close commit itself — it moves the page only as far
+  // as reveals that button below the sticky header and above the safe
+  // area, and not at all when it is already visible, so the rider's
+  // current position (including any scrolling they did while the
+  // confirmation was open) is kept. That correction is consumed there and
+  // then, exactly once, even if focus itself must wait for a disabled
+  // button (a Save still in flight): a later render can never scroll. The
+  // focus that follows uses preventScroll, so it can never compete with
+  // that correction either. Both are dropped outright the moment focus has
+  // left the park, so nothing here ever takes focus or moves the page
+  // after the rider has moved on.
   //
-  // - "cancel" (Cancel/Escape) waits with focus parked on the routing
-  //   disclosure's <summary>. In the first layout pass that remounts the
-  //   trigger — the close commit itself — it moves the page only as far
-  //   as reveals that button below the sticky header and above the safe
-  //   area, and not at all when it is already visible, so the rider's
-  //   current position (including any scrolling they did while the
-  //   confirmation was open) is kept. That correction is consumed there
-  //   and then, exactly once, even if focus itself must wait for a
-  //   disabled button (a Save still in flight): a later render can never
-  //   scroll. The focus that follows uses preventScroll, so it can never
-  //   compete with that correction either. Both are dropped outright the
-  //   moment focus has left the park, so nothing here ever takes focus or
-  //   moves the page after the rider has moved on.
-  // - "failure" (the .catch() below) keeps its plain focus() once the
-  //   trigger is enabled, with no park and no reveal; the only difference
-  //   is that it now runs here, before paint, rather than in a passive
-  //   effect after it. A reveal policy for the failure message is a
-  //   separate question item 124 has not settled.
+  // A failure's focus return is decided separately, by the effect below.
   //
-  // A layout effect, so the "cancel" correction lands before the remounted
-  // trigger is painted rather than as a visible jump one frame later.
-  const pendingClearDraftFocusRef = useRef<"cancel" | "failure" | null>(null);
+  // A layout effect, so the correction lands before the remounted trigger
+  // is painted rather than as a visible jump one frame later.
+  const pendingClearDraftFocusRef = useRef<"cancel" | null>(null);
   const pendingClearDraftCancelRevealRef = useRef(false);
 
   useLayoutEffect(() => {
-    const request = pendingClearDraftFocusRef.current;
-    if (request === null) return;
+    if (pendingClearDraftFocusRef.current === null) return;
     const trigger = clearDraftTriggerRef.current;
     if (!trigger) return;
-    if (request === "failure") {
-      if (trigger.disabled) return;
-      pendingClearDraftFocusRef.current = null;
-      trigger.focus();
-      return;
-    }
     if (document.activeElement !== clearDraftFocusParkRef.current) {
       pendingClearDraftFocusRef.current = null;
       pendingClearDraftCancelRevealRef.current = false;
@@ -1786,6 +1780,67 @@ export function PlanningScreen({
     pendingClearDraftFocusRef.current = null;
     trigger.focus({ preventScroll: true });
   });
+
+  // A confirmed Clear draft attempt (backlog item 124, D-01, the rider's
+  // decision of 2 October 2026): each attempt arms its own interaction
+  // guard (operationInteractionGuard.ts), so an old attempt's outcome can
+  // never act on a later interaction. The first ref holds the guard of the
+  // attempt still running; the second, the guard of a failed attempt whose
+  // focus return the effect below has not decided yet. Both are detached
+  // once decided, when the attempt ends, and when this screen unmounts.
+  const clearDraftAttemptGuardRef = useRef<OperationInteractionGuard | null>(null);
+  const pendingClearDraftFailureGuardRef = useRef<OperationInteractionGuard | null>(null);
+
+  // Decides a Clear draft failure's focus return, re-checked on every
+  // render and in this order:
+  // 1. the trigger is not yet mounted and enabled: wait;
+  // 2. the rider has moved on — the attempt's guard saw a tap or click
+  //    outside the Clear draft area, a key other than Escape, a wheel or a
+  //    touch scroll, or focus is now on anything but <body> (where the
+  //    disabled and then removed confirmation leaves it) or the trigger:
+  //    leave focus and the page exactly where they are. The message stays
+  //    in the trigger's row, with its role="alert";
+  // 3. otherwise focus the trigger without the browser's own focus scroll,
+  //    which would centre it, then reveal the button and its message by the
+  //    minimum below the sticky header — the button alone, its message
+  //    reachable by scrolling, when both cannot fit.
+  // The guard is detached whichever way it is decided. A layout effect, so
+  // the reveal lands before the re-enabled trigger is painted.
+  useLayoutEffect(() => {
+    const guard = pendingClearDraftFailureGuardRef.current;
+    if (guard === null) return;
+    const trigger = clearDraftTriggerRef.current;
+    if (!trigger || trigger.disabled) return;
+    pendingClearDraftFailureGuardRef.current = null;
+    const focused = document.activeElement;
+    const isStillWaiting =
+      guard.armed &&
+      (focused === null || focused === document.body || focused === trigger);
+    guard.detach();
+    if (!isStillWaiting) return;
+    trigger.focus({ preventScroll: true });
+    const row = clearDraftRowRef.current;
+    if (row) {
+      applyConfirmationReveal(
+        row,
+        stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+        trigger,
+      );
+    }
+  });
+
+  // Detaches any Clear draft guard still listening when this screen
+  // unmounts (leaving Planning); saveGenerationRef's own unmount bump
+  // already drops the attempt's late result. Strict Mode's extra cleanup on
+  // mount runs before any attempt exists.
+  useLayoutEffect(() => {
+    const attemptGuardRef = clearDraftAttemptGuardRef;
+    const pendingGuardRef = pendingClearDraftFailureGuardRef;
+    return () => {
+      attemptGuardRef.current?.detach();
+      pendingGuardRef.current?.detach();
+    };
+  }, []);
 
   /**
    * Reveals the Clear-draft confirmation when it opens (backlog item 124),
@@ -1853,6 +1908,21 @@ export function PlanningScreen({
   const handleClearDraftConfirm = () => {
     if (isSavingRef.current || isClearingRef.current) return;
     isClearingRef.current = true;
+
+    // Backlog item 124, D-01. Focus waits on the confirmation's own title
+    // while both actions are disabled, so it stays inside the dialog —
+    // Chromium drops a focused button that becomes disabled to <body> —
+    // and a refused Escape still reaches the dialog, counting as waiting
+    // rather than moving on. Then this attempt's guard is armed over the
+    // Clear draft area: the confirmation now, the trigger's row once a
+    // failure has swapped it back.
+    pendingClearDraftFailureGuardRef.current?.detach();
+    pendingClearDraftFailureGuardRef.current = null;
+    clearDraftTitleRef.current?.focus({ preventScroll: true });
+    const guard = armOperationInteractionGuard(
+      () => clearDraftConfirmRef.current ?? clearDraftRowRef.current,
+    );
+    clearDraftAttemptGuardRef.current = guard;
 
     window.clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = undefined;
@@ -1924,11 +1994,20 @@ export function PlanningScreen({
         if (saveGenerationRef.current !== attemptGeneration) return;
         logError("planning-clear-draft", error);
         setClearDraftError(t("planning.clearDraft.failed"));
-        pendingClearDraftFocusRef.current = "failure";
+        // Never focused from here: the trigger is still unmounted and then
+        // disabled, and whether the rider is still waiting is decided once
+        // it is enabled again.
+        pendingClearDraftFailureGuardRef.current = guard;
         setIsClearDraftConfirmOpen(false);
       })
       .finally(() => {
         isClearingRef.current = false;
+        if (clearDraftAttemptGuardRef.current === guard) {
+          clearDraftAttemptGuardRef.current = null;
+        }
+        // A failure's guard stays attached until its focus return is
+        // decided.
+        if (pendingClearDraftFailureGuardRef.current !== guard) guard.detach();
         if (saveGenerationRef.current === attemptGeneration) {
           setIsClearing(false);
         }
@@ -2399,6 +2478,7 @@ export function PlanningScreen({
             open={isClearDraftConfirmOpen}
             containerRef={clearDraftConfirmRef}
             actionsRef={clearDraftActionsRef}
+            titleRef={clearDraftTitleRef}
             focusCancelWithoutScroll
             title={t("planning.clearDraft.confirmTitle")}
             message={t("planning.clearDraft.confirmMessage")}
@@ -2412,7 +2492,7 @@ export function PlanningScreen({
             onCancel={handleClearDraftCancel}
           />
         ) : (
-          <div className="row">
+          <div className="row" ref={clearDraftRowRef}>
             <button
               type="button"
               className="btn-danger"

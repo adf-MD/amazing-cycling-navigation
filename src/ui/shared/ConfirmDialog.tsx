@@ -67,11 +67,12 @@ export interface ConfirmDialogProps {
    * by script only (`tabIndex={-1}`: never in the tab order, never
    * activated) — the precedent of Planning's save heading and Settings'
    * OpenRouteService heading. For a caller whose action keeps running after
-   * Confirm (backlog item 124's D-06, Edit copy): focus waits here while
-   * both actions are disabled, so it stays inside the dialog — Chromium
-   * drops a focused button that becomes disabled to `<body>` — and Escape
-   * still reaches the dialog's own handler, which the caller refuses while
-   * busy. Undefined for every other caller, whose markup is unchanged. */
+   * Confirm (backlog item 124's D-06, Edit copy, and D-01, Clear draft):
+   * focus waits here while both actions are disabled, so it stays inside
+   * the dialog — Chromium drops a focused button that becomes disabled to
+   * `<body>` — and Escape still reaches the dialog's own handler, which the
+   * caller refuses while busy. Undefined for every other caller, whose
+   * markup is unchanged. */
   titleRef?: RefObject<HTMLHeadingElement | null>;
 }
 

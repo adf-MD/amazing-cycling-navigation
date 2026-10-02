@@ -83,9 +83,9 @@ import { GradientSegmentDetailsPanel } from "../shared/GradientSegmentDetailsPan
 import { RouteFeatureDetailsPanel } from "../shared/RouteFeatureDetailsPanel.tsx";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 import {
-  armEditCopyInteractionGuard,
-  type EditCopyInteractionGuard,
-} from "./editCopyInteractionGuard.ts";
+  armOperationInteractionGuard,
+  type OperationInteractionGuard,
+} from "../shared/operationInteractionGuard.ts";
 import { RidingClimbCue } from "./RidingClimbCue.tsx";
 import { RidingClimbPreviewPanel } from "./RidingClimbPreviewPanel.tsx";
 import { RidingClimbProgressPanel } from "./RidingClimbProgressPanel.tsx";
@@ -222,7 +222,7 @@ interface EditCopyAttempt {
   /** editCopyContextRef's value when the attempt began; the rider has left
    * the context it was started in once the two differ. */
   readonly context: number;
-  readonly guard: EditCopyInteractionGuard;
+  readonly guard: OperationInteractionGuard;
 }
 
 const DEFAULT_CAMERA_STATE: StoredCameraState = {
@@ -1132,7 +1132,7 @@ export function RidingScreen({
   const beginEditCopyAttempt = (): EditCopyAttempt => {
     const attempt: EditCopyAttempt = {
       context: editCopyContextRef.current,
-      guard: armEditCopyInteractionGuard(() => editCopyGroupRef.current),
+      guard: armOperationInteractionGuard(() => editCopyGroupRef.current),
     };
     editCopyAttemptRef.current = attempt;
     return attempt;

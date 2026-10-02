@@ -20,6 +20,7 @@ import type { RoutingProvider } from "../../routing/provider.ts";
 import { db } from "../../storage/db.ts";
 import type { PlanningDraftContent } from "../../storage/mapping.ts";
 import { saveProviderKey } from "../../storage/providerKeyRepository.ts";
+import * as guardModule from "../shared/operationInteractionGuard.ts";
 
 vi.mock("../../storage/planningDraftRepository.ts", () => ({
   getDraft: vi.fn(),
@@ -846,6 +847,9 @@ describe("PlanningScreen Clear draft reveal and focus return (backlog item 124)"
     inset: { top: number; bottom: number };
     actions: { top: number; bottom: number };
     trigger: { top: number; bottom: number };
+    /** The trigger's own row: the button and, after a failure, its message
+     * (D-01). */
+    row: { top: number; bottom: number };
   }
 
   /** Mutable, so a test can change what the next measurement sees (a
@@ -859,6 +863,7 @@ describe("PlanningScreen Clear draft reveal and focus return (backlog item 124)"
       inset: { top: 200, bottom: 500 },
       actions: { top: 440, bottom: 484 },
       trigger: { top: 300, bottom: 344 },
+      row: { top: 300, bottom: 404 },
       ...initial,
     };
     Element.prototype.getBoundingClientRect = function (this: Element) {
@@ -878,6 +883,16 @@ describe("PlanningScreen Clear draft reveal and focus return (backlog item 124)"
       ) {
         return rect(geometry.trigger.top, geometry.trigger.bottom);
       }
+      // The specific .row holding the trigger; Planning has others.
+      if (
+        this.classList.contains("row") &&
+        Array.from(this.children).some(
+          (child) =>
+            child.tagName === "BUTTON" && child.textContent.trim() === "Clear draft",
+        )
+      ) {
+        return rect(geometry.row.top, geometry.row.bottom);
+      }
       return rect(0, 0);
     };
     return geometry;
@@ -893,7 +908,11 @@ describe("PlanningScreen Clear draft reveal and focus return (backlog item 124)"
       options?: FocusOptions,
     ) {
       const name =
-        this.tagName === "SUMMARY" ? "summary" : this.textContent.trim().slice(0, 12);
+        this.tagName === "SUMMARY"
+          ? "summary"
+          : this.tagName === "INPUT"
+            ? `input#${this.id}`
+            : this.textContent.trim().slice(0, 12);
       log.push(
         `focus:${name}:${options?.preventScroll === true ? "noscroll" : "scroll"}`,
       );
@@ -1218,22 +1237,344 @@ describe("PlanningScreen Clear draft reveal and focus return (backlog item 124)"
     expect(scrolls(log)).toEqual([]);
   });
 
-  it("leaves the failure path's focus return exactly as before: a plain focus, and no reveal", async () => {
-    const map = createMockMapFactory();
-    await renderWithHeader(map);
-    mockedClearDraft.mockRejectedValueOnce(new Error("boom"));
-    const geometry = stubGeometry();
-    const log = captureLog();
+  describe("a failure (backlog item 124, D-01)", () => {
+    /** Confirms Clear draft with its storage call held, so the test decides
+     * when, and whether, it fails. */
+    function confirmHeld(): ControlledPromise<undefined> {
+      const pending = createControlledPromise<undefined>();
+      mockedClearDraft.mockReturnValueOnce(pending.promise);
+      fireEvent.click(clearDraftTriggerButton());
+      fireEvent.click(
+        within(screen.getByRole("dialog")).getByRole("button", { name: "Clear draft" }),
+      );
+      return pending;
+    }
 
-    fireEvent.click(clearDraftTriggerButton());
-    geometry.trigger = { top: 38, bottom: 82 };
-    log.length = 0;
-    fireEvent.click(
-      within(screen.getByRole("dialog")).getByRole("button", { name: "Clear draft" }),
+    async function fail(pending: ControlledPromise<undefined>): Promise<void> {
+      await act(async () => {
+        pending.reject(new Error("boom"));
+        await pending.promise.catch(() => undefined);
+      });
+      await waitUntil(() => screen.queryByRole("alert") !== null, "the failure alert");
+    }
+
+    function expectMessageInTheTriggerRow(): void {
+      const alert = screen.getByRole("alert");
+      expect(alert).toHaveTextContent(
+        "The draft could not be cleared on this device. Try again.",
+      );
+      expect(alert.parentElement).toBe(clearDraftTriggerButton().parentElement);
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    }
+
+    const triggerFocuses = (log: string[]) =>
+      log.filter((entry) => entry.startsWith("focus:Clear draft"));
+
+    /** Wraps every guard the screen arms, recording its detaches. */
+    function spyOnGuards(): { armed: number; detaches: number[] } {
+      const record = { armed: 0, detaches: [] as number[] };
+      const arm = guardModule.armOperationInteractionGuard;
+      vi.spyOn(guardModule, "armOperationInteractionGuard").mockImplementation(
+        (getArea) => {
+          const guard = arm(getArea);
+          const index = record.armed;
+          record.armed += 1;
+          record.detaches.push(0);
+          return {
+            get armed() {
+              return guard.armed;
+            },
+            detach: () => {
+              record.detaches[index] = (record.detaches[index] ?? 0) + 1;
+              guard.detach();
+            },
+          };
+        },
+      );
+      return record;
+    }
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("parks focus on the confirmation's title without scrolling while the clear runs, and still refuses Escape there", async () => {
+      const map = createMockMapFactory();
+      await renderWithHeader(map);
+      stubGeometry();
+      const log = captureLog();
+      const pending = confirmHeld();
+
+      const dialog = screen.getByRole("dialog");
+      expect(log).toContain("focus:Clear this d:noscroll");
+      expect(
+        within(dialog).getByRole("heading", { name: "Clear this draft?" }),
+      ).toHaveFocus();
+      expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+      expect(within(dialog).getByRole("button", { name: "Clearing…" })).toBeDisabled();
+
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      await fail(pending);
+      // The refused Escape was still this interaction.
+      expect(clearDraftTriggerButton()).toHaveFocus();
+    });
+
+    it("an immediate failure while the rider waits focuses Clear draft without scrolling, then reveals it and its message by the minimum", async () => {
+      const map = createMockMapFactory();
+      await renderWithHeader(map);
+      mockedClearDraft.mockRejectedValueOnce(new Error("boom"));
+      // The message ends 44px below the 760px band bottom.
+      const geometry = stubGeometry();
+      const log = captureLog();
+      fireEvent.click(clearDraftTriggerButton());
+      geometry.trigger = { top: 700, bottom: 744 };
+      geometry.row = { top: 700, bottom: 804 };
+      log.length = 0;
+
+      fireEvent.click(
+        within(screen.getByRole("dialog")).getByRole("button", { name: "Clear draft" }),
+      );
+      await waitUntil(() => screen.queryByRole("alert") !== null, "the failure alert");
+
+      expectMessageInTheTriggerRow();
+      expect(clearDraftTriggerButton()).toHaveFocus();
+      expect(log).toEqual([
+        "focus:Clear this d:noscroll",
+        "focus:Clear draft:noscroll",
+        "scrollBy:44:0:auto",
+      ]);
+    });
+
+    it("a delayed failure while the rider waits does the same, moving up when the row is under the header", async () => {
+      const map = createMockMapFactory();
+      await renderWithHeader(map);
+      const geometry = stubGeometry();
+      const log = captureLog();
+      const pending = confirmHeld();
+      geometry.trigger = { top: 20, bottom: 64 };
+      geometry.row = { top: 20, bottom: 124 };
+      log.length = 0;
+
+      await fail(pending);
+
+      expectMessageInTheTriggerRow();
+      expect(clearDraftTriggerButton()).toHaveFocus();
+      expect(log).toEqual(["focus:Clear draft:noscroll", "scrollBy:-48:0:auto"]);
+    });
+
+    it("does not move the page when the button and its message already show", async () => {
+      const map = createMockMapFactory();
+      await renderWithHeader(map);
+      stubGeometry();
+      const log = captureLog();
+      const pending = confirmHeld();
+      log.length = 0;
+
+      await fail(pending);
+
+      expect(clearDraftTriggerButton()).toHaveFocus();
+      expect(log).toEqual(["focus:Clear draft:noscroll"]);
+    });
+
+    it("when the button and its message cannot both fit, brings only the button in, leaving the message reachable by scrolling", async () => {
+      const map = createMockMapFactory();
+      await renderWithHeader(map);
+      const geometry = stubGeometry();
+      const log = captureLog();
+      const pending = confirmHeld();
+      // An 800px row against a 692px band; the button ends 24px below it.
+      geometry.trigger = { top: 740, bottom: 784 };
+      geometry.row = { top: 740, bottom: 1540 };
+      log.length = 0;
+
+      await fail(pending);
+
+      expect(clearDraftTriggerButton()).toHaveFocus();
+      expect(scrolls(log)).toEqual(["scrollBy:24:0:auto"]);
+    });
+
+    it.each([
+      ["a wheel", () => fireEvent.wheel(document.body)],
+      ["a touch scroll", () => fireEvent.touchMove(document.body)],
+      [
+        "a tap outside the Clear draft area",
+        () => fireEvent.pointerDown(screen.getByLabelText("Route name")),
+      ],
+      ["a tap on blank space", () => fireEvent.pointerDown(document.body)],
+      [
+        "a key other than Escape inside the confirmation",
+        () => fireEvent.keyDown(document.activeElement ?? document.body, { key: "Tab" }),
+      ],
+    ])(
+      "after %s while the clear runs, a failure takes no focus and moves nothing, and its message stays",
+      async (_label, moveOn) => {
+        const map = createMockMapFactory();
+        await renderWithHeader(map);
+        const geometry = stubGeometry();
+        const log = captureLog();
+        const pending = confirmHeld();
+        geometry.trigger = { top: 20, bottom: 64 };
+        geometry.row = { top: 20, bottom: 124 };
+        moveOn();
+        log.length = 0;
+
+        await fail(pending);
+
+        expectMessageInTheTriggerRow();
+        expect(clearDraftTriggerButton()).not.toHaveFocus();
+        expect(log).toEqual([]);
+      },
     );
-    await waitUntil(() => screen.queryByRole("alert") !== null, "the failure alert");
 
-    expect(clearDraftTriggerButton()).toHaveFocus();
-    expect(log).toEqual(["focus:Clear draft:scroll"]);
+    it("leaves focus in Route name when the rider moved it there, and keeps what they type there", async () => {
+      const map = createMockMapFactory();
+      await renderWithHeader(map);
+      const geometry = stubGeometry();
+      const log = captureLog();
+      const pending = confirmHeld();
+      geometry.trigger = { top: 20, bottom: 64 };
+      geometry.row = { top: 20, bottom: 124 };
+      // Moved by script, so no input event reaches the guard: only the
+      // focus check can see it.
+      const routeName = screen.getByLabelText("Route name");
+      routeName.focus();
+      log.length = 0;
+
+      await fail(pending);
+      fireEvent.change(routeName, { target: { value: "Evening loop, longer" } });
+
+      expectMessageInTheTriggerRow();
+      expect(routeName).toHaveFocus();
+      expect(routeName).toHaveValue("Evening loop, longer");
+      expect(log).toEqual([]);
+    });
+
+    it("still counts a tap on the disabled actions as waiting", async () => {
+      const map = createMockMapFactory();
+      await renderWithHeader(map);
+      stubGeometry();
+      const log = captureLog();
+      const pending = confirmHeld();
+      fireEvent.pointerDown(
+        within(screen.getByRole("dialog")).getByRole("button", { name: "Clearing…" }),
+      );
+      log.length = 0;
+
+      await fail(pending);
+
+      expect(clearDraftTriggerButton()).toHaveFocus();
+      expect(triggerFocuses(log)).toEqual(["focus:Clear draft:noscroll"]);
+    });
+
+    it("renews the guard for every attempt: moving on once does not stop a later attempt's focus, nor the reverse, and a successful retry clears the message", async () => {
+      const map = createMockMapFactory();
+      await renderWithHeader(map);
+      stubGeometry();
+      const log = captureLog();
+
+      // Moved on, then waiting.
+      const first = confirmHeld();
+      fireEvent.wheel(document.body);
+      await fail(first);
+      expect(clearDraftTriggerButton()).not.toHaveFocus();
+      const second = confirmHeld();
+      log.length = 0;
+      await fail(second);
+      expect(clearDraftTriggerButton()).toHaveFocus();
+      expect(triggerFocuses(log)).toEqual(["focus:Clear draft:noscroll"]);
+
+      // Waiting, then moved on.
+      const third = confirmHeld();
+      fireEvent.wheel(document.body);
+      log.length = 0;
+      await fail(third);
+      expect(clearDraftTriggerButton()).not.toHaveFocus();
+      expect(triggerFocuses(log)).toEqual([]);
+
+      // A successful retry.
+      const fourth = confirmHeld();
+      log.length = 0;
+      await act(async () => {
+        fourth.resolve(undefined);
+        await fourth.promise;
+      });
+      await waitUntil(
+        () => screen.queryByDisplayValue("Planned route") !== null,
+        "the retried clear to succeed",
+      );
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(triggerFocuses(log)).toEqual([]);
+      expect(mockedClearDraft).toHaveBeenCalledTimes(4);
+    });
+
+    it("arms one guard per confirmed attempt, none for a refused second confirm, and detaches each once it has ended or been decided", async () => {
+      const guards = spyOnGuards();
+      const map = createMockMapFactory();
+      await renderWithHeader(map);
+      stubGeometry();
+
+      // A refused rapid second confirm arms nothing.
+      const failing = confirmHeld();
+      fireEvent.click(
+        within(screen.getByRole("dialog")).getByRole("button", { name: "Clearing…" }),
+      );
+      expect(guards.armed).toBe(1);
+      expect(guards.detaches).toEqual([0]);
+      // A failure: detached once its focus return is decided.
+      await fail(failing);
+      expect(guards.detaches[0]).toBeGreaterThanOrEqual(1);
+
+      // A success: detached when the attempt ends.
+      const succeeding = confirmHeld();
+      await act(async () => {
+        succeeding.resolve(undefined);
+        await succeeding.promise;
+      });
+      await waitUntil(
+        () => screen.queryByDisplayValue("Planned route") !== null,
+        "the clear to succeed",
+      );
+      expect(guards.armed).toBe(2);
+      expect(guards.detaches[1]).toBeGreaterThanOrEqual(1);
+    });
+
+    it("leaving Planning while the clear runs detaches its guard, and a late failure takes no focus and moves nothing", async () => {
+      const guards = spyOnGuards();
+      const map = createMockMapFactory();
+      const header = document.createElement("header");
+      document.body.appendChild(header);
+      mockedGetDraft.mockResolvedValueOnce(buildMeaningfulDraftContent());
+      const { unmount } = render(
+        <PlanningScreen
+          onNavigateToSettings={vi.fn()}
+          mapFactory={map.factory}
+          routingProvider={{ calculateRoute: () => Promise.reject(new Error("unused")) }}
+          stickyHeaderRef={{ current: header }}
+        />,
+      );
+      map.triggerLoad();
+      await waitUntil(
+        () => screen.queryByDisplayValue("Evening loop") !== null,
+        "restored draft to hydrate",
+      );
+      stubGeometry();
+      const log = captureLog();
+      const pending = confirmHeld();
+      expect(guards.armed).toBe(1);
+
+      unmount();
+      expect(guards.detaches[0]).toBeGreaterThanOrEqual(1);
+      log.length = 0;
+      await act(async () => {
+        pending.reject(new Error("boom"));
+        await pending.promise.catch(() => undefined);
+      });
+      await flushAsync();
+
+      expect(log).toEqual([]);
+      expect(document.activeElement).toBe(document.body);
+    });
   });
 });
