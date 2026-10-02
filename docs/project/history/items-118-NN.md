@@ -953,7 +953,7 @@ Accepted on `0.4.53`, build `64bde8d`, in German and English: all five device ch
 
 _Category: CI infrastructure_
 
-**Status when recorded (2 October 2026): configured for four shards; CI verification pending.** The workflow change and its local verification are below. The first four-shard CI run had not happened when this record was written, so its outcome, each shard's test-step and whole-job duration against run 37048604312, and the deployed build are not recorded here.
+**Status: CI verified on 2 October 2026, in run 37055399688.** The workflow change and its local verification are below. When this record was first written, the first four-shard CI run had not happened, so it read "configured for four shards; CI verification pending". That run's outcome, each shard's test-step and whole-job duration against run 37048604312, and the deployed build are now recorded in [CI verification](#ci-verification--run-37055399688-2-october-2026), at the end of this entry.
 
 133. **Four end-to-end CI shards instead of two — done**
      - Origin: the rider's decision, 2 October 2026, after item 124's D-06 repair (`0.4.54`) deployed. **Scheduled first** in the approved execution order (root [`CLAUDE.md`](../../../CLAUDE.md)), ahead of [item 132](../backlog.md#item-132). **CI infrastructure only:** no application behaviour, test, assertion or version change.
@@ -1009,6 +1009,24 @@ _Category: CI infrastructure_
 
 ### Limitations, stated plainly
 
-- **Equal counts, not equal durations.** Playwright divides `fullyParallel` tests by count, so shard 4 carries every `webkit-smoke` and `android-chrome` test. Whether that makes it the longest shard, and how much headroom four shards leave under the 20-minute limit, is for the CI timings to show. No halving of runtime is claimed.
+- **Equal counts, not equal durations.** Playwright divides `fullyParallel` tests by count, so shard 4 carries every `webkit-smoke` and `android-chrome` test. Whether that makes it the longest shard, and how much headroom four shards leave under the 20-minute limit, is for the CI timings to show. No halving of runtime is claimed. The first run's answer is under [CI verification](#ci-verification--run-37055399688-2-october-2026) below: shard 2, not shard 4, was the longest.
 - **The counts will change** as tests are added. They are recorded here as measured on 2 October 2026, not as a standing rule.
 - **Four runners per push instead of two.** Each shard repeats container start-up, `npm ci` and the build — about 70 s per shard in run 37048604312.
+
+### CI verification — run 37055399688 (2 October 2026)
+
+Run [37055399688](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37055399688), for commit `75094b0`: **Verify and build, all four End-to-end shards and Deploy succeeded, each on its first attempt.** Verify and build took 287 s and Deploy 11 s. The deployed application was `0.4.54`, build `75094b0`: the version unchanged, as intended, and the build ID this commit's. The durations below come from the run's own job and step start and completion times.
+
+| Shard | Tests                                                         | Test step | Whole job |
+| ----- | ------------------------------------------------------------- | --------: | --------: |
+| 1/4   | `chromium` only                                               |     338 s |     398 s |
+| 2/4   | `chromium` only                                               |     458 s |     523 s |
+| 3/4   | `chromium` only                                               |     270 s |     352 s |
+| 4/4   | every `webkit-smoke` and `android-chrome`, plus 28 `chromium` |     445 s |     512 s |
+
+- **Against run 37048604312** (two shards, `041da6c`):
+  - the longest whole job fell from **956 s to 523 s**, leaving **677 s** under the 20-minute (1,200 s) limit, where the two-shard run left 244 s;
+  - the longest test step fell from 888 s to 458 s.
+- **The longest shard was 2, which runs Chromium only, not shard 4**, which carries every WebKit and Android test. The limitation above left this open, and equal test counts did not give equal durations. Why shard 2's 198 tests took the longest was not investigated.
+- **Parallelism, not speed.** The four test steps sum to 1,511 s, against 1,491 s (603 s + 888 s) for the two-shard run, so the suite's own work is unchanged and the gain is that the work is spread over four runners. Each shard still spends 60–82 s outside its test step, on container start-up, `npm ci` and the build.
+- **One run per configuration.** Every figure here comes from a single run, so none of it is a measured trend or a stable margin, and runner speed varies between runs. No further sharding or optimisation is requested.
