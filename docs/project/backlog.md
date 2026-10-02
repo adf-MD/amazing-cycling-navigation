@@ -4,7 +4,7 @@ This file holds the complete, byte-preserved specification for every backlog ite
 
 Item numbers are stable identifiers across this project's entire documentation set — they never change regardless of which file an item's text lives in. See [README.md](README.md) for the full map of where everything lives, and the root [`CLAUDE.md`](../../CLAUDE.md) for durable product/engineering rules and the required reading order before implementing any item here.
 
-Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence. Items 87–92 were added by the [release-readiness audit](release-readiness-audit.md) (item 86); items 87–92 have since been completed. Items 107–113 were added by the installed-iPhone field test of 10 September 2026 (see [current-status.md](current-status.md) for the dated evidence) and were all scheduled ahead of items 102 and 103, which keep their numbers; the authoritative execution order lives in the root [`CLAUDE.md`](../../CLAUDE.md)'s queue index and is deliberately not duplicated here. All seven items of that group, 107–113, have since been completed and their full specifications have moved to [`history/`](history/README.md). Item 114 was added on 11 September 2026 from item 109's own Chromium verification work rather than from that field test, and has since been completed (`0.4.45`) and moved to [`history/`](history/README.md). Item 117 was added on 13 September 2026 from the installed-iPhone session that accepted item 112, which rejected the opaque route identifier that session's `Active session` row exposed, and has since been completed and moved to [`history/`](history/README.md). Item 118 was added on 13 September 2026 from a second installed-iPhone report the same day and has since been completed and moved to [`history/`](history/README.md); item 119 was added from the repository investigation that established item 118's ownership, and has since been completed (`0.4.47`) and moved to [`history/`](history/README.md). Item 121 was recorded on 25 September 2026, placed first in the execution order, and has since been completed (`0.4.44`) and moved to [`history/`](history/README.md). Item 128 was recorded on 29 September 2026 from item 114's own measurements; it and item 124 were unscheduled until 30 September 2026, when the rider placed both in the approved execution order ahead of items 103 and 120. Item 128 has since been completed (`0.4.50`, the rider's C6 layout) and moved to [`history/`](history/items-118-NN.md#item-128). Item 122 was scheduled on 1 October 2026, after item 124 and before items 103 and 120, for its investigation and design stage only. Item 123 was promoted to the front of the approved execution order on 29 September 2026 and has since been completed (`0.4.46`) and moved to [`history/`](history/README.md); item 129 was recorded that day from the installed-iPhone check of `0.4.45` and is unscheduled. Item 130 was recorded on 30 September 2026 from an end-to-end test flake measured during item 119's `0.4.48` follow-up, and is unscheduled. Item 102 was completed on 30 September 2026 (`0.4.49`) and moved to [`history/`](history/README.md).
+Items 11, 12, 16, 28, 59, 60 and 61 below remain approved future work, not yet scheduled into the sequence. Items 87–92 were added by the [release-readiness audit](release-readiness-audit.md) (item 86); items 87–92 have since been completed. Items 107–113 were added by the installed-iPhone field test of 10 September 2026 (see [current-status.md](current-status.md) for the dated evidence) and were all scheduled ahead of items 102 and 103, which keep their numbers; the authoritative execution order lives in the root [`CLAUDE.md`](../../CLAUDE.md)'s queue index and is deliberately not duplicated here. All seven items of that group, 107–113, have since been completed and their full specifications have moved to [`history/`](history/README.md). Item 114 was added on 11 September 2026 from item 109's own Chromium verification work rather than from that field test, and has since been completed (`0.4.45`) and moved to [`history/`](history/README.md). Item 117 was added on 13 September 2026 from the installed-iPhone session that accepted item 112, which rejected the opaque route identifier that session's `Active session` row exposed, and has since been completed and moved to [`history/`](history/README.md). Item 118 was added on 13 September 2026 from a second installed-iPhone report the same day and has since been completed and moved to [`history/`](history/README.md); item 119 was added from the repository investigation that established item 118's ownership, and has since been completed (`0.4.47`) and moved to [`history/`](history/README.md). Item 121 was recorded on 25 September 2026, placed first in the execution order, and has since been completed (`0.4.44`) and moved to [`history/`](history/README.md). Item 128 was recorded on 29 September 2026 from item 114's own measurements; it and item 124 were unscheduled until 30 September 2026, when the rider placed both in the approved execution order ahead of items 103 and 120. Item 128 has since been completed (`0.4.50`, the rider's C6 layout) and moved to [`history/`](history/items-118-NN.md#item-128). Item 122 was scheduled on 1 October 2026, after item 124 and before items 103 and 120, for its investigation and design stage only. Item 123 was promoted to the front of the approved execution order on 29 September 2026 and has since been completed (`0.4.46`) and moved to [`history/`](history/README.md); item 129 was recorded that day from the installed-iPhone check of `0.4.45` and is unscheduled. Item 130 was recorded on 30 September 2026 from an end-to-end test flake measured during item 119's `0.4.48` follow-up, and is unscheduled. Item 102 was completed on 30 September 2026 (`0.4.49`) and moved to [`history/`](history/README.md). Item 132 was recorded on 2 October 2026, from the rider's approval of one paused-route screen after a cold start, and placed first in the approved execution order, ahead of item 124's remaining approved slices.
 
 Entries below are ordered by item number (not by their original position in the source document, since categories repeated non-contiguously there). Entries through item 93 reproduce their original text verbatim, with only the minimal bracketed pointers needed to keep cross-references navigable after this document was split out of a single monolithic `CLAUDE.md` (see that root file's own note on this). Items 94 and later are new post-0.4.0 specifications authored directly into this file, following the same structure and conventions.
 
@@ -180,6 +180,7 @@ _Category: Planning layout_
 _Category: Interface and accessibility consistency_
 
 > **Staged delivery — slice 1 shipped (`0.4.51`) and accepted on the installed iPhone; slice 2's inventory is complete; slice 3, the two inventory cases the rider approved, shipped in `0.4.52` and was accepted on the installed iPhone, reported 2 October 2026. A separate pause/resume repair, [item 131](history/items-118-NN.md#item-131), was scheduled ahead of further item 124 work and shipped in `0.4.53` and was accepted on the installed iPhone, reported 2 October 2026.**
+> **Item 132, filed on 2 October 2026, now precedes item 124's remaining approved slices.** The same day's C-12 device observation and the review preparation of D-01, D-02 and D-06 approve nothing further.
 > This item ships in slices and stays **pending** here until its final
 > slice. Nothing about it enters [`history/`](history/README.md) before
 > then. The original specification, under its own heading below, is kept
@@ -249,6 +250,8 @@ _Category: Interface and accessibility consistency_
 ### Slice 2 — inventory and review (completed 1 October 2026; awaiting the rider's review)
 
 **The inventory:** [`docs/design/reveal-inventory/README.md`](../design/reveal-inventory/README.md) — 14 confirmations, 35 expanding cards, forms, editors and disclosures, and 7 conditional and failure states, each with a stable ID, its labels in English and German, reproduction steps, current behaviour, source and tests, measured evidence where needed, and a recommendation, ending in a numbered review checklist. No application behaviour changed, and no additional surfaces are approved for behaviour changes until the rider confirms them.
+
+**Review preparation, 2 October 2026:** D-01, D-02 and D-06 were rechecked against `64bde8d` and measured with controlled synthetic fixtures, with C-12 as context. The findings, recommendations and the decisions they need are in the inventory's [review preparation](../design/reveal-inventory/README.md#review-preparation--d-01-d-02-and-d-06-2-october-2026). Nothing is approved by it; the C-12 device observation is in [`current-status.md`](current-status.md).
 
 **Purpose:** establish, before any broader unification, every surface that could fall under "one reveal rule", so the rider can confirm which of them should adopt it. **Slice 2 changes no behaviour**, and it ends at the rider's explicit review: automated checks do not replace that confirmation, and only a later slice may extend the behaviour, to the surfaces the rider approves.
 
@@ -449,3 +452,59 @@ _Category: End-to-end test reliability_
      - **First task:** capture the failing assertion and the artefacts item 116 retains — the failure screenshot, the CI trace and `error-context.md`, uploaded per shard — under **ordinary CI conditions**, not 36-worker stress. If ordinary CI does not reproduce it, record that and how many runs were observed.
      - **Then:** distinguish test timing — when the baseline and later camera readings are taken, and what they read — from a real camera-follow problem after reconnection.
      - **Evidence required when resolved:** the captured artefact, a check that discriminates between those two explanations, and negative controls. Any change to the test follows the diagnosis.
+
+---
+
+<a id="item-132"></a>
+
+## Item 132 — Consistent paused-route screen after a cold start
+
+_Category: Riding lifecycle_
+
+132. **Consistent paused-route screen after a cold start**
+     - Origin: the rider's decision, 2 October 2026, after item 131's installed-iPhone acceptance. The same paused route ride has two presentations today. After the PWA is fully closed and reopened, the Ride tab shows the Ride launcher's short summary; opening the same route from Routes shows the full paused-route screen. **The two caused confusion and made Edit copy harder to discover.**
+     - **An approved usability refinement of intentional existing behaviour — not a regression, and not attributed to item 131.** The launcher was added by [item 41](history/items-39-48.md#item-41), and the tests below pin today's behaviour as the established contract. Item 131 neither introduced nor changed it.
+     - **Scheduled on 2 October 2026, first** in the approved execution order (root [`CLAUDE.md`](../../CLAUDE.md)), ahead of item 124's remaining approved slices, by the rider's decision. It was filed during a documentation and review-preparation task. **Nothing about it has been implemented.**
+     - **Approved target behaviour.** The first time the rider enters Ride after fully closing and reopening the PWA, a valid unfinished route ride opens the existing full paused-route screen, with its map, elevation information and **Edit copy**. This is the same paused-route experience as opening that route from Routes. **Restoration starts no tracking, and Resume remains an explicit, single action.**
+     - **Approved constraints:**
+       - reuse the existing paused-route screen rather than create another presentation;
+       - preserve route progress and the existing restored-session state;
+       - preserve item 131's one-use resume handling, and its protection against restarting tracking after Pause or navigation;
+       - keep the current initial navigation tab unchanged; the change concerns entering Ride after a cold reopen;
+       - preserve appropriate recovery for a missing route, an unsupported session and a storage-read failure;
+       - free roam is outside this change.
+     - **Present facts, read from source at `64bde8d` (`0.4.53`) for this entry, not measured:**
+       - **The app always starts on Routes.** `screen` and `ridingContent` are in-memory state (`src/App.tsx` ~293, ~300), and nothing reads the stored ride before the first render. A cold start and a reload therefore take the same path.
+       - **The launcher.** While `ridingContent` is `none`, Ride renders `RidingLauncher` (`App.tsx` ~1326–1363), which re-reads storage on every mount (`RidingLauncher.tsx` ~154–200). For an unfinished route it shows the route's name, "You have an unfinished ride on this route.", **Resume ride** and **End ride**. Its other branches are:
+         - "Checking for an unfinished ride…";
+         - a failed read, with **Retry**;
+         - a missing route, with **Discard unfinished ride**;
+         - an unsupported stored kind, also with **Discard unfinished ride**;
+         - an unfinished free roam.
+       - **Resuming from the launcher.** **Resume ride** goes through the ride-transition guard and stamps the one-use resume instruction (items 72 and 131). The riding screen consumes it once restoration has settled.
+       - **Opening from Routes.** A route card goes through the same guard with no instruction. The paused-route screen restores progress, the stale last fix, the elevation view, the camera, the wake-lock preference, the dismissed climb and the completion state, and starts no location watch (`useRideNavigation.ts` ~482–518). A watch starts only from `handleStart()`.
+       - **Leaving Ride.** App keeps the selected route in `ridingContent` across tab changes. `RidingScreen`, keyed by route, still **unmounts when the rider leaves Ride and mounts again on return**: the remount behind item 131's replay. **Back to Ride options** sets `ridingContent` to `none` (`App.tsx` ~1136–1149), so the launcher renders and re-reads storage. End, Finish, and pausing or leaving free roam also lead back to the launcher.
+       - **The restore-failed alert renders only while a resume instruction is pending** (`RidingScreen.tsx` ~1207–1210, ~1739–1755). The alert reads "Your ride could not be restored on this device. Try again.", with **Retry** and **Back to Ride options**. Opened without an instruction, as from a route card, a failed restoration would show the ordinary no-fix panel with **Start riding** and no error. While restoration is still loading, **Start riding** can show briefly before **Resume ride**. This is from source only: no test covers it, and it was not reproduced in a browser.
+       - **Today's behaviour is pinned as the established contract** by:
+         - `e2e/ridingLauncher.spec.ts` (~146–212, with its comment at ~174–178);
+         - `e2e/ridingPauseAfterResume.smoke.spec.ts`;
+         - `e2e/rideSessionSwitchGuard.spec.ts` (~338–372);
+         - `e2e/androidPersistenceAndOffline.spec.ts`;
+         - `App.test.tsx` and `RidingLauncher.test.tsx`;
+         - [`docs/android-chrome-acceptance.md`](../android-chrome-acceptance.md) (~105–111);
+         - Session 1's item 72 cold-relaunch check in [`current-status.md`](current-status.md).
+
+         An implementation revises these deliberately, rather than leaving them to describe a removed path.
+     - **The implementation plan must address, and this entry deliberately does not settle:**
+       - loading and error presentation before restoration finishes;
+       - navigation or session changes while restoration is pending;
+       - the existing **Back to Ride options** action, avoiding automatic return loops or an unexplained duplicate paused-route view;
+       - keeping route selection, free-roam entry and the ride-switch guards accessible;
+       - regression coverage for restoration without tracking, an explicit Resume, Pause, navigation round trips and the recovery states.
+     - **Not approved:** a different initial tab; any change to free roam; tracking started by restoration or by entering Ride; a new presentation of a paused ride.
+     - **Evidence required when implemented:**
+       - component and App-level tests;
+       - browser coverage, in Chromium and WebKit, in English and German, of a real reload followed by entering Ride;
+       - the unchanged `0.4.53` behaviour failing those tests;
+       - negative controls;
+       - then the installed-iPhone check after fully closing and reopening the PWA.
