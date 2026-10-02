@@ -179,7 +179,7 @@ _Category: Planning layout_
 
 _Category: Interface and accessibility consistency_
 
-> **Staged delivery — slice 1 shipped (`0.4.51`) and accepted on the installed iPhone; slice 2's inventory is complete; slice 3, the two inventory cases the rider approved, shipped in `0.4.52` and was accepted on the installed iPhone, reported 2 October 2026. A separate pause/resume repair, [item 131](history/items-118-NN.md#item-131), was scheduled ahead of further item 124 work and shipped in `0.4.53`; its device check is pending.**
+> **Staged delivery — slice 1 shipped (`0.4.51`) and accepted on the installed iPhone; slice 2's inventory is complete; slice 3, the two inventory cases the rider approved, shipped in `0.4.52` and was accepted on the installed iPhone, reported 2 October 2026. A separate pause/resume repair, [item 131](history/items-118-NN.md#item-131), was scheduled ahead of further item 124 work and shipped in `0.4.53` and was accepted on the installed iPhone, reported 2 October 2026.**
 > This item ships in slices and stays **pending** here until its final
 > slice. Nothing about it enters [`history/`](history/README.md) before
 > then. The original specification, under its own heading below, is kept

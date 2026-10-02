@@ -941,6 +941,6 @@ _Category: Riding lifecycle_
 - **A pending instruction survives leaving Riding, by design**, and is honoured on return. The rider who leaves before restoration settles still gets the one resume they asked for.
 - No VoiceOver, iOS Larger Text, landscape or physical-Android result is claimed.
 
-### Installed-iPhone check
+### Installed-iPhone acceptance — reported 2 October 2026
 
-Pending — Session 5 in [`current-status.md`](../current-status.md).
+Accepted on `0.4.53`, build `64bde8d`, in German and English: all five device checks passed. The report, and exactly what it does and does not assert, are recorded only in [`current-status.md`](../current-status.md).
