@@ -1341,6 +1341,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
               onRideFinalized={handleRideFinalized}
               onReturnToRideLauncher={handleReturnToRideLauncher}
               onRidePaused={handleRidePaused}
+              stickyHeaderRef={stickyHeaderRef}
             />
           ) : ridingContent.kind === "free-roam" ? (
             <FreeRoamScreen

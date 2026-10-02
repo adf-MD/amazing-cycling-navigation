@@ -63,6 +63,16 @@ export interface ConfirmDialogProps {
    * Undefined/false for every other caller, which keep plain `autoFocus`
    * exactly as before. */
   focusCancelWithoutScroll?: boolean;
+  /** A handle onto the dialog's own title, which this also makes focusable
+   * by script only (`tabIndex={-1}`: never in the tab order, never
+   * activated) — the precedent of Planning's save heading and Settings'
+   * OpenRouteService heading. For a caller whose action keeps running after
+   * Confirm (backlog item 124's D-06, Edit copy): focus waits here while
+   * both actions are disabled, so it stays inside the dialog — Chromium
+   * drops a focused button that becomes disabled to `<body>` — and Escape
+   * still reaches the dialog's own handler, which the caller refuses while
+   * busy. Undefined for every other caller, whose markup is unchanged. */
+  titleRef?: RefObject<HTMLHeadingElement | null>;
 }
 
 /** Keeps the rendered tag a real JSX intrinsic rather than a computed
@@ -105,6 +115,7 @@ export function ConfirmDialog({
   containerRef,
   actionsRef,
   focusCancelWithoutScroll = false,
+  titleRef,
 }: ConfirmDialogProps) {
   // Called before the early return below, as hooks must be.
   const headingId = useId();
@@ -143,7 +154,9 @@ export function ConfirmDialog({
       onKeyDown={handleKeyDown}
       ref={containerRef}
     >
-      <Title id={headingId}>{title}</Title>
+      <Title id={headingId} ref={titleRef} tabIndex={titleRef ? -1 : undefined}>
+        {title}
+      </Title>
       <p id={descriptionId}>{message}</p>
       <div className="route-delete-confirm-actions" ref={actionsRef}>
         <button

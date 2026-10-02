@@ -8,6 +8,8 @@
 
 **Update (2 October 2026, later): D-06, D-02, D-01 and C-12 decided.** The rider approved policies for these four cases, recorded in [Decisions — D-06, D-02, D-01 and C-12](#decisions--d-06-d-02-d-01-and-c-12-2-october-2026). They are product decisions authorising later work, **not device acceptance**, and nothing about them is implemented yet. D-06's repair is first in the execution order; D-01, D-02 and C-12's opening-reveal change follow item 132. Every other case still awaits the rider's review.
 
+**Update (2 October 2026): D-06 delivered.** D-06's repair shipped in `0.4.54` as item 124's slice 4 ([record](../../project/backlog.md#item-124)); its installed-iPhone check is pending. D-01, D-02 and C-12's opening-reveal change are not yet implemented.
+
 **What this is.** Every confirmation in the app, every expanding card, form, editor and disclosure that could reasonably fall under the rider's "pop-up cards" request, and the conditional and failure states that change what would need revealing — each with a stable review ID, its labels in English and German, how to reach it, what it does today, where that is in the source and tests, what was measured, and a recommendation.
 
 **The rule under review** ([item 124](../../project/backlog.md#item-124)): no movement when the newly opened content fits between the sticky navigation and the bottom safe area; otherwise only enough to reveal it; and when it cannot fit, only enough to show its complete action row. On Cancel and Escape: keep the page where the rider has left it, moving only as far as needed to reveal the opening control.
@@ -460,6 +462,8 @@ The [review preparation](#review-preparation--d-01-d-02-and-d-06-2-october-2026)
 
 **Decided, 2 October 2026:** a working state that refuses Cancel and Escape once the replacement is confirmed, completion that respects the rider's navigation, and failure focus only while the rider has stayed in the interaction. First in the execution order; not yet implemented ([decisions](#decisions--d-06-d-02-d-01-and-c-12-2-october-2026)).
 
+**Delivered, 2 October 2026:** shipped in `0.4.54` as item 124's slice 4, with automated evidence only; its installed-iPhone check is pending ([record](../../project/backlog.md#item-124)).
+
 ### D-07 — Two confirmations open at once
 
 [S] Item 119 made this safe for naming and Escape: the page-level C-14 beside C-06, and C-11 beside C-12 in the paused panel. Nothing coordinates their reveals; each would act on its own subject. **Recommendation:** **needs discussion** only if a common rule would reveal one while the other is open.
@@ -553,7 +557,7 @@ Reported here so they are not lost; nothing was changed.
 | D-03                                     | Card remounts while a delete is pending                          | **candidate for change** — approved; shipped in slice 3 (`0.4.52`)              |
 | D-04                                     | Activation above the viewport                                    | already complies as measured                                                    |
 | D-05                                     | Focused control destroyed                                        | needs discussion                                                                |
-| D-06                                     | Edit copy's busy guard and failure focus                         | **candidate for change** — approved 2 October 2026; first in the order          |
+| D-06                                     | Edit copy's busy guard and failure focus                         | **candidate for change** — approved 2 October 2026; shipped `0.4.54`            |
 | D-07                                     | Two confirmations open                                           | needs discussion                                                                |
 
 ## Manual review checklist
@@ -566,7 +570,7 @@ C-01 (Delete route) and C-05 (Clear draft) are slice 1 — already approved and 
 2. **D-03 — a delete left open while searching.** In **Routes**, tap **Delete** on a route, then type in **Search routes** so that route disappears, then delete one letter. The route reappears with its confirmation open, focus jumps to Cancel, and the page scrolls. _Should a pending Delete be cancelled when its route leaves the list, or kept as now?_ — confirm a change / exclude / discuss. **Decided 1 October 2026: confirmed, for an unconfirmed Delete — shipped in slice 3 (`0.4.52`).**
 3. **D-02 — Delete route fails.** Not reproducible on demand; it needs the device's storage to fail. When it does, the confirmation grows, its buttons can drop below the screen, focus is lost, and the message is technical English. _Should the buttons be kept in view and the message be the ordinary "That route could not be deleted."?_ — confirm / exclude / discuss. **Decided 2 October 2026: confirmed, with an accurate pending state after an investigation of the list mechanism — not yet implemented.**
 4. **D-01 — Clear draft fails.** Not reproducible on demand. The message "The draft could not be cleared on this device. Try again." appears beside Clear draft. _Should that message itself be revealed if it falls off-screen?_ — confirm / exclude / discuss. **Decided 2 October 2026: only while the rider is still waiting, by the minimum; otherwise their activity is kept — not yet implemented.**
-5. **D-06 — Edit copy.** With a draft in Planning, open a route's ride screen, tap **Edit copy**, and see "Replace your current draft?". Its buttons are never disabled while working, and after a failure focus is probably lost. _Fix as a separate defect?_ — confirm / exclude / discuss. **Decided 2 October 2026: confirmed, first in the execution order.**
+5. **D-06 — Edit copy.** With a draft in Planning, open a route's ride screen, tap **Edit copy**, and see "Replace your current draft?". Its buttons are never disabled while working, and after a failure focus is probably lost. _Fix as a separate defect?_ — confirm / exclude / discuss. **Decided 2 October 2026: confirmed, first in the execution order — shipped in `0.4.54`.**
 6. **C-07, C-08, C-09 — the Ride launcher's End ride and Discard unfinished ride.** With an unfinished ride, open **Ride** and tap **End ride** (or **Discard unfinished ride**). They open where they are and nothing moves. _Agree they already comply and need no change?_ — confirm / discuss.
 7. **C-10, C-11, C-13 — End ride while riding, paused or in free roam.** Tap **End ride** in the riding header, in the paused panel, or in free roam. They open in view with no movement. _Agree they already comply?_ — confirm / discuss.
 8. **C-12 — Edit copy's confirmation itself** opens in view with no movement. _Agree its reveal already complies (item 5 aside)?_ — confirm / discuss. **Decided 2 October 2026: the ordinary-text opening is kept; at enlarged text C-12 adopts the common rule — not yet implemented.**
@@ -842,3 +846,4 @@ At ordinary text, the browser evidence agrees with the rider's iPhone 13 report.
 - **Execution order:** D-06's repair within item 124 → [item 132](../../project/backlog.md#item-132) → item 124's remaining approved slices (D-01, D-02 and C-12's opening reveal) → item 122's design stage → item 103 → item 120. The authoritative list is in the root [`CLAUDE.md`](../../../CLAUDE.md).
 - **Why D-06 goes first:** an available Cancel currently closes the confirmation while the confirmed draft replacement continues, and its completion can override the rider's subsequent navigation.
 - **Scope of the next slice:** D-06 only. D-01, D-02 and C-12's opening-reveal change remain later work; their implementation details are settled when each slice is planned.
+- **Delivered:** D-06's repair shipped in `0.4.54`, 2 October 2026, as item 124's slice 4 ([record](../../project/backlog.md#item-124)), with automated evidence only; its installed-iPhone check is pending.

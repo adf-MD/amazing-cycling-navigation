@@ -1,6 +1,15 @@
 import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { Translator } from "../../i18n/translate.ts";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import {
   canDeriveEditableWaypoints,
   resolveEditableWaypoints,
@@ -58,10 +67,11 @@ import {
 } from "../../navigation/upcomingElevation.ts";
 import { getDraft, saveDraft } from "../../storage/planningDraftRepository.ts";
 import { getPlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
-import type { StoredCameraState } from "../../storage/mapping.ts";
+import type { PlanningPreferences, StoredCameraState } from "../../storage/mapping.ts";
 import { ClimbCategoriesDisclosure } from "../shared/ClimbCategoriesDisclosure.tsx";
 import { ClimbLocalGradientDisclosure } from "../shared/ClimbLocalGradientDisclosure.tsx";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
+import { applyConfirmationReveal } from "../shared/confirmationRevealScroll.ts";
 import { CrosshairIcon } from "../shared/CrosshairIcon.tsx";
 import { NorthArrowIcon } from "../shared/NorthArrowIcon.tsx";
 import { ZoomIcon } from "../shared/ZoomIcon.tsx";
@@ -72,6 +82,10 @@ import {
 import { GradientSegmentDetailsPanel } from "../shared/GradientSegmentDetailsPanel.tsx";
 import { RouteFeatureDetailsPanel } from "../shared/RouteFeatureDetailsPanel.tsx";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
+import {
+  armEditCopyInteractionGuard,
+  type EditCopyInteractionGuard,
+} from "./editCopyInteractionGuard.ts";
 import { RidingClimbCue } from "./RidingClimbCue.tsx";
 import { RidingClimbPreviewPanel } from "./RidingClimbPreviewPanel.tsx";
 import { RidingClimbProgressPanel } from "./RidingClimbProgressPanel.tsx";
@@ -118,7 +132,11 @@ export interface RidingScreenProps {
    * Planning itself, as an ordinary, repeatable, undoable edit — see
    * PlanningScreen.tsx's "Reverse route" button and
    * waypointHistoryReducer's "reverse" case) — this callback only ever
-   * fires for a plain, unreversed copy now. */
+   * fires for a plain, unreversed copy now. Called only while the rider is
+   * still in the Ride context the copy was started from (backlog item 124,
+   * D-06): a copy that completes after they have left — another tab,
+   * Back to Ride options, End ride, Start riding — never pulls them into
+   * Planning, where its draft is waiting for them instead. */
   onNavigateToPlanning?: () => void;
   /** Called once a successful End ride or Finish ride has fully completed —
    * after nav.finish()'s own storage-clear-then-reset lifecycle has already
@@ -165,6 +183,24 @@ export interface RidingScreenProps {
    * point, so a bug in the caller's own handler must never be reported as
    * a pause failure. */
   onRidePaused?: () => void;
+  /** The sticky navigation header, for the minimal reveal of Edit copy and
+   * its message after a failure (backlog item 124, D-06) — the same ref
+   * App.tsx gives Routes, Settings and Planning. The pre-ride/paused panel
+   * Edit copy lives in is only ever shown beneath that header. Optional so
+   * tests without a header measure from the top. */
+  stickyHeaderRef?: RefObject<HTMLElement | null>;
+}
+
+/** One Edit copy attempt (backlog item 124, D-06): begun by the Edit copy
+ * press — covering its preliminary draft check and, when no meaningful
+ * draft exists, the write — or by Replace and edit. Each attempt owns its
+ * own interaction guard, so a refused duplicate press can never re-arm or
+ * detach a live one. */
+interface EditCopyAttempt {
+  /** editCopyContextRef's value when the attempt began; the rider has left
+   * the context it was started in once the two differ. */
+  readonly context: number;
+  readonly guard: EditCopyInteractionGuard;
 }
 
 const DEFAULT_CAMERA_STATE: StoredCameraState = {
@@ -224,6 +260,7 @@ export function RidingScreen({
   onRideFinalized,
   onReturnToRideLauncher,
   onRidePaused,
+  stickyHeaderRef,
 }: RidingScreenProps) {
   const translator = useTranslate();
   const { t } = translator;
@@ -790,25 +827,69 @@ export function RidingScreen({
   // former second copy operation ("Reverse route") entirely — reversing a
   // route is now an ordinary, repeatable, undoable Planning edit instead
   // (see PlanningScreen.tsx), not a pre-ride seed-time choice — so this is
-  // no longer a two-way, kind-parameterised guard; a single re-entrancy
-  // ref is sufficient. Entirely self-contained: this screen owns the
-  // meaningful-draft check, the confirmation, waypoint resolution and
-  // persistence; App.tsx only ever switches screens once told to via
-  // onNavigateToPlanning.
+  // no longer a two-way, kind-parameterised guard. Entirely
+  // self-contained: this screen owns the meaningful-draft check, the
+  // confirmation, waypoint resolution and persistence; App.tsx only ever
+  // switches screens once told to via onNavigateToPlanning.
+  //
+  // Backlog item 124, D-06, the rider's decisions of 2 October 2026:
+  // - once Replace and edit is pressed, both of the confirmation's actions
+  //   are disabled and Cancel and Escape refused until the write settles —
+  //   the earlier draft may already be replaced, so a Cancel could only
+  //   appear to cancel;
+  // - completion navigates to Planning only while the rider is still in the
+  //   Ride context the attempt began in (editCopyContextRef);
+  // - a failure returns focus to Edit copy, revealed by the minimum, only
+  //   while the rider has stayed in the interaction (each attempt's guard).
+  // And the coordination with Planning: no await separates the rider's
+  // authorisation (Replace and edit, or a preliminary check that found no
+  // meaningful draft) from saveDraft's call. Dexie creates the readwrite
+  // transaction synchronously inside that call, so it exists before the
+  // rider can open Planning, and IndexedDB starts the read-only
+  // transaction of any Planning hydration begun later only after it — so
+  // Planning shows the copy, or the earlier draft if the write fails, and
+  // never a draft older than a confirmed replacement that its 900 ms
+  // autosave would then write back over the copy. That is why the
+  // preferences the copy needs are read by the preliminary check, before
+  // the confirmation opens, rather than inside the write.
   const editCopyButtonRef = useRef<HTMLButtonElement>(null);
+  // Edit copy, its hint, its error and its confirmation: the area input
+  // inside which does not mean the rider has moved on, and the box revealed
+  // after a failure.
+  const editCopyGroupRef = useRef<HTMLDivElement>(null);
+  const editCopyTitleRef = useRef<HTMLHeadingElement>(null);
   const [isEditCopyConfirmOpen, setIsEditCopyConfirmOpen] = useState(false);
   const [isEditCopyInFlight, setIsEditCopyInFlight] = useState(false);
   const [editCopyError, setEditCopyError] = useState<string | null>(null);
   // Synchronous guard against a rapid double click/Confirm, mirroring
   // PlanningScreen.tsx's own isLocatingRef idiom — React state alone
-  // isn't reliably readable synchronously across the same tick.
+  // isn't reliably readable synchronously across the same tick. Set while
+  // a write is in flight.
   const isEditCopyActionPendingRef = useRef(false);
+  // The attempt in progress — its preliminary check, or its write — or
+  // null. A second Edit copy press is refused while one exists, so repeated
+  // presses during the check can never leave a second check behind that
+  // later starts another write.
+  const editCopyAttemptRef = useRef<EditCopyAttempt | null>(null);
+  // Bumped whenever the rider leaves the Ride context an attempt began in:
+  // the pre-ride/paused panel stops being shown (Start riding), or this
+  // screen unmounts (another tab, Back to Ride options, End ride, a route
+  // switch). Returning mounts a new screen with its own counter, so an old
+  // attempt's permission to navigate is never revived.
+  const editCopyContextRef = useRef(0);
+  // The preferences the preliminary check read for the confirmation now
+  // open, so Replace and edit can write without reading anything first.
+  const editCopyPreferencesRef = useRef<PlanningPreferences | null>(null);
+  // A failed attempt whose focus return has not been decided yet; see the
+  // layout effect that decides it, below the panel's render condition.
+  const pendingEditCopyFailureFocusRef = useRef<EditCopyAttempt | null>(null);
 
   // End ride / Finish ride — the shared ride-finalisation lifecycle. Both
   // actions converge on one performFinalizeRide, mirroring
-  // performEditCopy's own catch-block shape (logError, a source-tagged
-  // accessible error message, focus restored to whichever button triggered
-  // the action). endRideTriggerRef is shared across the two mutually
+  // performEditCopyWrite's own catch-block shape (logError, a source-tagged
+  // accessible error message, focus returned to whichever button triggered
+  // the action — Edit copy's only while the rider is still waiting for it,
+  // backlog item 124's D-06). endRideTriggerRef is shared across the two mutually
   // exclusive render sites the End-ride button can appear at (the
   // Resume-riding idle panel, and the active-tracking slot near the top of
   // the screen, directly after the offline notice and before the map) —
@@ -1023,13 +1104,36 @@ export function RidingScreen({
     setIsEndRideConfirmOpen(false);
   };
 
-  const performEditCopy = useCallback(async () => {
-    if (isEditCopyActionPendingRef.current) return;
+  const beginEditCopyAttempt = (): EditCopyAttempt => {
+    const attempt: EditCopyAttempt = {
+      context: editCopyContextRef.current,
+      guard: armEditCopyInteractionGuard(() => editCopyGroupRef.current),
+    };
+    editCopyAttemptRef.current = attempt;
+    return attempt;
+  };
+
+  const endEditCopyAttempt = (attempt: EditCopyAttempt) => {
+    if (editCopyAttemptRef.current === attempt) editCopyAttemptRef.current = null;
+    // A failure's guard stays attached until its focus return is decided.
+    if (pendingEditCopyFailureFocusRef.current !== attempt) attempt.guard.detach();
+  };
+
+  // The write itself. Nothing may be awaited before saveDraft is called:
+  // see the coordination note where this screen's Edit copy refs are
+  // declared.
+  const performEditCopyWrite = async (
+    attempt: EditCopyAttempt,
+    preferences: PlanningPreferences,
+  ) => {
+    if (isEditCopyActionPendingRef.current) {
+      endEditCopyAttempt(attempt);
+      return;
+    }
     isEditCopyActionPendingRef.current = true;
     setIsEditCopyInFlight(true);
     setEditCopyError(null);
     try {
-      const preferences = await getPlanningPreferences();
       const resolved = resolveEditableWaypoints(route, {
         avoidFerries: preferences.avoidFerriesByDefault,
       });
@@ -1055,40 +1159,89 @@ export function RidingScreen({
         editCopyOperation: "forward",
       });
       setIsEditCopyConfirmOpen(false);
-      onNavigateToPlanning?.();
+      if (attempt.context === editCopyContextRef.current) onNavigateToPlanning?.();
     } catch (error) {
       logError("riding-edit-copy-in-planning", error);
       setEditCopyError(t("riding.editCopyFailed"));
       setIsEditCopyConfirmOpen(false);
-      editCopyButtonRef.current?.focus();
+      // Never focused from here: Edit copy stays disabled until the commit
+      // this failure causes, and whether the rider is still waiting is
+      // decided then, once it is enabled.
+      pendingEditCopyFailureFocusRef.current = attempt;
     } finally {
       isEditCopyActionPendingRef.current = false;
       setIsEditCopyInFlight(false);
+      endEditCopyAttempt(attempt);
     }
-  }, [route, onNavigateToPlanning, t]);
+  };
 
-  const handleEditCopyClick = useCallback(() => {
-    if (isEditCopyConfirmOpen || isEditCopyActionPendingRef.current) return;
+  const handleEditCopyClick = () => {
+    if (
+      isEditCopyConfirmOpen ||
+      editCopyAttemptRef.current !== null ||
+      isEditCopyActionPendingRef.current
+    ) {
+      return;
+    }
+    // Begun at the press, so input during the check below already counts as
+    // moving on if this ends in a write that fails.
+    const attempt = beginEditCopyAttempt();
     setEditCopyError(null);
-    getDraft()
-      .then((draft) => {
-        const hasMeaningfulDraft = !!draft && draft.waypoints.length > 0;
-        if (hasMeaningfulDraft) {
-          setIsEditCopyConfirmOpen(true);
-          return;
-        }
-        void performEditCopy();
-      })
-      .catch((error: unknown) => {
+    void (async () => {
+      let hasMeaningfulDraft: boolean;
+      try {
+        const draft = await getDraft();
+        hasMeaningfulDraft = !!draft && draft.waypoints.length > 0;
+      } catch (error) {
         logError("riding-edit-copy-check-draft", error);
         setEditCopyError(t("riding.editCopyDraftCheckFailed"));
-      });
-  }, [isEditCopyConfirmOpen, performEditCopy, t]);
+        endEditCopyAttempt(attempt);
+        return;
+      }
+      let preferences: PlanningPreferences;
+      try {
+        preferences = await getPlanningPreferences();
+      } catch (error) {
+        logError("riding-edit-copy-load-preferences", error);
+        setEditCopyError(t("riding.editCopyFailed"));
+        endEditCopyAttempt(attempt);
+        return;
+      }
+      // The rider has left since pressing Edit copy: "no meaningful draft"
+      // no longer authorises an unconfirmed replacement — they may have
+      // begun one in Planning meanwhile — and no confirmation opens for a
+      // screen they have left.
+      if (attempt.context !== editCopyContextRef.current) {
+        endEditCopyAttempt(attempt);
+        return;
+      }
+      if (hasMeaningfulDraft) {
+        editCopyPreferencesRef.current = preferences;
+        endEditCopyAttempt(attempt);
+        setIsEditCopyConfirmOpen(true);
+        return;
+      }
+      await performEditCopyWrite(attempt, preferences);
+    })();
+  };
 
-  const handleEditCopyCancel = useCallback(() => {
+  const handleEditCopyConfirm = () => {
+    const preferences = editCopyPreferencesRef.current;
+    if (isEditCopyActionPendingRef.current || preferences === null) return;
+    // Focus waits on the confirmation's own title, without scrolling, while
+    // both actions are disabled: still inside the confirmation, so a refused
+    // Escape reaches it, where Chromium would otherwise drop the disabled
+    // button's focus to <body>.
+    editCopyTitleRef.current?.focus({ preventScroll: true });
+    void performEditCopyWrite(beginEditCopyAttempt(), preferences);
+  };
+
+  const handleEditCopyCancel = () => {
+    // Escape can bypass a disabled Cancel button, so guard here too.
+    if (isEditCopyActionPendingRef.current) return;
     setIsEditCopyConfirmOpen(false);
     editCopyButtonRef.current?.focus();
-  }, []);
+  };
 
   // useCallback-wrapped (backlog item 72) so it can be a dependency of the
   // resume-intent consumption effect below without that effect refiring on
@@ -1208,6 +1361,69 @@ export function RidingScreen({
     resumeIntentToken !== undefined &&
     resumeIntentToken !== handledResumeIntentToken &&
     !(restorationSettled && !nav.restoredForThisRoute);
+  // The pre-ride/paused panel's own render condition, named once: Edit copy
+  // and its confirmation live in it.
+  const isEditCopyPanelShown =
+    nav.geolocationStatus === "idle" && !isConsumingResumeIntent;
+
+  // Ends the Ride context an Edit copy attempt began in (backlog item 124,
+  // D-06): its cleanup runs whenever the panel stops or starts being shown
+  // and when this screen unmounts, bumping the counter an attempt compares
+  // against before it may navigate or take focus, and detaching any guard
+  // still listening. A layout effect, so no commit that hides the panel can
+  // be followed by a navigation before the bump. Strict Mode's extra
+  // cleanup on mount runs before any attempt can have read the counter.
+  useLayoutEffect(() => {
+    const contextRef = editCopyContextRef;
+    const attemptRef = editCopyAttemptRef;
+    const pendingFocusRef = pendingEditCopyFailureFocusRef;
+    return () => {
+      contextRef.current += 1;
+      attemptRef.current?.guard.detach();
+      pendingFocusRef.current?.guard.detach();
+    };
+  }, [isEditCopyPanelShown]);
+
+  // Decides an Edit copy failure's focus return (backlog item 124, D-06),
+  // re-checked on every render — the pendingEndRideFocusRef pattern — and
+  // in this order:
+  // 1. the rider has left the context the attempt began in: drop it;
+  // 2. Edit copy is not yet mounted and enabled: wait;
+  // 3. the rider has moved on — the attempt's guard saw input outside the
+  //    Edit copy group, or focus is now on anything but <body> (where a
+  //    removed or disabled control leaves it) or Edit copy itself: drop it;
+  // 4. otherwise focus Edit copy without the browser's own focus scroll,
+  //    then reveal it and its message by the minimum — Edit copy alone if
+  //    both cannot fit — under the sticky navigation.
+  // The guard is detached whichever way it is decided. A layout effect, so
+  // the reveal lands before the re-enabled button is painted.
+  useLayoutEffect(() => {
+    const attempt = pendingEditCopyFailureFocusRef.current;
+    if (attempt === null) return;
+    if (attempt.context !== editCopyContextRef.current) {
+      pendingEditCopyFailureFocusRef.current = null;
+      attempt.guard.detach();
+      return;
+    }
+    const button = editCopyButtonRef.current;
+    if (!button || button.disabled) return;
+    pendingEditCopyFailureFocusRef.current = null;
+    const focused = document.activeElement;
+    const isStillWaiting =
+      attempt.guard.armed &&
+      (focused === null || focused === document.body || focused === button);
+    attempt.guard.detach();
+    if (!isStillWaiting) return;
+    button.focus({ preventScroll: true });
+    const group = editCopyGroupRef.current;
+    if (group) {
+      applyConfirmationReveal(
+        group,
+        stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+        button,
+      );
+    }
+  });
 
   // Renders the End-ride action in place: either the trigger button (plus
   // any error) or the confirmation itself, never both — called from both of
@@ -1760,7 +1976,7 @@ export function RidingScreen({
         )
       ) : null}
 
-      {nav.geolocationStatus === "idle" && !isConsumingResumeIntent ? (
+      {isEditCopyPanelShown ? (
         <div className="panel stack ride-start-panel">
           <p>{nav.currentFix ? t("riding.resumePrompt") : t("riding.startPrompt")}</p>
           <button
@@ -1780,34 +1996,45 @@ export function RidingScreen({
           >
             {t("riding.backToRideOptions")}
           </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            ref={editCopyButtonRef}
-            onClick={handleEditCopyClick}
-            disabled={!canDeriveEditableWaypoints(route) || isEditCopyInFlight}
-          >
-            {isEditCopyInFlight ? t("riding.creatingEditCopy") : t("riding.editCopy")}
-          </button>
-          {!canDeriveEditableWaypoints(route) ? (
-            <p className="field-hint">{t("riding.editCopyTooShort")}</p>
-          ) : null}
-          {editCopyError ? (
-            <p className="field-error" role="alert">
-              {editCopyError}
-            </p>
-          ) : null}
-          <ConfirmDialog
-            open={isEditCopyConfirmOpen}
-            title={t("riding.editCopyConfirmTitle")}
-            message={t("riding.editCopyConfirmMessage")}
-            confirmLabel={t("riding.editCopyConfirmLabel")}
-            cancelLabel={t("ride.cancel")}
-            onConfirm={() => {
-              void performEditCopy();
-            }}
-            onCancel={handleEditCopyCancel}
-          />
+          {/* The Edit copy group (backlog item 124, D-06): input inside it
+           * does not count as moving on from an attempt, and it is what a
+           * failure reveals. The same .stack gap as the panel itself, so
+           * the layout is unchanged. */}
+          <div className="stack" ref={editCopyGroupRef}>
+            <button
+              type="button"
+              className="btn-secondary"
+              ref={editCopyButtonRef}
+              onClick={handleEditCopyClick}
+              disabled={!canDeriveEditableWaypoints(route) || isEditCopyInFlight}
+            >
+              {isEditCopyInFlight ? t("riding.creatingEditCopy") : t("riding.editCopy")}
+            </button>
+            {!canDeriveEditableWaypoints(route) ? (
+              <p className="field-hint">{t("riding.editCopyTooShort")}</p>
+            ) : null}
+            {editCopyError ? (
+              <p className="field-error" role="alert">
+                {editCopyError}
+              </p>
+            ) : null}
+            <ConfirmDialog
+              open={isEditCopyConfirmOpen}
+              titleRef={editCopyTitleRef}
+              title={t("riding.editCopyConfirmTitle")}
+              message={t("riding.editCopyConfirmMessage")}
+              confirmLabel={
+                isEditCopyInFlight
+                  ? t("riding.creatingEditCopy")
+                  : t("riding.editCopyConfirmLabel")
+              }
+              cancelLabel={t("ride.cancel")}
+              confirmDisabled={isEditCopyInFlight}
+              cancelDisabled={isEditCopyInFlight}
+              onConfirm={handleEditCopyConfirm}
+              onCancel={handleEditCopyCancel}
+            />
+          </div>
           {nav.currentFix ? (
             <div className="ride-end-ride-panel-row stack">
               {renderEndRideAction("panel")}

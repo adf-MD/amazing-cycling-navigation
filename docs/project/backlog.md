@@ -182,6 +182,7 @@ _Category: Interface and accessibility consistency_
 > **Staged delivery — slice 1 shipped (`0.4.51`) and accepted on the installed iPhone; slice 2's inventory is complete; slice 3, the two inventory cases the rider approved, shipped in `0.4.52` and was accepted on the installed iPhone, reported 2 October 2026. A separate pause/resume repair, [item 131](history/items-118-NN.md#item-131), was scheduled ahead of further item 124 work and shipped in `0.4.53` and was accepted on the installed iPhone, reported 2 October 2026.**
 > **Item 132, filed on 2 October 2026, now precedes item 124's remaining approved slices.** The same day's C-12 device observation and the review preparation of D-01, D-02 and D-06 approve nothing further.
 > **Later on 2 October 2026 the rider approved policies for D-06, D-02, D-01 and C-12, and placed the D-06 repair first, ahead of item 132** ([decisions below](#decisions-recorded-on-2-october-2026)). These are product decisions, not device acceptance; nothing about them is implemented yet.
+> **Slice 4, the D-06 repair, shipped in `0.4.54` on 2 October 2026, with automated evidence only; its installed-iPhone check is pending.** Item 132 is first again.
 > This item ships in slices and stays **pending** here until its final
 > slice. Nothing about it enters [`history/`](history/README.md) before
 > then. The original specification, under its own heading below, is kept
@@ -193,7 +194,7 @@ _Category: Interface and accessibility consistency_
 > | 1         | Planning's **Clear draft** and a Routes card's **Delete route** confirmations: the reveal rule on opening and the approved cancellation rule                                                     | **Shipped — `0.4.51`** (1 October 2026); **accepted on the installed iPhone**, reported 1 October 2026 ([`current-status.md`](current-status.md))                 |
 > | 2         | Inventory and review of every confirmation surface and every candidate expanding card or panel. **No behaviour change**; ends at the rider's own review                                          | **Completed inventory** ([inventory](../design/reveal-inventory/README.md)); C-14 and D-03 approved on 1 October 2026, every other case awaits the rider's review |
 > | 3         | Planning's **Save** separated from **Open saved route**, whose switch confirmation follows the rule beneath it (C-14); an unconfirmed **Delete** dismissed when filtering hides its route (D-03) | **Shipped — `0.4.52`** (1 October 2026); **accepted on the installed iPhone**, reported 2 October 2026 ([`current-status.md`](current-status.md))                 |
-> | 4         | **D-06**: Edit copy's working state, refused cancellation while the confirmed replacement runs, completion that respects the rider's navigation, and guarded failure focus                       | **Approved 2 October 2026; first in the execution order**; not started                                                                                            |
+> | 4         | **D-06**: Edit copy's working state, refused cancellation while the confirmed replacement runs, completion that respects the rider's navigation, and guarded failure focus                       | **Shipped — `0.4.54`** (2 October 2026); installed-iPhone check pending ([`current-status.md`](current-status.md))                                                |
 > | 5 onwards | D-01, D-02 and C-12's enlarged-text opening, as approved on 2 October 2026; then only further surfaces the rider approves from the inventory                                                     | Approved, not started; no other surfaces are approved for behaviour changes                                                                                       |
 
 ### Decisions recorded on 1 October 2026
@@ -328,6 +329,109 @@ _Category: Interface and accessibility consistency_
 - Browser root-text scaling is not iOS Larger Text. No VoiceOver, landscape or physical-Android result is claimed.
 
 **Installed-iPhone acceptance, reported 2 October 2026.** All five device checks passed on `0.4.52` (build `68e6697`), in German and English, the search and tag-filter paths both included. This accepts slice 3 only; the dated record, with what it does not claim, is in [`current-status.md`](current-status.md).
+
+### Slice 4 — Edit copy while a copy is being made (D-06) (shipped `0.4.54`, 2 October 2026)
+
+**Approved by the rider on 2 October 2026** — decisions 1 to 3 in the inventory's [decisions section](../design/reveal-inventory/README.md#decisions--d-06-d-02-d-01-and-c-12-2-october-2026) — and placed first in the execution order, ahead of item 132.
+
+**The defect.** Once **Replace and edit** was pressed, Cancel and Escape still closed the confirmation while the draft replacement continued, and its completion then switched the app to Planning even after the rider had left Ride. After a failure, focus was sent to Edit copy while it was still disabled, so it was lost ([review preparation](../design/reveal-inventory/README.md#d-06--edit-copy-with-c-12-as-context)). Rechecking the source before implementation found a consequence the new navigation behaviour depends on, raised by the rider in plan review and reproduced below: a Planning opened while the write was still awaiting its preferences read hydrated the earlier draft, and Planning's 900 ms autosave then wrote it back over the copy.
+
+**Mechanism** (`RidingScreen.tsx`, unless named).
+
+- **Working state.** Replace and edit first moves focus, without scrolling, to the confirmation's own title, which `ConfirmDialog`'s new optional `titleRef` makes focusable by script only. Both actions are then disabled, and the confirm action reads the existing **Creating editable copy… / Kopie zum Bearbeiten wird erstellt…**. Cancel and Escape are refused until the write settles; before confirmation they cancel as before. The existing re-entrancy guard stays.
+- **One attempt from the first press.** An attempt begins at the Edit copy press — covering its preliminary draft check and, when there is no meaningful draft, the write — or at Replace and edit. Each attempt owns one interaction guard (`src/ui/riding/editCopyInteractionGuard.ts`, new). A further Edit copy press is refused while an attempt exists, so repeated presses during the check leave no second check behind.
+- **Navigation context.** One counter is bumped, in a layout effect's cleanup, whenever the pre-ride/paused panel stops or starts being shown and when the screen unmounts: another tab, Back to Ride options, End ride, a route switch, Start riding. Success navigates to Planning only if the attempt's value still matches. Returning to Ride mounts a new screen with its own counter, so no old permission is revived, and a late result from an old screen changes neither the screen nor focus. The direct path skips the confirmation only because no meaningful draft exists, so it drops its attempt — no confirmation, no write — if the rider has left by the time its check settles.
+- **Coordination with Planning.** The preferences the copy needs are now read by the preliminary check, before the confirmation opens, so nothing is awaited between the rider's authorisation and `saveDraft`'s call.
+  - Dexie 4.4.5 creates the readwrite transaction synchronously inside that call (`Table._trans` → `tempTransaction` → `trans.create()`).
+  - A Planning hydration begun afterwards is a later read-only transaction on the same store, which IndexedDB starts only after the write. Planning's plain `get` is not served by Dexie's liveQuery cache.
+  - So Planning shows the copy, or the earlier draft if the write fails — never a draft older than a confirmed replacement — and its autosave rewrites what it shows.
+  - No change to Planning, to storage or to App's navigation handler.
+- **Failure focus.** The `catch` no longer focuses. A layout effect decides once Edit copy is enabled again:
+  - **dropped** if the rider has left the context, if the attempt's guard has seen them move on, or if focus is on anything but `<body>` or Edit copy. The guard is disarmed by a `pointerdown` outside the Edit copy group, any key except Escape inside it, and any `wheel` or `touchmove`;
+  - **otherwise** Edit copy is focused with `preventScroll`, and it and its message are revealed by the minimum beneath the sticky navigation (`applyConfirmationReveal`, with Edit copy as the priority when both cannot fit).
+
+  The group is a new `.stack` wrapper with the panel's own gap, so the layout is unchanged, and `RidingScreen` receives the sticky header's ref from `App.tsx`.
+
+- **Discoverability after leaving Ride**, by existing conventions:
+  - Plan shows the copy with its existing edit-copy notice.
+  - A failure leaves the earlier draft in Plan and the error in Status's redacted log.
+  - A failure while the panel was only hidden shows its message beside Edit copy when the panel returns.
+- **Changed as a consequence.** A preferences-read failure now shows the existing `riding.editCopyFailed` message before any confirmation opens, rather than after Replace and edit; it is logged as `riding-edit-copy-load-preferences`. A confirmation keeps the preferences read when it opened, which can change only from another tab.
+- **Files:**
+  - **source:** `src/ui/riding/RidingScreen.tsx`, `src/ui/riding/editCopyInteractionGuard.ts` (new), `src/ui/shared/ConfirmDialog.tsx` (one optional prop), `src/App.tsx` (one prop);
+  - **version:** `0.4.54`;
+  - **tests:** below.
+
+**Reproduction first, on the unchanged `0.4.53` build, in both engines.** In English and German, every variant leaves Planning on the earlier draft:
+
+| Sequence                                                                                                                 | Stored afterwards                                          | What Planning shows                                |
+| ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- | -------------------------------------------------- |
+| Open the confirmation, hold the preferences store, Replace and edit, open Plan; release before Planning's first autosave | the earlier draft — the copy was written, then overwritten | the earlier draft                                  |
+| The same, released after that autosave                                                                                   | the copy                                                   | the earlier draft, so display and storage disagree |
+| Released, the copy stored, then a waypoint added in Plan                                                                 | the earlier draft plus the waypoint                        | the earlier draft                                  |
+
+With the write itself held instead — issued before Planning mounted — the unchanged build already ordered Planning's read after it in both engines, which is the guarantee the repair relies on.
+
+**Evidence — automated only.**
+
+- **Unit and component.** All 4,795 tests in 206 files pass. New: 20 in `RidingScreen.test.tsx` (D-06), 8 in `editCopyInteractionGuard.test.ts` and 2 in `ConfirmDialog.test.tsx`. They cover:
+  - the busy state, the parked title and refused Cancel and Escape;
+  - the write issued within the press;
+  - navigation in context, under Strict Mode, after unmount, after Start riding and after a remount;
+  - one check and one write for repeated presses, and no write when either read settles after unmount;
+  - the preferences failure;
+  - focus restored with `preventScroll` once Edit copy is enabled, with a reveal;
+  - no focus and no reveal after each kind of moving on, including a wheel during the preliminary check;
+  - focus still restored after a press on the disabled Cancel or a refused Escape;
+  - every guard detached, however an attempt ends.
+- **Browser, in the pinned container, at 390×844 portrait.** `e2e/editCopyBusyState.smoke.spec.ts` (new): 24 tests in each of Chromium and WebKit, in English and German where copy or layout matters, and at 200% root text for the working label's containment and the failure reveal.
+  - **Controlled fixtures, all synthetic:** an IndexedDB hold on the draft or preferences store, an abort of the queued write, and an immediate `put` fault. They are always released, and a held store is never read.
+  - **Input:** real pointer, key and wheel. The app's scroll calls and the focus moves made by script are recorded, so a kept position is asserted as "no app scroll call", never as a raw `scrollY`.
+  - **Results:** 48 of 48, then 144 of 144 over three repeats, and 96 of 96 over two after the focus recorder was corrected (see the findings).
+  - **Regression specs:** `editRouteAsPlanningCopy`, `reverseRoute`, `clearPlanningDraft`, `planning`, `confirmationReveal.smoke`, `ridingPauseAfterResume.smoke`, `rideSessionSwitchGuard`, `ridingLauncher` and `planningSavedRoute.smoke`: 126 of 126. The two Edit copy specs then passed 36 of 36 over three repeats.
+  - **The full browser suite, once, at 8 workers:** 791 of 792. The failure was `ridingClimbView.spec.ts`'s item 115 cue-placement test, whose probe found no rider marker painted at the follow anchor during active riding, which this slice does not touch. It passed 10 of 10 alone. Under load, the whole file at three repeats lost 2 of 78 on this build, and also 2 of 78 in one of two runs on the unchanged `0.4.53` build, so it is pre-existing and not attributed here.
+- **Baseline, `0.4.53`.** 36 of the 48 browser runs fail in the two engines. The failures are: the working state, in both languages; completion after leaving Ride, and after leaving and returning — the app switched to Planning; the direct path left during its check — the copy was written and the app switched; focus after a failure, left on `<body>`; the 200% failure reveal and working label; and the Planning reproduction above. Twelve pass, six in each engine:
+  - the held write committing or failing, and the edit made while Planning is still loading — regression guards for behaviour the baseline already had;
+  - the scrolled-away and moved-focus cases — the baseline's failure focus reached a disabled button and did nothing;
+  - Chromium's direct-path wheel case, for the same reason;
+  - WebKit's direct path with no other input, where focus never left Edit copy.
+- **Negative controls**, each applied alone to `RidingScreen.tsx`, rebuilt, and restored byte-for-byte (SHA-256):
+
+| Control | What it disables                                                            | Unit tests failed (of 262) | Browser tests failed (of 48)                                                                                                                                                                                                |
+| ------- | --------------------------------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (a)     | the context check before navigating                                         | 3                          | 6 — leaving for Routes (English and German) and leaving and returning, both engines                                                                                                                                         |
+| (b)     | disabling the confirmation's actions                                        | 1                          | 10 — the working state and the 200% label containment in both languages, and the Tab case, whose focus then left with the confirmation; both engines                                                                        |
+| (c)     | refusing Escape                                                             | 2                          | 4 — the working state, both languages and engines                                                                                                                                                                           |
+| (d)     | the title park                                                              | 1                          | 4 — the working state: focus not on the title                                                                                                                                                                               |
+| (e)     | the deferred failure focus (the synchronous focus reinstated)               | 8                          | 8 — a held failure with no input (English and German), the direct path's wheel case and German at 200%, both engines. The scrolled-away and Tab cases pass: the synchronous call reaches a disabled button and does nothing |
+| (f)     | the reveal                                                                  | 3                          | 2 — German at 200% only, both engines; elsewhere Edit copy and its message were already in view                                                                                                                             |
+| (g)     | the interaction guard (always armed)                                        | 4                          | 4 — the two wheel cases, both engines; the Tab case is still caught by the focus check                                                                                                                                      |
+| (h)     | the focus check                                                             | 1                          | **none**: real input also fires the guard's events, so only a focus move by script, at unit level, discriminates                                                                                                            |
+| (i)     | dropping the direct path when the rider has left                            | 2                          | 4 — leaving during the check, held on either store, both engines: a write lands after leaving                                                                                                                               |
+| (j)     | the guard armed only when the write starts, as in the first plan            | 2                          | 2 — the wheel during the preliminary check, both engines                                                                                                                                                                    |
+| (k)     | the original delayed preferences read before the write, held by the fixture | 1                          | 8 — every Planning case: opened during the held read (English and German), released after autosave, and an edit after the copy, both engines; the earlier draft is stored, or shown                                         |
+| (l)     | refusing a further press during the check                                   | 1                          | 2 — three writes instead of one, both engines                                                                                                                                                                               |
+
+**Findings worth carrying forward.**
+
+- **React's own commit calls `focus()` on a button it has just disabled.** Chromium blurs a focused button that becomes disabled, and React's selection restore after the commit calls `focus()` on it again, which does nothing. A recorder that counted calls therefore credited focus moves that never happened. It first misread control (k), then the baseline. The spec now records only calls that leave focus on their target; the same caution applies to any future focus assertion.
+- **An immediate storage fault never shows the working state.** A write that fails before React renders lands its busy and idle states in one commit, so the button is never disabled. Only a held write exercises the busy-then-enabled sequence in a browser. The direct path's version of it is covered at unit level.
+- **The baseline mostly lost focus rather than taking it.** Its failure focus reached Edit copy while it was disabled, a no-op, leaving the rider on `<body>`. WebKit's direct path was the exception: its write could fail before the working state rendered, and the baseline then moved focus back to Edit copy after the rider had scrolled away.
+- **The title park makes the engines agree.** Chromium blurs a disabled focused button and WebKit keeps it, so without the park a refused Escape in Chromium would land on `<body>` and count as moving on; with it, both engines keep focus inside the confirmation.
+- **IndexedDB's ordering already held on the baseline for a write issued before Planning mounted**, in both engines. The repair issues every authorised write that way.
+
+**Limitations, stated plainly.**
+
+- **Synthetic only.** Holds, aborts and faults are synthetic. Nothing is established about real write latency, real failure modes or how often they occur on the iPhone, and no physical-device reproduction of D-06 exists.
+- **Edits in a Planning still loading behind a held write.** If the rider edits Planning while it is still loading behind a held write, Planning's existing rule applies: edits made before hydration take precedence, and they supersede the copy in storage. A test characterises this; nothing changes it here. It is reachable only while a write is held.
+- **Two buttons read the working label while busy** — Edit copy and the confirmation's action. Accurate, but it is announced twice.
+- **The guard is deliberately coarse.** Any `wheel` or `touchmove`, and any key but Escape, counts as moving on — including a tap that drifts on the disabled actions. The failure then leaves focus where it is, and its message is still announced as an alert.
+- **Reported separately, not fixed (pre-existing):**
+  - an unconfirmed Edit copy confirmation left open survives Start riding, and when the ride is paused it is still open and its Cancel `autoFocus` fires again;
+  - the draft-check failure message is not gated on the rider still being there.
+- **Not claimed:** browser text scaling is not iOS Larger Text, and no VoiceOver, physical-keyboard, landscape or physical-Android result is claimed.
+
+**Installed-iPhone check: pending** — Session 5 of [`current-status.md`](current-status.md), the ordinary flow only.
 
 ### Original specification (scheduled 30 September 2026)
 

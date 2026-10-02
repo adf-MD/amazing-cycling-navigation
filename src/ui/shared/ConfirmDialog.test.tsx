@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 
@@ -341,5 +341,71 @@ describe("ConfirmDialog", () => {
       />,
     );
     expect(withPositionalIds(screen.getByRole("dialog").outerHTML)).toBe(withProps);
+  });
+
+  it("resolves titleRef to the title and makes only that title focusable by script (backlog item 124, D-06)", () => {
+    const titleRef = { current: null as HTMLHeadingElement | null };
+    const { unmount } = render(
+      <ConfirmDialog
+        open
+        titleRef={titleRef}
+        title="Replace your current draft?"
+        message="Editing this route will replace your unsaved draft."
+        confirmLabel="Replace and edit"
+        cancelLabel="Cancel"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    const title = screen.getByRole("heading", { name: "Replace your current draft?" });
+    expect(titleRef.current).toBe(title);
+    expect(title).toHaveAttribute("tabindex", "-1");
+    expect(screen.getByRole("dialog")).toHaveAccessibleName(
+      "Replace your current draft?",
+    );
+    const withRef = withPositionalIds(screen.getByRole("dialog").outerHTML);
+    unmount();
+
+    render(
+      <ConfirmDialog
+        open
+        title="Replace your current draft?"
+        message="Editing this route will replace your unsaved draft."
+        confirmLabel="Replace and edit"
+        cancelLabel="Cancel"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const plain = screen.getByRole("heading", { name: "Replace your current draft?" });
+    expect(plain).not.toHaveAttribute("tabindex");
+    expect(withPositionalIds(screen.getByRole("dialog").outerHTML)).toBe(
+      withRef.replace(' tabindex="-1"', ""),
+    );
+  });
+
+  it("still cancels on Escape from a focused title, so a caller can refuse it while busy", () => {
+    const titleRef = { current: null as HTMLHeadingElement | null };
+    const onCancel = vi.fn();
+    render(
+      <ConfirmDialog
+        open
+        titleRef={titleRef}
+        title="Replace your current draft?"
+        message="Editing this route will replace your unsaved draft."
+        confirmLabel="Replace and edit"
+        cancelLabel="Cancel"
+        confirmDisabled
+        cancelDisabled
+        onConfirm={vi.fn()}
+        onCancel={onCancel}
+      />,
+    );
+
+    titleRef.current?.focus();
+    expect(titleRef.current).toHaveFocus();
+    fireEvent.keyDown(titleRef.current ?? document.body, { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });

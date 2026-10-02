@@ -12,6 +12,9 @@ import {
   setActiveRideState,
 } from "../../storage/rideStateRepository.ts";
 import * as rideStateRepository from "../../storage/rideStateRepository.ts";
+import * as planningPreferencesRepository from "../../storage/planningPreferencesRepository.ts";
+import * as confirmationRevealScroll from "../shared/confirmationRevealScroll.ts";
+import * as guardModule from "./editCopyInteractionGuard.ts";
 import type {
   GeolocationError,
   GeolocationFix,
@@ -8278,6 +8281,535 @@ describe("RidingScreen", () => {
       expect(saveDraftSpy).toHaveBeenCalledTimes(1);
 
       saveDraftSpy.mockRestore();
+    });
+
+    // Backlog item 124, inventory case D-06 — the rider's decisions of 2
+    // October 2026. Storage is held with deferred promises, so each test
+    // decides exactly when a read or the write settles.
+    describe("while a copy is being made (backlog item 124, D-06)", () => {
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      function deferred<T>(): {
+        promise: Promise<T>;
+        resolve: (value: T) => void;
+        reject: (error: unknown) => void;
+      } {
+        let resolve: (value: T) => void = () => undefined;
+        let reject: (error: unknown) => void = () => undefined;
+        const promise = new Promise<T>((res, rej) => {
+          resolve = res;
+          reject = rej;
+        });
+        return { promise, resolve, reject };
+      }
+
+      async function seedMeaningfulDraft(): Promise<void> {
+        await saveDraft({
+          waypoints: [
+            { id: "existing-a", coordinate: [1, 52] },
+            { id: "existing-b", coordinate: [1.01, 52] },
+          ],
+          routeName: "Unsaved plan",
+          avoidFerries: true,
+          profile: "cycling-road",
+        });
+      }
+
+      function renderScreen(onNavigateToPlanning = vi.fn()) {
+        const stub = buildStubGeolocationSource();
+        const utils = render(
+          <RidingScreen
+            route={route}
+            geolocationSource={stub.source}
+            mapFactory={buildStubMapFactory().factory}
+            onNavigateToPlanning={onNavigateToPlanning}
+          />,
+        );
+        return { ...utils, onNavigateToPlanning };
+      }
+
+      /** Opens the replacement confirmation and returns it with Edit copy,
+       * captured while it still reads "Edit copy". */
+      async function openConfirmation(user: ReturnType<typeof userEvent.setup>) {
+        const editCopy = await screen.findByRole("button", { name: "Edit copy" });
+        await user.click(editCopy);
+        const dialog = await screen.findByRole("dialog");
+        return { editCopy, dialog };
+      }
+
+      function holdSaveDraft() {
+        const write = deferred<undefined>();
+        const spy = vi
+          .spyOn(planningDraftRepository, "saveDraft")
+          .mockImplementation(() => write.promise);
+        return { write, spy };
+      }
+
+      it("disables both actions with the working label, waits on the title and refuses Cancel and Escape, writing once", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        const { onNavigateToPlanning } = renderScreen();
+        const { dialog } = await openConfirmation(user);
+        const { write, spy } = holdSaveDraft();
+
+        await user.click(
+          within(dialog).getByRole("button", { name: "Replace and edit" }),
+        );
+
+        const working = within(dialog).getByRole("button", {
+          name: "Creating editable copy…",
+        });
+        const cancel = within(dialog).getByRole("button", { name: "Cancel" });
+        expect(working).toBeDisabled();
+        expect(cancel).toBeDisabled();
+        const title = within(dialog).getByRole("heading", {
+          name: "Replace your current draft?",
+        });
+        expect(title).toHaveFocus();
+        expect(title).toHaveAttribute("tabindex", "-1");
+
+        fireEvent.keyDown(title, { key: "Escape" });
+        await user.click(cancel);
+        await user.click(working);
+        expect(screen.getByRole("dialog")).toBe(dialog);
+        expect(spy).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+          write.resolve(undefined);
+          await write.promise;
+        });
+        expect(onNavigateToPlanning).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+
+      it("issues the write within the Replace and edit press itself, with nothing awaited first", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        renderScreen();
+        const { dialog } = await openConfirmation(user);
+        const { spy } = holdSaveDraft();
+        const preferencesSpy = vi.spyOn(
+          planningPreferencesRepository,
+          "getPlanningPreferences",
+        );
+
+        fireEvent.click(within(dialog).getByRole("button", { name: "Replace and edit" }));
+
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(preferencesSpy).not.toHaveBeenCalled();
+      });
+
+      it("navigates to Planning on success while the rider stays, even under Strict Mode", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        const onNavigateToPlanning = vi.fn();
+        const stub = buildStubGeolocationSource();
+        render(
+          <StrictMode>
+            <RidingScreen
+              route={route}
+              geolocationSource={stub.source}
+              mapFactory={buildStubMapFactory().factory}
+              onNavigateToPlanning={onNavigateToPlanning}
+            />
+          </StrictMode>,
+        );
+        const { dialog } = await openConfirmation(user);
+        await user.click(
+          within(dialog).getByRole("button", { name: "Replace and edit" }),
+        );
+
+        await waitFor(() => {
+          expect(onNavigateToPlanning).toHaveBeenCalledTimes(1);
+        });
+        expect((await getDraft())?.editCopySourceRouteId).toBe("route-1");
+      });
+
+      it("does not navigate when the copy completes after the screen has unmounted", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        const { onNavigateToPlanning, unmount } = renderScreen();
+        const { dialog } = await openConfirmation(user);
+        const { write } = holdSaveDraft();
+        await user.click(
+          within(dialog).getByRole("button", { name: "Replace and edit" }),
+        );
+
+        unmount();
+        await act(async () => {
+          write.resolve(undefined);
+          await write.promise;
+        });
+        expect(onNavigateToPlanning).not.toHaveBeenCalled();
+      });
+
+      it("does not navigate when the rider started riding before the copy completed", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        const { onNavigateToPlanning } = renderScreen();
+        const { dialog } = await openConfirmation(user);
+        const { write } = holdSaveDraft();
+        await user.click(
+          within(dialog).getByRole("button", { name: "Replace and edit" }),
+        );
+
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+        expect(
+          screen.queryByRole("button", { name: "Start riding" }),
+        ).not.toBeInTheDocument();
+        await act(async () => {
+          write.resolve(undefined);
+          await write.promise;
+        });
+        expect(onNavigateToPlanning).not.toHaveBeenCalled();
+      });
+
+      it("does not let an old copy navigate after the rider left and came back", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        const onNavigateToPlanning = vi.fn();
+        const first = renderScreen(onNavigateToPlanning);
+        const { dialog } = await openConfirmation(user);
+        const { write } = holdSaveDraft();
+        await user.click(
+          within(dialog).getByRole("button", { name: "Replace and edit" }),
+        );
+
+        first.unmount();
+        renderScreen(onNavigateToPlanning);
+        const returned = await screen.findByRole("button", { name: "Edit copy" });
+        returned.focus();
+        await act(async () => {
+          write.resolve(undefined);
+          await write.promise;
+        });
+        expect(onNavigateToPlanning).not.toHaveBeenCalled();
+        expect(returned).toHaveFocus();
+      });
+
+      it("refuses repeated Edit copy presses during the preliminary check: one check, one write", async () => {
+        const user = userEvent.setup();
+        const check = deferred<undefined>();
+        const checkSpy = vi
+          .spyOn(planningDraftRepository, "getDraft")
+          .mockImplementation(() => check.promise);
+        const saveSpy = vi.spyOn(planningDraftRepository, "saveDraft");
+        const { onNavigateToPlanning } = renderScreen();
+        const editCopy = await screen.findByRole("button", { name: "Edit copy" });
+
+        await user.click(editCopy);
+        await user.click(editCopy);
+        await user.click(editCopy);
+        expect(checkSpy).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+          check.resolve(undefined);
+          await check.promise;
+        });
+        await waitFor(() => {
+          expect(onNavigateToPlanning).toHaveBeenCalledTimes(1);
+        });
+        expect(saveSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it.each(["the draft check", "the preferences read"] as const)(
+        "writes nothing and does not navigate when %s settles after the screen has unmounted",
+        async (held) => {
+          const user = userEvent.setup();
+          const read = deferred<undefined>();
+          if (held === "the draft check") {
+            vi.spyOn(planningDraftRepository, "getDraft").mockImplementation(
+              () => read.promise,
+            );
+          } else {
+            vi.spyOn(
+              planningPreferencesRepository,
+              "getPlanningPreferences",
+            ).mockImplementation(() =>
+              read.promise.then(() => ({
+                profileByDefault: "cycling-road" as const,
+                avoidFerriesByDefault: true,
+              })),
+            );
+          }
+          const saveSpy = vi.spyOn(planningDraftRepository, "saveDraft");
+          const { onNavigateToPlanning, unmount } = renderScreen();
+          await user.click(await screen.findByRole("button", { name: "Edit copy" }));
+
+          unmount();
+          await act(async () => {
+            read.resolve(undefined);
+            await read.promise;
+          });
+          expect(saveSpy).not.toHaveBeenCalled();
+          expect(onNavigateToPlanning).not.toHaveBeenCalled();
+        },
+      );
+
+      it("shows the ordinary failure message, with no confirmation, when the preferences cannot be read", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        vi.spyOn(
+          planningPreferencesRepository,
+          "getPlanningPreferences",
+        ).mockRejectedValue(new Error("boom"));
+        const saveSpy = vi.spyOn(planningDraftRepository, "saveDraft");
+        renderScreen();
+        await user.click(await screen.findByRole("button", { name: "Edit copy" }));
+
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+          "The editable copy could not be created on this device. Try again.",
+        );
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(saveSpy).not.toHaveBeenCalled();
+      });
+
+      it("after a failure with no other input, focuses the re-enabled Edit copy without scrolling, then reveals it and its message", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        renderScreen();
+        const { editCopy, dialog } = await openConfirmation(user);
+        const { write } = holdSaveDraft();
+        await user.click(
+          within(dialog).getByRole("button", { name: "Replace and edit" }),
+        );
+        const focusSpy = vi.spyOn(HTMLElement.prototype, "focus");
+        const revealSpy = vi.spyOn(confirmationRevealScroll, "applyConfirmationReveal");
+
+        await act(async () => {
+          write.reject(new Error("boom"));
+          await write.promise.catch(() => undefined);
+        });
+
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        const alert = screen.getByRole("alert");
+        expect(alert).toHaveTextContent(
+          "The editable copy could not be created on this device. Try again.",
+        );
+        expect(editCopy).toBeEnabled();
+        expect(editCopy).toHaveFocus();
+        const editCopyFocusCalls = focusSpy.mock.contexts
+          .map((context, index) => ({ context, args: focusSpy.mock.calls[index] }))
+          .filter(({ context }) => context === editCopy);
+        expect(editCopyFocusCalls).toEqual([
+          { context: editCopy, args: [{ preventScroll: true }] },
+        ]);
+        expect(revealSpy).toHaveBeenCalledTimes(1);
+        const [group, headerBottom, priority] = revealSpy.mock.calls[0] ?? [];
+        expect(group).toContainElement(editCopy);
+        expect(group).toContainElement(alert);
+        expect(headerBottom).toBe(0);
+        expect(priority).toBe(editCopy);
+      });
+
+      it.each([
+        [
+          "focus moved elsewhere by script",
+          () => {
+            screen.getByRole("button", { name: "Start riding" }).focus();
+          },
+        ],
+        [
+          "a pointerdown outside Edit copy",
+          () => {
+            fireEvent.pointerDown(screen.getByRole("button", { name: "Start riding" }));
+          },
+        ],
+        [
+          "a wheel",
+          () => {
+            fireEvent.wheel(document.body);
+          },
+        ],
+        [
+          "a key other than Escape",
+          () => {
+            fireEvent.keyDown(document.activeElement ?? document.body, { key: "Tab" });
+          },
+        ],
+      ])(
+        "after %s while waiting, a failure neither takes focus nor reveals",
+        async (_label, moveOn) => {
+          const user = userEvent.setup();
+          await seedMeaningfulDraft();
+          renderScreen();
+          const { editCopy, dialog } = await openConfirmation(user);
+          const { write } = holdSaveDraft();
+          await user.click(
+            within(dialog).getByRole("button", { name: "Replace and edit" }),
+          );
+          const focusSpy = vi.spyOn(HTMLElement.prototype, "focus");
+          const revealSpy = vi.spyOn(confirmationRevealScroll, "applyConfirmationReveal");
+
+          moveOn();
+          await act(async () => {
+            write.reject(new Error("boom"));
+            await write.promise.catch(() => undefined);
+          });
+
+          expect(screen.getByRole("alert")).toBeInTheDocument();
+          expect(editCopy).toBeEnabled();
+          expect(editCopy).not.toHaveFocus();
+          expect(focusSpy.mock.contexts).not.toContain(editCopy);
+          expect(revealSpy).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each([
+        [
+          "a pointerdown on the disabled Cancel",
+          (dialog: HTMLElement) => {
+            fireEvent.pointerDown(within(dialog).getByRole("button", { name: "Cancel" }));
+          },
+        ],
+        [
+          "a refused Escape",
+          (dialog: HTMLElement) => {
+            fireEvent.keyDown(
+              within(dialog).getByRole("heading", {
+                name: "Replace your current draft?",
+              }),
+              { key: "Escape" },
+            );
+          },
+        ],
+      ])("after %s, a failure still returns focus to Edit copy", async (_label, act1) => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        renderScreen();
+        const { editCopy, dialog } = await openConfirmation(user);
+        const { write } = holdSaveDraft();
+        await user.click(
+          within(dialog).getByRole("button", { name: "Replace and edit" }),
+        );
+        const revealSpy = vi.spyOn(confirmationRevealScroll, "applyConfirmationReveal");
+
+        act1(dialog);
+        expect(screen.getByRole("dialog")).toBe(dialog);
+        await act(async () => {
+          write.reject(new Error("boom"));
+          await write.promise.catch(() => undefined);
+        });
+
+        expect(editCopy).toHaveFocus();
+        expect(revealSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it("counts a wheel during the preliminary check: the direct path's failure then takes no focus", async () => {
+        const user = userEvent.setup();
+        const check = deferred<undefined>();
+        vi.spyOn(planningDraftRepository, "getDraft").mockImplementation(
+          () => check.promise,
+        );
+        vi.spyOn(planningDraftRepository, "saveDraft").mockRejectedValue(
+          new Error("boom"),
+        );
+        renderScreen();
+        const editCopy = await screen.findByRole("button", { name: "Edit copy" });
+        await user.click(editCopy);
+        const focusSpy = vi.spyOn(HTMLElement.prototype, "focus");
+        const revealSpy = vi.spyOn(confirmationRevealScroll, "applyConfirmationReveal");
+
+        // Edit copy keeps focus here (jsdom, like WebKit, leaves it on a
+        // button that becomes disabled), so only the guard can refuse.
+        fireEvent.wheel(document.body);
+        await act(async () => {
+          check.resolve(undefined);
+          await check.promise;
+        });
+
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+          "The editable copy could not be created on this device. Try again.",
+        );
+        await waitFor(() => {
+          expect(editCopy).toBeEnabled();
+        });
+        expect(focusSpy.mock.contexts).not.toContain(editCopy);
+        expect(revealSpy).not.toHaveBeenCalled();
+      });
+
+      it("keeps Cancel and Escape working before Replace and edit is pressed", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        const { onNavigateToPlanning } = renderScreen();
+        const { editCopy, dialog } = await openConfirmation(user);
+
+        fireEvent.keyDown(within(dialog).getByRole("button", { name: "Cancel" }), {
+          key: "Escape",
+        });
+
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(editCopy).toHaveFocus();
+        expect(onNavigateToPlanning).not.toHaveBeenCalled();
+        expect((await getDraft())?.routeName).toBe("Unsaved plan");
+      });
+
+      it("detaches every interaction guard it arms, however the attempt ends", async () => {
+        const user = userEvent.setup();
+        const armed: { detach: ReturnType<typeof vi.fn> }[] = [];
+        const arm = guardModule.armEditCopyInteractionGuard;
+        vi.spyOn(guardModule, "armEditCopyInteractionGuard").mockImplementation(
+          (getGroup) => {
+            const guard = arm(getGroup);
+            const detach = vi.fn(() => {
+              guard.detach();
+            });
+            armed.push({ detach });
+            return {
+              get armed() {
+                return guard.armed;
+              },
+              detach,
+            };
+          },
+        );
+        await seedMeaningfulDraft();
+        const { unmount } = renderScreen();
+
+        // Opening the confirmation ends the press's attempt.
+        const { dialog } = await openConfirmation(user);
+        // A failed write, whose focus return is then decided.
+        const failing = holdSaveDraft();
+        await user.click(
+          within(dialog).getByRole("button", { name: "Replace and edit" }),
+        );
+        await act(async () => {
+          failing.write.reject(new Error("boom"));
+          await failing.write.promise.catch(() => undefined);
+        });
+        // A write still in flight when the screen unmounts.
+        vi.restoreAllMocks();
+        vi.spyOn(guardModule, "armEditCopyInteractionGuard").mockImplementation(
+          (getGroup) => {
+            const guard = arm(getGroup);
+            const detach = vi.fn(() => {
+              guard.detach();
+            });
+            armed.push({ detach });
+            return {
+              get armed() {
+                return guard.armed;
+              },
+              detach,
+            };
+          },
+        );
+        const pending = holdSaveDraft();
+        const reopened = await openConfirmation(user);
+        await user.click(
+          within(reopened.dialog).getByRole("button", { name: "Replace and edit" }),
+        );
+        unmount();
+        await act(async () => {
+          pending.write.resolve(undefined);
+          await pending.write.promise;
+        });
+
+        expect(armed).toHaveLength(4);
+        for (const { detach } of armed) expect(detach).toHaveBeenCalled();
+      });
     });
   });
 
