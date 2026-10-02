@@ -843,7 +843,7 @@ At ordinary text, the browser evidence agrees with the rider's iPhone 13 report.
 
 ### Order
 
-- **Execution order:** D-06's repair within item 124 → [item 132](../../project/backlog.md#item-132) → item 124's remaining approved slices (D-01, D-02 and C-12's opening reveal) → item 122's design stage → item 103 → item 120. The authoritative list is in the root [`CLAUDE.md`](../../../CLAUDE.md).
+- **Execution order:** D-06's repair within item 124 → [item 132](../../project/history/items-132-NN.md#item-132) → item 124's remaining approved slices (D-01, D-02 and C-12's opening reveal) → item 122's design stage → item 103 → item 120. The authoritative list is in the root [`CLAUDE.md`](../../../CLAUDE.md).
 - **Why D-06 goes first:** an available Cancel currently closes the confirmation while the confirmed draft replacement continues, and its completion can override the rider's subsequent navigation.
 - **Scope of the next slice:** D-06 only. D-01, D-02 and C-12's opening-reveal change remain later work; their implementation details are settled when each slice is planned.
 - **Delivered:** D-06's repair shipped in `0.4.54`, 2 October 2026, as item 124's slice 4 ([record](../../project/backlog.md#item-124)). Its ordinary flow was accepted on the installed iPhone in German and English, reported the same day; the pending-write and failure cases have automated evidence only.

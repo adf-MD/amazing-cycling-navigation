@@ -19,7 +19,12 @@ import { readActiveRideStateRow, readSavedRouteId } from "./support/rideStateDb.
 // The unfinished ride is created through the real UI, then the page is
 // reloaded so the launcher's cold resume is the path under test, as in
 // ridingLauncher.spec.ts (whose helpers are duplicated locally, per this
-// project's convention). Watches are counted by wrapping
+// project's convention). Since backlog item 132 the first Ride entry after
+// the reload shows the paused route screen, whose own Resume ride carries
+// no instruction at all; the launcher, and with it the one-use instruction
+// this file is about, is reached through that screen's Back to Ride
+// options. The paused screen's own path is
+// coldStartPausedRoute.smoke.spec.ts's. Watches are counted by wrapping
 // navigator.geolocation before the app's own scripts run; the counters
 // restart on every page load.
 //
@@ -43,12 +48,16 @@ const COPY = {
     routes: "Routes",
     resumeRide: "Resume ride",
     resuming: "Resuming your ride…",
+    backToRideOptions: "Back to Ride options",
+    unfinishedRide: "You have an unfinished ride on this route.",
   },
   de: {
     ride: "Fahren",
     routes: "Routen",
     resumeRide: "Fahrt fortsetzen",
     resuming: "Deine Fahrt wird fortgesetzt…",
+    backToRideOptions: "Zurück zur Auswahl",
+    unfinishedRide: "Du hast auf dieser Route eine unbeendete Fahrt.",
   },
 } as const;
 
@@ -139,7 +148,8 @@ async function seedLanguagePreference(page: Page, language: Language): Promise<v
 }
 
 /** A real, unfinished route ride with a fix and progress, then a reload:
- * the app lands on Routes, and the Ride launcher offers Resume ride. */
+ * the app lands on Routes; Ride shows the paused route screen, whose Back
+ * to Ride options shows the Ride launcher offering Resume ride. */
 async function prepareLauncherResume(
   page: Page,
   context: BrowserContext,
@@ -178,6 +188,8 @@ async function prepareLauncherResume(
   if (language !== "en") await seedLanguagePreference(page, language);
   await page.reload();
   await page.getByRole("button", { name: COPY[language].ride, exact: true }).click();
+  await page.getByRole("button", { name: COPY[language].backToRideOptions }).click();
+  await expect(page.getByText(COPY[language].unfinishedRide)).toBeVisible();
   await expect(
     page.getByRole("button", { name: COPY[language].resumeRide }),
   ).toBeVisible();

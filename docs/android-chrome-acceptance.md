@@ -109,6 +109,12 @@ Web Activity, or Play Store listing.
   with the persisted fix/progress restored, and makes no further
   OpenRouteService request — **(Auto)**,
   `e2e/androidPersistenceAndOffline.spec.ts`.
+- Since backlog item 132, entering **Ride** directly after a reload shows
+  that same session's paused route screen (not the Ride launcher's
+  summary), restoring before it offers any control and starting no
+  location watch — **(Auto, Chromium and WebKit, not the
+  `android-chrome` project)**, `e2e/coldStartPausedRoute.smoke.spec.ts`;
+  **(Device)** still outstanding on Android.
 - Opening a saved route into Riding while tile/style requests are blocked
   still renders it on the app's own local fallback style — **(Auto)**,
   same file.

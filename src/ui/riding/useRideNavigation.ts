@@ -146,6 +146,13 @@ export interface RideNavigationState {
    * (e.g. a one-use resume intent deciding whether to auto-start) must
    * check this, not merely restorationStatus. */
   restoredForThisRoute: boolean;
+  /** True once this route's ride is known to be in storage (backlog item
+   * 132): restoration found its row, a persistence write succeeded, or a
+   * Pause wrote its snapshot — so even a session paused before its first
+   * fix counts. False again after finish(). Only ever set after a write
+   * or a read has actually succeeded, never optimistically, so a failed
+   * write never claims a session that is not there. */
+  hasStoredSession: boolean;
   /** Re-runs the restoration read from scratch. Never touches
    * geolocationStatus or the watch itself — it only affects whether
    * restored progress/camera/preference fields get applied before any
@@ -211,6 +218,17 @@ export function useRideNavigation(
     "loading" | "ready" | "error"
   >("loading");
   const [restoredForThisRoute, setRestoredForThisRoute] = useState(false);
+  const [hasStoredSession, setHasStoredSession] = useState(false);
+  // Set by restoration just before it applies a stored row, and consumed by
+  // the persistence effect's run in that same commit (backlog item 132).
+  // That run would otherwise write the row straight back with the camera
+  // state as it stands before useRideCamera has applied the restored one —
+  // the default overview with no zoom, since getCameraState() reads a ref
+  // RidingScreen only updates in a later effect — so merely showing a
+  // paused ride's screen replaced its stored camera, and the next mount
+  // resumed without the rider's Follow zoom. Storage already holds exactly
+  // what was restored, so skipping that one write loses nothing.
+  const skipRestorationPersistRef = useRef(false);
   const [restorationRetryToken, setRestorationRetryToken] = useState(0);
 
   const clearWatchRef = useRef<(() => void) | null>(null);
@@ -390,6 +408,7 @@ export function useRideNavigation(
     setDismissedClimbFeatureId(null);
     setRestoredCameraState(null);
     setCompletionArmed(false);
+    setHasStoredSession(false);
     isFinalizingRef.current = false;
   }, [stop]);
 
@@ -457,6 +476,7 @@ export function useRideNavigation(
     // status back to "idle", which is what makes RidingWakeLockControl
     // unmount and release the wake lock for free, exactly as it already
     // does for finish().
+    setHasStoredSession(true);
     stop();
     isPausingRef.current = false;
   }, [
@@ -495,6 +515,7 @@ export function useRideNavigation(
           return;
         }
         const restored = fromStoredRideState(stored);
+        skipRestorationPersistRef.current = true;
         startedAtRef.current = stored.startedAt;
         setCoreState(restored.core);
         setCurrentFix(restored.lastFix);
@@ -505,6 +526,7 @@ export function useRideNavigation(
         setDismissedClimbFeatureId(restored.dismissedClimbFeatureId);
         setCompletionArmed(restored.completionArmed);
         setRestoredForThisRoute(true);
+        setHasStoredSession(true);
         setRestorationStatus("ready");
       })
       .catch((error: unknown) => {
@@ -532,6 +554,13 @@ export function useRideNavigation(
   // needed. Reads the camera state fresh via getCameraState() rather
   // than depending on it directly (see the option's doc comment).
   useEffect(() => {
+    // Consumed first, whatever else this run decides: restoration's commit
+    // always runs this effect (it replaces coreState), so a restored row
+    // without a fix can never leave the flag set to swallow a later write.
+    if (skipRestorationPersistRef.current) {
+      skipRestorationPersistRef.current = false;
+      return;
+    }
     if (isFinalizingRef.current || isPausingRef.current) return;
     if (route.id !== sessionRouteIdRef.current) return;
     if (currentFix === null || startedAtRef.current === null) return;
@@ -547,10 +576,15 @@ export function useRideNavigation(
         dismissedClimbFeatureId,
         completionArmed,
       ),
-    ).catch(() => {
-      // Persistence failure isn't fatal to an in-progress ride; the next
-      // successful write will catch the state up.
-    });
+    ).then(
+      () => {
+        setHasStoredSession(true);
+      },
+      () => {
+        // Persistence failure isn't fatal to an in-progress ride; the next
+        // successful write will catch the state up.
+      },
+    );
   }, [
     route.id,
     currentFix,
@@ -677,6 +711,7 @@ export function useRideNavigation(
     restoredCameraState,
     restorationStatus,
     restoredForThisRoute,
+    hasStoredSession,
     retryRestoration,
   };
 }

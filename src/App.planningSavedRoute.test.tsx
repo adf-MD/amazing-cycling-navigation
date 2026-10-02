@@ -521,4 +521,31 @@ describe("App — Planning's Open saved route (item 124, slice 3)", () => {
     });
     expect(inlinePrompt()).not.toBeNull();
   });
+
+  // Backlog item 132: opening the route that is itself paused carries a
+  // "restore" intent, so a failed restoration is explained, never offered
+  // as a fresh start.
+  it("opening the paused route itself explains a failed restoration instead of offering Start riding, with no tracking", async () => {
+    const user = userEvent.setup();
+    const { routeB } = await setUp(user);
+    // The helper pauses whichever route it is given: here the saved route.
+    await pauseRouteA(routeB.id);
+    const realRead = rideStateRepository.getActiveRideState;
+    vi.spyOn(rideStateRepository, "getActiveRideState")
+      .mockImplementationOnce(realRead)
+      .mockRejectedValueOnce(new Error("boom"));
+
+    await openFromPlanning(user);
+
+    const riding = await screen.findByRole("region", { name: "Riding" });
+    expect(
+      within(riding).getByRole("heading", { level: 1, name: "Route B" }),
+    ).toBeInTheDocument();
+    expect(await within(riding).findByRole("alert")).toHaveTextContent(
+      "Your ride could not be restored on this device. Try again.",
+    );
+    expect(screen.queryByRole("button", { name: "Start riding" })).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(watchPositionSpy).not.toHaveBeenCalled();
+  });
 });

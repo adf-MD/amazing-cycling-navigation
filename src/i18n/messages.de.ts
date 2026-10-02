@@ -640,6 +640,7 @@ export const de: Catalogue = {
   "riding.retry": "Erneut versuchen",
   "riding.backToRideOptions": "Zurück zur Auswahl",
   "riding.resuming": "Deine Fahrt wird fortgesetzt…",
+  "riding.restoring": "Deine unbeendete Fahrt wird wiederhergestellt…",
   "riding.resumePrompt":
     "Setze die Fahrt fort, damit dein Fortschritt weiter erfasst wird.",
   "riding.startPrompt":

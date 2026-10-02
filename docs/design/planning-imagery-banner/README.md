@@ -1,8 +1,8 @@
 # Item 128 — Planning's imagery banner and the placement crosshair
 
-**Status (1 October 2026): C6 chosen, implemented in `0.4.50` and accepted on the installed iPhone.** The rider chose C6 on 1 October 2026, and it shipped in `0.4.50`. The implementation record is [item 128's history entry](../../project/history/items-118-NN.md#item-128), and it was accepted on the installed iPhone in English and German, reported 1 October 2026 on `0.4.50` (build `3ebf4ce`); see the acceptance record in [`current-status.md`](../../project/current-status.md). The implemented layout is shown in [Implemented in `0.4.50`](#implemented-in-0450) at the end of this document. Everything else here is the design-stage record as written on 30 September 2026, kept unchanged apart from annotations marking the decisions it asked for. The 320×568 German overlap of 15 px it reported remains, and is not hidden.
+**Status (1 October 2026): C6 chosen, implemented in `0.4.50` and accepted on the installed iPhone.** The rider chose C6 on 1 October 2026, and it shipped in `0.4.50`. The implementation record is [item 128's history entry](../../project/history/items-118-131.md#item-128), and it was accepted on the installed iPhone in English and German, reported 1 October 2026 on `0.4.50` (build `3ebf4ce`); see the acceptance record in [`current-status.md`](../../project/current-status.md). The implemented layout is shown in [Implemented in `0.4.50`](#implemented-in-0450) at the end of this document. Everything else here is the design-stage record as written on 30 September 2026, kept unchanged apart from annotations marking the decisions it asked for. The 320×568 German overlap of 15 px it reported remains, and is not hidden.
 
-**Design-stage summary (30 September 2026).** _At that stage no correction was chosen and nothing was implemented._ This directory holds the measured comparison for [item 128](../../project/history/items-118-NN.md#item-128). It was prepared on 30 September 2026 against app version `0.4.49` at commit `1dd8c1a`. No application source, test, stylesheet or version changed. Every candidate below is a disposable browser override applied to the unchanged production build, and each was restored after it was measured.
+**Design-stage summary (30 September 2026).** _At that stage no correction was chosen and nothing was implemented._ This directory holds the measured comparison for [item 128](../../project/history/items-118-131.md#item-128). It was prepared on 30 September 2026 against app version `0.4.49` at commit `1dd8c1a`. No application source, test, stylesheet or version changed. Every candidate below is a disposable browser override applied to the unchanged production build, and each was restored after it was measured.
 
 **Recommendation: C6.**
 
@@ -469,7 +469,7 @@ done
 - Planning's own messages in item 114's below-map block at every text size;
 - the in-map Planning overlay retired.
 
-The full account, including fail-first evidence and negative controls, is [item 128's history entry](../../project/history/items-118-NN.md#item-128).
+The full account, including fail-first evidence and negative controls, is [item 128's history entry](../../project/history/items-118-131.md#item-128).
 
 ![Implemented C6, 0.4.50](images/implemented-0.4.50.png)
 

@@ -9,6 +9,13 @@ import { readActiveRideStateRow, readSavedRouteId } from "./support/rideStateDb.
 // selectedRoute (always null immediately after a reload), and offers
 // Resume ride/End ride/Discard unfinished ride entirely from local
 // storage — never contacting OpenRouteService merely to populate itself.
+//
+// Since backlog item 132 the first Ride entry after a reload shows a
+// resumable route ride's own paused screen instead of the launcher's
+// summary (e2e/coldStartPausedRoute.smoke.spec.ts). The launcher's summary
+// of it — its one-tap Resume ride and its End ride — is reached from that
+// screen's Back to Ride options, which is how the tests below reach it; a
+// missing route still shows the launcher directly.
 
 const ORS_URL_GLOB = "https://api.heigit.org/**";
 
@@ -143,7 +150,7 @@ async function establishUnfinishedRide(
     });
 }
 
-test("the launcher resumes a route session after a real reload with one tap, starting exactly one geolocation watch, with zero OpenRouteService requests (backlog item 72)", async ({
+test("the launcher, reached through the paused screen's Back to Ride options after a real reload, resumes a route session with one tap, starting exactly one geolocation watch, with zero OpenRouteService requests (backlog items 72 and 132)", async ({
   page,
   context,
 }) => {
@@ -178,6 +185,12 @@ test("the launcher resumes a route session after a real reload with one tap, sta
   // itself, not from any in-memory App state.
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
   await page.getByRole("button", { name: "Ride", exact: true }).click();
+  // The first entry shows the paused route screen (backlog item 132); its
+  // Back to Ride options shows the launcher's own summary.
+  await page.getByRole("button", { name: "Back to Ride options" }).click();
+  await expect(
+    page.getByText("You have an unfinished ride on this route."),
+  ).toBeVisible();
 
   await expect(page.getByRole("heading", { name: routeName })).toBeVisible();
   const resumeButton = page.getByRole("button", { name: "Resume ride" });
@@ -231,6 +244,11 @@ test("the launcher can end an unfinished ride directly, without ever resuming GP
   await page.reload();
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
   await page.getByRole("button", { name: "Ride", exact: true }).click();
+  // Backlog item 132: the launcher is behind the paused screen.
+  await page.getByRole("button", { name: "Back to Ride options" }).click();
+  await expect(
+    page.getByText("You have an unfinished ride on this route."),
+  ).toBeVisible();
 
   // Never clicking "Resume ride" — the launcher's own End ride must work
   // directly on the unresumed session.

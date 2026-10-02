@@ -20,9 +20,11 @@ import { readActiveRideStateRow, readSavedRouteId } from "./support/rideStateDb.
 // previously did this. Backlog item 41 (the Ride launcher) later added a
 // second, more direct recovery path — visiting "Ride" itself now
 // discovers and offers to resume the same persisted session without
-// reopening the route from Routes first (see e2e/ridingLauncher.spec.ts)
-// — but the manual-reopen path this file exercises remains fully valid
-// and is unchanged by that addition.
+// reopening the route from Routes first (see e2e/ridingLauncher.spec.ts),
+// and since backlog item 132 that first visit shows the session's own
+// paused route screen (e2e/coldStartPausedRoute.smoke.spec.ts) — but the
+// manual-reopen path this file exercises remains fully valid and is
+// unchanged by either addition.
 
 test.use({ serviceWorkers: "block" });
 

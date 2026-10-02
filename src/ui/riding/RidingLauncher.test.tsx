@@ -717,3 +717,143 @@ describe("RidingLauncher", () => {
     });
   });
 });
+
+// Backlog item 132: the launcher reports each completed check, so App can
+// show a stored route ride's own paused screen on the first Ride entry
+// after a cold start. Every outcome other than a resumable route reports
+// null and renders exactly as before.
+describe("RidingLauncher — onSessionChecked (backlog item 132)", () => {
+  function renderLauncher(onSessionChecked: (route: PlannedRoute | null) => boolean) {
+    return render(
+      <RidingLauncher
+        onResumeRoute={vi.fn()}
+        onChooseRoute={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
+        onSessionChecked={onSessionChecked}
+      />,
+    );
+  }
+
+  it("reports a resumable route once, and keeps its checking status, never its summary, when the owner takes over", async () => {
+    await db.routes.put(route);
+    await setActiveRideState(buildRideState());
+    const onSessionChecked = vi.fn(() => true);
+
+    renderLauncher(onSessionChecked);
+
+    await waitFor(() => {
+      expect(onSessionChecked).toHaveBeenCalledOnce();
+    });
+    expect(onSessionChecked).toHaveBeenCalledWith(
+      expect.objectContaining({ id: route.id, name: route.name }),
+    );
+    // Sampled: the summary never appears while the owner replaces it.
+    for (let sample = 0; sample < 5; sample += 1) {
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Checking for an unfinished ride",
+      );
+      expect(screen.queryByText("You have an unfinished ride on this route.")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(onSessionChecked).toHaveBeenCalledOnce();
+  });
+
+  it("when the owner declines, renders the resumable route's summary exactly as before", async () => {
+    await db.routes.put(route);
+    await setActiveRideState(buildRideState());
+    const onSessionChecked = vi.fn(() => false);
+
+    renderLauncher(onSessionChecked);
+
+    expect(
+      await screen.findByText("You have an unfinished ride on this route."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resume ride" })).toBeInTheDocument();
+    expect(onSessionChecked).toHaveBeenCalledOnce();
+  });
+
+  it("reports null for no session, a free roam, a missing route and an unsupported kind, then renders each branch as before", async () => {
+    const cases: { seed: () => Promise<void>; expectText: string }[] = [
+      { seed: () => Promise.resolve(), expectText: "Choose a route" },
+      {
+        seed: () =>
+          setActiveRideState({
+            id: "active",
+            kind: "free-roam",
+            startedAt: "2026-01-01T08:00:00.000Z",
+            lastFix: null,
+          }),
+        expectText: "Resume free roam",
+      },
+      {
+        seed: () => setActiveRideState(buildRideState()),
+        expectText: "Discard unfinished ride",
+      },
+      {
+        seed: async () => {
+          await db.routes.put(route);
+          await db.rideState.put({ ...buildRideState(), kind: "training-session" });
+        },
+        expectText: "Discard unfinished ride",
+      },
+    ];
+    for (const { seed, expectText } of cases) {
+      await db.routes.clear();
+      await db.rideState.clear();
+      await seed();
+      // Returning true for null must still never hide a branch.
+      const onSessionChecked = vi.fn(() => true);
+      const { unmount } = renderLauncher(onSessionChecked);
+      expect(await screen.findByRole("button", { name: expectText })).toBeInTheDocument();
+      expect(onSessionChecked).toHaveBeenCalledOnce();
+      expect(onSessionChecked).toHaveBeenCalledWith(null);
+      unmount();
+    }
+  });
+
+  it("never reports a failed read; the Retry that succeeds reports", async () => {
+    await db.routes.put(route);
+    await setActiveRideState(buildRideState());
+    const readSpy = vi
+      .spyOn(rideStateRepository, "getActiveRideState")
+      .mockRejectedValueOnce(new Error("boom"));
+    const onSessionChecked = vi.fn(() => false);
+
+    renderLauncher(onSessionChecked);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Your unfinished ride status could not be checked. Nothing has been changed.",
+    );
+    expect(onSessionChecked).not.toHaveBeenCalled();
+
+    readSpy.mockRestore();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(onSessionChecked).toHaveBeenCalledOnce();
+    });
+    expect(onSessionChecked).toHaveBeenCalledWith(
+      expect.objectContaining({ id: route.id }),
+    );
+  });
+
+  it("never reports a check that settles after the launcher has unmounted", async () => {
+    await db.routes.put(route);
+    let resolveRead: ((value: StoredRideState | undefined) => void) | undefined;
+    vi.spyOn(rideStateRepository, "getActiveRideState").mockReturnValue(
+      new Promise((resolve) => {
+        resolveRead = resolve;
+      }),
+    );
+    const onSessionChecked = vi.fn(() => true);
+
+    const { unmount } = renderLauncher(onSessionChecked);
+    unmount();
+    resolveRead?.(buildRideState());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(onSessionChecked).not.toHaveBeenCalled();
+  });
+});

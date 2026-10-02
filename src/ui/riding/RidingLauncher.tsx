@@ -51,6 +51,18 @@ export interface RidingLauncherProps {
    * re-triggers this component's own hydration so it never continues
    * showing a session that was just deliberately ended out from under it. */
   sessionRefreshToken?: number;
+  /** Called once per successful check of the stored session (backlog item
+   * 132) — with the route when the session is a resumable route ride,
+   * otherwise with null (no session, free roam, a missing route or an
+   * unsupported kind). Returning true means the owner is replacing this
+   * launcher with that route's own screen, so the launcher keeps its
+   * checking status rather than flashing its summary first; returning
+   * false renders every branch exactly as before. A failed read never
+   * calls it, so the failure and its Retry are unchanged, and a check that
+   * settles after this launcher has unmounted is discarded by the
+   * generation guard below before it can call it. Must keep a stable
+   * identity: it is a dependency of the hydration effect. */
+  onSessionChecked?: (route: PlannedRoute | null) => boolean;
 }
 
 type RidingLauncherHydrationStatus = "loading" | "ready" | "failed";
@@ -128,6 +140,12 @@ function describeUnresumableReason(
  * request, and starting free roam never requests geolocation either — only
  * App.tsx's own guard/write and FreeRoamScreen's subsequent mount effect
  * do that, once onStartFreeRoam/onResumeFreeRoam fires.
+ *
+ * Since backlog item 132 the first Ride entry after a cold start shows a
+ * stored route ride's own paused screen instead of this launcher's summary
+ * of it: App decides that through onSessionChecked, from this launcher's
+ * own check, so loading, a failed read with Retry, a missing route and an
+ * unsupported session all keep this launcher's existing presentation.
  */
 export function RidingLauncher({
   onResumeRoute,
@@ -137,6 +155,7 @@ export function RidingLauncher({
   isFreeRoamPending = false,
   freeRoamError = null,
   sessionRefreshToken,
+  onSessionChecked,
 }: RidingLauncherProps) {
   const translator = useTranslate();
   const { t } = translator;
@@ -158,27 +177,36 @@ export function RidingLauncher({
       const stored = await getActiveRideState();
       if (hydrationGenerationRef.current !== generation) return;
       if (!stored) {
+        onSessionChecked?.(null);
         setSessionState(NONE_SESSION_STATE);
         setHydrationStatus("ready");
         return;
       }
       if (isStoredFreeRoamRideState(stored)) {
+        onSessionChecked?.(null);
         setSessionState({ status: "resumable-free-roam" });
         setHydrationStatus("ready");
         return;
       }
       if (!isStoredRouteRideState(stored)) {
+        onSessionChecked?.(null);
         setSessionState({ status: "unresumable", reason: "unsupported-kind" });
         setHydrationStatus("ready");
         return;
       }
       const route = await getRoute(stored.routeId);
       if (hydrationGenerationRef.current !== generation) return;
-      setSessionState(
-        route
-          ? { status: "resumable-route", route }
-          : { status: "unresumable", reason: "route-missing" },
-      );
+      if (!route) {
+        onSessionChecked?.(null);
+        setSessionState({ status: "unresumable", reason: "route-missing" });
+        setHydrationStatus("ready");
+        return;
+      }
+      // The owner is opening this route's own paused screen in place of
+      // the launcher, so nothing here changes: the checking status stays
+      // until the launcher unmounts.
+      if (onSessionChecked?.(route) === true) return;
+      setSessionState({ status: "resumable-route", route });
       setHydrationStatus("ready");
     }
 
@@ -197,7 +225,7 @@ export function RidingLauncher({
         hydrationGenerationRef.current += 1;
       }
     };
-  }, [hydrationRetryToken, sessionRefreshToken]);
+  }, [hydrationRetryToken, sessionRefreshToken, onSessionChecked]);
 
   const clearTriggerRef = useRef<HTMLButtonElement>(null);
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);

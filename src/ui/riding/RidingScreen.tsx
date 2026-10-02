@@ -119,6 +119,28 @@ export interface RidingScreenProps {
    * failed. Carries the token so the owner retires that exact instruction
    * and no other (backlog item 131). */
   onResumeIntentHandled?: (token: number) => void;
+  /** Set by App.tsx when it knows this route has a stored, unfinished ride
+   * (backlog item 132): the first Ride entry after a cold start, an
+   * explicit open that found this same route stored, or any later return
+   * once the session is known to be stored. Only its value at mount
+   * counts. While that mount's restoration has not yet restored this
+   * route's session, the pre-ride/paused controls are held back — a
+   * pending read shows a restoring status, a failed read the restore
+   * alert with Retry and Back to Ride options — so a known session is
+   * never presented as a fresh start. It never starts tracking. */
+  restoreIntentToken?: number;
+  /** Reports, once restoration has settled, that the session behind the
+   * mount's restoreIntentToken is not in storage after all (ended or
+   * replaced elsewhere). The owner returns to the Ride launcher, which
+   * shows what is actually stored; until then the restoring status stays,
+   * so no Start riding is offered over a session that changed. */
+  onRestoredSessionMissing?: (token: number) => void;
+  /** Reports that this route's ride is known to be in storage
+   * (nav.hasStoredSession) once no resume instruction is pending, so the
+   * owner keeps that knowledge for later returns to Ride independently of
+   * Pause and of the one-use instruction to start tracking (backlog item
+   * 132). A fact only: it never starts tracking. */
+  onStoredSessionKnown?: (routeId: string) => void;
   geolocationSource?: GeolocationSource;
   mapFactory?: MapFactory;
   clock?: Clock;
@@ -251,6 +273,9 @@ export function RidingScreen({
   route,
   resumeIntentToken,
   onResumeIntentHandled,
+  restoreIntentToken,
+  onRestoredSessionMissing,
+  onStoredSessionKnown,
   geolocationSource,
   mapFactory,
   clock = systemClock,
@@ -1361,10 +1386,50 @@ export function RidingScreen({
     resumeIntentToken !== undefined &&
     resumeIntentToken !== handledResumeIntentToken &&
     !(restorationSettled && !nav.restoredForThisRoute);
+
+  // Backlog item 132: only the value at mount counts. App adds a restore
+  // token while this screen is mounted once it learns the session is
+  // stored (see onStoredSessionKnown below); that is for the next mount,
+  // and must never hide the controls of this one, whose restoration has
+  // already settled — possibly as a fresh route with nothing to restore.
+  const [restoreIntentTokenAtMount] = useState(restoreIntentToken);
+  // A known session holds the controls back until it is genuinely restored
+  // — not merely until restoration settles — so a session that turns out
+  // to be gone keeps the restoring status until App returns to the
+  // launcher, never flashing Start riding first.
+  const isAwaitingRestoredSession =
+    restoreIntentTokenAtMount !== undefined &&
+    !(restorationSettled && nav.restoredForThisRoute);
   // The pre-ride/paused panel's own render condition, named once: Edit copy
   // and its confirmation live in it.
   const isEditCopyPanelShown =
-    nav.geolocationStatus === "idle" && !isConsumingResumeIntent;
+    nav.geolocationStatus === "idle" &&
+    !isConsumingResumeIntent &&
+    !isAwaitingRestoredSession;
+  // Resume ride, its prompt and the panel's End ride follow whether a
+  // session exists for this route, not whether it has a fix (backlog item
+  // 132): a ride paused before its first fix is still a ride to resume or
+  // end.
+  const hasResumableSession = nav.currentFix !== null || nav.hasStoredSession;
+
+  useEffect(() => {
+    if (restoreIntentTokenAtMount === undefined) return;
+    if (!restorationSettled || nav.restoredForThisRoute) return;
+    onRestoredSessionMissing?.(restoreIntentTokenAtMount);
+  }, [
+    restoreIntentTokenAtMount,
+    restorationSettled,
+    nav.restoredForThisRoute,
+    onRestoredSessionMissing,
+  ]);
+
+  // Reported only once no resume instruction is pending: the owner never
+  // replaces a pending instruction with this knowledge, and the resume
+  // token's own retirement (backlog item 131) re-runs this effect.
+  useEffect(() => {
+    if (!nav.hasStoredSession || resumeIntentToken !== undefined) return;
+    onStoredSessionKnown?.(route.id);
+  }, [nav.hasStoredSession, resumeIntentToken, route.id, onStoredSessionKnown]);
 
   // Ends the Ride context an Edit copy attempt began in (backlog item 124,
   // D-06): its cleanup runs whenever the panel stops or starts being shown
@@ -1952,7 +2017,8 @@ export function RidingScreen({
         </p>
       ) : null}
 
-      {nav.geolocationStatus === "idle" && isConsumingResumeIntent ? (
+      {nav.geolocationStatus === "idle" &&
+      (isConsumingResumeIntent || isAwaitingRestoredSession) ? (
         nav.restorationStatus === "error" ? (
           <div role="alert" className="ride-alert-panel">
             <p>{t("riding.restoreFailed")}</p>
@@ -1971,20 +2037,22 @@ export function RidingScreen({
           </div>
         ) : (
           <p role="status" className="status-row">
-            {t("riding.resuming")}
+            {isConsumingResumeIntent ? t("riding.resuming") : t("riding.restoring")}
           </p>
         )
       ) : null}
 
       {isEditCopyPanelShown ? (
         <div className="panel stack ride-start-panel">
-          <p>{nav.currentFix ? t("riding.resumePrompt") : t("riding.startPrompt")}</p>
+          <p>
+            {hasResumableSession ? t("riding.resumePrompt") : t("riding.startPrompt")}
+          </p>
           <button
             type="button"
             className="btn-primary ride-start-panel-button"
             onClick={handleStart}
           >
-            {nav.currentFix ? t("riding.resumeRide") : t("riding.startRiding")}
+            {hasResumableSession ? t("riding.resumeRide") : t("riding.startRiding")}
           </button>
           <button
             type="button"
@@ -2035,7 +2103,7 @@ export function RidingScreen({
               onCancel={handleEditCopyCancel}
             />
           </div>
-          {nav.currentFix ? (
+          {hasResumableSession ? (
             <div className="ride-end-ride-panel-row stack">
               {renderEndRideAction("panel")}
             </div>

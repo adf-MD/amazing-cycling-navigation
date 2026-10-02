@@ -355,6 +355,12 @@ test("resuming the exact same unfinished route via the launcher starts exactly o
   await page.reload();
   await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
   await page.getByRole("button", { name: "Ride", exact: true }).click();
+  // Backlog item 132: the launcher, whose Resume ride goes through the
+  // guard, is behind the paused route screen's Back to Ride options.
+  await page.getByRole("button", { name: "Back to Ride options" }).click();
+  await expect(
+    page.getByText("You have an unfinished ride on this route."),
+  ).toBeVisible();
 
   const resumeButton = page.getByRole("button", { name: "Resume ride" });
   await expect(resumeButton).toBeVisible();

@@ -4868,6 +4868,306 @@ describe("RidingScreen", () => {
     });
   });
 
+  // Backlog item 132: a "restore" intent marks a route App knows has a
+  // stored, unfinished ride. Its controls wait for that session to be
+  // restored; a pending read, a failure and a missing session are each
+  // explicit, and nothing here ever starts tracking.
+  describe("restore intent (backlog item 132)", () => {
+    const STORED_ROW: StoredRideState = {
+      id: "active",
+      routeId: route.id,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: { coordinate: pointAt(5), accuracyMetres: 6, timestampMs: 1000 },
+      lastMatchedPointIndex: 5,
+      matchedDistanceFromStartMetres: routePoints[5]?.distanceFromStartMetres ?? 0,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+      elevationWindowMetres: 5000,
+    };
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    });
+
+    /** Samples, never stopping at the first success, that no watch starts. */
+    async function expectNoWatch(spy: ReturnType<typeof vi.fn>) {
+      for (let sample = 0; sample < 10; sample += 1) {
+        expect(spy).not.toHaveBeenCalled();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    }
+
+    function expectNoPanelControls() {
+      expect(screen.queryByRole("button", { name: "Start riding" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Edit copy" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "End ride" })).toBeNull();
+    }
+
+    it("while the restoration read is pending, shows Restoring your unfinished ride and holds back every control, then shows the paused panel without starting a watch", async () => {
+      let resolveRead!: (value: StoredRideState | undefined) => void;
+      vi.spyOn(rideStateRepository, "getActiveRideState").mockReturnValueOnce(
+        new Promise<StoredRideState | undefined>((resolve) => {
+          resolveRead = resolve;
+        }),
+      );
+      const stub = buildStubGeolocationSource();
+      const onRestoredSessionMissing = vi.fn();
+      render(
+        <RidingScreen
+          route={route}
+          restoreIntentToken={1}
+          onRestoredSessionMissing={onRestoredSessionMissing}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      expect(screen.getByText("Restoring your unfinished ride…")).toBeInTheDocument();
+      expectNoPanelControls();
+      await expectNoWatch(stub.watchPositionSpy);
+
+      await act(async () => {
+        resolveRead(STORED_ROW);
+        await Promise.resolve();
+      });
+
+      expect(
+        await screen.findByRole("button", { name: "Resume ride" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Edit copy" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "End ride" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Back to Ride options" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Restoring your unfinished ride…")).toBeNull();
+      await expectNoWatch(stub.watchPositionSpy);
+      expect(onRestoredSessionMissing).not.toHaveBeenCalled();
+    });
+
+    it("a failed restoration shows the restore alert with Retry and Back to Ride options, and a passive Retry restores without starting a watch", async () => {
+      await setActiveRideState(STORED_ROW);
+      vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
+        new Error("boom"),
+      );
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const onReturnToRideLauncher = vi.fn();
+      render(
+        <RidingScreen
+          route={route}
+          restoreIntentToken={1}
+          onReturnToRideLauncher={onReturnToRideLauncher}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(
+        "Your ride could not be restored on this device. Try again.",
+      );
+      expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+      expectNoPanelControls();
+
+      await user.click(
+        within(alert).getByRole("button", { name: "Back to Ride options" }),
+      );
+      expect(onReturnToRideLauncher).toHaveBeenCalledOnce();
+
+      await user.click(within(alert).getByRole("button", { name: "Retry" }));
+      expect(
+        await screen.findByRole("button", { name: "Resume ride" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).toBeNull();
+      await expectNoWatch(stub.watchPositionSpy);
+      expect(await getActiveRideState()).toEqual(STORED_ROW);
+    });
+
+    it("finding no stored row, or another route's row, reports the missing session once and never offers Start riding", async () => {
+      for (const seed of [
+        () => Promise.resolve(),
+        () => setActiveRideState({ ...STORED_ROW, routeId: "some-other-route" }),
+      ]) {
+        await db.rideState.clear();
+        await seed();
+        const stub = buildStubGeolocationSource();
+        const onRestoredSessionMissing = vi.fn();
+        const { unmount } = render(
+          <RidingScreen
+            route={route}
+            restoreIntentToken={3}
+            onRestoredSessionMissing={onRestoredSessionMissing}
+            geolocationSource={stub.source}
+            mapFactory={buildStubMapFactory().factory}
+          />,
+        );
+
+        await waitFor(() => {
+          expect(onRestoredSessionMissing).toHaveBeenCalledWith(3);
+        });
+        // Until the owner returns to the launcher, the restoring status
+        // stays: no flash of a fresh start.
+        for (let sample = 0; sample < 5; sample += 1) {
+          expect(screen.getByText("Restoring your unfinished ride…")).toBeInTheDocument();
+          expectNoPanelControls();
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(onRestoredSessionMissing).toHaveBeenCalledOnce();
+        expect(stub.watchPositionSpy).not.toHaveBeenCalled();
+        unmount();
+      }
+    });
+
+    it("a restore token that arrives after mount never hides this mount's controls", async () => {
+      const stub = buildStubGeolocationSource();
+      const { rerender } = render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      expect(
+        await screen.findByRole("button", { name: "Start riding" }),
+      ).toBeInTheDocument();
+
+      rerender(
+        <RidingScreen
+          route={route}
+          restoreIntentToken={5}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      for (let sample = 0; sample < 5; sample += 1) {
+        expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
+        expect(screen.queryByText("Restoring your unfinished ride…")).toBeNull();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    });
+
+    it("reports the stored session once a fix has been persisted, and only for this route", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const onStoredSessionKnown = vi.fn();
+      render(
+        <RidingScreen
+          route={route}
+          onStoredSessionKnown={onStoredSessionKnown}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(await screen.findByRole("button", { name: "Start riding" }));
+      await screen.findByRole("button", { name: "Pause" });
+      expect(onStoredSessionKnown).not.toHaveBeenCalled();
+
+      act(() => {
+        stub.emitFix({
+          coordinate: pointAt(2),
+          accuracyMetres: 5,
+          timestampMs: 2000,
+          speedMetresPerSecond: null,
+          headingDegrees: null,
+        });
+      });
+
+      await waitFor(() => {
+        expect(onStoredSessionKnown).toHaveBeenCalledWith(route.id);
+      });
+      expect(await getActiveRideState()).toMatchObject({ routeId: route.id });
+    });
+
+    it("never reports the stored session while a resume token is pending, and reports it once that token is retired", async () => {
+      await setActiveRideState(STORED_ROW);
+      const stub = buildStubGeolocationSource();
+      const onStoredSessionKnown = vi.fn();
+      const onResumeIntentHandled = vi.fn();
+      const { rerender } = render(
+        <RidingScreen
+          route={route}
+          resumeIntentToken={1}
+          onResumeIntentHandled={onResumeIntentHandled}
+          onStoredSessionKnown={onStoredSessionKnown}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await waitFor(() => {
+        expect(onResumeIntentHandled).toHaveBeenCalledWith(1);
+      });
+      await screen.findByRole("button", { name: "Pause" });
+      for (let sample = 0; sample < 5; sample += 1) {
+        expect(onStoredSessionKnown).not.toHaveBeenCalled();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+
+      // The owner retires the instruction, as App does.
+      rerender(
+        <RidingScreen
+          route={route}
+          onResumeIntentHandled={onResumeIntentHandled}
+          onStoredSessionKnown={onStoredSessionKnown}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await waitFor(() => {
+        expect(onStoredSessionKnown).toHaveBeenCalledWith(route.id);
+      });
+      expect(stub.watchPositionSpy).toHaveBeenCalledOnce();
+    });
+
+    it("a restored session without a fix offers Resume ride and End ride, never Start riding, and starts no watch", async () => {
+      await setActiveRideState({ ...STORED_ROW, lastFix: null });
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          restoreIntentToken={1}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      expect(
+        await screen.findByRole("button", { name: "Resume ride" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "End ride" })).toBeInTheDocument();
+      expect(
+        screen.getByText("Resume riding to continue tracking your progress."),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Start riding" })).toBeNull();
+      await expectNoWatch(stub.watchPositionSpy);
+    });
+
+    it("a fresh ride paused before its first fix offers Resume ride and End ride", async () => {
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(await screen.findByRole("button", { name: "Start riding" }));
+      await user.click(await screen.findByRole("button", { name: "Pause" }));
+
+      expect(
+        await screen.findByRole("button", { name: "Resume ride" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "End ride" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Start riding" })).toBeNull();
+      expect(await getActiveRideState()).toMatchObject({
+        routeId: route.id,
+        lastFix: null,
+      });
+    });
+  });
+
   describe("offline and tile-failure resilience", () => {
     afterEach(() => {
       vi.unstubAllGlobals();

@@ -708,6 +708,7 @@ export const en = {
   "riding.retry": "Retry",
   "riding.backToRideOptions": "Back to Ride options",
   "riding.resuming": "Resuming your ride…",
+  "riding.restoring": "Restoring your unfinished ride…",
   "riding.resumePrompt": "Resume riding to continue tracking your progress.",
   "riding.startPrompt": "Location access is needed to track your progress on this ride.",
   "riding.resumeRide": "Resume ride",

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { PlannedRoute } from "./domain/types.ts";
 import type { MapFactory } from "./map/mapAdapter.ts";
 import { systemClock, type Clock } from "./platform/clock.ts";
@@ -53,31 +53,45 @@ export interface AppProps {
  * route-less free-roam session (backlog item 42) can never be conflated.
  * Free roam is deliberately not represented as a fake PlannedRoute.
  *
- * resumeIntentToken (backlog item 72) is a one-use resume intent: set only
- * when requestRouteTransition's own guard check resolves the SAME route as
- * already persisted (an ordinary, undialogued "Resume ride"), never for an
- * ordinary Routes-card reopen or Planning's Open saved route, and never
- * after a confirmed different-session switch (backlog item 73) — confirming
- * a switch is not permission to auto-start GPS for the replacement.
- * RidingScreen consumes it at most once, only after its own restoration has
- * genuinely completed, to start GPS and request Follow without a second
- * in-screen tap.
+ * A route's intent is one of two kinds, never both, each identified by a
+ * token from one plain monotonic counter:
  *
- * App owns its lifetime (backlog item 131): RidingScreen reports when it
- * has handled the instruction — consumed it, or found no matching session
- * to resume — and handleResumeIntentHandled then removes it, so a later
- * Pause can never be shown as "Resuming…" and a later mount of the screen
- * (after leaving Riding and coming back) can never replay it. Until then —
- * while restoration is still pending or has failed — it stays, so a rider
- * who leaves and returns before it is handled still gets the one resume
- * they asked for.
+ * - "resume" (backlog item 72) is a one-use resume intent: set only when
+ *   requestRouteTransition's own guard check, for the launcher's Resume
+ *   ride, resolves the SAME route as already persisted, and never after a
+ *   confirmed different-session switch (backlog item 73) — confirming a
+ *   switch is not permission to auto-start GPS for the replacement.
+ *   RidingScreen consumes it at most once, only after its own restoration
+ *   has genuinely completed, to start GPS and request Follow without a
+ *   second in-screen tap. App owns its lifetime (backlog item 131):
+ *   RidingScreen reports when it has handled the instruction — consumed
+ *   it, or found no matching session to resume — and
+ *   handleResumeIntentHandled then removes it, so a later Pause can never
+ *   be shown as "Resuming…" and a later mount of the screen (after leaving
+ *   Riding and coming back) can never replay it. Until then — while
+ *   restoration is still pending or has failed — it stays, so a rider who
+ *   leaves and returns before it is handled still gets the one resume they
+ *   asked for.
+ * - "restore" (backlog item 132) records that this route has a stored,
+ *   unfinished ride: the first Ride entry after a cold start, an explicit
+ *   open (a Routes card, Planning's Open saved route, a switch prompt's
+ *   Retry or Return to paused ride) that found this same route stored, or
+ *   RidingScreen's report that the session is in storage. It never starts
+ *   tracking. It lasts as long as the content, so every later mount holds
+ *   the paused controls back until the session is restored, explains a
+ *   failed read, and returns to the launcher if the session has gone.
  */
+interface RideIntent {
+  kind: "resume" | "restore";
+  token: number;
+}
+
 type RidingContent =
   | { kind: "none" }
   | {
       kind: "route";
       route: PlannedRoute;
-      resumeIntentToken?: number;
+      intent?: RideIntent;
     }
   | { kind: "free-roam" };
 
@@ -314,10 +328,25 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // continuously synced by RouteLibrary, resets only when App itself
   // remounts (backlog item 100 stage 3).
   const routesTagFilterKeysRef = useRef<readonly string[]>([]);
-  // Plain monotonic counter (never a timestamp/uuid) for resumeIntentToken —
-  // mirrors useRideCamera.ts's own nextCameraRequestIdRef idiom (backlog
-  // item 72).
-  const nextResumeIntentTokenRef = useRef(0);
+  // Plain monotonic counter (never a timestamp/uuid) for every RideIntent
+  // token — mirrors useRideCamera.ts's own nextCameraRequestIdRef idiom
+  // (backlog items 72 and 132).
+  const nextRideIntentTokenRef = useRef(0);
+  // Backlog item 132: whether the first Ride entry after a cold start may
+  // still open a stored route ride's own paused screen in place of the
+  // launcher's summary. Armed at mount — a cold start and a reload both
+  // mount App afresh — and disarmed by the first check that decides it, or
+  // synchronously by any ride content being opened, so it can never bring
+  // the rider back after Back to Ride options or override a choice they
+  // have since made.
+  const coldStartAutoOpenArmedRef = useRef(true);
+  // Mirrors of state that stable callbacks must read without depending on
+  // it (backlog item 132). Updated in layout effects, so a report from a
+  // child's effect after a commit always sees that commit's values.
+  const ridingContentRef = useRef<RidingContent>(NONE_RIDING_CONTENT);
+  useLayoutEffect(() => {
+    ridingContentRef.current = ridingContent;
+  }, [ridingContent]);
   const notifyNewRideContent = useResetScrollForNewRideContent(screen);
   // Whether the app shell is in immersive-Riding mode (backlog item 55):
   // MainNavigation and its wrapping <header> render at all only when this
@@ -330,7 +359,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // Backlog item 73's central unfinished-session switch guard state. One
   // monotonic request id, incremented at the top of every one of the five
   // ride-content entry points (mirrors hydrationGenerationRef/
-  // nextResumeIntentTokenRef elsewhere in this codebase), so a newer click
+  // nextRideIntentTokenRef elsewhere in this codebase), so a newer click
   // always discards an older pending check/dialog rather than racing it —
   // an older check/confirmation must never open a target after a newer
   // request has superseded or cancelled it.
@@ -352,6 +381,10 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   const [pendingRideSwitch, setPendingRideSwitch] = useState<PendingRideSwitch | null>(
     null,
   );
+  const pendingRideSwitchRef = useRef<PendingRideSwitch | null>(null);
+  useLayoutEffect(() => {
+    pendingRideSwitchRef.current = pendingRideSwitch;
+  }, [pendingRideSwitch]);
   // Backlog item 119: the storage mutation — the clear, or a fresh
   // free-roam row — that a pending-switch action currently has in flight,
   // settled to success or failure. A newer ride transition waits for it
@@ -383,10 +416,75 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // an effect that depends on it.
   const handleResumeIntentHandled = useCallback((token: number) => {
     setRidingContent((current) =>
-      current.kind === "route" && current.resumeIntentToken === token
+      current.kind === "route" &&
+      current.intent?.kind === "resume" &&
+      current.intent.token === token
         ? { kind: "route", route: current.route }
         : current,
     );
+  }, []);
+  // Backlog item 132: RidingLauncher's report of each check it completes.
+  // While armed, the first check that finds a stored route ride opens that
+  // route's own paused screen in place of the launcher's summary, with a
+  // "restore" intent and no instruction to start tracking. It is not a
+  // ride choice: it takes no transition request id, so it can neither
+  // supersede nor withdraw a pending switch prompt, and it records no
+  // Routes scroll position. While a switch prompt is pending it declines,
+  // still armed, so the launcher's own guarded Resume ride stays the way
+  // on, as before. Returns true only when it has opened the route. Stable
+  // identity: the launcher's hydration effect depends on it.
+  const handleLauncherSessionChecked = useCallback(
+    (route: PlannedRoute | null): boolean => {
+      if (!coldStartAutoOpenArmedRef.current) return false;
+      if (pendingRideSwitchRef.current !== null) return false;
+      coldStartAutoOpenArmedRef.current = false;
+      if (route === null) return false;
+      const token = (nextRideIntentTokenRef.current += 1);
+      setRidingContent({ kind: "route", route, intent: { kind: "restore", token } });
+      notifyNewRideContent();
+      return true;
+    },
+    [notifyNewRideContent],
+  );
+  // Backlog item 132: the route screen found that the stored session its
+  // "restore" intent promised is not there (ended or replaced elsewhere).
+  // Back to the launcher, which shows what storage actually holds; the
+  // auto-open is already disarmed, so it cannot reopen anything. Acts only
+  // for the content that still carries that exact token, decided outside
+  // the state updater so nothing runs twice under Strict Mode.
+  const handleRestoredSessionMissing = useCallback(
+    (token: number) => {
+      const seen = ridingContentRef.current;
+      if (
+        seen.kind !== "route" ||
+        seen.intent?.kind !== "restore" ||
+        seen.intent.token !== token
+      ) {
+        return;
+      }
+      setRidingContent((current) => (current === seen ? NONE_RIDING_CONTENT : current));
+      notifyNewRideContent();
+    },
+    [notifyNewRideContent],
+  );
+  // Backlog item 132: the route screen reports that this route's ride is in
+  // storage. App keeps that knowledge as a "restore" intent for as long as
+  // the content lasts, independently of Pause and of a consumed "resume"
+  // intent, so every later mount waits for the session to be restored. It
+  // never replaces an intent already there — in particular a "resume"
+  // still pending, whose one-use instruction item 131 retires first, after
+  // which the screen reports again.
+  const handleStoredSessionKnown = useCallback((routeId: string) => {
+    const seen = ridingContentRef.current;
+    if (seen.kind !== "route" || seen.route.id !== routeId || seen.intent !== undefined) {
+      return;
+    }
+    const next: RidingContent = {
+      kind: "route",
+      route: seen.route,
+      intent: { kind: "restore", token: (nextRideIntentTokenRef.current += 1) },
+    };
+    setRidingContent((current) => (current === seen ? next : current));
   }, []);
   // Bumped once, immediately after any successful clearActiveRideState()
   // call inside the pending-switch flow, so a RidingLauncher already
@@ -465,18 +563,21 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     }
   }
 
+  // Every explicit opening of ride content goes through here, so it is also
+  // where the cold-start auto-open is disarmed (backlog item 132): once the
+  // rider has opened anything, a launcher check still in flight can no
+  // longer replace it.
   function openRideTarget(
     target: RideSessionTarget,
-    options: { resumeIntentToken?: number } = {},
+    options: { intent?: RideIntent } = {},
   ) {
+    coldStartAutoOpenArmedRef.current = false;
     if (target.kind === "route") {
       routesScrollYRef.current = window.scrollY;
       setRidingContent({
         kind: "route",
         route: target.route,
-        ...(options.resumeIntentToken !== undefined
-          ? { resumeIntentToken: options.resumeIntentToken }
-          : {}),
+        ...(options.intent !== undefined ? { intent: options.intent } : {}),
       });
     } else {
       setRidingContent({ kind: "free-roam" });
@@ -564,14 +665,16 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // other stale in-memory assumption) can never bypass this check.
   //
   // stampResumeIntent is true only for the launcher's own Resume ride
-  // action; even then, the one-use resumeIntentToken (backlog item 72) is
+  // action; even then, the one-use "resume" intent (backlog item 72) is
   // stamped only when THIS check itself, immediately and without any
   // dialog, resolves to "resume" (the exact same route already persisted).
   // It is never stamped when the row has vanished since hydration (an
   // ordinary "never-started" pre-ride open, which must still require an
   // explicit Start riding tap) nor after a confirmed different-session
   // switch (confirming a switch is not permission to auto-start GPS for
-  // the replacement).
+  // the replacement). Every other "resume" outcome — a Routes card or
+  // Planning's Open saved route finding this same route stored — carries a
+  // "restore" intent instead (backlog item 132), which never starts GPS.
   //
   // origin (item 73 follow-up) is supplied by the caller, never inferred
   // here — see PendingRideSwitch's own doc comment for why.
@@ -593,12 +696,15 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     if (transitionRequestIdRef.current !== requestId) return;
 
     if (outcome.kind === "proceed" || outcome.kind === "resume") {
-      const resumeIntentToken =
-        options.stampResumeIntent && outcome.kind === "resume"
-          ? (nextResumeIntentTokenRef.current += 1)
+      const intent: RideIntent | undefined =
+        outcome.kind === "resume"
+          ? {
+              kind: options.stampResumeIntent ? "resume" : "restore",
+              token: (nextRideIntentTokenRef.current += 1),
+            }
           : undefined;
       withdrawPromptsOlderThan(requestId);
-      openRideTarget(target, { resumeIntentToken });
+      openRideTarget(target, { intent });
       return;
     }
 
@@ -803,7 +909,14 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
 
       if (outcome.kind === "resume") {
         updateOwnPrompt(pending, null);
-        openRideTarget(pending.target);
+        openRideTarget(
+          pending.target,
+          pending.target.kind === "route"
+            ? {
+                intent: { kind: "restore", token: (nextRideIntentTokenRef.current += 1) },
+              }
+            : {},
+        );
         return;
       }
       if (outcome.kind === "proceed") {
@@ -895,13 +1008,13 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   }
 
   // "Return to paused ride" (item 73 follow-up) — reopens the existing
-  // paused route WITHOUT clearing storage, WITHOUT stamping a
-  // resumeIntentToken, and without starting GPS: opening a route target
-  // through openRideTarget with no resumeIntentToken already produces the
-  // correct "paused, Resume ride required" presentation, since
-  // RidingScreen independently re-detects the matching stored row itself
-  // — the exact mechanism an ordinary undialogued "resume" outcome already
-  // relies on elsewhere in this guard.
+  // paused route WITHOUT clearing storage, WITHOUT stamping a "resume"
+  // intent, and without starting GPS: opening a route target with only a
+  // "restore" intent (backlog item 132) produces the "paused, Resume ride
+  // required" presentation, since RidingScreen independently re-detects
+  // the matching stored row itself — the exact mechanism an ordinary
+  // undialogued "resume" outcome already relies on elsewhere in this
+  // guard.
   //
   // Revalidates fresh at click time rather than trusting the snapshot the
   // prompt opened with, so a stale prompt can never reopen or silently
@@ -978,7 +1091,10 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
       }
 
       updateOwnPrompt(pending, null);
-      openRideTarget({ kind: "route", route });
+      openRideTarget(
+        { kind: "route", route },
+        { intent: { kind: "restore", token: (nextRideIntentTokenRef.current += 1) } },
+      );
     } finally {
       isPendingSwitchActionPendingRef.current = false;
     }
@@ -1093,7 +1209,10 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   //
   // In every one of the first three cases, this helper's own job is only
   // ever "drop back to whatever the Ride launcher's own re-hydration from
-  // storage already reflects" — never a storage mutation itself.
+  // storage already reflects" — never a storage mutation itself. The
+  // launcher shows its own summary of a still-unfinished route ride then:
+  // the cold-start auto-open (backlog item 132) is disarmed by the time any
+  // of these can run, since each follows ride content that was opened.
   const resetRidingContentToLauncher = () => {
     setRidingContent(NONE_RIDING_CONTENT);
     notifyNewRideContent();
@@ -1143,7 +1262,10 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // persisted-storage clear preceded the call, which is entirely
   // RidingScreen's own concern. Not wired to FreeRoamScreen — out of scope
   // for item 51, which is pre-ride-panel-only and FreeRoamScreen has no
-  // idle panel to place an equivalent action in.
+  // idle panel to place an equivalent action in. Since backlog item 132
+  // this is also how the rider reaches the launcher's summary, its Resume
+  // ride and End ride after the first Ride entry has shown the paused
+  // screen; it never bounces back, because that auto-open is disarmed.
   const handleReturnToRideLauncher = () => {
     resetRidingContentToLauncher();
   };
@@ -1179,11 +1301,14 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // resuming a still-selected FreeRoamScreen instance. Deliberately NOT
   // applied when ridingContent is a route session: RidingScreen's own
   // existing, tested idle-panel pattern (an in-screen "Resume ride" button
-  // gates the restart whenever no resumeIntentToken is present) already
+  // gates the restart whenever no "resume" intent is present) already
   // satisfies the identical requirement for routes. A launcher Resume's
-  // token no longer outlives its handling (backlog item 131,
+  // intent no longer outlives its handling (backlog item 131,
   // handleResumeIntentHandled above), so returning to Ride after it has
-  // been handled is that same no-token path.
+  // been handled is that same path — now with a "restore" intent once the
+  // session is known to be stored (backlog item 132), which holds the
+  // paused controls back until the session is restored but never starts
+  // GPS.
   const handleNavigate = (nextScreen: Screen) => {
     if (screen === "riding" && nextScreen !== "riding") {
       if (ridingContent.kind === "free-roam") {
@@ -1333,8 +1458,19 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
             <RidingScreen
               key={ridingContent.route.id}
               route={ridingContent.route}
-              resumeIntentToken={ridingContent.resumeIntentToken}
+              resumeIntentToken={
+                ridingContent.intent?.kind === "resume"
+                  ? ridingContent.intent.token
+                  : undefined
+              }
               onResumeIntentHandled={handleResumeIntentHandled}
+              restoreIntentToken={
+                ridingContent.intent?.kind === "restore"
+                  ? ridingContent.intent.token
+                  : undefined
+              }
+              onRestoredSessionMissing={handleRestoredSessionMissing}
+              onStoredSessionKnown={handleStoredSessionKnown}
               mapFactory={mapFactory}
               onRidingActiveChange={handleRidingActiveChange}
               onNavigateToPlanning={handleNavigateToPlanning}
@@ -1361,6 +1497,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
               isFreeRoamPending={freeRoamTransitionPending}
               freeRoamError={freeRoamTransitionError}
               sessionRefreshToken={launcherSessionRefreshToken}
+              onSessionChecked={handleLauncherSessionChecked}
             />
           ))}
         {screen === "planning" && (

@@ -103,7 +103,7 @@ describe("shape parity", () => {
     };
     expect(count(de)).toEqual(count(en));
     // Pinned literally so a silently shrinking catalogue is visible.
-    expect(count(en)).toEqual({ plain: 737, plural: 18, rich: 2 });
+    expect(count(en)).toEqual({ plain: 738, plural: 18, rich: 2 });
   });
 
   it("gives every plural entry both German categories, non-empty", () => {
