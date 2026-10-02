@@ -8,7 +8,7 @@
 
 **Update (2 October 2026, later): D-06, D-02, D-01 and C-12 decided.** The rider approved policies for these four cases, recorded in [Decisions — D-06, D-02, D-01 and C-12](#decisions--d-06-d-02-d-01-and-c-12-2-october-2026). They are product decisions authorising later work, **not device acceptance**, and nothing about them is implemented yet. D-06's repair is first in the execution order; D-01, D-02 and C-12's opening-reveal change follow item 132. Every other case still awaits the rider's review.
 
-**Update (2 October 2026): D-06 delivered.** D-06's repair shipped in `0.4.54` as item 124's slice 4 ([record](../../project/backlog.md#item-124)); its installed-iPhone check is pending. D-01, D-02 and C-12's opening-reveal change are not yet implemented.
+**Update (2 October 2026): D-06 delivered.** D-06's repair shipped in `0.4.54` as item 124's slice 4 ([record](../../project/backlog.md#item-124)); its ordinary flow was accepted on the installed iPhone in German and English, reported 2 October 2026 ([`current-status.md`](../../project/current-status.md)), and its pending-write and failure cases have automated evidence only. D-01, D-02 and C-12's opening-reveal change are not yet implemented.
 
 **What this is.** Every confirmation in the app, every expanding card, form, editor and disclosure that could reasonably fall under the rider's "pop-up cards" request, and the conditional and failure states that change what would need revealing — each with a stable review ID, its labels in English and German, how to reach it, what it does today, where that is in the source and tests, what was measured, and a recommendation.
 
@@ -462,7 +462,7 @@ The [review preparation](#review-preparation--d-01-d-02-and-d-06-2-october-2026)
 
 **Decided, 2 October 2026:** a working state that refuses Cancel and Escape once the replacement is confirmed, completion that respects the rider's navigation, and failure focus only while the rider has stayed in the interaction. First in the execution order; not yet implemented ([decisions](#decisions--d-06-d-02-d-01-and-c-12-2-october-2026)).
 
-**Delivered, 2 October 2026:** shipped in `0.4.54` as item 124's slice 4, with automated evidence only; its installed-iPhone check is pending ([record](../../project/backlog.md#item-124)).
+**Delivered, 2 October 2026:** shipped in `0.4.54` as item 124's slice 4 ([record](../../project/backlog.md#item-124)). Its ordinary flow was accepted on the installed iPhone in German and English, reported the same day ([`current-status.md`](../../project/current-status.md)); the pending-write and failure cases have automated evidence only.
 
 ### D-07 — Two confirmations open at once
 
@@ -846,4 +846,4 @@ At ordinary text, the browser evidence agrees with the rider's iPhone 13 report.
 - **Execution order:** D-06's repair within item 124 → [item 132](../../project/backlog.md#item-132) → item 124's remaining approved slices (D-01, D-02 and C-12's opening reveal) → item 122's design stage → item 103 → item 120. The authoritative list is in the root [`CLAUDE.md`](../../../CLAUDE.md).
 - **Why D-06 goes first:** an available Cancel currently closes the confirmation while the confirmed draft replacement continues, and its completion can override the rider's subsequent navigation.
 - **Scope of the next slice:** D-06 only. D-01, D-02 and C-12's opening-reveal change remain later work; their implementation details are settled when each slice is planned.
-- **Delivered:** D-06's repair shipped in `0.4.54`, 2 October 2026, as item 124's slice 4 ([record](../../project/backlog.md#item-124)), with automated evidence only; its installed-iPhone check is pending.
+- **Delivered:** D-06's repair shipped in `0.4.54`, 2 October 2026, as item 124's slice 4 ([record](../../project/backlog.md#item-124)). Its ordinary flow was accepted on the installed iPhone in German and English, reported the same day; the pending-write and failure cases have automated evidence only.
