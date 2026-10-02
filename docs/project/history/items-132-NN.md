@@ -257,11 +257,24 @@ Each control was one temporary source mutation. It was run against the narrowest
 
 ### CI and deployment
 
-This entry was written before the push. The CI run, its shards and the deployed build were reported in the handoff, to be recorded here together with the device acceptance.
+This entry was written before the push. The CI run, its shards and the deployed build were reported in the handoff and are recorded here together with the device acceptance.
 
-### Installed-iPhone acceptance — pending
+Run [37068927716](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37068927716), for commit `501e1d4`: **Verify and build, all four End-to-end shards and Deploy succeeded, each on its first attempt.** The durations come from the run's own job and step start and completion times, read once after the run and kept locally; Verify and build's test step is its unit and component tests, each shard's its end-to-end suite.
 
-Session 5 of [`current-status.md`](../current-status.md) holds the checklist, in English and German. No device acceptance is claimed.
+| Job              | Test step | Whole job |
+| ---------------- | --------: | --------: |
+| Verify and build |     168 s |     291 s |
+| E2E shard 1/4    |     371 s |     433 s |
+| E2E shard 2/4    |     465 s |     524 s |
+| E2E shard 3/4    |     288 s |     350 s |
+| E2E shard 4/4    |     437 s |     491 s |
+| Deploy           |         — |      11 s |
+
+The live bundle then contained `0.4.55` and `501e1d4`, and no longer the previous build `75094b0`. One run, so no trend is claimed.
+
+### Installed-iPhone acceptance (reported 2 October 2026)
+
+**Accepted** on the installed iPhone, on `0.4.55` (build `501e1d4`), in English and German: the ordinary flows and their visible behaviour, at product level. The verbatim report and what it does not establish — GPS-watch counts, induced storage failures, the no-first-fix lifecycle and a measured Follow-zoom result — are in the dated record in [`current-status.md`](../current-status.md). The automated evidence above is unchanged by it.
 
 ---
 
