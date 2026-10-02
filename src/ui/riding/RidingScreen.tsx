@@ -92,14 +92,19 @@ export interface RidingScreenProps {
   /** A one-use resume intent from App.tsx's launcher-driven cold recovery
    * (backlog item 72) — set only when this screen was mounted via
    * RidingLauncher's "Resume ride" action, undefined for every other entry
-   * path (a fresh route, an ordinary Routes-card reopen, a Planning-save-
-   * then-ride, or a still-mounted screen after an in-session Pause, whose
-   * token — if any — was already consumed on first mount and is never
-   * re-consumed). Consumed at most once per distinct value, only once
+   * path (a fresh route, an ordinary Routes-card reopen, Planning's Open
+   * saved route). Consumed at most once per distinct value, only once
    * restoration has genuinely completed for this exact route, via the same
    * authoritative handleStart() transition the "Resume ride"/"Start riding"
-   * button itself uses. */
+   * button itself uses. App owns it, and retires it once
+   * onResumeIntentHandled reports it handled (backlog item 131). */
   resumeIntentToken?: number;
+  /** Reports that the resume intent with this token has been handled —
+   * consumed, or found to have no matching session to resume — once
+   * restoration has settled; never while it is still loading or has
+   * failed. Carries the token so the owner retires that exact instruction
+   * and no other (backlog item 131). */
+  onResumeIntentHandled?: (token: number) => void;
   geolocationSource?: GeolocationSource;
   mapFactory?: MapFactory;
   clock?: Clock;
@@ -209,6 +214,7 @@ function elevationViewModeKey(mode: ElevationViewMode): string {
 export function RidingScreen({
   route,
   resumeIntentToken,
+  onResumeIntentHandled,
   geolocationSource,
   mapFactory,
   clock = systemClock,
@@ -1139,7 +1145,21 @@ export function RidingScreen({
   // marks the token consumed and falls through to the ordinary manual idle
   // panel exactly once, never auto-starting a fresh ride and never
   // retry-looping.
+  //
+  // Backlog item 131: a handled token must stop counting as pending. The
+  // consuming branch records it in handledResumeIntentToken — state, so the
+  // render-time predicate below can read it — inside the same ref-gated
+  // block as handleStart(), ahead of it, so the restoration/camera/Follow
+  // ordering is unchanged. Both branches then report it to the owner
+  // (App), which retires that exact instruction, so a later mount can never
+  // replay it. Neither happens while restoration is loading or has failed
+  // (the early returns): the pending and error presentation, and Retry,
+  // keep the instruction until it is genuinely handled. A Strict Mode or
+  // dependency re-run reports the same token again, which is harmless.
   const consumedResumeIntentTokenRef = useRef<number | null>(null);
+  const [handledResumeIntentToken, setHandledResumeIntentToken] = useState<number | null>(
+    null,
+  );
   useEffect(() => {
     if (resumeIntentToken === undefined) return;
     if (nav.restorationStatus !== "ready") return;
@@ -1151,10 +1171,12 @@ export function RidingScreen({
       nav.restoredForThisRoute;
     if (shouldConsume) {
       consumedResumeIntentTokenRef.current = resumeIntentToken;
+      setHandledResumeIntentToken(resumeIntentToken);
       handleStart();
     } else {
       consumedResumeIntentTokenRef.current = resumeIntentToken;
     }
+    onResumeIntentHandled?.(resumeIntentToken);
   }, [
     resumeIntentToken,
     nav.restorationStatus,
@@ -1162,6 +1184,7 @@ export function RidingScreen({
     nav.restoredCameraState,
     camera.hasAppliedRestoredCamera,
     handleStart,
+    onResumeIntentHandled,
   ]);
 
   // True only while a resume intent is present and restoration hasn't yet
@@ -1174,12 +1197,17 @@ export function RidingScreen({
   // will leave "idle" on the very next render, at which point this whole
   // idle-panel block stops rendering regardless of this value) or the row
   // never matched this route, in which case this correctly settles to
-  // false and the ordinary idle panel takes over.
+  // false and the ordinary idle panel takes over. A token this screen has
+  // already consumed is never pending again (backlog item 131), so a later
+  // Pause, which returns navigation to idle, shows the ordinary paused
+  // controls even while a parent still passes the same token.
   const restorationSettled =
     nav.restorationStatus === "ready" &&
     (nav.restoredCameraState === null || camera.hasAppliedRestoredCamera);
   const isConsumingResumeIntent =
-    resumeIntentToken !== undefined && !(restorationSettled && !nav.restoredForThisRoute);
+    resumeIntentToken !== undefined &&
+    resumeIntentToken !== handledResumeIntentToken &&
+    !(restorationSettled && !nav.restoredForThisRoute);
 
   // Renders the End-ride action in place: either the trigger button (plus
   // any error) or the confirmation itself, never both — called from both of

@@ -872,3 +872,75 @@ _Category: Planning presentation_
 ### Installed-iPhone acceptance — reported 1 October 2026
 
 Accepted on `0.4.50`, build `3ebf4ce`, in English and German: all three device checks passed. The report, and exactly what it does and does not assert, are recorded only in [`current-status.md`](../current-status.md). The limitations above describe the item as it stood at implementation; the 320×568 German overlap among them is unchanged by this acceptance.
+
+---
+
+<a id="item-131"></a>
+
+## Item 131 — Pause and the one-use resume instruction — done
+
+_Category: Riding lifecycle_
+
+131. **Pause and the one-use resume instruction — done**
+     - **Origin:** a device finding reported 2 October 2026 on `0.4.52` (build `68e6697`), separate from item 124 slice 3's acceptance in the same session — the dated record in [`current-status.md`](../current-status.md). While preparing a paused ride, tapping **Pause** did not show the expected paused screen: it read "Deine Fahrt wird fortgesetzt…", and switching to Routes and back to Riding returned to an active ride. It first reproduced even after fully closing the PWA, and later behaved normally. **The report does not say how that ride had been opened.**
+     - **Scheduled first on 2 October 2026**, before further item 124 work, by the rider's decision; the root [`CLAUDE.md`](../../../CLAUDE.md) holds the order.
+     - **Diagnosis — component evidence, not an iPhone reproduction.** Confirmed against `68e6697`'s source. The reproduced code path is a ride resumed through the Ride launcher's **Resume ride**, the only entry point that stamps App's one-use resume instruction (`resumeIntentToken`, backlog item 72):
+       1. **The display.** `RidingScreen.tsx` consumes the instruction at most once per mount (`consumedResumeIntentTokenRef`), but its `isConsumingResumeIntent` predicate keeps treating it as pending for as long as the prop is present, once restoration has succeeded for the route. After a successful Pause returns navigation to idle, the screen therefore shows `riding.resuming` — "Resuming your ride…" / "Deine Fahrt wird fortgesetzt…" — in place of the ordinary paused controls.
+       2. **The lifetime.** `App.tsx` keeps the instruction in the route session's `ridingContent` for the whole session: Pause leaves a route session's content untouched, and leaving Riding resets only free roam. Leaving Riding unmounts the screen; returning mounts a fresh one (keyed by route), whose consumption guard is empty, so the retained instruction can start another GPS watch.
+       - Two temporary component diagnostics, run on source blocks verified identical to `68e6697`, reproduced both: Pause saved the resumable state and stopped the watch, the wrong message appeared, and remounting with the retained instruction started another watch. The same sequence without the instruction behaved correctly. The diagnostics were removed.
+       - The logic predates item 124 slice 3 and is not attributed to C-14 or D-03.
+     - **Required behaviour:**
+       - a launcher Resume requests **one** resume;
+       - while restoration is genuinely pending, the existing pending and error presentation, and restoration's own retry, are kept;
+       - once the instruction has been handled, it can neither suppress a later paused screen nor replay on a later mount;
+       - a successful Pause saves the session, stops tracking and shows the ordinary Resume controls; switching to Routes and back after Pause keeps the ride paused;
+       - tracking starts again only after a fresh, explicit Start or Resume.
+     - **Ownership:** explicit across `App` and `RidingScreen`, fixing both the display and the instruction's lifetime — not merely hiding the message, and not clearing the instruction only when Pause is pressed. An acknowledgement from an obsolete screen must never retire a newer instruction.
+     - **Must be preserved:** Strict Mode's single watch and the existing restoration and camera ordering; failed Pause (a storage failure leaves the ride running with its retryable error); route progress, camera state, elevation selection, wake-lock preference, dismissed-climb and completion state through Pause and Resume; ordinary route opening, the launcher's one-tap cold resume, the route-switch guards, free roam, and slice 3's Save / Open saved route separation. No dependency, toolchain, storage-schema or unrelated confirmation change, and nothing for the item 130 flake.
+     - **Evidence required:** component and App-level tests — component tests alone cannot show the instruction surviving in App — covering the paused controls after a resumed ride, Routes and back staying paused with no new watch, an explicit Resume and a second Pause, ordinary opening without the instruction, deferred and failed restoration, a mismatched stored route, camera ordering, Strict Mode, failed Pause, and an obsolete acknowledgement; browser coverage of the real launcher → Resume → Pause → Routes → Riding sequence and the following explicit Resume, in Chromium and WebKit, English and German; the two mechanisms observable independently; failures on the unchanged baseline; and negative controls.
+     - **Not claimed:** that the first Pause on the device failed to stop GPS, which the observation alone cannot establish; how the device ride had been opened; any link to item 124 slice 3.
+
+### Implementation account (2 October 2026, `0.4.53`)
+
+- **App owns the instruction.** `handleResumeIntentHandled`, a stable `useCallback` in `App.tsx`, retires the route session's `resumeIntentToken` only when its value equals the token reported. Tokens are unique and monotonic, so a report from an obsolete screen about an older instruction can never retire a newer one, for the same route or another. `RidingContent`'s and `handleNavigate`'s comments now say so.
+- **RidingScreen consumes and reports.** In the existing consumption effect, the ref-gated consuming branch — the single combined boolean the `react-hooks/set-state-in-effect` rule requires — records the token in a new `handledResumeIntentToken` state and then calls `handleStart()`, so the restoration, camera and Follow ordering is unchanged. Once restoration has settled, both branches — consumed, or a stored row for another route — report the token through the new `onResumeIntentHandled` prop. The early returns for loading and failed restoration are unchanged, so the pending status, the error with Retry and Back to Ride options all keep the instruction until it is genuinely handled. A Strict Mode or dependency re-run reports the same token again, which is harmless.
+- **The display rule** now excludes a handled token: `isConsumingResumeIntent` is true only for a token the screen has not yet consumed. A later Pause therefore shows the ordinary paused controls even if a parent still passed the token; the render between restoration settling and consumption still shows "Resuming your ride…", so the Start button never flashes.
+- **The pending policy.** Leaving Riding before restoration has settled keeps the instruction, and returning honours it exactly once — the one resume the rider asked for.
+- **Unchanged:** Pause and failed Pause, free roam, the route-switch guards, Planning's Save / Open saved route, the storage schema and every dependency.
+- **Files:** `src/App.tsx`, `src/ui/riding/RidingScreen.tsx`; tests in `src/ui/riding/RidingScreen.test.tsx`, `src/App.test.tsx` and the new `src/App.resumeIntent.test.tsx`; the new browser spec `e2e/ridingPauseAfterResume.smoke.spec.ts`.
+
+### Evidence — automated only
+
+- **Component (`RidingScreen.test.tsx`, 6 new):** with the same token still passed, as a parent that never retired it would, a successful Pause shows Resume ride and End ride, stops the watch and keeps the resumable row, and only an explicit Resume starts another watch; the report fires with the prop's own token after consumption and never while restoration is deferred; never while restoration has failed, and after Retry succeeds; for another route's stored row with no watch; under Strict Mode with one watch; and a failed Pause keeps the watch running with its retryable error, after which a successful Pause shows the Resume controls. The existing deferred, failure/retry, mismatch, camera-ordering and Strict Mode tests pass unchanged.
+- **App, with the real riding screen (`App.test.tsx`, 6 new):** Pause after a launcher Resume shows the Resume controls, clears the watch and keeps the session; separately, after that Pause, Routes and back keeps the ride paused with no new watch, waiting only on the Pause itself and sampling the watch count repeatedly; an explicit Resume starts exactly one more watch, a second Pause works, and the seeded session's progress, elevation view, wake-lock preference, dismissed climb, completion state and follow zoom all survive; opening the route from its card starts nothing; a failed Pause keeps tracking with its error; and a still-pending instruction survives leaving Riding while its restoration read is held, starts nothing while Riding is absent, is honoured once on return, and a later Pause and round trip stay paused.
+- **App, with the riding screen stubbed (`App.resumeIntent.test.tsx`, 2 new):** a report retires the instruction it names, once, leaving the route open; and a late report from an obsolete screen about an older instruction never retires the newer one.
+- **Browser, in the pinned container (`e2e/ridingPauseAfterResume.smoke.spec.ts`):** a real unfinished ride, a reload, and the launcher's one-tap Resume; then (A) Pause shows the paused controls, clears the watch and keeps the session, and, separately, (B) Routes and back keeps it paused with no new watch, an explicit Resume starts exactly one, and a second Pause works. Watches are counted by wrapping `navigator.geolocation` before the app runs. 8 of 8 in Chromium and WebKit, English and German, and 24 of 24 at `--repeat-each=3`. The ten cold-resume, Pause, ride-transition, free-roam and slice 3 regression specs passed 107 of 107, and the full suite 744 of 744.
+- **The full unit suite:** 4,765 of 4,765 in 205 files; lint, typecheck and the production build passed.
+- **Baseline, `68e6697`:**
+  - **Browser:** 8 of 8 fail, each for its own reason — (A) at the missing Resume ride button (`Fahrt fortsetzen` in German), and (B), independently, at a second watch (`Expected: 1`, `Received: 2`).
+  - **Unit:** with `68e6697`'s `App.tsx` and `RidingScreen.tsx` in place and the new tests run against them, the six behavioural tests fail meaningfully — the five that expect the paused controls at the missing Resume ride button, and the round-trip test at a second `watchPosition` call. The two guards, opening from a card and App's failed Pause, pass, as they should. The six tests of the new report callback fail only because it does not exist there; they are judged by the controls below. Both files were restored byte-for-byte (SHA-256).
+- **Negative controls**, each applied alone and restored byte-for-byte (SHA-256):
+
+| Control | What it disables                                               | Unit tests failed (of 25 resume-intent tests)                                                                                                                                                                                                | Browser (Chromium, both languages)                                 |
+| ------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| (a)     | the handled-token exclusion in the display rule                | 2 — the two component tests that keep passing the token                                                                                                                                                                                      | **none**: App's retirement removes the token, so the display holds |
+| (b)     | App's retirement (the report does nothing)                     | 5 — the round trip, the explicit Resume, the pending policy and both stubbed-screen tests                                                                                                                                                    | (B) fails at a second watch in both languages; (A) passes          |
+| (c)     | the token match (any report retires the current instruction)   | 1 — the obsolete-screen report                                                                                                                                                                                                               | not run                                                            |
+| (d)     | waiting for restoration (the report is sent before it settles) | 8 — the component reports for deferred and failed restoration, and six App tests whose launcher Resume no longer resumes: Pause, failed Pause, the round trip, the explicit Resume, the pending policy and item 72's own one-tap cold resume | not run                                                            |
+
+### Findings worth carrying forward
+
+- **Two independent defects, each covering only part of the other's symptom.** Control (a) shows App's retirement alone keeps the App-level and browser display right, because the token is gone, while a screen still handed the token would show the pending text after Pause. Control (b) shows the screen's rule alone keeps the display right within one mount but cannot stop a replay on the next. Both fixes are needed.
+- **The report must wait for restoration to settle.** Sent early (control d), it retired the instruction before it was used and broke item 72's one-tap cold resume itself.
+- **A control must keep strict TypeScript compiling.** The first form of control (a) deleted the only use of the new state, which `noUnusedLocals` rejects at build time; it was rewritten as an always-true comparison.
+- **The device's "later it behaved normally" is not explained by this evidence.** It is consistent with a ride opened by any other path, which carries no instruction, but how the device ride had been opened was not reported, and nothing here assumes it.
+
+### Limitations, stated plainly
+
+- **No iPhone reproduction.** The diagnosis and the evidence are component, App and desktop-browser evidence; Playwright's geolocation is emulated, not a phone's.
+- **A pending instruction survives leaving Riding, by design**, and is honoured on return. The rider who leaves before restoration settles still gets the one resume they asked for.
+- No VoiceOver, iOS Larger Text, landscape or physical-Android result is claimed.
+
+### Installed-iPhone check
+
+Pending — Session 5 in [`current-status.md`](../current-status.md).

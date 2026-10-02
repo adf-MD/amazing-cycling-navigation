@@ -1424,6 +1424,258 @@ describe("App — Free roam", () => {
   });
 });
 
+// Backlog item 131: a launcher Resume's one-use instruction, end to end
+// through the real App and RidingScreen. Pause and the round trip through
+// Routes are deliberately separate tests, so the paused screen (the
+// display) and the retained instruction (its lifetime) are each observable
+// even when the other is broken.
+describe("App — a launcher Resume's one-use instruction (item 131)", () => {
+  beforeEach(async () => {
+    await db.routes.clear();
+    await db.rideState.clear();
+    await db.routeLibraryPreferences.clear();
+  });
+
+  afterEach(() => {
+    // cleanup() before unstubbing: unmounting a watching screen calls
+    // navigator.geolocation.clearWatch, which needs the stub.
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  function stubGeolocation() {
+    const watchPositionSpy = vi.fn();
+    const clearWatchSpy = vi.fn();
+    vi.stubGlobal("navigator", {
+      onLine: navigator.onLine,
+      geolocation: {
+        watchPosition: watchPositionSpy,
+        getCurrentPosition: vi.fn(),
+        clearWatch: clearWatchSpy,
+      },
+    });
+    return { watchPositionSpy, clearWatchSpy };
+  }
+
+  const SESSION_EXTRAS = {
+    elevationViewMode: { kind: "upcoming", windowMetres: 10000 },
+    wakeLockDesired: true,
+    dismissedClimbFeatureId: "climb-dismissed-before-pause",
+    completionArmed: true,
+    cameraMode: "following",
+    cameraZoom: 15.5,
+  } as const;
+
+  async function seedPausedRoute(user: ReturnType<typeof userEvent.setup>) {
+    await importFixture(user, "Route A.gpx");
+    const [importedRoute] = await db.routes.toArray();
+    if (!importedRoute) throw new Error("expected an imported route");
+    await setActiveRideState({
+      id: "active",
+      routeId: importedRoute.id,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: { coordinate: [0, 51], accuracyMetres: 6, timestampMs: 1000 },
+      lastMatchedPointIndex: 2,
+      matchedDistanceFromStartMetres: 40,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+      ...SESSION_EXTRAS,
+    });
+    return importedRoute;
+  }
+
+  /** Launcher → one-tap Resume ride → actively tracking. */
+  async function resumeFromLauncher(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+    await user.click(await screen.findByRole("button", { name: "Resume ride" }));
+    await screen.findByRole("button", { name: "Pause" });
+  }
+
+  /** Samples for a while, never stopping at the first success, that no
+   * further watch has started. */
+  async function expectWatchCountToStay(spy: ReturnType<typeof vi.fn>, count: number) {
+    for (let sample = 0; sample < 10; sample += 1) {
+      expect(spy).toHaveBeenCalledTimes(count);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+    expect(spy).toHaveBeenCalledTimes(count);
+  }
+
+  it("Pause after a launcher Resume shows the ordinary Resume controls, stops the watch and keeps the resumable session", async () => {
+    const user = userEvent.setup();
+    const { watchPositionSpy, clearWatchSpy } = stubGeolocation();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    const importedRoute = await seedPausedRoute(user);
+    await resumeFromLauncher(user);
+    expect(watchPositionSpy).toHaveBeenCalledOnce();
+
+    await user.click(screen.getByRole("button", { name: "Pause" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Resume ride" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "End ride" })).toBeInTheDocument();
+    expect(screen.queryByText("Resuming your ride…")).toBeNull();
+    expect(clearWatchSpy).toHaveBeenCalledOnce();
+    expect(await getActiveRideState()).toMatchObject({ routeId: importedRoute.id });
+  });
+
+  it("after that Pause, leaving for Routes and returning keeps the ride paused and starts no watch", async () => {
+    const user = userEvent.setup();
+    const { watchPositionSpy, clearWatchSpy } = stubGeolocation();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    await seedPausedRoute(user);
+    await resumeFromLauncher(user);
+
+    await user.click(screen.getByRole("button", { name: "Pause" }));
+    // Waits only on the Pause itself — the watch stopped and the main
+    // navigation back — never on the paused screen's own controls.
+    await waitFor(() => {
+      expect(clearWatchSpy).toHaveBeenCalledOnce();
+    });
+    await user.click(await screen.findByRole("button", { name: "Routes" }));
+    await screen.findByRole("heading", { name: "Routes" });
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+
+    // Restoration has settled once either control shows: the paused
+    // screen's Resume ride, or — were the instruction replayed — Pause.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Resume ride" }) ??
+          screen.queryByRole("button", { name: "Pause" }),
+      ).not.toBeNull();
+    });
+    await expectWatchCountToStay(watchPositionSpy, 1);
+    expect(screen.getByRole("button", { name: "Resume ride" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
+  });
+
+  it("a fresh, explicit Resume starts exactly one more watch, a second Pause still works, and the session's own state survives both", async () => {
+    const user = userEvent.setup();
+    const { watchPositionSpy, clearWatchSpy } = stubGeolocation();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    const importedRoute = await seedPausedRoute(user);
+    await resumeFromLauncher(user);
+    await user.click(screen.getByRole("button", { name: "Pause" }));
+    await waitFor(() => {
+      expect(clearWatchSpy).toHaveBeenCalledOnce();
+    });
+    await user.click(await screen.findByRole("button", { name: "Routes" }));
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+
+    await user.click(await screen.findByRole("button", { name: "Resume ride" }));
+    await screen.findByRole("button", { name: "Pause" });
+    expect(watchPositionSpy).toHaveBeenCalledTimes(2);
+
+    await user.click(screen.getByRole("button", { name: "Pause" }));
+    expect(
+      await screen.findByRole("button", { name: "Resume ride" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Resuming your ride…")).toBeNull();
+    expect(clearWatchSpy).toHaveBeenCalledTimes(2);
+    await expectWatchCountToStay(watchPositionSpy, 2);
+    expect(await getActiveRideState()).toMatchObject({
+      routeId: importedRoute.id,
+      lastMatchedPointIndex: 2,
+      matchedDistanceFromStartMetres: 40,
+      ...SESSION_EXTRAS,
+    });
+  });
+
+  it("opening the same route from its Routes card, with no instruction, starts no watch and offers Resume ride", async () => {
+    const user = userEvent.setup();
+    const { watchPositionSpy } = stubGeolocation();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    await seedPausedRoute(user);
+
+    await user.click(screen.getByRole("button", { name: "Route A" }));
+    expect(
+      await screen.findByRole("button", { name: "Resume ride" }),
+    ).toBeInTheDocument();
+    await expectWatchCountToStay(watchPositionSpy, 0);
+  });
+
+  it("a failed Pause after a launcher Resume keeps tracking, shows its retryable error and leaves the watch running", async () => {
+    const user = userEvent.setup();
+    const { watchPositionSpy, clearWatchSpy } = stubGeolocation();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    await seedPausedRoute(user);
+    await resumeFromLauncher(user);
+
+    const setSpy = vi
+      .spyOn(rideStateRepository, "setActiveRideState")
+      .mockRejectedValue(new Error("boom"));
+    await user.click(screen.getByRole("button", { name: "Pause" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The ride could not be paused on this device. Try again.",
+    );
+    expect(screen.getByRole("button", { name: "Pause" })).not.toBeDisabled();
+    expect(clearWatchSpy).not.toHaveBeenCalled();
+    expect(watchPositionSpy).toHaveBeenCalledOnce();
+    setSpy.mockRestore();
+  });
+
+  it("a still-pending instruction survives leaving Riding, is honoured once on return, and a later Pause and round trip stay paused", async () => {
+    const user = userEvent.setup();
+    const { watchPositionSpy, clearWatchSpy } = stubGeolocation();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    const importedRoute = await seedPausedRoute(user);
+
+    // Holds the screen's restoration read: once armed, the guard's own
+    // check is the first read and restoration the second.
+    const realRead = rideStateRepository.getActiveRideState;
+    let armed = false;
+    let readsSinceArmed = 0;
+    let resolveHeld!: (value: Awaited<ReturnType<typeof realRead>>) => void;
+    const held = new Promise<Awaited<ReturnType<typeof realRead>>>((resolve) => {
+      resolveHeld = resolve;
+    });
+    vi.spyOn(rideStateRepository, "getActiveRideState").mockImplementation(() => {
+      if (armed) {
+        readsSinceArmed += 1;
+        if (readsSinceArmed === 2) return held;
+      }
+      return realRead();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+    const resume = await screen.findByRole("button", { name: "Resume ride" });
+    armed = true;
+    await user.click(resume);
+
+    // Proof the held read is the restoration one: the screen is pending.
+    expect(await screen.findByText("Resuming your ride…")).toBeInTheDocument();
+    expect(readsSinceArmed).toBe(2);
+    expect(watchPositionSpy).not.toHaveBeenCalled();
+
+    // Leave while it is pending, and let the held read finish while away.
+    await user.click(screen.getByRole("button", { name: "Routes" }));
+    await screen.findByRole("heading", { name: "Routes" });
+    resolveHeld(await realRead());
+    await expectWatchCountToStay(watchPositionSpy, 0);
+
+    // Returning honours the still-pending instruction, exactly once.
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+    await screen.findByRole("button", { name: "Pause" });
+    await expectWatchCountToStay(watchPositionSpy, 1);
+
+    // Handled now: Pause and a round trip stay paused.
+    await user.click(screen.getByRole("button", { name: "Pause" }));
+    expect(
+      await screen.findByRole("button", { name: "Resume ride" }),
+    ).toBeInTheDocument();
+    expect(clearWatchSpy).toHaveBeenCalledOnce();
+    await user.click(await screen.findByRole("button", { name: "Routes" }));
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+    expect(
+      await screen.findByRole("button", { name: "Resume ride" }),
+    ).toBeInTheDocument();
+    await expectWatchCountToStay(watchPositionSpy, 1);
+    expect(await realRead()).toMatchObject({ routeId: importedRoute.id });
+  });
+});
+
 // Covers the remainder of backlog item 73's required transition matrix not
 // already exercised above: same-route/free-roam recovery and the
 // free-roam-blocks-route/check-failed directions are covered by the

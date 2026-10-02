@@ -4664,6 +4664,192 @@ describe("RidingScreen", () => {
       });
     });
 
+    // Backlog item 131: a handled resume intent never counts as pending
+    // again. Each of these keeps passing the SAME token, as a parent that
+    // never retired it would, so the screen's own display rule is what is
+    // under test here; App's retirement of the token is covered in
+    // App.test.tsx and App.resumeIntent.test.tsx.
+    function watchCleanup(
+      stub: ReturnType<typeof buildStubGeolocationSource>,
+      index: number,
+    ) {
+      const cleanup: unknown = stub.watchPositionSpy.mock.results[index]?.value;
+      if (typeof cleanup !== "function")
+        throw new Error(`expected watch ${String(index)}`);
+      return cleanup as ReturnType<typeof vi.fn>;
+    }
+
+    it("after a consumed resume intent, a successful Pause shows the ordinary Resume controls even while the same token is still passed (item 131)", async () => {
+      await setActiveRideState(RESUMABLE_ROW);
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const onResumeIntentHandled = vi.fn();
+      render(
+        <RidingScreen
+          route={route}
+          resumeIntentToken={1}
+          onResumeIntentHandled={onResumeIntentHandled}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await user.click(await screen.findByRole("button", { name: "Pause" }));
+
+      expect(
+        await screen.findByRole("button", { name: "Resume ride" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "End ride" })).toBeInTheDocument();
+      expect(screen.queryByText(/resuming your ride/i)).toBeNull();
+      expect(stub.watchPositionSpy).toHaveBeenCalledOnce();
+      expect(watchCleanup(stub, 0)).toHaveBeenCalledOnce();
+      expect(await getActiveRideState()).toMatchObject({ routeId: route.id });
+
+      // Only a fresh, explicit Resume starts tracking again.
+      await user.click(screen.getByRole("button", { name: "Resume ride" }));
+      await screen.findByRole("button", { name: "Pause" });
+      expect(stub.watchPositionSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("reports a consumed resume intent with its own token, and never while restoration is still deferred (item 131)", async () => {
+      let resolveRead!: (value: StoredRideState | undefined) => void;
+      const deferred = new Promise<StoredRideState | undefined>((resolve) => {
+        resolveRead = resolve;
+      });
+      vi.spyOn(rideStateRepository, "getActiveRideState").mockReturnValueOnce(deferred);
+      const stub = buildStubGeolocationSource();
+      const onResumeIntentHandled = vi.fn();
+      render(
+        <RidingScreen
+          route={route}
+          resumeIntentToken={7}
+          onResumeIntentHandled={onResumeIntentHandled}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      expect(await screen.findByText(/resuming your ride/i)).toBeInTheDocument();
+      expect(onResumeIntentHandled).not.toHaveBeenCalled();
+
+      resolveRead(RESUMABLE_ROW);
+      await screen.findByRole("button", { name: "Pause" });
+      expect(stub.watchPositionSpy).toHaveBeenCalledOnce();
+      expect(onResumeIntentHandled).toHaveBeenCalled();
+      expect(onResumeIntentHandled.mock.calls.every(([token]) => token === 7)).toBe(true);
+    });
+
+    it("does not report a resume intent while restoration has failed, and reports it once Retry succeeds (item 131)", async () => {
+      await setActiveRideState(RESUMABLE_ROW);
+      vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
+        new Error("boom"),
+      );
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      const onResumeIntentHandled = vi.fn();
+      render(
+        <RidingScreen
+          route={route}
+          resumeIntentToken={1}
+          onResumeIntentHandled={onResumeIntentHandled}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      await screen.findByRole("alert");
+      expect(onResumeIntentHandled).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: "Retry" }));
+      await screen.findByRole("button", { name: "Pause" });
+      expect(onResumeIntentHandled).toHaveBeenCalledWith(1);
+      expect(stub.watchPositionSpy).toHaveBeenCalledOnce();
+    });
+
+    it("reports a resume intent for another route's stored row as handled, starting no watch (item 131)", async () => {
+      await setActiveRideState({ ...RESUMABLE_ROW, routeId: "some-other-route" });
+      const stub = buildStubGeolocationSource();
+      const onResumeIntentHandled = vi.fn();
+      render(
+        <RidingScreen
+          route={route}
+          resumeIntentToken={3}
+          onResumeIntentHandled={onResumeIntentHandled}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+
+      expect(
+        await screen.findByRole("button", { name: "Start riding" }),
+      ).toBeInTheDocument();
+      await waitFor(() => {
+        expect(onResumeIntentHandled).toHaveBeenCalledWith(3);
+      });
+      expect(stub.watchPositionSpy).not.toHaveBeenCalled();
+    });
+
+    it("under Strict Mode, still starts one watch and reports only its own token (item 131)", async () => {
+      await setActiveRideState(RESUMABLE_ROW);
+      const stub = buildStubGeolocationSource();
+      const onResumeIntentHandled = vi.fn();
+      render(
+        <RidingScreen
+          route={route}
+          resumeIntentToken={4}
+          onResumeIntentHandled={onResumeIntentHandled}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+        { wrapper: StrictMode },
+      );
+
+      await screen.findByRole("button", { name: "Pause" });
+      expect(stub.watchPositionSpy).toHaveBeenCalledTimes(1);
+      expect(onResumeIntentHandled).toHaveBeenCalled();
+      expect(onResumeIntentHandled.mock.calls.every(([token]) => token === 4)).toBe(true);
+    });
+
+    it("a failed Pause after a consumed resume intent keeps the watch running and shows its retryable error; a later Pause then shows the Resume controls (item 131)", async () => {
+      await setActiveRideState(RESUMABLE_ROW);
+      const user = userEvent.setup();
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          resumeIntentToken={1}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+      );
+      await user.click(await screen.findByRole("button", { name: "Pause" }));
+      await screen.findByRole("button", { name: "Resume ride" });
+      await user.click(screen.getByRole("button", { name: "Resume ride" }));
+      await screen.findByRole("button", { name: "Pause" });
+
+      // Every write fails while the Pause is attempted, so it is Pause's own
+      // write that fails, whatever else persists meanwhile.
+      const setSpy = vi
+        .spyOn(rideStateRepository, "setActiveRideState")
+        .mockRejectedValue(new Error("boom"));
+      await user.click(screen.getByRole("button", { name: "Pause" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "The ride could not be paused on this device. Try again.",
+      );
+      expect(screen.getByRole("button", { name: "Pause" })).not.toBeDisabled();
+      expect(watchCleanup(stub, 1)).not.toHaveBeenCalled();
+      expect(screen.queryByText(/resuming your ride/i)).toBeNull();
+
+      setSpy.mockRestore();
+      await user.click(screen.getByRole("button", { name: "Pause" }));
+      expect(
+        await screen.findByRole("button", { name: "Resume ride" }),
+      ).toBeInTheDocument();
+      expect(watchCleanup(stub, 1)).toHaveBeenCalledOnce();
+      expect(screen.queryByText(/resuming your ride/i)).toBeNull();
+    });
+
     it("a never-started route still shows Start riding and never auto-starts", () => {
       const stub = buildStubGeolocationSource();
       render(

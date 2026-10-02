@@ -179,7 +179,7 @@ _Category: Planning layout_
 
 _Category: Interface and accessibility consistency_
 
-> **Staged delivery — slice 1 shipped (`0.4.51`) and accepted on the installed iPhone; slice 2's inventory is complete; slice 3, the two inventory cases the rider approved, shipped in `0.4.52` and was accepted on the installed iPhone, reported 2 October 2026. A separate pause/resume repair, [item 131](#item-131), precedes further item 124 work (the root `CLAUDE.md` order).**
+> **Staged delivery — slice 1 shipped (`0.4.51`) and accepted on the installed iPhone; slice 2's inventory is complete; slice 3, the two inventory cases the rider approved, shipped in `0.4.52` and was accepted on the installed iPhone, reported 2 October 2026. A separate pause/resume repair, [item 131](history/items-118-NN.md#item-131), was scheduled ahead of further item 124 work and shipped in `0.4.53`; its device check is pending.**
 > This item ships in slices and stays **pending** here until its final
 > slice. Nothing about it enters [`history/`](history/README.md) before
 > then. The original specification, under its own heading below, is kept
@@ -449,30 +449,3 @@ _Category: End-to-end test reliability_
      - **First task:** capture the failing assertion and the artefacts item 116 retains — the failure screenshot, the CI trace and `error-context.md`, uploaded per shard — under **ordinary CI conditions**, not 36-worker stress. If ordinary CI does not reproduce it, record that and how many runs were observed.
      - **Then:** distinguish test timing — when the baseline and later camera readings are taken, and what they read — from a real camera-follow problem after reconnection.
      - **Evidence required when resolved:** the captured artefact, a check that discriminates between those two explanations, and negative controls. Any change to the test follows the diagnosis.
-
----
-
-<a id="item-131"></a>
-
-## Item 131 — Pause and the one-use resume instruction (scheduled first)
-
-_Category: Riding lifecycle_
-
-131. **Pause and the one-use resume instruction — scheduled first**
-     - **Origin:** a device finding reported 2 October 2026 on `0.4.52` (build `68e6697`), separate from item 124 slice 3's acceptance in the same session — the dated record in [`current-status.md`](current-status.md). While preparing a paused ride, tapping **Pause** did not show the expected paused screen: it read "Deine Fahrt wird fortgesetzt…", and switching to Routes and back to Riding returned to an active ride. It first reproduced even after fully closing the PWA, and later behaved normally. **The report does not say how that ride had been opened.**
-     - **Scheduled first on 2 October 2026**, before further item 124 work, by the rider's decision; the root [`CLAUDE.md`](../../CLAUDE.md) holds the order.
-     - **Diagnosis — component evidence, not an iPhone reproduction.** Confirmed against `68e6697`'s source. The reproduced code path is a ride resumed through the Ride launcher's **Resume ride**, the only entry point that stamps App's one-use resume instruction (`resumeIntentToken`, backlog item 72):
-       1. **The display.** `RidingScreen.tsx` consumes the instruction at most once per mount (`consumedResumeIntentTokenRef`), but its `isConsumingResumeIntent` predicate keeps treating it as pending for as long as the prop is present, once restoration has succeeded for the route. After a successful Pause returns navigation to idle, the screen therefore shows `riding.resuming` — "Resuming your ride…" / "Deine Fahrt wird fortgesetzt…" — in place of the ordinary paused controls.
-       2. **The lifetime.** `App.tsx` keeps the instruction in the route session's `ridingContent` for the whole session: Pause leaves a route session's content untouched, and leaving Riding resets only free roam. Leaving Riding unmounts the screen; returning mounts a fresh one (keyed by route), whose consumption guard is empty, so the retained instruction can start another GPS watch.
-       - Two temporary component diagnostics, run on source blocks verified identical to `68e6697`, reproduced both: Pause saved the resumable state and stopped the watch, the wrong message appeared, and remounting with the retained instruction started another watch. The same sequence without the instruction behaved correctly. The diagnostics were removed.
-       - The logic predates item 124 slice 3 and is not attributed to C-14 or D-03.
-     - **Required behaviour:**
-       - a launcher Resume requests **one** resume;
-       - while restoration is genuinely pending, the existing pending and error presentation, and restoration's own retry, are kept;
-       - once the instruction has been handled, it can neither suppress a later paused screen nor replay on a later mount;
-       - a successful Pause saves the session, stops tracking and shows the ordinary Resume controls; switching to Routes and back after Pause keeps the ride paused;
-       - tracking starts again only after a fresh, explicit Start or Resume.
-     - **Ownership:** explicit across `App` and `RidingScreen`, fixing both the display and the instruction's lifetime — not merely hiding the message, and not clearing the instruction only when Pause is pressed. An acknowledgement from an obsolete screen must never retire a newer instruction.
-     - **Must be preserved:** Strict Mode's single watch and the existing restoration and camera ordering; failed Pause (a storage failure leaves the ride running with its retryable error); route progress, camera state, elevation selection, wake-lock preference, dismissed-climb and completion state through Pause and Resume; ordinary route opening, the launcher's one-tap cold resume, the route-switch guards, free roam, and slice 3's Save / Open saved route separation. No dependency, toolchain, storage-schema or unrelated confirmation change, and nothing for the item 130 flake.
-     - **Evidence required:** component and App-level tests — component tests alone cannot show the instruction surviving in App — covering the paused controls after a resumed ride, Routes and back staying paused with no new watch, an explicit Resume and a second Pause, ordinary opening without the instruction, deferred and failed restoration, a mismatched stored route, camera ordering, Strict Mode, failed Pause, and an obsolete acknowledgement; browser coverage of the real launcher → Resume → Pause → Routes → Riding sequence and the following explicit Resume, in Chromium and WebKit, English and German; the two mechanisms observable independently; failures on the unchanged baseline; and negative controls.
-     - **Not claimed:** that the first Pause on the device failed to stop GPS, which the observation alone cannot establish; how the device ride had been opened; any link to item 124 slice 3.

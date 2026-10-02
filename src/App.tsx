@@ -56,12 +56,21 @@ export interface AppProps {
  * resumeIntentToken (backlog item 72) is a one-use resume intent: set only
  * when requestRouteTransition's own guard check resolves the SAME route as
  * already persisted (an ordinary, undialogued "Resume ride"), never for an
- * ordinary Routes-card reopen/Planning-save-then-ride, and never after a
- * confirmed different-session switch (backlog item 73) — confirming a
- * switch is not permission to auto-start GPS for the replacement.
+ * ordinary Routes-card reopen or Planning's Open saved route, and never
+ * after a confirmed different-session switch (backlog item 73) — confirming
+ * a switch is not permission to auto-start GPS for the replacement.
  * RidingScreen consumes it at most once, only after its own restoration has
  * genuinely completed, to start GPS and request Follow without a second
  * in-screen tap.
+ *
+ * App owns its lifetime (backlog item 131): RidingScreen reports when it
+ * has handled the instruction — consumed it, or found no matching session
+ * to resume — and handleResumeIntentHandled then removes it, so a later
+ * Pause can never be shown as "Resuming…" and a later mount of the screen
+ * (after leaving Riding and coming back) can never replay it. Until then —
+ * while restoration is still pending or has failed — it stays, so a rider
+ * who leaves and returns before it is handled still gets the one resume
+ * they asked for.
  */
 type RidingContent =
   | { kind: "none" }
@@ -365,6 +374,19 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
       transitionRequestIdRef.current += 1;
       setPendingRideSwitch(null);
     }
+  }, []);
+  // Backlog item 131: retires the route session's one-use resume
+  // instruction once RidingScreen reports it handled. Matched on the token
+  // itself — tokens are unique and monotonic — so a report from an obsolete
+  // screen, about an older instruction, can never retire a newer one, for
+  // the same route or another. Stable identity: RidingScreen reports from
+  // an effect that depends on it.
+  const handleResumeIntentHandled = useCallback((token: number) => {
+    setRidingContent((current) =>
+      current.kind === "route" && current.resumeIntentToken === token
+        ? { kind: "route", route: current.route }
+        : current,
+    );
   }, []);
   // Bumped once, immediately after any successful clearActiveRideState()
   // call inside the pending-switch flow, so a RidingLauncher already
@@ -1157,10 +1179,11 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // resuming a still-selected FreeRoamScreen instance. Deliberately NOT
   // applied when ridingContent is a route session: RidingScreen's own
   // existing, tested idle-panel pattern (an in-screen "Resume ride" button
-  // gates the restart whenever no resumeIntentToken is present, e.g. this
-  // ordinary Routes-card/tab-navigation path) already satisfies the
-  // identical requirement for routes, and changing that behaviour here is
-  // out of scope for this slice.
+  // gates the restart whenever no resumeIntentToken is present) already
+  // satisfies the identical requirement for routes. A launcher Resume's
+  // token no longer outlives its handling (backlog item 131,
+  // handleResumeIntentHandled above), so returning to Ride after it has
+  // been handled is that same no-token path.
   const handleNavigate = (nextScreen: Screen) => {
     if (screen === "riding" && nextScreen !== "riding") {
       if (ridingContent.kind === "free-roam") {
@@ -1311,6 +1334,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
               key={ridingContent.route.id}
               route={ridingContent.route}
               resumeIntentToken={ridingContent.resumeIntentToken}
+              onResumeIntentHandled={handleResumeIntentHandled}
               mapFactory={mapFactory}
               onRidingActiveChange={handleRidingActiveChange}
               onNavigateToPlanning={handleNavigateToPlanning}
