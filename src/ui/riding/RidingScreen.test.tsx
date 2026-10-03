@@ -8586,6 +8586,401 @@ describe("RidingScreen", () => {
     // Backlog item 124, inventory case D-06 — the rider's decisions of 2
     // October 2026. Storage is held with deferred promises, so each test
     // decides exactly when a read or the write settles.
+    // jsdom lays nothing out, so the reveal's geometry is stubbed here, as
+    // PlanningScreen.clearDraft.test.tsx's item 124 reveal tests do; the
+    // real-browser geometry is proved in
+    // e2e/editCopyConfirmationReveal.smoke.spec.ts.
+    describe("the replacement confirmation's opening reveal (backlog item 124, C-12)", () => {
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const originalFocus = HTMLElement.prototype.focus;
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const originalScrollBy = window.scrollBy;
+
+      afterEach(() => {
+        Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+        HTMLElement.prototype.focus = originalFocus;
+        window.scrollBy = originalScrollBy;
+        document.querySelectorAll("body > header").forEach((node) => {
+          node.remove();
+        });
+        vi.restoreAllMocks();
+      });
+
+      function rect(top: number, bottom: number): DOMRect {
+        return {
+          top,
+          bottom,
+          left: 0,
+          right: 358,
+          width: 358,
+          height: bottom - top,
+          x: 0,
+          y: top,
+          toJSON: () => "",
+        };
+      }
+
+      interface Geometry {
+        inset: { top: number; bottom: number };
+        actions: { top: number; bottom: number };
+      }
+
+      /** Mutable, so a test can change what the next opening measures.
+       * jsdom's window.innerHeight is 768 and it has no visualViewport, so
+       * with the 60px header the usable band is 68..760. */
+      function stubGeometry(initial: Partial<Geometry> = {}): Geometry {
+        const geometry: Geometry = {
+          inset: { top: 200, bottom: 500 },
+          actions: { top: 440, bottom: 484 },
+          ...initial,
+        };
+        Element.prototype.getBoundingClientRect = function (this: Element) {
+          const dialog = this.closest('[role="dialog"]');
+          const isReplacement =
+            dialog?.textContent.includes("Replace your current draft?") === true;
+          if (isReplacement && this.getAttribute("role") === "dialog") {
+            return rect(geometry.inset.top, geometry.inset.bottom);
+          }
+          if (isReplacement && this.classList.contains("route-delete-confirm-actions")) {
+            return rect(geometry.actions.top, geometry.actions.bottom);
+          }
+          if (this.tagName === "HEADER") return rect(0, 60);
+          return rect(0, 0);
+        };
+        return geometry;
+      }
+
+      /** Focus calls and deliberate scrolls in one ordered log. Delegates to
+       * the real focus. */
+      function captureLog() {
+        const log: string[] = [];
+        HTMLElement.prototype.focus = function focus(
+          this: HTMLElement,
+          options?: FocusOptions,
+        ) {
+          log.push(
+            `focus:${this.textContent.trim().slice(0, 12)}:${options?.preventScroll === true ? "noscroll" : "scroll"}`,
+          );
+          originalFocus.call(this, options);
+        };
+        window.scrollBy = (options?: ScrollToOptions | number) => {
+          if (typeof options === "object") {
+            log.push(
+              `scrollBy:${String(options.top)}:${String(options.left)}:${String(options.behavior)}`,
+            );
+          }
+        };
+        return log;
+      }
+
+      const scrolls = (log: string[]) =>
+        log.filter((entry) => entry.startsWith("scrollBy"));
+      /** The log from Cancel's focus onwards: the click on Edit copy
+       * focuses it first, which is the test's own input, not the opening. */
+      const fromCancel = (log: string[]) =>
+        log.slice(Math.max(0, log.indexOf("focus:Cancel:noscroll")));
+
+      async function seedMeaningfulDraft(): Promise<void> {
+        await saveDraft({
+          waypoints: [
+            { id: "existing-a", coordinate: [1, 52] },
+            { id: "existing-b", coordinate: [1.01, 52] },
+          ],
+          routeName: "Unsaved plan",
+          avoidFerries: true,
+          profile: "cycling-road",
+        });
+      }
+
+      function renderWithHeader(onNavigateToPlanning = vi.fn()) {
+        const header = document.createElement("header");
+        document.body.appendChild(header);
+        const headerRef: { current: HTMLElement | null } = { current: header };
+        const stub = buildStubGeolocationSource();
+        const mapFactory = buildStubMapFactory().factory;
+        const element = (onNavigate: () => void) => (
+          <RidingScreen
+            route={route}
+            geolocationSource={stub.source}
+            mapFactory={mapFactory}
+            onNavigateToPlanning={onNavigate}
+            stickyHeaderRef={headerRef}
+          />
+        );
+        const utils = render(element(onNavigateToPlanning));
+        return {
+          ...utils,
+          header,
+          headerRef,
+          stub,
+          rerenderScreen: () => {
+            utils.rerender(element(vi.fn()));
+          },
+        };
+      }
+
+      const replacement = () =>
+        screen.findByRole("dialog", { name: "Replace your current draft?" });
+      const cancelIn = (dialog: HTMLElement) =>
+        within(dialog).getByRole("button", { name: "Cancel" });
+
+      function holdSaveDraft() {
+        let resolve: (value: undefined) => void = () => undefined;
+        let reject: (error: unknown) => void = () => undefined;
+        const promise = new Promise<undefined>((res, rej) => {
+          resolve = res;
+          reject = rej;
+        });
+        vi.spyOn(planningDraftRepository, "saveDraft").mockImplementation(() => promise);
+        return { promise, resolve, reject };
+      }
+
+      it("focuses Cancel without scrolling, then makes one instant minimal reveal measured below the sticky header", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        renderWithHeader();
+        // Fits the 692px band, but its bottom is 140px below it.
+        stubGeometry({
+          inset: { top: 600, bottom: 900 },
+          actions: { top: 840, bottom: 884 },
+        });
+        const log = captureLog();
+
+        await user.click(screen.getByRole("button", { name: "Edit copy" }));
+        const dialog = await replacement();
+
+        expect(fromCancel(log)).toEqual(["focus:Cancel:noscroll", "scrollBy:140:0:auto"]);
+        expect(cancelIn(dialog)).toHaveFocus();
+      });
+
+      it("does not move the page when the whole confirmation already fits", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        renderWithHeader();
+        stubGeometry({ inset: { top: 200, bottom: 500 } });
+        const log = captureLog();
+
+        await user.click(screen.getByRole("button", { name: "Edit copy" }));
+        const dialog = await replacement();
+
+        expect(fromCancel(log)).toEqual(["focus:Cancel:noscroll"]);
+        expect(cancelIn(dialog)).toHaveFocus();
+      });
+
+      it("does not move an oversized confirmation whose complete action row already shows, and otherwise moves only the row into the band", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        renderWithHeader();
+        const geometry = stubGeometry({
+          inset: { top: -100, bottom: 760 },
+          actions: { top: 690, bottom: 734 },
+        });
+        const log = captureLog();
+
+        await user.click(screen.getByRole("button", { name: "Edit copy" }));
+        await user.click(cancelIn(await replacement()));
+        expect(scrolls(log)).toEqual([]);
+
+        // Oversized again, but now the row is 40px below the band: exactly
+        // that much, not the confirmation's own padding below it as well.
+        geometry.inset = { top: 100, bottom: 1000 };
+        geometry.actions = { top: 756, bottom: 800 };
+        await user.click(screen.getByRole("button", { name: "Edit copy" }));
+        await replacement();
+        expect(scrolls(log)).toEqual(["scrollBy:40:0:auto"]);
+      });
+
+      it("does not reveal again on an unrelated re-render, and re-measures on reopening", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        const { rerenderScreen } = renderWithHeader();
+        const geometry = stubGeometry({
+          inset: { top: 600, bottom: 900 },
+          actions: { top: 840, bottom: 884 },
+        });
+        const log = captureLog();
+
+        await user.click(screen.getByRole("button", { name: "Edit copy" }));
+        let dialog = await replacement();
+        expect(scrolls(log)).toEqual(["scrollBy:140:0:auto"]);
+
+        rerenderScreen();
+        expect(scrolls(log)).toEqual(["scrollBy:140:0:auto"]);
+        expect(cancelIn(dialog)).toHaveFocus();
+
+        await user.click(cancelIn(dialog));
+        geometry.inset = { top: 650, bottom: 950 };
+        geometry.actions = { top: 890, bottom: 934 };
+        await user.click(screen.getByRole("button", { name: "Edit copy" }));
+        dialog = await replacement();
+        expect(scrolls(log)).toEqual(["scrollBy:140:0:auto", "scrollBy:190:0:auto"]);
+        expect(cancelIn(dialog)).toHaveFocus();
+      });
+
+      it.each(["Cancel", "Escape"] as const)(
+        "%s still returns focus to Edit copy as before, keeps the draft and reveals nothing on closing",
+        async (how) => {
+          const user = userEvent.setup();
+          await seedMeaningfulDraft();
+          renderWithHeader();
+          stubGeometry({
+            inset: { top: 600, bottom: 900 },
+            actions: { top: 840, bottom: 884 },
+          });
+          const saveSpy = vi.spyOn(planningDraftRepository, "saveDraft");
+          const log = captureLog();
+
+          await user.click(screen.getByRole("button", { name: "Edit copy" }));
+          const dialog = await replacement();
+          log.length = 0;
+          if (how === "Cancel") await user.click(cancelIn(dialog));
+          else await user.keyboard("{Escape}");
+
+          expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+          expect(screen.getByRole("button", { name: "Edit copy" })).toHaveFocus();
+          expect(log.filter((entry) => entry.startsWith("focus:Edit copy"))).toEqual([
+            "focus:Edit copy:scroll",
+          ]);
+          expect(scrolls(log)).toEqual([]);
+          expect(saveSpy).not.toHaveBeenCalled();
+          expect((await getDraft())?.waypoints.map((waypoint) => waypoint.id)).toEqual([
+            "existing-a",
+            "existing-b",
+          ]);
+        },
+      );
+
+      it("reveals the opening alone: nothing while a confirmed write is in flight, and a failure keeps D-06's own reveal", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        renderWithHeader();
+        stubGeometry({
+          inset: { top: 600, bottom: 900 },
+          actions: { top: 840, bottom: 884 },
+        });
+        const revealSpy = vi.spyOn(confirmationRevealScroll, "applyConfirmationReveal");
+
+        await user.click(screen.getByRole("button", { name: "Edit copy" }));
+        const dialog = await replacement();
+        expect(revealSpy).toHaveBeenCalledTimes(1);
+        const [inset, headerBottom, priority] = revealSpy.mock.calls[0] ?? [];
+        expect(inset).toBe(dialog);
+        expect(headerBottom).toBe(60);
+        expect(priority).toHaveClass("route-delete-confirm-actions");
+        expect(dialog).toContainElement(priority ?? null);
+
+        const write = holdSaveDraft();
+        await user.click(
+          within(dialog).getByRole("button", { name: "Replace and edit" }),
+        );
+        expect(within(dialog).getByRole("heading")).toHaveFocus();
+        expect(revealSpy).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+          write.reject(new Error("boom"));
+          await write.promise.catch(() => undefined);
+        });
+        const editCopy = screen.getByRole("button", { name: "Edit copy" });
+        expect(editCopy).toHaveFocus();
+        expect(revealSpy).toHaveBeenCalledTimes(2);
+        expect(revealSpy.mock.calls[1]?.[2]).toBe(editCopy);
+      });
+
+      it("opens no confirmation and reveals nothing on the direct path with no meaningful draft", async () => {
+        const user = userEvent.setup();
+        const onNavigateToPlanning = vi.fn();
+        renderWithHeader(onNavigateToPlanning);
+        stubGeometry();
+        const revealSpy = vi.spyOn(confirmationRevealScroll, "applyConfirmationReveal");
+
+        await user.click(screen.getByRole("button", { name: "Edit copy" }));
+
+        await waitFor(() => {
+          expect(onNavigateToPlanning).toHaveBeenCalledOnce();
+        });
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(revealSpy).not.toHaveBeenCalled();
+      });
+
+      // The separately recorded survivor (slice 4, not fixed): a confirmation
+      // left open survives Start riding and reappears on Pause. App puts the
+      // sticky navigation back a commit later, so the header ref is emptied
+      // here while riding, as App's own header unmounts then.
+      it("reveals a confirmation that reappears on Pause only once the sticky navigation is back, focusing Cancel without scrolling", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        const { header, headerRef, stub, rerenderScreen } = renderWithHeader();
+        stubGeometry({
+          inset: { top: 600, bottom: 900 },
+          actions: { top: 840, bottom: 884 },
+        });
+        await user.click(screen.getByRole("button", { name: "Edit copy" }));
+        await replacement();
+        const log = captureLog();
+
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        headerRef.current = null;
+        stub.emitFix({
+          coordinate: [0, 51],
+          accuracyMetres: 5,
+          timestampMs: 1000,
+          speedMetresPerSecond: null,
+          headingDegrees: null,
+        });
+        await user.click(await screen.findByRole("button", { name: "Pause" }));
+        const dialog = await replacement();
+        await screen.findByRole("button", { name: "Resume ride" });
+        expect(cancelIn(dialog)).toHaveFocus();
+        expect(log).toContain("focus:Cancel:noscroll");
+        expect(scrolls(log)).toEqual([]);
+
+        headerRef.current = header;
+        rerenderScreen();
+        expect(scrolls(log)).toEqual(["scrollBy:140:0:auto"]);
+        rerenderScreen();
+        expect(scrolls(log)).toEqual(["scrollBy:140:0:auto"]);
+      });
+
+      it("does not reveal a confirmation that reappears on Pause while its confirmed write is still in flight", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        const { stub, rerenderScreen } = renderWithHeader();
+        stubGeometry({
+          inset: { top: 600, bottom: 900 },
+          actions: { top: 840, bottom: 884 },
+        });
+        await user.click(screen.getByRole("button", { name: "Edit copy" }));
+        const dialog = await replacement();
+        const write = holdSaveDraft();
+        await user.click(
+          within(dialog).getByRole("button", { name: "Replace and edit" }),
+        );
+        const log = captureLog();
+
+        await user.click(screen.getByRole("button", { name: "Start riding" }));
+        stub.emitFix({
+          coordinate: [0, 51],
+          accuracyMetres: 5,
+          timestampMs: 1000,
+          speedMetresPerSecond: null,
+          headingDegrees: null,
+        });
+        await user.click(await screen.findByRole("button", { name: "Pause" }));
+        await replacement();
+        await screen.findByRole("button", { name: "Resume ride" });
+        rerenderScreen();
+        expect(scrolls(log)).toEqual([]);
+
+        await act(async () => {
+          write.resolve(undefined);
+          await write.promise;
+        });
+      });
+    });
+
     describe("while a copy is being made (backlog item 124, D-06)", () => {
       afterEach(() => {
         vi.restoreAllMocks();

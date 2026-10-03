@@ -206,10 +206,12 @@ export interface RidingScreenProps {
    * a pause failure. */
   onRidePaused?: () => void;
   /** The sticky navigation header, for the minimal reveal of Edit copy and
-   * its message after a failure (backlog item 124, D-06) — the same ref
-   * App.tsx gives Routes, Settings and Planning. The pre-ride/paused panel
-   * Edit copy lives in is only ever shown beneath that header. Optional so
-   * tests without a header measure from the top. */
+   * its message after a failure (backlog item 124, D-06) and of its
+   * replacement confirmation on opening (C-12) — the same ref App.tsx gives
+   * Routes, Settings and Planning. The pre-ride/paused panel Edit copy lives
+   * in is only ever shown beneath that header, which App puts back a commit
+   * after a Pause. Optional so tests without a header measure from the
+   * top. */
   stickyHeaderRef?: RefObject<HTMLElement | null>;
 }
 
@@ -883,6 +885,10 @@ export function RidingScreen({
   // after a failure.
   const editCopyGroupRef = useRef<HTMLDivElement>(null);
   const editCopyTitleRef = useRef<HTMLHeadingElement>(null);
+  // The confirmation and its Cancel/Replace and edit row, which its opening
+  // reveal measures (backlog item 124, C-12).
+  const editCopyConfirmRef = useRef<HTMLDivElement>(null);
+  const editCopyActionsRef = useRef<HTMLDivElement>(null);
   const [isEditCopyConfirmOpen, setIsEditCopyConfirmOpen] = useState(false);
   const [isEditCopyInFlight, setIsEditCopyInFlight] = useState(false);
   const [editCopyError, setEditCopyError] = useState<string | null>(null);
@@ -1490,6 +1496,65 @@ export function RidingScreen({
     }
   });
 
+  // Whether Edit copy's confirmation is on screen: open, and inside the
+  // pre-ride/paused panel that renders it.
+  const isEditCopyConfirmShown = isEditCopyPanelShown && isEditCopyConfirmOpen;
+  // The opening reveal's own state: whether the confirmation was on screen
+  // at the last commit, and whether its reveal is still owed.
+  const editCopyRevealRef = useRef({ shown: false, pending: false });
+
+  /**
+   * Reveals Edit copy's replacement confirmation when it appears (backlog
+   * item 124, C-12; the rider's decision 7 of 2 October 2026), under the
+   * rule Planning's Clear draft follows: no movement when it fits between
+   * the sticky header and the safe area; otherwise only enough to show all
+   * of it; and when it cannot fit at all, only enough to show its complete
+   * Cancel/Replace and edit row — none when that row is already showing —
+   * leaving the explanation reachable above.
+   *
+   * ConfirmDialog focuses Cancel with preventScroll
+   * (`focusCancelWithoutScroll`) in its own layout effect, which runs before
+   * this one, because the browser's own focus scroll centres the button and
+   * so moves the page further than this rule allows.
+   *
+   * Owed once each time the confirmation appears — "on screen" rather than
+   * merely open, matching ConfirmDialog's own focus effect, which also runs
+   * when the panel remounts the confirmation still open (one left open
+   * survives Start riding; recorded separately, not fixed here) — and
+   * never while a confirmed write is in flight, so D-06's working state is
+   * left exactly as it is. A reopening re-measures whatever geometry then
+   * exists, and no other render repeats it.
+   *
+   * Paid once the sticky navigation is there to measure against. On a
+   * genuine opening it already is. On that remount after Pause it is not:
+   * App learns the ride has stopped from a passive effect, so it puts the
+   * navigation back a commit later, pushing everything below it down — and
+   * a reveal measured without it would rely on the browser's scroll
+   * anchoring to keep the action row in view. So the reveal waits for that
+   * commit, re-checked on every render. With no ref at all (tests) it
+   * measures from the top at once.
+   *
+   * `useLayoutEffect` and `behavior: "auto"` (inside
+   * applyConfirmationReveal) are item 95's interaction-safety pair.
+   */
+  useLayoutEffect(() => {
+    const reveal = editCopyRevealRef.current;
+    if (isEditCopyConfirmShown !== reveal.shown) {
+      reveal.shown = isEditCopyConfirmShown;
+      reveal.pending = isEditCopyConfirmShown && !isEditCopyActionPendingRef.current;
+    }
+    if (!reveal.pending) return;
+    if (stickyHeaderRef?.current === null) return;
+    reveal.pending = false;
+    const insetEl = editCopyConfirmRef.current;
+    if (!insetEl) return;
+    applyConfirmationReveal(
+      insetEl,
+      stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+      editCopyActionsRef.current,
+    );
+  });
+
   // Renders the End-ride action in place: either the trigger button (plus
   // any error) or the confirmation itself, never both — called from both of
   // this screen's two mutually exclusive trigger locations below (the
@@ -2089,6 +2154,9 @@ export function RidingScreen({
             <ConfirmDialog
               open={isEditCopyConfirmOpen}
               titleRef={editCopyTitleRef}
+              containerRef={editCopyConfirmRef}
+              actionsRef={editCopyActionsRef}
+              focusCancelWithoutScroll
               title={t("riding.editCopyConfirmTitle")}
               message={t("riding.editCopyConfirmMessage")}
               confirmLabel={

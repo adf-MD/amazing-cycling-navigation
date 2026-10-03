@@ -2,9 +2,10 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 import { readActiveRideStateRow, readSavedRouteId } from "./support/rideStateDb.ts";
 
-// Backlog item 124, slices 1 and 3 — Chromium only (CDP CPU throttling, and to
-// keep CI cost down; the cross-engine geometry is in
-// confirmationReveal.smoke.spec.ts).
+// Backlog item 124, slices 1, 3 and 7 — Chromium only (CDP CPU throttling,
+// and to keep CI cost down; the cross-engine geometry is in
+// confirmationReveal.smoke.spec.ts and, for slice 7's Edit copy,
+// editCopyConfirmationReveal.smoke.spec.ts).
 //
 // What the frame recorder below can and cannot show. It samples the open
 // confirmation's action buttons on every animation frame, from BEFORE the
@@ -536,6 +537,126 @@ test("Planning's saved-route switch confirmation: no sampled drift under a 20x C
   await cpu.send("Emulation.setCPUThrottlingRate", { rate: 20 });
   try {
     await expectSettledActionsThenCancel(page, SAVED_ROUTE_SWITCH, "Cancel", {
+      recordMs: THROTTLED_ACTION_RECORD_MS,
+      frameWaitMs: 10_000,
+    });
+  } finally {
+    await cpu.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  }
+});
+
+// Slice 7, C-12: Edit copy's replacement confirmation opens only after two
+// storage reads, not in the click's own commit — the asynchronous opening
+// item 95's prompt also has. At 200% root text in English its bottom opens
+// 599 px below the usable band, so its opening is a reveal.
+
+const EDIT_COPY_DIALOG =
+  '.ride-start-panel > .stack:not(.ride-end-ride-panel-row) > [role="dialog"]';
+
+async function openPreRideWithDraftAt200(
+  page: Page,
+  context: BrowserContext,
+): Promise<void> {
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
+  await installLocalMapStyle(page);
+  await page.goto("/");
+  await page.getByLabel("Import GPX file").setInputFiles({
+    name: "C-12 reveal route.gpx",
+    mimeType: "application/gpx+xml",
+    buffer: Buffer.from(buildRouteGpx()),
+  });
+  const routeButton = page.getByRole("button", {
+    name: "C-12 reveal route",
+    exact: true,
+  });
+  await expect(routeButton).toBeVisible();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open("amazing-cycling-navigation");
+        request.onerror = () => {
+          reject(new Error("IndexedDB open failed"));
+        };
+        request.onsuccess = () => {
+          const db = request.result;
+          const tx = db.transaction("planningDrafts", "readwrite");
+          tx.objectStore("planningDrafts").put({
+            id: "draft",
+            waypoints: [
+              { id: "wp-a", coordinate: [-0.1, 51.5] },
+              { id: "wp-b", coordinate: [-0.09, 51.51] },
+            ],
+            routeName: "Unsaved plan",
+            avoidFerries: true,
+            profile: "cycling-road",
+            updatedAt: "2026-10-03T08:00:00.000Z",
+          });
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => {
+            db.close();
+            reject(new Error("IndexedDB write failed"));
+          };
+        };
+      }),
+  );
+  await routeButton.click();
+  await expect(
+    page.getByRole("button", { name: "Edit copy", exact: true }),
+  ).toBeEnabled();
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+  await settle(page);
+}
+
+async function expectEditCopySettledThenCancel(
+  page: Page,
+  { recordMs, frameWaitMs }: { recordMs: number; frameWaitMs: number },
+): Promise<void> {
+  const before = await page.evaluate(() => window.scrollY);
+  await installActionGeometryRecorder(page, EDIT_COPY_DIALOG, recordMs);
+  const editCopy = page.getByRole("button", { name: "Edit copy", exact: true });
+  await editCopy.click();
+  const dialog = page.locator(EDIT_COPY_DIALOG);
+  await expect(dialog).toBeVisible();
+  const cancel = dialog.getByRole("button", { name: "Cancel" });
+  await expect(cancel).toBeVisible();
+  await waitForActionableFrames(page, frameWaitMs);
+  expect(
+    (await page.evaluate(() => window.scrollY)) - before,
+    "the opening was a reveal",
+  ).toBeGreaterThan(100);
+  await cancel.click();
+  expectNoSampledDrift(await readActionGeometry(page), "Cancel");
+  await expect(dialog).toHaveCount(0);
+  await expect(editCopy).toBeFocused();
+}
+
+test("Edit copy's replacement confirmation: the actions showed no drift across the sampled frames from its asynchronous opening to the rider's click", async ({
+  page,
+  context,
+}) => {
+  await openPreRideWithDraftAt200(page, context);
+  await expectEditCopySettledThenCancel(page, {
+    recordMs: ACTION_RECORD_MS,
+    frameWaitMs: 2_000,
+  });
+});
+
+test("Edit copy's replacement confirmation: no sampled drift under a 20x CPU throttle either (sampling only; this does not separate effect timing)", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(120_000);
+  await openPreRideWithDraftAt200(page, context);
+  const cpu = await context.newCDPSession(page);
+  await cpu.send("Emulation.setCPUThrottlingRate", { rate: 20 });
+  try {
+    await expectEditCopySettledThenCancel(page, {
       recordMs: THROTTLED_ACTION_RECORD_MS,
       frameWaitMs: 10_000,
     });
