@@ -18,6 +18,8 @@
 
 **Update (3 October 2026, later still): D-02 decided and delivered.** The rider approved the implementation and chose option A for a failure hidden by the rider's own filter (decision 8 in [Decisions](#decisions--d-06-d-02-d-01-and-c-12-2-october-2026), reported 3 October 2026). D-02 shipped in `0.4.57` as item 124's slice 6 ([record](../../project/backlog.md#slice-6--delete-route-pending-and-failing-d-02-shipped-0457-3-october-2026)); its pending, failure and enlarged-text cases have synthetic, automated evidence only, and its ordinary-flow device check is pending. C-12's opening reveal remains approved later work, and every other case still awaits the rider's review.
 
+**Update (3 October 2026, latest): D-02 accepted; C-07, C-08, C-10, C-11 and C-13 decided; C-09 reported; C-12 next.** D-02's ordinary flow was accepted on the installed iPhone in English and German, on `0.4.57` (build `bd688d7`) ([`current-status.md`](../../project/current-status.md)); its pending, failure, failure-recovery and committed-but-unreconciled cases keep automated evidence only. The rider approved the common opening and cancellation policy for C-07, C-08, C-10, C-11 and C-13, observed that a lower opening position could not be reached for them, and reported C-09's missing-route variant on the device ([Decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026)). **C-12's opening reveal is the next implementation slice**, slice 7. Any targeted correction under the new policy, and every case not yet reviewed, is implementation still to be selected.
+
 **What this is.** Every confirmation in the app, every expanding card, form, editor and disclosure that could reasonably fall under the rider's "pop-up cards" request, and the conditional and failure states that change what would need revealing — each with a stable review ID, its labels in English and German, how to reach it, what it does today, where that is in the source and tests, what was measured, and a recommendation.
 
 **The rule under review** ([item 124](../../project/backlog.md#item-124)): no movement when the newly opened content fits between the sticky navigation and the bottom safe area; otherwise only enough to reveal it; and when it cannot fit, only enough to show its complete action row. On Cancel and Escape: keep the page where the rider has left it, moving only as far as needed to reveal the opening control.
@@ -40,6 +42,7 @@
 - [Decisions and delivery](#decisions-and-delivery)
 - [Review preparation — D-01, D-02 and D-06 (2 October 2026)](#review-preparation--d-01-d-02-and-d-06-2-october-2026)
 - [Decisions — D-06, D-02, D-01 and C-12 (2 October 2026)](#decisions--d-06-d-02-d-01-and-c-12-2-october-2026)
+- [Decisions and observations — C-07 to C-13 (3 October 2026)](#decisions-and-observations--c-07-to-c-13-3-october-2026)
 - [D-02 — investigation and plan (3 October 2026, a separate file)](d-02-delete-lifecycle.md)
 
 ## How to read this
@@ -177,6 +180,7 @@ Labels are quoted from `src/i18n/messages.en.ts` and `messages.de.ts`. All confi
 - **Tests:** `RidingLauncher.test.tsx`; e2e `ridingLauncher.spec.ts`.
 - **Evidence:** [M] row C-07.
 - **Recommendation:** **already complies** as measured — it opens where it is, complete, with no movement, and focus returns to the button. [U] Not measured at 200% text or in German, where the launcher is taller.
+- **Decided, 3 October 2026:** the common opening and cancellation policy, keeping its placement and ride semantics, with targeted corrections only where measurements demonstrate a mismatch; the rider could not reach a lower opening position on the installed iPhone. Nothing is implemented, and no correction is selected yet ([decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026)).
 
 #### C-08 — End ride (unfinished free roam, launcher)
 
@@ -186,6 +190,7 @@ Labels are quoted from `src/i18n/messages.en.ts` and `messages.de.ts`. All confi
 - **Tests:** `RidingLauncher.test.tsx`; e2e `freeRoam.spec.ts`.
 - **Evidence:** [M] row C-08.
 - **Recommendation:** **already complies** as measured; same caveat as C-07.
+- **Decided, 3 October 2026:** the common opening and cancellation policy, keeping its placement and ride semantics, with targeted corrections only where measurements demonstrate a mismatch; the rider could not reach a lower opening position on the installed iPhone. Nothing is implemented, and no correction is selected yet ([decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026)).
 
 #### C-09 — Discard unfinished ride (launcher)
 
@@ -195,6 +200,7 @@ Labels are quoted from `src/i18n/messages.en.ts` and `messages.de.ts`. All confi
 - **Tests:** `RidingLauncher.test.tsx`; e2e `ridingLauncher.spec.ts`.
 - **Evidence:** [M] row C-09 (reached with a stored row naming a missing route — a synthetic shortcut to the same state).
 - **Recommendation:** **already complies** as measured; same caveat as C-07.
+- **[D] device report, 3 October 2026** (`0.4.57`, build `bd688d7`, English and German): the missing-route variant was readable and fitted without unwanted movement; Cancel kept the unfinished-session warning; a confirmed Discard removed it, and it stayed gone after leaving and returning; other saved routes remained; a lower opening position was not reachable. It does not cover enlarged text, the unsupported or corrupt-session variant or storage failures, and **no policy decision is recorded for C-09** ([ledger](../../project/current-status.md); [decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026)).
 
 ### Route riding
 
@@ -208,6 +214,7 @@ Labels are quoted from `src/i18n/messages.en.ts` and `messages.de.ts`. All confi
 - **Tests:** `RidingScreen.finishEndRide.test.tsx`, `RidingScreen.test.tsx`; e2e `ridingFinishAndEnd.spec.ts`, `ridingImmersiveShell.spec.ts`, `germanRidingHeader.spec.ts`.
 - **Evidence:** [M] row C-10 (measured where the fixed control actually is); [D] the End confirmation's header stillness was accepted in German, 28 September 2026 (item 113).
 - **Recommendation:** **already complies** — it opens directly below the fixed header, and nothing moves.
+- **Decided, 3 October 2026:** the common opening and cancellation policy, keeping its placement and ride semantics, with targeted corrections only where measurements demonstrate a mismatch; the rider could not reach a lower opening position on the installed iPhone. Nothing is implemented, and no correction is selected yet ([decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026)).
 
 #### C-11 — End ride, from the paused panel
 
@@ -218,6 +225,7 @@ Labels are quoted from `src/i18n/messages.en.ts` and `messages.de.ts`. All confi
 - **Tests:** `RidingScreen.finishEndRide.test.tsx`, `RidingScreen.test.tsx`, `App.test.tsx`; no e2e targets this placement.
 - **Evidence:** [M] row C-11.
 - **Recommendation:** **already complies** as measured (the paused panel sits near the page's top at 390×844); [U] not measured at 200% text.
+- **Decided, 3 October 2026:** the common opening and cancellation policy, keeping its placement and ride semantics, with targeted corrections only where measurements demonstrate a mismatch; the rider could not reach a lower opening position on the installed iPhone. Nothing is implemented, and no correction is selected yet ([decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026)).
 
 #### C-12 — Edit copy: replace your current draft?
 
@@ -246,6 +254,7 @@ Labels are quoted from `src/i18n/messages.en.ts` and `messages.de.ts`. All confi
 - **Tests:** `FreeRoamScreen.endRide.test.tsx`; e2e `freeRoam.spec.ts`, `germanRidingHeader.spec.ts`.
 - **Evidence:** [M] row C-13 (measured where the fixed control actually is).
 - **Recommendation:** **already complies**, as C-10.
+- **Decided, 3 October 2026:** the common opening and cancellation policy, keeping its placement and ride semantics, with targeted corrections only where measurements demonstrate a mismatch; the rider could not reach a lower opening position on the installed iPhone. Nothing is implemented, and no correction is selected yet ([decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026)).
 
 ### App-wide
 
@@ -435,6 +444,7 @@ Geolocation **Try again**, **Retry map imagery**, the wake-lock failure row, the
 - **Decided, 2 October 2026:** the ordinary translated message, a guarded minimum reveal and appropriate focus restoration, and an accurate pending, success and failure presentation, after an investigation of the storage and list mechanism. Not yet implemented ([decisions](#decisions--d-06-d-02-d-01-and-c-12-2-october-2026)).
 - **Investigated and planned, 3 October 2026:** the causes are measured — Dexie's optimistic live-query cache hides the route while pending and never restores it after an aborted deletion, and the confirmation's raw message, growth and focus loss are the app's — and a repair is proposed, in the [D-02 report](d-02-delete-lifecycle.md). Not implemented.
 - **Decided and delivered, 3 October 2026:** option A for a failure hidden by a filter (decision 8), and the repair shipped in `0.4.57` as item 124's slice 6 ([record](../../project/backlog.md#slice-6--delete-route-pending-and-failing-d-02-shipped-0457-3-october-2026)). Automated evidence only so far; its ordinary-flow device check is pending.
+- **Accepted, 3 October 2026:** the ordinary flow passed on the installed iPhone in English and German, on `0.4.57` (build `bd688d7`) ([`current-status.md`](../../project/current-status.md)). The pending, failure, failure-recovery and committed-but-unreconciled cases keep automated evidence only.
 
 ### D-03 — A route card remounts while its delete is pending
 
@@ -540,13 +550,13 @@ Reported here so they are not lost; nothing was changed.
 | C-04                                     | Delete tag                                                       | preserve existing behaviour (protected)                                         |
 | C-05                                     | Clear draft                                                      | already complies (protected, slice 1)                                           |
 | C-06                                     | Delete key                                                       | preserve existing behaviour (protected, item 118)                               |
-| C-07                                     | End ride, launcher (route)                                       | already complies as measured                                                    |
-| C-08                                     | End ride, launcher (free roam)                                   | already complies as measured                                                    |
-| C-09                                     | Discard unfinished ride                                          | already complies as measured                                                    |
-| C-10                                     | End ride, riding header                                          | already complies                                                                |
-| C-11                                     | End ride, paused panel                                           | already complies as measured                                                    |
+| C-07                                     | End ride, launcher (route)                                       | already complies as measured — common policy approved 3 October 2026            |
+| C-08                                     | End ride, launcher (free roam)                                   | already complies as measured — common policy approved 3 October 2026            |
+| C-09                                     | Discard unfinished ride                                          | already complies as measured — missing-route variant reported 3 October 2026    |
+| C-10                                     | End ride, riding header                                          | already complies — common policy approved 3 October 2026                        |
+| C-11                                     | End ride, paused panel                                           | already complies as measured — common policy approved 3 October 2026            |
 | C-12                                     | Edit copy                                                        | already complies (reveal); see D-06 and the 2 October decisions                 |
-| C-13                                     | End ride, free-roam header                                       | already complies                                                                |
+| C-13                                     | End ride, free-roam header                                       | already complies — common policy approved 3 October 2026                        |
 | C-14                                     | Switch to another ride, page-level                               | **candidate for change** — approved; shipped in slice 3 (`0.4.52`)              |
 | P-01                                     | Rename                                                           | needs discussion                                                                |
 | P-02                                     | Add / Edit tags                                                  | preserve existing behaviour (protected)                                         |
@@ -566,7 +576,7 @@ Reported here so they are not lost; nothing was changed.
 | P-30                                     | No turn cues                                                     | preserve existing behaviour (protected, item 97)                                |
 | P-33                                     | Update prompt                                                    | not a candidate; its placement needs discussion                                 |
 | D-01                                     | Clear draft fails                                                | needs discussion — decided 2 October 2026; shipped `0.4.56`; accepted           |
-| D-02                                     | Delete route fails                                               | **candidate for change** — approved 2 October 2026; planned, not implemented    |
+| D-02                                     | Delete route fails                                               | **candidate for change** — approved 2 October 2026; shipped `0.4.57`; accepted  |
 | D-03                                     | Card remounts while a delete is pending                          | **candidate for change** — approved; shipped in slice 3 (`0.4.52`)              |
 | D-04                                     | Activation above the viewport                                    | already complies as measured                                                    |
 | D-05                                     | Focused control destroyed                                        | needs discussion                                                                |
@@ -584,8 +594,8 @@ C-01 (Delete route) and C-05 (Clear draft) are slice 1 — already approved and 
 3. **D-02 — Delete route fails.** Not reproducible on demand; it needs the device's storage to fail. When it does, the confirmation grows, its buttons can drop below the screen, focus is lost, and the message is technical English. _Should the buttons be kept in view and the message be the ordinary "That route could not be deleted."?_ — confirm / exclude / discuss. **Decided 2 October 2026: confirmed, with an accurate pending state after an investigation of the list mechanism — not yet implemented. Investigated and planned 3 October 2026 ([report](d-02-delete-lifecycle.md)).**
 4. **D-01 — Clear draft fails.** Not reproducible on demand. The message "The draft could not be cleared on this device. Try again." appears beside Clear draft. _Should that message itself be revealed if it falls off-screen?_ — confirm / exclude / discuss. **Decided 2 October 2026: only while the rider is still waiting, by the minimum; otherwise their activity is kept — shipped in `0.4.56`.**
 5. **D-06 — Edit copy.** With a draft in Planning, open a route's ride screen, tap **Edit copy**, and see "Replace your current draft?". Its buttons are never disabled while working, and after a failure focus is probably lost. _Fix as a separate defect?_ — confirm / exclude / discuss. **Decided 2 October 2026: confirmed, first in the execution order — shipped in `0.4.54`.**
-6. **C-07, C-08, C-09 — the Ride launcher's End ride and Discard unfinished ride.** With an unfinished ride, open **Ride** and tap **End ride** (or **Discard unfinished ride**). They open where they are and nothing moves. _Agree they already comply and need no change?_ — confirm / discuss.
-7. **C-10, C-11, C-13 — End ride while riding, paused or in free roam.** Tap **End ride** in the riding header, in the paused panel, or in free roam. They open in view with no movement. _Agree they already comply?_ — confirm / discuss.
+6. **C-07, C-08, C-09 — the Ride launcher's End ride and Discard unfinished ride.** With an unfinished ride, open **Ride** and tap **End ride** (or **Discard unfinished ride**). They open where they are and nothing moves. _Agree they already comply and need no change?_ — confirm / discuss. **3 October 2026: C-07 and C-08 decided — the common opening and cancellation policy, with targeted corrections only where measurements demonstrate a mismatch; C-09's missing-route variant reported on the installed iPhone, with no policy decision ([decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026)).**
+7. **C-10, C-11, C-13 — End ride while riding, paused or in free roam.** Tap **End ride** in the riding header, in the paused panel, or in free roam. They open in view with no movement. _Agree they already comply?_ — confirm / discuss. **3 October 2026: decided — the common opening and cancellation policy, with targeted corrections only where measurements demonstrate a mismatch; a lower opening position was not reachable on the installed iPhone ([decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026)).**
 8. **C-12 — Edit copy's confirmation itself** opens in view with no movement. _Agree its reveal already complies (item 5 aside)?_ — confirm / discuss. **Decided 2 October 2026: the ordinary-text opening is kept; at enlarged text C-12 adopts the common rule — not yet implemented.**
 9. **C-02 — Switch to another route inside a card** (item 95). _Keep exactly as accepted?_ — confirm keeping / discuss.
 10. **C-03, C-04 — Merge tags and Delete tag in Manage tags** (items 105 and 106). Their reveal waits a moment and then scrolls smoothly. _Keep as accepted?_ — confirm keeping / discuss motion.
@@ -651,6 +661,8 @@ Branches flagged as difficult to reach or apparently unreachable. No steps are i
 **Later: D-06 shipped in `0.4.54` (2 October 2026) and D-01 in `0.4.56` (3 October 2026)**, as item 124's slices 4 and 5. D-02 and C-12's opening reveal remain approved and not implemented, and every other case still awaits the rider's review. D-01's ordinary flow was accepted on the installed iPhone, reported 3 October 2026, and D-02's investigation and planning stage is next.
 
 **3 October 2026 — D-02 decided and delivered.** After the [D-02 report](d-02-delete-lifecycle.md), the rider approved its implementation with option A (decision 8 below), and it shipped in `0.4.57` as item 124's slice 6 ([record](../../project/backlog.md#slice-6--delete-route-pending-and-failing-d-02-shipped-0457-3-october-2026)). C-12's opening reveal remains approved later work; every other case still awaits the rider's review.
+
+**3 October 2026, later — D-02 accepted; five surfaces decided; C-09 reported.** D-02's ordinary flow was accepted on the installed iPhone. The rider approved the common opening and cancellation policy for C-07, C-08, C-10, C-11 and C-13 and reported C-09's missing-route variant on the device — see [Decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026). C-12's opening reveal is the next slice; every case not yet reviewed still awaits the rider's review.
 
 ## Review preparation — D-01, D-02 and D-06 (2 October 2026)
 
@@ -869,3 +881,39 @@ At ordinary text, the browser evidence agrees with the rider's iPhone 13 report.
 - **Accepted and next:** D-01's ordinary flow was accepted on the installed iPhone in English and German, reported 3 October 2026, on `0.4.56` (build `439e578`). The next slice is D-02's investigation and planning stage, with no implementation; C-12's opening reveal remains approved later work.
 - **D-02 investigated and planned, 3 October 2026:** the [D-02 report](d-02-delete-lifecycle.md). Not implemented; its implementation follows the rider's review.
 - **Delivered:** D-02's repair shipped in `0.4.57`, 3 October 2026, as item 124's slice 6, with decision 8 ([record](../../project/backlog.md#slice-6--delete-route-pending-and-failing-d-02-shipped-0457-3-october-2026)). Its pending, failure and enlarged-text cases have automated evidence only, and its ordinary-flow device check is pending. C-12's opening reveal is the remaining approved work.
+- **Accepted and next:** D-02's ordinary flow was accepted on the installed iPhone in English and German, reported 3 October 2026, on `0.4.57` (build `bd688d7`). C-12's opening reveal is the next slice, slice 7. The same day's policy for C-07, C-08, C-10, C-11 and C-13 and the C-09 report are in [Decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026).
+
+## Decisions and observations — C-07 to C-13 (3 October 2026)
+
+**Status: a policy approval and two device observations, recorded separately.** The rider approved the common opening and cancellation policy for C-07, C-08, C-10, C-11 and C-13 — a product decision, **not device acceptance**, and nothing about it is implemented. The rider also reported, from the installed iPhone, an observation for those five and a check of C-09's missing-route variant. C-12's opening reveal remains the only implementation selected.
+
+### The policy approval and observation — C-07, C-08, C-10, C-11 and C-13
+
+The rider's words, verbatim (reported 3 October 2026):
+
+> “Keep these placements and existing ride semantics, and require the common opening/cancellation behaviour above. Make only targeted corrections where current checks or enlarged-text measurements demonstrate a mismatch. I can't position the cancel buttons low enough though for C10, C11, C07, C13 and C08. Please give me instructions for C09 too, then we can finish this slice.”
+
+The common behaviour approved, as the rider stated it:
+
+- the confirmations stay beside their opening controls, below the riding header or inside the paused or launcher panel;
+- no scrolling when a confirmation fits; otherwise it is revealed only as far as necessary;
+- an oversized confirmation prioritises its complete action row while its explanation stays reachable;
+- Cancel closes the confirmation and preserves whether the ride was active or paused; the resulting page position is kept, with only a necessary adjustment to reveal the opening control;
+- Cancel is focused on opening, and focus returns appropriately on cancellation, without uncontrolled browser scrolling and without taking focus after the rider has moved elsewhere;
+- existing End ride semantics are preserved.
+
+**What this is, kept apart:**
+
+- **An approved behaviour policy** for five surfaces. Their placements and ride semantics are kept, and a correction is made only where current checks or enlarged-text measurements demonstrate a mismatch. Their recorded measurements are at ordinary text, in English ([Measured results](#measured-results)), so **which corrections, if any, are needed is implementation work still to be measured and selected**; none is selected.
+- **A device observation:** the rider could not position the Cancel buttons low enough on the installed iPhone to reach a lower opening position for any of the five. It is **not** a report that every action passed on those surfaces, and **no version, build or language** was attached to it. That a lower position could not be reached on this phone does not establish that it is unreachable at every supported phone size.
+
+### C-09 — Discard unfinished ride, the missing-route variant
+
+The rider's report from the installed iPhone — `0.4.57` (build `bd688d7`), English and German, reported 3 October 2026 — is recorded once, verbatim, in [`current-status.md`](../../project/current-status.md): the missing-route confirmation is readable and fits without unwanted movement; Cancel keeps the unfinished-session warning; a confirmed Discard removes it, and it stays gone after leaving and returning; other saved routes remain; and a lower opening position was not reachable. It covers the **missing-route variant only** — not enlarged text, the unsupported or corrupt-session variant, or storage failures. **No policy decision is recorded for C-09.**
+
+### Where item 124 now stands
+
+- **Approved behaviour policies:** C-14 and D-03 (1 October 2026, delivered); D-06, D-02, D-01 and C-12 (2 October 2026 — D-06, D-01 and D-02 delivered); and the common policy for C-07, C-08, C-10, C-11 and C-13 (above).
+- **Reported device observations:** C-12 on an iPhone 13 (2 October 2026); C-09's missing-route variant and the five surfaces' unreachable lower positions (3 October 2026).
+- **Next:** C-12's opening reveal, slice 7.
+- **Implementation still to be selected:** any targeted correction under the five-surface policy, and every inventory entry not yet reviewed, which needs an explicit review or disposition before item 124 closes.

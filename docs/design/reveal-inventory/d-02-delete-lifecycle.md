@@ -2,6 +2,8 @@
 
 **Update, 3 October 2026: implemented in `0.4.57`, as item 124's slice 6; not yet accepted on the device.** The rider approved the implementation and chose option A in the [decision below](#decision-for-the-rider), reported 3 October 2026. The delivered behaviour, the seven differences from this report's recommendation and why, the evidence, the baseline, the negative controls and the limitations are recorded once, in [item 124's slice 6 record](../../project/backlog.md#slice-6--delete-route-pending-and-failing-d-02-shipped-0457-3-october-2026); this report is otherwise kept as written, as the investigation's record.
 
+**Update, 3 October 2026, later: accepted on the device.** Its ordinary flow passed on the installed iPhone in English and German, on `0.4.57` (build `bd688d7`) ([`current-status.md`](../../project/current-status.md)); the pending, failure, failure-recovery and committed-but-unreconciled cases keep automated evidence only.
+
 **Status: investigated and planned, 3 October 2026. Not implemented, not accepted.** This is item 124's D-02 investigation and planning stage ([backlog](../../project/backlog.md#item-124)), carried out against `439e578` (`0.4.56`). It establishes what causes each recorded problem and proposes a bounded implementation. No application source, test, dependency, configuration or version changed. The approved policy it serves is decision 4 and decision 5 of the [inventory's decisions](README.md#decisions--d-06-d-02-d-01-and-c-12-2-october-2026). The [review preparation](README.md#d-02--delete-route-fails-1) holds the earlier measurements, which are reproduced below rather than assumed.
 
 ## Contents
