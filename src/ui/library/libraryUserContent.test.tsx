@@ -63,10 +63,10 @@ function renderCard(route: LibraryRoute, extra: Record<string, unknown> = {}) {
       onExport={vi.fn<(route: PlannedRoute) => void>()}
       onDeleteRequest={vi.fn<(id: string) => void>()}
       onDeleteCancel={vi.fn<(id: string) => void>()}
-      onDeleteConfirm={vi.fn<(id: string) => void>()}
+      onDeleteConfirm={vi.fn<(id: string) => number | null>()}
       isDeletePending={false}
       isDeleting={false}
-      deleteError={null}
+      deletion={null}
       isPinned={false}
       isPinPending={false}
       pinError={null}

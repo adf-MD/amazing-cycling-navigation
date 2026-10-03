@@ -22,11 +22,15 @@ import { readSavedRouteId } from "./support/rideStateDb.ts";
 //
 // Not covered here: a confirmed deletion still running when its route is
 // hidden (which must continue normally), and a failed confirmed deletion
-// (whose confirmation and error must be kept): a Dexie write cannot be
-// held open or made to fail in a browser, so both are covered by
-// RouteLibrary.test.tsx with a controlled deleteRoute. Desktop engines
-// have no software keyboard, so the iPhone keyboard closing is not
-// reproduced: this proves where focus and keystrokes go.
+// (whose confirmation and error must be kept). This comment used to say a
+// Dexie write could not be held open or made to fail in a browser; it can
+// — a test-owned readwrite transaction on the store holds it, and aborting
+// the app's queued transaction fails it — and both cases, by search and by
+// tag filter, are in e2e/routeDeleteFailure.smoke.spec.ts (backlog item
+// 124, D-02), with RouteLibrary.test.tsx holding them on real IndexedDB
+// transactions too. Desktop engines have no software keyboard, so the
+// iPhone keyboard closing is not reproduced: this proves where focus and
+// keystrokes go.
 //
 // No test in this file contacts a live map or routing provider.
 

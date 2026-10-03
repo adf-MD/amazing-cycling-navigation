@@ -16,6 +16,8 @@
 
 **Update (3 October 2026, later): D-02 investigated and planned.** Its pending and failure lifecycle was investigated against `439e578`, and an implementation proposed, in a separate [D-02 report](d-02-delete-lifecycle.md). **Nothing is implemented**, and the plan awaits the rider's review and one decision.
 
+**Update (3 October 2026, later still): D-02 decided and delivered.** The rider approved the implementation and chose option A for a failure hidden by the rider's own filter (decision 8 in [Decisions](#decisions--d-06-d-02-d-01-and-c-12-2-october-2026), reported 3 October 2026). D-02 shipped in `0.4.57` as item 124's slice 6 ([record](../../project/backlog.md#slice-6--delete-route-pending-and-failing-d-02-shipped-0457-3-october-2026)); its pending, failure and enlarged-text cases have synthetic, automated evidence only, and its ordinary-flow device check is pending. C-12's opening reveal remains approved later work, and every other case still awaits the rider's review.
+
 **What this is.** Every confirmation in the app, every expanding card, form, editor and disclosure that could reasonably fall under the rider's "pop-up cards" request, and the conditional and failure states that change what would need revealing — each with a stable review ID, its labels in English and German, how to reach it, what it does today, where that is in the source and tests, what was measured, and a recommendation.
 
 **The rule under review** ([item 124](../../project/backlog.md#item-124)): no movement when the newly opened content fits between the sticky navigation and the bottom safe area; otherwise only enough to reveal it; and when it cannot fit, only enough to show its complete action row. On Cancel and Escape: keep the page where the rider has left it, moving only as far as needed to reveal the opening control.
@@ -432,6 +434,7 @@ Geolocation **Try again**, **Retry map imagery**, the wake-lock failure row, the
 - **Update, 2 October 2026:** rechecked and measured in both languages at ordinary and 200% text. A failure that arrives while the deletion is pending behaves differently: the route leaves the list as soon as Delete route is pressed, and stays hidden, with no error, after the failure ([review preparation](#review-preparation--d-01-d-02-and-d-06-2-october-2026)).
 - **Decided, 2 October 2026:** the ordinary translated message, a guarded minimum reveal and appropriate focus restoration, and an accurate pending, success and failure presentation, after an investigation of the storage and list mechanism. Not yet implemented ([decisions](#decisions--d-06-d-02-d-01-and-c-12-2-october-2026)).
 - **Investigated and planned, 3 October 2026:** the causes are measured — Dexie's optimistic live-query cache hides the route while pending and never restores it after an aborted deletion, and the confirmation's raw message, growth and focus loss are the app's — and a repair is proposed, in the [D-02 report](d-02-delete-lifecycle.md). Not implemented.
+- **Decided and delivered, 3 October 2026:** option A for a failure hidden by a filter (decision 8), and the repair shipped in `0.4.57` as item 124's slice 6 ([record](../../project/backlog.md#slice-6--delete-route-pending-and-failing-d-02-shipped-0457-3-october-2026)). Automated evidence only so far; its ordinary-flow device check is pending.
 
 ### D-03 — A route card remounts while its delete is pending
 
@@ -647,6 +650,8 @@ Branches flagged as difficult to reach or apparently unreachable. No steps are i
 
 **Later: D-06 shipped in `0.4.54` (2 October 2026) and D-01 in `0.4.56` (3 October 2026)**, as item 124's slices 4 and 5. D-02 and C-12's opening reveal remain approved and not implemented, and every other case still awaits the rider's review. D-01's ordinary flow was accepted on the installed iPhone, reported 3 October 2026, and D-02's investigation and planning stage is next.
 
+**3 October 2026 — D-02 decided and delivered.** After the [D-02 report](d-02-delete-lifecycle.md), the rider approved its implementation with option A (decision 8 below), and it shipped in `0.4.57` as item 124's slice 6 ([record](../../project/backlog.md#slice-6--delete-route-pending-and-failing-d-02-shipped-0457-3-october-2026)). C-12's opening reveal remains approved later work; every other case still awaits the rider's review.
+
 ## Review preparation — D-01, D-02 and D-06 (2 October 2026)
 
 **Status: prepared for the rider's review; nothing is approved.** This section rechecks three failure and busy states against current source and measures them with controlled fixtures, with C-12 as context. Every recommendation below is a proposal. The earlier sections and their measurements, made against `04639cb`, are unchanged.
@@ -840,7 +845,7 @@ At ordinary text, the browser evidence agrees with the rider's iPhone 13 report.
 - **The rider's device observation:** C-12 on an iPhone 13, in German and English, reported 2 October 2026 — its replacement confirmation opened without moving the page and fitted on screen. The dated record is in [`current-status.md`](../../project/current-status.md) and is not repeated here.
 - **Synthetic desktop findings:** the [review preparation](#review-preparation--d-01-d-02-and-d-06-2-october-2026) — desktop Chromium and WebKit in the pinned container, with synthetic storage faults, holds and aborts, and browser root-text scaling.
 - **Not reproduced on the phone:** a pending write, a storage failure, an enlarged-text layout and keyboard-focus behaviour. Nothing here claims otherwise.
-- **The newly approved policies:** the seven decisions below, numbered as the rider gave them, with the [questions](#decisions-needed-from-the-rider) each answers.
+- **The newly approved policies:** the seven decisions below, numbered as the rider gave them, with the [questions](#decisions-needed-from-the-rider) each answers — and an eighth, D-02's own question after its investigation, reported 3 October 2026.
 - **Future implementation and acceptance:** none yet; see [Order](#order).
 
 ### The decisions
@@ -852,6 +857,7 @@ At ordinary text, the browser evidence agrees with the rider's iPhone 13 report.
 - **5. D-02, pending deletion and delayed failure (question 3).** The interface must represent pending, successful and failed deletion accurately, and a failed deletion must not leave a still-stored route hidden without an error or a way to recover. The storage and list mechanism is investigated before an implementation is chosen. Keeping the route, with "Deleting…", until the deletion has committed is the preferred presentation; this approval prescribes neither a cache workaround nor a storage architecture.
 - **6. D-01, a Clear draft failure (question 4).** If the rider has moved elsewhere, their activity is preserved. The error stays in the Clear draft area. If they are still waiting at that operation, focus is restored appropriately and the button and its message are revealed only as far as necessary, avoiding the browser's own uncontrolled focus scrolling.
 - **7. C-12, the opening reveal (question 9).** When implemented, C-12 follows the established common rule: no movement when the card fits, the minimum movement when it can fit after scrolling, and action-row priority when it is taller than the usable space. The ordinary-text opening the rider checked on the iPhone is preserved.
+- **8. D-02, a failure while the rider's own filter hides the route (the [D-02 report's](d-02-delete-lifecycle.md#decision-for-the-rider) one question; reported 3 October 2026, with approval of D-02's implementation).** Option A: the route stays hidden according to the filter, and the failure stays with that route's confirmation; when the route becomes visible again, its message and recovery actions are shown without taking focus or scrolling. No list-level message or notification is added. Implementation approval, not device acceptance.
 
 ### Order
 
@@ -862,3 +868,4 @@ At ordinary text, the browser evidence agrees with the rider's iPhone 13 report.
 - **Delivered:** D-01's repair shipped in `0.4.56`, 3 October 2026, as item 124's slice 5, after [item 132](../../project/history/items-132-NN.md#item-132) was accepted on the installed iPhone. Its failure cases have automated evidence only, and its ordinary-flow device check is pending.
 - **Accepted and next:** D-01's ordinary flow was accepted on the installed iPhone in English and German, reported 3 October 2026, on `0.4.56` (build `439e578`). The next slice is D-02's investigation and planning stage, with no implementation; C-12's opening reveal remains approved later work.
 - **D-02 investigated and planned, 3 October 2026:** the [D-02 report](d-02-delete-lifecycle.md). Not implemented; its implementation follows the rider's review.
+- **Delivered:** D-02's repair shipped in `0.4.57`, 3 October 2026, as item 124's slice 6, with decision 8 ([record](../../project/backlog.md#slice-6--delete-route-pending-and-failing-d-02-shipped-0457-3-october-2026)). Its pending, failure and enlarged-text cases have automated evidence only, and its ordinary-flow device check is pending. C-12's opening reveal is the remaining approved work.

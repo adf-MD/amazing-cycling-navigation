@@ -15,6 +15,11 @@ import { runWhenViewportSettled } from "../shared/viewportSettle.ts";
 import { applyTopRevealScroll } from "./routeCardTopReveal.ts";
 import { isCardAlreadyFullyVisible } from "./routeSwitchCardVisibility.ts";
 import { applyConfirmationReveal } from "../shared/confirmationRevealScroll.ts";
+import {
+  armOperationInteractionGuard,
+  type OperationInteractionGuard,
+} from "../shared/operationInteractionGuard.ts";
+import type { RouteDeletion } from "./routeDeletion.ts";
 
 /** The inline, route-card-scoped presentation of backlog item 73's
  * unfinished-session switch guard (item 73 follow-up) — a ready-made view
@@ -36,6 +41,20 @@ export interface RouteSwitchPrompt {
   onReturn: () => void;
 }
 
+/** What a card knows as it leaves the list (backlog item 124, D-02),
+ * reported from its own layout-effect cleanup — which React runs while the
+ * card is still connected, before its element is removed, so focus inside it
+ * is still observable there and nowhere later. RouteLibrary decides whether
+ * the removal was a successful deletion; filtering, navigation and ordinary
+ * remounts report too and are ignored there. */
+export interface RouteCardRemovalReport {
+  /** Focus was inside the card, never merely on `<body>`. */
+  focusInside: boolean;
+  /** The card's confirmed deletion attempt still had the rider waiting at
+   * it (operationInteractionGuard.ts). */
+  guardArmed: boolean;
+}
+
 export interface RouteListItemProps {
   route: LibraryRoute;
   onOpen: (route: PlannedRoute) => void;
@@ -43,10 +62,19 @@ export interface RouteListItemProps {
   onExport: (route: PlannedRoute) => void;
   onDeleteRequest: (id: string) => void;
   onDeleteCancel: (id: string) => void;
-  onDeleteConfirm: (id: string) => void;
+  /** Starts the confirmed deletion and returns its attempt number, or null
+   * when it was refused (another deletion is busy) and nothing started. */
+  onDeleteConfirm: (id: string) => number | null;
+  /** This card's delete confirmation is open — unconfirmed, or showing this
+   * card's confirmed deletion below. */
   isDeletePending: boolean;
+  /** A confirmed deletion is busy somewhere in the list, which disables
+   * every card's pin toggle. */
   isDeleting: boolean;
-  deleteError: string | null;
+  /** This card's own confirmed deletion (backlog item 124, D-02), or null.
+   * Owned by App (routeDeletion.ts), so it survives this card — and the
+   * whole Routes screen — unmounting and remounting. */
+  deletion: RouteDeletion | null;
   isPinned: boolean;
   isPinPending: boolean;
   pinError: string | null;
@@ -104,6 +132,11 @@ export interface RouteListItemProps {
    * case the editor does not open at all. Asking after the fact would
    * allow one frame with both interactions on screen. */
   requestInlineEditorOpen?: () => boolean;
+  /** Called once as this card leaves the list, for any reason — see
+   * RouteCardRemovalReport. Must be a stable reference: a new identity
+   * would re-run the reporting effect and report a removal that did not
+   * happen. */
+  onCardRemoved?: (routeId: string, report: RouteCardRemovalReport) => void;
 }
 
 export function RouteListItem({
@@ -116,7 +149,7 @@ export function RouteListItem({
   onDeleteConfirm,
   isDeletePending,
   isDeleting,
-  deleteError,
+  deletion,
   isPinned,
   isPinPending,
   pinError,
@@ -131,6 +164,7 @@ export function RouteListItem({
   onTagsSaveBusyChange,
   dismissInlineEditorsToken,
   requestInlineEditorOpen,
+  onCardRemoved,
 }: RouteListItemProps) {
   const translator = useTranslate();
   const { t } = translator;
@@ -158,6 +192,23 @@ export function RouteListItem({
   const deleteConfirmRef = useRef<HTMLDivElement>(null);
   const deleteActionsRef = useRef<HTMLDivElement>(null);
   const deleteCancelRef = useRef<HTMLButtonElement>(null);
+  // Backlog item 124, D-02. The confirmation's own title, focusable by
+  // script only, where focus waits while a confirmed deletion runs.
+  const deleteTitleRef = useRef<HTMLHeadingElement>(null);
+  const deleteErrorId = useId();
+  // The interaction guard of this card's latest confirmed deletion attempt,
+  // tied to that attempt's number. Detached once its failure is decided,
+  // when a newer attempt replaces it, and when this card unmounts — so a
+  // card that leaves the list and comes back (a filter, a return to Routes)
+  // has no guard, and never takes focus for an attempt it did not see.
+  const deleteAttemptGuardRef = useRef<{
+    attempt: number;
+    guard: OperationInteractionGuard;
+  } | null>(null);
+  // Only a confirmed deletion still running, or committed and awaiting the
+  // live list, is busy; a failed one leaves the card usable again.
+  const isOwnDeletionBusy = deletion !== null && deletion.phase !== "failed";
+  const isDeletionFailed = deletion?.phase === "failed";
   // Set only by Cancel/Escape (handleCancelDelete), never inferred from
   // isDeletePending going false, which a rename, pin, tag editor, switch
   // prompt or tag manager also does — and consumed on every transition, so
@@ -495,13 +546,19 @@ export function RouteListItem({
   // then revealed under item 118's rule: no movement when it fits between
   // the sticky header and the safe area, otherwise only enough to show all
   // of it, and when it cannot fit, only enough to show its complete
-  // Cancel/Delete route row (none when that row already shows). It also
-  // runs when the card mounts with the confirmation already pending, as
-  // autoFocus did. Since item 124's slice 3, filtering no longer reaches
-  // that path for an unconfirmed Delete — RouteLibrary dismisses one whose
-  // route the filters hide — but a confirmed deletion that failed keeps
-  // its confirmation and error (the deferred D-02 state), so a filtered-out
-  // card in that state can still remount pending, by design.
+  // Cancel/Delete route row (none when that row already shows).
+  //
+  // Opening means a genuine false-to-true transition while this card is
+  // mounted (backlog item 124, D-02). A card that MOUNTS with its
+  // confirmation already open takes no focus and scrolls nothing: it was not
+  // opened, it reappeared. That is only ever a confirmed deletion's
+  // confirmation, running or failed, when a filter brings the card back or
+  // the rider returns to Routes — item 124's slice 3 (D-03) closes an
+  // unconfirmed one that filtering hides, and leaving Routes closes it too.
+  // Before D-02 the mount ran the opening, as autoFocus had, and so took
+  // focus from the search field for a failed deletion's returning card. The
+  // previous value is a ref initialised to the mount value, so Strict Mode's
+  // repeated mount effect sees no transition either.
   //
   // Closing after Cancel/Escape: focus has already returned to Delete,
   // without scrolling, in handleCancelDelete — before the focused Cancel is
@@ -517,9 +574,13 @@ export function RouteListItem({
   // A layout effect with an instant scroll: item 95's interaction-safety
   // pair, so the actions should not still be moving once they can be
   // touched.
+  const wasDeletePendingRef = useRef(isDeletePending);
   useLayoutEffect(() => {
+    const wasDeletePending = wasDeletePendingRef.current;
+    wasDeletePendingRef.current = isDeletePending;
     const headerBottom = stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0;
     if (isDeletePending) {
+      if (wasDeletePending) return;
       revealDeleteTriggerOnCloseRef.current = false;
       deleteCancelRef.current?.focus({ preventScroll: true });
       const insetEl = deleteConfirmRef.current;
@@ -535,7 +596,89 @@ export function RouteListItem({
     applyConfirmationReveal(trigger, headerBottom);
   }, [isDeletePending, stickyHeaderRef]);
 
+  // A confirmed deletion's failure (backlog item 124, D-02, the rider's
+  // decision of 2 October 2026): decided once, by the card that confirmed
+  // it, when this mounted card sees its record become failed for a new
+  // attempt — after "Deleting…", or straight from the open confirmation when
+  // an immediate fault lands in the same commit as the press, or after a
+  // retry. A card that mounts already failed (a filter returning it, a
+  // return to Routes) decides nothing: its guard went with the card that
+  // confirmed, and the previous-record ref starts at the mount value.
+  //
+  // Still waiting means this attempt's guard is still armed — no tap or click
+  // outside the card, no key but Escape, no wheel or touch scroll — and
+  // focus is inside the card: on the title it was parked on, on the card
+  // after a tap on its text, or on a now re-enabled action. `<body>` never
+  // counts. Then Cancel takes focus without the browser's own focus scroll —
+  // the safe action beside a destructive retry, and the one an opening
+  // focuses — and the grown confirmation is revealed by the minimum under
+  // item 118's rule, its complete action row taking priority when it cannot
+  // fit (as at 200% text). Otherwise nothing moves, and the message stays in
+  // the confirmation as an alert, named by its aria-describedby. The guard
+  // is detached either way.
+  //
+  // A layout effect with an instant scroll, so the reveal lands before the
+  // re-enabled actions are painted (item 95's pair).
+  const previousDeletionRef = useRef(deletion);
+  useLayoutEffect(() => {
+    const previous = previousDeletionRef.current;
+    previousDeletionRef.current = deletion;
+    if (deletion?.phase !== "failed") return;
+    if (previous?.phase === "failed" && previous.attempt === deletion.attempt) return;
+    const owned = deleteAttemptGuardRef.current;
+    if (owned?.attempt !== deletion.attempt) return;
+    deleteAttemptGuardRef.current = null;
+    const card = cardRef.current;
+    const focused = document.activeElement;
+    const isStillWaiting =
+      owned.guard.armed &&
+      card !== null &&
+      focused !== null &&
+      focused !== document.body &&
+      card.contains(focused);
+    owned.guard.detach();
+    if (!isStillWaiting) return;
+    deleteCancelRef.current?.focus({ preventScroll: true });
+    const insetEl = deleteConfirmRef.current;
+    if (insetEl) {
+      applyConfirmationReveal(
+        insetEl,
+        stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+        deleteActionsRef.current,
+      );
+    }
+  }, [deletion, stickyHeaderRef]);
+
+  // Reports this card leaving the list (backlog item 124, D-02) — see
+  // RouteCardRemovalReport — and detaches any deletion guard it still holds.
+  // React runs a removed component's layout-effect cleanup while its element
+  // is still connected, before removing it, so focus inside the card is
+  // still observable here: measured in Chromium and WebKit during D-02's
+  // investigation (React 19.2), and held by this file's own tests rather
+  // than assumed. Keyed on stable values only, so it runs on unmount and
+  // never on an ordinary re-render, which would detach a guard mid-attempt.
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    const attemptGuardRef = deleteAttemptGuardRef;
+    const routeId = route.id;
+    return () => {
+      const owned = attemptGuardRef.current;
+      attemptGuardRef.current = null;
+      const focused = document.activeElement;
+      const focusInside =
+        card !== null &&
+        focused !== null &&
+        focused !== document.body &&
+        card.contains(focused);
+      onCardRemoved?.(routeId, { focusInside, guardArmed: owned?.guard.armed ?? false });
+      owned?.guard.detach();
+    };
+  }, [route.id, onCardRemoved]);
+
   const openRename = () => {
+    // Backlog item 124, D-02: every action on a card whose deletion is
+    // running is refused, here as well as by its disabled button.
+    if (isOwnDeletionBusy) return;
     if (requestInlineEditorOpen && !requestInlineEditorOpen()) return;
     if (isDeletePending) {
       onDeleteCancel(route.id);
@@ -568,7 +711,9 @@ export function RouteListItem({
   };
 
   const handleCancelDelete = () => {
-    if (isDeleting) return;
+    // Escape can bypass the disabled Cancel, so this refuses while the
+    // confirmed deletion runs.
+    if (isOwnDeletionBusy) return;
     // Focus returns synchronously, before the focused Cancel is destroyed,
     // but without the browser's own focus scroll: the layout effect above
     // makes the only, minimal, correction once the collapse has committed.
@@ -581,6 +726,7 @@ export function RouteListItem({
   // switch prompt) first" precedent above, so an open confirmation never
   // gets silently moved into a different group instead of being resolved.
   const handlePinClick = () => {
+    if (isDeleting || isOwnDeletionBusy) return;
     if (isDeletePending) {
       onDeleteCancel(route.id);
     }
@@ -602,6 +748,7 @@ export function RouteListItem({
   // site with this exact guard) must never be silently interrupted by
   // opening the tag editor.
   const openTagEditor = () => {
+    if (isOwnDeletionBusy) return;
     if (requestInlineEditorOpen && !requestInlineEditorOpen()) return;
     if (isDeletePending) {
       onDeleteCancel(route.id);
@@ -678,6 +825,25 @@ export function RouteListItem({
     // going false, which a manager-driven dismissal also does.
     setRevealCardOnClose(true);
     setIsEditingTags(false);
+  };
+
+  // Backlog item 124, D-02. Once the deletion is admitted, focus waits on the
+  // confirmation's own title, without the browser's focus scroll, before the
+  // busy render disables both actions: Chromium drops a focused button that
+  // becomes disabled to <body>, and from the title a refused Escape still
+  // reaches the confirmation. Then this attempt arms its own interaction
+  // guard over the whole card (operationInteractionGuard.ts), which the
+  // failure decision above reads. A refused press — another deletion busy —
+  // parks nothing and arms nothing.
+  const handleConfirmDelete = () => {
+    const attempt = onDeleteConfirm(route.id);
+    if (attempt === null) return;
+    deleteTitleRef.current?.focus({ preventScroll: true });
+    deleteAttemptGuardRef.current?.guard.detach();
+    deleteAttemptGuardRef.current = {
+      attempt,
+      guard: armOperationInteractionGuard(() => cardRef.current),
+    };
   };
 
   const handleTagsEditorKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -838,7 +1004,9 @@ export function RouteListItem({
               type="button"
               className="route-card-title"
               ref={nameButtonRef}
+              disabled={isOwnDeletionBusy}
               onClick={() => {
+                if (isOwnDeletionBusy) return;
                 onOpen(route);
               }}
             >
@@ -851,7 +1019,7 @@ export function RouteListItem({
               aria-pressed={isPinned}
               aria-label={pinActionLabel}
               title={pinActionLabel}
-              disabled={isPinPending || isDeleting}
+              disabled={isPinPending || isDeleting || isOwnDeletionBusy}
               onClick={handlePinClick}
             >
               <PinIcon filled={isPinned} />
@@ -880,6 +1048,7 @@ export function RouteListItem({
               type="button"
               className="btn-secondary"
               ref={renameButtonRef}
+              disabled={isOwnDeletionBusy}
               onClick={openRename}
             >
               {t("routes.card.rename")}
@@ -888,6 +1057,7 @@ export function RouteListItem({
               type="button"
               className="btn-secondary"
               ref={tagsButtonRef}
+              disabled={isOwnDeletionBusy}
               onClick={openTagEditor}
             >
               {route.tags.length > 0
@@ -897,7 +1067,9 @@ export function RouteListItem({
             <button
               type="button"
               className="btn-secondary"
+              disabled={isOwnDeletionBusy}
               onClick={() => {
+                if (isOwnDeletionBusy) return;
                 onExport(route);
               }}
             >
@@ -907,7 +1079,9 @@ export function RouteListItem({
               type="button"
               className="btn-danger"
               ref={deleteButtonRef}
+              disabled={isOwnDeletionBusy}
               onClick={() => {
+                if (isOwnDeletionBusy) return;
                 onDeleteRequest(route.id);
               }}
             >
@@ -921,15 +1095,27 @@ export function RouteListItem({
               className="route-delete-confirm"
               role="dialog"
               aria-labelledby={headingId}
-              aria-describedby={descriptionId}
+              aria-describedby={
+                isDeletionFailed ? `${descriptionId} ${deleteErrorId}` : descriptionId
+              }
               onKeyDown={handleConfirmKeyDown}
               ref={deleteConfirmRef}
             >
-              <h2 id={headingId}>
+              {/* Focusable by script only (tabIndex -1: never in the tab
+                  order): where focus waits while a confirmed deletion runs,
+                  backlog item 124's D-02. */}
+              <h2 id={headingId} ref={deleteTitleRef} tabIndex={-1}>
                 {t("routes.card.deleteConfirmTitle", { name: route.name })}
               </h2>
               <p id={descriptionId}>{t("routes.card.deleteConfirmBody")}</p>
-              {deleteError ? <p role="alert">{deleteError}</p> : null}
+              {/* Always the ordinary translated message, whatever the
+                  storage error said: its technical detail goes only to the
+                  redacted error log (useRouteDeletion.ts). */}
+              {isDeletionFailed ? (
+                <p id={deleteErrorId} role="alert">
+                  {t("routes.error.delete")}
+                </p>
+              ) : null}
               <div className="route-delete-confirm-actions" ref={deleteActionsRef}>
                 {/* Focused on opening by the item 124 layout effect above,
                     with preventScroll, rather than by autoFocus. */}
@@ -937,7 +1123,7 @@ export function RouteListItem({
                   type="button"
                   className="btn-secondary"
                   ref={deleteCancelRef}
-                  disabled={isDeleting}
+                  disabled={isOwnDeletionBusy}
                   onClick={handleCancelDelete}
                 >
                   {t("routes.card.cancel")}
@@ -945,12 +1131,10 @@ export function RouteListItem({
                 <button
                   type="button"
                   className="btn-danger"
-                  disabled={isDeleting}
-                  onClick={() => {
-                    onDeleteConfirm(route.id);
-                  }}
+                  disabled={isOwnDeletionBusy}
+                  onClick={handleConfirmDelete}
                 >
-                  {isDeleting
+                  {isOwnDeletionBusy
                     ? t("routes.card.deleting")
                     : t("routes.card.deleteConfirm")}
                 </button>

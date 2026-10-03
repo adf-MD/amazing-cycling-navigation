@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { liveQuery } from "dexie";
 import { db } from "./db.ts";
+import { holdIdbStore, releaseAllIdbHolds } from "../test/idbHold.ts";
 import * as routeTags from "../domain/routeTags.ts";
 import {
   applyRouteTagLifecycle,
@@ -593,5 +595,90 @@ describe("routesRepository tag lifecycle (backlog item 100 stage 4A)", () => {
     for (const id of ids) {
       await expect(rawTags(id)).resolves.toEqual(["Gravel"]);
     }
+  });
+});
+
+// Backlog item 124, D-02. With an implicit transaction, Dexie 4.4.5's
+// live-query cache dropped the route from an index-ordered list while the
+// delete was still pending, and after an abort never re-ran that list, so a
+// still-stored route stayed hidden. These hold the app's delete behind a
+// real readwrite transaction and watch the same query RouteLibrary
+// subscribes to. Replacing deleteRoute's explicit transaction with a bare
+// `db.routes.delete(id)` fails all three — that is their purpose.
+describe("deleteRoute and the live route list (backlog item 124, D-02)", () => {
+  afterEach(async () => {
+    await releaseAllIdbHolds();
+  });
+
+  async function watchRouteIds() {
+    const emissions: string[][] = [];
+    const subscription = liveQuery(() => listRoutes()).subscribe({
+      next: (routes) => {
+        emissions.push(routes.map((route) => route.id));
+      },
+    });
+    await vi.waitFor(() => {
+      expect(emissions.length).toBeGreaterThan(0);
+    });
+    return {
+      emissions,
+      latest: () => emissions[emissions.length - 1] ?? [],
+      unsubscribe: () => {
+        subscription.unsubscribe();
+      },
+    };
+  }
+
+  const settle = () =>
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, 50);
+    });
+
+  it("keeps the route listed while its delete is pending, then lists it no more once it commits", async () => {
+    const kept = buildRoute({ name: "Kept", createdAt: "2026-01-01T00:00:00.000Z" });
+    const doomed = buildRoute({ name: "Doomed", createdAt: "2026-01-02T00:00:00.000Z" });
+    await saveRoute(kept);
+    await saveRoute(doomed);
+    const watcher = await watchRouteIds();
+    const hold = await holdIdbStore("routes");
+
+    const deletion = deleteRoute(doomed.id);
+    await settle();
+    expect(watcher.emissions.every((ids) => ids.includes(doomed.id))).toBe(true);
+
+    await hold.release();
+    await deletion;
+    await vi.waitFor(() => {
+      expect(watcher.latest()).toEqual([kept.id]);
+    });
+    watcher.unsubscribe();
+  });
+
+  it("keeps the route listed and stored, and rejects, when its pending delete aborts", async () => {
+    const doomed = buildRoute({ name: "Doomed" });
+    await saveRoute(doomed);
+    const watcher = await watchRouteIds();
+    const hold = await holdIdbStore("routes", { captureDeletes: true });
+
+    const deletion = deleteRoute(doomed.id);
+    const outcome = deletion.then(
+      () => "resolved",
+      () => "rejected",
+    );
+    await vi.waitFor(() => {
+      expect(hold.capturedDeleteCount).toBe(1);
+    });
+    // Pending for a while before it fails, as when the rider does something
+    // else first: an abort arriving within Dexie's own deferred signal would
+    // never let an optimistic removal be seen at all.
+    await settle();
+    expect(watcher.emissions.every((ids) => ids.includes(doomed.id))).toBe(true);
+    await hold.release({ abortCapturedDeletes: true });
+
+    await expect(outcome).resolves.toBe("rejected");
+    await settle();
+    expect(watcher.emissions.every((ids) => ids.includes(doomed.id))).toBe(true);
+    await expect(getRoute(doomed.id)).resolves.toEqual(doomed);
+    watcher.unsubscribe();
   });
 });

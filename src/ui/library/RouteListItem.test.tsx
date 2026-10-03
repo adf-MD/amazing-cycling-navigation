@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { RouteListItem, type RouteSwitchPrompt } from "./RouteListItem.tsx";
+import {
+  RouteListItem,
+  type RouteCardRemovalReport,
+  type RouteSwitchPrompt,
+} from "./RouteListItem.tsx";
+import type { RouteDeletion } from "./routeDeletion.ts";
 import type { LibraryRoute, PlannedRoute } from "../../domain/types.ts";
 
 function buildRoute(overrides: Partial<LibraryRoute> = {}): LibraryRoute {
@@ -28,10 +33,13 @@ interface RenderOverrides {
   onExport?: ReturnType<typeof vi.fn<(route: PlannedRoute) => void>>;
   onDeleteRequest?: ReturnType<typeof vi.fn<(id: string) => void>>;
   onDeleteCancel?: ReturnType<typeof vi.fn<(id: string) => void>>;
-  onDeleteConfirm?: ReturnType<typeof vi.fn<(id: string) => void>>;
+  onDeleteConfirm?: ReturnType<typeof vi.fn<(id: string) => number | null>>;
   isDeletePending?: boolean;
   isDeleting?: boolean;
-  deleteError?: string | null;
+  deletion?: RouteDeletion | null;
+  onCardRemoved?: ReturnType<
+    typeof vi.fn<(routeId: string, report: RouteCardRemovalReport) => void>
+  >;
   isPinned?: boolean;
   isPinPending?: boolean;
   pinError?: string | null;
@@ -66,6 +74,12 @@ function buildSwitchPrompt(
   };
 }
 
+/** The default onDeleteConfirm: admits the deletion as attempt 1, as
+ * RouteLibrary does when no other deletion is busy (backlog item 124, D-02). */
+function admittingDeleteConfirm() {
+  return vi.fn<(id: string) => number | null>().mockReturnValue(1);
+}
+
 function buildElement(route: LibraryRoute, overrides: RenderOverrides) {
   return (
     <RouteListItem
@@ -75,10 +89,11 @@ function buildElement(route: LibraryRoute, overrides: RenderOverrides) {
       onExport={overrides.onExport ?? vi.fn<(route: PlannedRoute) => void>()}
       onDeleteRequest={overrides.onDeleteRequest ?? vi.fn<(id: string) => void>()}
       onDeleteCancel={overrides.onDeleteCancel ?? vi.fn<(id: string) => void>()}
-      onDeleteConfirm={overrides.onDeleteConfirm ?? vi.fn<(id: string) => void>()}
+      onDeleteConfirm={overrides.onDeleteConfirm ?? admittingDeleteConfirm()}
       isDeletePending={overrides.isDeletePending ?? false}
       isDeleting={overrides.isDeleting ?? false}
-      deleteError={overrides.deleteError ?? null}
+      deletion={overrides.deletion ?? null}
+      onCardRemoved={overrides.onCardRemoved}
       isPinned={overrides.isPinned ?? false}
       isPinPending={overrides.isPinPending ?? false}
       pinError={overrides.pinError ?? null}
@@ -106,7 +121,7 @@ function renderItem(overrides: RenderOverrides = {}) {
   const onExport = overrides.onExport ?? vi.fn<(route: PlannedRoute) => void>();
   const onDeleteRequest = overrides.onDeleteRequest ?? vi.fn<(id: string) => void>();
   const onDeleteCancel = overrides.onDeleteCancel ?? vi.fn<(id: string) => void>();
-  const onDeleteConfirm = overrides.onDeleteConfirm ?? vi.fn<(id: string) => void>();
+  const onDeleteConfirm = overrides.onDeleteConfirm ?? admittingDeleteConfirm();
   const onPinToggle = overrides.onPinToggle ?? vi.fn<(route: PlannedRoute) => void>();
   const onTagsSave =
     overrides.onTagsSave ??
@@ -134,6 +149,25 @@ function renderItem(overrides: RenderOverrides = {}) {
     onRename,
     onExport,
     unmount,
+    // Rerenders with the same route and callbacks plus the given props —
+    // how a confirmation is OPENED (backlog item 124, D-02: only a
+    // false-to-true transition opens one; a card mounting with its
+    // confirmation already showing takes no focus).
+    rerenderWith: (extra: RenderOverrides) => {
+      rerender(
+        buildElement(extra.route ?? route, {
+          onOpen,
+          onRename,
+          onExport,
+          onDeleteRequest,
+          onDeleteCancel,
+          onDeleteConfirm,
+          onPinToggle,
+          onTagsSave,
+          ...extra,
+        }),
+      );
+    },
     // Rerenders with the same route/callbacks but a new switchPrompt — the
     // minimal seam needed to prove a later message change re-triggers the
     // nearest-scroll check, without threading every prop through again.
@@ -372,7 +406,8 @@ describe("RouteListItem", () => {
   });
 
   it("moves focus to the Cancel button when the confirmation opens", () => {
-    renderItem({ isDeletePending: true });
+    const { rerenderWith } = renderItem();
+    rerenderWith({ isDeletePending: true });
 
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
   });
@@ -389,7 +424,8 @@ describe("RouteListItem", () => {
 
   it("pressing Escape while focus is inside the confirmation cancels and returns focus to the Delete button", async () => {
     const user = userEvent.setup();
-    const { route, onDeleteCancel } = renderItem({ isDeletePending: true });
+    const { route, onDeleteCancel, rerenderWith } = renderItem();
+    rerenderWith({ isDeletePending: true });
 
     await user.keyboard("{Escape}");
 
@@ -402,7 +438,8 @@ describe("RouteListItem", () => {
   // while the rest of the Route Library stays operable around this one.
   it("item 119: the delete confirmation is a named, described, non-modal dialog that takes focus and gives it back on Escape", async () => {
     const user = userEvent.setup();
-    const { route, onDeleteCancel } = renderItem({ isDeletePending: true });
+    const { route, onDeleteCancel, rerenderWith } = renderItem();
+    rerenderWith({ isDeletePending: true });
 
     expect(screen.queryByRole("alertdialog")).toBeNull();
     const dialog = screen.getByRole("dialog", { name: "Delete “Evening loop”?" });
@@ -427,23 +464,39 @@ describe("RouteListItem", () => {
     expect(onDeleteConfirm).toHaveBeenCalledWith(route.id);
   });
 
-  it("disables Cancel and Delete route and shows Deleting… while isDeleting is true", () => {
-    renderItem({ isDeletePending: true, isDeleting: true });
+  it.each(["deleting", "committed"] as const)(
+    "disables Cancel and Delete route and shows Deleting… while its own deletion is %s",
+    (phase) => {
+      const route = buildRoute();
+      renderItem({
+        route,
+        isDeletePending: true,
+        isDeleting: true,
+        deletion: { attempt: 1, routeId: route.id, phase },
+      });
 
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Deleting…" })).toBeDisabled();
-  });
+      expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Deleting…" })).toBeDisabled();
+    },
+  );
 
-  it("shows the delete error as an alert without dismissing the confirmation", () => {
+  it("shows a failed deletion's ordinary translated message as an alert without dismissing the confirmation, and names it in the description", () => {
+    const route = buildRoute();
     renderItem({
+      route,
       isDeletePending: true,
-      deleteError: "That route could not be deleted.",
+      deletion: { attempt: 1, routeId: route.id, phase: "failed" },
     });
 
     expect(screen.getByRole("alert")).toHaveTextContent(
       "That route could not be deleted.",
     );
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "Delete “Evening loop”?" });
+    expect(dialog).toHaveAccessibleDescription(
+      "This route will be permanently deleted from this device. This cannot be undone. That route could not be deleted.",
+    );
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Delete route" })).toBeEnabled();
   });
 
   it("clicking Rename while this route's delete confirmation is open cancels the pending delete first, then enters rename mode", async () => {
@@ -2181,17 +2234,32 @@ describe("RouteListItem delete confirmation reveal and focus return (backlog ite
     expect(scrolls(log)).toEqual([]);
   });
 
-  it("also takes focus and reveals when the card mounts with the confirmation already pending, as autoFocus did", () => {
-    stubGeometry({
-      inset: { top: 620, bottom: 820 },
-      actions: { top: 760, bottom: 804 },
-    });
-    const log = captureLog();
+  // Backlog item 124, D-02: before it, the mount ran the opening as
+  // autoFocus had, so a failed deletion's card returning from a search took
+  // focus from the search field. Only a confirmed deletion's confirmation
+  // can now be open when a card mounts.
+  it.each(["deleting", "failed"] as const)(
+    "takes no focus and scrolls nothing when the card mounts with a %s deletion's confirmation already open",
+    (phase) => {
+      stubGeometry({
+        inset: { top: 620, bottom: 820 },
+        actions: { top: 760, bottom: 804 },
+      });
+      const log = captureLog();
+      const route = buildRoute();
 
-    renderItem({ isDeletePending: true, stickyHeaderRef: headerRef() });
+      renderItem({
+        route,
+        isDeletePending: true,
+        isDeleting: phase === "deleting",
+        deletion: { attempt: 1, routeId: route.id, phase },
+        stickyHeaderRef: headerRef(),
+      });
 
-    expect(log).toEqual(["focus:Cancel:noscroll", "scrollBy:60:0:auto"]);
-  });
+      expect(log).toEqual([]);
+      expect(document.body).toHaveFocus();
+    },
+  );
 
   it("does not reveal again on an unrelated re-render, and re-measures on reopening", () => {
     const geometry = stubGeometry({
@@ -2201,9 +2269,8 @@ describe("RouteListItem delete confirmation reveal and focus return (backlog ite
     const log = captureLog();
     const route = buildRoute();
     const stickyHeaderRef = headerRef();
-    const { rerender } = render(
-      buildElement(route, { stickyHeaderRef, isDeletePending: true }),
-    );
+    const { rerender } = render(buildElement(route, { stickyHeaderRef }));
+    rerender(buildElement(route, { stickyHeaderRef, isDeletePending: true }));
     expect(scrolls(log)).toEqual(["scrollBy:60:0:auto"]);
 
     // Unrelated prop changes: a new name from a live-query re-emission, and
@@ -2244,6 +2311,9 @@ describe("RouteListItem delete confirmation reveal and focus return (backlog ite
       const route = buildRoute();
       const stickyHeaderRef = headerRef();
       const { rerender } = render(
+        buildElement(route, { stickyHeaderRef, onDeleteCancel }),
+      );
+      rerender(
         buildElement(route, { stickyHeaderRef, isDeletePending: true, onDeleteCancel }),
       );
       const user = userEvent.setup();
@@ -2332,7 +2402,8 @@ describe("RouteListItem delete confirmation reveal and focus return (backlog ite
     const onDeleteCancel = vi.fn<(id: string) => void>();
     const route = buildRoute();
     const stickyHeaderRef = headerRef();
-    const { rerender } = render(
+    const { rerender } = render(buildElement(route, { stickyHeaderRef, onDeleteCancel }));
+    rerender(
       buildElement(route, { stickyHeaderRef, isDeletePending: true, onDeleteCancel }),
     );
     // Cancel holds focus from opening; the delete then starts. jsdom keeps
@@ -2343,6 +2414,7 @@ describe("RouteListItem delete confirmation reveal and focus return (backlog ite
         stickyHeaderRef,
         isDeletePending: true,
         isDeleting: true,
+        deletion: { attempt: 1, routeId: route.id, phase: "deleting" },
         onDeleteCancel,
       }),
     );
@@ -2354,5 +2426,333 @@ describe("RouteListItem delete confirmation reveal and focus return (backlog ite
 
     expect(onDeleteCancel).not.toHaveBeenCalled();
     expect(log).toEqual([]);
+  });
+
+  // Backlog item 124, D-02: a confirmed deletion's pending and failure
+  // lifecycle on the card that confirmed it. The record itself is App's
+  // (routeDeletion.ts); these drive it by rerendering, as RouteLibrary does.
+  describe("a confirmed deletion (D-02)", () => {
+    const record = (attempt: number, phase: RouteDeletion["phase"]): RouteDeletion => ({
+      attempt,
+      routeId: "route-1",
+      phase,
+    });
+
+    /** Opens the confirmation genuinely (a false-to-true transition), with
+     * an oversized-but-fitting inset whose reveal is 60px, and returns a way
+     * to show any record on it. */
+    function openConfirmation() {
+      stubGeometry({
+        inset: { top: 620, bottom: 820 },
+        actions: { top: 760, bottom: 804 },
+      });
+      const route = buildRoute();
+      const stickyHeaderRef = headerRef();
+      const onDeleteConfirm = vi
+        .fn<(id: string) => number | null>()
+        .mockReturnValueOnce(1)
+        .mockReturnValueOnce(2);
+      const onDeleteCancel = vi.fn<(id: string) => void>();
+      const onCardRemoved =
+        vi.fn<(routeId: string, report: RouteCardRemovalReport) => void>();
+      const base = { stickyHeaderRef, onDeleteConfirm, onDeleteCancel, onCardRemoved };
+      const view = render(buildElement(route, base));
+      view.rerender(buildElement(route, { ...base, isDeletePending: true }));
+      const show = (deletion: RouteDeletion | null, nextRoute: LibraryRoute = route) => {
+        view.rerender(
+          buildElement(nextRoute, {
+            ...base,
+            isDeletePending: true,
+            isDeleting: deletion !== null && deletion.phase !== "failed",
+            deletion,
+          }),
+        );
+      };
+      const confirmButton = () =>
+        screen.getByRole("button", { name: /^(Delete route|Deleting…)$/ });
+      const title = () => screen.getByRole("heading", { name: "Delete “Evening loop”?" });
+      return {
+        view,
+        show,
+        confirmButton,
+        title,
+        onDeleteConfirm,
+        onDeleteCancel,
+        onCardRemoved,
+      };
+    }
+
+    it("parks focus on the confirmation's title without scrolling once the deletion is admitted", () => {
+      const { confirmButton, title } = openConfirmation();
+      const log = captureLog();
+
+      fireEvent.click(confirmButton());
+
+      expect(title()).toHaveFocus();
+      expect(log).toEqual(["focus:Delete “Even:noscroll"]);
+    });
+
+    it("parks nothing and arms nothing when the deletion is refused", () => {
+      const { confirmButton, onDeleteConfirm, show } = openConfirmation();
+      onDeleteConfirm.mockReset();
+      onDeleteConfirm.mockReturnValue(null);
+      const log = captureLog();
+
+      fireEvent.click(confirmButton());
+      show(record(7, "failed"));
+
+      expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+      expect(log).toEqual([]);
+    });
+
+    it("refuses Escape from the parked title while the deletion runs", () => {
+      const { confirmButton, title, show, onDeleteCancel } = openConfirmation();
+      fireEvent.click(confirmButton());
+      show(record(1, "deleting"));
+
+      fireEvent.keyDown(title(), { key: "Escape" });
+
+      expect(onDeleteCancel).not.toHaveBeenCalled();
+      expect(title()).toHaveFocus();
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    it.each(["deleting", "committed"] as const)(
+      "makes every action on the card unavailable while its deletion is %s",
+      (phase) => {
+        const route = buildRoute();
+        const onOpen = vi.fn<(route: PlannedRoute) => void>();
+        const onExport = vi.fn<(route: PlannedRoute) => void>();
+        const onDeleteRequest = vi.fn<(id: string) => void>();
+        const onPinToggle = vi.fn<(route: PlannedRoute) => void>();
+        render(
+          buildElement(route, {
+            onOpen,
+            onExport,
+            onDeleteRequest,
+            onPinToggle,
+            isDeletePending: true,
+            isDeleting: true,
+            deletion: { attempt: 1, routeId: route.id, phase },
+          }),
+        );
+
+        for (const name of [
+          "Evening loop",
+          "Pin Evening loop",
+          "Rename",
+          "Add tags",
+          "Export",
+          "Delete",
+        ]) {
+          const button = screen.getByRole("button", { name });
+          expect(button).toBeDisabled();
+          fireEvent.click(button);
+        }
+        expect(onOpen).not.toHaveBeenCalled();
+        expect(onExport).not.toHaveBeenCalled();
+        expect(onDeleteRequest).not.toHaveBeenCalled();
+        expect(onPinToggle).not.toHaveBeenCalled();
+        expect(screen.queryByLabelText("Route name")).toBeNull();
+        expect(screen.queryByLabelText("Add a tag")).toBeNull();
+      },
+    );
+
+    it("leaves the card usable again once its deletion has failed", () => {
+      const route = buildRoute();
+      render(
+        buildElement(route, {
+          isDeletePending: true,
+          deletion: { attempt: 1, routeId: route.id, phase: "failed" },
+        }),
+      );
+
+      for (const name of [
+        "Evening loop",
+        "Pin Evening loop",
+        "Rename",
+        "Add tags",
+        "Export",
+        "Delete",
+        "Cancel",
+        "Delete route",
+      ]) {
+        expect(screen.getByRole("button", { name })).toBeEnabled();
+      }
+    });
+
+    it("on a failure while the rider waits, focuses Cancel without scrolling and then reveals by the minimum", () => {
+      const { confirmButton, show } = openConfirmation();
+      fireEvent.click(confirmButton());
+      show(record(1, "deleting"));
+      const log = captureLog();
+
+      show(record(1, "failed"));
+
+      expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+      expect(log).toEqual(["focus:Cancel:noscroll", "scrollBy:60:0:auto"]);
+    });
+
+    it("decides a failure batched straight from the open confirmation, with no deleting render between", () => {
+      const { confirmButton, show } = openConfirmation();
+      fireEvent.click(confirmButton());
+      const log = captureLog();
+
+      show(record(1, "failed"));
+
+      expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+      expect(log).toEqual(["focus:Cancel:noscroll", "scrollBy:60:0:auto"]);
+    });
+
+    it("still counts a refused Escape, and a tap on the card's own text, as waiting", () => {
+      const { confirmButton, title, show } = openConfirmation();
+      fireEvent.click(confirmButton());
+      show(record(1, "deleting"));
+      fireEvent.keyDown(title(), { key: "Escape" });
+      const text = screen.getByText(
+        "This route will be permanently deleted from this device. This cannot be undone.",
+      );
+      fireEvent.pointerDown(text);
+      const card = text.closest("li");
+      if (!card) throw new Error("expected the card");
+      card.focus();
+      const log = captureLog();
+
+      show(record(1, "failed"));
+
+      expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+      expect(log).toEqual(["focus:Cancel:noscroll", "scrollBy:60:0:auto"]);
+    });
+
+    it.each([
+      [
+        "a wheel scroll",
+        () => {
+          fireEvent.wheel(window);
+        },
+      ],
+      [
+        "a touch scroll",
+        () => {
+          fireEvent.touchMove(window);
+        },
+      ],
+      [
+        "a tap outside the card",
+        () => {
+          fireEvent.pointerDown(document.body);
+        },
+      ],
+      [
+        "a key other than Escape",
+        () => {
+          fireEvent.keyDown(document.activeElement ?? document.body, { key: "Tab" });
+        },
+      ],
+    ])("leaves focus and the page alone after %s", (_label, moveOn) => {
+      const { confirmButton, title, show } = openConfirmation();
+      fireEvent.click(confirmButton());
+      show(record(1, "deleting"));
+      moveOn();
+      const log = captureLog();
+
+      show(record(1, "failed"));
+
+      expect(title()).toHaveFocus();
+      expect(log).toEqual([]);
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "That route could not be deleted.",
+      );
+    });
+
+    it("never counts focus on <body> as waiting, though the guard is still armed", () => {
+      const { confirmButton, title, show } = openConfirmation();
+      fireEvent.click(confirmButton());
+      show(record(1, "deleting"));
+      title().blur();
+      expect(document.body).toHaveFocus();
+      const log = captureLog();
+
+      show(record(1, "failed"));
+
+      expect(document.body).toHaveFocus();
+      expect(log).toEqual([]);
+    });
+
+    it("starts a retry with a fresh guard: moved on for the first attempt, waiting for the second", () => {
+      const { confirmButton, show, title } = openConfirmation();
+      fireEvent.click(confirmButton());
+      show(record(1, "deleting"));
+      fireEvent.wheel(window);
+      show(record(1, "failed"));
+      expect(title()).toHaveFocus();
+
+      fireEvent.click(confirmButton());
+      expect(title()).toHaveFocus();
+      show(record(2, "deleting"));
+      const log = captureLog();
+      show(record(2, "failed"));
+
+      expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+      expect(log).toEqual(["focus:Cancel:noscroll", "scrollBy:60:0:auto"]);
+    });
+
+    it("decides nothing for a failure it did not confirm", () => {
+      const { show } = openConfirmation();
+      (document.activeElement as HTMLElement | null)?.blur();
+      const log = captureLog();
+
+      show(record(5, "deleting"));
+      show(record(5, "failed"));
+
+      expect(log).toEqual([]);
+    });
+
+    it("reports its removal with focus inside and the guard armed, then detaches the guard", () => {
+      const { confirmButton, show, view, onCardRemoved } = openConfirmation();
+      fireEvent.click(confirmButton());
+      show(record(1, "committed"));
+      const removeListener = vi.spyOn(window, "removeEventListener");
+
+      view.unmount();
+
+      expect(onCardRemoved).toHaveBeenCalledTimes(1);
+      expect(onCardRemoved).toHaveBeenCalledWith("route-1", {
+        focusInside: true,
+        guardArmed: true,
+      });
+      expect(removeListener).toHaveBeenCalledWith(
+        "pointerdown",
+        expect.any(Function),
+        expect.objectContaining({ capture: true }),
+      );
+    });
+
+    it("reports a disarmed guard after a scroll, and focus outside after the rider moved it", () => {
+      const { confirmButton, show, view, onCardRemoved } = openConfirmation();
+      fireEvent.click(confirmButton());
+      show(record(1, "committed"));
+      fireEvent.wheel(window);
+      const elsewhere = document.createElement("button");
+      document.body.appendChild(elsewhere);
+      elsewhere.focus();
+
+      view.unmount();
+
+      expect(onCardRemoved).toHaveBeenCalledWith("route-1", {
+        focusInside: false,
+        guardArmed: false,
+      });
+      elsewhere.remove();
+    });
+
+    it("reports nothing on an ordinary re-render, even with a new route object", () => {
+      const { confirmButton, show, onCardRemoved } = openConfirmation();
+      fireEvent.click(confirmButton());
+      show(record(1, "deleting"), buildRoute({ name: "Evening loop" }));
+      show(record(1, "committed"), buildRoute({ name: "Evening loop" }));
+
+      expect(onCardRemoved).not.toHaveBeenCalled();
+    });
   });
 });

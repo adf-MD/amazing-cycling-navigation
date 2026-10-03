@@ -52,8 +52,23 @@ export async function updateRouteTags(
   await db.routes.update(id, { tags: normalizeRouteTags(tags) });
 }
 
+/** Deletes one route inside an explicit Dexie transaction (backlog item
+ * 124, D-02). Not merely a style choice: for an implicit transaction Dexie
+ * 4.4.5's live-query cache applies the delete optimistically, so the Routes
+ * list dropped the route while the delete was still pending — and after an
+ * abort it never re-ran the index-ordered list query (the mutation names no
+ * `createdAt` part, and the optimistic re-run had already replaced the
+ * cache entry's observed keys), leaving a still-stored route hidden with no
+ * error. Dexie skips optimistic operations for an explicit transaction: the
+ * list keeps the route until the commit, a commit invalidates and re-reads
+ * the overlapping queries, and an abort leaves them untouched. The promise
+ * resolves only after the commit and rejects on an abort.
+ * routesRepository.test.ts's held-transaction tests guard this, and fail
+ * against the implicit form. */
 export async function deleteRoute(id: string): Promise<void> {
-  await db.routes.delete(id);
+  await db.transaction("rw", db.routes, async () => {
+    await db.routes.delete(id);
+  });
 }
 
 /** One global tag lifecycle operation (backlog item 100 stage 4A).

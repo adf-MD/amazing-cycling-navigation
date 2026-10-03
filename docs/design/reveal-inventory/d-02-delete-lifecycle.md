@@ -1,5 +1,7 @@
 # D-02 — Delete route's pending and failure lifecycle: investigation and plan
 
+**Update, 3 October 2026: implemented in `0.4.57`, as item 124's slice 6; not yet accepted on the device.** The rider approved the implementation and chose option A in the [decision below](#decision-for-the-rider), reported 3 October 2026. The delivered behaviour, the seven differences from this report's recommendation and why, the evidence, the baseline, the negative controls and the limitations are recorded once, in [item 124's slice 6 record](../../project/backlog.md#slice-6--delete-route-pending-and-failing-d-02-shipped-0457-3-october-2026); this report is otherwise kept as written, as the investigation's record.
+
 **Status: investigated and planned, 3 October 2026. Not implemented, not accepted.** This is item 124's D-02 investigation and planning stage ([backlog](../../project/backlog.md#item-124)), carried out against `439e578` (`0.4.56`). It establishes what causes each recorded problem and proposes a bounded implementation. No application source, test, dependency, configuration or version changed. The approved policy it serves is decision 4 and decision 5 of the [inventory's decisions](README.md#decisions--d-06-d-02-d-01-and-c-12-2-october-2026). The [review preparation](README.md#d-02--delete-route-fails-1) holds the earlier measurements, which are reproduced below rather than assumed.
 
 ## Contents
@@ -360,6 +362,8 @@ Every failure shows `t("routes.error.delete")`: "That route could not be deleted
 - **(b) The alternative:** a one-line message at the list, naming the route and saying it could not be deleted. It would take no focus and move nothing.
 
 Everything else above follows from the approved policy and the measurements, and needs no decision.
+
+**Decided, reported 3 October 2026: option (a).** The route stays hidden according to the rider's filter, the failure stays with that route's confirmation, and when the route becomes visible again its message and recovery actions are shown without taking focus or scrolling. No list-level message or notification is added. This is implementation approval, not device acceptance; it shipped in `0.4.57`.
 
 ## Test plan
 

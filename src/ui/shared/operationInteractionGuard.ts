@@ -3,13 +3,17 @@
  * item 124). A failure may return focus to the operation's control, and
  * reveal it, only while this is still armed: the rider's own decision is
  * that focus and page position are left alone once they have moved
- * elsewhere. Two callers, each arming one guard per attempt:
+ * elsewhere. Three callers, each arming one guard per attempt:
  *
  * - D-06, Edit copy (RidingScreen.tsx): its area is the Edit copy group —
  *   the button, its hint, its error and its confirmation.
  * - D-01, Clear draft (PlanningScreen.tsx): its area is whichever of the
  *   confirmation and the button's own row is mounted, since the two swap in
  *   place.
+ * - D-02, Delete route (RouteListItem.tsx): its area is the whole route
+ *   card. The card that confirmed holds it, so it goes when that card leaves
+ *   the list; a success reports whether it was still armed, for the focus
+ *   repair's reveal (RouteLibrary.tsx).
  *
  * Armed when an attempt begins, and disarmed by rider input that means
  * they have moved on:

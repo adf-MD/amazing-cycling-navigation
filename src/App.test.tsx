@@ -9,6 +9,8 @@ import { saveProviderKey } from "./storage/providerKeyRepository.ts";
 import * as rideStateRepository from "./storage/rideStateRepository.ts";
 import * as routesRepository from "./storage/routesRepository.ts";
 import { trackWithElevationGpx } from "./test/fixtures/gpx.ts";
+import { holdIdbStore, releaseAllIdbHolds } from "./test/idbHold.ts";
+import { clearErrorLog, getRecentErrors } from "./platform/errorLog.ts";
 
 // Several tests below navigate to Status, mounting the real
 // DiagnosticsScreen, whose inline isMapRenderingSupported() call would
@@ -687,6 +689,156 @@ describe("App — Route Library search restoration across navigation", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Sort by")).toHaveValue("name-asc");
     });
+  });
+});
+
+// Backlog item 124, D-02: App owns the confirmed route deletion, so leaving
+// Routes while it runs never brings the rider back to an ordinary, fully
+// enabled card, and a failure that lands while they are away is still
+// shown beside its route on return — without taking focus. Real holds on
+// the app's IndexedDB stores (src/test/idbHold.ts) keep it pending; each
+// return to Routes is well inside Dexie's three-second cache window, after
+// which a real read would wait behind the hold.
+describe("App — a confirmed route deletion across navigation (item 124, D-02)", () => {
+  beforeEach(async () => {
+    await db.routes.clear();
+    await db.rideState.clear();
+    await db.routeLibraryPreferences.clear();
+    clearErrorLog();
+  });
+
+  afterEach(async () => {
+    await releaseAllIdbHolds();
+    vi.restoreAllMocks();
+    clearErrorLog();
+  });
+
+  async function importTwoRoutes(user: ReturnType<typeof userEvent.setup>) {
+    await importFixture(user, "Route A.gpx");
+    await importFixture(user, "Route B.gpx");
+    const routes = await db.routes.toArray();
+    const routeA = routes.find((route) => route.name === "Route A");
+    const routeB = routes.find((route) => route.name === "Route B");
+    if (!routeA || !routeB) throw new Error("expected Route A and Route B");
+    return { routeA, routeB };
+  }
+
+  async function confirmHeldDelete(
+    user: ReturnType<typeof userEvent.setup>,
+    routeId: string,
+    options: { captureDeletes?: boolean } = {},
+  ) {
+    await user.click(
+      within(getListItemByRouteId(routeId)).getByRole("button", { name: "Delete" }),
+    );
+    const hold = await holdIdbStore("routes", options);
+    await user.click(screen.getByRole("button", { name: "Delete route" }));
+    return hold;
+  }
+
+  it("shows a deletion still running as Deleting…, with its actions unavailable and no focus taken, after leaving Routes and returning", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    const { routeA } = await importTwoRoutes(user);
+    const hold = await confirmHeldDelete(user, routeA.id);
+
+    await user.click(navButton("Settings"));
+    expect(screen.queryByRole("button", { name: "Route A" })).toBeNull();
+    await user.click(navButton("Routes"));
+
+    const card = await waitFor(() => getListItemByRouteId(routeA.id));
+    expect(within(card).getByRole("button", { name: "Deleting…" })).toBeDisabled();
+    expect(within(card).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(within(card).getByRole("button", { name: "Route A" })).toBeDisabled();
+    expect(within(card).getByRole("button", { name: "Rename" })).toBeDisabled();
+    expect(navButton("Routes")).toHaveFocus();
+
+    await hold.release();
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Route A" })).toBeNull();
+    });
+    expect(navButton("Routes")).toHaveFocus();
+  });
+
+  it("shows a failure that landed while the rider was away beside its route on return, without taking focus, and logs it", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    const { routeA } = await importTwoRoutes(user);
+    const hold = await confirmHeldDelete(user, routeA.id, { captureDeletes: true });
+
+    await user.click(navButton("Settings"));
+    await hold.release({ abortCapturedDeletes: true });
+    await waitFor(() => {
+      expect(getRecentErrors().map((entry) => entry.context)).toContain("route-delete");
+    });
+    await user.click(navButton("Routes"));
+
+    const card = await waitFor(() => getListItemByRouteId(routeA.id));
+    expect(within(card).getByRole("alert")).toHaveTextContent(
+      "That route could not be deleted.",
+    );
+    expect(within(card).getByRole("button", { name: "Delete route" })).toBeEnabled();
+    expect(within(card).getByRole("button", { name: "Cancel" })).toBeEnabled();
+    expect(navButton("Routes")).toHaveFocus();
+    expect(await db.routes.count()).toBe(2);
+  });
+
+  it("never lets a route card's switch prompt clear a running deletion, but lets a later one supersede its failure", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    const { routeA, routeB } = await importTwoRoutes(user);
+    // A paused free-roam session: Route B's prompt then needs no route read,
+    // which would otherwise wait behind the held deletion.
+    await setActiveRideState({
+      id: "active",
+      kind: "free-roam",
+      startedAt: "2026-01-01T08:00:00.000Z",
+      lastFix: null,
+    });
+    const hold = await confirmHeldDelete(user, routeA.id, { captureDeletes: true });
+
+    await user.click(screen.getByRole("button", { name: "Route B" }));
+    await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
+    expect(
+      within(getListItemByRouteId(routeA.id)).getByRole("button", { name: "Deleting…" }),
+    ).toBeDisabled();
+
+    await hold.release({ abortCapturedDeletes: true });
+    await waitFor(() => {
+      expect(
+        within(getListItemByRouteId(routeA.id)).getByRole("alert"),
+      ).toBeInTheDocument();
+    });
+    await user.click(
+      within(getListItemByRouteId(routeB.id)).getByRole("button", { name: "Cancel" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Route B" }));
+    await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
+    expect(within(getListItemByRouteId(routeA.id)).queryByRole("dialog")).toBeNull();
+  });
+
+  it("never opens a route whose deletion started after its name was tapped", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    const { routeA } = await importTwoRoutes(user);
+    // Holds the switch guard's ride-state read, so the tap's transition is
+    // still unresolved when the deletion starts.
+    const rideStateHold = await holdIdbStore("rideState");
+    await user.click(screen.getByRole("button", { name: "Route A" }));
+    const routesHold = await confirmHeldDelete(user, routeA.id);
+
+    await rideStateHold.release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByRole("heading", { level: 1, name: "Routes" })).toBeInTheDocument();
+    expect(
+      within(getListItemByRouteId(routeA.id)).getByRole("button", { name: "Deleting…" }),
+    ).toBeDisabled();
+
+    await routesHold.release();
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Route A" })).toBeNull();
+    });
+    expect(screen.getByRole("heading", { level: 1, name: "Routes" })).toBeInTheDocument();
   });
 });
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouteLibrary, type PendingRouteSwitch } from "./RouteLibrary.tsx";
 import type { PlannedRoute } from "../../domain/types.ts";
@@ -8,6 +8,7 @@ import { db } from "../../storage/db.ts";
 import * as routeLibraryPreferencesRepository from "../../storage/routeLibraryPreferencesRepository.ts";
 import * as routesRepository from "../../storage/routesRepository.ts";
 import { multiTrackGpx, trackWithElevationGpx } from "../../test/fixtures/gpx.ts";
+import { holdIdbStore, releaseAllIdbHolds, type IdbHold } from "../../test/idbHold.ts";
 
 function getVisibleRouteNames(): string[] {
   return Array.from(document.querySelectorAll(".route-card-title")).map(
@@ -83,7 +84,8 @@ beforeEach(async () => {
   await db.routeLibraryPreferences.clear();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await releaseAllIdbHolds();
   vi.restoreAllMocks();
 });
 
@@ -956,9 +958,14 @@ describe("RouteLibrary", () => {
       await user.click(screen.getByRole("button", { name: "Delete" }));
       await user.click(screen.getByRole("button", { name: "Delete route" }));
 
+      // Backlog item 124, D-02: the ordinary translated message, never the
+      // storage error's own text, which goes only to the redacted log.
       await waitFor(() => {
-        expect(screen.getByRole("alert")).toHaveTextContent("Delete failed.");
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "That route could not be deleted.",
+        );
       });
+      expect(screen.queryByText("Delete failed.")).toBeNull();
       expect(screen.getByRole("dialog")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Evening Ride" })).toBeInTheDocument();
 
@@ -1077,20 +1084,17 @@ describe("RouteLibrary", () => {
       expect(screen.getByRole("dialog")).toBeInTheDocument();
     });
 
+    // Backlog item 124, D-02: these two run the real deletion, held behind
+    // a real IndexedDB transaction (src/test/idbHold.ts), rather than a
+    // mocked deleteRoute — a mock bypassed the very storage path whose
+    // optimistic live-query removal D-02 corrected.
     it("leaves a deletion already running alone while a search hides it: it completes, and is never shown as cancelled", async () => {
       const user = userEvent.setup();
-      let releaseDelete: () => void = () => undefined;
-      const deleteHeld = new Promise<void>((resolve) => {
-        releaseDelete = resolve;
-      });
-      vi.spyOn(routesRepository, "deleteRoute").mockImplementation(async (id: string) => {
-        await deleteHeld;
-        await db.routes.delete(id);
-      });
       await importTwo(user);
       const evening = eveningItem();
       if (!evening) throw new Error("expected Evening Ride");
       await user.click(within(evening).getByRole("button", { name: "Delete" }));
+      const hold = await holdIdbStore("routes");
       await user.click(screen.getByRole("button", { name: "Delete route" }));
       expect(screen.getByRole("button", { name: "Deleting…" })).toBeDisabled();
 
@@ -1099,49 +1103,53 @@ describe("RouteLibrary", () => {
       await user.type(search, "Alp");
       expect(eveningItem()).toBeNull();
       // Brought back while still running: the confirmation was not
-      // dismissed, and still shows the deletion in progress.
+      // dismissed, and still shows the deletion in progress — without
+      // taking focus from the search field.
       await user.clear(search);
       expect(eveningItem()).not.toBeNull();
       expect(screen.getByRole("button", { name: "Deleting…" })).toBeDisabled();
+      expect(search).toHaveFocus();
 
       await user.type(search, "Alp");
-      releaseDelete();
+      await hold.release();
       await waitFor(async () => {
         expect(await db.routes.count()).toBe(1);
       });
+      // A filtered success leaves focus in the field being typed into.
+      expect(search).toHaveFocus();
       await user.clear(search);
       await waitFor(() => {
         expect(eveningItem()).toBeNull();
       });
       expect(screen.queryByRole("dialog")).toBeNull();
+      expect(search).toHaveFocus();
     });
 
-    it("keeps a confirmed deletion's failure, and its confirmation, when it fails while a search hides the route", async () => {
+    it("keeps a confirmed deletion's failure, and its confirmation, when it fails while a search hides the route — shown on return without taking focus (option A)", async () => {
       const user = userEvent.setup();
-      let rejectDelete: (error: Error) => void = () => undefined;
-      const deleteHeld = new Promise<void>((_resolve, reject) => {
-        rejectDelete = reject;
-      });
-      vi.spyOn(routesRepository, "deleteRoute").mockImplementation(async () => {
-        await deleteHeld;
-      });
       await importTwo(user);
       const evening = eveningItem();
       if (!evening) throw new Error("expected Evening Ride");
       await user.click(within(evening).getByRole("button", { name: "Delete" }));
+      const hold = await holdIdbStore("routes", { captureDeletes: true });
       await user.click(screen.getByRole("button", { name: "Delete route" }));
 
       const search = screen.getByLabelText("Search routes");
       await user.click(search);
       await user.type(search, "Alp");
       expect(eveningItem()).toBeNull();
-      rejectDelete(new Error("Delete failed."));
-      await waitFor(() => {
-        expect(screen.queryByRole("button", { name: "Deleting…" })).toBeNull();
+      await hold.release({ abortCapturedDeletes: true });
+      // Hidden by the rider's own filter, the failure adds nothing to the
+      // list: no message, no focus move.
+      await waitFor(async () => {
+        expect(await db.routes.count()).toBe(2);
       });
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(eveningItem()).toBeNull();
+      expect(search).toHaveFocus();
 
-      // The failure is not dismissed by the filter: the route returns with
-      // its confirmation and visible error, as D-02 presents it today.
+      // Shown again, it brings back its confirmation and the translated
+      // failure, and leaves focus in the search field.
       await user.clear(search);
       await waitFor(() => {
         expect(eveningItem()).not.toBeNull();
@@ -1149,8 +1157,13 @@ describe("RouteLibrary", () => {
       const returned = eveningItem();
       if (!returned) throw new Error("expected Evening Ride back");
       expect(within(returned).getByRole("dialog")).toBeInTheDocument();
-      expect(within(returned).getByRole("alert")).toHaveTextContent("Delete failed.");
-      expect(await db.routes.count()).toBe(2);
+      expect(within(returned).getByRole("alert")).toHaveTextContent(
+        "That route could not be deleted.",
+      );
+      expect(
+        within(returned).getByRole("button", { name: "Delete route" }),
+      ).toBeEnabled();
+      expect(search).toHaveFocus();
     });
 
     it("keeps a failed confirmed deletion's error when a search later hides and returns the route", async () => {
@@ -1164,7 +1177,9 @@ describe("RouteLibrary", () => {
       await user.click(within(evening).getByRole("button", { name: "Delete" }));
       await user.click(screen.getByRole("button", { name: "Delete route" }));
       await waitFor(() => {
-        expect(screen.getByRole("alert")).toHaveTextContent("Delete failed.");
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "That route could not be deleted.",
+        );
       });
 
       const search = screen.getByLabelText("Search routes");
@@ -1176,7 +1191,333 @@ describe("RouteLibrary", () => {
       const returned = eveningItem();
       if (!returned) throw new Error("expected Evening Ride back");
       expect(within(returned).getByRole("dialog")).toBeInTheDocument();
-      expect(within(returned).getByRole("alert")).toHaveTextContent("Delete failed.");
+      expect(within(returned).getByRole("alert")).toHaveTextContent(
+        "That route could not be deleted.",
+      );
+      expect(search).toHaveFocus();
+    });
+  });
+
+  // Backlog item 124, D-02: a confirmed deletion's pending, committed and
+  // failed states in the Routes list, run against the real repository —
+  // held behind a real IndexedDB transaction where a pending state matters
+  // (src/test/idbHold.ts). App's ownership across navigation is App.test's.
+  describe("a confirmed deletion's lifecycle (item 124, D-02)", () => {
+    async function importThree(user: ReturnType<typeof userEvent.setup>) {
+      render(<RouteLibrary onOpenRoute={onOpenRoute} />);
+      await importFixture(user, "Alpine Climb.gpx");
+      await importFixture(user, "Evening Ride.gpx");
+      await importFixture(user, "Zebra Loop.gpx");
+    }
+
+    let onOpenRoute = vi.fn<(route: PlannedRoute) => void>();
+    beforeEach(() => {
+      onOpenRoute = vi.fn<(route: PlannedRoute) => void>();
+    });
+
+    function card(name: string): HTMLElement {
+      const item = screen.getByRole("button", { name }).closest("li");
+      if (!item) throw new Error(`expected the ${name} card`);
+      return item;
+    }
+
+    async function confirmDelete(
+      user: ReturnType<typeof userEvent.setup>,
+      name: string,
+      beforeConfirm?: () => void,
+    ): Promise<void> {
+      await user.click(within(card(name)).getByRole("button", { name: "Delete" }));
+      beforeConfirm?.();
+      await user.click(screen.getByRole("button", { name: "Delete route" }));
+    }
+
+    /** Confirms the deletion behind a real hold on the routes store, taken
+     * once the list has loaded and the confirmation is open. */
+    async function confirmHeldDelete(
+      user: ReturnType<typeof userEvent.setup>,
+      name: string,
+      options: { captureDeletes?: boolean } = {},
+    ): Promise<IdbHold> {
+      await user.click(within(card(name)).getByRole("button", { name: "Delete" }));
+      const hold = await holdIdbStore("routes", options);
+      await user.click(screen.getByRole("button", { name: "Delete route" }));
+      return hold;
+    }
+
+    it("keeps the route listed as Deleting… while its deletion is pending, with every conflicting action refused, then removes it once committed", async () => {
+      const user = userEvent.setup();
+      await importThree(user);
+      const hold = await confirmHeldDelete(user, "Evening Ride");
+
+      const evening = card("Evening Ride");
+      expect(within(evening).getByRole("button", { name: "Deleting…" })).toBeDisabled();
+      expect(within(evening).getByRole("button", { name: "Cancel" })).toBeDisabled();
+      expect(
+        within(evening).getByRole("heading", { name: "Delete “Evening Ride”?" }),
+      ).toHaveFocus();
+      for (const name of ["Evening Ride", "Rename", "Add tags", "Export", "Delete"]) {
+        fireEvent.click(within(evening).getByRole("button", { name }));
+      }
+      expect(onOpenRoute).not.toHaveBeenCalled();
+      expect(screen.queryByLabelText("Route name")).toBeNull();
+      // Another card's Delete opens nothing while a deletion runs.
+      await user.click(
+        within(card("Alpine Climb")).getByRole("button", { name: "Delete" }),
+      );
+      expect(screen.getAllByRole("dialog")).toHaveLength(1);
+      // Every pin is disabled, as before D-02.
+      expect(
+        within(card("Alpine Climb")).getByRole("button", { name: "Pin Alpine Climb" }),
+      ).toBeDisabled();
+
+      await hold.release();
+      await waitFor(() => {
+        expect(screen.queryByRole("button", { name: "Evening Ride" })).toBeNull();
+      });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(
+        within(card("Alpine Climb")).getByRole("button", { name: "Pin Alpine Climb" }),
+      ).toBeEnabled();
+    });
+
+    it("starts only one deletion for two presses landing in the same batch", async () => {
+      const user = userEvent.setup();
+      const deleteSpy = vi.spyOn(routesRepository, "deleteRoute");
+      await importThree(user);
+      await user.click(
+        within(card("Evening Ride")).getByRole("button", { name: "Delete" }),
+      );
+      const confirm = screen.getByRole("button", { name: "Delete route" });
+
+      act(() => {
+        confirm.click();
+        confirm.click();
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByRole("button", { name: "Evening Ride" })).toBeNull();
+      });
+      expect(deleteSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps Deleting… after the commit until the live list itself no longer has the route", async () => {
+      const user = userEvent.setup();
+      await importThree(user);
+      // Gates the list's re-read after the commit: a hold can delay only
+      // the commit itself, never the window between it and the re-read.
+      const originalListRoutes = routesRepository.listRoutes;
+      let gate: Promise<void> | null = null;
+      let openGate: () => void = () => undefined;
+      vi.spyOn(routesRepository, "listRoutes").mockImplementation(async () => {
+        const result = await originalListRoutes();
+        if (gate) await gate;
+        return result;
+      });
+      gate = new Promise<void>((resolve) => {
+        openGate = resolve;
+      });
+
+      await confirmDelete(user, "Evening Ride");
+      await waitFor(async () => {
+        expect(await db.routes.count()).toBe(2);
+      });
+      // Committed, and the list has not re-read yet: still the disabled
+      // Deleting… card, never an ordinary one.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const evening = card("Evening Ride");
+      expect(within(evening).getByRole("button", { name: "Deleting…" })).toBeDisabled();
+      expect(within(evening).getByRole("button", { name: "Rename" })).toBeDisabled();
+
+      openGate();
+      gate = null;
+      await waitFor(() => {
+        expect(screen.queryByRole("button", { name: "Evening Ride" })).toBeNull();
+      });
+    });
+
+    it("shows the translated failure with the route still listed when a pending deletion aborts", async () => {
+      const user = userEvent.setup();
+      await importThree(user);
+      const hold = await confirmHeldDelete(user, "Evening Ride", {
+        captureDeletes: true,
+      });
+      expect(screen.getByRole("button", { name: "Deleting…" })).toBeDisabled();
+
+      await hold.release({ abortCapturedDeletes: true });
+
+      const evening = card("Evening Ride");
+      await waitFor(() => {
+        expect(within(evening).getByRole("alert")).toHaveTextContent(
+          "That route could not be deleted.",
+        );
+      });
+      expect(within(evening).getByRole("button", { name: "Delete route" })).toBeEnabled();
+      // Still waiting at the card, so Cancel takes focus.
+      expect(within(evening).getByRole("button", { name: "Cancel" })).toHaveFocus();
+      expect(await db.routes.count()).toBe(3);
+    });
+
+    it("leaves focus where the rider moved it, in Search, when the deletion then succeeds", async () => {
+      const user = userEvent.setup();
+      await importThree(user);
+      const hold = await confirmHeldDelete(user, "Evening Ride");
+      const search = screen.getByLabelText("Search routes");
+      await user.click(search);
+
+      await hold.release();
+      await waitFor(() => {
+        expect(screen.queryByRole("button", { name: "Evening Ride" })).toBeNull();
+      });
+      expect(search).toHaveFocus();
+    });
+
+    it("never takes a tap on blank space, which leaves focus on <body>, as focus to repair", async () => {
+      const user = userEvent.setup();
+      await importThree(user);
+      const hold = await confirmHeldDelete(user, "Evening Ride");
+      await user.click(document.body);
+      expect(document.body).toHaveFocus();
+
+      await hold.release();
+      await waitFor(() => {
+        expect(screen.queryByRole("button", { name: "Evening Ride" })).toBeNull();
+      });
+      expect(document.body).toHaveFocus();
+    });
+
+    describe("the success focus repair's reveal", () => {
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+      afterEach(() => {
+        Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+      });
+
+      /** Puts every route name below jsdom's 768px viewport, so a reveal of
+       * the neighbour's name must scroll; everything else has no box. */
+      function stubNamesBelowTheViewport() {
+        Element.prototype.getBoundingClientRect = function (this: Element) {
+          const box = this.classList.contains("route-card-title")
+            ? { top: 800, bottom: 844 }
+            : { top: 0, bottom: 0 };
+          return {
+            ...box,
+            left: 0,
+            right: 358,
+            width: 358,
+            height: box.bottom - box.top,
+            x: 0,
+            y: box.top,
+            toJSON: () => "",
+          };
+        };
+      }
+
+      it("moves focus without scrolling to the neighbour's name, then reveals it by the minimum while the rider waited", async () => {
+        const user = userEvent.setup();
+        await importThree(user);
+        const scrollBy = vi.spyOn(window, "scrollBy");
+        const focusSpy = vi.spyOn(HTMLElement.prototype, "focus");
+        await confirmDelete(user, "Evening Ride", stubNamesBelowTheViewport);
+
+        await waitFor(() => {
+          expect(screen.queryByRole("button", { name: "Evening Ride" })).toBeNull();
+        });
+        const neighbour = screen.getByRole("button", { name: "Alpine Climb" });
+        expect(neighbour).toHaveFocus();
+        expect(focusSpy).toHaveBeenLastCalledWith({ preventScroll: true });
+        expect(scrollBy).toHaveBeenCalledWith({ top: 84, left: 0, behavior: "auto" });
+      });
+
+      it("repairs focus but keeps the page where it is when the rider scrolled away while waiting on the title", async () => {
+        const user = userEvent.setup();
+        await importThree(user);
+        const hold = await confirmHeldDelete(user, "Evening Ride");
+        fireEvent.wheel(window);
+        stubNamesBelowTheViewport();
+        const scrollBy = vi.spyOn(window, "scrollBy");
+
+        await hold.release();
+        await waitFor(() => {
+          expect(screen.queryByRole("button", { name: "Evening Ride" })).toBeNull();
+        });
+        expect(screen.getByRole("button", { name: "Alpine Climb" })).toHaveFocus();
+        expect(scrollBy).not.toHaveBeenCalled();
+      });
+    });
+
+    it("lets a pin marker yield to a failure that returns focus to the open confirmation", async () => {
+      const user = userEvent.setup();
+      await importThree(user);
+      let resolvePinWrite: () => void = () => undefined;
+      const pinWriteHeld = new Promise<void>((resolve) => {
+        resolvePinWrite = resolve;
+      });
+      vi.spyOn(routesRepository, "pinRoute").mockImplementation(async () => {
+        await pinWriteHeld;
+      });
+      await user.click(
+        within(card("Alpine Climb")).getByRole("button", { name: "Pin Alpine Climb" }),
+      );
+      const hold = await confirmHeldDelete(user, "Evening Ride", {
+        captureDeletes: true,
+      });
+      // The pin lands while the deletion keeps every pin disabled.
+      resolvePinWrite();
+      await waitFor(() => {
+        expect(
+          within(card("Alpine Climb")).getByRole("button", { name: "Pin Alpine Climb" }),
+        ).toBeDisabled();
+      });
+
+      await hold.release({ abortCapturedDeletes: true });
+
+      const evening = card("Evening Ride");
+      await waitFor(() => {
+        expect(within(evening).getByRole("alert")).toBeInTheDocument();
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(within(evening).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    });
+
+    it.each([
+      [
+        "Cancel",
+        (evening: HTMLElement) => within(evening).getByRole("button", { name: "Cancel" }),
+      ],
+      [
+        "Rename",
+        (evening: HTMLElement) => within(evening).getByRole("button", { name: "Rename" }),
+      ],
+      [
+        "Add tags",
+        (evening: HTMLElement) =>
+          within(evening).getByRole("button", { name: "Add tags" }),
+      ],
+      [
+        "its pin",
+        (evening: HTMLElement) =>
+          within(evening).getByRole("button", { name: "Pin Evening Ride" }),
+      ],
+      [
+        "another card's Delete",
+        () => within(card("Alpine Climb")).getByRole("button", { name: "Delete" }),
+      ],
+    ])("closes a failed deletion's confirmation through %s", async (_label, control) => {
+      const user = userEvent.setup();
+      vi.spyOn(routesRepository, "deleteRoute").mockRejectedValueOnce(
+        new Error("Delete failed."),
+      );
+      await importThree(user);
+      await confirmDelete(user, "Evening Ride");
+      const evening = card("Evening Ride");
+      await waitFor(() => {
+        expect(within(evening).getByRole("alert")).toBeInTheDocument();
+      });
+
+      await user.click(control(evening));
+
+      expect(within(evening).queryByRole("dialog")).toBeNull();
+      expect(screen.queryByText("That route could not be deleted.")).toBeNull();
     });
   });
 

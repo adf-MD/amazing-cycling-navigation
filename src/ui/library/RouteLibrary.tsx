@@ -16,6 +16,7 @@ import {
   tagsEqualByIdentity,
 } from "../../domain/routeTags.ts";
 import { prefersReducedMotion } from "../../platform/environmentContext.ts";
+import { applyConfirmationReveal } from "../shared/confirmationRevealScroll.ts";
 import { runWhenViewportSettled } from "../shared/viewportSettle.ts";
 import { applyTopRevealScroll } from "./routeCardTopReveal.ts";
 import { isCardAlreadyFullyVisible } from "./routeSwitchCardVisibility.ts";
@@ -56,7 +57,6 @@ import {
 } from "../../storage/routeLibraryPreferencesRepository.ts";
 import {
   applyRouteTagLifecycle,
-  deleteRoute,
   listRoutes,
   pinRoute,
   renameRoute,
@@ -75,7 +75,13 @@ import {
 } from "./gpxMessages.ts";
 import { computeFocusRouteIdAfterDelete } from "./routeDeleteFocus.ts";
 import { isPinnedRoute, selectRouteLibraryGroups } from "./routeLibraryView.ts";
-import { RouteListItem, type RouteSwitchPrompt } from "./RouteListItem.tsx";
+import {
+  RouteListItem,
+  type RouteCardRemovalReport,
+  type RouteSwitchPrompt,
+} from "./RouteListItem.tsx";
+import { isRouteDeletionBusy } from "./routeDeletion.ts";
+import { useRouteDeletion, type RouteDeletionController } from "./useRouteDeletion.ts";
 
 /** The inline switch-guard prompt (backlog item 73 follow-up), owned and
  * fully computed by App.tsx — this is the single, complete, discriminated
@@ -133,6 +139,14 @@ export interface RouteLibraryProps {
    * header's live rendered height when deciding whether its route-switch
    * guard prompt needs to scroll into view (backlog item 95). */
   stickyHeaderRef?: RefObject<HTMLElement | null>;
+  /** The confirmed route deletion's owner (backlog item 124, D-02). App
+   * owns it, so a deletion that is still running — or has just failed —
+   * survives this screen unmounting when the rider leaves Routes, and is
+   * shown on its card again on return. Optional at this outer level only,
+   * like pendingRouteSwitch, so a RouteLibrary rendered on its own (its
+   * component tests) owns one itself instead; production always passes
+   * App's. */
+  routeDeletion?: RouteDeletionController;
 }
 
 export function RouteLibrary({
@@ -143,6 +157,7 @@ export function RouteLibrary({
   clock = systemClock,
   pendingRouteSwitch = null,
   stickyHeaderRef,
+  routeDeletion: routeDeletionProp,
 }: RouteLibraryProps) {
   const translator = useTranslate();
   const { t } = translator;
@@ -151,6 +166,11 @@ export function RouteLibrary({
   const preferencesQuery = useCallback(() => getRouteLibraryPreferences(), []);
   const preferences = useLiveQuery(preferencesQuery);
   const sortOrder = preferences?.sortOrder ?? DEFAULT_ROUTE_LIBRARY_SORT_ORDER;
+  // Always called, as hooks must be; idle and effect-free unless used.
+  const ownRouteDeletion = useRouteDeletion();
+  const routeDeletion = routeDeletionProp ?? ownRouteDeletion;
+  const deletion = routeDeletion.deletion;
+  const isDeletionBusy = isRouteDeletionBusy(deletion);
 
   const [searchQuery, setSearchQuery] = useState("");
   // Backlog item 100 stage 3: selected tag-filter identity keys
@@ -228,9 +248,9 @@ export function RouteLibrary({
   const tagFilterCountIdPrefix = useId();
   const tagManagerPanelId = useId();
   const tagFilterDisclosureRef = useRef<HTMLButtonElement>(null);
+  // An UNCONFIRMED delete confirmation only (backlog item 124, D-02): once
+  // confirmed, the deletion is routeDeletion's, which App owns.
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [notices, setNotices] = useState<GpxImportNotice[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -452,7 +472,7 @@ export function RouteLibrary({
   // browser has already defaulted focus to <body> on the row's removal,
   // so a document.activeElement check can't tell a rename-caused
   // disappearance apart from a delete-caused one. The stillExists guard
-  // defers to handleDeleteConfirm's own focus handling if the same route
+  // defers to the deletion's own focus repair (below) if the same route
   // was deleted before this rename's write round-tripped. Accepted, narrow
   // gap: renaming a second route before the first rename's write lands
   // overwrites this marker, so the first route's stranding goes
@@ -564,18 +584,25 @@ export function RouteLibrary({
   // `pinPendingIds` reflects, and once that unrelated delete's own
   // `isDeleting → false` transition later landed with no accompanying
   // `groups`/`pinPendingIds` change, this effect never re-ran and the
-  // marker was stranded permanently. `isDeleting` is now a third
-  // dependency, read the same indirect way as `pinPendingIds` — only via
-  // `button.disabled`, never directly in the body — so the marker
-  // retries on whichever of all three updates lands last.
+  // marker was stranded permanently. The deletion's busy state is now a
+  // third dependency (`isDeletionBusy` since backlog item 124's D-02), read
+  // the same indirect way as `pinPendingIds` — only via `button.disabled`,
+  // never directly in the body — so the marker retries on whichever of all
+  // three updates lands last.
+  // D-02 also lets a failed deletion return focus to its confirmation's
+  // Cancel when the rider is still waiting there, in a layout effect that
+  // runs before this one. A marker still pending at that moment yields
+  // rather than taking focus out of the open confirmation the rider is
+  // using.
   useEffect(() => {
     const targetId = pendingPinFocusIdRef.current;
     if (!targetId) return;
     const button = pinButtonRefs.current.get(targetId);
     if (!button || button.disabled) return;
-    button.focus();
     pendingPinFocusIdRef.current = null;
-  }, [groups, pinPendingIds, isDeleting]);
+    if (document.activeElement?.closest(".route-delete-confirm")) return;
+    button.focus();
+  }, [groups, pinPendingIds, isDeletionBusy]);
 
   // Cross-card coordination for backlog item 73 follow-up's inline switch
   // prompt, owned here because pendingDeleteId is owned here — a per-card
@@ -593,9 +620,11 @@ export function RouteLibrary({
   // directly in an effect body here would also cost an extra render pass.
   if (pendingRouteSwitch !== previousPendingRouteSwitch) {
     setPreviousPendingRouteSwitch(pendingRouteSwitch);
+    // Only the unconfirmed confirmation is this file's to clear. A failed
+    // confirmed deletion is cleared by App as it sets a route card's prompt;
+    // a running or committed one is never cleared by a prompt (D-02).
     if (pendingRouteSwitch && pendingDeleteId !== null) {
       setPendingDeleteId(null);
-      setDeleteError(null);
     }
   }
 
@@ -611,19 +640,17 @@ export function RouteLibrary({
   // still pending, the card never sees a pending-to-closed transition, and
   // nothing returns focus or scrolls — focus stays on the search field or
   // chip being used. Sorting and pinning only reorder viewRoutes, so they
-  // never dismiss. The guards keep everything else exactly as it was:
-  // - `routes !== undefined`: loading never clears anything (item 119's
-  //   own lesson for the switch prompt below);
-  // - `!isDeleting`: a deletion already running continues normally —
-  //   hiding its card must not pretend to cancel the storage operation;
-  // - `deleteError === null`: only a confirmed deletion's failure sets it
-  //   (and opening Delete clears it), so a failed confirmed deletion keeps
-  //   its confirmation and visible error, hidden or not — the deferred D-02
-  //   failure presentation is untouched.
+  // never dismiss. Loading never clears anything (`routes !== undefined`,
+  // item 119's own lesson for the switch prompt below).
+  //
+  // Since D-02, pendingDeleteId is the unconfirmed confirmation alone, so
+  // this needs no further guard: a confirmed deletion — running, committed
+  // or failed — is routeDeletion's, untouched here. Hiding a running one's
+  // card does not pretend to cancel the storage operation, and a failed one
+  // keeps its confirmation and message for when its route is shown again
+  // (the rider's option A, 3 October 2026).
   const isUnconfirmedDeleteHidden =
     pendingDeleteId !== null &&
-    !isDeleting &&
-    deleteError === null &&
     routes !== undefined &&
     !viewRoutes.some((route) => route.id === pendingDeleteId);
   if (isUnconfirmedDeleteHidden) {
@@ -856,7 +883,7 @@ export function RouteLibrary({
       setTagManagerHint(t("routes.busy.savingTags"));
       return;
     }
-    if (isDeleting) {
+    if (isDeletionBusy) {
       setTagManagerHint(t("routes.busy.deleting"));
       return;
     }
@@ -869,7 +896,9 @@ export function RouteLibrary({
     }
     if (pendingDeleteId !== null) {
       setPendingDeleteId(null);
-      setDeleteError(null);
+    }
+    if (deletion?.phase === "failed") {
+      routeDeletion.dismiss(deletion.attempt);
     }
     setTagManagerHint(null);
     setTagLifecycleStatus(null);
@@ -1227,45 +1256,135 @@ export function RouteLibrary({
     setIsTagFilterOpen(true);
   };
 
+  // A new Delete on any card replaces a failed deletion's confirmation, as
+  // it replaced its error before D-02; a running one refuses it.
   const handleDeleteRequest = (id: string) => {
-    if (isDeleting) return;
+    if (isDeletionBusy) return;
     if (pendingRouteSwitch) {
       // Busy (clearing/returning): don't interrupt an in-flight switch
       // action — let it settle rather than racing a cancel against it.
       if (pendingRouteSwitch.busy) return;
       pendingRouteSwitch.onCancel();
     }
+    if (deletion?.phase === "failed") {
+      routeDeletion.dismiss(deletion.attempt);
+    }
     setPendingDeleteId(id);
-    setDeleteError(null);
   };
 
+  // Every way a card closes its own confirmation comes through here —
+  // Cancel, Escape, and opening Rename, the tag editor or the pin on that
+  // card — so this closes a failed deletion's confirmation as well as an
+  // unconfirmed one. A running or committed deletion refuses (D-02).
   const handleDeleteCancel = (id: string) => {
-    if (isDeleting || id !== pendingDeleteId) return;
+    if (isDeletionBusy) return;
+    if (deletion?.phase === "failed" && deletion.routeId === id) {
+      routeDeletion.dismiss(deletion.attempt);
+      return;
+    }
+    if (id !== pendingDeleteId) return;
     setPendingDeleteId(null);
-    setDeleteError(null);
   };
 
-  const handleDeleteConfirm = (id: string) => {
-    if (isDeleting) return;
-    const focusTargetId = computeFocusRouteIdAfterDelete(viewRoutes, id);
-    const hasActiveQuery = searchQuery.trim().length > 0;
-
-    setIsDeleting(true);
-    setDeleteError(null);
-    deleteRoute(id)
-      .then(() => {
-        setPendingDeleteId(null);
-        setIsDeleting(false);
-        const target = focusTargetId ? nameButtonRefs.current.get(focusTargetId) : null;
-        const fallback = hasActiveQuery ? searchInputRef.current : null;
-        (target ?? fallback ?? headingRef.current)?.focus();
-      })
-      .catch((error: unknown) => {
-        setIsDeleting(false);
-        setDeleteError(error instanceof Error ? error.message : t("routes.error.delete"));
-        logError("route-delete", error);
-      });
+  // Backlog item 124, D-02: the confirmed deletion is started by its owner,
+  // App's routeDeletion, so it survives this screen unmounting, and its
+  // outcome — the "Deleting…" state, the translated failure, the logging —
+  // no longer lives here. The unconfirmed confirmation is cleared in the
+  // same batch, so the card's confirmation stays open throughout. Returns
+  // the attempt number (null when refused) for the card's own guard.
+  const handleDeleteConfirm = (id: string): number | null => {
+    const attempt = routeDeletion.start(id);
+    if (attempt !== null) {
+      setPendingDeleteId(null);
+    }
+    return attempt;
   };
+
+  // Reconciliation (D-02). A committed deletion keeps its card on
+  // "Deleting…" until the LOADED live list no longer contains the route, and
+  // a failed one whose route has gone from the list (deleted elsewhere) is
+  // dropped. Measured on the unchanged storage path, the commit's promise
+  // settled 7–26 ms before the list re-ran, and clearing on the promise
+  // showed the deleted route as an ordinary, fully enabled card in between.
+  // Filtering is never evidence: only `routes`, never `viewRoutes`. No
+  // second, tombstone list is kept — if the live query never re-runs, the
+  // card stays a disabled "Deleting…", which allows nothing on a route that
+  // no longer exists. A layout effect, so App's synchronous re-render lands
+  // before paint.
+  useLayoutEffect(() => {
+    if (deletion === null || deletion.phase === "deleting") return;
+    if (routes === undefined) return;
+    if (routes.some((route) => route.id === deletion.routeId)) return;
+    routeDeletion.reconcile(deletion.attempt);
+  }, [deletion, routes, routeDeletion]);
+
+  // Focus repair after a successful deletion (D-02) — a deliberate change
+  // from the old unconditional focus move, which focused the next card even
+  // when the rider had moved on (taking focus from Search to the heading
+  // after a filtered success) and, with the browser's own focus scroll
+  // while the expanded card was still laid out, jumped the page 246 px in
+  // Chromium and 297 px in WebKit.
+  //
+  // Each card reports its own removal from its layout-effect cleanup, the
+  // only point at which focus inside it is still observable; focus on
+  // <body> afterwards could equally mean a deliberate tap on blank space, so
+  // it is never taken as permission. The reports are consumed on every
+  // commit, and only one counts: the last report for the deletion's route,
+  // when that route was rendered in the previous commit, is not rendered
+  // now, and is absent from the loaded list itself — it left because storage
+  // no longer holds it, never because a filter hid it. Navigation away
+  // unmounts this component, whose layout effects then never run.
+  //
+  // Only when focus was inside the removed card is it moved, without
+  // scrolling, to the neighbouring card's name from the previous list (a
+  // surviving, enabled one), or else Clear tag filters, the filter
+  // disclosure, Search, the heading. The new target is then revealed by the
+  // minimum only while the attempt's guard was still armed — a rider who
+  // scrolled away keeps their position.
+  const cardRemovalReportsRef = useRef(new Map<string, RouteCardRemovalReport>());
+  const lastViewRoutesRef = useRef<readonly PlannedRoute[]>([]);
+  const handleCardRemoved = useCallback(
+    (routeId: string, report: RouteCardRemovalReport) => {
+      cardRemovalReportsRef.current.set(routeId, report);
+    },
+    [],
+  );
+  useLayoutEffect(() => {
+    const reports = cardRemovalReportsRef.current;
+    cardRemovalReportsRef.current = new Map();
+    const previousView = lastViewRoutesRef.current;
+    lastViewRoutesRef.current = viewRoutes;
+    if (reports.size === 0) return;
+    if (deletion === null || deletion.phase === "failed" || routes === undefined) return;
+    const deletedId = deletion.routeId;
+    const report = reports.get(deletedId);
+    if (!report?.focusInside) return;
+    const wasRendered = previousView.some((route) => route.id === deletedId);
+    const isRendered = viewRoutes.some((route) => route.id === deletedId);
+    const isStored = routes.some((route) => route.id === deletedId);
+    if (!wasRendered || isRendered || isStored) return;
+    const survivors = previousView.filter(
+      (route) =>
+        route.id === deletedId || viewRoutes.some((current) => current.id === route.id),
+    );
+    const neighbourId = computeFocusRouteIdAfterDelete(survivors, deletedId);
+    const neighbour = neighbourId ? nameButtonRefs.current.get(neighbourId) : undefined;
+    const target =
+      neighbour?.isConnected && !neighbour.disabled
+        ? neighbour
+        : (clearTagFiltersButtonRef.current ??
+          tagFilterDisclosureRef.current ??
+          searchInputRef.current ??
+          headingRef.current);
+    if (!target) return;
+    target.focus({ preventScroll: true });
+    if (report.guardArmed) {
+      applyConfirmationReveal(
+        target,
+        stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+      );
+    }
+  });
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
@@ -1294,9 +1413,6 @@ export function RouteLibrary({
   };
 
   const trimmedQuery = searchQuery.trim();
-  // Named distinctly from handleDeleteConfirm's own local hasActiveQuery
-  // above (an unrelated, differently-scoped delete-focus-fallback flag)
-  // to avoid a same-named-but-different-purpose variable in this file.
   const hasActiveNameQuery = trimmedQuery.length > 0;
   const hasActiveTagFilters = selectedTagFilters.size > 0;
 
@@ -1310,9 +1426,10 @@ export function RouteLibrary({
       onDeleteRequest={handleDeleteRequest}
       onDeleteCancel={handleDeleteCancel}
       onDeleteConfirm={handleDeleteConfirm}
-      isDeletePending={route.id === pendingDeleteId}
-      isDeleting={isDeleting}
-      deleteError={deleteError}
+      isDeletePending={route.id === pendingDeleteId || route.id === deletion?.routeId}
+      isDeleting={isDeletionBusy}
+      deletion={deletion?.routeId === route.id ? deletion : null}
+      onCardRemoved={handleCardRemoved}
       isPinned={isPinnedRoute(route)}
       isPinPending={pinPendingIds.has(route.id)}
       pinError={pinErrors[route.id] ?? null}

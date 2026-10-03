@@ -16,6 +16,7 @@ import {
   type RideSessionTarget,
 } from "./ui/riding/rideSessionTransition.ts";
 import { RouteLibrary, type PendingRouteSwitch } from "./ui/library/RouteLibrary.tsx";
+import { useRouteDeletion } from "./ui/library/useRouteDeletion.ts";
 import {
   PlanningScreen,
   type SavedRouteSwitchPrompt,
@@ -328,6 +329,12 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // continuously synced by RouteLibrary, resets only when App itself
   // remounts (backlog item 100 stage 3).
   const routesTagFilterKeysRef = useRef<readonly string[]>([]);
+  // Backlog item 124, D-02: the confirmed route deletion, owned here rather
+  // than by RouteLibrary so it survives the rider leaving Routes while it
+  // runs — on return its card still shows "Deleting…", or its failure —
+  // instead of an ordinary, fully enabled card. Memory only, like the two
+  // refs above: a reload starts empty, and storage is then the truth.
+  const routeDeletion = useRouteDeletion();
   // Plain monotonic counter (never a timestamp/uuid) for every RideIntent
   // token — mirrors useRideCamera.ts's own nextCameraRequestIdRef idiom
   // (backlog items 72 and 132).
@@ -694,6 +701,11 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     }
     const outcome = await checkRideTransition(target);
     if (transitionRequestIdRef.current !== requestId) return;
+    // Backlog item 124, D-02: a route whose deletion is running, or committed
+    // and awaiting the list, is never opened or prompted for. Its card
+    // refuses the tap already; this closes the narrow race of a tap made
+    // just before Delete route was confirmed, which settles here after it.
+    if (routeDeletion.isBusyFor(route.id)) return;
 
     if (outcome.kind === "proceed" || outcome.kind === "resume") {
       const intent: RideIntent | undefined =
@@ -714,7 +726,12 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         ? await resolveExistingRouteForConflict(existingRouteId)
         : null;
     if (transitionRequestIdRef.current !== requestId) return;
+    if (routeDeletion.isBusyFor(route.id)) return;
 
+    // Backlog item 124, D-02: a route card's prompt supersedes a failed
+    // deletion's confirmation, as it closed one before D-02 — never a
+    // deletion still running or awaiting the list.
+    if (options.origin === "route-card") routeDeletion.clearFailed();
     pendingSwitchTriggerRef.current = triggerElement;
     setFreeRoamTransitionError(null);
     setPendingRideSwitch({
@@ -1446,6 +1463,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
             restoreTagFilterKeysRef={routesTagFilterKeysRef}
             pendingRouteSwitch={routeSwitchPrompt}
             stickyHeaderRef={stickyHeaderRef}
+            routeDeletion={routeDeletion}
           />
         )}
         {screen === "riding" &&
