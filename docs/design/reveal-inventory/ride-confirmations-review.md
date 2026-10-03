@@ -2,6 +2,8 @@
 
 **Status: documentation only — nothing implemented, nothing accepted, nothing decided on the rider's behalf.** This review covers item 124's ([backlog](../../project/backlog.md#item-124)) five ride confirmations — C-07, C-08, C-10, C-11 and C-13 — under the rider's approved common opening and cancellation policy, and reconciles every remaining entry of the [inventory](README.md). It was carried out against `7e46daf` (`0.4.58`). No application source, test, dependency, configuration or version changed, and the probe that measured it stayed outside the repository. Every disposition below is a **recommendation**.
 
+**Update (3 October 2026, evening): decided, and C-11 delivered.** The rider took the four [ride-confirmation decisions](#decisions-still-needed-for-the-ride-confirmations) — C-11 corrected next; C-07 and C-08 unchanged, the 25 px at 200% accepted as a bounded exception; C-09's accepted flow preserved; and a separate slice to dismiss unconfirmed ride-screen prompts on a successful Start, Resume or Pause. The [proposed slice](#proposed-next-slice--c-11-only) shipped in `0.4.59` as item 124's slice 8 ([record](../../project/backlog-item-124-continued.md#slice-8--end-rides-confirmation-on-the-paused-screen-c-11-shipped-0459-3-october-2026)); its device check is pending. The decisions are recorded in the [continuation](../../project/backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening). The text below is kept as written; the remaining dispositions stay proposals.
+
 ## Contents
 
 - [Summary](#summary)
@@ -206,6 +208,8 @@ The first two are the same class as Edit copy's [recorded survival](../../projec
 
 **A proposal, not a selection.** It is the smallest change that would make C-11 follow the approved policy, reusing what slices 1 and 7 established rather than a new mechanism.
 
+**Selected and delivered (3 October 2026, evening):** shipped in `0.4.59` as slice 8 ([record](../../project/backlog-item-124-continued.md#slice-8--end-rides-confirmation-on-the-paused-screen-c-11-shipped-0459-3-october-2026)). Beyond this proposal, a focus return that has to wait — a Cancel made in the riding header while a Pause is still being saved — is guarded against the rider having moved on.
+
 - **Opening.** Only for the paused screen's placement — the header's (C-10) is unchanged:
   - pass `ConfirmDialog`'s existing opt-ins `containerRef`, `actionsRef` and `focusCancelWithoutScroll`;
   - run one opening reveal with `applyConfirmationReveal` and the action row, under the sticky navigation's band;
@@ -230,6 +234,8 @@ The first two are the same class as Edit copy's [recorded survival](../../projec
 - **Device check it would need:** the ordinary flows, including the touch-reachable scrolled Cancel. The 200% branch cannot be reached on the phone.
 
 ## Decisions still needed for the ride confirmations
+
+**Decided on 3 October 2026, evening** — all four, as recommended, with C-07 and C-08's 25 px accepted as a bounded exception rather than exact compliance ([decisions](../../project/backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening)). The list is kept as it was put to the rider.
 
 1. **The C-11 slice:** whether to schedule the [proposed correction](#proposed-next-slice--c-11-only), and where it sits in the execution order. **Recommended: yes, as item 124's next slice.**
 2. **C-07 and C-08's 25 px at 200%:** leave it, or include the launcher in that slice. **Recommended: leave it.** The rider-visible difference is 25 px with the confirmation complete either way, and the change would touch C-09's code path.

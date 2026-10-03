@@ -192,6 +192,7 @@ _Category: Interface and accessibility consistency_
 > **Slice 7, C-12's opening reveal, shipped in `0.4.58` on 3 October 2026; its ordinary-flow device check is pending.** Its record is the first in [`backlog-item-124-continued.md`](backlog-item-124-continued.md), split from this file for size ([pointer below](#slice-7--edit-copys-replacement-confirmation-opening-c-12-shipped-0458-3-october-2026)). Its enlarged-text, oversized and reappearing-confirmation cases have automated evidence only.
 > **Slice 7's ordinary flow was accepted on the installed iPhone in English and German, reported 3 October 2026** (`0.4.58`, build `7e46daf`; CI run 37133035503 is recorded with it in the [continuation](backlog-item-124-continued.md)). Item 124 stays active for the five-surface review and the remaining inventory dispositions.
 > **Review, 3 October 2026 — documentation only** ([report](../design/reveal-inventory/ride-confirmations-review.md)): C-10 and C-13 match the five-surface policy, C-07 and C-08 match at ordinary text, and C-11 mismatches — a correction is proposed, not selected; the remaining decisions are listed there.
+> **3 October 2026, evening: the rider took four decisions, and slice 8, C-11, shipped in `0.4.59`; its device check is pending** ([record](backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening)). Decision 4's transition dismissal is the next slice.
 > This item ships in slices and stays **pending** here until its final
 > slice. Nothing about it enters [`history/`](history/README.md) before
 > then. The original specification, under its own heading below, is kept
@@ -207,7 +208,8 @@ _Category: Interface and accessibility consistency_
 > | 5         | **D-01**: a failing Clear draft — the message kept in its area, focus and a minimum reveal only while the rider is still waiting, and the rider's activity preserved once they have moved on     | **Shipped — `0.4.56`** (3 October 2026); **ordinary flow accepted on the installed iPhone**, reported 3 October 2026 ([`current-status.md`](current-status.md))   |
 > | 6         | **D-02**: a confirmed Delete route kept as "Deleting…" until storage and the list agree, owned by App across navigation; the translated failure; focus and a minimum reveal only while waiting   | **Shipped — `0.4.57`** (3 October 2026); **ordinary flow accepted on the installed iPhone**, reported 3 October 2026 ([`current-status.md`](current-status.md))   |
 > | 7         | **C-12**: Edit copy's replacement confirmation opening under the common rule (decision 7, 2 October 2026), its ordinary-text opening preserved                                                   | **Shipped — `0.4.58`** (3 October 2026); **ordinary flow accepted on the installed iPhone**, reported 3 October 2026 ([`current-status.md`](current-status.md))   |
-> | Remaining | **Approved policies:** common opening and cancellation policy for C-07, C-08, C-10, C-11 and C-13 (3 October 2026). **Device observations:** C-09; unreachable lower positions on those five     | **Reviewed 3 October 2026** ([report](../design/reveal-inventory/ride-confirmations-review.md)): C-11 correction proposed; decisions listed, none taken           |
+> | 8         | **C-11**: End ride's confirmation on the paused screen — the common opening rule, and on Cancel a guarded minimum reveal of End ride itself (decision 1, 3 October 2026)                         | **Shipped — `0.4.59`** (3 October 2026); ordinary-flow device check pending ([`current-status.md`](current-status.md))                                            |
+> | Remaining | **Approved next:** dismissing unconfirmed ride-screen prompts after a successful Start, Resume or Pause (decision 4). C-07/C-08 unchanged; C-09 preserved                                        | **Decided 3 October 2026** ([record](backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening)); other dispositions stay proposals              |
 
 ### Decisions recorded on 1 October 2026
 
@@ -694,6 +696,10 @@ The longest job, shard 4, left 416 s below the E2E jobs' 1,200-second timeout. T
 ### Slice 7 — Edit copy's replacement confirmation, opening (C-12) (shipped `0.4.58`, 3 October 2026)
 
 C-12's opening now follows the common rule: no movement when Edit copy's "Replace your current draft?" fits, the minimum when it can fit, and its action row first when it is taller than the band, with Cancel focused without the browser's own focus scroll. The ordinary-text opening is unchanged. Its full record — the re-measured baseline, the mechanism, the comparison of the confirmation that reappears on Pause, the evidence, the controls and the limitations — is in [`backlog-item-124-continued.md`](backlog-item-124-continued.md#slice-7--edit-copys-replacement-confirmation-opening-c-12-shipped-0458-3-october-2026), split from this file for size; it is not repeated here. Its ordinary flow was accepted on the installed iPhone in English and German, reported 3 October 2026 ([`current-status.md`](current-status.md)).
+
+### Slice 8 — End ride's confirmation on the paused screen (C-11) (shipped `0.4.59`, 3 October 2026)
+
+Its record — the decisions, the re-measured baseline, the mechanism, the evidence, the controls and the limitations — is in [`backlog-item-124-continued.md`](backlog-item-124-continued.md#slice-8--end-rides-confirmation-on-the-paused-screen-c-11-shipped-0459-3-october-2026). Its ordinary-flow device check is pending ([`current-status.md`](current-status.md)).
 
 ### Original specification (scheduled 30 September 2026)
 

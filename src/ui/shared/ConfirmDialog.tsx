@@ -47,15 +47,15 @@ export interface ConfirmDialogProps {
    * RouteTagManager.tsx's own `confirmRef` precedent rather than using
    * React 19's ref-as-prop, since every ref in this codebase is passed as
    * an explicit `*Ref` prop. Also passed by the item 124 callers that reveal
-   * their confirmation (Clear draft, Planning's saved-route switch and
-   * Riding's Edit copy); undefined for every other caller, whose rendering
-   * and behaviour are unchanged. */
+   * their confirmation (Clear draft, Planning's saved-route switch, Riding's
+   * Edit copy and the paused panel's End ride); undefined for every other
+   * caller, whose rendering and behaviour are unchanged. */
   containerRef?: RefObject<HTMLDivElement | null>;
   /** A handle onto the Cancel/Confirm action row, for a caller whose
    * reveal prioritises that row when the whole dialog cannot fit (backlog
-   * item 124's Clear draft, Planning's saved-route switch and Riding's Edit
-   * copy). Same explicit-`*Ref` convention as `containerRef`; undefined for
-   * every other caller. */
+   * item 124's Clear draft, Planning's saved-route switch, Riding's Edit
+   * copy and the paused panel's End ride). Same explicit-`*Ref` convention
+   * as `containerRef`; undefined for every other caller. */
   actionsRef?: RefObject<HTMLDivElement | null>;
   /** Backlog item 124. Cancel still receives focus the moment the dialog
    * opens, but with `preventScroll`, for a caller that performs its own
@@ -63,9 +63,10 @@ export interface ConfirmDialogProps {
    * centres Cancel (item 118 measured 619px of movement where ~240px was
    * the minimum), so leaving it on would mean two mechanisms moving the
    * page for one opening, and more movement than the reveal rule allows.
-   * Set by Clear draft, Planning's saved-route switch and Riding's Edit
-   * copy; undefined/false for every other caller, which keep plain
-   * `autoFocus` exactly as before. */
+   * Set by Clear draft, Planning's saved-route switch, Riding's Edit copy
+   * and the paused panel's End ride (not the riding header's, which opens
+   * inside a fixed shell); undefined/false for every other caller, which
+   * keep plain `autoFocus` exactly as before. */
   focusCancelWithoutScroll?: boolean;
   /** A handle onto the dialog's own title, which this also makes focusable
    * by script only (`tabIndex={-1}`: never in the tab order, never

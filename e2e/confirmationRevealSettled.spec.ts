@@ -2,10 +2,11 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 import { readActiveRideStateRow, readSavedRouteId } from "./support/rideStateDb.ts";
 
-// Backlog item 124, slices 1, 3 and 7 — Chromium only (CDP CPU throttling,
-// and to keep CI cost down; the cross-engine geometry is in
-// confirmationReveal.smoke.spec.ts and, for slice 7's Edit copy,
-// editCopyConfirmationReveal.smoke.spec.ts).
+// Backlog item 124, slices 1, 3, 7 and 8 — Chromium only (CDP CPU
+// throttling, and to keep CI cost down; the cross-engine geometry is in
+// confirmationReveal.smoke.spec.ts and, for slice 7's Edit copy and slice
+// 8's End ride on the paused screen, editCopyConfirmationReveal.smoke.spec.ts
+// and endRidePausedConfirmationReveal.smoke.spec.ts).
 //
 // What the frame recorder below can and cannot show. It samples the open
 // confirmation's action buttons on every animation frame, from BEFORE the
@@ -657,6 +658,100 @@ test("Edit copy's replacement confirmation: no sampled drift under a 20x CPU thr
   await cpu.send("Emulation.setCPUThrottlingRate", { rate: 20 });
   try {
     await expectEditCopySettledThenCancel(page, {
+      recordMs: THROTTLED_ACTION_RECORD_MS,
+      frameWaitMs: 10_000,
+    });
+  } finally {
+    await cpu.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  }
+});
+
+// Slice 8, C-11: End ride's confirmation on the paused route screen, which
+// opens in the click's own commit. At 200% root text in English its bottom
+// opens 535 px below the usable band, so its opening is a reveal.
+
+const END_RIDE_PANEL: Surface = {
+  dialog: '.ride-end-ride-panel-row > [role="dialog"]',
+  trigger: ".ride-end-ride-panel-row > button",
+};
+
+async function openPausedRouteAt200(page: Page, context: BrowserContext): Promise<void> {
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: 51.5, longitude: -0.1 });
+  await installLocalMapStyle(page);
+  await page.goto("/");
+  await page.getByLabel("Import GPX file").setInputFiles({
+    name: "C-11 reveal route.gpx",
+    mimeType: "application/gpx+xml",
+    buffer: Buffer.from(buildRouteGpx()),
+  });
+  const routeButton = page.getByRole("button", {
+    name: "C-11 reveal route",
+    exact: true,
+  });
+  await expect(routeButton).toBeVisible();
+  await routeButton.click();
+  await page.getByRole("button", { name: "Start riding" }).click();
+  await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
+  await context.setGeolocation({
+    latitude: 51.5,
+    longitude: -0.1 + 400 / METRES_PER_DEGREE_LON,
+  });
+  await expect
+    .poll(() => readActiveRideStateRow(page), { timeout: 10_000 })
+    .toMatchObject({ kind: "route", lastFix: expect.anything() });
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Resume ride" })).toBeVisible();
+  await expect(page.locator("header.app-header--sticky")).toBeAttached();
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+  await settle(page);
+}
+
+async function expectEndRideSettledThenCancel(
+  page: Page,
+  { recordMs, frameWaitMs }: { recordMs: number; frameWaitMs: number },
+): Promise<void> {
+  const before = await page.evaluate(() => window.scrollY);
+  await installActionGeometryRecorder(page, END_RIDE_PANEL.dialog, recordMs);
+  await page.locator(END_RIDE_PANEL.trigger).click();
+  const dialog = page.locator(END_RIDE_PANEL.dialog);
+  await expect(dialog).toBeVisible();
+  const cancel = dialog.getByRole("button", { name: "Cancel" });
+  await expect(cancel).toBeVisible();
+  await waitForActionableFrames(page, frameWaitMs);
+  expect(
+    (await page.evaluate(() => window.scrollY)) - before,
+    "the opening was a reveal",
+  ).toBeGreaterThan(100);
+  await cancel.click();
+  expectNoSampledDrift(await readActionGeometry(page), "Cancel");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator(END_RIDE_PANEL.trigger)).toBeFocused();
+}
+
+test("End ride's confirmation on the paused screen: the actions showed no drift across the sampled frames from opening to the rider's click", async ({
+  page,
+  context,
+}) => {
+  await openPausedRouteAt200(page, context);
+  await expectEndRideSettledThenCancel(page, {
+    recordMs: ACTION_RECORD_MS,
+    frameWaitMs: 2_000,
+  });
+});
+
+test("End ride's confirmation on the paused screen: no sampled drift under a 20x CPU throttle either (sampling only; this does not separate effect timing)", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(120_000);
+  await openPausedRouteAt200(page, context);
+  const cpu = await context.newCDPSession(page);
+  await cpu.send("Emulation.setCPUThrottlingRate", { rate: 20 });
+  try {
+    await expectEndRideSettledThenCancel(page, {
       recordMs: THROTTLED_ACTION_RECORD_MS,
       frameWaitMs: 10_000,
     });

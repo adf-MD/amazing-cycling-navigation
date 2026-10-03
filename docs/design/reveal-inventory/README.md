@@ -26,6 +26,8 @@
 
 **Update (3 October 2026, review): the ride confirmations and the remaining inventory reviewed — documentation only.** C-07, C-08, C-10, C-11 and C-13 were measured against the approved common policy at `7e46daf`, in Chromium and WebKit, English and German, ordinary and 200% text; every remaining entry was reconciled. C-10 and C-13 match; C-07 and C-08 match at ordinary text, with a 25 px overshoot at 200%; C-11 mismatches, and a correction is proposed. The findings, the proposed slice and a compact list of the decisions still needed are in the [review](ride-confirmations-review.md). **Nothing is selected, accepted or excluded by it**, and the sections below keep their original measurements.
 
+**Update (3 October 2026, evening): four decisions; C-11 delivered.** The rider decided C-11 (correct it), C-07 and C-08 (unchanged, the 25 px at 200% a bounded exception), C-09 (its accepted flow preserved) and approved a separate slice dismissing unconfirmed ride-screen prompts on a successful Start, Resume or Pause ([decisions](../../project/backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening)). C-11's correction shipped in `0.4.59` as item 124's slice 8, with automated evidence only; its device check is pending. The other dispositions stay proposals.
+
 **What this is.** Every confirmation in the app, every expanding card, form, editor and disclosure that could reasonably fall under the rider's "pop-up cards" request, and the conditional and failure states that change what would need revealing — each with a stable review ID, its labels in English and German, how to reach it, what it does today, where that is in the source and tests, what was measured, and a recommendation.
 
 **The rule under review** ([item 124](../../project/backlog.md#item-124)): no movement when the newly opened content fits between the sticky navigation and the bottom safe area; otherwise only enough to reveal it; and when it cannot fit, only enough to show its complete action row. On Cancel and Escape: keep the page where the rider has left it, moving only as far as needed to reveal the opening control.
@@ -193,6 +195,7 @@ _Correction, 3 October 2026: C-02 is an exception — it orders its actions End 
 - **Recommendation:** **already complies** as measured — it opens where it is, complete, with no movement, and focus returns to the button. [U] Not measured at 200% text or in German, where the launcher is taller.
 - **Decided, 3 October 2026:** the common opening and cancellation policy, keeping its placement and ride semantics, with targeted corrections only where measurements demonstrate a mismatch; the rider could not reach a lower opening position on the installed iPhone. Nothing is implemented, and no correction is selected yet ([decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026)).
 - **Reviewed, 3 October 2026:** matches at ordinary text; at 200% the browser's focus scroll overshoots the minimum by 25 px, stopped by the page's end, the confirmation ending complete; cancellation matches. Recommended unchanged ([review](ride-confirmations-review.md#verdicts)). Since item 132, a reload's first **Ride** entry shows the paused route screen, so the launcher is reached with **Back to Ride options**.
+- **Decided, 3 October 2026, evening:** unchanged; the 25 px at 200% is accepted as a bounded exception to strict minimum scrolling, not exact compliance ([decision 2](../../project/backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening)).
 
 #### C-08 — End ride (unfinished free roam, launcher)
 
@@ -204,6 +207,7 @@ _Correction, 3 October 2026: C-02 is an exception — it orders its actions End 
 - **Recommendation:** **already complies** as measured; same caveat as C-07.
 - **Decided, 3 October 2026:** the common opening and cancellation policy, keeping its placement and ride semantics, with targeted corrections only where measurements demonstrate a mismatch; the rider could not reach a lower opening position on the installed iPhone. Nothing is implemented, and no correction is selected yet ([decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026)).
 - **Reviewed, 3 October 2026:** as C-07 — matches at ordinary text, a 25 px overshoot at 200%. Recommended unchanged ([review](ride-confirmations-review.md#verdicts)).
+- **Decided, 3 October 2026, evening:** as C-07 ([decision 2](../../project/backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening)).
 
 #### C-09 — Discard unfinished ride (launcher)
 
@@ -215,6 +219,7 @@ _Correction, 3 October 2026: C-02 is an exception — it orders its actions End 
 - **Recommendation:** **already complies** as measured; same caveat as C-07.
 - **[D] device report, 3 October 2026** (`0.4.57`, build `bd688d7`, English and German): the missing-route variant was readable and fitted without unwanted movement; Cancel kept the unfinished-session warning; a confirmed Discard removed it, and it stayed gone after leaving and returning; other saved routes remained; a lower opening position was not reachable. It does not cover enlarged text, the unsupported or corrupt-session variant or storage failures, and **no policy decision is recorded for C-09** ([ledger](../../project/current-status.md); [decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026)).
 - **3 October 2026:** not measured in the review; it shares C-07's component, so the review's C-07 findings apply to it by source inference, and whether it follows C-07's policy is listed as a decision ([review](ride-confirmations-review.md#decisions-still-needed-for-the-ride-confirmations)).
+- **Decided, 3 October 2026, evening:** its accepted missing-route flow is preserved; if the shared launcher code changes, the launcher policy applies and C-09 is verified then — shared source alone proves neither its geometry nor its untested variants ([decision 3](../../project/backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening)).
 
 ### Route riding
 
@@ -242,6 +247,7 @@ _Correction, 3 October 2026: C-02 is an exception — it orders its actions End 
 - **Recommendation:** **already complies** as measured (the paused panel sits near the page's top at 390×844); [U] not measured at 200% text.
 - **Decided, 3 October 2026:** the common opening and cancellation policy, keeping its placement and ride semantics, with targeted corrections only where measurements demonstrate a mismatch; the rider could not reach a lower opening position on the installed iPhone. Nothing is implemented, and no correction is selected yet ([decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026)).
 - **Reviewed, 3 October 2026: mismatches.** At 200% the opening over-scrolls by 280 px and hides the title; after the rider scrolls it, Cancel can leave **End ride** hidden under the sticky navigation, at ordinary text too. A targeted correction is proposed, not selected ([review](ride-confirmations-review.md#proposed-next-slice--c-11-only)).
+- **Decided and delivered, 3 October 2026, evening:** shipped in `0.4.59` as item 124's slice 8 ([record](../../project/backlog-item-124-continued.md#slice-8--end-rides-confirmation-on-the-paused-screen-c-11-shipped-0459-3-october-2026)). The opening is revealed by the minimum under the navigation, and Cancel and Escape return focus to End ride with only the movement that reveals it; at ordinary text the opening is unchanged. Automated evidence only; its device check is pending.
 
 #### C-12 — Edit copy: replace your current draft?
 
@@ -691,6 +697,8 @@ Branches flagged as difficult to reach or apparently unreachable. No steps are i
 
 **3 October 2026 — review, documentation only.** C-07, C-08, C-10, C-11 and C-13 were measured against the common policy, and every remaining entry was reconciled, in the [review](ride-confirmations-review.md). It proposes one correction, for C-11, and lists the decisions still needed; it selects, accepts and excludes nothing.
 
+**3 October 2026, evening — four decisions; C-11 delivered.** The rider's decisions on C-11, C-07/C-08, C-09 and the surviving confirmations are recorded in the [continuation](../../project/backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening); C-11 shipped in `0.4.59` as slice 8, and the transition dismissal is the next slice.
+
 ## Review preparation — D-01, D-02 and D-06 (2 October 2026)
 
 **Status: prepared for the rider's review; nothing is approved.** This section rechecks three failure and busy states against current source and measures them with controlled fixtures, with C-12 as context. Every recommendation below is a proposal. The earlier sections and their measurements, made against `04639cb`, are unchanged.
@@ -956,3 +964,5 @@ The rider's report from the installed iPhone — `0.4.57` (build `bd688d7`), Eng
 - **measured matches:** C-10 and C-13; C-07 and C-08 at ordinary text;
 - **measured mismatches:** C-11, for which a correction is proposed; C-07 and C-08's 25 px overshoot at 200%, recommended unchanged;
 - **decisions still needed:** the C-11 slice, C-09's policy, confirmations surviving ride transitions, and the remaining entries in the review's [decision list](ride-confirmations-review.md#the-remaining-inventory--decisions-still-needed).
+
+**Evening, 3 October 2026:** those three decisions were taken, and C-07/C-08's 25 px accepted as a bounded exception ([decisions](../../project/backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening)); C-11's correction shipped in `0.4.59` (slice 8), its device check pending. **Next:** the approved transition-dismissal slice. The remaining entries still need review or disposition.

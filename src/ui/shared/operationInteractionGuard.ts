@@ -3,7 +3,7 @@
  * item 124). A failure may return focus to the operation's control, and
  * reveal it, only while this is still armed: the rider's own decision is
  * that focus and page position are left alone once they have moved
- * elsewhere. Three callers, each arming one guard per attempt:
+ * elsewhere. Four callers, each arming one guard per attempt:
  *
  * - D-06, Edit copy (RidingScreen.tsx): its area is the Edit copy group —
  *   the button, its hint, its error and its confirmation.
@@ -14,6 +14,11 @@
  *   card. The card that confirmed holds it, so it goes when that card leaves
  *   the list; a success reports whether it was still armed, for the focus
  *   repair's reveal (RouteLibrary.tsx).
+ * - C-11, End ride's Cancel (RidingScreen.tsx): not an operation's failure
+ *   but a Cancel whose focus return has to wait — End ride still disabled
+ *   while a Pause is being saved — so it has no area at all: once the
+ *   confirmation has closed, any tap, key, wheel or touch scroll means the
+ *   rider has moved on. Armed only when the wait begins.
  *
  * Armed when an attempt begins, and disarmed by rider input that means
  * they have moved on:

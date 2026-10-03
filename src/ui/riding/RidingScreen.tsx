@@ -206,12 +206,13 @@ export interface RidingScreenProps {
    * a pause failure. */
   onRidePaused?: () => void;
   /** The sticky navigation header, for the minimal reveal of Edit copy and
-   * its message after a failure (backlog item 124, D-06) and of its
-   * replacement confirmation on opening (C-12) — the same ref App.tsx gives
-   * Routes, Settings and Planning. The pre-ride/paused panel Edit copy lives
-   * in is only ever shown beneath that header, which App puts back a commit
-   * after a Pause. Optional so tests without a header measure from the
-   * top. */
+   * its message after a failure (backlog item 124, D-06), of its
+   * replacement confirmation on opening (C-12), and of the paused panel's
+   * End ride confirmation on opening and of End ride itself on Cancel
+   * (C-11) — the same ref App.tsx gives Routes, Settings and Planning. The
+   * pre-ride/paused panel both live in is only ever shown beneath that
+   * header, which App puts back a commit after a Pause. Optional so tests
+   * without a header measure from the top. */
   stickyHeaderRef?: RefObject<HTMLElement | null>;
 }
 
@@ -225,6 +226,19 @@ interface EditCopyAttempt {
    * the context it was started in once the two differ. */
   readonly context: number;
   readonly guard: OperationInteractionGuard;
+}
+
+/** A Cancel or Escape on End ride's confirmation whose focus return is not
+ * decided yet (backlog item 124, C-11). `origin` is the placement it was
+ * cancelled from. `guard` stays null while the request is decided in its
+ * own closing commit, as an ordinary Cancel always is; it is armed only
+ * when the request has to wait beyond that commit — End ride still
+ * disabled while a Pause is being saved, or the paused panel shown before
+ * App has put the sticky navigation back — and tells whether the rider has
+ * since moved on. */
+interface PendingEndRideCancel {
+  readonly origin: "header" | "panel";
+  guard: OperationInteractionGuard | null;
 }
 
 const DEFAULT_CAMERA_STATE: StoredCameraState = {
@@ -942,15 +956,26 @@ export function RidingScreen({
   // End-ride's trigger is unavailable while its confirmation is open — it
   // unmounts in the paused panel (item 50's in-place confirmation morph)
   // and is concealed and disabled in the immersive header (see
-  // renderEndRideTrigger below) — so Cancel/Escape and a failed
-  // finalisation both record a pending focus request here, applied once the
-  // trigger is mounted and enabled again, instead of calling .focus()
-  // directly —
-  // mirrors PlanningScreen.tsx's pendingClearDraftFocusRef exactly (item
-  // 49). Finish-ride's own trigger never unmounts (RidingRouteCompletionPanel
-  // has no confirmation dialog to swap in), so it keeps its own plain
-  // finalizeError-identity effect below and never touches this latch.
+  // renderEndRideTrigger below) — so a failed finalisation records a
+  // pending focus request here, applied once the trigger is mounted and
+  // enabled again, instead of calling .focus() directly — mirrors
+  // PlanningScreen.tsx's pendingClearDraftFocusRef exactly (item 49). A
+  // Cancel or Escape whose trigger is back in the riding header (C-10) is
+  // handed to this same latch by the cancellation's own effect below, so
+  // its focus return is exactly what it was before backlog item 124's
+  // C-11. Finish-ride's own trigger never unmounts
+  // (RidingRouteCompletionPanel has no confirmation dialog to swap in), so
+  // it keeps its own plain finalizeError-identity effect below and never
+  // touches this latch.
   const pendingEndRideFocusRef = useRef(false);
+  // A Cancel or Escape on End ride's confirmation whose focus return is not
+  // decided yet (backlog item 124, C-11); see PendingEndRideCancel and the
+  // effect that decides it, after the paused panel's opening reveal.
+  const pendingEndRideCancelRef = useRef<PendingEndRideCancel | null>(null);
+  // The paused panel's End ride confirmation and its Cancel/End ride row,
+  // for its opening reveal (C-11). Never set in the riding header.
+  const endRideConfirmRef = useRef<HTMLDivElement>(null);
+  const endRideActionsRef = useRef<HTMLDivElement>(null);
 
   // Pause — the reversible, non-destructive counterpart to End/Finish ride
   // (backlog item 55). Deliberately separate state from
@@ -1113,7 +1138,10 @@ export function RidingScreen({
 
   // A no-deps effect re-checks pendingEndRideFocusRef's readiness (mounted
   // AND enabled) on every render, rather than consuming the request
-  // unconditionally on the first post-set commit.
+  // unconditionally on the first post-set commit. Since backlog item 124's
+  // C-11 it serves a failed End ride and a Cancel or Escape whose trigger
+  // is back in the riding header; the paused panel's own Cancel is decided
+  // by the layout effect after that panel's opening reveal.
   useEffect(() => {
     if (!pendingEndRideFocusRef.current) return;
     const trigger = endRideTriggerRef.current;
@@ -1122,16 +1150,26 @@ export function RidingScreen({
     trigger.focus();
   });
 
+  // Drops a Cancel's focus return that is still undecided, detaching its
+  // guard (backlog item 124, C-11): a new opening or a new Cancel replaces
+  // it, so an old request can never act in a later commit.
+  const dropPendingEndRideCancel = () => {
+    pendingEndRideCancelRef.current?.guard?.detach();
+    pendingEndRideCancelRef.current = null;
+  };
+
   const handleEndRideClick = () => {
     if (isEndRideConfirmOpen || isFinalizeActionPendingRef.current) return;
+    dropPendingEndRideCancel();
     setFinalizeError(null);
     setIsEndRideConfirmOpen(true);
   };
 
-  const handleEndRideCancel = () => {
+  const handleEndRideCancel = (placement: "header" | "panel") => {
     // Escape can bypass a disabled Cancel button, so guard here too.
     if (isFinalizeActionPendingRef.current) return;
-    pendingEndRideFocusRef.current = true;
+    dropPendingEndRideCancel();
+    pendingEndRideCancelRef.current = { origin: placement, guard: null };
     setIsEndRideConfirmOpen(false);
   };
 
@@ -1417,6 +1455,9 @@ export function RidingScreen({
   // 132): a ride paused before its first fix is still a ride to resume or
   // end.
   const hasResumableSession = nav.currentFix !== null || nav.hasStoredSession;
+  // The paused panel's End ride row, named once: its trigger, or its
+  // confirmation (C-11), in page flow beneath the sticky navigation.
+  const isEndRidePanelShown = isEditCopyPanelShown && hasResumableSession;
 
   useEffect(() => {
     if (restoreIntentTokenAtMount === undefined) return;
@@ -1555,6 +1596,135 @@ export function RidingScreen({
     );
   });
 
+  // Whether End ride's confirmation is on screen in the paused panel — the
+  // placement whose page can scroll. In the riding header (C-10) it opens
+  // inside a fixed shell that never scrolls, and is left exactly as it was.
+  const isEndRidePanelConfirmShown = isEndRidePanelShown && isEndRideConfirmOpen;
+  // The opening reveal's own state, as Edit copy's above.
+  const endRideRevealRef = useRef({ shown: false, pending: false });
+
+  /**
+   * Reveals the paused panel's End ride confirmation when it appears
+   * (backlog item 124, C-11; the rider's decision of 3 October 2026), under
+   * the rule Edit copy's follows: no movement when it fits between the
+   * sticky header and the safe area; otherwise only enough to show all of
+   * it; and when it cannot fit at all, only enough to show its complete
+   * Cancel/End ride row — none when that row is already showing — leaving
+   * the explanation reachable above. ConfirmDialog has already focused
+   * Cancel with preventScroll (`focusCancelWithoutScroll`, set for this
+   * placement only), because the browser's own focus scroll centres it.
+   *
+   * Owed once each time it appears in the panel: a genuine opening, or a
+   * confirmation left open in the riding header that survives Pause and
+   * reappears here (recorded separately, not fixed here). Paid, as Edit
+   * copy's is, only once the sticky navigation is there to measure
+   * against, which on that reappearance is a commit after the Pause. A
+   * reopening re-measures, and no other render repeats it. Unlike Edit
+   * copy's, no in-flight condition is needed: it can appear only by an
+   * opening, refused while a finalisation runs; by a Pause, also refused
+   * then; or as restoration completes, when it cannot be open.
+   *
+   * Declared after Edit copy's reveal on purpose. When both confirmations
+   * reappear after one Pause, End ride's Cancel is the one left focused
+   * (its dialog comes later in the panel), so its reveal runs last and is
+   * measured after whatever Edit copy's reveal moved.
+   */
+  useLayoutEffect(() => {
+    const reveal = endRideRevealRef.current;
+    if (isEndRidePanelConfirmShown !== reveal.shown) {
+      reveal.shown = isEndRidePanelConfirmShown;
+      reveal.pending = isEndRidePanelConfirmShown;
+    }
+    if (!reveal.pending) return;
+    if (stickyHeaderRef?.current === null) return;
+    reveal.pending = false;
+    const insetEl = endRideConfirmRef.current;
+    if (!insetEl) return;
+    applyConfirmationReveal(
+      insetEl,
+      stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+      endRideActionsRef.current,
+    );
+  });
+
+  /**
+   * Decides the focus return of a Cancel or Escape on End ride's
+   * confirmation (backlog item 124, C-11), re-checked on every render and
+   * in this order:
+   * 1. wait while the confirmation is open, End ride is absent or disabled
+   *    (a Pause still being saved), or End ride is in the paused panel
+   *    before App has put the sticky navigation back. The first wait arms
+   *    the request's guard: from then on a tap, a key, a wheel or a touch
+   *    scroll anywhere means the rider has moved on;
+   * 2. End ride is back in the riding header (C-10): a Cancel made there is
+   *    handed to pendingEndRideFocusRef's effect above, so it keeps exactly
+   *    the plain focus it always had; one made in the panel only while the
+   *    rider is still waiting;
+   * 3. End ride is in the paused panel: unless the rider has moved on,
+   *    focus it without the browser's own focus scroll — which ignores the
+   *    sticky navigation, leaving the button under it, or centres it — and
+   *    then move the page only as far as reveals that button below the
+   *    navigation and above the safe area, and not at all when it is
+   *    visible. The rider's position, including any scrolling done while
+   *    the confirmation was open, is otherwise kept, and the position
+   *    before it opened is never restored. The collapse, and any clamping
+   *    of the shorter page, is already laid out when the button is
+   *    measured.
+   * An ordinary Cancel is decided in its own closing commit, where nothing
+   * can have intervened, so it always returns focus, as before. Still
+   * waiting means the guard saw no input and focus is on <body> — where the
+   * removed confirmation, or the riding shell a Pause replaced, leaves it —
+   * or on End ride itself.
+   *
+   * A layout effect with an instant scroll, so the correction lands before
+   * the remounted button is painted (item 95's pair).
+   */
+  useLayoutEffect(() => {
+    const pending = pendingEndRideCancelRef.current;
+    if (pending === null) return;
+    const trigger = endRideTriggerRef.current;
+    if (
+      isEndRideConfirmOpen ||
+      trigger === null ||
+      trigger.disabled ||
+      (isEndRidePanelShown && stickyHeaderRef?.current === null)
+    ) {
+      pending.guard ??= armOperationInteractionGuard(() => null);
+      return;
+    }
+    pendingEndRideCancelRef.current = null;
+    const guard = pending.guard;
+    const focused = document.activeElement;
+    const isStillWaiting =
+      guard === null ||
+      (guard.armed &&
+        (focused === null || focused === document.body || focused === trigger));
+    guard?.detach();
+    if (!isEndRidePanelShown) {
+      if (pending.origin === "header" || isStillWaiting) {
+        pendingEndRideFocusRef.current = true;
+      }
+      return;
+    }
+    if (!isStillWaiting) return;
+    trigger.focus({ preventScroll: true });
+    if (document.activeElement !== trigger) return;
+    applyConfirmationReveal(
+      trigger,
+      stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+    );
+  });
+
+  // Detaches a Cancel's guard still waiting when this screen unmounts. Not
+  // folded into the panel's own context effect above, whose cleanup runs
+  // exactly when the paused panel appears — when a waiting request lands.
+  useLayoutEffect(() => {
+    const cancelRef = pendingEndRideCancelRef;
+    return () => {
+      cancelRef.current?.guard?.detach();
+    };
+  }, []);
+
   // Renders the End-ride action in place: either the trigger button (plus
   // any error) or the confirmation itself, never both — called from both of
   // this screen's two mutually exclusive trigger locations below (the
@@ -1564,17 +1734,28 @@ export function RidingScreen({
   // 50's in-place confirmation morph, mirroring PlanningScreen.tsx's own
   // Clear-draft treatment from item 49).
   //
-  // `placement` only changes the trigger's label. In the compact immersive
+  // `placement` changes the trigger's label. In the compact immersive
   // header the visible text is the short `ride.endRideCompact` — German
   // `Beenden` rather than `Fahrt beenden` — so the screen title keeps its
   // room on a phone-width line (item 113's 25 September 2026 follow-up);
   // the accessible name stays the full `ride.endRide`, which contains the
   // visible word. The paused panel has the width for the full label.
+  //
+  // It also decides how the confirmation is revealed (backlog item 124,
+  // C-11). Only the paused panel's sits in page flow, so only it focuses
+  // Cancel without the browser's own focus scroll and hands over its box
+  // and action row for the opening reveal above; the riding header's keeps
+  // plain autoFocus inside its fixed shell. Cancel and Escape report the
+  // placement they were made from to the decision effect above.
   function renderEndRideAction(placement: "header" | "panel"): ReactNode {
     if (!isEndRideConfirmOpen) return renderEndRideTrigger(placement);
+    const isPanel = placement === "panel";
     return (
       <ConfirmDialog
         open={isEndRideConfirmOpen}
+        containerRef={isPanel ? endRideConfirmRef : undefined}
+        actionsRef={isPanel ? endRideActionsRef : undefined}
+        focusCancelWithoutScroll={isPanel}
         title={t("riding.endConfirmTitle")}
         message={t("riding.endConfirmMessage")}
         confirmLabel={
@@ -1586,7 +1767,9 @@ export function RidingScreen({
         onConfirm={() => {
           void performFinalizeRide("end");
         }}
-        onCancel={handleEndRideCancel}
+        onCancel={() => {
+          handleEndRideCancel(placement);
+        }}
       />
     );
   }
@@ -2171,7 +2354,7 @@ export function RidingScreen({
               onCancel={handleEditCopyCancel}
             />
           </div>
-          {hasResumableSession ? (
+          {isEndRidePanelShown ? (
             <div className="ride-end-ride-panel-row stack">
               {renderEndRideAction("panel")}
             </div>

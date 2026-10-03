@@ -6,7 +6,7 @@
 // saveDraft spy precedent). See CLAUDE.md's "A finished ride's persisted
 // state is never cleared" entry for the feature this proves.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RidingScreen } from "./RidingScreen.tsx";
 import { db } from "../../storage/db.ts";
@@ -22,6 +22,10 @@ import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSourc
 import { buildFakeWakeLockSource } from "../../test/fixtures/wakeLockSource.ts";
 import type { GeolocationFix } from "../../platform/geolocation.ts";
 import { clearErrorLog, getRecentErrors } from "../../platform/errorLog.ts";
+import { saveDraft } from "../../storage/planningDraftRepository.ts";
+import * as guardModule from "../shared/operationInteractionGuard.ts";
+import type { OperationInteractionGuard } from "../shared/operationInteractionGuard.ts";
+import type { StoredRouteRideState } from "../../storage/db.ts";
 
 const routePoints = buildRoutePointsFromWaypoints(
   [
@@ -854,5 +858,642 @@ describe("RidingScreen onRideFinalized", () => {
         (entry) => entry.context === "riding-ride-finalized-callback",
       ),
     ).toBe(true);
+  });
+});
+
+// Backlog item 124, C-11 (the rider's decision of 3 October 2026): the paused
+// panel's End ride confirmation is revealed by the common rule on opening,
+// and a Cancel or Escape returns focus to End ride without the browser's own
+// focus scroll, moving the page only as far as reveals that button. The
+// riding header's confirmation (C-10) is left exactly as it was. Geometry is
+// stubbed as RidingScreen.test.tsx's C-12 tests stub it; the real-browser
+// geometry is proved in e2e/endRidePausedConfirmationReveal.smoke.spec.ts.
+// The held Pause write below is a timing branch no ordinary flow reaches:
+// these are its unit-level evidence.
+describe("End ride's confirmation on the paused screen (backlog item 124, C-11)", () => {
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalFocus = HTMLElement.prototype.focus;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalScrollBy = window.scrollBy;
+
+  afterEach(async () => {
+    Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    HTMLElement.prototype.focus = originalFocus;
+    window.scrollBy = originalScrollBy;
+    document.querySelectorAll("body > header, body > .c11-elsewhere").forEach((node) => {
+      node.remove();
+    });
+    vi.restoreAllMocks();
+    await db.planningDrafts.clear();
+  });
+
+  function rect(top: number, bottom: number): DOMRect {
+    return {
+      top,
+      bottom,
+      left: 0,
+      right: 358,
+      width: 358,
+      height: bottom - top,
+      x: 0,
+      y: top,
+      toJSON: () => "",
+    };
+  }
+
+  interface Band {
+    top: number;
+    bottom: number;
+  }
+
+  interface Geometry {
+    inset: Band;
+    actions: Band;
+    trigger: Band;
+    editInset: Band;
+    editActions: Band;
+  }
+
+  /** Mutable, so a test can change what the next measurement sees. jsdom's
+   * window.innerHeight is 768 and it has no visualViewport, so with the
+   * 60px header the usable band is 68..760. Both End ride placements and
+   * both of its triggers report the same boxes, so a test of the riding
+   * header proves it is never revealed whatever its geometry. */
+  function stubGeometry(initial: Partial<Geometry> = {}): Geometry {
+    const geometry: Geometry = {
+      inset: { top: 200, bottom: 397 },
+      actions: { top: 341, bottom: 385 },
+      trigger: { top: 300, bottom: 344 },
+      editInset: { top: 200, bottom: 397 },
+      editActions: { top: 341, bottom: 385 },
+      ...initial,
+    };
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const dialog = this.closest('[role="dialog"]');
+      const title = dialog?.querySelector("h2, h3, h4")?.textContent ?? "";
+      const isEnd = title === "End this ride?";
+      const isEdit = title === "Replace your current draft?";
+      if (dialog === this) {
+        if (isEnd) return rect(geometry.inset.top, geometry.inset.bottom);
+        if (isEdit) return rect(geometry.editInset.top, geometry.editInset.bottom);
+      }
+      if (dialog && this.classList.contains("route-delete-confirm-actions")) {
+        if (isEnd) return rect(geometry.actions.top, geometry.actions.bottom);
+        if (isEdit) return rect(geometry.editActions.top, geometry.editActions.bottom);
+      }
+      if (
+        !dialog &&
+        this.tagName === "BUTTON" &&
+        (this.getAttribute("aria-label") ?? this.textContent.trim()) === "End ride"
+      ) {
+        return rect(geometry.trigger.top, geometry.trigger.bottom);
+      }
+      if (this.tagName === "HEADER" && this.parentElement === document.body) {
+        return rect(0, 60);
+      }
+      return rect(0, 0);
+    };
+    return geometry;
+  }
+
+  /** Focus calls and deliberate scrolls in one ordered log. Delegates to
+   * the real focus. */
+  function captureLog() {
+    const log: string[] = [];
+    HTMLElement.prototype.focus = function focus(
+      this: HTMLElement,
+      options?: FocusOptions,
+    ) {
+      log.push(
+        `focus:${this.textContent.trim().slice(0, 12)}:${options?.preventScroll === true ? "noscroll" : "scroll"}`,
+      );
+      originalFocus.call(this, options);
+    };
+    window.scrollBy = (options?: ScrollToOptions | number) => {
+      if (typeof options === "object") {
+        log.push(
+          `scrollBy:${String(options.top)}:${String(options.left)}:${String(options.behavior)}`,
+        );
+      }
+    };
+    return log;
+  }
+
+  const scrolls = (log: readonly string[]) =>
+    log.filter((entry) => entry.startsWith("scrollBy"));
+  /** What the app did from `start` on, leaving out the focus user-event
+   * itself gives the control it clicks. */
+  const appEntriesSince = (log: readonly string[], start: number, clicked: string) =>
+    log.slice(start).filter((entry) => entry !== `focus:${clicked}:scroll`);
+
+  function renderWithHeader() {
+    const header = document.createElement("header");
+    document.body.appendChild(header);
+    const headerRef: { current: HTMLElement | null } = { current: header };
+    const fake = buildFakeGeolocationSource();
+    const mapFactory = createMockMapFactory().factory;
+    const element = () => (
+      <RidingScreen
+        route={route}
+        geolocationSource={fake.source}
+        mapFactory={mapFactory}
+        stickyHeaderRef={headerRef}
+      />
+    );
+    const utils = render(element());
+    return {
+      ...utils,
+      header,
+      headerRef,
+      fake,
+      rerenderScreen: () => {
+        utils.rerender(element());
+      },
+    };
+  }
+
+  const storedPausedRide: StoredRouteRideState = {
+    id: "active",
+    routeId: route.id,
+    startedAt: "2026-01-01T08:00:00.000Z",
+    lastFix: { coordinate: MIDPOINT_COORDINATE, accuracyMetres: 6, timestampMs: 1000 },
+    lastMatchedPointIndex: 10,
+    matchedDistanceFromStartMetres: route.distanceMetres / 2,
+    offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+  };
+
+  /** The paused route screen, reached as item 132's restored session is. */
+  async function renderPaused() {
+    await setActiveRideState(storedPausedRide);
+    const rendered = renderWithHeader();
+    await screen.findByRole("button", { name: "Resume ride" });
+    return rendered;
+  }
+
+  /** Active riding with a persisted fix, the riding header's End ride
+   * showing. */
+  async function renderRiding() {
+    const user = userEvent.setup();
+    const rendered = renderWithHeader();
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+    act(() => {
+      rendered.fake.watches[0]?.emitFix(midpointFix(1000));
+    });
+    await waitFor(async () => {
+      expect(await getActiveRideState()).toBeDefined();
+    });
+    return { ...rendered, user };
+  }
+
+  const endConfirm = () => screen.findByRole("dialog", { name: "End this ride?" });
+  const cancelIn = (dialog: HTMLElement) =>
+    within(dialog).getByRole("button", { name: "Cancel" });
+  const panelTrigger = (container: HTMLElement) =>
+    container.querySelector<HTMLButtonElement>(".ride-end-ride-panel-row > button");
+
+  function holdPauseWrite(): { release: () => Promise<void>; fail: () => Promise<void> } {
+    let resolveWrite: () => void = () => undefined;
+    let rejectWrite: (error: Error) => void = () => undefined;
+    vi.spyOn(rideStateRepository, "setActiveRideState").mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          resolveWrite = resolve;
+          rejectWrite = reject;
+        }),
+    );
+    const settle = async (action: () => void) => {
+      await act(async () => {
+        action();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    };
+    return {
+      release: () =>
+        settle(() => {
+          resolveWrite();
+        }),
+      fail: () =>
+        settle(() => {
+          rejectWrite(new Error("held write failed"));
+        }),
+    };
+  }
+
+  it("focuses Cancel without scrolling, then makes one instant minimal reveal measured below the sticky header", async () => {
+    const user = userEvent.setup();
+    await renderPaused();
+    // Fits the 692px band, but its bottom is 140px below it.
+    stubGeometry({
+      inset: { top: 600, bottom: 900 },
+      actions: { top: 840, bottom: 884 },
+    });
+    const log = captureLog();
+
+    const start = log.length;
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    const dialog = await endConfirm();
+
+    expect(appEntriesSince(log, start, "End ride")).toEqual([
+      "focus:Cancel:noscroll",
+      "scrollBy:140:0:auto",
+    ]);
+    expect(cancelIn(dialog)).toHaveFocus();
+  });
+
+  it("does not move the page when the whole confirmation already fits", async () => {
+    const user = userEvent.setup();
+    await renderPaused();
+    stubGeometry();
+    const log = captureLog();
+
+    const start = log.length;
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    const dialog = await endConfirm();
+
+    expect(appEntriesSince(log, start, "End ride")).toEqual(["focus:Cancel:noscroll"]);
+    expect(cancelIn(dialog)).toHaveFocus();
+  });
+
+  it("does not move an oversized confirmation whose complete action row already shows, and otherwise moves only the row into the band", async () => {
+    const user = userEvent.setup();
+    await renderPaused();
+    const geometry = stubGeometry({
+      inset: { top: -100, bottom: 760 },
+      actions: { top: 690, bottom: 734 },
+    });
+    const log = captureLog();
+
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    await user.click(cancelIn(await endConfirm()));
+    expect(scrolls(log)).toEqual([]);
+
+    // Oversized again, but now the row is 40px below the band: exactly that
+    // much, not the confirmation's own padding below it as well.
+    geometry.inset = { top: 100, bottom: 1000 };
+    geometry.actions = { top: 756, bottom: 800 };
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    await endConfirm();
+    expect(scrolls(log)).toEqual(["scrollBy:40:0:auto"]);
+  });
+
+  it("reveals once per opening — never on an unrelated re-render — and re-measures on reopening", async () => {
+    const user = userEvent.setup();
+    const { rerenderScreen } = await renderPaused();
+    const geometry = stubGeometry({
+      inset: { top: 600, bottom: 900 },
+      actions: { top: 840, bottom: 884 },
+    });
+    const log = captureLog();
+
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    const dialog = await endConfirm();
+    rerenderScreen();
+    rerenderScreen();
+    expect(scrolls(log)).toEqual(["scrollBy:140:0:auto"]);
+
+    await user.click(cancelIn(dialog));
+    geometry.inset = { top: 650, bottom: 950 };
+    geometry.actions = { top: 890, bottom: 934 };
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    await endConfirm();
+    expect(scrolls(log)).toEqual(["scrollBy:140:0:auto", "scrollBy:190:0:auto"]);
+  });
+
+  it("Cancel and Escape return focus to End ride without scrolling, moving only as far as reveals End ride itself, and keep the ride paused", async () => {
+    const user = userEvent.setup();
+    const { container } = await renderPaused();
+    // End ride comes back 38px under the 68px top of the band.
+    const geometry = stubGeometry({ trigger: { top: 30, bottom: 74 } });
+    const stored = await getActiveRideState();
+    const log = captureLog();
+
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    let start = log.length;
+    await user.click(cancelIn(await endConfirm()));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(appEntriesSince(log, start, "Cancel")).toEqual([
+      "focus:End ride:noscroll",
+      "scrollBy:-38:0:auto",
+    ]);
+    expect(panelTrigger(container)).toHaveFocus();
+
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    await endConfirm();
+    start = log.length;
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(appEntriesSince(log, start, "Cancel")).toEqual([
+      "focus:End ride:noscroll",
+      "scrollBy:-38:0:auto",
+    ]);
+    expect(panelTrigger(container)).toHaveFocus();
+
+    // Already inside the band: focus only, the page left where it is.
+    geometry.trigger = { top: 300, bottom: 344 };
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    start = log.length;
+    await user.click(cancelIn(await endConfirm()));
+    expect(appEntriesSince(log, start, "Cancel")).toEqual(["focus:End ride:noscroll"]);
+
+    expect(await getActiveRideState()).toEqual(stored);
+    expect(screen.getByRole("button", { name: "Resume ride" })).toBeInTheDocument();
+  });
+
+  it("refuses Cancel and Escape while the ending runs, and a failed ending keeps its plain focus return with no reveal", async () => {
+    const user = userEvent.setup();
+    const { container } = await renderPaused();
+    stubGeometry({ trigger: { top: 30, bottom: 74 } });
+    let rejectClear: (error: Error) => void = () => undefined;
+    vi.spyOn(rideStateRepository, "clearActiveRideState").mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectClear = reject;
+        }),
+    );
+    const log = captureLog();
+
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    const dialog = await endConfirm();
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+    expect(within(dialog).getByRole("button", { name: "Ending ride…" })).toBeDisabled();
+    const start = log.length;
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog", { name: "End this ride?" })).toBe(dialog);
+    expect(log.slice(start)).toEqual([]);
+
+    await act(async () => {
+      rejectClear(new Error("boom"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The ride could not be ended on this device. Try again.",
+    );
+    // Unchanged by C-11: the browser's own focus scroll, and no reveal,
+    // even though End ride is under the navigation here.
+    expect(log.slice(start)).toEqual(["focus:End ride:scroll"]);
+    expect(panelTrigger(container)).toHaveFocus();
+  });
+
+  it("leaves the riding header's confirmation (C-10) exactly as it was: autoFocus, no reveal, and a plain focus back to End ride", async () => {
+    const { user } = await renderRiding();
+    // Geometry that would warrant movement in the paused panel.
+    stubGeometry({
+      inset: { top: 600, bottom: 900 },
+      actions: { top: 840, bottom: 884 },
+      trigger: { top: 30, bottom: 74 },
+    });
+    const log = captureLog();
+
+    let start = log.length;
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    const dialog = await endConfirm();
+    expect(appEntriesSince(log, start, "End ride")).toEqual(["focus:Cancel:scroll"]);
+
+    start = log.length;
+    await user.click(cancelIn(dialog));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "End ride" })).toHaveFocus();
+    });
+    expect(appEntriesSince(log, start, "Cancel")).toEqual(["focus:End ride:scroll"]);
+
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    await endConfirm();
+    start = log.length;
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "End ride" })).toHaveFocus();
+    });
+    expect(appEntriesSince(log, start, "Cancel")).toEqual(["focus:End ride:scroll"]);
+    expect(scrolls(log)).toEqual([]);
+  });
+
+  it("a paused confirmation carried into riding by Resume ride is not revealed there", async () => {
+    const user = userEvent.setup();
+    await renderPaused();
+    stubGeometry();
+    const log = captureLog();
+
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    await endConfirm();
+    const start = log.length;
+    await user.click(screen.getByRole("button", { name: "Resume ride" }));
+    const dialog = await endConfirm();
+    // The riding header's own plain autoFocus, as before C-11.
+    expect(appEntriesSince(log, start, "Resume ride")).toEqual(["focus:Cancel:scroll"]);
+    expect(cancelIn(dialog)).toHaveFocus();
+    expect(scrolls(log)).toEqual([]);
+  });
+
+  // The separately recorded survivor (not fixed here): a confirmation left
+  // open in the riding header survives Pause and reappears in the panel.
+  // App puts the sticky navigation back a commit later, so the header ref is
+  // emptied here while riding, as App's own header unmounts then.
+  it("reveals a confirmation that reappears on Pause only once the sticky navigation is back, focusing Cancel without scrolling", async () => {
+    const { user, header, headerRef, rerenderScreen } = await renderRiding();
+    stubGeometry({
+      inset: { top: 600, bottom: 900 },
+      actions: { top: 840, bottom: 884 },
+    });
+    headerRef.current = null;
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    await endConfirm();
+    const log = captureLog();
+
+    await user.click(screen.getByRole("button", { name: "Pause" }));
+    await screen.findByRole("button", { name: "Resume ride" });
+    const dialog = await endConfirm();
+    expect(cancelIn(dialog)).toHaveFocus();
+    expect(log).toContain("focus:Cancel:noscroll");
+    expect(scrolls(log)).toEqual([]);
+
+    headerRef.current = header;
+    rerenderScreen();
+    expect(scrolls(log)).toEqual(["scrollBy:140:0:auto"]);
+    rerenderScreen();
+    expect(scrolls(log)).toEqual(["scrollBy:140:0:auto"]);
+  });
+
+  it("when Edit copy's confirmation reappears with it, End ride's is revealed last and keeps focus", async () => {
+    const user = userEvent.setup();
+    await saveDraft({
+      waypoints: [
+        { id: "existing-a", coordinate: [1, 52] },
+        { id: "existing-b", coordinate: [1.01, 52] },
+      ],
+      routeName: "Unsaved plan",
+      avoidFerries: true,
+      profile: "cycling-road",
+    });
+    const { header, headerRef, fake, rerenderScreen } = await renderPaused();
+    stubGeometry({
+      editInset: { top: 600, bottom: 900 },
+      editActions: { top: 840, bottom: 884 },
+      inset: { top: 650, bottom: 950 },
+      actions: { top: 890, bottom: 934 },
+    });
+    await user.click(screen.getByRole("button", { name: "Edit copy" }));
+    await screen.findByRole("dialog", { name: "Replace your current draft?" });
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    await endConfirm();
+
+    await user.click(screen.getByRole("button", { name: "Resume ride" }));
+    headerRef.current = null;
+    act(() => {
+      fake.watches[0]?.emitFix(midpointFix(2000));
+    });
+    await waitFor(async () => {
+      expect((await getActiveRideState())?.lastFix?.timestampMs).toBe(2000);
+    });
+    const log = captureLog();
+    await user.click(screen.getByRole("button", { name: "Pause" }));
+    await screen.findByRole("button", { name: "Resume ride" });
+    await screen.findByRole("dialog", { name: "Replace your current draft?" });
+    const dialog = await endConfirm();
+    expect(scrolls(log)).toEqual([]);
+
+    headerRef.current = header;
+    rerenderScreen();
+    expect(scrolls(log)).toEqual(["scrollBy:140:0:auto", "scrollBy:190:0:auto"]);
+    expect(cancelIn(dialog)).toHaveFocus();
+  });
+
+  describe("a Cancel made while a Pause is still being saved", () => {
+    it("returns focus to the paused screen's End ride, without scrolling and with the minimal reveal, once the navigation is back — if the rider did nothing meanwhile", async () => {
+      const { user, header, headerRef, rerenderScreen, container } = await renderRiding();
+      stubGeometry({ trigger: { top: 30, bottom: 74 } });
+      headerRef.current = null;
+      await user.click(screen.getByRole("button", { name: "End ride" }));
+      const dialog = await endConfirm();
+      const write = holdPauseWrite();
+      await user.click(screen.getByRole("button", { name: "Pause" }));
+      expect(screen.getByRole("button", { name: "Pausing…" })).toBeDisabled();
+      const log = captureLog();
+
+      await user.click(cancelIn(dialog));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await write.release();
+      await screen.findByRole("button", { name: "Resume ride" });
+      expect(appEntriesSince(log, 0, "Cancel")).toEqual([]);
+
+      headerRef.current = header;
+      rerenderScreen();
+      expect(appEntriesSince(log, 0, "Cancel")).toEqual([
+        "focus:End ride:noscroll",
+        "scrollBy:-38:0:auto",
+      ]);
+      expect(panelTrigger(container)).toHaveFocus();
+    });
+
+    it.each([
+      [
+        "a tap",
+        () => {
+          fireEvent.pointerDown(document.body);
+        },
+      ],
+      [
+        "a key",
+        () => {
+          fireEvent.keyDown(document.body, { key: "Tab" });
+        },
+      ],
+      [
+        "a wheel scroll",
+        () => {
+          fireEvent.wheel(document.body, { deltaY: 120 });
+        },
+      ],
+    ])(
+      "takes neither focus nor the page once the rider has moved on with %s",
+      async (_label, moveOn) => {
+        const { user, header, headerRef, rerenderScreen } = await renderRiding();
+        stubGeometry({ trigger: { top: 30, bottom: 74 } });
+        headerRef.current = null;
+        await user.click(screen.getByRole("button", { name: "End ride" }));
+        const dialog = await endConfirm();
+        const write = holdPauseWrite();
+        await user.click(screen.getByRole("button", { name: "Pause" }));
+        const log = captureLog();
+        await user.click(cancelIn(dialog));
+
+        moveOn();
+        await write.release();
+        await screen.findByRole("button", { name: "Resume ride" });
+        headerRef.current = header;
+        rerenderScreen();
+
+        expect(appEntriesSince(log, 0, "Cancel")).toEqual([]);
+        expect(screen.getByRole("button", { name: "End ride" })).not.toHaveFocus();
+      },
+    );
+
+    it("takes neither focus nor the page once focus has moved elsewhere", async () => {
+      const { user, header, headerRef, rerenderScreen } = await renderRiding();
+      stubGeometry({ trigger: { top: 30, bottom: 74 } });
+      const elsewhere = document.createElement("button");
+      elsewhere.className = "c11-elsewhere";
+      elsewhere.textContent = "Elsewhere";
+      document.body.appendChild(elsewhere);
+      headerRef.current = null;
+      await user.click(screen.getByRole("button", { name: "End ride" }));
+      const dialog = await endConfirm();
+      const write = holdPauseWrite();
+      await user.click(screen.getByRole("button", { name: "Pause" }));
+      await user.click(cancelIn(dialog));
+      const log = captureLog();
+
+      elsewhere.focus();
+      await write.release();
+      await screen.findByRole("button", { name: "Resume ride" });
+      headerRef.current = header;
+      rerenderScreen();
+
+      expect(log).toEqual(["focus:Elsewhere:scroll"]);
+      expect(elsewhere).toHaveFocus();
+    });
+
+    it("keeps the riding header's own plain focus return when the Pause fails", async () => {
+      const { user } = await renderRiding();
+      stubGeometry({ trigger: { top: 30, bottom: 74 } });
+      await user.click(screen.getByRole("button", { name: "End ride" }));
+      const dialog = await endConfirm();
+      const write = holdPauseWrite();
+      await user.click(screen.getByRole("button", { name: "Pause" }));
+      const log = captureLog();
+      await user.click(cancelIn(dialog));
+
+      await write.fail();
+      expect(await screen.findByRole("alert")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "End ride" })).toHaveFocus();
+      });
+      expect(log.filter((entry) => entry.startsWith("focus:End ride"))).toEqual([
+        "focus:End ride:scroll",
+      ]);
+      expect(scrolls(log)).toEqual([]);
+    });
+
+    it("detaches its guard, taking nothing later, when the screen unmounts while it waits", async () => {
+      const armSpy = vi.spyOn(guardModule, "armOperationInteractionGuard");
+      const { user, unmount } = await renderRiding();
+      stubGeometry({ trigger: { top: 30, bottom: 74 } });
+      await user.click(screen.getByRole("button", { name: "End ride" }));
+      const dialog = await endConfirm();
+      const write = holdPauseWrite();
+      await user.click(screen.getByRole("button", { name: "Pause" }));
+      await user.click(cancelIn(dialog));
+      const guard = armSpy.mock.results.at(-1)?.value as OperationInteractionGuard;
+      expect(guard.armed).toBe(true);
+      const log = captureLog();
+
+      unmount();
+      expect(guard.armed).toBe(false);
+      await write.release();
+      expect(log).toEqual([]);
+    });
   });
 });
