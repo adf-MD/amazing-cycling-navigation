@@ -28,6 +28,8 @@
 
 **Update (3 October 2026, evening): four decisions; C-11 delivered.** The rider decided C-11 (correct it), C-07 and C-08 (unchanged, the 25 px at 200% a bounded exception), C-09 (its accepted flow preserved) and approved a separate slice dismissing unconfirmed ride-screen prompts on a successful Start, Resume or Pause ([decisions](../../project/backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening)). C-11's correction shipped in `0.4.59` as item 124's slice 8, with automated evidence only; its device check is pending. The other dispositions stay proposals.
 
+**Update (3 October 2026, later): C-11 accepted.** Its ordinary flows passed on the installed iPhone in English and German, the scrolled cancellation included, on `0.4.59` (build `bc4fb11`) ([`current-status.md`](../../project/current-status.md)). Its enlarged-text, oversized and held-Pause cases keep automated evidence only.
+
 **What this is.** Every confirmation in the app, every expanding card, form, editor and disclosure that could reasonably fall under the rider's "pop-up cards" request, and the conditional and failure states that change what would need revealing — each with a stable review ID, its labels in English and German, how to reach it, what it does today, where that is in the source and tests, what was measured, and a recommendation.
 
 **The rule under review** ([item 124](../../project/backlog.md#item-124)): no movement when the newly opened content fits between the sticky navigation and the bottom safe area; otherwise only enough to reveal it; and when it cannot fit, only enough to show its complete action row. On Cancel and Escape: keep the page where the rider has left it, moving only as far as needed to reveal the opening control.
@@ -248,6 +250,7 @@ _Correction, 3 October 2026: C-02 is an exception — it orders its actions End 
 - **Decided, 3 October 2026:** the common opening and cancellation policy, keeping its placement and ride semantics, with targeted corrections only where measurements demonstrate a mismatch; the rider could not reach a lower opening position on the installed iPhone. Nothing is implemented, and no correction is selected yet ([decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026)).
 - **Reviewed, 3 October 2026: mismatches.** At 200% the opening over-scrolls by 280 px and hides the title; after the rider scrolls it, Cancel can leave **End ride** hidden under the sticky navigation, at ordinary text too. A targeted correction is proposed, not selected ([review](ride-confirmations-review.md#proposed-next-slice--c-11-only)).
 - **Decided and delivered, 3 October 2026, evening:** shipped in `0.4.59` as item 124's slice 8 ([record](../../project/backlog-item-124-continued.md#slice-8--end-rides-confirmation-on-the-paused-screen-c-11-shipped-0459-3-october-2026)). The opening is revealed by the minimum under the navigation, and Cancel and Escape return focus to End ride with only the movement that reveals it; at ordinary text the opening is unchanged. Automated evidence only; its device check is pending.
+- **Accepted, 3 October 2026:** the ordinary flows passed on the installed iPhone in English and German, the scrolled cancellation included, on `0.4.59` (build `bc4fb11`) ([`current-status.md`](../../project/current-status.md)). The enlarged-text, oversized and held-Pause cases keep automated evidence only.
 
 #### C-12 — Edit copy: replace your current draft?
 
@@ -698,6 +701,8 @@ Branches flagged as difficult to reach or apparently unreachable. No steps are i
 **3 October 2026 — review, documentation only.** C-07, C-08, C-10, C-11 and C-13 were measured against the common policy, and every remaining entry was reconciled, in the [review](ride-confirmations-review.md). It proposes one correction, for C-11, and lists the decisions still needed; it selects, accepts and excludes nothing.
 
 **3 October 2026, evening — four decisions; C-11 delivered.** The rider's decisions on C-11, C-07/C-08, C-09 and the surviving confirmations are recorded in the [continuation](../../project/backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening); C-11 shipped in `0.4.59` as slice 8, and the transition dismissal is the next slice.
+
+**3 October 2026, later — C-11 accepted.** Its ordinary flows passed on the installed iPhone in English and German, on `0.4.59` (build `bc4fb11`) ([`current-status.md`](../../project/current-status.md)).
 
 ## Review preparation — D-01, D-02 and D-06 (2 October 2026)
 

@@ -1,10 +1,115 @@
 # Item 124 — slice records, continued
 
-This file continues [item 124](backlog.md#item-124)'s entry in [`backlog.md`](backlog.md), from slice 7 onwards. It was split out on 3 October 2026, for size only: `backlog.md` had reached about 146,000 characters, and one more slice record would have taken it past the 150,000-character limit set out in [the documentation index](README.md).
+This file continues [item 124](backlog.md#item-124)'s entry in [`backlog.md`](backlog.md), from slice 6 onwards. It was split out on 3 October 2026, for size only: `backlog.md` had reached about 146,000 characters, and one more slice record would have taken it past the 150,000-character limit set out in [the documentation index](README.md). It began at slice 7; slice 6's record was moved here unchanged later the same day, when `backlog.md` had again reached about 149,000 characters.
 
-- **It is the same entry, not a second record.** Item 124's specification, its dated decisions and the records of slices 1 to 6 stay in `backlog.md`, with a short pointer there for each slice recorded here.
+- **It is the same entry, not a second record.** Item 124's specification, its dated decisions and the records of slices 1 to 5 stay in `backlog.md`, with a short pointer there for each slice recorded here.
 - **Item 124 is still pending.** Nothing about it enters [`history/`](history/README.md) before its final slice; at that point both parts move there together.
 - **Device acceptance is recorded only in [`current-status.md`](current-status.md)**, never here.
+
+## Slice 6 — Delete route pending and failing (D-02) (shipped `0.4.57`, 3 October 2026)
+
+**Approved by the rider on 3 October 2026**, after the [investigation](../design/reveal-inventory/d-02-delete-lifecycle.md): implementation of decisions 4 and 5 in the inventory's [decisions section](../design/reveal-inventory/README.md#decisions--d-06-d-02-d-01-and-c-12-2-october-2026), following the report's recommendation. This is implementation approval, not device acceptance.
+
+**The rider's decision, option A** (reported 3 October 2026), for a failure that arrives while the rider's own search or tag filter hides the route: the route stays hidden according to the filter; the failure stays with that route's confirmation; when the route is visible again, its message and recovery actions are shown without taking focus or scrolling; no list-level message or notification is added.
+
+**What the rider gets.**
+
+- **While a confirmed deletion runs**, the route stays listed — whenever the search and filters include it — as "Deleting…", with Cancel and Delete route disabled. Its name, Rename, Add/Edit tags, Export and Delete are unavailable too. As before, every pin, every other card's Delete and Manage tags (with its hint) are refused; browsing, Search and the filters are not.
+- **After the commit**, the card stays a disabled "Deleting…" until the list itself no longer contains the route — never an ordinary card in between. Filtering a route out of view is not taken as evidence of the commit.
+- **A failure** shows "That route could not be deleted." / "Diese Route konnte nicht gelöscht werden.", never the storage error's own text, which goes only to Status's redacted log.
+  - **Still waiting at the card:** Cancel takes focus without the browser's focus scroll, and the grown confirmation is revealed by the minimum — its complete action row first when it cannot fit.
+  - **Moved on** (a scroll, a tap elsewhere, typing, another key): nothing takes focus and nothing moves.
+  - **Hidden by a filter:** option A, above.
+- **Leaving Routes** keeps the operation: returning shows "Deleting…" or the failure on its card, taking no focus.
+- **A success** moves focus only when it was inside the removed card, to the neighbouring card's name without scrolling — revealed by the minimum only while the rider was still waiting. Focus the rider moved, or a tap on blank space, is left alone. This replaces the old unconditional focus move, a behaviour change of its own.
+- **A card reappearing** with a running or failed deletion (a filter cleared, a return to Routes) takes no focus and scrolls nothing. D-03's quiet dismissal of an unconfirmed Delete is unchanged.
+
+**Mechanism.**
+
+- **Storage:** `deleteRoute` runs inside an explicit `db.transaction("rw", db.routes, …)`, so Dexie applies no optimistic removal; a commit re-reads the list, and an abort leaves it untouched.
+- **Owner:** a pure `src/ui/library/routeDeletion.ts` holds the record `{ attempt, routeId, phase: "deleting" | "committed" | "failed" }` and its attempt-guarded transitions. `useRouteDeletion.ts` wraps it with a synchronous admission ref (a second press in the same batch starts nothing), always logs a failure as `route-delete`, and records the outcome whether or not Routes is mounted. `App` owns one instance and passes it to `RouteLibrary`.
+- **`RouteLibrary`:** `pendingDeleteId` now means an unconfirmed confirmation only. A layout effect reconciles a committed or failed record once the loaded list lacks its route; no tombstone list is kept. A failed record is dismissed by Cancel or Escape, by Rename, the tag editor or the pin on its card, by a new Delete on any card and by opening Manage tags; App clears it when a route card's switch prompt appears, and never a running or committed one.
+- **`RouteListItem`:** on an admitted confirm, focus is parked on the confirmation's title (script-focusable, `preventScroll`) and the card arms one `armOperationInteractionGuard` over itself for that attempt. A layout effect decides the failure once, on a genuine transition to failed: guard armed **and** focus inside the card means Cancel plus `applyConfirmationReveal`; `<body>` never counts. The message joins the dialog's `aria-describedby`. The opening effect runs only on a false-to-true transition, so a remount replays nothing. The card's layout-effect cleanup reports, while the card is still connected, whether focus was inside it and whether the guard was still armed; `RouteLibrary` repairs focus only for the last such report from a card that left because its route is no longer stored.
+- **Files:** `src/storage/routesRepository.ts`, `src/ui/library/routeDeletion.ts` (new), `src/ui/library/useRouteDeletion.ts` (new), `src/App.tsx`, `src/ui/library/RouteLibrary.tsx`, `src/ui/library/RouteListItem.tsx`, `src/ui/shared/operationInteractionGuard.ts` (a comment); version `0.4.57`. No i18n, schema, CSS or dependency change.
+
+**Differences from the investigation's recommendation, and why.**
+
+1. **The guard and the failure decision live in `RouteListItem`**, not in `RouteLibrary` with per-route ref maps. The guard then lives exactly as long as the card that confirmed: filtering, navigation and success all detach it, and no ref map is needed. A filter change or a navigation is rider input that disarms the guard anyway; the remaining case, an external change filtering the card out and back mid-attempt, errs towards not taking focus.
+2. **`routeDeletion` is optional on `RouteLibrary`**, which owns one through the same hook when rendered alone, following the `pendingRouteSwitch` precedent; this spares 169 standalone test renders a mechanical change. Production always passes App's.
+3. **Focus repair also covers the route leaving storage while the record is still `deleting`** — a list emission before the commit's promise — so the repair does not depend on that ordering.
+4. **App clears a failed record as it sets a route card's prompt**, since `RouteLibrary` cannot update App during render, and **refuses to open or prompt for a route whose deletion is busy** — closing a narrow tap-then-delete race the investigation did not list.
+5. **A pending pin-focus marker yields** when focus is already inside an open confirmation, so it cannot take focus back from a failure decision's Cancel.
+6. **The handler guards are defence in depth.** The `disabled` attribute is the working mechanism — React drops clicks on disabled buttons — so the browser tests assert behaviour, and the guards-only control does not discriminate (below).
+7. **Not adopted:** the painted-frame recorder, since the DOM-commit recorder already covers every state that could be painted and headless WebKit defers frames; and the "`error.message` restored" control, since the unchanged baseline shows the raw text.
+
+**Evidence — automated only.**
+
+- **Unit and component:** the full suite passes, 4,896 tests in 208 files (54 more than `0.4.56`).
+  - **New:** `routeDeletion.test.ts` (6), `useRouteDeletion.test.ts` (7), and `src/test/idbHold.ts`, a bounded real IndexedDB hold on fake-indexeddb that can abort the app's queued delete.
+  - **`routesRepository.test.ts` (+2):** with a hold, a live `listRoutes` subscriber keeps the route while pending and after an abort, which rejects; a commit removes it.
+  - **`RouteListItem.test.tsx` (+21):** the title park, refused Escape, unavailable actions, the failure decision while waiting and after each kind of moving on, `<body>` never counting, a failure batched straight from the open confirmation, a retry's fresh guard, no focus on a pending or failed mount, and the removal report.
+  - **`RouteLibrary.test.tsx` (+14):** the four raw-message assertions now expect the translated message; real holds for pending, commit, abort and the D-03 running and failed cases; reconciliation with the list's re-read gated; focus repair, moved focus, a blank-space tap and the repair's reveal; a pin marker yielding; a failed record closed six ways; two presses in one batch.
+  - **`App.test.tsx` (+4):** leaving and returning while pending, a failure while away (logged, shown on return without focus), a switch prompt never clearing a running deletion but superseding a failure, and a busy route never opened.
+- **Browser, in the pinned container (the CI image, by digest), at 390×844 portrait:** `e2e/routeDeleteFailure.smoke.spec.ts` (new), 27 tests in each of Chromium and WebKit.
+  - **Fixtures, all synthetic:** an immediate fault on the routes delete; a bounded hold on `routes`, whose release can abort only the app's queued delete; a read fault on the list. The hold is always released, and the test never reads the held store.
+  - **Cases:** immediate failure while waiting, in English and German at ordinary and 200% root text; delayed failure while waiting (English ordinary, German 200%), with Escape refused on the parked title; a tap on the confirmation's own text; moved on by a wheel (English ordinary, German 200%), by typing in Search and by a blank-space tap; held and unheld success, and German 200%; success after focus moved to Search, after a wheel with focus on the title, and after a blank-space tap; Search hiding the route, then a commit or a failure; **a tag filter hiding the confirmed deletion, a failure, then the filter removed** (German); leaving Routes and returning within and after Dexie's 3-second cache window; a retry; refused actions; another page deleting the route while ours is pending or after ours failed; and the read-fault characterisation.
+  - **Results:** 54 of 54. Measured: the waiting reveal moved exactly the minimum — 37 px (English) and 58 px (German) at ordinary text, and the action row's 95 px and 164 px at 200%; moved-on anchors moved 0 px; the success repair moved 0 px at ordinary text, and −456 px (Chromium) and −468 px (WebKit) at German 200%, where the waiting rider's neighbour had moved above the band.
+  - **Regression specs**, with the new spec: `routeDeleteFiltering.smoke` (its claim that a Dexie write cannot be held in a browser corrected), `clearDraftFailure.smoke`, `confirmationDialogs.smoke`, `confirmationReveal.smoke`, `confirmationRevealSettled`, `editCopyBusyState.smoke`, `rideSessionSwitchGuard`, `ridingLauncher`, `diagnostics`, the five `routeLibrary*` specs and `androidRouteLibraryTags`: 284 of 284.
+  - **The full browser suite, once, at 8 workers:** 920 of 920, in both engines and the `android-chrome` project.
+- **Baseline, `23f9af4`** (application code identical to `439e578`, `0.4.56`): **all 54 browser runs fail, each on visible behaviour**, none on an implementation check alone.
+  - **21 per engine** cannot reach "Deleting…": the route leaves the list while its deletion is pending — the storage defect itself.
+  - **5 per engine** show the raw storage text instead of the translated message.
+  - **The successes** commit the deleted route as an ordinary card, and at German 200% the page jumped −733 px (Chromium) and −745 px (WebKit) where the minimum was 116 px.
+- **Negative controls**, each applied alone, rebuilt, and restored byte-for-byte (SHA-256); unit failures are of the 412 tests in the five affected files:
+
+| Control | What it disables                                    | Unit failures | Browser failures (of 54)                                       |
+| ------- | --------------------------------------------------- | ------------: | -------------------------------------------------------------- |
+| (a)     | the explicit transaction (an implicit delete)       |            10 | 40 — every held case                                           |
+| (b)     | App's ownership (RouteLibrary keeps its own)        |             4 | 4 — both navigation cases                                      |
+| (c)     | reconciliation (cleared at the commit's promise)    |             9 | 10 — the ordinary-card flash and every repair                  |
+| (d)     | the removal report (repair keyed on `<body>`)       |             1 | 2 — success after a blank-space tap                            |
+| (e)     | the guard (always armed)                            |             7 | 6 — wheel scrolls and the retry                                |
+| (f)     | the failure reveal                                  |             4 | 14 — every waiting case                                        |
+| (g)     | the title park                                      |            10 | 17 — waiting in Chromium, delayed waiting and repairs in both  |
+| (h)     | transition-only opening (the opening runs on mount) |             5 | 6 — failures returned by a filter or a navigation take focus   |
+| (i)     | the card's disabled attributes and handler guards   |             5 | 8 — refused actions, navigation and the busy-state recorder    |
+| (i2)    | the handler guards alone                            |             0 | 0 — not discriminating: React drops clicks on disabled buttons |
+| (j)     | App's refusal to open a busy route                  |             1 | not run: unit only                                             |
+| (k)     | the pin marker's yield                              |             1 | not run: unit only                                             |
+
+**Findings worth carrying forward.**
+
+- **An abort inside Dexie's own deferred signal hides the optimistic removal altogether.** The unit abort test passed against the implicit delete until the deletion stayed pending for 50 ms before failing; a failure that fast never shows the defect.
+- **A failure grows its confirmation downwards** — by 37 px at ordinary text and 164 px at German 200% — moving later content by itself. A kept-position anchor below it measured that growth as movement; anchors are therefore taken from the top of the band, above the message.
+- **React suppresses `onClick` on a disabled button**, even for a dispatched click, so the handler guards cannot be reached while the attribute is present; control (i2) shows it.
+
+**Limitations, stated plainly.**
+
+- **Synthetic only.** Holds, aborts, faults and the read fault are synthetic. Nothing is established about real failure modes, their frequency, or how long a deletion stays pending on an iPhone, and no physical-device reproduction of D-02 exists.
+- **Committed but never reconciled.** If the deletion commits and the live query then fails, the card stays a disabled "Deleting…", and because the list-wide busy state is retained, every pin, any other Delete and Manage tags stay refused until a later successful re-read or a reload. Nothing is still writing to storage then — the deletion has committed, and it is the list that is stale. General live-query recovery is outside this slice; the characterisation test pins today's behaviour.
+- **Returning to Routes after Dexie's three-second cache window while a deletion is still pending** shows "Loading routes…" until it settles, because the list's read waits behind the write.
+- **The repair's fallback** — when no neighbouring name can take focus — is Clear tag filters, the filter disclosure, Search and the heading, in that order.
+- **Two confirmations at once:** a failure arriving while another card's switch prompt is open leaves both open, as item 119 allows.
+- **The guard cannot see a scrollbar drag or an assistive-technology scroll**, and treats a failure after one as waiting, as in D-01 and D-06.
+- **Focus is parked on the confirmation's title while pending;** whether VoiceOver announces it there is unverified.
+- **The removal report relies on React 19.2's commit order**, measured and held by the tests rather than documented by React.
+- **Unchanged and pre-existing:** a route deleted in another tab while its unconfirmed confirmation has focus leaves focus on `<body>`.
+- **Not claimed:** browser text scaling is not iOS Larger Text, and no VoiceOver, physical-keyboard, landscape or physical-Android result is claimed.
+
+**CI and deployment.** Run [37116791859](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37116791859), for commit `bd688d7`: **Verify and build, all four End-to-end shards and Deploy succeeded, each on its first attempt.** The durations come from the run's own job and step start and completion times, read once after the run and kept locally. Verify and build's test step is its unit and component tests; each shard's is its end-to-end suite.
+
+| Job              | Test step | Whole job |
+| ---------------- | --------: | --------: |
+| Verify and build |     170 s |     297 s |
+| E2E shard 1/4    |     434 s |     498 s |
+| E2E shard 2/4    |     444 s |     498 s |
+| E2E shard 3/4    |     269 s |     331 s |
+| E2E shard 4/4    |     719 s |     784 s |
+| Deploy           |         — |       9 s |
+
+The longest job, shard 4, left 416 s below the E2E jobs' 1,200-second timeout. The deployment served `0.4.57` / `bd688d7`. These are one run's timings, not an established growth trend, and no further sharding change is made or authorised here.
+
+**Installed-iPhone acceptance, reported 3 October 2026.** The ordinary Delete route flow passed on `0.4.57` (build `bd688d7`), in English and German: cancelling Delete preserves the route; confirmed deletion and repeated use work without unexpected page jumps or stale states; and an unconfirmed Delete hidden by Search or a tag filter stays closed when the route returns, with Search typing uninterrupted. This accepts slice 6's ordinary-flow regression checks only: a pending deletion, the synthetic failures, failure recovery and the committed-but-unreconciled state above keep their synthetic, automated evidence and were not induced on the phone, and the Search result is an installed-iPhone typing result, not physical-keyboard evidence. The dated record, with what it does not claim, is in [`current-status.md`](current-status.md).
 
 ## Slice 7 — Edit copy's replacement confirmation, opening (C-12) (shipped `0.4.58`, 3 October 2026)
 
@@ -335,4 +440,17 @@ The remaining inventory dispositions in the review stay **proposals**, not blank
   - a second Escape during that wait counts as moving on.
 - **Desktop keyboard only.** There is no VoiceOver, physical-keyboard, landscape or physical-Android result. `useLayoutEffect` is kept as the design guarantee and is not proved load-bearing here.
 
-**Installed-iPhone acceptance: pending** — Session 5 of [`current-status.md`](current-status.md), in English and German, at ordinary text. **Next, approved:** the transition-dismissal slice (decision 4 above).
+**CI and deployment.** Run [37153751967](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37153751967), for commit `bc4fb11`: **Verify and build, all four End-to-end shards and Deploy succeeded, each on its first attempt.** The durations come from the run's own job and step start and completion times, read once after the run and kept locally as saved job data. Verify and build's test step is its unit and component tests; each shard's is its end-to-end suite.
+
+| Job              | Test step | Whole job |
+| ---------------- | --------: | --------: |
+| Verify and build |     174 s |     301 s |
+| E2E shard 1/4    |     394 s |     450 s |
+| E2E shard 2/4    |     623 s |     684 s |
+| E2E shard 3/4    |     330 s |     392 s |
+| E2E shard 4/4    |     626 s |     693 s |
+| Deploy           |         — |       8 s |
+
+The longest job, shard 4, left 507 s below the E2E jobs' 1,200-second timeout. The deployment served `0.4.59` / `bc4fb11`. These are one run's timings, not an established trend, and no sharding change is made or authorised here.
+
+**Installed-iPhone acceptance, reported 3 October 2026.** The ordinary flows passed on `0.4.59` (build `bc4fb11`), in English and German: opening and cancelling End ride on the in-session and cold-start paused screens, the ride staying paused, reopening, Resume preserving the ride's position and progress, and the scrolled cancellation — End ride returning fully into view with only the necessary adjustment. This accepts slice 8's ordinary-flow checks only: the enlarged-text openings and cancellations, the oversized branches, the held Pause and the anchoring-off survivor keep their automated evidence and were not induced on the phone, and no location-watch count, progress or camera value was measured there. The dated record, with what it does not claim, is in [`current-status.md`](current-status.md). **Next, approved:** the transition-dismissal slice (decision 4 above).
