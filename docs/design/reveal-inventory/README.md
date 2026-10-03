@@ -30,6 +30,8 @@
 
 **Update (3 October 2026, later): C-11 accepted.** Its ordinary flows passed on the installed iPhone in English and German, the scrolled cancellation included, on `0.4.59` (build `bc4fb11`) ([`current-status.md`](../../project/current-status.md)). Its enlarged-text, oversized and held-Pause cases keep automated evidence only.
 
+**Update (3 October 2026, later still): ride transitions.** Decision 4 shipped in `0.4.60` as item 124's slice 9: an unconfirmed C-10, C-11 or C-12 confirmation closes quietly when Start riding, Resume ride or Pause succeeds, and does not reappear ([record](../../project/backlog-item-124-continued.md#slice-9--confirmations-closed-by-a-ride-transition-c-10-c-11-c-12-shipped-0460-3-october-2026)). Automated evidence only; its device check is pending.
+
 **What this is.** Every confirmation in the app, every expanding card, form, editor and disclosure that could reasonably fall under the rider's "pop-up cards" request, and the conditional and failure states that change what would need revealing — each with a stable review ID, its labels in English and German, how to reach it, what it does today, where that is in the source and tests, what was measured, and a recommendation.
 
 **The rule under review** ([item 124](../../project/backlog.md#item-124)): no movement when the newly opened content fits between the sticky navigation and the bottom safe area; otherwise only enough to reveal it; and when it cannot fit, only enough to show its complete action row. On Cancel and Escape: keep the page where the rider has left it, moving only as far as needed to reveal the opening control.
@@ -237,6 +239,7 @@ _Correction, 3 October 2026: C-02 is an exception — it orders its actions End 
 - **Recommendation:** **already complies** — it opens directly below the fixed header, and nothing moves.
 - **Decided, 3 October 2026:** the common opening and cancellation policy, keeping its placement and ride semantics, with targeted corrections only where measurements demonstrate a mismatch; the rider could not reach a lower opening position on the installed iPhone. Nothing is implemented, and no correction is selected yet ([decisions and observations](#decisions-and-observations--c-07-to-c-13-3-october-2026)).
 - **Reviewed, 3 October 2026:** matches in every measured configuration; at 200% the map and the Map/Profile switcher sit below the screen while it is open, a fixed-layout constraint. An open confirmation survives **Pause** as C-11, recorded separately. Recommended unchanged ([review](ride-confirmations-review.md#verdicts)).
+- **Delivered, 3 October 2026, later:** an unconfirmed confirmation closes quietly when **Pause** succeeds instead of reappearing as C-11 (slice 9, `0.4.60`; [record](../../project/backlog-item-124-continued.md#slice-9--confirmations-closed-by-a-ride-transition-c-10-c-11-c-12-shipped-0460-3-october-2026)). Device check pending.
 
 #### C-11 — End ride, from the paused panel
 
@@ -251,6 +254,7 @@ _Correction, 3 October 2026: C-02 is an exception — it orders its actions End 
 - **Reviewed, 3 October 2026: mismatches.** At 200% the opening over-scrolls by 280 px and hides the title; after the rider scrolls it, Cancel can leave **End ride** hidden under the sticky navigation, at ordinary text too. A targeted correction is proposed, not selected ([review](ride-confirmations-review.md#proposed-next-slice--c-11-only)).
 - **Decided and delivered, 3 October 2026, evening:** shipped in `0.4.59` as item 124's slice 8 ([record](../../project/backlog-item-124-continued.md#slice-8--end-rides-confirmation-on-the-paused-screen-c-11-shipped-0459-3-october-2026)). The opening is revealed by the minimum under the navigation, and Cancel and Escape return focus to End ride with only the movement that reveals it; at ordinary text the opening is unchanged. Automated evidence only; its device check is pending.
 - **Accepted, 3 October 2026:** the ordinary flows passed on the installed iPhone in English and German, the scrolled cancellation included, on `0.4.59` (build `bc4fb11`) ([`current-status.md`](../../project/current-status.md)). The enlarged-text, oversized and held-Pause cases keep automated evidence only.
+- **Delivered, 3 October 2026, later:** an unconfirmed confirmation closes quietly when **Resume ride** succeeds instead of reappearing as C-10 (slice 9, `0.4.60`; [record](../../project/backlog-item-124-continued.md#slice-9--confirmations-closed-by-a-ride-transition-c-10-c-11-c-12-shipped-0460-3-october-2026)). Device check pending.
 
 #### C-12 — Edit copy: replace your current draft?
 
@@ -270,6 +274,7 @@ _Correction, 3 October 2026: C-02 is an exception — it orders its actions End 
 - **Decided, 2 October 2026:** when implemented, C-12's opening follows the common rule — no movement when it fits, the minimum when it can fit after scrolling, its action row first when it is taller than the usable space — and the ordinary-text opening the rider checked is preserved. Not yet implemented ([decisions](#decisions--d-06-d-02-d-01-and-c-12-2-october-2026)).
 - **Delivered, 3 October 2026:** shipped in `0.4.58` as item 124's slice 7 ([record](../../project/backlog-item-124-continued.md#slice-7--edit-copys-replacement-confirmation-opening-c-12-shipped-0458-3-october-2026)). Re-measured first: at 390×844 it fits with no movement at ordinary text in both languages; at 200% the unchanged build's focus scroll moved 879–1,049 px where the rule warrants 599 px (English) and 781–788 px (German, oversized). The confirmation that reappears on Pause after surviving Start riding (D-06's separately recorded finding, not fixed) is revealed only once the sticky navigation has returned. Automated evidence only; its ordinary-flow device check is pending.
 - **Accepted, 3 October 2026:** the ordinary flows passed on the installed iPhone in English and German, on `0.4.58` (build `7e46daf`) ([`current-status.md`](../../project/current-status.md)). The enlarged-text, oversized and reappearing-confirmation cases, pending writes and failures keep automated evidence only.
+- **Delivered, 3 October 2026, later:** an unconfirmed confirmation closes quietly when **Start riding** or **Resume ride** succeeds and no longer reappears on **Pause**; one whose write is running is kept (slice 9, `0.4.60`; [record](../../project/backlog-item-124-continued.md#slice-9--confirmations-closed-by-a-ride-transition-c-10-c-11-c-12-shipped-0460-3-october-2026)). Device check pending.
 
 ### Free roam
 
@@ -703,6 +708,8 @@ Branches flagged as difficult to reach or apparently unreachable. No steps are i
 **3 October 2026, evening — four decisions; C-11 delivered.** The rider's decisions on C-11, C-07/C-08, C-09 and the surviving confirmations are recorded in the [continuation](../../project/backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening); C-11 shipped in `0.4.59` as slice 8, and the transition dismissal is the next slice.
 
 **3 October 2026, later — C-11 accepted.** Its ordinary flows passed on the installed iPhone in English and German, on `0.4.59` (build `bc4fb11`) ([`current-status.md`](../../project/current-status.md)).
+
+**3 October 2026, later still — slice 9.** Decision 4's transition dismissal shipped in `0.4.60` ([record](../../project/backlog-item-124-continued.md#slice-9--confirmations-closed-by-a-ride-transition-c-10-c-11-c-12-shipped-0460-3-october-2026)).
 
 ## Review preparation — D-01, D-02 and D-06 (2 October 2026)
 

@@ -1005,6 +1005,33 @@ export function RidingScreen({
   // declaration comment in useRideNavigation.ts).
   const isPauseActionPendingRef = useRef(false);
 
+  // Backlog item 124, decision 4 of 3 October 2026: an unconfirmed End ride
+  // or Edit copy confirmation closes quietly when a ride transition
+  // succeeds, and never reappears in the context it was not opened in. A
+  // transition has succeeded when navigation's idle/active state has
+  // actually changed — Start riding and Resume ride once start() has begun
+  // watching (no fix is needed, and an immediate location error still
+  // shows the riding shell), Pause once its snapshot is written and the
+  // watch stopped. A Pause still being saved, a failed or refused one, and
+  // Try again (error to watching) change nothing, so nothing closes.
+  //
+  // Adjusted during render, as reachedManoeuvreIndex and wasStatusCardShown
+  // are, so the confirmation is never committed in the new context: no
+  // Cancel focus, no opening reveal, and — this not being a Cancel — no
+  // focus return or cancellation scroll. A confirmed operation still
+  // running keeps its confirmation and settles it as before: End ride's
+  // while it finalises, and Edit copy's while its write is in flight
+  // (D-06). State, not those operations' refs, since it is read during
+  // render.
+  const isRidingShellShown = nav.geolocationStatus !== "idle";
+  const [confirmationsRidingShell, setConfirmationsRidingShell] =
+    useState(isRidingShellShown);
+  if (isRidingShellShown !== confirmationsRidingShell) {
+    setConfirmationsRidingShell(isRidingShellShown);
+    if (activeFinalizeSource !== "end") setIsEndRideConfirmOpen(false);
+    if (!isEditCopyInFlight) setIsEditCopyConfirmOpen(false);
+  }
+
   const completion = useRouteCompletionCandidate({
     routeId: route.id,
     isRideActive: nav.geolocationStatus === "watching",
@@ -1560,20 +1587,22 @@ export function RidingScreen({
    *
    * Owed once each time the confirmation appears — "on screen" rather than
    * merely open, matching ConfirmDialog's own focus effect, which also runs
-   * when the panel remounts the confirmation still open (one left open
-   * survives Start riding; recorded separately, not fixed here) — and
-   * never while a confirmed write is in flight, so D-06's working state is
-   * left exactly as it is. A reopening re-measures whatever geometry then
-   * exists, and no other render repeats it.
+   * when the panel remounts the confirmation still open — and never while
+   * a confirmed write is in flight, so D-06's working state is left
+   * exactly as it is. Since decision 4's transition dismissal, only a
+   * confirmed write's confirmation is still open when the panel remounts
+   * after Start riding and Pause; an unconfirmed one has closed. A
+   * reopening re-measures whatever geometry then exists, and no other
+   * render repeats it.
    *
    * Paid once the sticky navigation is there to measure against. On a
-   * genuine opening it already is. On that remount after Pause it is not:
-   * App learns the ride has stopped from a passive effect, so it puts the
-   * navigation back a commit later, pushing everything below it down — and
-   * a reveal measured without it would rely on the browser's scroll
-   * anchoring to keep the action row in view. So the reveal waits for that
-   * commit, re-checked on every render. With no ref at all (tests) it
-   * measures from the top at once.
+   * genuine opening it already is. After a Pause it is not: App learns the
+   * ride has stopped from a passive effect, so it puts the navigation back
+   * a commit later, pushing everything below it down — and a reveal
+   * measured without it would rely on the browser's scroll anchoring to
+   * keep the action row in view. Since decision 4 no owed reveal can arise
+   * in that commit, but the wait is kept as the guard: re-checked on every
+   * render. With no ref at all (tests) it measures from the top at once.
    *
    * `useLayoutEffect` and `behavior: "auto"` (inside
    * applyConfirmationReveal) are item 95's interaction-safety pair.
@@ -1614,20 +1643,19 @@ export function RidingScreen({
    * Cancel with preventScroll (`focusCancelWithoutScroll`, set for this
    * placement only), because the browser's own focus scroll centres it.
    *
-   * Owed once each time it appears in the panel: a genuine opening, or a
-   * confirmation left open in the riding header that survives Pause and
-   * reappears here (recorded separately, not fixed here). Paid, as Edit
-   * copy's is, only once the sticky navigation is there to measure
-   * against, which on that reappearance is a commit after the Pause. A
-   * reopening re-measures, and no other render repeats it. Unlike Edit
-   * copy's, no in-flight condition is needed: it can appear only by an
-   * opening, refused while a finalisation runs; by a Pause, also refused
-   * then; or as restoration completes, when it cannot be open.
+   * Owed once each time it appears in the panel. Since decision 4's
+   * transition dismissal that is a genuine opening: a confirmation left
+   * open in the riding header closes when a Pause succeeds instead of
+   * reappearing here. Paid, as Edit copy's is, only once the sticky
+   * navigation is there to measure against — on a genuine opening it is,
+   * and the wait is kept as the guard. A reopening re-measures, and no
+   * other render repeats it. Unlike Edit copy's, no in-flight condition is
+   * needed: it can appear only by an opening, refused while a finalisation
+   * runs; or as restoration completes, when it cannot be open.
    *
-   * Declared after Edit copy's reveal on purpose. When both confirmations
-   * reappear after one Pause, End ride's Cancel is the one left focused
-   * (its dialog comes later in the panel), so its reveal runs last and is
-   * measured after whatever Edit copy's reveal moved.
+   * Declared after Edit copy's reveal on purpose, should both ever be owed
+   * in one commit: End ride's dialog comes later in the panel, so its
+   * reveal runs last and is measured after whatever Edit copy's moved.
    */
   useLayoutEffect(() => {
     const reveal = endRideRevealRef.current;

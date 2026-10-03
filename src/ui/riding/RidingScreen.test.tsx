@@ -8904,14 +8904,14 @@ describe("RidingScreen", () => {
         expect(revealSpy).not.toHaveBeenCalled();
       });
 
-      // The separately recorded survivor (slice 4, not fixed): a confirmation
-      // left open survives Start riding and reappears on Pause. App puts the
-      // sticky navigation back a commit later, so the header ref is emptied
-      // here while riding, as App's own header unmounts then.
-      it("reveals a confirmation that reappears on Pause only once the sticky navigation is back, focusing Cancel without scrolling", async () => {
+      // Backlog item 124, decision 4 of 3 October 2026: an unconfirmed
+      // confirmation closes quietly when Start riding succeeds and does not
+      // reappear on Pause. With geometry that would warrant a 140px reveal,
+      // a reappearance or a focus return would show in the log.
+      it("closes quietly when Start riding succeeds and stays closed through Pause and Resume; opening it again follows the rule", async () => {
         const user = userEvent.setup();
         await seedMeaningfulDraft();
-        const { header, headerRef, stub, rerenderScreen } = renderWithHeader();
+        const { stub } = renderWithHeader();
         stubGeometry({
           inset: { top: 600, bottom: 900 },
           actions: { top: 840, bottom: 884 },
@@ -8919,10 +8919,15 @@ describe("RidingScreen", () => {
         await user.click(screen.getByRole("button", { name: "Edit copy" }));
         await replacement();
         const log = captureLog();
+        const clicked = new Set([
+          "focus:Start riding:scroll",
+          "focus:Pause:scroll",
+          "focus:Resume ride:scroll",
+        ]);
+        const appEntries = () => log.filter((entry) => !clicked.has(entry));
 
         await user.click(screen.getByRole("button", { name: "Start riding" }));
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-        headerRef.current = null;
         stub.emitFix({
           coordinate: [0, 51],
           accuracyMetres: 5,
@@ -8931,11 +8936,48 @@ describe("RidingScreen", () => {
           headingDegrees: null,
         });
         await user.click(await screen.findByRole("button", { name: "Pause" }));
-        const dialog = await replacement();
         await screen.findByRole("button", { name: "Resume ride" });
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Edit copy" })).not.toHaveFocus();
+        expect(document.activeElement).toBe(document.body);
+        expect(appEntries()).toEqual([]);
+
+        await user.click(screen.getByRole("button", { name: "Resume ride" }));
+        await user.click(await screen.findByRole("button", { name: "Pause" }));
+        await screen.findByRole("button", { name: "Resume ride" });
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(appEntries()).toEqual([]);
+
+        const start = log.length;
+        await user.click(screen.getByRole("button", { name: "Edit copy" }));
+        const dialog = await replacement();
+        expect(fromCancel(log.slice(start))).toEqual([
+          "focus:Cancel:noscroll",
+          "scrollBy:140:0:auto",
+        ]);
         expect(cancelIn(dialog)).toHaveFocus();
-        expect(log).toContain("focus:Cancel:noscroll");
-        expect(scrolls(log)).toEqual([]);
+      });
+
+      // No ordinary flow reaches this since decision 4: a genuine opening
+      // always has the sticky navigation to measure against, and an
+      // unconfirmed confirmation no longer reappears after Pause, which is
+      // when App puts it back a commit late. The wait is kept as a guard,
+      // and this pins it.
+      it("(synthetic) waits for the sticky navigation before revealing an opening made while it is absent", async () => {
+        const user = userEvent.setup();
+        await seedMeaningfulDraft();
+        const { header, headerRef, rerenderScreen } = renderWithHeader();
+        stubGeometry({
+          inset: { top: 600, bottom: 900 },
+          actions: { top: 840, bottom: 884 },
+        });
+        headerRef.current = null;
+        const log = captureLog();
+
+        await user.click(screen.getByRole("button", { name: "Edit copy" }));
+        const dialog = await replacement();
+        expect(cancelIn(dialog)).toHaveFocus();
+        expect(fromCancel(log)).toEqual(["focus:Cancel:noscroll"]);
 
         headerRef.current = header;
         rerenderScreen();
@@ -8969,14 +9011,24 @@ describe("RidingScreen", () => {
           headingDegrees: null,
         });
         await user.click(await screen.findByRole("button", { name: "Pause" }));
-        await replacement();
+        // A confirmed write still running keeps its confirmation across
+        // Start riding and Pause (backlog item 124, decision 4), in D-06's
+        // working state.
+        const carried = await replacement();
         await screen.findByRole("button", { name: "Resume ride" });
+        expect(
+          within(carried).getByRole("button", { name: "Creating editable copy…" }),
+        ).toBeDisabled();
+        expect(cancelIn(carried)).toBeDisabled();
         rerenderScreen();
         expect(scrolls(log)).toEqual([]);
 
         await act(async () => {
           write.resolve(undefined);
           await write.promise;
+        });
+        await waitFor(() => {
+          expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
         });
       });
     });

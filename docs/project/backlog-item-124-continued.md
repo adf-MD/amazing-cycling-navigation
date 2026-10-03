@@ -285,7 +285,7 @@ C-07, C-08, C-10, C-11 and C-13 were measured against the rider's approved commo
 1. **C-11 — implement the demonstrated correction next.** End ride's confirmation on the paused route screen gets the opening and cancellation correction the review measured as needed. It is slice 8, below.
 2. **C-07 and C-08 — unchanged.** The launcher confirmations keep their current behaviour. The measured extra 25 px of scrolling at 200% browser text is accepted as a **bounded exception** to strict minimum scrolling, because their content stays readable and their actions accessible. It is not described as exact compliance.
 3. **C-09 — its accepted missing-route ordinary flow is preserved.** If the shared launcher implementation changes later, the same launcher policy applies to C-09 and C-09 is verified appropriately then. Shared source alone does not establish identical geometry, nor acceptance of its untested variants.
-4. **Surviving confirmations — a separate follow-up slice is approved.** It will quietly dismiss unconfirmed ride-screen prompts when Start, Resume or Pause **successfully** changes the ride context. A failed transition does not count as success, and the dismissal must never cancel, conceal or misrepresent an operation already confirmed and running. It is the next slice after slice 8, and **nothing about it is implemented yet**.
+4. **Surviving confirmations — a separate follow-up slice is approved.** It will quietly dismiss unconfirmed ride-screen prompts when Start, Resume or Pause **successfully** changes the ride context. A failed transition does not count as success, and the dismissal must never cancel, conceal or misrepresent an operation already confirmed and running. It is the next slice after slice 8; nothing about it was implemented with slice 8, and it is slice 9, below.
 
 The remaining inventory dispositions in the review stay **proposals**, not blanket approvals.
 
@@ -453,4 +453,102 @@ The remaining inventory dispositions in the review stay **proposals**, not blank
 
 The longest job, shard 4, left 507 s below the E2E jobs' 1,200-second timeout. The deployment served `0.4.59` / `bc4fb11`. These are one run's timings, not an established trend, and no sharding change is made or authorised here.
 
-**Installed-iPhone acceptance, reported 3 October 2026.** The ordinary flows passed on `0.4.59` (build `bc4fb11`), in English and German: opening and cancelling End ride on the in-session and cold-start paused screens, the ride staying paused, reopening, Resume preserving the ride's position and progress, and the scrolled cancellation — End ride returning fully into view with only the necessary adjustment. This accepts slice 8's ordinary-flow checks only: the enlarged-text openings and cancellations, the oversized branches, the held Pause and the anchoring-off survivor keep their automated evidence and were not induced on the phone, and no location-watch count, progress or camera value was measured there. The dated record, with what it does not claim, is in [`current-status.md`](current-status.md). **Next, approved:** the transition-dismissal slice (decision 4 above).
+**Installed-iPhone acceptance, reported 3 October 2026.** The ordinary flows passed on `0.4.59` (build `bc4fb11`), in English and German: opening and cancelling End ride on the in-session and cold-start paused screens, the ride staying paused, reopening, Resume preserving the ride's position and progress, and the scrolled cancellation — End ride returning fully into view with only the necessary adjustment. This accepts slice 8's ordinary-flow checks only: the enlarged-text openings and cancellations, the oversized branches, the held Pause and the anchoring-off survivor keep their automated evidence and were not induced on the phone, and no location-watch count, progress or camera value was measured there. The dated record, with what it does not claim, is in [`current-status.md`](current-status.md). **Next, approved:** the transition-dismissal slice (decision 4 above), which is slice 9, below.
+
+## Slice 9 — Confirmations closed by a ride transition (C-10, C-11, C-12) (shipped `0.4.60`, 3 October 2026)
+
+**Approved as decision 4 above.** An unconfirmed ride-screen confirmation closes quietly when **Start riding**, **Resume ride** or **Pause** successfully changes the ride context, and does not reappear when the rider returns to the previous context. It covers the survivors already recorded:
+
+- End ride's confirmation moving between the riding header and the paused screen (C-10 and C-11), measured in the [review](../design/reveal-inventory/ride-confirmations-review.md#transitions-measured);
+- Edit copy's "Replace your current draft?" surviving **Start riding** and reappearing on **Pause** (C-12), recorded in slices 4 and 7.
+
+Unchanged are:
+
+- the launcher (C-07, C-08, C-09) and free roam (C-13), whose Pause already returns to the launcher with the confirmation gone;
+- two independent confirmations open at once (D-07): no "one at a time" rule is added;
+- the C-11 and C-12 opening and cancellation rules, and every Cancel and Escape.
+
+**Success, from the ride lifecycle.** Read from `useRideNavigation.ts` before anything changed:
+
+- **Start riding and Resume ride** call `start()`, which begins watching at once — status `idle` to `watching` — with no fix needed. A location error that follows, even one reported within the call, leaves the riding shell showing with **Try again**, so the context has still changed. Start is not refused from the pre-ride or paused screen.
+- **Pause** writes its snapshot and only then stops the watch (`idle`). A Pause still being saved, a failed write and the hook's own refusals leave the ride active. The hook's refusal resolves silently, so the screen's "Pause resolved" is not a success signal.
+- **Try again** (`error` to `watching`) and a return to the page (`stop(); start()` in one handler, rendered as one `watching`) do not change the context.
+- The only other change, a successful End or Finish ride, closes End ride's confirmation itself.
+
+**Mechanism** (`RidingScreen.tsx` only).
+
+- **One adjustment during render.** When navigation's idle/active state differs from the one last seen, the screen records the new one and closes both confirmations. This is the file's existing "adjust state during render" idiom (`reachedManoeuvreIndex`, `wasStatusCardShown`).
+- **Quiet by construction.**
+  - React renders again before committing, so the confirmation is never mounted in the new context: no Cancel focus, no opening reveal.
+  - Nothing records a Cancel, so no focus return or cancellation scroll follows.
+  - Focus ends wherever the same transition leaves it with nothing open — on the page body in every measured case.
+- **A confirmed operation keeps its confirmation**, and settles it as before:
+  - End ride's while it finalises (`activeFinalizeSource === "end"`);
+  - Edit copy's while its write is in flight (`isEditCopyInFlight`, D-06).
+
+  Both are state rather than those operations' refs, since they are read during render.
+
+- **Stays closed.** The open state itself is cleared, so later Pause and Resume cycles and screen returns cannot revive it. Reopening uses the unchanged handlers.
+- **Unchanged:**
+  - the C-11 and C-12 opening reveals, including their wait for the sticky navigation. No ordinary flow now reaches that wait; it is kept as a guard and pinned by one synthetic unit test each;
+  - C-11's waiting Cancel and its guard;
+  - D-06's context counter, navigation rule and failure focus;
+  - item 131's one-use resume instruction and item 132's restore gating.
+
+  The reveal comments that called the survivor "recorded separately, not fixed here" are updated.
+
+- **Files:**
+  - **source:** `src/ui/riding/RidingScreen.tsx`;
+  - **version:** `0.4.60`;
+  - **tests:** `src/ui/riding/RidingScreen.finishEndRide.test.tsx`, `src/ui/riding/RidingScreen.test.tsx`, `e2e/endRidePausedConfirmationReveal.smoke.spec.ts`, `e2e/editCopyConfirmationReveal.smoke.spec.ts` and `e2e/support/rideTransitionProbe.ts` (new).
+
+**Evidence — automated only.**
+
+- **Unit and component.** The full suite passes: 4,931 tests in 208 files, 8 more than `0.4.59`. The four tests that asserted the survival were rewritten. The cases are:
+  - closing with no focus call and no scroll, and staying closed through the next transition: C-10 on **Pause**; C-11 on **Resume ride**; C-11 and C-12 together; and C-12 on **Start riding**, both before any fix and with a location watch that fails at once;
+  - reopening C-11 and C-12 afterwards, each with its own opening reveal;
+  - kept open: a Pause still being saved, closed once it succeeds; a failed Pause, whose Cancel is still C-10's; **Try again**; and a return to the page;
+  - kept as running: a confirmed End ride carried, still "Ending ride…", across **Resume ride**; and a confirmed Edit copy write carried across **Start riding** and **Pause** in D-06's working state;
+  - each opening reveal's wait for the sticky navigation, synthetic.
+- **Browser, in the pinned container (the CI image, by digest), at 390×844 portrait.** 12 tests in each of Chromium and WebKit, in the two existing specs, replacing their survivor cases.
+  - **The paired control**, the rider's refinement: each affected transition is compared with the same transition, from the same starting state and position, with nothing open (`e2e/support/rideTransitionProbe.ts`). A transition replaces the riding shell with the paused screen or the reverse, and whatever the browser does to the scroll position then, it does to both. So the movement is compared, never required to be nil.
+  - **[behaviour] assertions:** no confirmation after the transition; focus ends where the control's did, never on Cancel, End ride or Edit copy; the page moved as the control's did.
+  - **[implementation] assertions:** no scroll call and no focus call beyond the control's.
+  - **Cases:**
+    - C-10 and **Pause**, in English and German at ordinary text and in English at 200%, then **Resume ride** and **Pause** again;
+    - C-11 and **Resume ride**, in both languages, and on item 132's cold-start screen in German;
+    - C-11 and C-12 open together, then **Resume ride** and **Pause**;
+    - C-12 with **Start riding** and the **Pause** after it, in both languages;
+    - reopening, with Cancel, by the C-11 and C-12 rules;
+    - synthetic: a Pause held open by the app's own seam, then released, in both languages, and failed, in German. The failure rejects the seam's promise through a test-only resolver beside the existing one; nothing in production changed.
+  - **Measured:** every affected transition and its control started at the page's top and ended there. Focus ended on the page body in both, and neither made a scroll call or a focus call. The layout change shows only in the scrollable height, for example from 0 to 656 px on an English Pause.
+  - **Results:** 24 of 24.
+- **The full browser suite, once, at 8 workers:** 1,010 passed, in both engines and the `android-chrome` project, with nothing skipped — the Chromium-only survivor case that `0.4.59` skipped in WebKit is gone. Every regression spec slice 8 named is part of it, and both converted specs then passed again in full, 86 of 86, after formatting.
+- **Baseline, `c5255ae`** (application code identical to `bc4fb11`, `0.4.59`):
+  - **unit:** the 7 dismissal tests fail, each because the confirmation is still there; the other 9 pass — the failed and pending Pause, Try again, the confirmed operations and the synthetic waits;
+  - **browser:** 22 of the 24 runs fail on behaviour — the confirmation still open, its Cancel focused. At 200% the old survivor's reveal moved the page 535 px where the control moved none. The 2 failed-Pause runs pass, as regression guards.
+- **Negative controls.** Each was applied alone to `RidingScreen.tsx`, built separately and restored byte-for-byte (SHA-256). Unit failures are of the 317 tests in the two test files. Browser failures are of 30 runs: the 24 above plus the 6 existing runs that Cancel during a held Pause.
+
+| Control | What it changes                                            | Unit failures                                                                    | Browser failures                                                                                                   |
+| ------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| (a)     | the in-flight conditions removed                           | 2 — the confirmed End ride and Edit copy cases                                   | not run: no confirmed operation can be held in these specs                                                         |
+| (b)     | Pause also dismisses at its press                          | 6 — the held and failed Pause, the Cancel-while-pausing group, Edit copy's write | 6 on behaviour — held and failed Pause — and 6 timeouts: the existing held-Pause cases find nothing left to cancel |
+| (c)     | any status change dismisses, not only idle and active      | 1 — Try again                                                                    | not run: no location error in these specs                                                                          |
+| (d)     | the dismissal made through End ride's Cancel path          | 4                                                                                | 18 on behaviour — focus lands on End ride                                                                          |
+| (e)     | a layout effect after the commit, instead of during render | 4 — Cancel focused, and in the harness the 140 px opening reveal                 | 18 on the implementation check only — a focus call to Cancel; focus then fell to the body, and no reveal ran       |
+
+**Findings worth carrying forward.**
+
+- **Pause resolving is not Pause succeeding.** `pause()` resolves silently when it refuses, and the screen's code after its `await` is not guaranteed to land in the same commit as the status change. Acting on the status change itself avoids both.
+- **Adjusting during render is load-bearing.** Control (e) shows that a post-commit effect mounts the confirmation for one commit: its Cancel takes focus, and wherever the navigation is already present the opening reveal is paid before the close. In the browser the navigation returns a commit after Pause, so only the focus call showed there.
+- **The paired control made "no movement" meaningful.** At 200% the old survivor's reveal stood out against the control by exactly 535 px, while the transition itself changed the page's scrollable height legitimately.
+
+**Limitations, stated plainly.**
+
+- **Measured at 390×844 portrait only**, from the page's top, where these transitions start in ordinary use at this viewport, in desktop Chromium and WebKit. These are not iOS Safari, and browser root-text scaling is not iOS Larger Text.
+- **Synthetic steps:** the held and failed Pause; and, in component tests only, the confirmed operations running across a transition, the immediate location failure and the sticky-navigation waits.
+- **Observed, not changed:** **Resume ride** on the paused screen stays enabled while a confirmed End ride is finishing, where Back to Ride options is disabled. A Resume in that window starts a watch that the finishing End ride then stops. This slice keeps that confirmation showing "Ending ride…" and changes nothing else; it is recorded, not fixed.
+- **Not newly tested:** **Start riding** while Edit copy's preliminary check is still reading; D-06's context counter already stops that confirmation opening.
+- **Desktop input only.** There is no VoiceOver, physical-keyboard, landscape or physical-Android result.
+
+**Installed-iPhone acceptance: pending** — Session 5 of [`current-status.md`](current-status.md), in English and German, at ordinary text.

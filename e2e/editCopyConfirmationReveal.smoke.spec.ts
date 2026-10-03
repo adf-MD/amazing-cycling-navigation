@@ -11,11 +11,20 @@ import {
   readPlanningDraftRow,
   readSavedRouteId,
 } from "./support/rideStateDb.ts";
+import {
+  expectQuietTransition,
+  measureTransition,
+  type Transition,
+} from "./support/rideTransitionProbe.ts";
 
 // Backlog item 124's inventory case C-12, slice 7: the opening of Edit
 // copy's "Replace your current draft?" confirmation, in both engines (this
 // file runs under the "chromium" and "webkit-smoke" projects), at 390x844
-// portrait, in English and German, at ordinary and 200% root text.
+// portrait, in English and German, at ordinary and 200% root text. Since
+// backlog item 124's decision 4, it also holds the ride-transition case: an
+// unconfirmed confirmation closes quietly when Start riding succeeds and
+// does not reappear on Pause, judged against the same transitions made with
+// nothing open (e2e/support/rideTransitionProbe.ts).
 //
 // The rule, approved on 2 October 2026 (decision 7): no movement when the
 // confirmation fits the usable band where it opens; otherwise the minimum
@@ -30,8 +39,7 @@ import {
 //
 // Input is real — pointer clicks at measured centres, key presses and wheel
 // input — except where a step is labelled synthetic: a safe-area inset set on
-// the root (the seam index.css documents), and the browser's scroll anchoring
-// switched off for the reappearing confirmation. The app's own scroll calls are
+// the root (the seam index.css documents). The app's own scroll calls are
 // recorded, and so are focus calls made by script that actually moved focus,
 // with their options and the page's geometry just before them. The minimum
 // is computed by the rule from that pre-focus geometry, so the same
@@ -84,6 +92,8 @@ const COPY = {
     startRiding: "Start riding",
     resumeRide: "Resume ride",
     pause: "Pause",
+    endRide: "End ride",
+    endTitle: "End this ride?",
     ride: "Ride",
     routes: "Routes",
     plan: "Plan",
@@ -96,6 +106,8 @@ const COPY = {
     startRiding: "Fahrt starten",
     resumeRide: "Fahrt fortsetzen",
     pause: "Pause",
+    endRide: "Fahrt beenden",
+    endTitle: "Diese Fahrt beenden?",
     ride: "Fahren",
     routes: "Routen",
     plan: "Planen",
@@ -872,86 +884,121 @@ test("(de, 200%) the cold-start paused screen: the opening follows the rule", as
 });
 
 // ---------------------------------------------------------------------------
-// The separately recorded survivor (item 124 slice 4, not fixed here): an
-// unconfirmed confirmation left open survives Start riding and reappears
-// when the ride is paused. In that Pause commit the sticky navigation has
-// not yet returned — App learns the ride has stopped from a passive effect —
-// so the opening is judged only once it has, by where the confirmation and
-// its actions end up. A reveal measured before the navigation returned left
-// the action row up to 114 px below the band once it had, wherever the
-// browser's scroll anchoring did not compensate; the unchanged build, which
-// centred Cancel, kept the row in view either way.
+// Backlog item 124, decision 4 of 3 October 2026: an unconfirmed confirmation
+// closes quietly when Start riding succeeds and does not reappear on Pause.
+// Each transition is judged against the same transition from the same
+// starting state and position with nothing open: the route's pre-ride screen
+// at its top, reached again for the control by ending the ride and reopening
+// the route from Routes.
 
-const SURVIVOR_CASES: readonly (readonly [Language, TextSize])[] = [
-  ["en", "200%"],
-  ["de", "200%"],
-  ["en", "100%"],
+const pauseButton = (page: Page, language: Language): Locator =>
+  page.getByRole("button", { name: COPY[language].pause, exact: true });
+const resumeButton = (page: Page, language: Language): Locator =>
+  page.getByRole("button", { name: COPY[language].resumeRide, exact: true });
+
+/** Settled on the paused screen, under the returned navigation. */
+async function pausedSettled(page: Page, language: Language): Promise<void> {
+  await expect(resumeButton(page, language)).toBeVisible();
+  await expect(page.locator("header.app-header--sticky")).toBeAttached();
+  await settle(page);
+}
+
+/** Settled in the riding shell, the navigation gone. */
+async function ridingSettled(page: Page, language: Language): Promise<void> {
+  await expect(pauseButton(page, language)).toBeEnabled();
+  await expect(page.locator("header.app-header--sticky")).toHaveCount(0);
+  await settle(page);
+}
+
+/** Start riding, judged once the ride holds a fix 400 m along the route. */
+const startTransition = (
+  page: Page,
+  context: BrowserContext,
+  language: Language,
+): Promise<Transition> =>
+  measureTransition(
+    page,
+    () => startRidingWithFix(page, context, language),
+    () => ridingSettled(page, language),
+  );
+
+const pauseTransition = (page: Page, language: Language): Promise<Transition> =>
+  measureTransition(
+    page,
+    () => pointerClick(page, pauseButton(page, language)),
+    () => pausedSettled(page, language),
+  );
+
+/** Ends the paused ride and opens the route's pre-ride screen again from
+ * Routes, at its top. */
+async function endAndReopenPreRide(page: Page, language: Language): Promise<void> {
+  await pointerClick(page, page.locator(".ride-end-ride-panel-row > button"));
+  const end = page.getByRole("dialog", { name: COPY[language].endTitle });
+  await pointerClick(
+    page,
+    end.getByRole("button", { name: COPY[language].endRide, exact: true }),
+  );
+  await expect(end).toHaveCount(0);
+  await expect.poll(() => readActiveRideStateRow(page)).toBeNull();
+  await page.getByRole("button", { name: COPY[language].routes, exact: true }).click();
+  await page.getByRole("button", { name: ROUTE_NAME, exact: true }).click();
+  await expect(editCopyButton(page, language)).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: COPY[language].startRiding }),
+  ).toBeVisible();
+  await settle(page);
+}
+
+const editCopyTexts = (language: Language): string[] => [
+  COPY[language].cancel,
+  COPY[language].editCopy,
 ];
 
-for (const [language, size] of SURVIVOR_CASES) {
-  test(`(${language}, ${size}) a confirmation surviving Start riding reappears on Pause with its actions in the band once the navigation has returned`, async ({
+for (const language of LANGUAGES) {
+  test(`(${language}, 100%) the confirmation closes quietly when Start riding succeeds and does not reappear on Pause, each as with nothing open; Edit copy opens it again as before`, async ({
     page,
     context,
   }) => {
-    test.setTimeout(90_000);
-    await openPreRide(page, context, language, size);
+    test.setTimeout(120_000);
+    const { pageErrors } = await openPreRide(page, context, language, "100%");
     await openReplacement(page, language);
-    await wheelBy(page, -5_000);
-    await startRidingWithFix(page, context, language);
-    await expect(confirmation(page, language)).toHaveCount(0);
-    await resetRecords(page);
-    // Synthetic: the browser's scroll anchoring switched off, so the result
-    // cannot depend on it compensating for the navigation's return — not
-    // every engine anchors, and with it on both engines here hid the
-    // difference this test exists to catch.
-    await page.evaluate(() => {
-      document.documentElement.style.overflowAnchor = "none";
-      document.body.style.overflowAnchor = "none";
-    });
-    await pointerClick(
-      page,
-      page.getByRole("button", { name: COPY[language].pause, exact: true }),
-    );
+    const affectedStart = await startTransition(page, context, language);
+    const affectedPause = await pauseTransition(page, language);
+
+    await pointerClick(page, resumeButton(page, language));
+    await ridingSettled(page, language);
+    await pointerClick(page, pauseButton(page, language));
+    await pausedSettled(page, language);
     await expect(
-      page.getByRole("button", { name: COPY[language].resumeRide }),
-    ).toBeVisible();
-    await expect(
-      confirmation(page, language),
-      "the survivor is still open",
-    ).toBeVisible();
-    await expect(page.locator("header.app-header--sticky")).toBeAttached();
-    await settle(page);
-    const s = await snapshot(page, language);
-    const fixture = await records(page);
-    note(
-      "survivor",
-      JSON.stringify({
-        scrollY: s.scrollY,
-        band: s.band,
-        dialog: s.dialog,
-        actions: s.actions,
-        title: s.title,
-        cancelFocused: s.cancelFocused,
-        scrolls: fixture.scrolls,
-        focusCalls: fixture.focusCalls.map((call) => ({
-          text: call.text,
-          preventScroll: call.preventScroll,
-          scrollYBefore: call.scrollYBefore,
-          scrollYAfter: call.scrollYAfter,
-          bandBefore: call.bandBefore,
-        })),
-      }),
-    );
-    expect.soft(s.cancelFocused, "[behaviour] Cancel has focus").toBe(true);
-    const actions = s.actions;
-    expect
-      .soft(
-        actions !== null &&
-          actions.top >= s.band.top - TOLERANCE_PX &&
-          actions.bottom <= s.band.bottom + TOLERANCE_PX,
-        `[behaviour] the complete action row is in the band once the navigation has returned (${JSON.stringify({ actions, band: s.band })})`,
-      )
-      .toBe(true);
+      page.getByRole("dialog"),
+      "[behaviour] still closed after Resume ride and Pause",
+    ).toHaveCount(0);
+
+    // Opened deliberately again, it follows the rule, and Cancel keeps the
+    // draft.
+    const opening = await openReplacement(page, language);
+    note("reopened", expectOpening("reopened", language, opening));
     await cancelKeepsDraft(page, language, "pointer");
+
+    // The control: the same pre-ride screen, nothing open.
+    await endAndReopenPreRide(page, language);
+    const controlStart = await startTransition(page, context, language);
+    const controlPause = await pauseTransition(page, language);
+
+    expectQuietTransition(
+      "Start riding",
+      controlStart,
+      affectedStart,
+      COPY[language].confirmTitle,
+      editCopyTexts(language),
+    );
+    expectQuietTransition(
+      "the Pause after it",
+      controlPause,
+      affectedPause,
+      null,
+      editCopyTexts(language),
+    );
+    expect(pageErrors).toEqual([]);
   });
 }

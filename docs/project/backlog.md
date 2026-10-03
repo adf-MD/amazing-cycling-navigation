@@ -194,6 +194,7 @@ _Category: Interface and accessibility consistency_
 > **Review, 3 October 2026 — documentation only** ([report](../design/reveal-inventory/ride-confirmations-review.md)): C-10 and C-13 match the five-surface policy, C-07 and C-08 match at ordinary text, and C-11 mismatches — a correction is proposed, not selected; the remaining decisions are listed there.
 > **3 October 2026, evening: the rider took four decisions, and slice 8, C-11, shipped in `0.4.59`; its device check is pending** ([record](backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening)). Decision 4's transition dismissal is the next slice.
 > **Slice 8's ordinary flow was accepted on the installed iPhone in English and German, reported 3 October 2026** (`0.4.59`, build `bc4fb11`; CI run 37153751967 is recorded with it in the [continuation](backlog-item-124-continued.md)), the scrolled cancellation included. Decision 4's transition dismissal is the next slice.
+> **Slice 9, decision 4's transition dismissal, shipped in `0.4.60` on 3 October 2026; its ordinary-flow device check is pending** ([record](backlog-item-124-continued.md#slice-9--confirmations-closed-by-a-ride-transition-c-10-c-11-c-12-shipped-0460-3-october-2026)). An unconfirmed End ride or Edit copy confirmation now closes quietly when Start riding, Resume ride or Pause succeeds, and does not reappear.
 > This item ships in slices and stays **pending** here until its final
 > slice. Nothing about it enters [`history/`](history/README.md) before
 > then. The original specification, under its own heading below, is kept
@@ -210,7 +211,8 @@ _Category: Interface and accessibility consistency_
 > | 6         | **D-02**: a confirmed Delete route kept as "Deleting…" until storage and the list agree, owned by App across navigation; the translated failure; focus and a minimum reveal only while waiting   | **Shipped — `0.4.57`** (3 October 2026); **ordinary flow accepted on the installed iPhone**, reported 3 October 2026 ([`current-status.md`](current-status.md))   |
 > | 7         | **C-12**: Edit copy's replacement confirmation opening under the common rule (decision 7, 2 October 2026), its ordinary-text opening preserved                                                   | **Shipped — `0.4.58`** (3 October 2026); **ordinary flow accepted on the installed iPhone**, reported 3 October 2026 ([`current-status.md`](current-status.md))   |
 > | 8         | **C-11**: End ride's confirmation on the paused screen — the common opening rule, and on Cancel a guarded minimum reveal of End ride itself (decision 1, 3 October 2026)                         | **Shipped — `0.4.59`** (3 October 2026); **ordinary flow accepted on the installed iPhone**, reported 3 October 2026 ([`current-status.md`](current-status.md))   |
-> | Remaining | **Approved next:** dismissing unconfirmed ride-screen prompts after a successful Start, Resume or Pause (decision 4). C-07/C-08 unchanged; C-09 preserved                                        | **Decided 3 October 2026** ([record](backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening)); other dispositions stay proposals              |
+> | 9         | **C-10, C-11, C-12**: an unconfirmed End ride or Edit copy confirmation closed quietly by a successful Start riding, Resume ride or Pause, never reappearing (decision 4)                        | **Shipped — `0.4.60`** (3 October 2026); ordinary-flow device check pending ([`current-status.md`](current-status.md))                                            |
+> | Remaining | No slice selected: the review's remaining dispositions stay proposals. C-07/C-08 unchanged (bounded exception); C-09's accepted flow preserved                                                   | **Decided 3 October 2026** ([record](backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening)); other dispositions stay proposals              |
 
 ### Decisions recorded on 1 October 2026
 
@@ -600,6 +602,10 @@ C-12's opening now follows the common rule: no movement when Edit copy's "Replac
 ### Slice 8 — End ride's confirmation on the paused screen (C-11) (shipped `0.4.59`, 3 October 2026)
 
 Its record — the decisions, the re-measured baseline, the mechanism, the evidence, the controls and the limitations — is in [`backlog-item-124-continued.md`](backlog-item-124-continued.md#slice-8--end-rides-confirmation-on-the-paused-screen-c-11-shipped-0459-3-october-2026). Its ordinary flow was accepted on the installed iPhone in English and German, reported 3 October 2026 ([`current-status.md`](current-status.md)).
+
+### Slice 9 — Confirmations closed by a ride transition (C-10, C-11, C-12) (shipped `0.4.60`, 3 October 2026)
+
+Decision 4's slice: an unconfirmed End ride or Edit copy confirmation closes quietly when Start riding, Resume ride or Pause succeeds, judged from the ride's own lifecycle, and does not reappear; a confirmed operation still running keeps its confirmation. Its record — the lifecycle definition, the mechanism, the paired-control evidence, the controls and the limitations — is in [`backlog-item-124-continued.md`](backlog-item-124-continued.md#slice-9--confirmations-closed-by-a-ride-transition-c-10-c-11-c-12-shipped-0460-3-october-2026). Its ordinary-flow device check is pending ([`current-status.md`](current-status.md)).
 
 ### Original specification (scheduled 30 September 2026)
 

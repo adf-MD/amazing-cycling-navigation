@@ -7,12 +7,20 @@ import {
 } from "@playwright/test";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 import { readActiveRideStateRow, readSavedRouteId } from "./support/rideStateDb.ts";
+import {
+  expectQuietTransition,
+  measureTransition,
+  type Transition,
+} from "./support/rideTransitionProbe.ts";
 
 // Backlog item 124's inventory case C-11, slice 8: the paused route screen's
 // End ride confirmation, in both engines (this file runs under the "chromium"
 // and "webkit-smoke" projects), at 390x844 portrait, in English and German,
 // at ordinary and 200% root text, on the in-session paused screen and on item
-// 132's cold-start paused screen.
+// 132's cold-start paused screen. Since backlog item 124's decision 4, it
+// also holds the ride-transition cases: an unconfirmed End ride confirmation
+// closes quietly when Resume ride or Pause succeeds, judged against the same
+// transition made with nothing open (e2e/support/rideTransitionProbe.ts).
 //
 // The rule (the common policy approved on 3 October 2026, and the rider's
 // decision to correct C-11 the same day):
@@ -32,9 +40,8 @@ import { readActiveRideStateRow, readSavedRouteId } from "./support/rideStateDb.
 // bottom less the safe-area inset and 8 px.
 //
 // Input is real — pointer clicks at measured centres, key presses and wheel
-// input — except where a step is labelled synthetic: the browser's scroll
-// anchoring switched off for the confirmation that reappears after Pause,
-// and a Pause write held open by the app's own e2e seam. The app's own scroll
+// input — except where a step is labelled synthetic: a Pause write held
+// open, or failed, by the app's own e2e seam. The app's own scroll
 // calls are recorded, and so are focus calls made by script that actually
 // moved focus, with the page's geometry just before them, so the same
 // assertion judges an unchanged build's browser focus scroll and the repair's
@@ -79,6 +86,7 @@ type TextSize = (typeof TEXT_SIZES)[number];
 const COPY = {
   en: {
     endRide: "End ride",
+    endRideCompact: "End ride",
     confirmTitle: "End this ride?",
     cancel: "Cancel",
     startRiding: "Start riding",
@@ -93,6 +101,7 @@ const COPY = {
   },
   de: {
     endRide: "Fahrt beenden",
+    endRideCompact: "Beenden",
     confirmTitle: "Diese Fahrt beenden?",
     cancel: "Abbrechen",
     startRiding: "Fahrt starten",
@@ -279,14 +288,16 @@ async function installFixtures(page: Page): Promise<void> {
 }
 
 /** The app's own seam (rideStateRepository.ts): holds the ride's next
- * persistence write — Pause's — open until released. Starts disarmed, and
- * disarms again on release so later writes are never held. */
+ * persistence write — Pause's — open until released, or until failed, which
+ * fails the write. Starts disarmed, and disarms again on release or failure
+ * so later writes are never held. */
 async function installPauseWriteHold(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const w = window as unknown as {
       __acnE2eArmRideStateWriteDelay?: () => void;
       __acnE2eRideStateWriteDelay?: () => Promise<void>;
       __resolveRideStateWriteDelay?: () => void;
+      __rejectRideStateWriteDelay?: () => void;
     };
     let armed = false;
     w.__acnE2eArmRideStateWriteDelay = () => {
@@ -294,10 +305,14 @@ async function installPauseWriteHold(page: Page): Promise<void> {
     };
     w.__acnE2eRideStateWriteDelay = () => {
       if (!armed) return Promise.resolve();
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         w.__resolveRideStateWriteDelay = () => {
           armed = false;
           resolve();
+        };
+        w.__rejectRideStateWriteDelay = () => {
+          armed = false;
+          reject(new Error("held Pause write failed (e2e seam)"));
         };
       });
     };
@@ -1076,21 +1091,82 @@ for (const [language, size, placement] of SCROLLED_CASES) {
 }
 
 // ---------------------------------------------------------------------------
-// The separately recorded survivor (not fixed here): a confirmation left
-// open in the riding header survives Pause and reappears in the paused panel.
-// In that Pause commit the sticky navigation has not yet returned — App
-// learns the ride has stopped from a passive effect — so the opening is
-// judged only once it has, by where the confirmation and its actions end up.
+// Backlog item 124, decision 4 of 3 October 2026: an unconfirmed End ride
+// confirmation closes quietly when Resume ride or Pause succeeds, and never
+// reappears. Each affected transition is judged against the same transition
+// from the same starting state and position with nothing open; the riding
+// shell cannot scroll, and the paused screen is at its top before each one.
 
-const SURVIVOR_CASES: readonly (readonly [Language, TextSize, "off" | "default"])[] = [
-  ["en", "200%", "off"],
-  ["de", "200%", "off"],
-  ["en", "100%", "off"],
-  ["en", "200%", "default"],
+const endRideTexts = (language: Language): string[] => [
+  COPY[language].cancel,
+  COPY[language].endRide,
+  COPY[language].endRideCompact,
 ];
 
-for (const [language, size, anchoring] of SURVIVOR_CASES) {
-  test(`(${language}, ${size}, scroll anchoring ${anchoring}) a confirmation surviving Pause reappears with its actions in the band once the navigation has returned`, async ({
+const pauseButton = (page: Page, language: Language): Locator =>
+  page.getByRole("button", { name: COPY[language].pause, exact: true });
+
+/** Settled on the paused screen, under the returned navigation. */
+async function pausedSettled(page: Page, language: Language): Promise<void> {
+  await expect(resumeButton(page, language)).toBeVisible();
+  await expect(page.locator("header.app-header--sticky")).toBeAttached();
+  await settle(page);
+}
+
+/** Settled in the riding shell, the navigation gone. */
+async function ridingSettled(page: Page, language: Language): Promise<void> {
+  await expect(pauseButton(page, language)).toBeEnabled();
+  await expect(page.locator("header.app-header--sticky")).toHaveCount(0);
+  await settle(page);
+}
+
+const pauseTransition = (page: Page, language: Language): Promise<Transition> =>
+  measureTransition(
+    page,
+    () => pointerClick(page, pauseButton(page, language)),
+    () => pausedSettled(page, language),
+  );
+
+const resumeTransition = (page: Page, language: Language): Promise<Transition> =>
+  measureTransition(
+    page,
+    () => pointerClick(page, resumeButton(page, language)),
+    () => ridingSettled(page, language),
+  );
+
+/** Opens the riding header's End ride confirmation (C-10). */
+async function openHeaderEndRide(page: Page, language: Language): Promise<void> {
+  await expect(headerTrigger(page, language)).toBeEnabled();
+  await pointerClick(page, headerTrigger(page, language));
+  await expect(confirmation(page, language)).toBeVisible();
+  await settle(page);
+}
+
+/** Opened deliberately again on the paused screen, it follows C-11's rule,
+ * and Cancel keeps the ride paused. */
+async function expectReopensAsBefore(page: Page, language: Language): Promise<void> {
+  const row = await readActiveRideStateRow(page);
+  const { watchStarts } = await records(page);
+  const opening = await openEndRide(page, language);
+  note("reopened", expectOpening("reopened", language, opening));
+  const result = await cancelEndRide(page, language, "pointer");
+  expectFocusReturn("reopened, then Cancel", language, result, {
+    keptFrom: result.before.scrollY,
+  });
+  await expectStillPaused(page, language, row, watchStarts);
+}
+
+const PAUSE_CASES: readonly (readonly [Language, TextSize])[] = [
+  ["en", "100%"],
+  ["de", "100%"],
+  // At 200% the unchanged build revealed the reappearing confirmation by the
+  // minimum, 535 px: this case shows that extra movement gone, not that a
+  // Pause can never move the page.
+  ["en", "200%"],
+];
+
+for (const [language, size] of PAUSE_CASES) {
+  test(`(${language}, ${size}) the riding header's confirmation closes quietly when Pause succeeds, as a Pause with nothing open does, and stays closed through Resume and Pause`, async ({
     page,
     context,
   }) => {
@@ -1099,152 +1175,233 @@ for (const [language, size, anchoring] of SURVIVOR_CASES) {
     await openRoute(page, language);
     await setRootText(page, size);
     await startRidingWithFix(page, context, language);
-    await pointerClick(page, headerTrigger(page, language));
-    await expect(confirmation(page, language)).toBeVisible();
-    if (anchoring === "off") {
-      // Synthetic: the browser's scroll anchoring switched off, so the result
-      // cannot depend on it compensating for the navigation's return.
-      await page.evaluate(() => {
-        document.documentElement.style.overflowAnchor = "none";
-        document.body.style.overflowAnchor = "none";
-      });
-    }
-    await resetRecords(page);
-    await pointerClick(
-      page,
-      page.getByRole("button", { name: COPY[language].pause, exact: true }),
+    const control = await pauseTransition(page, language);
+    await pointerClick(page, resumeButton(page, language));
+    await ridingSettled(page, language);
+    await openHeaderEndRide(page, language);
+    const affected = await pauseTransition(page, language);
+    expectQuietTransition(
+      "Pause",
+      control,
+      affected,
+      COPY[language].confirmTitle,
+      endRideTexts(language),
     );
-    await expect(resumeButton(page, language)).toBeVisible();
+
+    await pointerClick(page, resumeButton(page, language));
+    await ridingSettled(page, language);
     await expect(
-      confirmation(page, language),
-      "the survivor is still open",
-    ).toBeVisible();
-    await expect(page.locator("header.app-header--sticky")).toBeAttached();
-    await settle(page);
-    const s = await snapshot(page, language);
-    const fixture = await records(page);
-    const fits =
-      s.dialog !== null && s.dialog.bottom - s.dialog.top <= s.band.bottom - s.band.top;
-    const cancelCall = fixture.focusCalls.find(
-      (call) =>
-        call.dialogTitle === COPY[language].confirmTitle &&
-        call.text === COPY[language].cancel,
-    );
-    note(
-      "survivor",
-      JSON.stringify({
-        scrollY: s.scrollY,
-        band: s.band,
-        dialog: s.dialog,
-        actions: s.actions,
-        title: s.title,
-        fits,
-        cancelFocused: s.cancelFocused,
-        scrolls: fixture.scrolls,
-        cancelFocus: cancelCall
-          ? {
-              preventScroll: cancelCall.preventScroll,
-              scrolled: round(cancelCall.scrollYAfter - cancelCall.scrollYBefore),
-            }
-          : null,
-      }),
-    );
-    expect.soft(s.cancelFocused, "[behaviour] Cancel has focus").toBe(true);
-    expect
-      .soft(
-        inBand(s.actions, s.band),
-        `[behaviour] the complete action row is in the band once the navigation has returned (${JSON.stringify({ actions: s.actions, band: s.band })})`,
-      )
-      .toBe(true);
-    if (fits) {
-      expect
-        .soft(
-          inBand(s.dialog, s.band),
-          "[behaviour] the whole confirmation, its title included, is in the band",
-        )
-        .toBe(true);
-    }
-    // A minimum reveal leaves the confirmation's bottom (or, oversized, its
-    // action row's) on the band's bottom edge; with no reveal it is simply
-    // inside the band, as asserted above.
-    if (fixture.scrolls.length > 0) {
-      const edge = fits ? s.dialog?.bottom : s.actions?.bottom;
-      expect
-        .soft(
-          Math.abs((edge ?? Number.NaN) - s.band.bottom),
-          "[behaviour] the reveal moved no further than the band's bottom edge",
-        )
-        .toBeLessThanOrEqual(TOLERANCE_PX);
-    }
-    expect
-      .soft(
-        cancelCall?.preventScroll,
-        "[implementation] Cancel focused with preventScroll on reappearing",
-      )
-      .toBe(true);
-    expect
-      .soft(fixture.scrolls.length, "[implementation] at most one deliberate scroll")
-      .toBeLessThanOrEqual(1);
-    const result = await cancelEndRide(page, language, "pointer");
-    expectFocusReturn("survivor's Cancel", language, result, {
-      keptFrom: result.before.scrollY,
-    });
+      page.getByRole("dialog"),
+      "[behaviour] still closed after Resume ride",
+    ).toHaveCount(0);
+    await pauseRide(page, language);
+    await expect(
+      page.getByRole("dialog"),
+      "[behaviour] still closed after another Pause",
+    ).toHaveCount(0);
+    if (size === "100%") await expectReopensAsBefore(page, language);
     expect(pageErrors).toEqual([]);
   });
 }
 
-// Both confirmations surviving together (D-07's pair): End ride's is the one
-// whose Cancel is focused, and its actions end in the band. Chromium only, as
-// a single real-geometry check of the effects' order; the unit tests pin the
-// order itself.
-test("(en, 200%) with Edit copy's confirmation reappearing too, End ride's actions end in the band with its Cancel focused", async ({
+for (const language of LANGUAGES) {
+  test(`(${language}, 100%) the paused screen's confirmation closes quietly when Resume ride succeeds, as a Resume with nothing open does, and stays closed after Pause`, async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(90_000);
+    const { pageErrors } = await openPaused(page, context, language, "100%");
+    const control = await resumeTransition(page, language);
+    await pauseRide(page, language);
+    await openEndRide(page, language);
+    const affected = await resumeTransition(page, language);
+    expectQuietTransition(
+      "Resume ride",
+      control,
+      affected,
+      COPY[language].confirmTitle,
+      endRideTexts(language),
+    );
+    await expect(
+      headerTrigger(page, language),
+      "[behaviour] the riding header offers End ride",
+    ).toBeEnabled();
+
+    await pauseRide(page, language);
+    await expect(
+      page.getByRole("dialog"),
+      "[behaviour] still closed after Pause",
+    ).toHaveCount(0);
+    await expectReopensAsBefore(page, language);
+    expect(pageErrors).toEqual([]);
+  });
+}
+
+test("(de, 100%) cold-start paused: the confirmation closes quietly when Resume ride succeeds, as on the same screen with nothing open, and stays closed after Pause", async ({
   page,
   context,
-  browserName,
 }) => {
-  test.skip(browserName !== "chromium", "one real-geometry check of the order");
   test.setTimeout(90_000);
-  await openPaused(page, context, "en", "200%");
+  const { pageErrors } = await openColdStartPaused(page, context, "de", "100%");
+  await openEndRide(page, "de");
+  const affected = await resumeTransition(page, "de");
+  await pauseRide(page, "de");
+  await expect(
+    page.getByRole("dialog"),
+    "[behaviour] still closed after Pause",
+  ).toHaveCount(0);
+
+  // The control: the same cold-start paused screen again, nothing open.
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { level: 1, name: COPY.de.routes }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: COPY.de.ride, exact: true }).click();
+  await expect(panelTrigger(page)).toBeEnabled();
+  await settle(page);
+  const control = await resumeTransition(page, "de");
+  expectQuietTransition(
+    "cold-start Resume ride",
+    control,
+    affected,
+    COPY.de.confirmTitle,
+    endRideTexts("de"),
+  );
+  expect(pageErrors).toEqual([]);
+});
+
+test("(en, 100%) with Edit copy's confirmation open too, both close quietly when Resume ride succeeds, and neither reappears on Pause", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(90_000);
+  const { pageErrors } = await openPaused(page, context, "en", "100%");
   await writeRow(page, "planningDrafts", OLD_DRAFT);
+  const control = await resumeTransition(page, "en");
+  const controlPause = await pauseTransition(page, "en");
+
   await pointerClick(
     page,
     page.getByRole("button", { name: COPY.en.editCopy, exact: true }),
   );
   await expect(page.getByRole("dialog", { name: COPY.en.editTitle })).toBeVisible();
   await settle(page);
-  // Below Edit copy's revealed confirmation: activated from the keyboard.
-  await openEndRide(page, "en", "keyboard");
-  await resumeButton(page, "en").evaluate((element) => {
-    (element as HTMLElement).focus({ preventScroll: true });
-  });
-  await page.keyboard.press("Enter");
-  await expect(
-    page.getByRole("button", { name: COPY.en.pause, exact: true }),
-  ).toBeEnabled();
-  await page.evaluate(() => {
-    document.documentElement.style.overflowAnchor = "none";
-    document.body.style.overflowAnchor = "none";
-  });
-  await resetRecords(page);
-  await pointerClick(
+  await openEndRide(page, "en");
+  await expect(page.getByRole("dialog")).toHaveCount(2);
+  // Back to the top, where the control's Resume ride was pressed.
+  await wheelBy(page, -5_000);
+  const affected = await resumeTransition(page, "en");
+  expectQuietTransition(
+    "Resume ride with both open",
+    control,
+    affected,
+    COPY.en.confirmTitle,
+    [...endRideTexts("en"), COPY.en.editCopy],
+  );
+  expect(affected.before.dialogs).toContain(COPY.en.editTitle);
+
+  const affectedPause = await pauseTransition(page, "en");
+  expectQuietTransition("the next Pause", controlPause, affectedPause, null, [
+    ...endRideTexts("en"),
+    COPY.en.editCopy,
+  ]);
+  expect(pageErrors).toEqual([]);
+});
+
+// Synthetic: the Pause write held open, then released or failed, by the
+// app's own e2e seam. A Pause still being saved is not yet a success, and a
+// failed one never becomes one.
+
+for (const language of LANGUAGES) {
+  test(`(${language}, 100%) a Pause still being saved keeps the riding header's confirmation; it closes quietly once the Pause succeeds, as a held Pause with nothing open does`, async ({
     page,
-    page.getByRole("button", { name: COPY.en.pause, exact: true }),
-  );
-  await expect(resumeButton(page, "en")).toBeVisible();
-  await expect(page.getByRole("dialog", { name: COPY.en.editTitle })).toBeVisible();
-  await expect(confirmation(page, "en")).toBeVisible();
-  await expect(page.locator("header.app-header--sticky")).toBeAttached();
-  await settle(page);
-  const s = await snapshot(page, "en");
-  const fixture = await records(page);
-  note(
-    "both survivors",
-    JSON.stringify({ scrolls: fixture.scrolls, actions: s.actions, band: s.band }),
-  );
-  expect.soft(s.cancelFocused, "[behaviour] End ride's Cancel has focus").toBe(true);
-  expect
-    .soft(inBand(s.actions, s.band), "[behaviour] End ride's action row is in the band")
-    .toBe(true);
+    context,
+  }) => {
+    test.setTimeout(90_000);
+    const pageErrors = await prepare(page, context, { holdPauseWrite: true });
+    await openRoute(page, language);
+    await startRidingWithFix(page, context, language);
+    const holdPause = async () => {
+      await page.evaluate(() => {
+        (
+          window as unknown as { __acnE2eArmRideStateWriteDelay?: () => void }
+        ).__acnE2eArmRideStateWriteDelay?.();
+      });
+      await pointerClick(page, pauseButton(page, language));
+      await expect(
+        page.getByRole("button", { name: COPY[language].pausing, exact: true }),
+      ).toBeDisabled();
+    };
+    const release = () =>
+      page.evaluate(() => {
+        (
+          window as unknown as { __resolveRideStateWriteDelay?: () => void }
+        ).__resolveRideStateWriteDelay?.();
+      });
+
+    await holdPause();
+    const control = await measureTransition(page, release, () =>
+      pausedSettled(page, language),
+    );
+    await pointerClick(page, resumeButton(page, language));
+    await ridingSettled(page, language);
+    await openHeaderEndRide(page, language);
+    await holdPause();
+    await expect(
+      confirmation(page, language),
+      "[behaviour] still open while the Pause is only being saved",
+    ).toBeVisible();
+    await expect(cancelButton(page, language)).toBeEnabled();
+    const affected = await measureTransition(page, release, () =>
+      pausedSettled(page, language),
+    );
+    expectQuietTransition(
+      "a held Pause, released",
+      control,
+      affected,
+      COPY[language].confirmTitle,
+      endRideTexts(language),
+    );
+    expect(pageErrors).toEqual([]);
+  });
+}
+
+test("(de, 100%) a failed Pause keeps the riding header's confirmation, still usable", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(90_000);
+  const pageErrors = await prepare(page, context, { holdPauseWrite: true });
+  await openRoute(page, "de");
+  await startRidingWithFix(page, context, "de");
+  await openHeaderEndRide(page, "de");
+  await page.evaluate(() => {
+    (
+      window as unknown as { __acnE2eArmRideStateWriteDelay?: () => void }
+    ).__acnE2eArmRideStateWriteDelay?.();
+  });
+  await pointerClick(page, pauseButton(page, "de"));
+  await expect(
+    page.getByRole("button", { name: COPY.de.pausing, exact: true }),
+  ).toBeDisabled();
+  await page.evaluate(() => {
+    (
+      window as unknown as { __rejectRideStateWriteDelay?: () => void }
+    ).__rejectRideStateWriteDelay?.();
+  });
+  await expect(pauseButton(page, "de")).toBeEnabled();
+  await expect(page.getByRole("alert").first()).toBeVisible();
+  await expect(
+    confirmation(page, "de"),
+    "[behaviour] still open after the failed Pause",
+  ).toBeVisible();
+  await expect(resumeButton(page, "de")).toHaveCount(0);
+
+  // C-10's own Cancel, unchanged: focus back to the header's End ride.
+  await pointerClick(page, cancelButton(page, "de"));
+  await expect(confirmation(page, "de")).toHaveCount(0);
+  await expect(headerTrigger(page, "de")).toBeFocused();
+  expect(pageErrors).toEqual([]);
 });
 
 // ---------------------------------------------------------------------------
