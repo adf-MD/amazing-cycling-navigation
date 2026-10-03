@@ -163,3 +163,12 @@ In that Pause commit App still believes the ride is active, because it learns ot
 The longest job, shard 4, left 535 s below the E2E jobs' 1,200-second timeout. The deployment served `0.4.58` / `7e46daf`. These are one run's timings, not an established trend, and no sharding change is made or authorised here.
 
 **Installed-iPhone acceptance, reported 3 October 2026.** The ordinary flows passed on `0.4.58` (build `7e46daf`), in English and German: Edit copy's confirmation fully visible without unwanted movement from the pre-ride, paused and cold-start paused screens; Cancel and reopening preserving the original draft; and Replace and edit opening the route's copy in Plan, the saved route unchanged. This accepts slice 7's ordinary-flow checks only: the enlarged-text geometry, the synthetic inset, the reappearing-confirmation comparison, and pending writes and failures keep their automated evidence and were not induced on the phone. The dated record, with what it does not claim, is in [`current-status.md`](current-status.md).
+
+## Review of the ride confirmations and the remaining inventory (3 October 2026, documentation only — not a slice)
+
+C-07, C-08, C-10, C-11 and C-13 were measured against the rider's approved common opening and cancellation policy, at `7e46daf`, and every remaining inventory entry was reconciled against the dated decisions, shipped slices and acceptance records. The account — method, measurements, verdicts, a proposed slice, noted defects kept apart by evidence level, and a compact list of the decisions still needed — is the [review](../design/reveal-inventory/ride-confirmations-review.md); it is not repeated here.
+
+- **Measured matches:** C-10 and C-13 in every configuration; C-07 and C-08 at ordinary text, with a 25 px overshoot at 200% recommended unchanged.
+- **Measured mismatch:** C-11 — at 200% the opening over-scrolls by 280 px and hides the title, and after the rider scrolls it, Cancel can leave **End ride** hidden under the sticky navigation, at ordinary text too.
+- **Proposed, not selected:** a C-11-only slice reusing slices 1 and 7's mechanisms.
+- **Nothing is implemented, accepted or excluded by the review**, and no device check is added to [`current-status.md`](current-status.md).
