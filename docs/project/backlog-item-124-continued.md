@@ -149,4 +149,17 @@ In that Pause commit App still believes the ride is active, because it learns ot
 - **The reappearing confirmation is not fixed.** An unconfirmed confirmation still survives Start riding and Pause, as recorded in slice 4. Only how it is revealed changed, and that was measured above.
 - **Desktop keyboard only.** Escape and Enter were exercised with the desktop engines' keyboard, which is automated evidence. There is no physical-keyboard, VoiceOver, landscape or physical-Android result.
 
-**CI and deployment:** pending when this record was written. The run's results are reported in the handoff and recorded with the device acceptance.
+**CI and deployment.** Run [37133035503](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37133035503), for commit `7e46daf`: **Verify and build, all four End-to-end shards and Deploy succeeded, each on its first attempt.** The durations come from the run's own job and step start and completion times, read once after the run and kept locally as saved job data. Verify and build's test step is its unit and component tests; each shard's is its end-to-end suite.
+
+| Job              | Test step | Whole job |
+| ---------------- | --------: | --------: |
+| Verify and build |     137 s |     241 s |
+| E2E shard 1/4    |     463 s |     527 s |
+| E2E shard 2/4    |     521 s |     588 s |
+| E2E shard 3/4    |     288 s |     352 s |
+| E2E shard 4/4    |     600 s |     665 s |
+| Deploy           |         — |      11 s |
+
+The longest job, shard 4, left 535 s below the E2E jobs' 1,200-second timeout. The deployment served `0.4.58` / `7e46daf`. These are one run's timings, not an established trend, and no sharding change is made or authorised here.
+
+**Installed-iPhone acceptance, reported 3 October 2026.** The ordinary flows passed on `0.4.58` (build `7e46daf`), in English and German: Edit copy's confirmation fully visible without unwanted movement from the pre-ride, paused and cold-start paused screens; Cancel and reopening preserving the original draft; and Replace and edit opening the route's copy in Plan, the saved route unchanged. This accepts slice 7's ordinary-flow checks only: the enlarged-text geometry, the synthetic inset, the reappearing-confirmation comparison, and pending writes and failures keep their automated evidence and were not induced on the phone. The dated record, with what it does not claim, is in [`current-status.md`](current-status.md).
