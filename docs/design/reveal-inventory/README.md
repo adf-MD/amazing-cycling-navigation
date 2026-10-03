@@ -14,6 +14,8 @@
 
 **Update (3 October 2026): D-01's ordinary flow accepted; D-02 next.** D-01's ordinary Clear draft flow was accepted on the installed iPhone in English and German, reported 3 October 2026, on `0.4.56` (build `439e578`) ([`current-status.md`](../../project/current-status.md)); its failure, delayed-completion, retry and enlarged-text cases keep synthetic, automated evidence only. **D-02's investigation and planning stage is the next slice**, with no implementation; C-12's opening reveal remains approved later work.
 
+**Update (3 October 2026, later): D-02 investigated and planned.** Its pending and failure lifecycle was investigated against `439e578`, and an implementation proposed, in a separate [D-02 report](d-02-delete-lifecycle.md). **Nothing is implemented**, and the plan awaits the rider's review and one decision.
+
 **What this is.** Every confirmation in the app, every expanding card, form, editor and disclosure that could reasonably fall under the rider's "pop-up cards" request, and the conditional and failure states that change what would need revealing — each with a stable review ID, its labels in English and German, how to reach it, what it does today, where that is in the source and tests, what was measured, and a recommendation.
 
 **The rule under review** ([item 124](../../project/backlog.md#item-124)): no movement when the newly opened content fits between the sticky navigation and the bottom safe area; otherwise only enough to reveal it; and when it cannot fit, only enough to show its complete action row. On Cancel and Escape: keep the page where the rider has left it, moving only as far as needed to reveal the opening control.
@@ -36,6 +38,7 @@
 - [Decisions and delivery](#decisions-and-delivery)
 - [Review preparation — D-01, D-02 and D-06 (2 October 2026)](#review-preparation--d-01-d-02-and-d-06-2-october-2026)
 - [Decisions — D-06, D-02, D-01 and C-12 (2 October 2026)](#decisions--d-06-d-02-d-01-and-c-12-2-october-2026)
+- [D-02 — investigation and plan (3 October 2026, a separate file)](d-02-delete-lifecycle.md)
 
 ## How to read this
 
@@ -428,6 +431,7 @@ Geolocation **Try again**, **Retry map imagery**, the wake-lock failure row, the
 - **Recommendation:** **candidate for change** (re-reveal or keep the actions in view after a failure, and restore focus) and, separately, the raw error text — **needs discussion**.
 - **Update, 2 October 2026:** rechecked and measured in both languages at ordinary and 200% text. A failure that arrives while the deletion is pending behaves differently: the route leaves the list as soon as Delete route is pressed, and stays hidden, with no error, after the failure ([review preparation](#review-preparation--d-01-d-02-and-d-06-2-october-2026)).
 - **Decided, 2 October 2026:** the ordinary translated message, a guarded minimum reveal and appropriate focus restoration, and an accurate pending, success and failure presentation, after an investigation of the storage and list mechanism. Not yet implemented ([decisions](#decisions--d-06-d-02-d-01-and-c-12-2-october-2026)).
+- **Investigated and planned, 3 October 2026:** the causes are measured — Dexie's optimistic live-query cache hides the route while pending and never restores it after an aborted deletion, and the confirmation's raw message, growth and focus loss are the app's — and a repair is proposed, in the [D-02 report](d-02-delete-lifecycle.md). Not implemented.
 
 ### D-03 — A route card remounts while its delete is pending
 
@@ -559,7 +563,7 @@ Reported here so they are not lost; nothing was changed.
 | P-30                                     | No turn cues                                                     | preserve existing behaviour (protected, item 97)                                |
 | P-33                                     | Update prompt                                                    | not a candidate; its placement needs discussion                                 |
 | D-01                                     | Clear draft fails                                                | needs discussion — decided 2 October 2026; shipped `0.4.56`; accepted           |
-| D-02                                     | Delete route fails                                               | **candidate for change** — approved 2 October 2026; not yet implemented         |
+| D-02                                     | Delete route fails                                               | **candidate for change** — approved 2 October 2026; planned, not implemented    |
 | D-03                                     | Card remounts while a delete is pending                          | **candidate for change** — approved; shipped in slice 3 (`0.4.52`)              |
 | D-04                                     | Activation above the viewport                                    | already complies as measured                                                    |
 | D-05                                     | Focused control destroyed                                        | needs discussion                                                                |
@@ -574,7 +578,7 @@ C-01 (Delete route) and C-05 (Clear draft) are slice 1 — already approved and 
 
 1. **C-14 — the switch dialog from Planning.** With a route ride paused, plan a route in **Plan**, calculate it, and tap **Save route** near the bottom of the screen. The "Switch to …?" dialog appears at the very top of Planning, and after Cancel or Escape you are left there. _Should this dialog follow the common rule (appear where you are, keep your place on Cancel)?_ — confirm / exclude / discuss. **Decided 1 October 2026: confirmed, as a separate Open saved route — shipped in slice 3 (`0.4.52`).**
 2. **D-03 — a delete left open while searching.** In **Routes**, tap **Delete** on a route, then type in **Search routes** so that route disappears, then delete one letter. The route reappears with its confirmation open, focus jumps to Cancel, and the page scrolls. _Should a pending Delete be cancelled when its route leaves the list, or kept as now?_ — confirm a change / exclude / discuss. **Decided 1 October 2026: confirmed, for an unconfirmed Delete — shipped in slice 3 (`0.4.52`).**
-3. **D-02 — Delete route fails.** Not reproducible on demand; it needs the device's storage to fail. When it does, the confirmation grows, its buttons can drop below the screen, focus is lost, and the message is technical English. _Should the buttons be kept in view and the message be the ordinary "That route could not be deleted."?_ — confirm / exclude / discuss. **Decided 2 October 2026: confirmed, with an accurate pending state after an investigation of the list mechanism — not yet implemented.**
+3. **D-02 — Delete route fails.** Not reproducible on demand; it needs the device's storage to fail. When it does, the confirmation grows, its buttons can drop below the screen, focus is lost, and the message is technical English. _Should the buttons be kept in view and the message be the ordinary "That route could not be deleted."?_ — confirm / exclude / discuss. **Decided 2 October 2026: confirmed, with an accurate pending state after an investigation of the list mechanism — not yet implemented. Investigated and planned 3 October 2026 ([report](d-02-delete-lifecycle.md)).**
 4. **D-01 — Clear draft fails.** Not reproducible on demand. The message "The draft could not be cleared on this device. Try again." appears beside Clear draft. _Should that message itself be revealed if it falls off-screen?_ — confirm / exclude / discuss. **Decided 2 October 2026: only while the rider is still waiting, by the minimum; otherwise their activity is kept — shipped in `0.4.56`.**
 5. **D-06 — Edit copy.** With a draft in Planning, open a route's ride screen, tap **Edit copy**, and see "Replace your current draft?". Its buttons are never disabled while working, and after a failure focus is probably lost. _Fix as a separate defect?_ — confirm / exclude / discuss. **Decided 2 October 2026: confirmed, first in the execution order — shipped in `0.4.54`.**
 6. **C-07, C-08, C-09 — the Ride launcher's End ride and Discard unfinished ride.** With an unfinished ride, open **Ride** and tap **End ride** (or **Discard unfinished ride**). They open where they are and nothing moves. _Agree they already comply and need no change?_ — confirm / discuss.
@@ -857,3 +861,4 @@ At ordinary text, the browser evidence agrees with the rider's iPhone 13 report.
 - **Delivered:** D-06's repair shipped in `0.4.54`, 2 October 2026, as item 124's slice 4 ([record](../../project/backlog.md#item-124)). Its ordinary flow was accepted on the installed iPhone in German and English, reported the same day; the pending-write and failure cases have automated evidence only.
 - **Delivered:** D-01's repair shipped in `0.4.56`, 3 October 2026, as item 124's slice 5, after [item 132](../../project/history/items-132-NN.md#item-132) was accepted on the installed iPhone. Its failure cases have automated evidence only, and its ordinary-flow device check is pending.
 - **Accepted and next:** D-01's ordinary flow was accepted on the installed iPhone in English and German, reported 3 October 2026, on `0.4.56` (build `439e578`). The next slice is D-02's investigation and planning stage, with no implementation; C-12's opening reveal remains approved later work.
+- **D-02 investigated and planned, 3 October 2026:** the [D-02 report](d-02-delete-lifecycle.md). Not implemented; its implementation follows the rider's review.
