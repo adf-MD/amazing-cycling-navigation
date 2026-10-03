@@ -12,6 +12,8 @@
 
 **Update (3 October 2026): D-01 delivered.** D-01's repair shipped in `0.4.56` as item 124's slice 5 ([record](../../project/backlog.md#item-124)). A failed Clear draft now returns focus, and reveals the button and its message by the minimum, only while the rider is still waiting; once they have moved on, their focus and position are kept and the message stays in the Clear draft area. Its failure, delayed-completion and retry behaviour have synthetic, automated evidence only; its ordinary-flow device check is pending ([`current-status.md`](../../project/current-status.md)). D-02 and C-12's opening-reveal change are not yet implemented.
 
+**Update (3 October 2026): D-01's ordinary flow accepted; D-02 next.** D-01's ordinary Clear draft flow was accepted on the installed iPhone in English and German, reported 3 October 2026, on `0.4.56` (build `439e578`) ([`current-status.md`](../../project/current-status.md)); its failure, delayed-completion, retry and enlarged-text cases keep synthetic, automated evidence only. **D-02's investigation and planning stage is the next slice**, with no implementation; C-12's opening reveal remains approved later work.
+
 **What this is.** Every confirmation in the app, every expanding card, form, editor and disclosure that could reasonably fall under the rider's "pop-up cards" request, and the conditional and failure states that change what would need revealing — each with a stable review ID, its labels in English and German, how to reach it, what it does today, where that is in the source and tests, what was measured, and a recommendation.
 
 **The rule under review** ([item 124](../../project/backlog.md#item-124)): no movement when the newly opened content fits between the sticky navigation and the bottom safe area; otherwise only enough to reveal it; and when it cannot fit, only enough to show its complete action row. On Cancel and Escape: keep the page where the rider has left it, moving only as far as needed to reveal the opening control.
@@ -415,6 +417,7 @@ Geolocation **Try again**, **Retry map imagery**, the wake-lock failure row, the
 - **Update, 2 October 2026:** rechecked and measured further, including a failure that arrives after the rider has scrolled or moved focus elsewhere: the failure takes focus back to Clear draft in every case ([review preparation](#review-preparation--d-01-d-02-and-d-06-2-october-2026)).
 - **Decided, 2 October 2026:** a failure preserves the rider's activity if they have moved elsewhere, and keeps its error in the Clear draft area; if they are still waiting, focus is restored and the button and message are revealed only as far as necessary. Not yet implemented ([decisions](#decisions--d-06-d-02-d-01-and-c-12-2-october-2026)).
 - **Delivered, 3 October 2026:** shipped in `0.4.56` as item 124's slice 5 ([record](../../project/backlog.md#item-124)). Each confirmed attempt has its own interaction guard, shared with D-06, and focus is parked on the confirmation's title while the clear runs. A failure then focuses Clear draft, without the browser's own focus scroll, and reveals the button and its message by the minimum only if the rider is still waiting; otherwise it leaves their focus and position alone. The failure cases have synthetic, automated evidence only; the ordinary flow's device check is pending ([`current-status.md`](../../project/current-status.md)).
+- **Accepted, 3 October 2026:** the ordinary flow passed on the installed iPhone in English and German, on `0.4.56` (build `439e578`) ([`current-status.md`](../../project/current-status.md)). The failure cases keep automated evidence only.
 
 ### D-02 — Delete route fails
 
@@ -555,7 +558,7 @@ Reported here so they are not lost; nothing was changed.
 | P-29                                     | Selected feature summary                                         | needs discussion                                                                |
 | P-30                                     | No turn cues                                                     | preserve existing behaviour (protected, item 97)                                |
 | P-33                                     | Update prompt                                                    | not a candidate; its placement needs discussion                                 |
-| D-01                                     | Clear draft fails                                                | needs discussion — decided 2 October 2026; shipped `0.4.56`                     |
+| D-01                                     | Clear draft fails                                                | needs discussion — decided 2 October 2026; shipped `0.4.56`; accepted           |
 | D-02                                     | Delete route fails                                               | **candidate for change** — approved 2 October 2026; not yet implemented         |
 | D-03                                     | Card remounts while a delete is pending                          | **candidate for change** — approved; shipped in slice 3 (`0.4.52`)              |
 | D-04                                     | Activation above the viewport                                    | already complies as measured                                                    |
@@ -638,7 +641,7 @@ Branches flagged as difficult to reach or apparently unreachable. No steps are i
 
 **2 October 2026 — D-06, D-02, D-01 and C-12 decided.** Since then, checklist items 3, 4, 5 and 8 are decided as well; the record is [Decisions — D-06, D-02, D-01 and C-12](#decisions--d-06-d-02-d-01-and-c-12-2-october-2026). Nothing about them is implemented yet, and every other case still awaits the rider's review.
 
-**Later: D-06 shipped in `0.4.54` (2 October 2026) and D-01 in `0.4.56` (3 October 2026)**, as item 124's slices 4 and 5. D-02 and C-12's opening reveal remain approved and not implemented, and every other case still awaits the rider's review.
+**Later: D-06 shipped in `0.4.54` (2 October 2026) and D-01 in `0.4.56` (3 October 2026)**, as item 124's slices 4 and 5. D-02 and C-12's opening reveal remain approved and not implemented, and every other case still awaits the rider's review. D-01's ordinary flow was accepted on the installed iPhone, reported 3 October 2026, and D-02's investigation and planning stage is next.
 
 ## Review preparation — D-01, D-02 and D-06 (2 October 2026)
 
@@ -853,3 +856,4 @@ At ordinary text, the browser evidence agrees with the rider's iPhone 13 report.
 - **Scope of the next slice:** D-06 only. D-01, D-02 and C-12's opening-reveal change remain later work; their implementation details are settled when each slice is planned.
 - **Delivered:** D-06's repair shipped in `0.4.54`, 2 October 2026, as item 124's slice 4 ([record](../../project/backlog.md#item-124)). Its ordinary flow was accepted on the installed iPhone in German and English, reported the same day; the pending-write and failure cases have automated evidence only.
 - **Delivered:** D-01's repair shipped in `0.4.56`, 3 October 2026, as item 124's slice 5, after [item 132](../../project/history/items-132-NN.md#item-132) was accepted on the installed iPhone. Its failure cases have automated evidence only, and its ordinary-flow device check is pending.
+- **Accepted and next:** D-01's ordinary flow was accepted on the installed iPhone in English and German, reported 3 October 2026, on `0.4.56` (build `439e578`). The next slice is D-02's investigation and planning stage, with no implementation; C-12's opening reveal remains approved later work.
