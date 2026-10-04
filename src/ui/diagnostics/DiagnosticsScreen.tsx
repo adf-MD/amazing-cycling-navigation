@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useOnlineStatus } from "../../platform/onlineStatus.ts";
 import { useRecentErrors } from "../../platform/errorLog.ts";
 import {
@@ -32,6 +32,11 @@ import {
   type ResolvedActiveRoute,
 } from "./activeSessionSummary.ts";
 import { useLiveQuery } from "../shared/useLiveQuery.ts";
+import type { OperationInteractionGuard } from "../shared/operationInteractionGuard.ts";
+import {
+  armConnectionTestWaitGuard,
+  revealConnectionTestResult,
+} from "./connectionTestResultReveal.ts";
 import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { ParameterlessMessageKey, Translator } from "../../i18n/translate.ts";
 
@@ -126,11 +131,18 @@ export interface DiagnosticsScreenProps {
    * construction PlanningScreen uses, so "Test routing connection" below
    * exercises identical request code to a real Planning calculation. */
   routingProvider?: RoutingProvider;
+  /** Backlog item 124, slice 11 (P-15): App's sticky navigation and the
+   * Settings/Status switcher sticking beneath it. The lower of their
+   * bottoms is where the revealed test result's band begins. */
+  stickyHeaderRef?: RefObject<HTMLElement | null>;
+  stickySubheaderRef?: RefObject<HTMLElement | null>;
 }
 
 export function DiagnosticsScreen({
   clock = systemClock,
   routingProvider,
+  stickyHeaderRef,
+  stickySubheaderRef,
 }: DiagnosticsScreenProps) {
   const translator = useTranslate();
   const { t } = translator;
@@ -176,9 +188,17 @@ export function DiagnosticsScreen({
   const [connectionTestResult, setConnectionTestResult] =
     useState<RoutingConnectionTestResult | null>(null);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const testButtonRef = useRef<HTMLButtonElement>(null);
+  const resultLineRef = useRef<HTMLParagraphElement>(null);
+  // Backlog item 124, slice 11 (P-15): whether the rider is still waiting
+  // at the attempt now running. One guard per attempt, held only here.
+  const testWaitGuardRef = useRef<OperationInteractionGuard | null>(null);
 
   const runConnectionTest = useCallback(() => {
     if (isTestingConnection) return;
+    // Each deliberate attempt decides afresh whether its result is revealed.
+    testWaitGuardRef.current?.detach();
+    testWaitGuardRef.current = armConnectionTestWaitGuard(() => testButtonRef.current);
     setIsTestingConnection(true);
     setCopyStatus("idle");
     void runRoutingConnectionTest(adapter)
@@ -189,6 +209,45 @@ export function DiagnosticsScreen({
         setIsTestingConnection(false);
       });
   }, [adapter, isTestingConnection]);
+
+  // Backlog item 124, slice 11 (P-15): once an attempt has finished, bring
+  // its result line into view by the minimum — only if the rider is still
+  // waiting at it. The result is committed with or before the button's
+  // label returns (`.then` runs before `.finally`), so acting on the commit
+  // in which `isTestingConnection` turns false needs no batching assumption
+  // and measures the settled button. The guard is taken and detached here,
+  // whichever way it is decided, and a detached guard reads as disarmed, so
+  // nothing can reveal twice: the clock's tick, a live-query refresh or any
+  // other re-render leaves these dependencies unchanged anyway. A layout
+  // effect, so a reduced-motion reveal lands before the result is painted
+  // below the screen. Nothing is focused, and the live region is untouched.
+  useLayoutEffect(() => {
+    if (isTestingConnection) return;
+    const guard = testWaitGuardRef.current;
+    if (guard === null) return;
+    testWaitGuardRef.current = null;
+    const isStillWaiting = guard.armed;
+    guard.detach();
+    const line = resultLineRef.current;
+    if (!isStillWaiting || !line) return;
+    revealConnectionTestResult(
+      line,
+      Math.max(
+        stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+        stickySubheaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+      ),
+    );
+  }, [isTestingConnection, stickyHeaderRef, stickySubheaderRef]);
+
+  // Leaving Status unmounts this screen while a test may still be running:
+  // its result then lands nowhere, and its guard's listeners go with it.
+  useLayoutEffect(() => {
+    const guardRef = testWaitGuardRef;
+    return () => {
+      guardRef.current?.detach();
+      guardRef.current = null;
+    };
+  }, []);
 
   const copyConnectionTestReport = useCallback(() => {
     if (!connectionTestResult) return;
@@ -481,6 +540,7 @@ export function DiagnosticsScreen({
         <p className="field-hint">{t("status.testConnectionHint")}</p>
         {!hasKey ? <p className="field-hint">{t("status.testConnectionNoKey")}</p> : null}
         <button
+          ref={testButtonRef}
           type="button"
           className="btn-secondary"
           onClick={runConnectionTest}
@@ -490,7 +550,7 @@ export function DiagnosticsScreen({
         </button>
         {connectionTestResult ? (
           <>
-            <p className="status-row" role="status">
+            <p ref={resultLineRef} className="status-row" role="status">
               {/* `detail` is described in the rider's language from the
                   result's own data (the copied report describes the same
                   data in English), and `elapsed` is a machine number. Both

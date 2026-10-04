@@ -937,3 +937,143 @@ The longest job, shard 4, left 343 s below the E2E jobs' 1,200-second timeout. T
 14. **The stale launcher confirmation — filed as [item 140](backlog.md#item-140)**, a separate, unscheduled correctness item. No priority is assigned, and the execution order is unchanged.
 
 **Where item 124 stands.** Slice 11, P-15, is the next and only approved slice. Every other inventory entry now has a disposition ([reconciliation](../design/reveal-inventory/closure-reconciliation.md#dispositions-after-slice-10s-acceptance-4-october-2026)), and item 124 stays active until slice 11's installed-iPhone acceptance. Item 122's design stage has not started.
+
+## Slice 11 — The routing-connection result revealed (P-15) (shipped `0.4.62`, 4 October 2026)
+
+**Approved by the rider on 4 October 2026** as [decision 12](#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice), with the rider's further answer that an app hidden while a test runs counts as having moved on. This is implementation approval, not device acceptance.
+
+**The defect,** measured in the [close-out investigation](../design/reveal-inventory/closure-reconciliation.md#p-15--the-routing-connection-result): with **Test routing connection** low on Status, its result line, the grid below it and **Copy diagnostic report** appeared wholly below the screen, in both engines and both languages, for success and every failure. Nothing moved; the only visible change was the button's label returning.
+
+**What the rider gets.**
+
+- **When the current test finishes and the rider is still waiting**, the result line comes into view:
+  - **where:** below the sticky navigation and the Settings/Status switcher plus 8 px, and above the visible screen's bottom less the safe-area inset plus 8 px;
+  - **how far:** not at all when it already fits, otherwise by the minimum;
+  - **taller than that band:** its beginning comes to rest just below the switcher, and the rider scrolls on for the rest;
+  - **motion:** smooth, instant with reduced motion;
+  - **not required:** bringing the grid and **Copy diagnostic report** into view.
+- **"Still waiting"** means no rider input since the tap that started the test. Each of these counts as having moved on, and the page and focus are then left alone:
+  - a scroll by wheel or touch;
+  - a tap or click elsewhere;
+  - a key;
+  - focus moved to anything else;
+  - leaving Status, for Settings or another tab;
+  - the app hidden — switching apps or locking the phone — even once it is visible again.
+
+  A repeated tap on the disabled **Testing…** button still counts as waiting.
+
+- **Once per completion.** Re-renders never repeat it, and each new attempt decides afresh, in both directions.
+- **Unchanged:**
+  - the request and its error classification;
+  - the result's text, the grid and the button's states;
+  - the stored key, copying and the copied report;
+  - the result line's `role="status"` announcement. Nothing is focused to reveal it.
+
+**Mechanism.**
+
+- **New `src/ui/diagnostics/connectionTestResultReveal.ts`.**
+  - **`revealConnectionTestResult`** is the same composition as slice 10's `warningReveal.ts`, which stays byte-identical rather than being generalised. It uses `computeTopRevealScrollDelta` (`routeCardTopReveal.ts`), unchanged, with a visible bottom reduced by `readSafeAreaInsetBottomPx()` plus `REVEAL_GAP_PX` (`confirmationRevealScroll.ts`), then makes one `window.scrollBy`, smooth unless reduced motion is set.
+  - **`armConnectionTestWaitGuard`** composes the accepted `armOperationInteractionGuard`, unchanged, with the button as its area: a `pointerdown` elsewhere, any key, a wheel or a `touchmove` disarms it. It adds two signals of its own:
+    - **`focusin` outside the button.** A disabled button losing focus fires only blur and focusout, so this tells the activation's own focus loss apart from a deliberate move. `document.activeElement` could not, since a WebKit tap need not focus the button.
+    - **`visibilitychange` to hidden**, which never re-arms.
+- **`DiagnosticsScreen.tsx`.**
+  - **One guard per attempt**, held in a ref and armed inside the click, after the existing early return.
+  - **One layout effect, keyed on `isTestingConnection` and the two sticky refs,** acts on the commit in which the test ends. It takes the guard, reads `armed`, detaches it, and reveals only if the rider was still waiting.
+  - **Why that is enough:** the result commits with or before the label returns (`.then` runs before `.finally`), so no batching is assumed. A detached guard reads as disarmed, so nothing reveals twice.
+  - **An unmount cleanup detaches the guard.** That is the protection for a completion after the rider has left: an unmounted screen's state updates do nothing, and its effect never runs.
+- **`SettingsSection.tsx`** passes App's navigation ref and its switcher ref to Status, as it already does to Settings. **`routeCardTopReveal.ts`** gains a comment only.
+- **Files:**
+  - **source:** `src/ui/diagnostics/connectionTestResultReveal.ts` (new), `src/ui/diagnostics/DiagnosticsScreen.tsx`, `src/ui/settings/SettingsSection.tsx`, `src/ui/library/routeCardTopReveal.ts` (a comment);
+  - **version:** `0.4.62`;
+  - **tests:** `src/ui/diagnostics/connectionTestResultReveal.test.ts` (new), `src/ui/diagnostics/DiagnosticsScreen.test.tsx`, `src/ui/settings/SettingsSection.statusRefs.test.tsx` (new), `e2e/statusConnectionResultReveal.smoke.spec.ts` (new).
+
+**Evidence — automated only.**
+
+- **Unit and component.** The full suite passes: 4,975 tests in 211 files, 30 more than `0.4.61` and two new files.
+  - **`connectionTestResultReveal.test.ts`** (new, 20 cases): the geometry, mirroring slice 10's; and the wait guard — `focusin` on the button against elsewhere, focusout and blur alone, a hidden document not re-armed by a visible one, the composed guard's signals, and `detach` removing every listener.
+  - **`DiagnosticsScreen.test.tsx`** (9 new): with the line's box stubbed and the clock's interval faked, it checks:
+    - one reveal per armed completion, kept across ticks and a live re-render;
+    - none after a wheel, a tap elsewhere, a focus move, a hidden app or an unmount;
+    - a repeated tap on the disabled button;
+    - fresh eligibility both ways;
+    - focus unchanged.
+  - **`SettingsSection.statusRefs.test.tsx`** (new): Status receives both sticky refs.
+- **Browser, in the CI image by digest, at 390×844 portrait unless stated.** `e2e/statusConnectionResultReveal.smoke.spec.ts` (new) has 24 tests in Chromium and 23 in WebKit.
+  - **The path is the real interface.** Settings, then the switcher's **Status**; a test-setup scroll that puts the button's bottom 4 px above the band; then a real touch tap. One case uses Enter, and one, Chromium only, a mouse click.
+  - **Synthetic:**
+    - the provider is answered locally, each request held until the test answers it with a success, a 401 or a network failure;
+    - the 34 px inset is the documented `--safe-area-inset-bottom` seam;
+    - the 390×360 viewport is a stand-in;
+    - a hidden app is a dispatched `visibilitychange`;
+    - a programmatic focus stands in for assistive technology.
+  - **[behaviour] assertions** are the line against the band measured in the page, the button, focus and the text. **[implementation] assertions** are the app's scroll calls, recorded by an init script that marks the test's own positioning as "test setup". The final geometry, the reveal's duration and every call are attached to each result as diagnostics.
+  - **Waiting.** An uninterrupted reveal waits for the line's measured final place, bounded at 8 s. No test catches the engine's smooth scroll in flight.
+  - **Both engines:**
+    - English success and network failure, German 401 and network failure, English success and German network failure at 200% root text, and the synthetic inset;
+    - reduced motion;
+    - an already-fitting line, and a line on screen but inside the cushion;
+    - the oversized line;
+    - a completion delayed 2.5 s;
+    - a repeated tap on the disabled button, and Enter;
+    - five ways of moving on: a wheel, a tap elsewhere, a programmatic focus, Tab and a hidden app;
+    - an older completion after Settings and back, while a newer attempt runs;
+    - a completion after leaving for Routes;
+    - three attempts — waiting, moved on, waiting;
+    - and the rider's own wheel after a reveal, followed by more than two re-render ticks.
+- **Measured, the same in both engines** (the 200% rows differ by 1 px):
+
+| Configuration                         | Line height (px) | Unchanged build: line (viewport px) | `0.4.62`: page moved (px) | Line after (viewport px) | Band (px) |
+| ------------------------------------- | ---------------: | ----------------------------------- | ------------------------: | ------------------------ | --------- |
+| English success, 100%                 |               56 | 867–923, below the screen           |                        87 | 780–836                  | 136–836   |
+| English network failure, 100%         |              113 | 905–1,018, below the screen         |                       182 | 723–836                  | 136–836   |
+| German 401, 100%                      |               75 | 849–924, below the screen           |                        88 | 761–836                  | 136–836   |
+| German network failure, 100%          |              132 | 906–1,038, below the screen         |                       202 | 704–836                  | 136–836   |
+| English success, 200%                 |              178 | 874–1,052, below the screen         |                   216–217 | 658–836                  | 156–836   |
+| German network failure, 200%          |              498 | 1,038–1,536, below the screen       |                   700–701 | 338–836                  | 187–836   |
+| English success, 34 px inset (synth.) |               56 | 833–889: 11 px, inside the inset    |                        87 | 746–802                  | 136–802   |
+
+Positions are rounded to the pixel; every bottom edge after the reveal was within 0.7 px of the band's. In the oversized stand-in (German network failure at 200%, 390×360), the line, taller than the band, came to rest with its top at the band's top after a 177–178 px movement; on the unchanged build it stayed 177 px below that place.
+
+- **Results:**
+  - **The final spec:** 47 of 47, then 141 of 141 over three repeats.
+  - **Under a 4-CPU limit with two workers:** 47 of 47, then 94 of 94 over two repeats.
+  - **Settling times:** uninterrupted reveals reached their measured final place in 0.40–0.73 s in Chromium and 0.39–0.53 s in WebKit unconstrained, and at worst 0.73 s and 1.74 s under the limit — within the 8 s bound carried over from slice 10's measurement.
+- **The full browser suite, once, at 8 workers:** 1,079 passed and 5 skipped — 47 runs and one skip more than `0.4.61`'s 1,032 and 4, the skip being the Chromium-only mouse case under WebKit. It ran before the spec's arrival settle, a finding below, which the repeats above cover.
+- **Baseline: the unchanged application source** (`55f6ae8`'s, identical to `ae76f98`'s), with the new spec and tests.
+  - **Browser:** 33 of the 48 runs fail.
+    - **31 fail on visible behaviour:** every case that expects a reveal, because the result line is below the screen — or, in the oversized case, 177 px below its place.
+    - **2 fail on implementation only:** reduced motion, in both engines, whose first assertion is the one immediate call.
+    - **14 pass:** the already-fitting line, a completion after leaving for Routes, and the five moved-on cases, in both engines. Nothing ever reveals there, so the moved-on passes are vacuous: the guards are proved by the controls below, not by the baseline.
+  - **Unit:** 5 of the 66 tests in the three files fail: the four component cases that expect a reveal, and the refs test. The five moved-on component cases pass vacuously. None of the unit failures is visible-behaviour evidence.
+- **Negative controls**, each applied alone, built and run against both test sets, and restored byte-for-byte (SHA-256):
+
+| Control | What it changes                                                  | Unit failures                                          | Browser failures                                                                                                                                                              |
+| ------- | ---------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (a)     | the guard ignored: always revealed                               | 5 — the moved-on and fresh-eligibility component cases | 12 on behaviour — the five moved-on cases and the three attempts, both engines; the leave cases pass, being structural                                                        |
+| (b)     | no `focusin` listener                                            | 4 — three guard cases and the focus component case     | 2 on behaviour — the programmatic focus, both engines, and nothing else                                                                                                       |
+| (c)     | no `visibilitychange` listener                                   | 3 — two guard cases and the hidden-app component case  | 2 on behaviour — the hidden app, both engines, and nothing else                                                                                                               |
+| (d)     | no bottom cushion: the band ends at the screen's edge            | 7 — the geometry cases and the component reveal cases  | 31 on behaviour — every case arriving from below, the cushion and inset cases included, with the line flush at 844 px; the oversized, already-fitting and moved-on cases pass |
+| (e)     | the switcher ignored: the band begins below the navigation alone | 0                                                      | 2 on behaviour — the oversized case, both engines, its top 64–65 px under the switcher, and nothing else                                                                      |
+| (f)     | a second reveal on every render, ignoring the guard              | 8 — every component case that counts reveals           | 41 — among them the rider's later wheel, on behaviour: the line pulled back into the band                                                                                     |
+| (g)     | the reveal focuses the result line                               | 1 — the component focus check                          | 16 on behaviour — every focus assertion: the geometry cases and Enter, both engines                                                                                           |
+
+Control (d)'s first build failed — removing the cushion left its imports unused — so its first browser run used the previous control's bundle and was discarded; a variant that keeps them compiled, and is the one reported. Controls (a) to (f) ran against the spec before its last test-only changes — the attached geometry diagnostics, the focus allowance and the arrival settle, the last two described below; (g) and the baseline were run again on the final spec, with the same results.
+
+**Findings worth carrying forward.**
+
+- **The guard composes rather than changes.** The accepted `operationInteractionGuard.ts` already treats a pointerdown elsewhere, a key, a wheel and a touch scroll as moving on, and a repeated tap on the disabled button as waiting. P-15 needed only two signals more — focus moved elsewhere and a hidden app — and adding them outside it leaves the four accepted callers untouched.
+- **`focusin` separates the activation's focus loss from a deliberate move.** Disabling the focused button fires only blur and focusout, so the guard sees nothing then. Control (b) shows that nothing else in the set catches a focus move without a key or a tap.
+- **React's own focus restoration writes the root's scroll position.** In Chromium, every activation records two `scrollTop` writes from the bundle's commit path: React saves the ancestors' scroll offsets, refocuses the now-disabled button and writes them back. They move nothing, precede any answer, and appear on the unchanged build too; the spec measures the app's calls from after the activation.
+- **Linux WebKit keeps a just-disabled button focused until a deferred focus fixup**, which landed after the test's snapshot in 2 of 3 repeats. The focus assertion allows exactly that change and nothing else, and control (g) still fails it.
+- **Settings' arrival reset can outlive a wall-clock wait.** Under the CPU limit, headless WebKit deferred the reset loop's frames past the test's 1.2 s wait, and the loop flattened the test's own setup scroll; Playwright's tap then scrolled the button to mid-screen, which looked like an over-reveal. The spec now requests frames before positioning, as `settingsStatusSwitcher.smoke.spec.ts` does. This is a test-sequencing matter: a rider's touch, pointer or wheel ends the loop at once.
+
+**Limitations, stated plainly.**
+
+- **Desktop engines, not iOS Safari.** The inset is synthetic, browser root-text scaling is not iOS Larger Text, and the short viewport is a stand-in. WebKit here is Playwright's Linux WebKit, whose focus behaviour is not iOS Safari's.
+- **Every provider answer is synthetic**: a success, a 401 and a network failure. A 429 and a malformed body were not run here; they produce result lines of the same kind.
+- **Assistive technology is a stand-in:** a programmatic focus. Whether VoiceOver moving its cursor fires `focusin` on the phone is not established, and the line's announcement was not heard.
+- **A hidden app is a dispatched `visibilitychange`**, not a real app switch or lock.
+- **A finger scrolling during the movement** was not tested, by the rider's instruction not to repeat slice 10's experiment; what iOS does then is its own scrolling.
+- **No VoiceOver, physical-keyboard, landscape or physical-Android result.**
+
+**The installed-iPhone check is Session 5 of [`current-status.md`](current-status.md).** It uses the key already saved on the phone, and it neither invalidates the key nor induces errors or slow requests. **Item 124 stays active until that check:** its ordinary flows still need device acceptance, while the delayed-request, failure, leave and hidden-app cases keep the automated evidence above.

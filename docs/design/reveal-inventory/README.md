@@ -842,3 +842,5 @@ The rider's report from the installed iPhone — `0.4.57` (build `bd688d7`), Eng
 **4 October 2026, later:** the rider approved slice 10 and the proposed retentions except P-01; slice 10 shipped in `0.4.61`; and P-01, P-15 and the two source-only concerns were investigated. **Next:** P-18's installed-iPhone check and the rider's [decisions still needed](closure-reconciliation.md#decisions-still-needed-after-slice-10). Item 124 is not closed.
 
 **4 October 2026, after slice 10's acceptance:** P-18 was accepted on the installed iPhone, and the rider decided P-01, P-15 and the two source-only concerns ([summary](closure-reconciliation.md#dispositions-after-slice-10s-acceptance-4-october-2026)). **Next:** slice 11, P-15's result reveal, then its installed-iPhone check. Item 124 is not closed.
+
+**4 October 2026, later:** slice 11, P-15's result reveal, shipped in `0.4.62` ([record](../../project/backlog-item-124-continued.md#slice-11--the-routing-connection-result-revealed-p-15-shipped-0462-4-october-2026)). **Next:** its installed-iPhone check, then item 124's closure.

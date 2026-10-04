@@ -24,7 +24,9 @@ export const TOP_REVEAL_TOLERANCE_PX = 1;
  * Also called directly, unchanged, by Planning's map-selected warning
  * reveal (src/ui/planning/warningReveal.ts, backlog item 124 slice 10),
  * which passes a visible bottom already reduced by the safe-area inset
- * and an 8px gap and performs its own single scroll.
+ * and an 8px gap and performs its own single scroll — and in the same way
+ * by Status's routing-connection result reveal
+ * (src/ui/diagnostics/connectionTestResultReveal.ts, slice 11).
  */
 export function computeTopRevealScrollDelta(
   topBandRect: { top: number; bottom: number },

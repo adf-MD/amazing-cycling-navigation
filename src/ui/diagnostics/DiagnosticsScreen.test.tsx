@@ -1,6 +1,6 @@
 import { englishTranslator } from "../../i18n/englishTranslator.ts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import pkg from "../../../package.json" with { type: "json" };
 import { DiagnosticsScreen } from "./DiagnosticsScreen.tsx";
@@ -1113,5 +1113,234 @@ describe("DiagnosticsScreen", () => {
         "Estimated app storage: unavailable",
       );
     });
+  });
+});
+
+// Backlog item 124, slice 11 (P-15). jsdom has no layout, so the result
+// line's box is stubbed: 800..856px, wholly below jsdom's 768px window, as
+// measured on a phone with the button low on Status. With no sticky rows
+// passed, the band is 8..760, so a reveal is one 96px smooth scrollBy. The
+// real geometry, the sticky rows and the engines' own scrolling are proved
+// in e2e/statusConnectionResultReveal.smoke.spec.ts.
+describe("Test routing connection: revealing the result (item 124, slice 11)", () => {
+  const LINE = { top: 800, bottom: 856 };
+  const REVEAL = { top: 856 - 760, left: 0, behavior: "smooth" };
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const originalScrollBy = window.scrollBy;
+  let scrolls: ScrollToOptions[];
+  let visibility: DocumentVisibilityState;
+
+  beforeEach(() => {
+    scrolls = [];
+    window.scrollBy = (options?: ScrollToOptions | number) => {
+      if (typeof options === "object") scrolls.push(options);
+    };
+    // The clock's one-second tick is the screen's regular re-render; only
+    // the interval is faked, so promises, IndexedDB and user-event stay real.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    // Saved only to be called with an explicit `this` below.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.matches('p.status-row[role="status"]')) {
+        return {
+          ...LINE,
+          left: 16,
+          right: 374,
+          width: 358,
+          height: LINE.bottom - LINE.top,
+          x: 16,
+          y: LINE.top,
+          toJSON: () => "",
+        };
+      }
+      return original.call(this);
+    });
+    visibility = "visible";
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
+  });
+
+  afterEach(() => {
+    window.scrollBy = originalScrollBy;
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** A provider whose requests stay pending until the test settles them. */
+  function heldProvider() {
+    const pending: { resolve: () => void; reject: (error: unknown) => void }[] = [];
+    const provider: RoutingProvider = {
+      calculateRoute: () =>
+        new Promise<PlannedRoute>((resolve, reject) => {
+          pending.push({
+            resolve: () => {
+              resolve(buildFakeRoute());
+            },
+            reject,
+          });
+        }),
+    };
+    return { provider, pending };
+  }
+
+  async function renderAndStart(provider: RoutingProvider) {
+    await saveProviderKey("dummy-test-key");
+    const user = userEvent.setup();
+    const view = render(<DiagnosticsScreen routingProvider={provider} />);
+    const button = await screen.findByRole("button", { name: "Test routing connection" });
+    await waitFor(() => {
+      expect(button).toBeEnabled();
+    });
+    await user.click(button);
+    expect(button).toHaveTextContent("Testing…");
+    return { user, button, view };
+  }
+
+  async function settle(
+    pending: { resolve: () => void }[],
+    index: number,
+    button: HTMLElement,
+  ) {
+    await waitFor(() => {
+      expect(pending.length).toBeGreaterThan(index);
+    });
+    pending[index]?.resolve();
+    await waitFor(() => {
+      expect(button).toHaveTextContent("Test routing connection");
+    });
+  }
+
+  it("reveals the result line once, by the minimum, when the rider is still waiting", async () => {
+    const { provider, pending } = heldProvider();
+    const { button } = await renderAndStart(provider);
+    const focusedBefore = document.activeElement;
+
+    await settle(pending, 0, button);
+
+    expect(screen.getByRole("status")).toHaveTextContent(/Succeeded/);
+    expect(scrolls).toEqual([REVEAL]);
+    // Nothing is focused to reveal it.
+    expect(document.activeElement).toBe(focusedBefore);
+  });
+
+  it("never repeats the reveal on the clock's ticks or a live re-render", async () => {
+    const { provider, pending } = heldProvider();
+    const { button } = await renderAndStart(provider);
+    // Ticks while the test runs.
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+    await settle(pending, 0, button);
+    expect(scrolls).toHaveLength(1);
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    act(() => {
+      recordRoutingAttempt(
+        buildAttempt({
+          timestampIso: "2026-10-04T12:00:00.000Z",
+          responseReceived: true,
+          category: "timeout",
+        }),
+      );
+    });
+    await screen.findByText(
+      describeRoutingAttempt(
+        englishTranslator,
+        buildAttempt({
+          timestampIso: "2026-10-04T12:00:00.000Z",
+          responseReceived: true,
+          category: "timeout",
+        }),
+      ),
+    );
+    expect(scrolls).toHaveLength(1);
+  });
+
+  it("keeps waiting through a repeated tap on the disabled button", async () => {
+    const { provider, pending } = heldProvider();
+    const { button } = await renderAndStart(provider);
+    fireEvent.pointerDown(button);
+    await settle(pending, 0, button);
+    expect(scrolls).toEqual([REVEAL]);
+  });
+
+  it("does not reveal when the rider scrolled while the test ran", async () => {
+    const { provider, pending } = heldProvider();
+    const { button } = await renderAndStart(provider);
+    fireEvent.wheel(document.body);
+    await settle(pending, 0, button);
+    expect(screen.getByRole("status")).toHaveTextContent(/Succeeded/);
+    expect(scrolls).toEqual([]);
+  });
+
+  it("does not reveal when the rider tapped elsewhere while the test ran", async () => {
+    const { provider, pending } = heldProvider();
+    const { button } = await renderAndStart(provider);
+    fireEvent.pointerDown(document.body);
+    await settle(pending, 0, button);
+    expect(scrolls).toEqual([]);
+  });
+
+  it("does not reveal, and leaves focus where the rider put it, after focus moved elsewhere", async () => {
+    const { provider, pending } = heldProvider();
+    const { button } = await renderAndStart(provider);
+    const heading = screen.getByRole("heading", { name: "Recent routing attempts" });
+    heading.tabIndex = -1;
+    act(() => {
+      heading.focus({ preventScroll: true });
+    });
+    await settle(pending, 0, button);
+    expect(scrolls).toEqual([]);
+    expect(document.activeElement).toBe(heading);
+  });
+
+  it("does not reveal after the app was hidden while the test ran, even once visible again", async () => {
+    const { provider, pending } = heldProvider();
+    const { button } = await renderAndStart(provider);
+    visibility = "hidden";
+    document.dispatchEvent(new Event("visibilitychange"));
+    visibility = "visible";
+    document.dispatchEvent(new Event("visibilitychange"));
+    await settle(pending, 0, button);
+    // The result still appears; only the page is left where it was.
+    expect(screen.getByRole("status")).toHaveTextContent(/Succeeded/);
+    expect(scrolls).toEqual([]);
+  });
+
+  it("does nothing when the result lands after the rider has left Status", async () => {
+    const { provider, pending } = heldProvider();
+    const { view } = await renderAndStart(provider);
+    view.unmount();
+    await waitFor(() => {
+      expect(pending).toHaveLength(1);
+    });
+    pending[0]?.resolve();
+    // Long enough for the request's own IndexedDB write to settle.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(scrolls).toEqual([]);
+  });
+
+  it("decides afresh on each attempt, in both directions", async () => {
+    const { provider, pending } = heldProvider();
+    const { user, button } = await renderAndStart(provider);
+    // First attempt: the rider moved on.
+    fireEvent.wheel(document.body);
+    await settle(pending, 0, button);
+    expect(scrolls).toEqual([]);
+
+    // Second attempt: still waiting.
+    await user.click(button);
+    await settle(pending, 1, button);
+    expect(scrolls).toEqual([REVEAL]);
+
+    // Third attempt: moved on again; the second's eligibility is not kept.
+    await user.click(button);
+    fireEvent.pointerDown(document.body);
+    await settle(pending, 2, button);
+    expect(scrolls).toEqual([REVEAL]);
   });
 });

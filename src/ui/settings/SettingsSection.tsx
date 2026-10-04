@@ -101,7 +101,10 @@ export function SettingsSection({
           stickySubheaderRef={switcherRef}
         />
       ) : (
-        <DiagnosticsScreen />
+        <DiagnosticsScreen
+          stickyHeaderRef={stickyHeaderRef}
+          stickySubheaderRef={switcherRef}
+        />
       )}
     </div>
   );
