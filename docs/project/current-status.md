@@ -110,6 +110,22 @@ None of these blocks acceptance of the item it came from. Record one if it occur
 
 ## Dated acceptance record
 
+### Installed-iPhone observation of P-01, Rename on the last route card (item 124 inventory, reported 4 October 2026)
+
+**Device and build.** The installed iPhone. **No version, build or language was reported with this observation**, so none is recorded, and none is borrowed from the slice 9 acceptance below.
+
+**The rider's words, verbatim:** "Renaming puts focus on the field in general and both cancel and save are reachable. For the last item in the routes list, the field doesn't show automatically, but I can scroll downwards to see it. Both buttons remain reachable (after scroll). For the rest I follow your recommendations."
+
+**What it establishes**, for [P-01](../design/reveal-inventory/README.md#p-01--rename-route-card), at product level:
+
+- opening **Rename** puts focus on the name field;
+- **Save** and **Cancel** were reachable, including after scrolling;
+- on the **last** route card, the focused field did not come into view automatically; scrolling down brought it into view.
+
+**What it is not.** It is **not acceptance of P-01**: the field out of view on the last card is unresolved. It is also a different finding from the 1 October desktop measurement, in which the opened editor ended 21 px below the usable band, so that at most a strip of its Save and Cancel row was cut off ([reconciliation](../design/reveal-inventory/closure-reconciliation.md#the-closure-table)). That measurement concerned the action row, in desktop engines with no software keyboard, and is automated evidence only; this observation concerns the field itself, on the phone. Neither is taken as explaining the other. "For the rest I follow your recommendations" is recorded with the rider's [decisions of the same day](backlog-item-124-continued.md#decisions-recorded-on-4-october-2026), not here.
+
+**Not claimed:** a language, version or build; whether the software keyboard covered the field; a middle card's behaviour; enlarged text; VoiceOver; a physical keyboard; landscape; physical Android.
+
 ### Installed-iPhone acceptance of `0.4.60` (build `e2ba7cf`, item 124 slice 9, transition dismissal, reported 4 October 2026)
 
 **Device and build.** Installed Home Screen PWA, in English and German, stationary, in portrait and at ordinary text size, as the session specified. The context is item 124 slice 9's installed-iPhone checklist, Session 5, written for version `0.4.60`, build `e2ba7cf`. The report itself names neither, and no separate reading of the version or build from Status is recorded. The accepted build is `e2ba7cf`, and it stays so when later documentation deployments change the deployed build ID.
@@ -629,6 +645,7 @@ The dated acceptance record continues, unchanged and in the same order, in [`cur
 - **Slice 9 — the automated evidence.** Component tests, and Chromium and WebKit in the pinned container at 390 px portrait, in English and German, each transition compared with the same transition made with nothing open; one English case at 200% root text shows the old survivor's 535 px reveal gone. A held and a failed Pause are synthetic, and the confirmed operations running across a transition are tested in components only.
 - **Slice 9 — ordinary flow accepted on the installed iPhone** (`0.4.60`, build `e2ba7cf`; the dated record above) — the whole checklist, in English and German, at product level: End ride's and Edit copy's unanswered confirmations closing on a successful transition and staying closed, reopening and Cancel, the cold-start paused screen, and the ride, its progress and the Planning draft preserved. Whether Edit copy's check used **Start riding** or **Resume ride** was not reported, so neither path is claimed separately. A held or failed Pause, a confirmed operation still running and an immediate location error keep automated evidence only. **Not claimed:** any of those on the device, a Status reading, a measured location-watch count, progress or camera value, VoiceOver, a physical keyboard, iOS Larger Text, landscape and physical Android. Item 124 stays active while its remaining inventory is reconciled.
 - **4 October 2026 — a reconciliation, not acceptance.** Every remaining inventory entry was given a disposition, and P-18 was measured in desktop Chromium and WebKit only ([reconciliation](../design/reveal-inventory/closure-reconciliation.md)). Nothing was added to this ledger's checklist. P-18's optional phone steps are a decision aid, not a check. Item 124 is not closed.
+- **4 October 2026 — decisions and one device observation, not acceptance.** The rider approved P-18's correction as slice 10, with its design choices, and the reconciliation's other proposed retentions except P-01 and P-18, and asked for P-15 to be measured and the two source-only concerns checked or deferred ([decisions](backlog-item-124-continued.md#decisions-recorded-on-4-october-2026)). The same report observed P-01 on the phone: on the last route card, Rename's focused field did not come into view, while Save and Cancel stayed reachable after scrolling (the dated record above). P-01 stays unresolved, and nothing was added to the checklist.
 
 ### Item 131 — shipped `0.4.53`; accepted on the installed iPhone (reported 2 October 2026)
 

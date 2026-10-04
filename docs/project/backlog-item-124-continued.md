@@ -1,10 +1,135 @@
 # Item 124 — slice records, continued
 
-This file continues [item 124](backlog.md#item-124)'s entry in [`backlog.md`](backlog.md), from slice 6 onwards. It was split out on 3 October 2026, for size only: `backlog.md` had reached about 146,000 characters, and one more slice record would have taken it past the 150,000-character limit set out in [the documentation index](README.md). It began at slice 7; slice 6's record was moved here unchanged later the same day, when `backlog.md` had again reached about 149,000 characters.
+This file continues [item 124](backlog.md#item-124)'s entry in [`backlog.md`](backlog.md), from slice 5 onwards. It was split out on 3 October 2026, for size only: `backlog.md` had reached about 146,000 characters, and one more slice record would have taken it past the 150,000-character limit set out in [the documentation index](README.md). It began at slice 7; slice 6's record was moved here unchanged later the same day, when `backlog.md` had again reached about 149,000 characters, and slice 5's on 4 October 2026, at about 147,000, with only its pointer to slice 4 adjusted for its new place.
 
-- **It is the same entry, not a second record.** Item 124's specification, its dated decisions and the records of slices 1 to 5 stay in `backlog.md`, with a short pointer there for each slice recorded here.
+- **It is the same entry, not a second record.** Item 124's specification, the decisions recorded there on 1, 2 and 3 October and the records of slices 1 to 4 stay in `backlog.md`, with a short pointer there for each slice recorded here. The decisions of 3 October evening and later are recorded here.
 - **Item 124 is still pending.** Nothing about it enters [`history/`](history/README.md) before its final slice; at that point both parts move there together.
 - **Device acceptance is recorded only in [`current-status.md`](current-status.md)**, never here.
+
+## Slice 5 — Clear draft failing (D-01) (shipped `0.4.56`, 3 October 2026)
+
+**Approved by the rider on 2 October 2026** — decision 6 in the inventory's [decisions section](../design/reveal-inventory/README.md#decisions--d-06-d-02-d-01-and-c-12-2-october-2026). It was made the next slice once item 132 had been accepted, D-01 only.
+
+**The defect.** A failed Clear draft returned focus to the re-enabled button with a plain `.focus()`, whatever the rider had done meanwhile ([review preparation](../design/reveal-inventory/README.md#d-01--clear-draft-fails-1)):
+
+- focus was taken back from Route name, from another control and from a rider who had scrolled away;
+- at 200% text the browser's own focus scroll then pulled the page back, by up to 4,282 px in Chromium;
+- while the rider was still waiting, that same focus scroll centred the button rather than revealing it by the minimum. Measured again on the unchanged build in German at 200%: 476 px where 207 px was the minimum.
+
+**Mechanism** (`PlanningScreen.tsx`, unless named).
+
+- **The guard, shared.** D-06's interaction guard moved from `src/ui/riding/editCopyInteractionGuard.ts` to `src/ui/shared/operationInteractionGuard.ts`, as `armOperationInteractionGuard` / `OperationInteractionGuard`. The slice 4 record in [`backlog.md`](backlog.md#slice-4--edit-copy-while-a-copy-is-being-made-d-06-shipped-0454-2-october-2026) names it by its old path.
+  - Its semantics are unchanged.
+  - Its two callers are D-06 and D-01, and D-02 is approved to need it too.
+  - `RidingScreen.tsx` and the spies in `RidingScreen.test.tsx` follow the rename, and nothing else in D-06 changes.
+- **Pending.** Once the confirmation's **Clear draft** is pressed, focus waits on the confirmation's own title, which `ConfirmDialog`'s existing `titleRef` makes focusable by script only. Focus moves there with `preventScroll`, before the existing busy state disables both actions.
+  - Chromium drops a focused button that becomes disabled to `<body>`. The park keeps focus inside the dialog in both engines.
+  - A refused Escape therefore still reaches the dialog's own handler, and the guard counts it as waiting.
+- **One guard per attempt.**
+  - Each confirmed attempt arms its own guard, after the existing duplicate check, so a refused second press arms nothing.
+  - The guard covers the Clear draft area: the confirmation while it shows, and the button's own row once a failure has swapped it back. Only one of the two is ever mounted.
+  - It is disarmed by a tap or click outside that area, any key but Escape inside it, and any wheel or touch scroll.
+  - The guard is detached when its decision is made, when its attempt ends and when Planning unmounts. An old attempt can therefore never act on a later one.
+- **The decision.** A layout effect decides once the button is mounted and enabled again:
+  - **still waiting** — the guard is armed, and focus is on `<body>` (where the disabled, then removed, confirmation leaves it) or on the button itself: focus Clear draft with `preventScroll`, then reveal the button and its message by the minimum below the sticky header with `applyConfirmationReveal`. Clear draft has priority when both cannot fit, so the retry control stays reachable and the message is available by scrolling;
+  - **moved on** — no focus, no scroll. The message stays in Clear draft's row, with its existing `role="alert"`.
+- **Unchanged:**
+  - opening, Cancel and Escape;
+  - the busy label and disabled actions;
+  - the duplicate protection;
+  - a successful clear and the retry;
+  - draft persistence and clearing.
+- **Files:**
+  - **source:** `src/ui/planning/PlanningScreen.tsx`, `src/ui/shared/operationInteractionGuard.ts` (moved), `src/ui/riding/RidingScreen.tsx` (import only), `src/ui/shared/ConfirmDialog.tsx` (a comment);
+  - **version:** `0.4.56`;
+  - **tests:** below.
+
+**Evidence — automated only.**
+
+- **Unit and component.** The full suite passes, 4,842 tests in 206 files.
+  - `PlanningScreen.clearDraft.test.tsx` has 15 new D-01 cases. They replace the test that pinned the old plain focus, and the file now has 40 tests. They cover:
+    - the title park while the clear runs, and Escape refused there;
+    - an immediate and a delayed failure while the rider waits: focus with `preventScroll`, then a minimal reveal, none when the row already shows, and only the button when the row cannot fit;
+    - five kinds of moving on, with no focus and no scroll: a wheel, a touch scroll, a tap outside the area, a tap on blank space, and a key other than Escape;
+    - focus moved to Route name, which keeps the rider's typing;
+    - a tap on the disabled actions, which still counts as waiting;
+    - the guard renewed for every attempt, in both directions, and a successful retry;
+    - one guard per confirmed attempt, none for a refused second press, and each detached;
+    - leaving Planning while the clear runs.
+  - The moved guard's own 8 tests pass unchanged under the new name, and D-06's `RidingScreen.test.tsx` spies follow the rename.
+- **Browser, in the pinned container, at 390×844 portrait.** `e2e/clearDraftFailure.smoke.spec.ts` (new): 23 tests in each of Chromium and WebKit.
+  - **Controlled fixtures, all synthetic:** an immediate fault on the draft delete, and a hold on `planningDrafts` whose release aborts only the app's queued delete. The hold is always released, and the held store is never read.
+  - **Input:** real pointer, wheel and key input. Each outcome is asserted twice, and labelled:
+    - **[behaviour]:** where focus is, whether the page was scrolled back towards Clear draft, and whether a needed reveal moved the page exactly the minimum from where the failure left the row. That position is measured just before the focus call, in any build;
+    - **[implementation]:** whether focus used `preventScroll`, and whether the app made at most one scroll call (none once the rider has moved on).
+  - **Cases:**
+    - **waiting:** an immediate and a delayed failure, in English and German at ordinary and 200% root text, plus a refused Escape and a tap on the disabled action;
+    - **moved on:**
+      - a wheel scroll down, in both languages at both text sizes;
+      - a wheel scroll up, in English at both text sizes;
+      - Route name tapped and typed into before and after the failure, in both languages at both sizes, with every keystroke kept and autosaved over the intact draft;
+      - Shift+Tab to the routing disclosure, after which Enter opens it, not Clear draft;
+      - a tap on blank space;
+      - leaving for Routes while the clear is pending, with the draft intact on return;
+    - **retry:** moved on, then a fresh attempt while waiting restores focus, then a successful clear removes the message.
+  - **Results:** 46 of 46, twice.
+  - **Regression specs:** with the new spec, on the final build: `clearPlanningDraft` (6), `confirmationReveal.smoke` (14 in each engine), `confirmationRevealSettled` (7), `editCopyBusyState.smoke` (24 in each engine, D-06 with the moved guard), `planningSavedRoute.smoke` (14 in each engine), `planning` (22), `editRouteAsPlanningCopy` (5) and `reverseRoute` (7). 197 of 197 passed.
+  - **The full browser suite, once, at 8 workers:** 866 of 866, in both engines and the `android-chrome` project, with the new spec included.
+- **Which branch each combination took.**
+  - **No reveal needed:** at ordinary text in both languages, and in English at 200%, the button and its message were already inside the band when the failure arrived. Focus returned with no movement.
+  - **The minimum reveal:** in German at 200% the confirmation is taller than the band, so its collapse left the row partly above it. The page moved 207 px in both engines, against a minimum of 207.3 px in Chromium and 206.3 px in WebKit.
+  - **Moved on:** the collapse itself moved later content up by up to 732 px, and Chromium's scroll anchoring sometimes kept the rider's field where it was. In no moved-on case did the app make a scroll call.
+- **Baseline, `b94ddc3`** (application code identical to `501e1d4`, `0.4.55`): 44 of the 46 browser runs fail. The failures are separated by kind:
+  - **28 fail on behaviour:**
+    - every moved-on case in both engines. Focus was taken back to Clear draft, and at 200% the browser's focus scroll also pulled the page back. A Route name keystroke after the failure went to Clear draft instead of the field;
+    - German at 200% while waiting, in both engines. The page moved 476 px (Chromium) and 475 px (WebKit) where the minimum was 207 px.
+  - **16 fail on the implementation assertion only:**
+    - 14 waiting cases whose visible outcome was already right. Only the focus call lacked `preventScroll`, so they do not show a visible defect on the baseline;
+    - the Shift+Tab case in both engines. Its precondition, focus parked on the title, does not exist on the baseline.
+  - **2 pass:** leaving Planning, in both engines. The baseline already dropped a failure that settled after Planning unmounted, so this is a regression guard.
+- **Negative controls**, each applied alone to `PlanningScreen.tsx`, rebuilt for the browser runs, and restored byte-for-byte (SHA-256):
+
+| Control | What it disables                                             | Unit tests failed (of 40)                                                                | Browser tests failed (of 46)                                                                                                                                                                                 |
+| ------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| (a)     | the interaction guard, so a failure always counts as waiting | 6 — the five kinds of moving on that leave focus on `<body>` or the title, and the retry | 16 — every wheel, blank-space and retry case, both engines. Route name and Shift+Tab still pass: the focus check catches them                                                                                |
+| (b)     | the reveal                                                   | 3 — the two minimal reveals and the fallback                                             | 4 — German at 200% while waiting, both engines: the row was left partly above the band                                                                                                                       |
+| (c)     | `preventScroll`, replaced by plain focus                     | 5                                                                                        | 20 — every waiting case, on the implementation assertion. On behaviour, only German at 200% in Chromium, which moved 476 px. In WebKit the browser's own focus scroll ended within 1 px of the minimum there |
+| (d)     | the title park                                               | 2                                                                                        | 4 — the refused Escape, whose focus was then not restored, and Shift+Tab, whose precondition is the park; both engines                                                                                       |
+| (e)     | a new guard for each attempt (the first is reused)           | 2                                                                                        | 2 — the retry, both engines                                                                                                                                                                                  |
+| (f)     | Clear draft's priority in the reveal                         | 1 — the fallback                                                                         | not run: the fallback cannot be reached in a browser                                                                                                                                                         |
+
+**Findings worth carrying forward.**
+
+- **The visible defect was mostly about moving on.** While the rider waited, the baseline already ended in the right place everywhere except German at 200%. What it got wrong was everyone who had moved on. The `preventScroll` assertion is an implementation check, and its baseline failures are reported separately for that reason.
+- **"Not scrolled back" needs two kinds of evidence.** A collapsing confirmation moves later content up by itself, so an anchor that merely "did not move down" misses a scroll-back smaller than the collapse. Control (a) showed this at 200%, where only the app's recorded scroll call revealed the reveal it made. Both checks are kept.
+- **The minimum is measured from the failure, not computed by the app.** The focus recorder captures the row and the scroll position immediately before the focus call, so the same assertion judges the baseline's browser focus scroll and the repair's deliberate one.
+- **Opening the routing disclosure moves its own summary by 1 px in both engines.** The Shift+Tab test therefore measures the rider's position before their next key, not after it.
+
+**Limitations, stated plainly.**
+
+- **Synthetic only.** The faults, holds and aborts are synthetic. Nothing is established about how often a clear fails on the iPhone or how long it takes, and no physical-device reproduction of D-01 exists.
+- **A failure that settles after Planning has been left is neither shown nor logged.** This is pre-existing: the attempt's generation check drops it. The draft remains, and Plan shows it on return.
+- **A Route name edit while a clear is pending schedules an autosave that queues behind the delete.** This is pre-existing. After a failure it saves the edit over the kept draft, which is tested. After a success it can briefly rewrite the row until the next autosave clears it. Nothing changes this here.
+- **The guard cannot see a scrollbar drag or an assistive-technology scroll gesture**, which fire no pointer, touch, wheel or key event. A failure after one of those is treated as waiting. The same is true of D-06.
+- **Focus is parked on the confirmation's title while pending.** Whether VoiceOver announces it there is unverified.
+- **Desktop keyboard only.** Escape, Tab, Shift+Tab and Enter were exercised with the desktop engines' keyboard, which is automated evidence. There is no physical-device keyboard result.
+- **The oversized-row fallback cannot be reached in a browser.** At the supported widths, the button and its message always fit the band, so the fallback is unit-tested with stubbed geometry only.
+- **Not claimed:** browser text scaling is not iOS Larger Text, and no VoiceOver, landscape or physical-Android result is claimed.
+
+**CI and deployment.** Run [37076853209](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37076853209), for commit `439e578`: **Verify and build, all four End-to-end shards and Deploy succeeded, each on its first attempt.** The durations come from the run's own job and step start and completion times, read once after the run and kept locally. Verify and build's test step is its unit and component tests; each shard's is its end-to-end suite.
+
+| Job              | Test step | Whole job |
+| ---------------- | --------: | --------: |
+| Verify and build |     175 s |     300 s |
+| E2E shard 1/4    |     439 s |     499 s |
+| E2E shard 2/4    |     424 s |     486 s |
+| E2E shard 3/4    |     270 s |     340 s |
+| E2E shard 4/4    |     661 s |     725 s |
+| Deploy           |         — |      11 s |
+
+The longest job, shard 4, left 475 s below the E2E jobs' 1,200-second timeout. The deployment served `0.4.56` / `439e578`. These are one run's timings, not an established growth trend, and no further sharding change is made or authorised here.
+
+**Installed-iPhone acceptance, reported 3 October 2026.** The ordinary Clear draft flow passed on `0.4.56` (build `439e578`), in English and German: opening Clear draft, cancelling without losing the draft, confirming a successful clear, and repeating with a new draft, with no stale error or busy state. This accepts slice 5's ordinary-flow regression checks only: the failure, delayed-completion, failure-retry and enlarged-text cases above keep their synthetic, automated evidence and were not induced on the phone. The dated record, with what it does not claim, is in [`current-status.md`](current-status.md).
 
 ## Slice 6 — Delete route pending and failing (D-02) (shipped `0.4.57`, 3 October 2026)
 
@@ -578,3 +703,27 @@ After slice 9's acceptance, every inventory entry was given an explicit disposit
   - P-17 to item 127, and C-14's button styling to item 103;
   - two monitoring lines in [`current-status.md`](current-status.md).
 - **Not closed.** Item 124 closes only once the rider has decided on slice 10, P-01 and the proposed retentions. No implementation, device check or version change came with the reconciliation.
+
+## Decisions recorded on 4 October 2026
+
+**Approved by the rider on 4 October 2026, after the [reconciliation](../design/reveal-inventory/closure-reconciliation.md).** These are product decisions, **not device acceptance**. The same report carried an installed-iPhone observation of P-01, recorded only in [`current-status.md`](current-status.md#installed-iphone-observation-of-p-01-rename-on-the-last-route-card-item-124-inventory-reported-4-october-2026).
+
+1. **P-18 — the correction is approved, as slice 10.** A warning selected on the Planning map brings its row and its explanatory details into view together.
+2. **Where it comes to rest:** below the sticky navigation and clear of the bottom safe area, with a small margin consistent with the app's existing reveal behaviour.
+3. **Motion:** smooth scrolling is kept under ordinary motion preferences, and reduced motion is respected. The confirmations' instant movement is not copied merely for uniformity.
+4. **Only as far as needed:** if the entire item already fits, nothing scrolls; otherwise the page moves only as far as needed.
+5. **Taller than the usable viewport:** its beginning is aligned below the navigation, so that its label and the start of its explanation are visible, and the rider scrolls through the remainder normally. It is not repositioned repeatedly.
+6. **Scope:** map-originated warning selections only. Bringing the separate **Clear warning selection** control into view is not required.
+7. **The reconciliation's other proposed retentions are approved**, excluding P-01 and P-18, which remain unresolved:
+   - the disclosures P-08 to P-14, P-16, P-20, P-27 and P-28;
+   - the messages and overlays P-05, P-22, P-23, P-25, P-31, P-32, P-34 and P-35;
+   - P-07's reveal, P-21 and P-26 (no automatic scroll; the cue stays with [item 136](backlog.md#item-136)), P-29 and P-33;
+   - C-14's other entry paths;
+   - D-04.
+
+   This approves retaining their behaviour under item 124. It is **not new device acceptance**, and their deferred focus questions stay with [item 135](backlog.md#item-135).
+
+8. **P-15 is measured before closure**, with a mocked provider.
+9. **The two source-only concerns** — where a failed End ride's message appears, and what happens to the launcher's open confirmation when its session is re-read — are resolved through a narrow check or an explicit proposed deferral.
+
+**P-01 stays unresolved** until its disposition is agreed. The device observation shows the focused field out of view on the last route card, which the reconciliation's provisional recommendation did not consider; a bounded browser reproduction accompanies slice 10. **Item 124 stays active**: implementing P-18 does not by itself close it.
