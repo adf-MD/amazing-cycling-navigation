@@ -200,6 +200,7 @@ _Category: Interface and accessibility consistency_
 > **Reconciled on 4 October 2026, documentation only** ([reconciliation](../design/reveal-inventory/closure-reconciliation.md)). Every inventory entry now has an explicit disposition. P-18, measured for the first time, shows a demonstrated problem: a warning selected on the map leaves its details below the screen. Its smallest correction is proposed as slice 10, **not approved**. Proposed retentions and three unresolved evidence gaps await the rider, other concerns go to items 127, 103 and 134–138, and item 124 is **not closed**.
 > **4 October 2026 — the rider's decisions** ([record](backlog-item-124-continued.md#decisions-recorded-on-4-october-2026)): P-18's correction is approved as slice 10, the next slice, with its design choices; the other proposed retentions are approved, except P-01, which an installed-iPhone observation the same day left unresolved ([`current-status.md`](current-status.md)); P-15 is to be measured with a mocked provider, and the two source-only concerns checked or deferred. These are product decisions, not device acceptance. Item 124 stays active.
 > **Slice 10, P-18, shipped in `0.4.61` on 4 October 2026; its device check is pending** ([record](backlog-item-124-continued.md#slice-10--a-warning-selected-on-plannings-map-revealed-with-its-details-p-18-shipped-0461-4-october-2026)). A warning tapped on Planning's map now brings its row and details into view together. Its first CI run failed on one end-to-end test, repaired test-only the same day ([repair note](backlog-item-124-continued.md#slice-10-repair-note--the-end-to-end-test-that-failed-ci-4-october-2026-test-only)). The same day's investigations of P-01, P-15 and the two source-only concerns are documentation only, and their dispositions await the rider ([reconciliation](../design/reveal-inventory/closure-reconciliation.md#decisions-still-needed-after-slice-10)). Item 124 stays active.
+> **Slice 10's ordinary flows were accepted on the installed iPhone in English and German, reported 4 October 2026** (`0.4.61`, build `ae76f98`; CI run 37215419294 is recorded with it in the [continuation](backlog-item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice)); its optional Reduced Motion step and its conditional second-warning check are not claimed. **The rider's dispositions the same day:** P-01, with its desktop action-row clipping as a separate finding, deferred to [item 135](#item-135); P-15's bounded correction approved as **slice 11, the next slice**; a failed End ride's message filed as [item 139](#item-139) and the stale launcher confirmation as [item 140](#item-140), both unscheduled. Item 124 stays active until slice 11's device acceptance.
 > This item ships in slices and stays **pending** here until its final
 > slice. Nothing about it enters [`history/`](history/README.md) before
 > then. The original specification, under its own heading below, is kept
@@ -217,8 +218,9 @@ _Category: Interface and accessibility consistency_
 > | 7         | **C-12**: Edit copy's replacement confirmation opening under the common rule (decision 7, 2 October 2026), its ordinary-text opening preserved                                                   | **Shipped — `0.4.58`** (3 October 2026); **ordinary flow accepted on the installed iPhone**, reported 3 October 2026 ([`current-status.md`](current-status.md))   |
 > | 8         | **C-11**: End ride's confirmation on the paused screen — the common opening rule, and on Cancel a guarded minimum reveal of End ride itself (decision 1, 3 October 2026)                         | **Shipped — `0.4.59`** (3 October 2026); **ordinary flow accepted on the installed iPhone**, reported 3 October 2026 ([`current-status.md`](current-status.md))   |
 > | 9         | **C-10, C-11, C-12**: an unconfirmed End ride or Edit copy confirmation closed quietly by a successful Start riding, Resume ride or Pause, never reappearing (decision 4)                        | **Shipped — `0.4.60`** (3 October 2026); **ordinary flow accepted on the installed iPhone**, reported 4 October 2026 ([`current-status.md`](current-status.md))   |
-> | 10        | **P-18**: a warning selected on Planning's map brings its row and details into view together, by the minimum, below the navigation and clear of the safe area (decisions 1–6)                    | **Shipped — `0.4.61`** (4 October 2026); device check pending ([`current-status.md`](current-status.md))                                                          |
-> | Remaining | P-01, P-15 and the two source-only concerns investigated on 4 October 2026, documentation only; each disposition awaits the rider                                                                | **Awaiting the rider** ([decisions](../design/reveal-inventory/closure-reconciliation.md#decisions-still-needed-after-slice-10)); item 124 not closed             |
+> | 10        | **P-18**: a warning selected on Planning's map brings its row and details into view together, by the minimum, below the navigation and clear of the safe area (decisions 1–6)                    | **Shipped — `0.4.61`** (4 October 2026); **ordinary flow accepted on the installed iPhone**, reported 4 October 2026 ([`current-status.md`](current-status.md))   |
+> | 11        | **P-15**: the routing-connection result line revealed by the minimum when a test completes while the rider is still waiting, below the navigation and clear of the safe area (decision 12)       | **Approved, not started** (4 October 2026); the next slice ([decision 12](backlog-item-124-continued.md))                                                         |
+> | Remaining | P-01 and its desktop action-row clipping deferred to item 135; a failed End ride's message → item 139; the stale launcher confirmation → item 140 (decisions 10–14, 4 October 2026)              | **Dispositions recorded**; item 124 closes after slice 11's installed-iPhone acceptance ([reconciliation](../design/reveal-inventory/closure-reconciliation.md))  |
 
 ### Decisions recorded on 1 October 2026
 
@@ -246,6 +248,8 @@ _Category: Interface and accessibility consistency_
 ### Decisions recorded on 4 October 2026
 
 The rider's nine decisions after the [reconciliation](../design/reveal-inventory/closure-reconciliation.md) — P-18's correction approved as slice 10 with its design choices, the other proposed retentions approved except P-01 and P-18, P-15 to be measured, and the two source-only concerns checked or deferred — are recorded once, in the [continuation](backlog-item-124-continued.md#decisions-recorded-on-4-october-2026). They are product decisions, not device acceptance.
+
+Later the same day, with slice 10's acceptance, the rider's dispositions 10 to 14 — P-01 and, as a separate finding, its desktop action-row clipping deferred to [item 135](#item-135); P-15's correction approved as slice 11; a failed End ride's message and the stale launcher confirmation filed as [items 139](#item-139) and [140](#item-140) — are recorded once, in the [continuation](backlog-item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice). They too are product decisions, not device acceptance.
 
 ### Slice 1 — Clear draft and Delete route (shipped `0.4.51`, 1 October 2026)
 
@@ -498,7 +502,7 @@ Decision 4's slice: an unconfirmed End ride or Edit copy confirmation closes qui
 
 ### Slice 10 — A warning selected on Planning's map, revealed with its details (P-18) (shipped `0.4.61`, 4 October 2026)
 
-Decisions 1 to 6 of 4 October 2026: a warning tapped on the map brings its row and its "Surface: …" and "Route position: …" lines into view together, below the sticky navigation and clear of the bottom safe area, by the minimum, with its beginning first when it is too tall, smoothly unless reduced motion is set. A selection from the list still does not scroll. Its record — the mechanism, the evidence, the baseline, the controls and the limitations — is in [`backlog-item-124-continued.md`](backlog-item-124-continued.md#slice-10--a-warning-selected-on-plannings-map-revealed-with-its-details-p-18-shipped-0461-4-october-2026); its device check is pending ([`current-status.md`](current-status.md)).
+Decisions 1 to 6 of 4 October 2026: a warning tapped on the map brings its row and its "Surface: …" and "Route position: …" lines into view together, below the sticky navigation and clear of the bottom safe area, by the minimum, with its beginning first when it is too tall, smoothly unless reduced motion is set. A selection from the list still does not scroll. Its record — the mechanism, the evidence, the baseline, the controls and the limitations — is in [`backlog-item-124-continued.md`](backlog-item-124-continued.md#slice-10--a-warning-selected-on-plannings-map-revealed-with-its-details-p-18-shipped-0461-4-october-2026); its ordinary flows were accepted on the installed iPhone in English and German, reported 4 October 2026 ([`current-status.md`](current-status.md)), and CI run 37215419294 is recorded in the [continuation](backlog-item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice).
 
 ### Original specification (scheduled 30 September 2026)
 
@@ -671,6 +675,12 @@ _Category: Interface and accessibility consistency_
        - a route deleted in another tab while its unconfirmed Delete confirmation has focus leaves focus on `<body>` (item 124 slice 6's limitations);
        - a failed End ride returns focus to End ride with a plain `focus()`, which could leave it under the navigation if the rider had scrolled. The failure itself is synthetic, and this was not measured.
      - **Untested:** what VoiceOver announces, and where its reading position goes, in each case, including focus parked on a confirmation's title while a write runs (D-01, D-02, D-06); what iOS Safari does with the same focus loss; and whether any candidate target would open the software keyboard or scroll the page on the installed iPhone. **None of these is established as a defect.**
+     - **P-01, deferred here by the rider on 4 October 2026** ([decisions 10 and 11](backlog-item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice)). Two distinct findings, **neither accepted nor fixed**:
+       - **The last route card's focused Rename field out of view**, observed on the installed iPhone ([dated record](current-status.md#installed-iphone-observation-of-p-01-rename-on-the-last-route-card-item-124-inventory-reported-4-october-2026)): the field did not come into view automatically, scrolling brought it into view, and Save and Cancel stayed reachable. Desktop Chromium and WebKit did not reproduce it: there the field is on screen, and the last card leaves 0 px of scroll room below, against a middle card's 990 px ([reconciliation](../design/reveal-inventory/closure-reconciliation.md#p-01--rename-on-the-last-route-card)). Whether the software keyboard covered the field, and whether iOS tried to scroll, is unknown.
+       - **A middle card's Save and Cancel row partly clipped**, in desktop engines only, with no software keyboard: the opened editor's action row ends 21 px below the usable band, about 13 px beyond the viewport's edge (measured 1 October, reproduced 4 October).
+
+       This item assesses the visibility of the field and the actions together, keyboard and visual-viewport behaviour included, without assuming that the two share a cause. Resolving either needs installed-iPhone evidence of the keyboard path.
+
      - **Constraints:** focusing the key field on opening Replace key would open the keyboard and could meet the open key-field zoom finding in [`current-status.md`](current-status.md); item 121's sticky-switcher release while the key form has focus; item 119's non-modal confirmations; and item 124's established pattern, under which focus moves with `preventScroll` and any reveal is the minimum, only while the rider is still at the operation. Coordinate with [item 125](#item-125)'s open question on restored focus.
      - **Evidence required when implemented:** desktop keyboard measurements of focus and scroll in Chromium and WebKit, in English and German; VoiceOver on the installed iPhone; and a negative control for each change.
 
@@ -726,3 +736,72 @@ _Category: Maintenance_
      - **A committed test comment:** `e2e/confirmationReveal.smoke.spec.ts` (about lines 716–719) repeats slice 1's incorrect claim that a button above the viewport is "reachable by neither tap nor Tab" (corrected in the inventory's D-04).
      - **Not included:** C-14's always-red confirm action, a styling question that goes to [item 103](#item-103).
      - **Evidence required when done:** the catalogue parity tests, the formatter, and a review that each comment now matches the source it describes. No behaviour change.
+
+---
+
+<a id="item-139"></a>
+
+## Item 139 — A failed End ride's message clipped in the riding header (unscheduled presentation defect)
+
+_Category: Riding presentation_
+
+139. **A failed End ride's message clipped in the riding header — unscheduled presentation defect**
+     - Origin: item 124's close-out investigation of 4 October 2026 ([findings](../design/reveal-inventory/closure-reconciliation.md#a-failed-end-rides-message)), filed by the rider's disposition the same day ([decision 13](backlog-item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice)). **Filing it here does not mean it is fixed or accepted.**
+     - **Unscheduled, and not part of the approved execution order.** No change is approved by this entry.
+     - **What was measured**, in desktop Chromium and WebKit in the pinned container at 390×844 portrait, identically in both engines. The failure is **synthetic**: the existing test-only seam `window.__acnE2eRideStateClearFailure` fails the first clear of the stored session only.
+       - **Route riding's header (C-10):** the message "The ride could not be ended on this device. Try again." sits on one line in the header's end slot, beside **End ride**. It is 318 px wide in English, from x = 216 to 534 on a 390 px screen, and 464 px wide in German, to x = 685. The fixed riding shell clips it at the screen's edge, so about 55% of the English sentence and 36% of the German one are visible. The page itself does not overflow.
+       - **Free roam's header (C-13):** the same placement and clipping, measured in English only.
+       - **Beside it:** the route's title collapses to 16 px, and **End ride** moves left, to x = 125–216, but stays visible and works. The retry ended the ride and cleared the stored session, and focus returned to **End ride** in every run.
+     - **The comparison that reads well:** on the paused panel (C-11), the same message wraps under its button, 324 px wide, wholly on screen.
+     - **Not established:**
+       - how often a clear fails on a phone;
+       - anything on the installed iPhone, where nothing was reproduced; a genuine failure is expected, not shown, to render the same way;
+       - German free roam and enlarged text, which were not measured.
+     - **A candidate, not a decision:** show the failure on its own wrapping line below the header row, leaving **Pause** and **End ride** where they are.
+     - **Coordinate with:**
+       - [item 134](#item-134), Resume while an End ride is finishing;
+       - [item 135](#item-135), focus after a failure, including the plain `focus()` noted there;
+       - [item 103](#item-103), control styling;
+       - the riding header's existing layout decisions: items 68 and 76, and item 113's `0.4.42` and `0.4.43` header corrections.
+     - **Evidence required when implemented:**
+       - the synthetic failure in Chromium and WebKit, in English and German, at 100% and 200% root text, on route riding and free roam;
+       - the message measured wholly visible, with **Pause** and **End ride** unmoved;
+       - a negative control;
+       - an installed-iPhone check of an ordinary End ride, since a failure cannot be induced on the phone.
+
+---
+
+<a id="item-140"></a>
+
+## Item 140 — A stale Ride-launcher confirmation clearing a newer session (unscheduled correctness investigation)
+
+_Category: Riding lifecycle_
+
+140. **A stale Ride-launcher confirmation clearing a newer session — unscheduled correctness investigation**
+     - Origin: item 124's close-out investigation of 4 October 2026 ([findings](../design/reveal-inventory/closure-reconciliation.md#the-launcher-confirmation-after-a-re-read)), filed by the rider's disposition the same day ([decision 14](backlog-item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice)). **Filing it here does not mean it is fixed or accepted.**
+     - **Unscheduled, and not part of the approved execution order.** This entry assigns no priority and approves no change.
+     - **The demonstrated path: two pages in one desktop browser context**, sharing IndexedDB, with ordinary interface steps in each. Chromium and WebKit in the pinned container, English, 6 runs, identical in both engines.
+       1. In page A, a route ride was started and paused, **Back to Ride options** taken, and the launcher's **End ride** opened, unconfirmed: "End this ride?", with **Cancel** focused.
+       2. In page B, the same route's paused screen was ended and free roam started.
+       3. Page A, which does not re-read, still showed "You have an unfinished ride on this route." with its confirmation open.
+       4. **Confirming page A's stale confirmation deleted page B's newer free-roam session.** The clear carries no session identity, so it removed whatever was stored. Page B still showed free roam until it was reloaded; then nothing was stored.
+     - **Not claimed:**
+       - any reproduction in the installed iPhone PWA, which has a single window; this path needs two tabs or windows of the site in a browser;
+       - the launcher's re-reads after **Retry** or a failed free-roam write, which need synthetic faults and were **not exercised**.
+     - **Present facts, from source (at `ae76f98`):**
+       - The launcher (`src/ui/riding/RidingLauncher.tsx`) reads its session once on mount, after **Retry**, and when `sessionRefreshToken` changes, which only a successful **End and switch** does.
+       - Dexie's cross-tab broadcast reaches only live queries, which the launcher does not use.
+       - The stored session is cleared through one function, `clearActiveRideState()` (`src/storage/rideStateRepository.ts`), which takes no session identity. Its callers are `src/App.tsx`, `src/ui/riding/RidingLauncher.tsx`, `src/ui/riding/useRideNavigation.ts` and `src/ui/riding/useFreeRoamNavigation.ts`.
+     - **The safeguard to achieve:** a confirmation must never clear a session other than the one it refers to.
+     - **The investigation must consider atomicity, not merely a potentially stale preliminary read.** A fresh read before an unconditional clear still leaves a window between the read and the delete. The candidate to evaluate is a clear conditioned on the session's identity, checked and applied within one IndexedDB read-write transaction, together with what the rider sees when the condition fails.
+     - **It must also inventory every caller of the identity-less clear** — the launcher's **Discard** among them — and establish which share the hazard.
+     - **Coordinate with:**
+       - [item 119](history/items-118-131.md#item-119)'s switch guard, which protects **Resume** comparably; it is precedent, not a fix here;
+       - [item 134](#item-134), an End ride still finishing;
+       - [item 135](#item-135), focus after **End and switch**;
+       - item 124's C-09, whose accepted flow is to be verified again if the launcher's shared code changes.
+     - **Evidence required when resolved:**
+       - a two-page browser test in Chromium and WebKit reproducing the path above, with the stored session read before and after;
+       - a negative control showing that the identity check is what prevents the deletion;
+       - a synthetic-fault test for any re-read path changed;
+       - an installed-iPhone check of the launcher's ordinary End ride and Discard, since the two-window path itself cannot be reached there.

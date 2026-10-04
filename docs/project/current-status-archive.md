@@ -1,17 +1,121 @@
-# Current status — archive: dated records from 25 September back to 10 September 2026
+# Current status — archive: dated records from 29 September back to 10 September 2026
 
-This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order on 1 October 2026, only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
+This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order — on 1 October 2026 those from 25 September 2026 back, and on 4 October 2026 the four of 28 and 29 September 2026 that now open it — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
 
 **Where the moved text's positional references now point.** These records stood in `current-status.md` after its newer dated records and before its per-item entries from item 114 onwards, and their wording is kept exactly as written. Read them like this:
 
 - **"above" or "below" one of the records in this file** — another record in this file, as before: their order is unchanged.
-- **"the checklist above", "the consolidated installed-iPhone checklist above", "Session 1", "Session 2", "Session 3", "the opportunistic monitoring above", "this file's own reading note above" and "the umbrella above"** — in [`current-status.md`](current-status.md): its open checklist, its "How to read this ledger" notes and its "Physical Android — one umbrella" statement. "Session N" means the checklist's sessions as they stood when a record was written; a check named there may since have been accepted and removed.
-- **Item 121's "the dated `0.4.44` record above"**, under "Dated evidence, closures and limitations, by item" — that record stayed in [`current-status.md`](current-status.md#installed-iphone-acceptance-of-0444-build-8027c6a-item-121-reported-29-september-2026).
+- **"the checklist above", "the consolidated installed-iPhone checklist above", "Session 1", "Session 2", "Session 3", "the opportunistic monitoring above", "this file's own reading note above", "the umbrella above" and "the open-finding subsection above"** — in [`current-status.md`](current-status.md): its open checklist, its "How to read this ledger" notes, its "Physical Android — one umbrella" statement and its "Open device findings" subsection. "Session N" means the checklist's sessions as they stood when a record was written; a check named there may since have been accepted and removed.
+- **Item 121's "the dated `0.4.44` record above"**, under "Dated evidence, closures and limitations, by item" — that record stayed in `current-status.md` on 1 October 2026 and moved here on 4 October 2026, so it is again [above, in this file](#installed-iphone-acceptance-of-0444-build-8027c6a-item-121-reported-29-september-2026).
 - **"Item 115's installed-iPhone presentation checklist below"**, in the 12 September 2026 bicycle field test — the per-item checklists of that time, since consolidated into `current-status.md`'s Sessions 2 and 3.
 
 Links in these records are relative to `docs/project/`, as they were, and still resolve.
 
 ---
+
+### Installed-iPhone check of `0.4.45` (build `bac3553`, item 114, reported 29 September 2026)
+
+**Device and build.** iPhone 13, installed Home Screen PWA, portrait, ordinary text size; version `0.4.45`, build `bac3553`, as reported.
+
+**Passed** — item 114's ordinary-text Planning check, and only that:
+
+- The OpenStreetMap attribution and the `Add waypoint here` placement button remain clear of each other.
+- The red crosshair is visible.
+- A failed `Locate me` shows its message inside the map.
+- Add, Move and Insert after place waypoints correctly.
+- The map pans when dragged beside and above the placement button.
+
+**Not claimed:** any physical acceptance of item 114's enlarged-text layout, which cannot be reached on the iPhone through Larger Text; its 200% browser-text evidence stays automated (Chromium and WebKit in the pinned container) and is never iOS Dynamic Type; its informative 250% limitations are unchanged; [item 128](history/items-118-131.md#item-128)'s ordinary-text imagery-banner collision with the crosshair was not rechecked and is neither resolved nor accepted; no VoiceOver audit; and no physical-Android result.
+
+**Observation, filed as [item 129](backlog.md#item-129).** To exercise the `Locate me` failure message, the rider denied location permission in the installed PWA. The message appeared correctly — that is the check above — but the rider did not find a way to grant permission again during that PWA session; after fully closing and reopening the PWA, another permission prompt appeared. It is recorded as an unscheduled usability investigation; no claim is made that a denial is permanent or that no in-session way exists.
+
+**Decision the same day.** [Item 123](history/items-118-131.md#item-123) — accidental waypoint placement during touch panning or zooming in Planning — was promoted to the front of the approved execution order, with the rider's preferred design direction recorded in its entry.
+
+### Installed-iPhone acceptance of `0.4.44` (build `8027c6a`, item 121, reported 29 September 2026)
+
+**Device and build.** iPhone 13, installed Home Screen PWA, portrait; version `0.4.44`, build `8027c6a`, as reported. The checks came in two reports the same day; the second completed the three that the first left open.
+
+**Passed**, recorded as broad product-level acceptance of item 121's intended behaviour:
+
+- All four German primary tabs fit and remain tappable. This settles on the device the 25 September 2026 finding that `Einstellungen` wrapped its final `n` in the five-tab bar.
+- The `Settings / Status` switcher stays visible beneath the primary navigation while scrolling and does not cover content. The visible headings make sense without the large page title.
+- Returning to the Settings tab from another tab reopens the last-viewed Settings or Status view. Tapping the Settings tab while Status is shown opens Settings.
+- With no OpenRouteService key configured — a condition the rider set up on the device — Planning's `Open Settings` appeared and opened Settings directly.
+- Each newly selected Settings or Status view starts at the top. Re-tapping the Settings tab while Settings is already shown preserves its scroll position.
+- An unsaved, non-secret placeholder in the key field survived Settings → Status → Settings and came back masked. Leaving for another primary tab discarded it.
+- With the real keyboard open, the key field and its controls remained reachable; Show/Hide and dismissing the keyboard caused no page jump.
+- The four tabs and the switcher passed an English spot check.
+- _Second report:_ with the real keyboard open, saving a valid OpenRouteService key worked on the **first tap**, and the key remained saved after leaving Settings and returning.
+- _Second report:_ while the key form had focus, the switcher scrolled away with the page; after leaving the form, it stuck beneath the primary navigation again.
+- _Second report:_ `Schlüssel löschen` revealed its confirmation and actions as expected. The rider cancelled, and the key was not deleted.
+
+**Language.** The tab-fit check and the `Schlüssel löschen` check were German. The English half was a spot check of the four tabs and the switcher only; the remaining checks are recorded without a language.
+
+**Not separately reported, not claimed, not blockers:** whether the selected tab and switcher view are recognisable without colour, and whether opening a disclosure moves the page.
+
+**Removed from item 121's device checklist: glove use.** Glove compatibility depends on the glove and the touchscreen, so it is not an acceptance criterion here. Ordinary tappability passed; a specific missed tap with gloves can be filed later as a usability finding.
+
+**Not claimed:** confirmed key deletion; that nothing is saved before Save is pressed; `Gerätesprache` resolving from the device language (still in Session 4); 200% text or iOS Dynamic Type; the German key form on an SE-sized screen with enlarged text (automated only, and already short of room above the keyboard before item 121); VoiceOver, including whether the switcher's current view is announced; physical Android; the optional English End-confirmation checks; and the physical climb-cue check, which stays pending until a suitable ride (Session 2).
+
+**Open device finding, kept for follow-up.** Tapping the key field zoomed the page in, and saving did not restore normal zoom; the rider had to zoom out manually. **No cause is claimed and none has been investigated**, and it is **not** recorded as an item 121 regression. It sits in the open-finding subsection above.
+
+**Observation for [item 125](backlog.md#item-125), its outstanding behaviour.** Arriving at Ride or Plan keeps the scroll offset of the screen just left, Routes included, while arriving at Routes shows the top. Item 121's interim top reset applies to the Settings section alone — Settings and Status — and to no other primary screen. Source has no deliberate reset for an ordinary switch to Routes (its one-shot restoration runs only after a route has been opened), so **no cause is claimed** for Routes arriving at the top.
+
+### Installed-iPhone recheck of `0.4.43` (build `aab58c0`, reported 28 September 2026)
+
+**Device:** iPhone 13, installed Home Screen PWA, portrait.
+
+**Passed:**
+
+- **Build identification:** version `0.4.43`, build `aab58c0`.
+- **The German Status wording:** the map-imagery heading `Probleme mit dem Kartenmaterial` and its empty state.
+- **The End-confirmation checks on route riding and on free roam.**
+
+**Not claimed:** this record does not claim VoiceOver (still deferred, not a blocker), any particular keyboard-focus state (Cancel focused, or focus returning to End), the optional English half of the End checks, or any check beyond those reported.
+
+**Not exercised:** the climb cue. Its `0.4.43` recheck stays pending for a ride with a recognised climb (Session 2).
+
+**A question resolved from source, with no wording change requested.** A freshly calculated route in the German interface showed a turn instruction in the formal address, `Biegen Sie links auf … ab`. A read-only trace of the source and fixtures shows that **ACN passes openrouteservice's own German instruction through**:
+
+- The adapter asks for German with `language: "de"` (`src/routing/openRouteServiceAdapter.ts`).
+- `step.instruction` becomes the manoeuvre's instruction unchanged, apart from a 200-character limit (`src/routing/normalizeOpenRouteServiceRoute.ts`).
+- It is stored verbatim, in IndexedDB and in the GPX `acn:navigation` round trip.
+- Riding shows it, trimmed, in preference to ACN's own label (`RidingNextManoeuvrePanel.tsx`, `RidingCompactManoeuvreCue.tsx`).
+
+ACN's own German fallback labels are infinitives (`Links abbiegen`), and a manoeuvre has no road-name field, so ACN cannot have produced the text. This is item 113's rule that provider text is data, not copy. **Limit of the evidence:** no German openrouteservice response exists in the repository's fixtures, and no live request was made. **You have requested no wording change, so no backlog item is filed.**
+
+**New observations filed as unscheduled backlog items**, all outside the approved execution order:
+
+- [item 124](backlog.md#item-124): Clear draft and Delete route confirmations left out of view on the iPhone, and a common reveal rule;
+- [item 125](backlog.md#item-125): per-screen scroll restoration;
+- [item 126](backlog.md#item-126): `0.0 km` at climb boundaries;
+- [item 127](backlog.md#item-127): discovering `Insert after` in Planning.
+
+### Installed-iPhone recheck of `0.4.42` (reported 28 September 2026)
+
+**Device and build.** iPhone 13, installed Home Screen PWA, portrait; build `0c489db`, version `0.4.42`. The individual sessions' dates were not reported separately. Screenshots: `IMG_8005` (a German outdoor ride), `IMG_8107` and `IMG_8108` (an English route ride, before and after opening the End confirmation).
+
+**Completed**, recorded as broad product-level acceptance of the intended behaviour:
+
+- Session 4's targeted checks of the `0.4.42` corrections:
+  - Settings (`Gerätesprache` inside its button, `3 %`, the ORS introduction, the General-cycling description);
+  - Planning (generated names, warning rows, the placement control);
+  - route riding (the climb selector's closed option; the `Beenden` header label and its confirmation; the paused panel's `Fahrt beenden`);
+  - free roam (the `Freies Fahren` title beside `Beenden`, and the end message).
+- Status: the German connection-test result line and `Phase` row. **The copied diagnostic report stays English.**
+- **The English spot check**, which included switching back to English.
+- **In the field:** cycling route navigation, off-route behaviour and free roam were reported passing, and the climb functions worked.
+  - `IMG_8005` shows the German status card, next-manoeuvre panel, delayed-imagery message and climb cue during an outdoor ride. The route's stored turn instruction (`Turn sharp right onto R759`) stays English, as designed. That is **observed in the screenshot**, consistent with the rule that a language change translates nothing already stored.
+
+**Findings, corrected in `0.4.43` with automated evidence only:**
+
+1. **German Status wording.** The map-imagery heading and empty state were to be plainer; your wording has been applied.
+2. **The header jumped when the End confirmation opened** (`IMG_8107` → `IMG_8108`), in route riding and, by the report, in free roam. The End slot emptied and the centred title moved; the container measures 45.6–47.8 px.
+   - **`Pause` is visible in `IMG_8108.PNG` as supplied**, so the reported "Pause absent" is not shown in the capture available. The source always renders it and keeps it enabled while the confirmation is merely open.
+   - The behaviour predates item 113 (items 50 and 55).
+3. **The climb cue covered the blue position marker and the route next to it** (`IMG_8005`). The German cue was about 169 px wide, in a map about 371 px tall. **This stays open until the `0.4.43` layout is checked on the iPhone** (Session 2).
+
+**Not tested:** VoiceOver (deliberately; deferred, not a blocker), iOS Dynamic Type, and physical Android. **Still open:** `Gerätesprache` resolving from a German- or English-configured phone, and the three `0.4.43` rechecks (Sessions 2 and 4).
 
 ### Installed-iPhone German session, 25 September 2026 (item 113's first physical pass, batches 1–4)
 

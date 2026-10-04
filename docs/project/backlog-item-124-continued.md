@@ -882,3 +882,58 @@ With slice 10, P-01, P-15 and the two source-only concerns were investigated in 
 - **A failed End ride's message**, with a synthetic failure: clipped at the screen's edge in the riding header — 55% visible in English, 36% in German. Recommended: a new unscheduled item.
 - **The launcher's confirmation**, in two browser tabs only: no re-read happens, and confirming a stale launcher confirmation ended the other tab's newer session. Not reachable in the installed single-window PWA. Recommended: a new, low-priority item.
 - **Item 124 stays active** until P-18's device check and these decisions.
+
+## Slice 10's acceptance and CI, and the close-out dispositions (4 October 2026, documentation only — not a slice)
+
+**Installed-iPhone acceptance, reported 4 October 2026.** The ordinary tested flows passed on `0.4.61` (build `ae76f98`), in English and German:
+
+- a warning selected on Planning's map brought its information into view as expected, with movement as the rider expected;
+- a selection from the list behaved normally;
+- the rider's own scrolling afterwards was respected;
+- clearing the selection permitted normal waypoint placement.
+
+This accepts slice 10's ordinary-flow checks only.
+
+- **Reduced Motion was optional and is not accepted:** the report asks what it means rather than reporting a result.
+- **The conditional second-warning check is not claimed separately:** the report does not say whether a route with two surface warnings was available.
+- **No further evidence came with it:** no Status reading, measured geometry, finger during the movement, enlarged text, VoiceOver, physical keyboard, landscape or Android evidence.
+- **The accepted build stays `ae76f98`** after later deployments.
+- **Automated evidence, separate from the device acceptance:** the synthetic provider, the stand-in viewports and the [repair note](#slice-10-repair-note--the-end-to-end-test-that-failed-ci-4-october-2026-test-only)'s corrected timing evidence.
+
+The dated record, with the rider's words, is in [`current-status.md`](current-status.md#installed-iphone-acceptance-of-0461-build-ae76f98-item-124-slice-10-p-18-reported-4-october-2026).
+
+**CI and deployment.** Run [37215419294](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37215419294), for commit `ae76f98`: **Verify and build, all four End-to-end shards and Deploy succeeded, each on its first attempt.** The durations come from the run's own job and step start and completion times, read once after the run and kept locally as saved job data. Verify and build's test step is its unit and component tests; each shard's is its end-to-end suite.
+
+| Job              | Test step | Whole job |
+| ---------------- | --------: | --------: |
+| Verify and build |     174 s |     296 s |
+| E2E shard 1/4    |     410 s |     466 s |
+| E2E shard 2/4    |     654 s |     716 s |
+| E2E shard 3/4    |     348 s |     414 s |
+| E2E shard 4/4    |     795 s |     857 s |
+| Deploy           |         — |       8 s |
+
+The longest job, shard 4, left 343 s below the E2E jobs' 1,200-second timeout. The deployment served `0.4.61` / `ae76f98`, read again from the deployed bundle on 4 October 2026. These are one run's timings, not an established trend, and no sharding change is made or authorised here.
+
+**The rider's dispositions, 4 October 2026.** These were given with the acceptance ("I agree with you recommendations otherwise"), together with the rider's further directions and two answers the same day. They are product decisions, **not device acceptance**, and continue the numbering of the [decisions recorded earlier that day](#decisions-recorded-on-4-october-2026).
+
+10. **P-01 — deferred to [item 135](backlog.md#item-135).** The rider's [device observation](current-status.md#installed-iphone-observation-of-p-01-rename-on-the-last-route-card-item-124-inventory-reported-4-october-2026) stays recorded: on the last route card, Rename's focused field did not come into view, though scrolling brought it into view and Save and Cancel stayed reachable. So does its [desktop non-reproduction](../design/reveal-inventory/closure-reconciliation.md#p-01--rename-on-the-last-route-card): there, the last card's field is on screen, with 0 px of scroll room below, against a middle card's 990 px. The keyboard mechanism is unresolved. **Deferral is neither acceptance nor a fix.**
+11. **P-01's desktop action-row clipping — deferred with it, as a separate finding**, by the rider's answer the same day.
+    - **The finding:** on a middle card, the opened editor's Save and Cancel row ends 21 px below the usable band, about 13 px beyond the viewport's edge. It was measured on 1 October and reproduced on 4 October, in desktop engines only, with no software keyboard.
+    - **Kept distinct:** it concerns partly clipped actions, whereas the device observation concerns the last card's focused field.
+    - **For item 135:** it assesses the visibility of the field and the actions together, keyboard and visual-viewport behaviour included, without assuming a shared cause. Neither finding is accepted or fixed.
+12. **P-15 — a bounded correction approved, as slice 11.** When the current **Test routing connection** completes and the rider is still waiting, the result line is revealed only as far as needed.
+    - **Where it comes to rest:** below the sticky navigation and clear of the bottom safe area, with the existing small margin.
+    - **Only as far as needed:** no movement when it fits.
+    - **Motion:** smooth under ordinary motion preferences, respecting Reduced Motion.
+    - **Taller than the usable band:** its beginning first; the rider scrolls normally through the rest.
+    - **Not required:** bringing the diagnostic grid and **Copy diagnostic report** into view.
+    - **Focus and the announcement:** both preserved; the result is never focused merely to reveal it.
+    - **A rider who has moved on:** if they scrolled, tapped elsewhere, moved focus elsewhere or left Status while the request was pending, their position and focus are left alone.
+    - **Once per completion:** one reveal per eligible completion; rerenders never restart it, and each later deliberate attempt gets a fresh eligibility decision.
+    - **Hidden document, by the rider's further answer:** the document becoming hidden while a test is in flight — switching apps or locking the phone — also counts as moving on, for that attempt. Returning does not re-enable it, and the request and its result are neither cancelled nor suppressed.
+    - **Focus questions** stay with item 135.
+13. **A failed End ride's message — filed as [item 139](backlog.md#item-139)**, a separate, unscheduled presentation defect. No fix comes with slice 11.
+14. **The stale launcher confirmation — filed as [item 140](backlog.md#item-140)**, a separate, unscheduled correctness item. No priority is assigned, and the execution order is unchanged.
+
+**Where item 124 stands.** Slice 11, P-15, is the next and only approved slice. Every other inventory entry now has a disposition ([reconciliation](../design/reveal-inventory/closure-reconciliation.md#dispositions-after-slice-10s-acceptance-4-october-2026)), and item 124 stays active until slice 11's installed-iPhone acceptance. Item 122's design stage has not started.
