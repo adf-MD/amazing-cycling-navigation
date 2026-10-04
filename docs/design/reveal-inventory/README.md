@@ -34,6 +34,8 @@
 
 **Update (4 October 2026): slice 9 accepted.** Its ordinary flows passed on the installed iPhone in English and German, on `0.4.60` (build `e2ba7cf`) ([`current-status.md`](../../project/current-status.md)). A held or failed Pause, a confirmed operation still running and an immediate location error keep automated evidence only. For size, the 2 October review preparation of D-01, D-02 and D-06 moved, unchanged, to a [separate file](d-01-d-02-d-06-review-preparation.md); its heading below points there.
 
+**Update (4 October 2026, later): every entry reconciled, and P-18 measured — documentation only.** The [reconciliation](closure-reconciliation.md) gives each ID one disposition, keeping approved and proposed retentions apart. P-18 shows a demonstrated problem: a warning selected on the map leaves its details below the screen. A correction is proposed as slice 10, not approved. Other concerns go to items 127, 103 and 134–138. Item 124 is not closed. The sections below keep their original text.
+
 **What this is.** Every confirmation in the app, every expanding card, form, editor and disclosure that could reasonably fall under the rider's "pop-up cards" request, and the conditional and failure states that change what would need revealing — each with a stable review ID, its labels in English and German, how to reach it, what it does today, where that is in the source and tests, what was measured, and a recommendation.
 
 **The rule under review** ([item 124](../../project/backlog.md#item-124)): no movement when the newly opened content fits between the sticky navigation and the bottom safe area; otherwise only enough to reveal it; and when it cannot fit, only enough to show its complete action row. On Cancel and Escape: keep the page where the rider has left it, moving only as far as needed to reveal the opening control.
@@ -59,6 +61,7 @@
 - [Decisions and observations — C-07 to C-13 (3 October 2026)](#decisions-and-observations--c-07-to-c-13-3-october-2026)
 - [D-02 — investigation and plan (3 October 2026, a separate file)](d-02-delete-lifecycle.md)
 - [The ride confirmations and the remaining inventory — review (3 October 2026, a separate file)](ride-confirmations-review.md)
+- [Closing the inventory — reconciliation and P-18 (4 October 2026, a separate file)](closure-reconciliation.md)
 
 ## How to read this
 
@@ -402,6 +405,8 @@ Tapping a waypoint row (or marker) shows **Move** / **Verschieben** and **Insert
 
 Tapping a warning row under "Route warnings" / "Warnungen" expands its detail ("Surface: {surface}" / "Belag: {surface}") and **Clear warning selection** / **Auswahl der Warnung aufheben**. From the list: no scroll. From the map: `scrollIntoView({ block: "nearest" })` of the row, smooth unless reduced motion, **not aware of the sticky header** [S] (`RouteSummaryPanel.tsx` ~130–147). Not measured (needs a calculated route with a surface warning). **Recommendation:** **candidate for change** (header-aware reveal of a map-selected warning).
 
+**Measured, 4 October 2026:** in 22 runs the selected row stopped at the screen's bottom edge, its details below the screen, in both engines, both languages and both text sizes. A correction is proposed as slice 10, not approved ([reconciliation](closure-reconciliation.md#p-18--a-surface-warning-selected-on-plannings-map)).
+
 #### P-19 — Messages below the map (item 128)
 
 "Clear the selected warning to place or move a waypoint.", the route-feature equivalent, and "Your location could not be determined." / "Dein Standort konnte nicht bestimmt werden." — in normal flow below the map by design. **Recommendation:** **preserve existing behaviour** (protected, item 128).
@@ -580,6 +585,8 @@ Reported here so they are not lost; nothing was changed.
 
 ## Recommendations at a glance
 
+_4 October 2026: for each entry's current disposition, read the reconciliation's [closure table](closure-reconciliation.md#the-closure-table); this table keeps its recommendations as made, with later notes._
+
 | ID                                       | Surface                                                          | Recommendation                                                                  |
 | ---------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | C-01                                     | Delete route                                                     | already complies (protected, slice 1)                                           |
@@ -652,6 +659,8 @@ C-01 (Delete route) and C-05 (Clear draft) are slice 1 — already approved and 
 
 **3 October 2026:** the checklist items still open — 9 to 22, with D-04 measured as satisfactory but not device-accepted — are reconciled against current source, with recommended dispositions, in the [review](ride-confirmations-review.md#the-remaining-inventory--decisions-still-needed). The review decides none of them.
 
+**4 October 2026:** every item still open is given one disposition in the [reconciliation](closure-reconciliation.md#the-closure-table) — approved retention, proposed retention, deferred or unresolved — under the rider's direction of that day. The proposed retentions still await the rider's confirmation.
+
 ## Reproduction gaps
 
 Branches flagged as difficult to reach or apparently unreachable. No steps are invented for them, and none was removed or changed.
@@ -664,7 +673,7 @@ Branches flagged as difficult to reach or apparently unreachable. No steps are i
 - **D-06:** not measured. _(Measured on 2 October 2026 with controlled synthetic fixtures: [review preparation](#review-preparation--d-01-d-02-and-d-06-2-october-2026).)_
 - **The tag manager's empty state** ("No tags left. Add tags from a route to manage them here."): from source, reachable when the last tag disappears while the panel is hidden (for example behind a card's delete confirmation, or from another tab); not reproduced.
 - **P-15:** sends a real request; not measured.
-- **P-18:** needs a calculated route with a surface warning; not measured.
+- **P-18:** needs a calculated route with a surface warning; not measured. _(Measured on 4 October 2026 with a synthetic provider fixture and a real map tap: [reconciliation](closure-reconciliation.md#p-18--a-surface-warning-selected-on-plannings-map).)_
 
 ## Method and reproducing
 
@@ -821,3 +830,5 @@ The rider's report from the installed iPhone — `0.4.57` (build `bd688d7`), Eng
 - **decisions still needed:** the C-11 slice, C-09's policy, confirmations surviving ride transitions, and the remaining entries in the review's [decision list](ride-confirmations-review.md#the-remaining-inventory--decisions-still-needed).
 
 **Evening, 3 October 2026:** those three decisions were taken, and C-07/C-08's 25 px accepted as a bounded exception ([decisions](../../project/backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening)); C-11's correction shipped in `0.4.59` (slice 8), its device check pending. **Next:** the approved transition-dismissal slice. The remaining entries still need review or disposition.
+
+**4 October 2026:** slice 9 was accepted on the installed iPhone, and every remaining entry was given a disposition in the [reconciliation](closure-reconciliation.md). **Next:** the rider's decisions on P-18's proposed slice 10, P-01 and the proposed retentions. Item 124 is not closed.
