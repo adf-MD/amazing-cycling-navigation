@@ -86,7 +86,7 @@ ACN's own German fallback labels are infinitives (`Links abbiegen`), and a manoe
 
 **New observations filed as unscheduled backlog items**, all outside the approved execution order:
 
-- [item 124](backlog.md#item-124): Clear draft and Delete route confirmations left out of view on the iPhone, and a common reveal rule;
+- [item 124](history/item-124.md#item-124): Clear draft and Delete route confirmations left out of view on the iPhone, and a common reveal rule;
 - [item 125](backlog.md#item-125): per-screen scroll restoration;
 - [item 126](backlog.md#item-126): `0.0 km` at climb boundaries;
 - [item 127](backlog.md#item-127): discovering `Insert after` in Planning.

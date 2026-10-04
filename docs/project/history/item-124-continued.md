@@ -1,16 +1,16 @@
 # Item 124 — slice records, continued
 
-This file continues [item 124](backlog.md#item-124)'s entry in [`backlog.md`](backlog.md), from slice 5 onwards. It was split out on 3 October 2026, for size only: `backlog.md` had reached about 146,000 characters, and one more slice record would have taken it past the 150,000-character limit set out in [the documentation index](README.md). It began at slice 7; slice 6's record was moved here unchanged later the same day, when `backlog.md` had again reached about 149,000 characters, and slice 5's on 4 October 2026, at about 147,000, with only its pointer to slice 4 adjusted for its new place.
+This file continues [item 124](item-124.md#item-124)'s entry in [`item-124.md`](item-124.md), from slice 5 onwards. It was split out of `backlog.md` on 3 October 2026, for size only: `backlog.md` had reached about 146,000 characters, and one more slice record would have taken it past the 150,000-character limit set out in [the documentation index](../README.md). It began at slice 7; slice 6's record was moved here unchanged later the same day, when `backlog.md` had again reached about 149,000 characters, and slice 5's on 4 October 2026, at about 147,000, with only its pointer to slice 4 adjusted for its new place. **Item 124 was closed on 4 October 2026**, and this file moved the same day from `docs/project/backlog-item-124-continued.md` to `history/`, with the entry's first part; only its links, this introduction and a closing pointer changed.
 
-- **It is the same entry, not a second record.** Item 124's specification, the decisions recorded there on 1, 2 and 3 October and the records of slices 1 to 4 stay in `backlog.md`, with a short pointer there for each slice recorded here. The decisions of 3 October evening and later are recorded here.
-- **Item 124 is still pending.** Nothing about it enters [`history/`](history/README.md) before its final slice; at that point both parts move there together.
-- **Device acceptance is recorded only in [`current-status.md`](current-status.md)**, never here.
+- **It is the same entry, not a second record.** Item 124's specification, the decisions recorded on 1, 2 and 3 October, the records of slices 1 to 4 and the [closure](item-124.md#closure-4-october-2026) are in `item-124.md`, with a short pointer there for each slice recorded here. The decisions of 3 October evening and later are recorded here.
+- **Item 124 is closed.** This text was written while it was pending: where it names `backlog.md` for item 124's own records, that is now `item-124.md`, and "Session 5" means a session of [`current-status.md`](../current-status.md)'s checklist, since completed and removed.
+- **Device acceptance is recorded only in [`current-status.md`](../current-status.md)**, never here.
 
 ## Slice 5 — Clear draft failing (D-01) (shipped `0.4.56`, 3 October 2026)
 
-**Approved by the rider on 2 October 2026** — decision 6 in the inventory's [decisions section](../design/reveal-inventory/README.md#decisions--d-06-d-02-d-01-and-c-12-2-october-2026). It was made the next slice once item 132 had been accepted, D-01 only.
+**Approved by the rider on 2 October 2026** — decision 6 in the inventory's [decisions section](../../design/reveal-inventory/README.md#decisions--d-06-d-02-d-01-and-c-12-2-october-2026). It was made the next slice once item 132 had been accepted, D-01 only.
 
-**The defect.** A failed Clear draft returned focus to the re-enabled button with a plain `.focus()`, whatever the rider had done meanwhile ([review preparation](../design/reveal-inventory/README.md#d-01--clear-draft-fails-1)):
+**The defect.** A failed Clear draft returned focus to the re-enabled button with a plain `.focus()`, whatever the rider had done meanwhile ([review preparation](../../design/reveal-inventory/README.md#d-01--clear-draft-fails-1)):
 
 - focus was taken back from Route name, from another control and from a rider who had scrolled away;
 - at 200% text the browser's own focus scroll then pulled the page back, by up to 4,282 px in Chromium;
@@ -18,7 +18,7 @@ This file continues [item 124](backlog.md#item-124)'s entry in [`backlog.md`](ba
 
 **Mechanism** (`PlanningScreen.tsx`, unless named).
 
-- **The guard, shared.** D-06's interaction guard moved from `src/ui/riding/editCopyInteractionGuard.ts` to `src/ui/shared/operationInteractionGuard.ts`, as `armOperationInteractionGuard` / `OperationInteractionGuard`. The slice 4 record in [`backlog.md`](backlog.md#slice-4--edit-copy-while-a-copy-is-being-made-d-06-shipped-0454-2-october-2026) names it by its old path.
+- **The guard, shared.** D-06's interaction guard moved from `src/ui/riding/editCopyInteractionGuard.ts` to `src/ui/shared/operationInteractionGuard.ts`, as `armOperationInteractionGuard` / `OperationInteractionGuard`. The slice 4 record in [`backlog.md`](item-124.md#slice-4--edit-copy-while-a-copy-is-being-made-d-06-shipped-0454-2-october-2026) names it by its old path.
   - Its semantics are unchanged.
   - Its two callers are D-06 and D-01, and D-02 is approved to need it too.
   - `RidingScreen.tsx` and the spies in `RidingScreen.test.tsx` follow the rename, and nothing else in D-06 changes.
@@ -129,11 +129,11 @@ This file continues [item 124](backlog.md#item-124)'s entry in [`backlog.md`](ba
 
 The longest job, shard 4, left 475 s below the E2E jobs' 1,200-second timeout. The deployment served `0.4.56` / `439e578`. These are one run's timings, not an established growth trend, and no further sharding change is made or authorised here.
 
-**Installed-iPhone acceptance, reported 3 October 2026.** The ordinary Clear draft flow passed on `0.4.56` (build `439e578`), in English and German: opening Clear draft, cancelling without losing the draft, confirming a successful clear, and repeating with a new draft, with no stale error or busy state. This accepts slice 5's ordinary-flow regression checks only: the failure, delayed-completion, failure-retry and enlarged-text cases above keep their synthetic, automated evidence and were not induced on the phone. The dated record, with what it does not claim, is in [`current-status.md`](current-status.md).
+**Installed-iPhone acceptance, reported 3 October 2026.** The ordinary Clear draft flow passed on `0.4.56` (build `439e578`), in English and German: opening Clear draft, cancelling without losing the draft, confirming a successful clear, and repeating with a new draft, with no stale error or busy state. This accepts slice 5's ordinary-flow regression checks only: the failure, delayed-completion, failure-retry and enlarged-text cases above keep their synthetic, automated evidence and were not induced on the phone. The dated record, with what it does not claim, is in [`current-status.md`](../current-status.md).
 
 ## Slice 6 — Delete route pending and failing (D-02) (shipped `0.4.57`, 3 October 2026)
 
-**Approved by the rider on 3 October 2026**, after the [investigation](../design/reveal-inventory/d-02-delete-lifecycle.md): implementation of decisions 4 and 5 in the inventory's [decisions section](../design/reveal-inventory/README.md#decisions--d-06-d-02-d-01-and-c-12-2-october-2026), following the report's recommendation. This is implementation approval, not device acceptance.
+**Approved by the rider on 3 October 2026**, after the [investigation](../../design/reveal-inventory/d-02-delete-lifecycle.md): implementation of decisions 4 and 5 in the inventory's [decisions section](../../design/reveal-inventory/README.md#decisions--d-06-d-02-d-01-and-c-12-2-october-2026), following the report's recommendation. This is implementation approval, not device acceptance.
 
 **The rider's decision, option A** (reported 3 October 2026), for a failure that arrives while the rider's own search or tag filter hides the route: the route stays hidden according to the filter; the failure stays with that route's confirmation; when the route is visible again, its message and recovery actions are shown without taking focus or scrolling; no list-level message or notification is added.
 
@@ -234,11 +234,11 @@ The longest job, shard 4, left 475 s below the E2E jobs' 1,200-second timeout. T
 
 The longest job, shard 4, left 416 s below the E2E jobs' 1,200-second timeout. The deployment served `0.4.57` / `bd688d7`. These are one run's timings, not an established growth trend, and no further sharding change is made or authorised here.
 
-**Installed-iPhone acceptance, reported 3 October 2026.** The ordinary Delete route flow passed on `0.4.57` (build `bd688d7`), in English and German: cancelling Delete preserves the route; confirmed deletion and repeated use work without unexpected page jumps or stale states; and an unconfirmed Delete hidden by Search or a tag filter stays closed when the route returns, with Search typing uninterrupted. This accepts slice 6's ordinary-flow regression checks only: a pending deletion, the synthetic failures, failure recovery and the committed-but-unreconciled state above keep their synthetic, automated evidence and were not induced on the phone, and the Search result is an installed-iPhone typing result, not physical-keyboard evidence. The dated record, with what it does not claim, is in [`current-status.md`](current-status.md).
+**Installed-iPhone acceptance, reported 3 October 2026.** The ordinary Delete route flow passed on `0.4.57` (build `bd688d7`), in English and German: cancelling Delete preserves the route; confirmed deletion and repeated use work without unexpected page jumps or stale states; and an unconfirmed Delete hidden by Search or a tag filter stays closed when the route returns, with Search typing uninterrupted. This accepts slice 6's ordinary-flow regression checks only: a pending deletion, the synthetic failures, failure recovery and the committed-but-unreconciled state above keep their synthetic, automated evidence and were not induced on the phone, and the Search result is an installed-iPhone typing result, not physical-keyboard evidence. The dated record, with what it does not claim, is in [`current-status.md`](../current-status.md).
 
 ## Slice 7 — Edit copy's replacement confirmation, opening (C-12) (shipped `0.4.58`, 3 October 2026)
 
-**Approved by the rider on 2 October 2026** — decision 7 in the inventory's [decisions section](../design/reveal-inventory/README.md#decisions--d-06-d-02-d-01-and-c-12-2-october-2026). It was made the next slice on 3 October 2026, once D-02's ordinary flow had been accepted, and it is C-12's opening only: no other confirmation, and no new cancellation policy.
+**Approved by the rider on 2 October 2026** — decision 7 in the inventory's [decisions section](../../design/reveal-inventory/README.md#decisions--d-06-d-02-d-01-and-c-12-2-october-2026). It was made the next slice on 3 October 2026, once D-02's ordinary flow had been accepted, and it is C-12's opening only: no other confirmation, and no new cancellation policy.
 
 **The rule:**
 
@@ -392,20 +392,20 @@ In that Pause commit App still believes the ride is active, because it learns ot
 
 The longest job, shard 4, left 535 s below the E2E jobs' 1,200-second timeout. The deployment served `0.4.58` / `7e46daf`. These are one run's timings, not an established trend, and no sharding change is made or authorised here.
 
-**Installed-iPhone acceptance, reported 3 October 2026.** The ordinary flows passed on `0.4.58` (build `7e46daf`), in English and German: Edit copy's confirmation fully visible without unwanted movement from the pre-ride, paused and cold-start paused screens; Cancel and reopening preserving the original draft; and Replace and edit opening the route's copy in Plan, the saved route unchanged. This accepts slice 7's ordinary-flow checks only: the enlarged-text geometry, the synthetic inset, the reappearing-confirmation comparison, and pending writes and failures keep their automated evidence and were not induced on the phone. The dated record, with what it does not claim, is in [`current-status.md`](current-status.md).
+**Installed-iPhone acceptance, reported 3 October 2026.** The ordinary flows passed on `0.4.58` (build `7e46daf`), in English and German: Edit copy's confirmation fully visible without unwanted movement from the pre-ride, paused and cold-start paused screens; Cancel and reopening preserving the original draft; and Replace and edit opening the route's copy in Plan, the saved route unchanged. This accepts slice 7's ordinary-flow checks only: the enlarged-text geometry, the synthetic inset, the reappearing-confirmation comparison, and pending writes and failures keep their automated evidence and were not induced on the phone. The dated record, with what it does not claim, is in [`current-status.md`](../current-status.md).
 
 ## Review of the ride confirmations and the remaining inventory (3 October 2026, documentation only — not a slice)
 
-C-07, C-08, C-10, C-11 and C-13 were measured against the rider's approved common opening and cancellation policy, at `7e46daf`, and every remaining inventory entry was reconciled against the dated decisions, shipped slices and acceptance records. The account — method, measurements, verdicts, a proposed slice, noted defects kept apart by evidence level, and a compact list of the decisions still needed — is the [review](../design/reveal-inventory/ride-confirmations-review.md); it is not repeated here.
+C-07, C-08, C-10, C-11 and C-13 were measured against the rider's approved common opening and cancellation policy, at `7e46daf`, and every remaining inventory entry was reconciled against the dated decisions, shipped slices and acceptance records. The account — method, measurements, verdicts, a proposed slice, noted defects kept apart by evidence level, and a compact list of the decisions still needed — is the [review](../../design/reveal-inventory/ride-confirmations-review.md); it is not repeated here.
 
 - **Measured matches:** C-10 and C-13 in every configuration; C-07 and C-08 at ordinary text, with a 25 px overshoot at 200% recommended unchanged.
 - **Measured mismatch:** C-11 — at 200% the opening over-scrolls by 280 px and hides the title, and after the rider scrolls it, Cancel can leave **End ride** hidden under the sticky navigation, at ordinary text too.
 - **Proposed, not selected:** a C-11-only slice reusing slices 1 and 7's mechanisms.
-- **Nothing is implemented, accepted or excluded by the review**, and no device check is added to [`current-status.md`](current-status.md).
+- **Nothing is implemented, accepted or excluded by the review**, and no device check is added to [`current-status.md`](../current-status.md).
 
 ## Decisions recorded on 3 October 2026, evening
 
-**Approved by the rider on 3 October 2026, after the [review](../design/reveal-inventory/ride-confirmations-review.md).** These are product decisions, **not device acceptance**: no new device report came with them, and C-12's acceptance, already recorded, is not repeated.
+**Approved by the rider on 3 October 2026, after the [review](../../design/reveal-inventory/ride-confirmations-review.md).** These are product decisions, **not device acceptance**: no new device report came with them, and C-12's acceptance, already recorded, is not repeated.
 
 1. **C-11 — implement the demonstrated correction next.** End ride's confirmation on the paused route screen gets the opening and cancellation correction the review measured as needed. It is slice 8, below.
 2. **C-07 and C-08 — unchanged.** The launcher confirmations keep their current behaviour. The measured extra 25 px of scrolling at 200% browser text is accepted as a **bounded exception** to strict minimum scrolling, because their content stays readable and their actions accessible. It is not described as exact compliance.
@@ -578,13 +578,13 @@ The remaining inventory dispositions in the review stay **proposals**, not blank
 
 The longest job, shard 4, left 507 s below the E2E jobs' 1,200-second timeout. The deployment served `0.4.59` / `bc4fb11`. These are one run's timings, not an established trend, and no sharding change is made or authorised here.
 
-**Installed-iPhone acceptance, reported 3 October 2026.** The ordinary flows passed on `0.4.59` (build `bc4fb11`), in English and German: opening and cancelling End ride on the in-session and cold-start paused screens, the ride staying paused, reopening, Resume preserving the ride's position and progress, and the scrolled cancellation — End ride returning fully into view with only the necessary adjustment. This accepts slice 8's ordinary-flow checks only: the enlarged-text openings and cancellations, the oversized branches, the held Pause and the anchoring-off survivor keep their automated evidence and were not induced on the phone, and no location-watch count, progress or camera value was measured there. The dated record, with what it does not claim, is in [`current-status.md`](current-status.md). **Next, approved:** the transition-dismissal slice (decision 4 above), which is slice 9, below.
+**Installed-iPhone acceptance, reported 3 October 2026.** The ordinary flows passed on `0.4.59` (build `bc4fb11`), in English and German: opening and cancelling End ride on the in-session and cold-start paused screens, the ride staying paused, reopening, Resume preserving the ride's position and progress, and the scrolled cancellation — End ride returning fully into view with only the necessary adjustment. This accepts slice 8's ordinary-flow checks only: the enlarged-text openings and cancellations, the oversized branches, the held Pause and the anchoring-off survivor keep their automated evidence and were not induced on the phone, and no location-watch count, progress or camera value was measured there. The dated record, with what it does not claim, is in [`current-status.md`](../current-status.md). **Next, approved:** the transition-dismissal slice (decision 4 above), which is slice 9, below.
 
 ## Slice 9 — Confirmations closed by a ride transition (C-10, C-11, C-12) (shipped `0.4.60`, 3 October 2026)
 
 **Approved as decision 4 above.** An unconfirmed ride-screen confirmation closes quietly when **Start riding**, **Resume ride** or **Pause** successfully changes the ride context, and does not reappear when the rider returns to the previous context. It covers the survivors already recorded:
 
-- End ride's confirmation moving between the riding header and the paused screen (C-10 and C-11), measured in the [review](../design/reveal-inventory/ride-confirmations-review.md#transitions-measured);
+- End ride's confirmation moving between the riding header and the paused screen (C-10 and C-11), measured in the [review](../../design/reveal-inventory/ride-confirmations-review.md#transitions-measured);
 - Edit copy's "Replace your current draft?" surviving **Start riding** and reappearing on **Pause** (C-12), recorded in slices 4 and 7.
 
 Unchanged are:
@@ -689,11 +689,11 @@ Unchanged are:
 
 The longest job, shard 4, left 349 s below the E2E jobs' 1,200-second timeout. The deployment served `0.4.60` / `e2ba7cf`. These are one run's timings, not an established trend, and no sharding change is made or authorised here.
 
-**Installed-iPhone acceptance, reported 4 October 2026.** The ordinary flows passed on `0.4.60` (build `e2ba7cf`), in English and German: an unanswered End ride confirmation closing after a successful Pause or Resume ride and staying closed on the return; an unanswered Edit copy confirmation closing on the transition tried and staying closed after Pause — whether that was Start riding or Resume ride was not reported, so neither is claimed separately; deliberate reopening and Cancel; the cold-start paused screen; and the ride, its progress and the Planning draft preserved. This accepts slice 9's ordinary-flow checks only: a held or failed Pause, confirmed operations still running and an immediate location error keep their automated evidence and were not induced on the phone, and no location-watch count, progress or camera value was measured there. The dated record, with what it does not claim, is in [`current-status.md`](current-status.md). **Item 124 stays active** while its remaining inventory is reconciled.
+**Installed-iPhone acceptance, reported 4 October 2026.** The ordinary flows passed on `0.4.60` (build `e2ba7cf`), in English and German: an unanswered End ride confirmation closing after a successful Pause or Resume ride and staying closed on the return; an unanswered Edit copy confirmation closing on the transition tried and staying closed after Pause — whether that was Start riding or Resume ride was not reported, so neither is claimed separately; deliberate reopening and Cancel; the cold-start paused screen; and the ride, its progress and the Planning draft preserved. This accepts slice 9's ordinary-flow checks only: a held or failed Pause, confirmed operations still running and an immediate location error keep their automated evidence and were not induced on the phone, and no location-watch count, progress or camera value was measured there. The dated record, with what it does not claim, is in [`current-status.md`](../current-status.md). **Item 124 stays active** while its remaining inventory is reconciled.
 
 ## Reconciliation of the remaining inventory (4 October 2026, documentation only — not a slice)
 
-After slice 9's acceptance, every inventory entry was given an explicit disposition under the rider's direction of 4 October 2026, and P-18 was measured for the first time. The account — the direction verbatim, P-18's method and measurements, the closure table, the defects and concerns, the follow-up destinations and the decisions still needed — is the [reconciliation](../design/reveal-inventory/closure-reconciliation.md); it is not repeated here.
+After slice 9's acceptance, every inventory entry was given an explicit disposition under the rider's direction of 4 October 2026, and P-18 was measured for the first time. The account — the direction verbatim, P-18's method and measurements, the closure table, the defects and concerns, the follow-up destinations and the decisions still needed — is the [reconciliation](../../design/reveal-inventory/closure-reconciliation.md); it is not repeated here.
 
 - **P-18: a demonstrated problem.** In 22 runs in Chromium and WebKit — English and German, 100% and 200% root text, touch and mouse, from the page's top and from the lowest tappable position — selecting a surface warning on Planning's map left the selected row at the very bottom of the screen, with its "Surface: …" and "Route position: …" details below it. The smallest correction is proposed as slice 10: scroll the row with its details, rather than its button alone. It is **not approved**, and its design choices are listed for the rider.
 - **Approved and proposed retentions are kept apart.** Retentions resting on an acceptance, a dated decision or the direction's points 2 and 3 are approved. P-01 (provisional), the disclosures, the non-candidate messages, P-07's reveal, P-21, P-26, P-29, P-33, C-14's other paths and D-04 are retentions proposed for the rider's confirmation.
@@ -701,12 +701,12 @@ After slice 9's acceptance, every inventory entry was given an explicit disposit
 - **Deferred, not fixed:**
   - items 134 (Resume ride while a confirmed End ride finishes), 135 (focus continuity), 136 (where map- and chart-selected details appear), 137 (export-failure placement) and 138 (copy and comment corrections), all unscheduled;
   - P-17 to item 127, and C-14's button styling to item 103;
-  - two monitoring lines in [`current-status.md`](current-status.md).
+  - two monitoring lines in [`current-status.md`](../current-status.md).
 - **Not closed.** Item 124 closes only once the rider has decided on slice 10, P-01 and the proposed retentions. No implementation, device check or version change came with the reconciliation.
 
 ## Decisions recorded on 4 October 2026
 
-**Approved by the rider on 4 October 2026, after the [reconciliation](../design/reveal-inventory/closure-reconciliation.md).** These are product decisions, **not device acceptance**. The same report carried an installed-iPhone observation of P-01, recorded only in [`current-status.md`](current-status.md#installed-iphone-observation-of-p-01-rename-on-the-last-route-card-item-124-inventory-reported-4-october-2026).
+**Approved by the rider on 4 October 2026, after the [reconciliation](../../design/reveal-inventory/closure-reconciliation.md).** These are product decisions, **not device acceptance**. The same report carried an installed-iPhone observation of P-01, recorded only in [`current-status.md`](../current-status.md#installed-iphone-observation-of-p-01-rename-on-the-last-route-card-item-124-inventory-reported-4-october-2026).
 
 1. **P-18 — the correction is approved, as slice 10.** A warning selected on the Planning map brings its row and its explanatory details into view together.
 2. **Where it comes to rest:** below the sticky navigation and clear of the bottom safe area, with a small margin consistent with the app's existing reveal behaviour.
@@ -717,11 +717,11 @@ After slice 9's acceptance, every inventory entry was given an explicit disposit
 7. **The reconciliation's other proposed retentions are approved**, excluding P-01 and P-18, which remain unresolved:
    - the disclosures P-08 to P-14, P-16, P-20, P-27 and P-28;
    - the messages and overlays P-05, P-22, P-23, P-25, P-31, P-32, P-34 and P-35;
-   - P-07's reveal, P-21 and P-26 (no automatic scroll; the cue stays with [item 136](backlog.md#item-136)), P-29 and P-33;
+   - P-07's reveal, P-21 and P-26 (no automatic scroll; the cue stays with [item 136](../backlog.md#item-136)), P-29 and P-33;
    - C-14's other entry paths;
    - D-04.
 
-   This approves retaining their behaviour under item 124. It is **not new device acceptance**, and their deferred focus questions stay with [item 135](backlog.md#item-135).
+   This approves retaining their behaviour under item 124. It is **not new device acceptance**, and their deferred focus questions stay with [item 135](../backlog.md#item-135).
 
 8. **P-15 is measured before closure**, with a mocked provider.
 9. **The two source-only concerns** — where a failed End ride's message appears, and what happens to the launcher's open confirmation when its session is re-read — are resolved through a narrow check or an explicit proposed deferral.
@@ -730,7 +730,7 @@ After slice 9's acceptance, every inventory entry was given an explicit disposit
 
 ## Slice 10 — A warning selected on Planning's map, revealed with its details (P-18) (shipped `0.4.61`, 4 October 2026)
 
-**Approved by the rider on 4 October 2026** as decisions 1 to 6 above, after the [reconciliation](../design/reveal-inventory/closure-reconciliation.md#p-18--a-surface-warning-selected-on-plannings-map) measured the defect. This is implementation approval, not device acceptance.
+**Approved by the rider on 4 October 2026** as decisions 1 to 6 above, after the [reconciliation](../../design/reveal-inventory/closure-reconciliation.md#p-18--a-surface-warning-selected-on-plannings-map) measured the defect. This is implementation approval, not device acceptance.
 
 **The defect.** Selecting a surface warning on the map scrolled only its row's button into view (`scrollIntoView({ block: "nearest" })`). The row stopped flush with the screen's bottom edge, and the "Surface: …" and "Route position: …" lines the selection had opened stayed below the screen, in both engines, both languages and both text sizes.
 
@@ -875,7 +875,7 @@ Positions are rounded to the pixel; every bottom edge was within 0.5 px of the b
 
 ## Close-out investigations (4 October 2026, documentation only — not a slice)
 
-With slice 10, P-01, P-15 and the two source-only concerns were investigated in desktop Chromium and WebKit, on the `0.4.61` build. The account — method, measurements, what each establishes and does not, and the options — is in the [reconciliation](../design/reveal-inventory/closure-reconciliation.md#close-out-investigations-4-october-2026); it is not repeated here. **Nothing was fixed, and each disposition awaits the rider.**
+With slice 10, P-01, P-15 and the two source-only concerns were investigated in desktop Chromium and WebKit, on the `0.4.61` build. The account — method, measurements, what each establishes and does not, and the options — is in the [reconciliation](../../design/reveal-inventory/closure-reconciliation.md#close-out-investigations-4-october-2026); it is not repeated here. **Nothing was fixed, and each disposition awaits the rider.**
 
 - **P-01:** not reproduced in desktop engines, where the last card's field is on screen. The last card leaves no scroll room below, where a middle card leaves 990 px: consistent with the device observation if the keyboard covered the field, but not established. Recommended: defer to item 135; the alternative is a device-verified slice.
 - **P-15:** with the button low on the screen, the result appears wholly below it in every case; nothing moves. Recommended: a bounded correction, as a further slice; the alternative is retention.
@@ -900,7 +900,7 @@ This accepts slice 10's ordinary-flow checks only.
 - **The accepted build stays `ae76f98`** after later deployments.
 - **Automated evidence, separate from the device acceptance:** the synthetic provider, the stand-in viewports and the [repair note](#slice-10-repair-note--the-end-to-end-test-that-failed-ci-4-october-2026-test-only)'s corrected timing evidence.
 
-The dated record, with the rider's words, is in [`current-status.md`](current-status.md#installed-iphone-acceptance-of-0461-build-ae76f98-item-124-slice-10-p-18-reported-4-october-2026).
+The dated record, with the rider's words, is in [`current-status.md`](../current-status.md#installed-iphone-acceptance-of-0461-build-ae76f98-item-124-slice-10-p-18-reported-4-october-2026).
 
 **CI and deployment.** Run [37215419294](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37215419294), for commit `ae76f98`: **Verify and build, all four End-to-end shards and Deploy succeeded, each on its first attempt.** The durations come from the run's own job and step start and completion times, read once after the run and kept locally as saved job data. Verify and build's test step is its unit and component tests; each shard's is its end-to-end suite.
 
@@ -917,7 +917,7 @@ The longest job, shard 4, left 343 s below the E2E jobs' 1,200-second timeout. T
 
 **The rider's dispositions, 4 October 2026.** These were given with the acceptance ("I agree with you recommendations otherwise"), together with the rider's further directions and two answers the same day. They are product decisions, **not device acceptance**, and continue the numbering of the [decisions recorded earlier that day](#decisions-recorded-on-4-october-2026).
 
-10. **P-01 — deferred to [item 135](backlog.md#item-135).** The rider's [device observation](current-status.md#installed-iphone-observation-of-p-01-rename-on-the-last-route-card-item-124-inventory-reported-4-october-2026) stays recorded: on the last route card, Rename's focused field did not come into view, though scrolling brought it into view and Save and Cancel stayed reachable. So does its [desktop non-reproduction](../design/reveal-inventory/closure-reconciliation.md#p-01--rename-on-the-last-route-card): there, the last card's field is on screen, with 0 px of scroll room below, against a middle card's 990 px. The keyboard mechanism is unresolved. **Deferral is neither acceptance nor a fix.**
+10. **P-01 — deferred to [item 135](../backlog.md#item-135).** The rider's [device observation](../current-status.md#installed-iphone-observation-of-p-01-rename-on-the-last-route-card-item-124-inventory-reported-4-october-2026) stays recorded: on the last route card, Rename's focused field did not come into view, though scrolling brought it into view and Save and Cancel stayed reachable. So does its [desktop non-reproduction](../../design/reveal-inventory/closure-reconciliation.md#p-01--rename-on-the-last-route-card): there, the last card's field is on screen, with 0 px of scroll room below, against a middle card's 990 px. The keyboard mechanism is unresolved. **Deferral is neither acceptance nor a fix.**
 11. **P-01's desktop action-row clipping — deferred with it, as a separate finding**, by the rider's answer the same day.
     - **The finding:** on a middle card, the opened editor's Save and Cancel row ends 21 px below the usable band, about 13 px beyond the viewport's edge. It was measured on 1 October and reproduced on 4 October, in desktop engines only, with no software keyboard.
     - **Kept distinct:** it concerns partly clipped actions, whereas the device observation concerns the last card's focused field.
@@ -933,16 +933,16 @@ The longest job, shard 4, left 343 s below the E2E jobs' 1,200-second timeout. T
     - **Once per completion:** one reveal per eligible completion; rerenders never restart it, and each later deliberate attempt gets a fresh eligibility decision.
     - **Hidden document, by the rider's further answer:** the document becoming hidden while a test is in flight — switching apps or locking the phone — also counts as moving on, for that attempt. Returning does not re-enable it, and the request and its result are neither cancelled nor suppressed.
     - **Focus questions** stay with item 135.
-13. **A failed End ride's message — filed as [item 139](backlog.md#item-139)**, a separate, unscheduled presentation defect. No fix comes with slice 11.
-14. **The stale launcher confirmation — filed as [item 140](backlog.md#item-140)**, a separate, unscheduled correctness item. No priority is assigned, and the execution order is unchanged.
+13. **A failed End ride's message — filed as [item 139](../backlog.md#item-139)**, a separate, unscheduled presentation defect. No fix comes with slice 11.
+14. **The stale launcher confirmation — filed as [item 140](../backlog.md#item-140)**, a separate, unscheduled correctness item. No priority is assigned, and the execution order is unchanged.
 
-**Where item 124 stands.** Slice 11, P-15, is the next and only approved slice. Every other inventory entry now has a disposition ([reconciliation](../design/reveal-inventory/closure-reconciliation.md#dispositions-after-slice-10s-acceptance-4-october-2026)), and item 124 stays active until slice 11's installed-iPhone acceptance. Item 122's design stage has not started.
+**Where item 124 stands.** Slice 11, P-15, is the next and only approved slice. Every other inventory entry now has a disposition ([reconciliation](../../design/reveal-inventory/closure-reconciliation.md#dispositions-after-slice-10s-acceptance-4-october-2026)), and item 124 stays active until slice 11's installed-iPhone acceptance. Item 122's design stage has not started.
 
 ## Slice 11 — The routing-connection result revealed (P-15) (shipped `0.4.62`, 4 October 2026)
 
 **Approved by the rider on 4 October 2026** as [decision 12](#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice), with the rider's further answer that an app hidden while a test runs counts as having moved on. This is implementation approval, not device acceptance.
 
-**The defect,** measured in the [close-out investigation](../design/reveal-inventory/closure-reconciliation.md#p-15--the-routing-connection-result): with **Test routing connection** low on Status, its result line, the grid below it and **Copy diagnostic report** appeared wholly below the screen, in both engines and both languages, for success and every failure. Nothing moved; the only visible change was the button's label returning.
+**The defect,** measured in the [close-out investigation](../../design/reveal-inventory/closure-reconciliation.md#p-15--the-routing-connection-result): with **Test routing connection** low on Status, its result line, the grid below it and **Copy diagnostic report** appeared wholly below the screen, in both engines and both languages, for success and every failure. Nothing moved; the only visible change was the button's label returning.
 
 **What the rider gets.**
 
@@ -1076,4 +1076,6 @@ Control (d)'s first build failed — removing the cushion left its imports unuse
 - **A finger scrolling during the movement** was not tested, by the rider's instruction not to repeat slice 10's experiment; what iOS does then is its own scrolling.
 - **No VoiceOver, physical-keyboard, landscape or physical-Android result.**
 
-**The installed-iPhone check is Session 5 of [`current-status.md`](current-status.md).** It uses the key already saved on the phone, and it neither invalidates the key nor induces errors or slow requests. **Item 124 stays active until that check:** its ordinary flows still need device acceptance, while the delayed-request, failure, leave and hidden-app cases keep the automated evidence above.
+**The installed-iPhone check is Session 5 of [`current-status.md`](../current-status.md).** It uses the key already saved on the phone, and it neither invalidates the key nor induces errors or slow requests. **Item 124 stays active until that check:** its ordinary flows still need device acceptance, while the delayed-request, failure, leave and hidden-app cases keep the automated evidence above.
+
+**Slice 11's acceptance, its CI run and item 124's closure**, all on 4 October 2026, are recorded in the entry's [closure section](item-124.md#closure-4-october-2026).
