@@ -727,3 +727,105 @@ After slice 9's acceptance, every inventory entry was given an explicit disposit
 9. **The two source-only concerns** — where a failed End ride's message appears, and what happens to the launcher's open confirmation when its session is re-read — are resolved through a narrow check or an explicit proposed deferral.
 
 **P-01 stays unresolved** until its disposition is agreed. The device observation shows the focused field out of view on the last route card, which the reconciliation's provisional recommendation did not consider; a bounded browser reproduction accompanies slice 10. **Item 124 stays active**: implementing P-18 does not by itself close it.
+
+## Slice 10 — A warning selected on Planning's map, revealed with its details (P-18) (shipped `0.4.61`, 4 October 2026)
+
+**Approved by the rider on 4 October 2026** as decisions 1 to 6 above, after the [reconciliation](../design/reveal-inventory/closure-reconciliation.md#p-18--a-surface-warning-selected-on-plannings-map) measured the defect. This is implementation approval, not device acceptance.
+
+**The defect.** Selecting a surface warning on the map scrolled only its row's button into view (`scrollIntoView({ block: "nearest" })`). The row stopped flush with the screen's bottom edge, and the "Surface: …" and "Route position: …" lines the selection had opened stayed below the screen, in both engines, both languages and both text sizes.
+
+**What the rider gets.**
+
+- **A warning tapped or clicked on the map** brings its whole row — the button and the details it opens — into view together: below the sticky navigation plus 8 px, and above the visible screen's bottom less the safe-area inset plus 8 px.
+- **Only as far as needed.** Nothing moves when the row and details already fit. Otherwise the page moves the minimum; arriving from below, as a map selection always does, the details come to rest 8 px above the bottom inset.
+- **Taller than that band:** its beginning comes to rest 8 px below the navigation, so the label and the start of the explanation show, and the rider scrolls on for the rest.
+- **Motion:** smooth under ordinary motion preferences, instant with reduced motion.
+- **Once per map selection.** The movement is computed once and never repeated. A later, deliberate map selection reveals the newly selected warning.
+- **Unchanged:**
+  - a selection from the list, which still does not scroll;
+  - the selection itself, the map's highlight and framing, the "Selected warning: …" announcement and focus;
+  - **Clear warning selection**, which is not brought into view (decision 6);
+  - waypoint placement, route calculation and every confirmation's reveal.
+- **One side effect, intended:** a warning row without details, such as an access or ferry warning, is revealed by the same rule, so it now stops 8 px plus the inset above the bottom rather than flush.
+
+**Mechanism.**
+
+- **New `src/ui/planning/warningReveal.ts`.** `revealSelectedWarning` measures the selected item, reads the visual viewport as the other reveals do, and takes its delta from `routeCardTopReveal.ts`'s `computeTopRevealScrollDelta`, **unchanged**. It passes that function a visible bottom already reduced by `readSafeAreaInsetBottomPx()` plus `REVEAL_GAP_PX`, both from `confirmationRevealScroll.ts`.
+  - That function is top-prioritising, which is exactly decisions 4 and 5. The confirmations' `computeConfirmationRevealDelta` would have been wrong here: it anchors an oversized item's bottom, which would hide the label.
+  - One `window.scrollBy`, smooth unless reduced motion is set, with `left: 0`. An item with no laid-out box returns 0, as the confirmation helper does.
+- **`RouteSummaryPanel.tsx`.** The reveal ref moves from the selected button to its `<li>`. The existing one-shot effect, keyed on the token that only map selections bump (a repeat tap included), calls the reveal with the sticky navigation's bottom, from a new optional `stickyHeaderRef` prop that `PlanningScreen` passes.
+  - It stays a passive effect. The selection's own commit also collapses any route-feature panel and adds the 35 px "Clear the selected warning…" message below the map, both above the list, and the effect measures after them.
+- **No accepted helper changes its code.** `routeCardTopReveal.ts` gains only a comment naming the new caller.
+- **Files:**
+  - **source:** `src/ui/planning/warningReveal.ts` (new), `src/ui/planning/RouteSummaryPanel.tsx`, `src/ui/planning/PlanningScreen.tsx` (one prop), `src/ui/library/routeCardTopReveal.ts` (a comment);
+  - **version:** `0.4.61`;
+  - **tests:** `src/ui/planning/warningReveal.test.ts` (new), `src/ui/planning/RouteSummaryPanel.test.tsx`, `src/ui/planning/PlanningScreen.test.tsx`, `e2e/planningWarningMapReveal.smoke.spec.ts` (new).
+
+**Evidence — automated only.**
+
+- **Unit and component.** The full suite passes: 4,945 tests in 209 files, 14 more than `0.4.60` and one new file.
+  - `warningReveal.test.ts` (new, 12 cases): no movement when the item fits; the minimum from below and from above; an oversized item aligned below the navigation from below and from above, and left alone once aligned; sub-pixel tolerance; the synthetic 34 px inset; no navigation; no laid-out box; smooth and reduced-motion behaviour.
+  - `RouteSummaryPanel.test.tsx`: the map-originated cases now stub the geometry, the selected item below the band with its button inside it, so a reveal that measured only the button would move nothing, and every "does not scroll" case is non-vacuous. New cases: an oversized item and the navigation's bottom; an item that already fits.
+  - `PlanningScreen.test.tsx`: the map-to-list cases count the reveals — one per map selection, a repeat tap included, none from the list — and the now-unused `scrollIntoView` stub in the route-feature cases is gone.
+- **Browser, in the CI image by digest, at 390×844 portrait unless stated.** `e2e/planningWarningMapReveal.smoke.spec.ts` (new): 13 tests in Chromium and 9 in WebKit.
+  - **The path is the real interface.** Two waypoints placed by mouse; **Calculate route**; then a real touch tap — one case a mouse click — on the painted warning, located from the two waypoint markers and checked to hit the map canvas.
+  - **Synthetic:** the provider is answered locally with a straight line between the requested waypoints and three surface warnings; the 34 px bottom inset is the documented `--safe-area-inset-bottom` seam; the short (390×460) and tall (390×1900) viewports are geometry stand-ins.
+  - **[behaviour] assertions** are geometry measured in the page against the band, focus, the selection, the announcement and the waypoints; **[implementation] assertions** are the app's scroll calls, recorded by an init script.
+  - **Both engines:** English and German at 100% and 200% root text, default and reduced motion; the synthetic inset; the lowest tappable start; the oversized item; a second warning selected after zooming out; and scrolling during the movement.
+  - **Chromium only, as guards:** a mouse click; an item that already fits; a selection from the list; placement after **Clear warning selection**.
+  - **Results:** 22 of 22, then 66 of 66 over three repeats.
+- **Measured, the same in both engines:**
+
+| Configuration                            | Page moved, unchanged build (px) | Page moved, `0.4.61` (px) | Row and details after (viewport px) | Band (px) |
+| ---------------------------------------- | -------------------------------: | ------------------------: | ----------------------------------- | --------- |
+| English 100%                             |                              858 |                       914 | 744–836                             | 75–836    |
+| German 100%                              |                              969 |                     1,025 | 744–836                             | 75–836    |
+| English 200%                             |                            2,192 |                     2,389 | 541–836                             | 91–836    |
+| German 200%                              |                            3,020 |                     3,261 | 453–836                             | 122–836   |
+| English 100%, 34 px inset (synthetic)    |                              858 |                       948 | 710–802                             | 75–802    |
+| German 200% at 390×460, oversized (syn.) |                            3,304 |                     3,492 | 122–505: row and first line shown   | 122–452   |
+
+Positions are rounded to the pixel; every bottom edge was within 0.5 px of the band's. On the unchanged build the row ended at the screen's bottom edge (844 px) and both detail lines were below it in every row of the table; in the oversized case the row ended at the viewport's bottom (460 px) with both lines below.
+
+- **Scrolling during the movement**, the rider's refinement. The rider's wheel was dispatched once the smooth movement had visibly started and before it finished.
+  - **The app:** its one smooth call came before the wheel in every run, and it made no call afterwards; the page then stayed where it came to rest for the 2.2 s observed. Planning re-renders every second, and nothing re-issued the reveal.
+  - **The engines, native behaviour:** headless WebKit applied the wheel once its own animation had finished (914 px, then 614). Headless Chromium did not apply a wheel that arrived during the animation, early or late, and finished at 914; the same wheel at rest scrolled normally. The unchanged build's smooth `scrollIntoView` behaved identically in both engines (Chromium ignored wheels at 190 and 509 px and finished at 858; WebKit went on to 558). This is the engines' own smooth scrolling, not a repositioning by the app, so no cancellation machinery was added.
+  - **Touch was not reproduced:** Chromium's synthesized touch-scroll gesture moved nothing even at rest, so it was discarded, and nothing is claimed about a finger scrolling during the movement.
+- **A selection from the list**, measured: it adds no scroll call, and the row stays where it was tapped. The selection also adds the 35 px "Clear the selected warning…" message above the list; scroll anchoring absorbs it, in Chromium and WebKit alike, and with anchoring switched off the row moved down 35 px instead. That is existing behaviour, unchanged here.
+- **The full browser suite, once, at 8 workers:** 1,032 passed and 4 skipped — the new spec's Chromium-only guards under WebKit — in both engines and the `android-chrome` project.
+- **Baseline: the unchanged application source** (`81dcd07`, identical to `e2ba7cf` apart from documentation), with the new spec and tests.
+  - **Browser:** 20 of the 22 runs fail.
+    - **17 fail on visible behaviour:** the four language and text-size configurations, the inset, the lowest tappable start, the oversized item and the second selection in both engines, and the mouse click — each because "Surface: …" or "Route position: …" is below the screen, or, oversized, because the row sits at the viewport's bottom with both lines below it.
+    - **3 fail on implementation only:** the already-fitting item in Chromium, where the old code's `scrollIntoView` call moved nothing, and the scrolling-during-movement case in both engines, whose precondition reads the reveal's one smooth `scrollBy`.
+    - **2 pass, as guards:** the list selection and placement.
+  - **Unit:** 19 of the 199 tests in the three files fail, all on implementation: the old code calls `scrollIntoView`, which jsdom lacks, so the call throws. None of them is visible-behaviour evidence.
+- **Negative controls**, each applied alone to `warningReveal.ts`, built for the browser runs, and restored byte-for-byte (SHA-256):
+
+| Control | What it changes                        | Unit failures                                   | Browser failures                                                                                   |
+| ------- | -------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| (a)     | no bottom cushion (inset and 8 px gap) | 6 — the geometry cases and the panel's minimum  | 15 on behaviour — every case arriving from below, both engines; the oversized and guard cases pass |
+| (b)     | the sticky navigation's bottom ignored | 5 — the oversized and from-above geometry cases | 2 on behaviour — the oversized case, both engines: the only case a map tap can reach from above    |
+
+**Findings worth carrying forward.**
+
+- **The top-prioritising geometry already existed.** Reusing `computeTopRevealScrollDelta` with a reduced visible bottom gives decisions 4 and 5 exactly, with no accepted helper changed. The confirmations' helper anchors an oversized item's bottom and would have hidden the label.
+- **A smooth programmatic scroll and the rider's own input are the engine's business.** Desktop Chromium dropped a wheel during the movement, before and after this slice alike, and desktop WebKit applied it afterwards. The app's part — one call, never repeated — is what the tests assert.
+- **Selecting a warning frames it on the map**, so a second warning is usually off the map until the rider zooms out; the test does so with the map's own control. After zooming out, the warnings are short on screen, and a tap must stay clear of an adjoining warning within the map's ±14 px hit box.
+- **"Nothing moved" after a list selection is judged by the row's place on screen**, not by `scrollY`, which scroll anchoring changes by the 35 px message.
+
+**Limitations, stated plainly.**
+
+- **Desktop engines, not iOS Safari.** The 34 px inset is synthetic, browser root-text scaling is not iOS Larger Text, and the short and tall viewports are stand-ins.
+- **The route is a synthetic fixture**, with three warnings in a straight line. Real routes can have many warnings, which lengthens the list, but the rule does not depend on the item's place in it.
+- **A finger scrolling during the movement** was not reproduced; what iOS does then is its own scrolling.
+- **No VoiceOver, physical-keyboard, landscape or physical-Android result.**
+
+## Close-out investigations (4 October 2026, documentation only — not a slice)
+
+With slice 10, P-01, P-15 and the two source-only concerns were investigated in desktop Chromium and WebKit, on the `0.4.61` build. The account — method, measurements, what each establishes and does not, and the options — is in the [reconciliation](../design/reveal-inventory/closure-reconciliation.md#close-out-investigations-4-october-2026); it is not repeated here. **Nothing was fixed, and each disposition awaits the rider.**
+
+- **P-01:** not reproduced in desktop engines, where the last card's field is on screen. The last card leaves no scroll room below, where a middle card leaves 990 px: consistent with the device observation if the keyboard covered the field, but not established. Recommended: defer to item 135; the alternative is a device-verified slice.
+- **P-15:** with the button low on the screen, the result appears wholly below it in every case; nothing moves. Recommended: a bounded correction, as a further slice; the alternative is retention.
+- **A failed End ride's message**, with a synthetic failure: clipped at the screen's edge in the riding header — 55% visible in English, 36% in German. Recommended: a new unscheduled item.
+- **The launcher's confirmation**, in two browser tabs only: no re-read happens, and confirming a stale launcher confirmation ended the other tab's newer session. Not reachable in the installed single-window PWA. Recommended: a new, low-priority item.
+- **Item 124 stays active** until P-18's device check and these decisions.

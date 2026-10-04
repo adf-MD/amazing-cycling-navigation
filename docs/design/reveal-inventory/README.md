@@ -38,6 +38,8 @@
 
 **Update (4 October 2026, evening): the rider's decisions.** P-18's correction is approved as slice 10; the other proposed retentions are approved except P-01, which an installed-iPhone observation the same day left unresolved; P-15 is to be measured with a mocked provider ([decisions](../../project/backlog-item-124-continued.md#decisions-recorded-on-4-october-2026)). These are decisions, not device acceptance; the reconciliation's tables carry them, and the sections below keep their original text.
 
+**Update (4 October 2026, later): slice 10 shipped, and the close-out investigations.** P-18's correction shipped in `0.4.61`, its installed-iPhone check pending. P-01, P-15, a failed End ride's message and the launcher's confirmation after a re-read were then investigated, documentation only; each disposition awaits the rider ([reconciliation](closure-reconciliation.md#close-out-investigations-4-october-2026)). Item 124 is not closed.
+
 **What this is.** Every confirmation in the app, every expanding card, form, editor and disclosure that could reasonably fall under the rider's "pop-up cards" request, and the conditional and failure states that change what would need revealing — each with a stable review ID, its labels in English and German, how to reach it, what it does today, where that is in the source and tests, what was measured, and a recommendation.
 
 **The rule under review** ([item 124](../../project/backlog.md#item-124)): no movement when the newly opened content fits between the sticky navigation and the bottom safe area; otherwise only enough to reveal it; and when it cannot fit, only enough to show its complete action row. On Cancel and Escape: keep the page where the rider has left it, moving only as far as needed to reveal the opening control.
@@ -834,3 +836,5 @@ The rider's report from the installed iPhone — `0.4.57` (build `bd688d7`), Eng
 **Evening, 3 October 2026:** those three decisions were taken, and C-07/C-08's 25 px accepted as a bounded exception ([decisions](../../project/backlog-item-124-continued.md#decisions-recorded-on-3-october-2026-evening)); C-11's correction shipped in `0.4.59` (slice 8), its device check pending. **Next:** the approved transition-dismissal slice. The remaining entries still need review or disposition.
 
 **4 October 2026:** slice 9 was accepted on the installed iPhone, and every remaining entry was given a disposition in the [reconciliation](closure-reconciliation.md). **Next:** the rider's decisions on P-18's proposed slice 10, P-01 and the proposed retentions. Item 124 is not closed.
+
+**4 October 2026, later:** the rider approved slice 10 and the proposed retentions except P-01; slice 10 shipped in `0.4.61`; and P-01, P-15 and the two source-only concerns were investigated. **Next:** P-18's installed-iPhone check and the rider's [decisions still needed](closure-reconciliation.md#decisions-still-needed-after-slice-10). Item 124 is not closed.

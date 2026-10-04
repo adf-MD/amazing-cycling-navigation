@@ -2558,6 +2558,7 @@ export function PlanningScreen({
           onSelectWarning={handleSelectWarning}
           onClearWarningSelection={handleClearWarningSelection}
           revealToken={warningRevealToken}
+          stickyHeaderRef={stickyHeaderRef}
           gradientSegments={microDetailSegments}
           displayPoints={elevationDisplayPoints}
           routeFeatures={routeFeatures}

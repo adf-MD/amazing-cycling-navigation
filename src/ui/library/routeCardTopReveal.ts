@@ -20,6 +20,11 @@ export const TOP_REVEAL_TOLERANCE_PX = 1;
  * ever guarantees the band's own TOP is clear, never sacrificing it to try
  * to also show the band's bottom. Returns 0 (no scroll needed) when the
  * band is already suitably placed, within TOP_REVEAL_TOLERANCE_PX.
+ *
+ * Also called directly, unchanged, by Planning's map-selected warning
+ * reveal (src/ui/planning/warningReveal.ts, backlog item 124 slice 10),
+ * which passes a visible bottom already reduced by the safe-area inset
+ * and an 8px gap and performs its own single scroll.
  */
 export function computeTopRevealScrollDelta(
   topBandRect: { top: number; bottom: number },

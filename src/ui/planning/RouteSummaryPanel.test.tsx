@@ -340,74 +340,129 @@ describe("RouteSummaryPanel", () => {
   });
 
   describe("map-originated reveal", () => {
-    let scrollIntoViewSpy: ReturnType<
-      typeof vi.fn<(options?: boolean | ScrollIntoViewOptions) => void>
-    >;
-    // Saved only to restore afterwards, never called unbound.
+    // Backlog item 124, slice 10 (P-18): a map-originated selection brings
+    // the selected warning's whole list item — its row and the details it
+    // opens — into the usable band, through one window.scrollBy. jsdom has
+    // no layout, so the geometry is stubbed: a 60px header, and the
+    // selected item at 700..800 against jsdom's 768px viewport, whose band
+    // is 68..760 — its button visible, its details not, as the old
+    // button-only reveal left them. Every "does not scroll" case keeps that
+    // off-screen stub in place, so it cannot pass merely because jsdom
+    // reports empty boxes. Real-browser geometry is proved in
+    // e2e/planningWarningMapReveal.smoke.spec.ts.
     // eslint-disable-next-line @typescript-eslint/unbound-method
-    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalScrollBy = window.scrollBy;
     // eslint-disable-next-line @typescript-eslint/unbound-method
     const originalMatchMedia = window.matchMedia;
+    let scrolls: ScrollToOptions[];
+    let geometry: {
+      header: { top: number; bottom: number };
+      item: { top: number; bottom: number };
+      button: { top: number; bottom: number };
+    };
+    // One stable ref object per test, as App's is: a new object on every
+    // render would re-run the reveal effect's non-reveal branch.
+    let headerRef: { current: HTMLElement | null };
+
+    function rect(top: number, bottom: number): DOMRect {
+      return {
+        top,
+        bottom,
+        left: 0,
+        right: 358,
+        width: 358,
+        height: bottom - top,
+        x: 0,
+        y: top,
+        toJSON: () => "",
+      };
+    }
 
     beforeEach(() => {
-      scrollIntoViewSpy = vi.fn();
-      // jsdom doesn't implement scrollIntoView at all.
-      Element.prototype.scrollIntoView = scrollIntoViewSpy;
+      scrolls = [];
+      geometry = {
+        header: { top: 0, bottom: 60 },
+        item: { top: 700, bottom: 800 },
+        button: { top: 700, bottom: 744 },
+      };
+      const header = document.createElement("header");
+      document.body.appendChild(header);
+      headerRef = { current: header };
+      Element.prototype.getBoundingClientRect = function (this: Element) {
+        if (this.tagName === "HEADER") {
+          return rect(geometry.header.top, geometry.header.bottom);
+        }
+        if (this.tagName === "LI" && this.closest(".route-warning-list") !== null) {
+          return rect(geometry.item.top, geometry.item.bottom);
+        }
+        if (this.classList.contains("route-warning-button")) {
+          return rect(geometry.button.top, geometry.button.bottom);
+        }
+        return rect(0, 0);
+      };
+      window.scrollBy = (options?: ScrollToOptions | number) => {
+        if (typeof options === "object") scrolls.push(options);
+      };
     });
 
     afterEach(() => {
-      Element.prototype.scrollIntoView = originalScrollIntoView;
+      Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+      window.scrollBy = originalScrollBy;
       window.matchMedia = originalMatchMedia;
+      headerRef.current?.remove();
       vi.unstubAllGlobals();
     });
 
-    it("scrolls the selected button into view when revealToken increments", () => {
-      const { rerender } = render(
+    function panel(selectedWarningIndex: number | null, revealToken: number) {
+      return (
         <RouteSummaryPanel
           route={buildRoute()}
           waypointCount={2}
           warnings={WARNINGS}
-          selectedWarningIndex={1}
+          selectedWarningIndex={selectedWarningIndex}
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
-          revealToken={0}
+          revealToken={revealToken}
+          stickyHeaderRef={headerRef}
           gradientSegments={[]}
-        />,
+        />
       );
-      expect(scrollIntoViewSpy).not.toHaveBeenCalled();
+    }
 
-      rerender(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={1}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={1}
-          gradientSegments={[]}
-        />,
-      );
+    it("brings the selected warning's row and details into view when revealToken increments", () => {
+      const { rerender } = render(panel(1, 0));
+      expect(scrolls).toEqual([]);
 
-      expect(scrollIntoViewSpy).toHaveBeenCalledOnce();
-      expect(scrollIntoViewSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ block: "nearest" }),
-      );
+      rerender(panel(1, 1));
+
+      // 800 - 760: the item's bottom to the band's bottom, no further. The
+      // button alone (700..744) is already inside the band, so a reveal
+      // that measured only the button, as before, would move nothing.
+      expect(scrolls).toEqual([{ top: 40, left: 0, behavior: "smooth" }]);
+    });
+
+    it("keeps the beginning of an item taller than the band below the sticky navigation", () => {
+      geometry.header = { top: 0, bottom: 100 };
+      geometry.item = { top: 500, bottom: 1400 };
+
+      render(panel(1, 0)).rerender(panel(1, 1));
+
+      // 500 - (100 + 8): its top aligned 8px below the header.
+      expect(scrolls).toEqual([{ top: 392, left: 0, behavior: "smooth" }]);
+    });
+
+    it("does not scroll when the item already fits", () => {
+      geometry.item = { top: 300, bottom: 400 };
+
+      render(panel(1, 0)).rerender(panel(1, 1));
+
+      expect(scrolls).toEqual([]);
     });
 
     it("does not scroll when revealToken is unchanged across a rerender", () => {
-      const { rerender } = render(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={1}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={0}
-          gradientSegments={[]}
-        />,
-      );
+      const { rerender } = render(panel(1, 0));
 
       rerender(
         <RouteSummaryPanel
@@ -418,83 +473,27 @@ describe("RouteSummaryPanel", () => {
           onSelectWarning={vi.fn()}
           onClearWarningSelection={vi.fn()}
           revealToken={0}
+          stickyHeaderRef={headerRef}
           gradientSegments={[]}
         />,
       );
 
-      expect(scrollIntoViewSpy).not.toHaveBeenCalled();
+      expect(scrolls).toEqual([]);
     });
 
     it("does not scroll when selectedWarningIndex is null even if revealToken changed", () => {
-      const { rerender } = render(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={null}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={0}
-          gradientSegments={[]}
-        />,
-      );
+      render(panel(null, 0)).rerender(panel(null, 1));
 
-      rerender(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={null}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={1}
-          gradientSegments={[]}
-        />,
-      );
-
-      expect(scrollIntoViewSpy).not.toHaveBeenCalled();
+      expect(scrolls).toEqual([]);
     });
 
     it("scrolls again on a second revealToken increment even when selectedWarningIndex didn't change (repeat tap)", () => {
-      const { rerender } = render(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={1}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={0}
-          gradientSegments={[]}
-        />,
-      );
+      const { rerender } = render(panel(1, 0));
 
-      rerender(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={1}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={1}
-          gradientSegments={[]}
-        />,
-      );
-      rerender(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={1}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={2}
-          gradientSegments={[]}
-        />,
-      );
+      rerender(panel(1, 1));
+      rerender(panel(1, 2));
 
-      expect(scrollIntoViewSpy).toHaveBeenCalledTimes(2);
+      expect(scrolls).toHaveLength(2);
     });
 
     it("uses non-animated scrolling when prefers-reduced-motion is set", () => {
@@ -505,125 +504,31 @@ describe("RouteSummaryPanel", () => {
       window.matchMedia = ((query: string) => ({
         matches: query === "(prefers-reduced-motion: reduce)",
       })) as typeof window.matchMedia;
-      const { rerender } = render(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={1}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={0}
-          gradientSegments={[]}
-        />,
-      );
 
-      rerender(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={1}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={1}
-          gradientSegments={[]}
-        />,
-      );
+      render(panel(1, 0)).rerender(panel(1, 1));
 
-      expect(scrollIntoViewSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ behavior: "auto" }),
-      );
+      expect(scrolls).toEqual([{ top: 40, left: 0, behavior: "auto" }]);
     });
 
     it("never moves keyboard focus when revealing", () => {
-      const { rerender } = render(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={1}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={0}
-          gradientSegments={[]}
-        />,
-      );
+      render(panel(1, 0)).rerender(panel(1, 1));
 
-      rerender(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={1}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={1}
-          gradientSegments={[]}
-        />,
-      );
-
+      expect(scrolls).toHaveLength(1);
       expect(document.activeElement).toBe(document.body);
     });
 
     it("still identifies the selected button via aria-pressed under the reveal path", () => {
-      const { rerender } = render(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={1}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={0}
-          gradientSegments={[]}
-        />,
-      );
-
-      rerender(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={1}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={1}
-          gradientSegments={[]}
-        />,
-      );
+      render(panel(1, 0)).rerender(panel(1, 1));
 
       const buttons = screen.getAllByRole("button", { name: /surface for a road bike/i });
       expect(buttons[1]).toHaveAttribute("aria-pressed", "true");
     });
 
     it("renders a role=status live region with the selected warning's message and distance range on a reveal", () => {
-      const { rerender } = render(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={1}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={0}
-          gradientSegments={[]}
-        />,
-      );
+      const { rerender } = render(panel(1, 0));
       expect(screen.queryByRole("status")).toBeNull();
 
-      rerender(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={1}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={1}
-          gradientSegments={[]}
-        />,
-      );
+      rerender(panel(1, 1));
 
       const status = screen.getByRole("status");
       expect(status).toHaveTextContent("Unsuitable surface for a road bike.");
@@ -631,35 +536,11 @@ describe("RouteSummaryPanel", () => {
       expect(status).toHaveTextContent("0.7 km");
     });
 
-    it("does not render the live region for a list-originated selection (selectedWarningIndex changes without revealToken bumping)", () => {
-      const { rerender } = render(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={null}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={0}
-          gradientSegments={[]}
-        />,
-      );
-
-      rerender(
-        <RouteSummaryPanel
-          route={buildRoute()}
-          waypointCount={2}
-          warnings={WARNINGS}
-          selectedWarningIndex={0}
-          onSelectWarning={vi.fn()}
-          onClearWarningSelection={vi.fn()}
-          revealToken={0}
-          gradientSegments={[]}
-        />,
-      );
+    it("does not render the live region or scroll for a list-originated selection (selectedWarningIndex changes without revealToken bumping)", () => {
+      render(panel(null, 0)).rerender(panel(0, 0));
 
       expect(screen.queryByRole("status")).toBeNull();
-      expect(scrollIntoViewSpy).not.toHaveBeenCalled();
+      expect(scrolls).toEqual([]);
     });
   });
 

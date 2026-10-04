@@ -4,12 +4,11 @@ import {
   describeSurfaceWarningKind,
   formatSurfaceLabel,
 } from "./routeWarningCopy.ts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { PlannedRoute, RoutePoint, RouteWarning } from "../../domain/types.ts";
 import type { ClassifiedSegment } from "../../navigation/gradient.ts";
 import type { ClimbGradientBand, RouteFeature } from "../../navigation/routeFeatures.ts";
 import type { MicroDetailVisualKey } from "../../navigation/routeFeaturePalette.ts";
-import { prefersReducedMotion } from "../../platform/environmentContext.ts";
 import { formatRoutingProfileLabel } from "../../routing/routingProfiles.ts";
 import {
   ElevationChart,
@@ -24,6 +23,7 @@ import {
   formatDistanceKmValue,
   formatMetres,
 } from "../shared/routeSummary.ts";
+import { revealSelectedWarning } from "./warningReveal.ts";
 
 export interface RouteSummaryPanelProps {
   route: PlannedRoute;
@@ -83,6 +83,13 @@ export interface RouteSummaryPanelProps {
    * selectedWarningIndex. A list-originated selection does not bump
    * this, since the entry is already where the user is interacting. */
   revealToken: number;
+  /** The app's sticky navigation, whose bottom edge the map-originated
+   * reveal keeps the selected warning below. Optional, like Planning's own
+   * prop of the same name; without it the reveal uses the visible
+   * viewport's top. Must be a stable ref object: a new one on every render
+   * would re-run the reveal effect's non-reveal branch and clear the
+   * announcement. */
+  stickyHeaderRef?: RefObject<HTMLElement | null>;
 }
 
 // Backlog item 113 stage 3: the kind-to-heading switch moved into
@@ -103,6 +110,7 @@ export function RouteSummaryPanel({
   onSelectWarning,
   onClearWarningSelection,
   revealToken,
+  stickyHeaderRef,
   gradientSegments,
   displayPoints,
   routeFeatures = [],
@@ -118,7 +126,10 @@ export function RouteSummaryPanel({
   const translator = useTranslate();
   const { t } = translator;
   const surface = route.surfaceSummary;
-  const selectedButtonRef = useRef<HTMLButtonElement | null>(null);
+  // The selected warning's whole list item — its row button and, for a
+  // surface warning, the details it opens — which is what a map-originated
+  // selection reveals (backlog item 124, slice 10, P-18).
+  const selectedItemRef = useRef<HTMLLIElement | null>(null);
   const lastRevealTokenRef = useRef(revealToken);
   // The index a map-originated tap most recently revealed, or null. Only
   // ever set inside the effect below, and only ever rendered when it
@@ -131,12 +142,18 @@ export function RouteSummaryPanel({
     if (revealToken !== lastRevealTokenRef.current) {
       // A genuine fresh map-originated selection (including a repeat tap
       // on an already-selected warning, which still bumps revealToken) —
-      // scroll it into view and mark it as just revealed.
+      // bring its row and details into view together and mark it as just
+      // revealed. The row's button alone used to be scrolled into view
+      // ({ block: "nearest" }), which stopped it flush with the screen's
+      // bottom edge and left the details it had just opened below it.
       lastRevealTokenRef.current = revealToken;
-      selectedButtonRef.current?.scrollIntoView({
-        block: "nearest",
-        behavior: prefersReducedMotion() ? "auto" : "smooth",
-      });
+      const item = selectedItemRef.current;
+      if (item) {
+        revealSelectedWarning(
+          item,
+          stickyHeaderRef?.current?.getBoundingClientRect().bottom ?? 0,
+        );
+      }
       setJustRevealedIndex(selectedWarningIndex);
     } else {
       // selectedWarningIndex changed via some other path (a list click or
@@ -144,7 +161,7 @@ export function RouteSummaryPanel({
       // stale.
       setJustRevealedIndex(null);
     }
-  }, [revealToken, selectedWarningIndex]);
+  }, [revealToken, selectedWarningIndex, stickyHeaderRef]);
 
   const justRevealedWarning =
     justRevealedIndex !== null && justRevealedIndex === selectedWarningIndex
@@ -269,9 +286,8 @@ export function RouteSummaryPanel({
               return (
                 // Warnings have no stable id of their own; the array is
                 // rebuilt wholesale on every calculation, so index is safe.
-                <li key={index}>
+                <li key={index} ref={isSelected ? selectedItemRef : undefined}>
                   <button
-                    ref={isSelected ? selectedButtonRef : undefined}
                     type="button"
                     className={
                       isSelected

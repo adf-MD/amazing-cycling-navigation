@@ -3220,22 +3220,44 @@ describe("PlanningScreen", () => {
   });
 
   describe("map-to-list warning selection", () => {
-    // jsdom doesn't implement scrollIntoView at all, and RouteSummaryPanel
-    // now calls it whenever a warning is selected via the map.
-    let scrollIntoViewSpy: ReturnType<
-      typeof vi.fn<(options?: boolean | ScrollIntoViewOptions) => void>
-    >;
+    // RouteSummaryPanel reveals a map-selected warning's list item with one
+    // window.scrollBy (backlog item 124, slice 10). jsdom has no layout, so
+    // every warning's list item is stubbed below jsdom's 768px viewport:
+    // otherwise the reveal would measure an empty box and never scroll,
+    // and the call counts below would pass vacuously.
     // Saved only to restore afterwards, never called unbound.
     // eslint-disable-next-line @typescript-eslint/unbound-method
-    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalScrollBy = window.scrollBy;
+    let scrolls: ScrollToOptions[];
 
     beforeEach(() => {
-      scrollIntoViewSpy = vi.fn();
-      Element.prototype.scrollIntoView = scrollIntoViewSpy;
+      scrolls = [];
+      Element.prototype.getBoundingClientRect = function (this: Element) {
+        if (this.tagName === "LI" && this.closest(".route-warning-list") !== null) {
+          return {
+            top: 900,
+            bottom: 1000,
+            left: 0,
+            right: 358,
+            width: 358,
+            height: 100,
+            x: 0,
+            y: 900,
+            toJSON: () => "",
+          };
+        }
+        return originalGetBoundingClientRect.call(this);
+      };
+      window.scrollBy = (options?: ScrollToOptions | number) => {
+        if (typeof options === "object") scrolls.push(options);
+      };
     });
 
     afterEach(() => {
-      Element.prototype.scrollIntoView = originalScrollIntoView;
+      Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+      window.scrollBy = originalScrollBy;
     });
 
     async function renderWithCalculatedWarnings(
@@ -3368,11 +3390,11 @@ describe("PlanningScreen", () => {
       map.setWarningHit(0);
       map.triggerMapTap([0.15, 51]);
       expect(warningButton).toHaveAttribute("aria-pressed", "true");
-      expect(scrollIntoViewSpy).toHaveBeenCalledTimes(1);
+      expect(scrolls).toHaveLength(1);
 
       map.triggerMapTap([0.15, 51]);
       expect(warningButton).toHaveAttribute("aria-pressed", "true");
-      expect(scrollIntoViewSpy).toHaveBeenCalledTimes(2);
+      expect(scrolls).toHaveLength(2);
 
       expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Waypoint 2" })).toBeInTheDocument();
@@ -3467,11 +3489,13 @@ describe("PlanningScreen", () => {
       });
       expect(button).toHaveTextContent("Questionable surface · 210 m");
 
-      // List-originated selection.
+      // List-originated selection: the row is where the rider is already
+      // interacting, so nothing scrolls.
       await user.click(button);
       expect(
         within(summaryRegion).getByText("Surface: Compacted gravel"),
       ).toBeInTheDocument();
+      expect(scrolls).toEqual([]);
 
       // Toggle off, then reveal the same detail via a map-originated tap.
       await user.click(button);
@@ -3487,28 +3511,12 @@ describe("PlanningScreen", () => {
       expect(
         within(summaryRegion).getByText("Route position: 0.1–0.3 km"),
       ).toBeInTheDocument();
+      // Only the map-originated selection revealed its row and details.
+      expect(scrolls).toHaveLength(1);
     });
   });
 
   describe("route feature selection", () => {
-    // jsdom doesn't implement scrollIntoView at all, and RouteSummaryPanel
-    // calls it whenever a warning is selected via the map (part of the
-    // mutual-exclusivity test below, which selects a warning first).
-    let scrollIntoViewSpy: ReturnType<
-      typeof vi.fn<(options?: boolean | ScrollIntoViewOptions) => void>
-    >;
-    // eslint-disable-next-line @typescript-eslint/unbound-method
-    const originalScrollIntoView = Element.prototype.scrollIntoView;
-
-    beforeEach(() => {
-      scrollIntoViewSpy = vi.fn();
-      Element.prototype.scrollIntoView = scrollIntoViewSpy;
-    });
-
-    afterEach(() => {
-      Element.prototype.scrollIntoView = originalScrollIntoView;
-    });
-
     async function renderWithCalculatedClimb(
       map: ReturnType<typeof createMockMapFactory>,
       user: ReturnType<typeof userEvent.setup>,
