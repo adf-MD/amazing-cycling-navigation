@@ -787,7 +787,7 @@ After slice 9's acceptance, every inventory entry was given an explicit disposit
 
 Positions are rounded to the pixel; every bottom edge was within 0.5 px of the band's. On the unchanged build the row ended at the screen's bottom edge (844 px) and both detail lines were below it in every row of the table; in the oversized case the row ended at the viewport's bottom (460 px) with both lines below.
 
-- **Scrolling during the movement**, the rider's refinement. The rider's wheel was dispatched once the smooth movement had visibly started and before it finished.
+- **Scrolling during the movement**, the rider's refinement. The rider's wheel was dispatched once the smooth movement had visibly started and before it finished. **Qualified the same day by the [repair note](#slice-10-repair-note--the-end-to-end-test-that-failed-ci-4-october-2026-test-only):** that timing was a position read before the wheel was sent, not the wheel event itself, and the test that measured it later failed in CI. The engine figures below are corrected there.
   - **The app:** its one smooth call came before the wheel in every run, and it made no call afterwards; the page then stayed where it came to rest for the 2.2 s observed. Planning re-renders every second, and nothing re-issued the reveal.
   - **The engines, native behaviour:** headless WebKit applied the wheel once its own animation had finished (914 px, then 614). Headless Chromium did not apply a wheel that arrived during the animation, early or late, and finished at 914; the same wheel at rest scrolled normally. The unchanged build's smooth `scrollIntoView` behaved identically in both engines (Chromium ignored wheels at 190 and 509 px and finished at 858; WebKit went on to 558). This is the engines' own smooth scrolling, not a repositioning by the app, so no cancellation machinery was added.
   - **Touch was not reproduced:** Chromium's synthesized touch-scroll gesture moved nothing even at rest, so it was discarded, and nothing is claimed about a finger scrolling during the movement.
@@ -809,7 +809,7 @@ Positions are rounded to the pixel; every bottom edge was within 0.5 px of the b
 **Findings worth carrying forward.**
 
 - **The top-prioritising geometry already existed.** Reusing `computeTopRevealScrollDelta` with a reduced visible bottom gives decisions 4 and 5 exactly, with no accepted helper changed. The confirmations' helper anchors an oversized item's bottom and would have hidden the label.
-- **A smooth programmatic scroll and the rider's own input are the engine's business.** Desktop Chromium dropped a wheel during the movement, before and after this slice alike, and desktop WebKit applied it afterwards. The app's part — one call, never repeated — is what the tests assert.
+- **A smooth programmatic scroll and the rider's own input are the engine's business.** Desktop Chromium dropped a wheel during the movement, before and after this slice alike, and desktop WebKit applied it afterwards. The app's part — one call, never repeated — is what the tests assert. **Qualified by the [repair note](#slice-10-repair-note--the-end-to-end-test-that-failed-ci-4-october-2026-test-only):** Chromium's dropping holds on the wheel event's own timing; WebKit's wheel always arrived after its movement, so nothing about WebKit during the movement is established.
 - **Selecting a warning frames it on the map**, so a second warning is usually off the map until the rider zooms out; the test does so with the map's own control. After zooming out, the warnings are short on screen, and a tap must stay clear of an adjoining warning within the map's ±14 px hit box.
 - **"Nothing moved" after a list selection is judged by the row's place on screen**, not by `scrollY`, which scroll anchoring changes by the 35 px message.
 
@@ -819,6 +819,59 @@ Positions are rounded to the pixel; every bottom edge was within 0.5 px of the b
 - **The route is a synthetic fixture**, with three warnings in a straight line. Real routes can have many warnings, which lengthens the list, but the rule does not depend on the item's place in it.
 - **A finger scrolling during the movement** was not reproduced; what iOS does then is its own scrolling.
 - **No VoiceOver, physical-keyboard, landscape or physical-Android result.**
+
+## Slice 10 repair note — the end-to-end test that failed CI (4 October 2026, test-only)
+
+**The failure.** CI run [37203592186](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37203592186), for `3f58248`, failed in E2E shard 4, so Deploy was skipped and `0.4.60` stayed live. The rider read the retained failure: in **webkit-smoke**, "a rider who scrolls while the smooth reveal is still moving is not pulled back by the app" timed out at its `waitForFunction` (line 781); the rest of the shard was 254 passed and 4 skipped. **The artefact and job log were not accessible here** (401 and 403), and the CI run itself was **not reproduced**: shard 4 run locally with CI's settings passed 255 of 255.
+
+**What local diagnostics established** — the pinned image by digest, `CI=1`, two workers; "constrained" adds a 4-CPU limit; diagnostics in the scratchpad only, never committed.
+
+- **The old test waited for a transient position.**
+  - Constrained, headless WebKit's smooth reveal stood within 4 px of its start for 0.8–2.4 s, then reached its destination in one step, in 8 of 8 runs. On the test's English route the first step was 1 px, which the old condition excluded, so the intermediate position it waited for never existed. It timed out 4 of 4, although it began polling before the movement ended.
+  - Chromium timed out 1 of 4, when its first poll came 2 ms after the movement ended.
+  - A labelled controlled variant, which starts observing 1.5 s after the reveal request, timed out 16 of 16 in both engines, constrained and not: once the movement has ended, no timeout can recover it.
+  - This is **consistent with** the CI failure; it is not the CI run.
+- **`atWheel` was not the wheel.** Recorded in the page, the real wheel event arrived 104–257 ms after `atWheel` had read an intermediate position. In WebKit it arrived after the movement had ended in every run that sent one (12 of 12).
+- **A related weakness in the geometry tests.** Under the same limit, WebKit's stand-still outlasted the 500 ms quiet window that decided "settled", so 15 of 16 default-motion runs measured the page within 5 px of where it started. The movement then completed by itself, with no frame stimulation, and the final geometry was correct in all 8 diagnostic runs.
+- **No application scroll call beyond the one reveal** appeared in any of these runs.
+
+**The repair — test code only:** `e2e/planningWarningMapReveal.smoke.spec.ts`. No production, dependency, configuration, version or sharding change.
+
+- **The recorder** is armed before the selection that starts a reveal. It records:
+  - every scroll attempt — window and element scroll methods, `scrollIntoView` and `scrollTop` writes to the document — with its time, its start and its destination clamped to the page's range;
+  - real wheel events, as the page received them;
+  - the trajectory.
+
+  The test's own positioning is recorded as **"test setup"**, never left out, and the whole record is attached to every result, pass or fail.
+
+- **The interruption test is replaced** by "after the reveal request, a rider's wheel is followed by no further reveal or scroll from the app". The wheel is sent as soon as the request is recorded. The test asserts the real selection, the one smooth request, the wheel's arrival after it, and **no scroll attempt of any kind** after the wheel event, across Planning's once-a-second re-renders. Whether the wheel arrived during the movement is recorded as evidence only. Where the page ends is not asserted.
+- **Uninterrupted reveals** now wait for the **expected final geometry in the measured band** — the bottom at the band's bottom, or, oversized, the top at its top — bounded at 8 s, a little over three times the worst 2.4 s observed. The existing assertions then judge it, so a missing or wrong reveal still fails, and a repeated one fails the one-call assertion.
+- **"A later map selection"** returns to the top with one programmatic scroll, recorded as test setup. Its assertions expect exactly the two application reveals plus that one setup call. Its real-wheel check waits for the rider's own scroll to take effect, then asserts no application attempt after the wheel event.
+- **What an engine does with a wheel during its own movement** stays a scratchpad diagnostic, outside the suite.
+
+**Evidence.**
+
+- **The repaired spec, unconstrained:** 22 of 22 in Chromium and WebKit, then 88 of 88 over four repeats in isolation. Uninterrupted reveals reached their expected geometry in 0.30–1.19 s.
+- **Constrained, 4-CPU limit:** the spec passed 88 of 88 over four repeats, where the unchanged spec failed 23. Uninterrupted reveals reached their expected geometry in at worst 1.1 s (Chromium) and 1.9 s (WebKit).
+- **Shard 4, constrained, every run of this spec passed:**
+  - **At the 4-CPU limit:** the shard took 36 min against CI's 13. Twenty tests in other, unchanged specs failed, 18 of them `planningEnlargedTextLayout` timeouts.
+  - **At a 6-CPU limit:** 25.5 min, with 5 failures in other specs.
+
+  Those specs passed in CI and unconstrained. A CPU limit here is harsher than CI's runner, so neither run is offered as a reproduction of CI.
+
+- **The negative control**, applied to `RouteSummaryPanel.tsx` alone and restored byte-for-byte (SHA-256); the rebuilt bundle matched `3f58248`'s.
+  - **(a) The reveal reissued inside the first wheel handler** failed both targeted tests in Chromium, and neither in WebKit. WebKit runs the handler before it applies the wheel's scroll, and its wheel came after the movement, so the reissued reveal found nothing to move and made no scroll attempt. A reissue that moves nothing is, by design, not observable from scroll attempts.
+  - **(b) The reveal reissued 150 ms after the first wheel** failed both targeted tests in both engines. The regression test failed on "no scroll attempt of any kind after the rider's wheel", with the reissued `scrollBy` recorded; the later-selection test failed on the rider's scroll being pulled back. The other 18 runs passed.
+- **Checks:** lint, typecheck and the build with the pinned Node 24.18.0 and npm 11.16.0; `planningWarningRows` and `routeFeatureColouring` as regression; `format:check` last.
+
+**Correction to slice 10's record above.** Its "Scrolling during the movement" evidence took `atWheel` as the wheel's timing, and that is not established. The wheel event's own timing now shows:
+
+- **Chromium** did not apply a wheel that reached the page while it was still moving, in all 10 such runs (8 unconstrained, 2 constrained). It did not apply one that arrived within 5–12 ms after the last observed movement either (2 runs), and applied ones that arrived later.
+- **WebKit** received the wheel after its movement in every run (12 of 12), so **nothing is established about WebKit during the movement**: "applied once its own animation had finished" means only that a later wheel was applied.
+- **The unchanged build's comparison** (190 and 509 px) also rests on positions read before the wheel.
+- **One caveat for the new evidence field:** Chromium can apply a wheel on its compositor before the page's handler runs, so a wheel handled at 614 px reads as "not during movement".
+
+**Limitations.** Desktop headless engines only. A finger scrolling during the movement was never reproduced, and nothing is claimed about iOS. The CPU-limited conditions were harsher than CI's runner, not a copy of it. Repeated green runs are not offered as proof: the argument is that the required tests no longer depend on catching a native animation in flight. **P-18's installed-iPhone check is still pending**, until this build is deployed.
 
 ## Close-out investigations (4 October 2026, documentation only — not a slice)
 

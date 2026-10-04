@@ -25,10 +25,15 @@ import { installLocalMapStyle } from "./support/localMapStyle.ts";
 // three surface warnings; the 34px bottom inset is the
 // `--safe-area-inset-bottom` seam index.css documents; and the short and
 // tall viewports are geometry stand-ins, not devices. Browser root-text
-// scaling is not iOS Larger Text. Positioning before a tap is a
-// programmatic scroll the test makes; the rider's own scrolling is a real
-// wheel. Settling is judged by timers, never animation frames, since
-// headless WebKit can defer them.
+// scaling is not iOS Larger Text. Positioning is a programmatic scroll the
+// test makes, kept in the scroll record as "test setup"; the rider's own
+// scrolling is a real wheel, recorded as the page received it. Waiting is
+// judged by timers, never animation frames, since headless WebKit can defer
+// them. After an uninterrupted reveal, the test waits for the expected
+// final geometry rather than a quiet moment: under load, headless WebKit
+// can stand still for over two seconds before completing a smooth scroll.
+// After a rider's input, nothing waits for the reveal's original
+// destination; what the engine does with that input is not asserted.
 //
 // No test in this file contacts a live map or routing provider.
 
@@ -41,6 +46,20 @@ test.use({
   hasTouch: true,
   geolocation: { latitude: LAT, longitude: LON },
   permissions: ["geolocation"],
+});
+
+// The whole record — every scroll attempt with its origin, start and
+// destination, the trajectory and every wheel event — kept with each
+// result, on failure as well as success.
+test.afterEach(async ({ page }, testInfo) => {
+  try {
+    await testInfo.attach("scroll-record", {
+      body: JSON.stringify(await recorded(page)),
+      contentType: "application/json",
+    });
+  } catch {
+    // The page may already be gone; the test's own failure says why.
+  }
 });
 
 const ORS_URL_GLOB = "https://api.heigit.org/**";
@@ -123,39 +142,134 @@ function buildOrsResponse(coordinates: readonly (readonly number[])[]) {
   };
 }
 
-/** Records every programmatic scroll the app makes, with a timestamp, and
- * the page's scroll positions over time. Installed before the app runs. */
+/** Records every attempt to scroll the page — `window.scrollBy`,
+ * `scrollTo` and `scroll`, `Element.prototype.scrollIntoView`, `scrollBy`,
+ * `scrollTo` and `scroll`, and writes to the document scroller's
+ * `scrollTop` — with its time, the position it started from and, where it
+ * names one, its destination clamped to the page's scroll range; then
+ * forwards it unchanged, so a repeated reveal is both recorded and carried
+ * out. Also records every real `wheel` event the page receives, and the
+ * scroll trajectory. Installed before the app runs.
+ *
+ * Every attempt counts as the application's, except the one the test
+ * itself makes through `setupScroll`, which marks the next attempt as
+ * "test setup" in the record rather than leaving it out. */
 function instrument() {
-  interface Recorder {
-    calls: { t: number; kind: string; arg: string }[];
-    positions: { t: number; y: number }[];
+  interface Attempt {
+    t: number;
+    kind: string;
+    arg: string;
+    origin: "app" | "test setup";
+    y: number;
+    maxScrollY: number;
+    destination: number | null;
   }
-  const recorder: Recorder = { calls: [], positions: [] };
+  interface Recorder {
+    calls: Attempt[];
+    positions: { t: number; y: number }[];
+    wheels: { t: number; y: number; deltaY: number; target: string }[];
+    nextIsSetup: boolean;
+  }
+  const recorder: Recorder = { calls: [], positions: [], wheels: [], nextIsSetup: false };
   (window as unknown as { __p18: Recorder }).__p18 = recorder;
-  const wrap = (kind: string, original: (...args: never[]) => unknown) =>
-    function (this: unknown, ...args: never[]) {
-      recorder.calls.push({ t: performance.now(), kind, arg: JSON.stringify(args) });
-      return original.apply(this, args);
-    };
-  window.scrollBy = wrap(
-    "scrollBy",
-    window.scrollBy.bind(window),
-  ) as typeof window.scrollBy;
-  window.scrollTo = wrap(
-    "scrollTo",
-    window.scrollTo.bind(window),
-  ) as typeof window.scrollTo;
-  window.scroll = wrap("scroll", window.scroll.bind(window)) as typeof window.scroll;
-  // eslint-disable-next-line @typescript-eslint/unbound-method
-  const intoView = Element.prototype.scrollIntoView;
-  Element.prototype.scrollIntoView = function (this: Element, arg?: unknown) {
+  const scroller = () => document.scrollingElement ?? document.documentElement;
+  const maxScrollY = () => scroller().scrollHeight - scroller().clientHeight;
+  const clamp = (y: number) => Math.min(Math.max(y, 0), maxScrollY());
+  /** The vertical target named by scrollBy/scrollTo-style arguments. */
+  const named = (args: unknown[]): number | null => {
+    const [first, second] = args;
+    if (typeof first === "object" && first !== null && "top" in first) {
+      const top = (first as { top?: unknown }).top;
+      return typeof top === "number" ? top : null;
+    }
+    return typeof second === "number" ? second : null;
+  };
+  const record = (kind: string, args: unknown[], destination: number | null) => {
     recorder.calls.push({
       t: performance.now(),
-      kind: "scrollIntoView",
-      arg: JSON.stringify(arg ?? null),
+      kind,
+      arg: JSON.stringify(args),
+      origin: recorder.nextIsSetup ? "test setup" : "app",
+      y: window.scrollY,
+      maxScrollY: maxScrollY(),
+      destination: destination === null ? null : clamp(destination),
     });
-    intoView.call(this, arg as ScrollIntoViewOptions);
+    recorder.nextIsSetup = false;
   };
+  const byWindow = window.scrollBy.bind(window) as (...args: unknown[]) => void;
+  const toWindow = window.scrollTo.bind(window) as (...args: unknown[]) => void;
+  const scrollWindow = window.scroll.bind(window) as (...args: unknown[]) => void;
+  window.scrollBy = (...args: unknown[]) => {
+    const delta = named(args);
+    record("scrollBy", args, delta === null ? null : window.scrollY + delta);
+    byWindow(...args);
+  };
+  window.scrollTo = (...args: unknown[]) => {
+    record("scrollTo", args, named(args));
+    toWindow(...args);
+  };
+  window.scroll = (...args: unknown[]) => {
+    record("scroll", args, named(args));
+    scrollWindow(...args);
+  };
+  const proto = Element.prototype as unknown as Record<
+    string,
+    ((this: Element, ...args: unknown[]) => void) | undefined
+  >;
+  for (const name of ["scrollIntoView", "scrollBy", "scrollTo", "scroll"]) {
+    const original = proto[name];
+    if (!original) continue;
+    proto[name] = function (this: Element, ...args: unknown[]) {
+      const own = this === scroller();
+      const target = named(args);
+      record(
+        `element.${name}`,
+        args,
+        own && target !== null
+          ? name === "scrollBy"
+            ? window.scrollY + target
+            : target
+          : null,
+      );
+      original.apply(this, args);
+    };
+  }
+  const scrollTop = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop");
+  // Saved only to be called with an explicit `this` below.
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const getTop = scrollTop?.get;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  const setTop = scrollTop?.set;
+  if (getTop && setTop) {
+    Object.defineProperty(Element.prototype, "scrollTop", {
+      configurable: true,
+      enumerable: scrollTop.enumerable,
+      get(this: Element) {
+        return getTop.call(this) as number;
+      },
+      set(this: Element, value: number) {
+        if (this === scroller() || this === document.body) {
+          record("scrollTop=", [value], value);
+        }
+        setTop.call(this, value);
+      },
+    });
+  }
+  window.addEventListener(
+    "wheel",
+    (event) => {
+      const target = event.target as Element | null;
+      recorder.wheels.push({
+        t: performance.now(),
+        y: window.scrollY,
+        deltaY: event.deltaY,
+        target: target
+          ? `${target.tagName}.${typeof target.className === "string" ? (target.className.split(" ")[0] ?? "") : ""}`
+          : "none",
+      });
+    },
+    { capture: true, passive: true },
+  );
   document.addEventListener(
     "scroll",
     () => {
@@ -167,15 +281,26 @@ function instrument() {
   );
 }
 
+interface Attempt {
+  t: number;
+  kind: string;
+  arg: string;
+  origin: "app" | "test setup";
+  y: number;
+  maxScrollY: number;
+  destination: number | null;
+}
+
 interface Recorded {
-  calls: { t: number; kind: string; arg: string }[];
+  calls: Attempt[];
   positions: { t: number; y: number }[];
+  wheels: { t: number; y: number; deltaY: number; target: string }[];
 }
 
 function recorded(page: Page): Promise<Recorded> {
   return page.evaluate(() => {
     const r = (window as unknown as { __p18: Recorded }).__p18;
-    return { calls: [...r.calls], positions: [...r.positions] };
+    return { calls: [...r.calls], positions: [...r.positions], wheels: [...r.wheels] };
   });
 }
 
@@ -184,7 +309,17 @@ async function resetRecorded(page: Page): Promise<void> {
     const r = (window as unknown as { __p18: Recorded }).__p18;
     r.calls.length = 0;
     r.positions.length = 0;
+    r.wheels.length = 0;
   });
+}
+
+/** The test's own positioning: one `window.scrollTo` to `y`, marked as
+ * "test setup" in the record. Setup, never evidence of a rider's input. */
+async function setupScroll(page: Page, y: number): Promise<void> {
+  await page.evaluate((y) => {
+    (window as unknown as { __p18: { nextIsSetup: boolean } }).__p18.nextIsSetup = true;
+    window.scrollTo(0, y);
+  }, y);
 }
 
 /** Writes the language preference and a dummy routing key directly, before
@@ -218,6 +353,114 @@ async function seedLanguageAndKey(page: Page, language: Language): Promise<void>
       });
     },
     { dbName: DB_NAME, language },
+  );
+}
+
+/** How long an uninterrupted reveal may take to come to rest. Measured on
+ * 4 October 2026 in the pinned container: unconstrained, Chromium settled
+ * within 1.0 s and WebKit within 0.4 s; under a 4-CPU limit with two
+ * workers, Chromium within 1.0 s, while headless WebKit stood still after
+ * its first 1–4 px for 0.8–2.4 s and then completed in one step. 8 s is
+ * a little over three times the worst of those. */
+const REVEAL_COMPLETION_BOUND_MS = 8000;
+
+/**
+ * After an uninterrupted reveal: waits, on timers, until the selected
+ * warning has come to rest in its expected final place in the band
+ * measured in the page — its bottom at the band's bottom when it arrives
+ * from below, or, when it is taller than the band, its top at the band's
+ * top — and the page has been still for 300 ms, or until the bound
+ * expires. A quiet window alone is not enough: headless WebKit can stand
+ * still for over two seconds before it completes a smooth scroll.
+ *
+ * It never fails by itself: the geometry assertions that follow judge the
+ * outcome, so a missing or wrong reveal still fails on what the rider
+ * would see. Never used after a rider's own input, which can legitimately
+ * change where scrolling ends.
+ */
+async function waitForRevealedGeometry(
+  page: Page,
+  alignment: "bottom" | "top",
+): Promise<{ reached: boolean; ms: number }> {
+  return page.evaluate(
+    ({ alignment, gap, tolerance, bound }) =>
+      new Promise<{ reached: boolean; ms: number }>((resolve) => {
+        const inPlace = () => {
+          const item = document
+            .querySelector(".route-warning-button.is-selected")
+            ?.closest("li");
+          if (!item) return false;
+          const header = document.querySelector("header.app-header--sticky");
+          const vv = window.visualViewport;
+          const visibleTop = vv?.offsetTop ?? 0;
+          const visibleBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
+          const safeArea =
+            Number.parseFloat(
+              getComputedStyle(document.documentElement)
+                .getPropertyValue("--safe-area-inset-bottom")
+                .trim(),
+            ) || 0;
+          const bandTop =
+            Math.max(header?.getBoundingClientRect().bottom ?? 0, visibleTop) + gap;
+          const bandBottom = visibleBottom - (safeArea + gap);
+          const r = item.getBoundingClientRect();
+          return alignment === "bottom"
+            ? Math.abs(r.bottom - bandBottom) <= tolerance && r.top >= bandTop - tolerance
+            : Math.abs(r.top - bandTop) <= tolerance;
+        };
+        const start = performance.now();
+        let last = window.scrollY;
+        let still = performance.now();
+        const tick = () => {
+          const now = performance.now();
+          if (window.scrollY !== last) {
+            last = window.scrollY;
+            still = now;
+          }
+          if (inPlace() && now - still >= 300) {
+            resolve({ reached: true, ms: Math.round(now - start) });
+          } else if (now - start > bound) {
+            resolve({ reached: false, ms: Math.round(now - start) });
+          } else {
+            setTimeout(tick, 25);
+          }
+        };
+        setTimeout(tick, 25);
+      }),
+    { alignment, gap: GAP, tolerance: EDGE_TOLERANCE, bound: REVEAL_COMPLETION_BOUND_MS },
+  );
+}
+
+/** Waits, on timers, until at least `afterMs` has passed since the page's
+ * time `since` and the page has been still for `quietMs` (bounded). */
+async function quietSince(
+  page: Page,
+  since: number,
+  afterMs: number,
+  quietMs = 500,
+  maxMs = 10_000,
+): Promise<void> {
+  await page.evaluate(
+    ({ since, afterMs, quietMs, maxMs }) =>
+      new Promise<void>((resolve) => {
+        const start = performance.now();
+        let last = window.scrollY;
+        let still = performance.now();
+        const tick = () => {
+          const now = performance.now();
+          if (window.scrollY !== last) {
+            last = window.scrollY;
+            still = now;
+          }
+          if ((now - since >= afterMs && now - still >= quietMs) || now - start > maxMs) {
+            resolve();
+          } else {
+            setTimeout(tick, 25);
+          }
+        };
+        setTimeout(tick, 25);
+      }),
+    { since, afterMs, quietMs, maxMs },
   );
 }
 
@@ -290,9 +533,7 @@ async function planRoute(page: Page, options: Options): Promise<void> {
   await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
   const map = page.locator('[data-testid="map-container"]');
   await expect(map).toHaveAttribute("data-map-ready", "true", { timeout: 15_000 });
-  await page.evaluate(() => {
-    window.scrollTo(0, 0);
-  });
+  await setupScroll(page, 0);
   const box = await map.boundingBox();
   if (!box) throw new Error("no map box");
   await page.mouse.click(box.x + box.width * 0.3, box.y + box.height * 0.5);
@@ -304,9 +545,7 @@ async function planRoute(page: Page, options: Options): Promise<void> {
   await calculate.click();
   const list = page.getByRole("list", { name: copy.warnings });
   await expect(list.locator(".route-warning-button")).toHaveCount(3, { timeout: 15_000 });
-  await page.evaluate(() => {
-    window.scrollTo(0, 0);
-  });
+  await setupScroll(page, 0);
   await waitForStillMarkers(page);
   await settle(page);
 }
@@ -450,12 +689,17 @@ function expectRowAndDetailsInBand(after: Snapshot, copy: (typeof COPY)[Language
 }
 
 /** Keeps the measured geometry with the result, pass or fail. */
-function annotate(label: string, snapshot: Snapshot) {
+function annotate(
+  label: string,
+  snapshot: Snapshot,
+  completion?: { reached: boolean; ms: number },
+) {
   const r = (n: number) => Math.round(n * 10) / 10;
   test.info().annotations.push({
     type: "geometry",
     description: JSON.stringify({
       label,
+      completion,
       scrollY: r(snapshot.scrollY),
       band: [r(snapshot.bandTop), r(snapshot.bandBottom)],
       item: snapshot.item && [r(snapshot.item.top), r(snapshot.item.bottom)],
@@ -465,9 +709,19 @@ function annotate(label: string, snapshot: Snapshot) {
   });
 }
 
-/** [implementation] The app's own scroll calls since the last reset. */
+/** [implementation] The application's scroll attempts since the last
+ * reset: every recorded attempt except the test's own setup. */
 function appScrolls(record: Recorded) {
-  return record.calls.map((call) => `${call.kind} ${call.arg}`);
+  return record.calls
+    .filter((call) => call.origin === "app")
+    .map((call) => `${call.kind} ${call.arg}`);
+}
+
+/** The test's own positioning attempts, made through `setupScroll`. */
+function setupScrolls(record: Recorded) {
+  return record.calls
+    .filter((call) => call.origin === "test setup")
+    .map((call) => `${call.kind} ${call.arg}`);
 }
 
 /** Taps (or clicks) the painted warning where the page now is: the
@@ -500,7 +754,13 @@ async function zoomOutToRoute(page: Page): Promise<void> {
       p.y > box.y &&
       p.y < box.y + box.height;
     if (inside(start) && inside(finish)) return;
-    await page.getByRole("button", { name: "Zoom out", exact: true }).click();
+    // A real click at the control's centre, so no automation scrolling
+    // enters the scroll record.
+    const zoomOut = await page
+      .getByRole("button", { name: "Zoom out", exact: true })
+      .boundingBox();
+    if (!zoomOut) throw new Error("no Zoom out control");
+    await page.mouse.click(zoomOut.x + zoomOut.width / 2, zoomOut.y + zoomOut.height / 2);
   }
   throw new Error("the route never came back into view");
 }
@@ -524,10 +784,9 @@ for (const { language, rootText, motion } of CONFIGURATIONS) {
     await resetRecorded(page);
 
     await tapWarning(page, QUESTIONABLE_AT);
-    await settle(page);
+    const completion = await waitForRevealedGeometry(page, "bottom");
     const after = await measure(page);
-    annotate("after", after);
-    annotate("after", after);
+    annotate("after", after, completion);
     const record = await recorded(page);
 
     expect(after.selectedText, "[behaviour] the questionable warning").toMatch(
@@ -569,9 +828,9 @@ test("a synthetic 34px bottom inset keeps the details 8px above it", async ({ pa
   await resetRecorded(page);
 
   await tapWarning(page, QUESTIONABLE_AT);
-  await settle(page);
+  const completion = await waitForRevealedGeometry(page, "bottom");
   const after = await measure(page);
-  annotate("after", after);
+  annotate("after", after, completion);
 
   expectRowAndDetailsInBand(after, COPY.en);
   const visibleBottom = await page.evaluate(() =>
@@ -600,17 +859,15 @@ test("from the lowest tappable start, the page still moves only the minimum", as
         .bottom ?? 0,
   );
   const scrolledBy = Math.max(0, Math.floor(point.y - (headerBottom + 24)));
-  await page.evaluate((y) => {
-    window.scrollTo(0, y);
-  }, scrolledBy);
+  await setupScroll(page, scrolledBy);
   await settle(page);
   expect(await page.evaluate(() => window.scrollY)).toBe(scrolledBy);
   await resetRecorded(page);
 
   await tapWarning(page, QUESTIONABLE_AT);
-  await settle(page);
+  const completion = await waitForRevealedGeometry(page, "bottom");
   const after = await measure(page);
-  annotate("after", after);
+  annotate("after", after, completion);
 
   expectRowAndDetailsInBand(after, COPY.en);
   expect(
@@ -641,16 +898,14 @@ test("an item taller than the band is aligned at its beginning, below the naviga
         .bottom ?? 0,
   );
   const scrolledBy = Math.max(0, Math.floor(point.y - (headerBottom + 40)));
-  await page.evaluate((y) => {
-    window.scrollTo(0, y);
-  }, scrolledBy);
+  await setupScroll(page, scrolledBy);
   await settle(page);
   await resetRecorded(page);
 
   await tapWarning(page, QUESTIONABLE_AT);
-  await settle(page);
+  const completion = await waitForRevealedGeometry(page, "top");
   const after = await measure(page);
-  annotate("after", after);
+  annotate("after", after, completion);
 
   expect(after.selectedText).toMatch(COPY.de.questionable);
   expect(
@@ -690,25 +945,21 @@ test("a later map selection reveals the newly selected warning, and the rider's 
   await resetRecorded(page);
 
   await tapWarning(page, QUESTIONABLE_AT);
-  await settle(page);
+  await waitForRevealedGeometry(page, "bottom");
   expect((await measure(page)).selectedText).toMatch(COPY.en.questionable);
 
-  // The rider scrolls back up to the map with the wheel, over the page's
-  // own content rather than the map. The selection framed the first
-  // warning, so they zoom out with the map's control, and tap another.
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    if ((await page.evaluate(() => window.scrollY)) <= 0) break;
-    await page.mouse.move(195, 820);
-    await page.mouse.wheel(0, -400);
-    await page.waitForTimeout(80);
-  }
+  // Test setup, not a rider's input: one programmatic return to the page's
+  // top, kept in the record as "test setup". The selection framed the first
+  // warning on the map, so the map's own Zoom out control brings the route
+  // back into view, and the second warning is tapped for real.
+  await setupScroll(page, 0);
   await settle(page);
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
   await zoomOutToRoute(page);
   await tapWarning(page, UNKNOWN_AT);
-  await settle(page);
+  const completion = await waitForRevealedGeometry(page, "bottom");
   const second = await measure(page);
-  annotate("second", second);
+  annotate("second", second, completion);
 
   expect(second.selectedText, "[behaviour] the newly selected warning").toMatch(
     COPY.en.unknown,
@@ -726,106 +977,118 @@ test("a later map selection reveals the newly selected warning, and the rider's 
     await page.getByText(COPY.en.surface).count(),
     "[behaviour] the first warning's details are closed",
   ).toBe(0);
-  const calls = appScrolls(await recorded(page));
+  const instantReveal = expect.stringMatching(
+    /^scrollBy \[\{"top":[\d.]+,"left":0,"behavior":"auto"\}\]$/,
+  );
+  const record = await recorded(page);
   expect(
-    calls.filter((call) => call.startsWith("scrollBy")),
-    "[implementation] one reveal per map selection",
-  ).toHaveLength(2);
+    appScrolls(record),
+    "[implementation] one reveal per map selection, and nothing else from the app",
+  ).toEqual([instantReveal, instantReveal]);
+  expect(setupScrolls(record), "the test's one setup call, kept in the record").toEqual([
+    "scrollTo [0,0]",
+  ]);
 
-  // Then the rider scrolls up a little by hand.
+  // Then the rider scrolls up a little with a real wheel, the page at rest.
   await page.mouse.move(195, 820);
   await page.mouse.wheel(0, -200);
-  await settle(page);
-  const rested = await page.evaluate(() => window.scrollY);
-  expect(rested).toBeLessThan(second.scrollY);
-  await page.waitForTimeout(2200);
-  expect(await page.evaluate(() => window.scrollY), "[behaviour] left alone").toBe(
-    rested,
-  );
-  expect(appScrolls(await recorded(page)), "[implementation] no further call").toEqual(
-    calls,
-  );
-});
-
-test("a rider who scrolls while the smooth reveal is still moving is not pulled back by the app", async ({
-  page,
-}) => {
-  // What this establishes, and what it does not. The app issues its one
-  // smooth scroll, computed once, and nothing after the rider's own input:
-  // asserted as [implementation], since no geometry can tell an app call
-  // from the engine's own smooth-scroll animation. What the engine then
-  // does with a wheel that arrives mid-animation is native behaviour and
-  // differs: measured on 4 October 2026, headless WebKit applied it once
-  // its animation had finished, while headless Chromium did not apply it
-  // and completed the animation — with the old smooth scrollIntoView too.
-  // That outcome is recorded in an annotation, not asserted. [behaviour]
-  // is limited to the page staying where it came to rest.
-  await page.emulateMedia({ reducedMotion: "no-preference" });
-  await planRoute(page, { language: "en" });
-  const start = await page.evaluate(() => window.scrollY);
-  await resetRecorded(page);
-
-  await tapWarning(page, QUESTIONABLE_AT);
-  await expect.poll(async () => (await recorded(page)).calls.length).toBe(1);
-  // Where the one reveal will take the page, read from the app's own call.
-  const [call] = (await recorded(page)).calls;
-  expect(
-    appScrolls({ calls: [present(call, "the reveal call")], positions: [] }),
-    "[implementation] the reveal is one smooth scrollBy",
-  ).toEqual([
-    expect.stringMatching(/^scrollBy \[\{"top":[\d.]+,"left":0,"behavior":"smooth"\}\]$/),
-  ]);
-  const arg = present(call, "the reveal call").arg;
-  const target = start + (JSON.parse(arg) as [{ top: number }])[0].top;
-  // The native smooth scroll is under way and not yet finished.
-  await page.waitForFunction(
-    ({ start, target }) => window.scrollY > start + 1 && window.scrollY < target - 1,
-    { start, target },
-    { polling: 5, timeout: 5000 },
-  );
-  const atWheel = await page.evaluate(() => ({
-    y: window.scrollY,
-    t: performance.now(),
-  }));
-  expect(
-    await page.evaluate(() => document.elementFromPoint(195, 800)?.tagName),
-    "the wheel lands on the page's content, not the map",
-  ).not.toBe("CANVAS");
-  await page.mouse.move(195, 800);
-  await page.mouse.wheel(0, -300);
-  await settle(page, 800);
-  const rested = await page.evaluate(() => window.scrollY);
-  const record = await recorded(page);
-
-  expect(appScrolls(record), "[implementation] the one reveal, smooth").toEqual([
-    expect.stringMatching(/^scrollBy \[\{"top":[\d.]+,"left":0,"behavior":"smooth"\}\]$/),
-  ]);
-  expect(
-    record.calls.every((c) => c.t < atWheel.t),
-    "[implementation] no app call after the rider's wheel",
-  ).toBe(true);
-  await page.waitForTimeout(2200);
+  await expect
+    .poll(async () => (await recorded(page)).wheels.length, "the wheel reached the page")
+    .toBe(1);
+  const wheel = present((await recorded(page)).wheels.at(0), "the rider's wheel event");
+  // The rider's own scroll takes effect — native, so waited for as an end
+  // state — and stands through Planning's once-a-second re-renders.
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY), {
+      message: "[behaviour] the rider's scroll took effect",
+      timeout: REVEAL_COMPLETION_BOUND_MS,
+    })
+    .toBeLessThan(second.scrollY - 100);
+  await quietSince(page, wheel.t, 2200);
+  const after = await recorded(page);
   expect(
     await page.evaluate(() => window.scrollY),
-    "[behaviour] not repositioned afterwards",
-  ).toBe(rested);
+    "[behaviour] left where the rider put it",
+  ).toBeLessThan(second.scrollY - 100);
   expect(
-    appScrolls(await recorded(page)),
-    "[implementation] still one call",
-  ).toHaveLength(1);
+    after.calls.filter((call) => call.origin === "app" && call.t > wheel.t),
+    "[implementation] no application scroll attempt after the rider's wheel",
+  ).toEqual([]);
+  expect(appScrolls(after)).toEqual([instantReveal, instantReveal]);
+  expect(setupScrolls(after)).toEqual(["scrollTo [0,0]"]);
+});
+
+test("after the reveal request, a rider's wheel is followed by no further reveal or scroll from the app", async ({
+  page,
+}) => {
+  // The application's guarantee, independent of native animation timing:
+  // once the app has made its one reveal request, a rider's wheel is never
+  // answered by another reveal or any other scroll from the app. The wheel
+  // is dispatched as soon as the request is recorded. Whether it reaches
+  // the page while the engine's smooth movement is still running is native
+  // timing — recorded below as evidence, never a precondition — and what an
+  // engine does with a wheel during its own movement is a separate
+  // diagnostic, outside this suite (slice 10's repair note, 4 October
+  // 2026). Where the page ends after the wheel is the engine's business,
+  // and is not asserted.
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await planRoute(page, { language: "en" });
+  await resetRecorded(page); // Armed before the selection that starts the reveal.
+
+  await tapWarning(page, QUESTIONABLE_AT);
+  await expect
+    .poll(async () => appScrolls(await recorded(page)).length, "the app's reveal request")
+    .toBe(1);
+  await page.mouse.move(195, 800);
+  await page.mouse.wheel(0, -300);
+  await expect
+    .poll(async () => (await recorded(page)).wheels.length, "the wheel reached the page")
+    .toBe(1);
+  const early = await recorded(page);
+  const reveal = present(early.calls.at(0), "the reveal request");
+  const wheel = present(early.wheels.at(0), "the rider's wheel event");
+  await quietSince(page, wheel.t, 2200);
+  const record = await recorded(page);
+  const after = await measure(page);
+  const movedAfterWheel = record.positions.some((p) => p.t > wheel.t && p.y !== wheel.y);
+  const low = Math.min(reveal.y, reveal.destination ?? reveal.y);
+  const high = Math.max(reveal.y, reveal.destination ?? reveal.y);
   test.info().annotations.push({
-    type: "native scroll trace",
+    type: "reveal and wheel",
     description: JSON.stringify({
-      start,
-      target,
-      atWheel: atWheel.y,
-      rested,
-      wheelApplied: rested < target - 150,
-      positionsAfterWheel: record.positions
-        .filter((p) => p.t >= atWheel.t)
-        .map((p) => Math.round(p.y)),
+      reveal: { t: reveal.t, y: reveal.y, destination: reveal.destination },
+      wheel,
+      wheelAfterRequestMs: Math.round(wheel.t - reveal.t),
+      // Evidence only: the wheel's own position strictly inside the
+      // movement's span, with the page still moving after it.
+      wheelDuringMovement: wheel.y > low + 1 && wheel.y < high - 1 && movedAfterWheel,
+      finalScrollY: after.scrollY,
     }),
   });
+
+  expect(after.selectedText, "[behaviour] the questionable warning is selected").toMatch(
+    COPY.en.questionable,
+  );
+  expect(after.lines.map((line) => line.text)).toEqual([
+    COPY.en.surface,
+    expect.stringMatching(COPY.en.position),
+  ]);
+  expect(reveal.origin, "the request is the application's").toBe("app");
+  expect(`${reveal.kind} ${reveal.arg}`, "[implementation] one smooth scrollBy").toMatch(
+    /^scrollBy \[\{"top":[\d.]+,"left":0,"behavior":"smooth"\}\]$/,
+  );
+  expect(wheel.target, "the wheel landed on the page's content, not the map").not.toMatch(
+    /^CANVAS/,
+  );
+  expect(wheel.t, "the wheel followed the reveal request").toBeGreaterThan(reveal.t);
+  expect(
+    record.calls.filter((call) => call.t > wheel.t),
+    "[implementation] no scroll attempt of any kind after the rider's wheel",
+  ).toEqual([]);
+  expect(
+    appScrolls(record),
+    "[implementation] the one reveal request, in all",
+  ).toHaveLength(1);
 });
 
 test("a mouse click on the warning reveals the row and its details in the same way", async ({
@@ -837,9 +1100,9 @@ test("a mouse click on the warning reveals the row and its details in the same w
   await resetRecorded(page);
 
   await tapWarning(page, QUESTIONABLE_AT, "mouse");
-  await settle(page);
+  const completion = await waitForRevealedGeometry(page, "bottom");
   const after = await measure(page);
-  annotate("after", after);
+  annotate("after", after, completion);
 
   expect(after.selectedText).toMatch(COPY.en.questionable);
   expectRowAndDetailsInBand(after, COPY.en);
@@ -880,11 +1143,12 @@ test("a warning selected in the list does not scroll", async ({ page, browserNam
     .getByRole("list", { name: COPY.en.warnings })
     .getByRole("button", { name: COPY.en.questionable });
   // Positioned by the test, the row in mid-screen, then clicked where it is.
-  await page.evaluate(() => {
+  const rowTop = await page.evaluate(() => {
     const button = document.querySelector(".route-warning-button");
     if (!button) throw new Error("no warning row");
-    window.scrollBy(0, button.getBoundingClientRect().top - 300);
+    return window.scrollY + button.getBoundingClientRect().top;
   });
+  await setupScroll(page, rowTop - 300);
   await settle(page);
   await resetRecorded(page);
   const box = await row.boundingBox();
@@ -922,9 +1186,7 @@ test("after Clear warning selection, a mouse click on the map still places a way
 
   await page.getByRole("button", { name: COPY.en.clearSelection }).click();
   await expect(page.locator(".route-warning-button.is-selected")).toHaveCount(0);
-  await page.evaluate(() => {
-    window.scrollTo(0, 0);
-  });
+  await setupScroll(page, 0);
   await settle(page);
   const map = page.locator('[data-testid="map-container"]');
   const box = await map.boundingBox();
