@@ -551,4 +551,17 @@ Unchanged are:
 - **Not newly tested:** **Start riding** while Edit copy's preliminary check is still reading; D-06's context counter already stops that confirmation opening.
 - **Desktop input only.** There is no VoiceOver, physical-keyboard, landscape or physical-Android result.
 
-**Installed-iPhone acceptance: pending** — Session 5 of [`current-status.md`](current-status.md), in English and German, at ordinary text.
+**CI and deployment.** Run [37159182397](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37159182397), for commit `e2ba7cf`: **Verify and build, all four End-to-end shards and Deploy succeeded, each on its first attempt.** The durations come from the run's own job and step start and completion times, read once after the run and kept locally as saved job data. Verify and build's test step is its unit and component tests; each shard's is its end-to-end suite.
+
+| Job              | Test step | Whole job |
+| ---------------- | --------: | --------: |
+| Verify and build |     177 s |     302 s |
+| E2E shard 1/4    |     542 s |     607 s |
+| E2E shard 2/4    |     522 s |     582 s |
+| E2E shard 3/4    |     344 s |     410 s |
+| E2E shard 4/4    |     791 s |     851 s |
+| Deploy           |         — |      12 s |
+
+The longest job, shard 4, left 349 s below the E2E jobs' 1,200-second timeout. The deployment served `0.4.60` / `e2ba7cf`. These are one run's timings, not an established trend, and no sharding change is made or authorised here.
+
+**Installed-iPhone acceptance, reported 4 October 2026.** The ordinary flows passed on `0.4.60` (build `e2ba7cf`), in English and German: an unanswered End ride confirmation closing after a successful Pause or Resume ride and staying closed on the return; an unanswered Edit copy confirmation closing on the transition tried and staying closed after Pause — whether that was Start riding or Resume ride was not reported, so neither is claimed separately; deliberate reopening and Cancel; the cold-start paused screen; and the ride, its progress and the Planning draft preserved. This accepts slice 9's ordinary-flow checks only: a held or failed Pause, confirmed operations still running and an immediate location error keep their automated evidence and were not induced on the phone, and no location-watch count, progress or camera value was measured there. The dated record, with what it does not claim, is in [`current-status.md`](current-status.md). **Item 124 stays active** while its remaining inventory is reconciled.
