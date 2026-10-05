@@ -171,7 +171,7 @@ _Category: Planning layout_
      - Present fact: `.planning-map-container` is `clamp(280px, round(nearest, 44dvh, 20px), 460px)` behind an `@supports` fallback chain. The 20 px rounding is load-bearing: a fractional map-container height once left MapLibre's drag-rotate/pitch handler permanently active with no end event. That was found in CI during the interface migration's fifth slice, and it recurred in Planning ([`history/interface-accessibility-migration.md`](history/interface-accessibility-migration.md)).
      - Any change must be **measured and tested as its own alternative**. That covers the gesture end events at the new heights; the waypoint list, profile, warnings and save controls remaining reachable; item 114's attribution/placement-control relationship; and the ordinary 390 px presentation. It must not be folded into item 103 or any other styling work.
      - **Coordinate with item 128** (shipped `0.4.50`, [`history/items-118-131.md`](history/items-118-131.md#item-128)): its C6 layout was verified at the current map dimensions. Every proposed map size must rerun item 128's crosshair, imagery-message, Retry, placement-control and attribution checks — `e2e/planningImageryBanner.smoke.spec.ts` and the probe in [`../design/planning-imagery-banner/`](../design/planning-imagery-banner/README.md) — and report the 280 px-floor case at 320×568, where German still overlaps the crosshair by 15 px.
-     - **Coordinated with [item 141](#item-141) (5 October 2026),** the compact Edit copy notice: the notice above the map takes first-screen height from the map and **Calculate route**, so its design is considered with this item's layout decision. Neither item is scheduled for implementation by this.
+     - **Coordinated with [item 141](#item-141) (5 October 2026),** the compact Edit copy notice: the notice above the map takes first-screen height from the map and **Calculate route**, so its design is considered with this item's layout decision. Neither item is scheduled for implementation by this. The combined proposal — the compact notice with maps of 500, 480 and 420 px — is in [the follow-up report](../design/planning-map-area/copy-notice-and-map-size.md) (5 October 2026), awaiting the rider's decision.
      - **Investigation and design stage completed on 4 October 2026** ([report](../design/planning-map-area/README.md)). It recommends a larger default map at ordinary text (C1), compares an on-demand expanded mode (C2) and a map sized to the fold (C1L), and lists the decisions needed. Nothing is implemented; the rider's layout decision is awaited.
 
 ---
@@ -487,3 +487,10 @@ _Category: Planning layout_
        - a heading-by-name query needs any new control kept outside the `h1`.
 
        The evidence then covers English and German, 200% text and the installed PWA's safe-area insets.
+
+     - **Visual proposal, 5 October 2026 — design only, nothing implemented** ([report](../design/planning-map-area/copy-notice-and-map-size.md)), measured with item 122's intermediate map sizes. It proposes:
+       - the indicator as a disclosure button in the heading's row;
+       - a visible qualifier for estimated and legacy reversed copies;
+       - today's full text in a panel closed by default.
+
+       The rider's combined notice and layout decision is awaited.
