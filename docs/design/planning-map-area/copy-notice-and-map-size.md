@@ -2,6 +2,8 @@
 
 **Status (5 October 2026): a design proposal for the rider's combined decision. Nothing is implemented, and none of the wording below is approved catalogue text.**
 
+**Update (5 October 2026, later):** the rider approved the compact notice's direction, and a Calculate-first order was compared. See [Approved direction and the Calculate-first comparison](#approved-direction-and-the-calculate-first-comparison-5-october-2026), the newest record. The sections between here and there are the earlier record of the same day.
+
 This refines [item 122's report](README.md), which is not repeated here, and gives [item 141](../../project/backlog.md#item-141) its visual proposal. Everything was measured on scratch builds of `0.4.62` (application source identical to `5b2d295`), outside the repository, in the pinned Playwright container by digest: Chromium 149 and WebKit 26.5, which measured identically wherever both ran. **None of it is installed-iPhone evidence.**
 
 ## Summary
@@ -210,6 +212,124 @@ Not repeated. Item 122's design stage exercised genuine drag, rotate and pitch g
 - **Not re-measured:** P-18's map-selection reveal and the confirmation reveals of item 124. They adapt to the page's geometry by design, and item 122's evidence for larger maps found them working.
 - **Not run:** the specs that assert today's notice (listed in item 141), a real Edit copy → Planning arrival, VoiceOver, landscape and physical Android. The legacy variants were checked at 390×844 only.
 - **The wording is a proposal** in both languages.
+
+## Approved direction and the Calculate-first comparison (5 October 2026)
+
+**The rider's approvals, 5 October 2026.** These are product decisions, not device acceptance.
+
+- **The indicator:** "Editing a copy" / "Kopie in Bearbeitung" beside the Planning heading, acting as the disclosure button.
+- **The explanation:** in full, in a nearby panel, closed by default.
+- **The estimated-waypoint warning stays visible,** including that recalculation may follow different roads. The short qualifiers use full stops rather than long dashes.
+- **The legacy reversed-copy cautions stay visible.**
+- **The short qualifier is hidden while the full explanation is open.**
+- **The polite announcement:** the existing polite announcement of the copy information is preserved, separately from the disclosure button.
+- **Unchanged:** no timed disappearance, and no change to draft provenance, storage, editing, saving or the source route.
+- **The map:** the preferred candidate is about 500 px at 390×844, using the 60dvh rule with 20 px snapping, 340 px minimum and 560 px maximum. The final height is still open.
+
+**The qualifiers with full stops** (within the approved direction; final catalogue wording is settled in the implementation):
+
+| Qualifier                 | English                                                                                                | German                                                                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| Estimated                 | Waypoints estimated. Recalculation may follow different roads.                                         | Wegpunkte geschätzt. Die Neuberechnung kann andere Straßen wählen.                                    |
+| Legacy reversed exact     | Recalculate before saving. One-way restrictions may change the route.                                  | Vor dem Speichern neu berechnen. Einbahnregelungen können die Route ändern.                           |
+| Legacy reversed estimated | Waypoints estimated. Recalculation may follow different roads, especially around one-way restrictions. | Wegpunkte geschätzt. Die Neuberechnung kann andere Straßen wählen, besonders wegen Einbahnregelungen. |
+
+**The announcement in the prototype.** A visually hidden `<p role="status">` carries today's full notice text whenever an edit copy is shown. It is separate from the button and takes no layout space. **Its screen-reader behaviour is unverified**, including whether the text is read twice once the panel is opened. That belongs to the notice's implementation check.
+
+### What was compared
+
+Two scratch builds, with the revised notice, the 500 px rule and the enlarged-text guard:
+
+- **today's action order;**
+- **Calculate first:**
+  1. Calculate route, with its routing error and stale-route note, which report its result;
+  2. the editing actions: Undo, Redo, Return to start and Reverse route, and Deselect waypoint when shown;
+  3. the key-verification line;
+  4. the routing options and Clear draft.
+
+  Elements were only moved. Sizes, labels, enabled states and semantics are unchanged, and nothing is sticky, duplicated or hidden.
+
+Measured in Chromium. A WebKit spot-check of the most constrained cases — an estimated copy with a waypoint selected, in English and German — matched to the pixel. Because 500 px missed one important case, the height was then stepped down in 20 px increments, by overriding the map's height on the same build and reading it back. The nearest passing height was then built as its own rule (56dvh, 340–560 px), with Calculate first.
+
+![Calculate route first, at 500 px with synthetic insets](images/13-calculate-first-390x844.png)
+
+![The 480 px compromise, a WebKit spot-check, a zero-inset reference, and 375×667 in German](images/14-compromise-and-references.png)
+
+**Calculate's margin inside the usable band, and how far the Undo row lies below the band, in px.** The Undo figure is the editing group's first 44 px row, taken from the group's measured box; Undo's own box was not measured separately. These are at 390×844 with **synthetic 47/34 insets**, an assumption for an iPhone 13-class installed PWA, not a measurement:
+
+| Draft                                 | Today's order, 500 | Calculate first, 500 | Calculate first, 480 |
+| ------------------------------------- | -----------------: | -------------------: | -------------------: |
+| Ordinary (English or German)          |  −62; Undo in view |      +50; Undo 10 px |    +70; Undo in view |
+| Estimated copy (English or German)    |    −117; Undo 5 px |       −5; Undo 65 px |      +15; Undo 45 px |
+| Estimated, waypoint selected, English |    −117; Undo 5 px |       −5; Undo 65 px |      +15; Undo 45 px |
+| Estimated, waypoint selected, German  |    −169; Undo 5 px |       −5; Undo 65 px |      +15; Undo 45 px |
+
+**References:**
+
+- **Zero insets, 390×844** (Calculate's margin): ordinary +19 / +131 / +151; estimated −36 / +76 / +96; estimated with a waypoint selected, German, −88 / +76 / +96.
+- **375×667, German, an estimated copy, synthetic 20/0:**
+
+  | Rule and order               | Map    | Calculate |
+  | ---------------------------- | ------ | --------: |
+  | 500 px rule, today's order   | 400 px |   −185 px |
+  | 500 px rule, Calculate first | 400 px |    −21 px |
+  | 480 px rule, Calculate first | 380 px |     −1 px |
+
+- **Height steps at 390×844, synthetic 47/34, Calculate first:**
+
+  | Map height | Ordinary | Estimated copy |
+  | ---------: | -------: | -------------: |
+  |     500 px |      +50 |             −5 |
+  |     480 px |      +70 |            +15 |
+  |     460 px |      +90 |            +35 |
+
+  The editing group, Deselect included, lies at most 169 px below the band, at 500.
+
+**What this establishes:**
+
+- **Calculate first lifts Calculate route by 112 px at 390×844** and makes it independent of the editing rows. Selecting a waypoint, which adds German's "Wegpunkt abwählen" row, no longer moves it.
+- **At 500 px with the synthetic insets,** Calculate fits for an ordinary draft but misses by 5 px for an estimated copy. **480 px is the nearest 20 px step that fits every measured 390×844 case**, with 15 px to spare for an estimated copy.
+- **The editing actions stay one short scroll away.** The Undo row is in view for an ordinary draft at 480, and 45 px below for an estimated copy (65 px at 500). Before, they were above Calculate and closer to the map.
+- **On a 375×667 phone neither height is reliable,** even with Calculate first; there the trade-off is purely size.
+- **The key-verification line is still shown,** now after the editing actions.
+- **The bar for "readily reachable"** is one short scroll; this was not timed with a rider.
+
+### The measured recommendation
+
+**Calculate first, with the 480 px rule** (56dvh, 20 px snapping, 340–560 px). It is the nearest height to the preferred 500 px that keeps Calculate route inside the usable band in every measured 390×844 case with the synthetic insets, in English and German, whether or not a waypoint is selected.
+
+If the extra 20 px matters more, **500 px with Calculate first** keeps Calculate there for ordinary drafts and misses estimated copies by 5 px.
+
+**Neither is shown to fit the rider's installed iPhone:** the insets are assumed, and container fonts are not iOS's.
+
+**Enlarged text:** the map keeps today's height in the enlarged layout, as measured on 5 October. The implementation should also avoid the wider direction-dependent switching range found then, for example by deciding the layout without letting the map's own height change feed back. That mechanism is left to the implementation, and its thresholds were not re-measured here.
+
+**The intended implementation split:**
+
+1. **The compact notice first ([item 141](../../project/backlog.md#item-141)):** catalogue wording, the heading-row disclosure, the visible qualifiers and the separate polite announcement. Its checks:
+   - the notice-asserting tests updated deliberately, as item 141 lists;
+   - English and German, and 200% text;
+   - a screen-reader check of the announcement and the disclosure.
+2. **Then the map and layout ([item 122](../../project/backlog.md#item-122)):** the chosen height rule with its fallback tiers and the enlarged-text behaviour, and the Calculate-first order if chosen. Its checks:
+   - a genuine-drag gesture test at the new heights in CI;
+   - item 128's crosshair checks and item 114's enlarged-text contract;
+   - P-18 and the confirmation reveals, and the Planning specs.
+
+**The final decision needed:**
+
+- the action order (Calculate first, or today's);
+- the map height (480 px as measured, 500 px, or another 20 px step);
+- confirmation of the qualifier wording above.
+
+**This slice's limits:**
+
+- one engine, with a WebKit spot-check;
+- arrival and one selected waypoint only;
+- the insets assumed;
+- nothing about VoiceOver;
+- the earlier sections' limitations apply.
+
+The prototypes stayed in scratch. The reorder and the announcement are each a few lines of JSX: the `.planning-calculate-actions` block moved ahead of the editing-actions `role="group"`, with the key-status line moved after it.
 
 ## Reproducing (a reconstruction)
 
