@@ -1,6 +1,6 @@
 # Completed backlog items 132–
 
-This file continues the 100– numeric range and opens at item 132. It was started when item 132 was completed (2 October 2026, `0.4.55`). Its entry belongs before item 133's in numeric order, and adding it to what was then `items-118-NN.md` would have taken that file to about 176,000 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md). That file was therefore closed at item 131 and renamed [`items-118-131.md`](items-118-131.md), and item 133's entry — completed earlier the same day as a CI-only change — moved here unchanged apart from its link to item 132, which now points within this file. No entry was shortened or rewritten by that split. Stable item numbers never change regardless of which file their text lives in: item 133 was completed before item 132 and is filed after it, since a number is an identifier and never a schedule. Item 141 — implemented in `0.4.63` on 5 October 2026, with its installed-iPhone acceptance pending — follows them, moved from `backlog.md` under the same convention.
+This file continues the 100– numeric range and opens at item 132. It was started when item 132 was completed (2 October 2026, `0.4.55`). Its entry belongs before item 133's in numeric order, and adding it to what was then `items-118-NN.md` would have taken that file to about 176,000 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md). That file was therefore closed at item 131 and renamed [`items-118-131.md`](items-118-131.md), and item 133's entry — completed earlier the same day as a CI-only change — moved here unchanged apart from its link to item 132, which now points within this file. No entry was shortened or rewritten by that split. Stable item numbers never change regardless of which file their text lives in: item 133 was completed before item 132 and is filed after it, since a number is an identifier and never a schedule. Item 141 — completed in `0.4.63` on 5 October 2026 and accepted on the installed iPhone the same day — follows them, moved from `backlog.md` under the same convention.
 
 See [`README.md`](README.md) for the full history index, [`../backlog.md`](../backlog.md) for pending specifications, and [`../current-status.md`](../current-status.md) for the manual acceptance ledger.
 
@@ -366,7 +366,7 @@ Run [37055399688](https://github.com/adf-MD/amazing-cycling-navigation/actions/r
 
 <a id="item-141"></a>
 
-## Item 141 — A compact Edit copy notice in Planning — implemented, device acceptance pending
+## Item 141 — A compact Edit copy notice in Planning — done
 
 _Category: Planning layout_
 
@@ -541,8 +541,21 @@ No map, enlarged-text or action rule changed.
 
 ### CI and deployment
 
-This entry was written before the push. The CI run, its shards and the deployed build are reported in the handoff and recorded here together with the device acceptance.
+This entry was written before the push. Run [37306394172](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37306394172), for commit `a474254`: **Verify and build, all four End-to-end shards and Deploy succeeded, each on its first attempt.**
 
-### Installed-iPhone acceptance — pending
+- Verify and build took 235 s.
+- The shards took 659, 778, 349 and 893 s (shards 1 to 4). The longest was 307 s under the 1,200 s limit.
+- Deploy took 11 s.
 
-Session 5 of [`current-status.md`](../current-status.md). Item 122's implementation waits for this acceptance.
+The live site then served `0.4.63` with build `a474254`, and the previous build, `320b1d9`, was gone.
+
+### Installed-iPhone acceptance (reported 5 October 2026)
+
+**Accepted** on the installed iPhone, in German and English: Session 5's six visual and functional checks, at product level.
+
+- **The build** was deployed `0.4.63` (`a474254`). That is the deployed context: no version, build, phone model or iOS version was reported from the device.
+- **The verbatim report,** and what it does not establish, is in [`current-status.md`](../current-status.md#installed-iphone-acceptance-of-0463-build-a474254-item-141-reported-5-october-2026).
+- **VoiceOver was not checked.** The announcement, the button's name and state, and possible duplicate reading remain untested, so this is not screen-reader acceptance.
+- **Item 135's focus limitation** is unchanged.
+
+Item 122's implementation follows.

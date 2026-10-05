@@ -1,17 +1,120 @@
-# Current status — archive: dated records from 29 September back to 10 September 2026
+# Current status — archive: dated records from 1 October back to 10 September 2026
 
-This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order — on 1 October 2026 those from 25 September 2026 back, and on 4 October 2026 the four of 28 and 29 September 2026 that now open it — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
+This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order — on 1 October 2026 those from 25 September 2026 back, on 4 October 2026 the four of 28 and 29 September 2026, and on 5 October 2026 the seven of 30 September and 1 October 2026 that now open it — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
 
 **Where the moved text's positional references now point.** These records stood in `current-status.md` after its newer dated records and before its per-item entries from item 114 onwards, and their wording is kept exactly as written. Read them like this:
 
 - **"above" or "below" one of the records in this file** — another record in this file, as before: their order is unchanged.
 - **"the checklist above", "the consolidated installed-iPhone checklist above", "Session 1", "Session 2", "Session 3", "the opportunistic monitoring above", "this file's own reading note above", "the umbrella above" and "the open-finding subsection above"** — in [`current-status.md`](current-status.md): its open checklist, its "How to read this ledger" notes, its "Physical Android — one umbrella" statement and its "Open device findings" subsection. "Session N" means the checklist's sessions as they stood when a record was written; a check named there may since have been accepted and removed.
 - **Item 121's "the dated `0.4.44` record above"**, under "Dated evidence, closures and limitations, by item" — that record stayed in `current-status.md` on 1 October 2026 and moved here on 4 October 2026, so it is again [above, in this file](#installed-iphone-acceptance-of-0444-build-8027c6a-item-121-reported-29-september-2026).
+- **In the seven records of 30 September and 1 October 2026, moved on 5 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist above" means `current-status.md`'s open checklist; "the item 102 entry below" means `current-status.md`'s per-item entry for item 102; and "the mouse double-click observation above" means the observation from automated testing in `current-status.md`'s checklist section. Their references to one another, such as "the `0.4.47` finding below", still point within this file.
 - **"Item 115's installed-iPhone presentation checklist below"**, in the 12 September 2026 bicycle field test — the per-item checklists of that time, since consolidated into `current-status.md`'s Sessions 2 and 3.
 
 Links in these records are relative to `docs/project/`, as they were, and still resolve.
 
 ---
+
+### Installed-iPhone observations of Planning's save-and-switch and a hidden Delete (item 124's C-14 and D-03, reported 1 October 2026)
+
+**Device and build.** Installed Home Screen PWA. **The build and the language were not stated**, so neither is recorded. The behaviour observed is what slice 3 then changed.
+
+- **C-14 — Planning's Save while another ride was unfinished.** Saving caused no automatic movement. The switch confirmation appeared at the top of Planning, and the rider had to scroll up to find it. Cancel removed it without moving the view; the route had been saved, and the original ride stayed resumable.
+- **D-03 — a search hiding a route whose Delete confirmation was open.** Removing the search text made the software keyboard vanish and brought the Delete confirmation into the top third of the screen. After Cancel, both routes remained saved.
+
+These are observations of existing behaviour, recorded as the device evidence behind the approved slice 3 changes ([`history/item-124.md`](history/item-124.md#item-124)); they accept nothing. The slice 2 inventory's measurements of the same two cases are desktop-browser evidence, recorded in [`docs/design/reveal-inventory/`](../design/reveal-inventory/README.md), and are not re-asserted by this report.
+
+### Installed-iPhone acceptance of `0.4.51` (build `04639cb`, item 124 slice 1, reported 1 October 2026)
+
+**Device and build.** Installed Home Screen PWA, portrait, at the phone's ordinary text size; version `0.4.51`, build `04639cb`, as reported. That build is the deployed `0.4.51` (Deploy run `36884939494`).
+
+**The rider's report, verbatim:** "The checks 1-6 pass." — all six of item 124's Session 5 checks, so that session is complete for this device:
+
+- Clear draft near the bottom of the screen opens fully visible, clear of the navigation and the home indicator, with no movement after it appears;
+- Cancel preserves the draft, leaves Clear draft visible, and does not restore the page position from before opening;
+- Clear draft high on the screen opens without moving the page;
+- Delete route on the last card opens with its actions visible, and Cancel preserves the route and leaves Delete visible;
+- scrolling by hand while either confirmation is open is respected on cancelling, with only the minimum correction needed to reveal its opening button;
+- opening Clear draft from the route-name field with the software keyboard open works: once the keyboard has closed the confirmation is visible, and Cancel preserves the name.
+
+This **accepts item 124's first slice on the installed iPhone**, at product level. It closes **slice 1 only**: item 124 stays active, and its slice 2 is an inventory and review ([`history/item-124.md`](history/item-124.md#item-124)).
+
+**The keyboard-open path passed on this iPhone.** Desktop browsers have no software keyboard and did not reproduce that transition; the automated evidence for it remains only the focus hand-off from the focused route-name field.
+
+**Separate from the automated evidence.** The browser geometry, baseline and negative controls, in Chromium and WebKit in the pinned container, are recorded in item 124's [slice 1 record](history/item-124.md#item-124). This report neither re-verifies nor replaces them, and they remain automated evidence.
+
+**Not claimed:** the language the checks were made in — the report does not say, so no separate English or German acceptance is recorded; use of a physical Escape key; focus behaviour under assistive technology, including VoiceOver; iOS Larger Text; landscape; physical Android.
+
+### Installed-iPhone acceptance of `0.4.50` (build `3ebf4ce`, item 128, reported 1 October 2026)
+
+**Device and build.** Installed Home Screen PWA, portrait, at the phone's ordinary text size; version `0.4.50`, build `3ebf4ce`, as reported. That build is the deployed `0.4.50`: `3ebf4ce` is a test-only commit following `47f8c40`, whose own run did not deploy ([history](history/items-118-131.md#item-128)).
+
+**Passed in English and in German** — all three of item 128's Session 5 checks, so that session is complete for this device:
+
+- with map imagery unavailable, the red placement crosshair stays fully visible below Planning's imagery message, and **Retry map imagery** still retries;
+- a failed **Locate me**, a selected warning and a selected recognised climb each show their message below the map, readable and without overlapping the imagery message;
+- when each of those messages clears, its space closes with no leftover gap, and the map frame does not move.
+
+This **accepts item 128 on the installed iPhone in both languages**, at product level.
+
+**Separate from the automated evidence.** The ring-clearance measurements, fail-first runs and negative controls, in Chromium and WebKit in the pinned container, are recorded in item 128's [history](history/items-118-131.md#item-128) and its [design record](../design/planning-imagery-banner/README.md). This report neither re-verifies nor replaces them, and they remain automated evidence.
+
+**Item 129 stays open.** The failed-Locate-me check passing does not resolve [item 129](backlog.md#item-129)'s finding about recovering from a denied location permission in the installed PWA.
+
+**Not claimed:** VoiceOver, iOS Larger Text, landscape, physical Android, or a separately tested light or dark appearance. Nor does it resolve the informative 320×568 German case, which still overlaps the crosshair by 15 px in automated measurement and is carried into [item 122](backlog.md#item-122).
+
+### Installed-iPhone acceptance of item 102's navigation icons (`0.4.49`, reported 30 September 2026)
+
+**Device and build.** Installed Home Screen PWA, after item 102's icons shipped in `0.4.49`. The report stated no version, build or device model, so none is recorded as read from Status; the acceptance is associated with the shipped `0.4.49` work.
+
+**The rider's report**, verbatim: "All the icons look good and feel natural, the checks pass!" The rider explicitly authorised recording it as item 102's acceptance.
+
+**Accepted**, as broad product-level acceptance of the new navigation icons — the list, bicycle, dotted trail and gear — which **closes item 102's Session 5** and removes it from the checklist above. The report did not itemise that session's checks, so no individual result is recorded: not English or German separately, not light or dark appearance, and not selection behaviour.
+
+**Separate from the automated evidence.** The pixel comparison against the chosen artwork, and the navigation geometry and accessibility tree measured identical to `0.4.48`, are container evidence recorded in the item 102 entry below and in its [history](history/items-100-103.md#item-102). This report neither re-verifies nor replaces them.
+
+**Not claimed:** VoiceOver (the accessible names are unchanged and the icons stay hidden from assistive technology), iOS Larger Text, landscape and physical Android.
+
+**Decision the same day.** The rider approved a revised execution order, led by [item 128](history/items-118-131.md#item-128) and then [item 124](history/item-124.md#item-124); the root [`CLAUDE.md`](../../CLAUDE.md) holds the order and its rationale.
+
+### Installed-iPhone acceptance of `0.4.48` (build `bf09776`, item 119, reported 30 September 2026)
+
+**Device and build.** Installed Home Screen PWA, stationary and portrait as Session 5 specified; version `0.4.48`, build `bf09776`, as reported.
+
+**Passed** — both remaining Session 5 paths, so that session is complete for this device:
+
+- with a route ride paused and another route's switch prompt armed, **End and switch pressed from Ride** opened the new route fresh, with **Start riding** and none of the paused route's progress — the `0.4.47` finding below, corrected;
+- with the same prompt armed, the Settings **Delete key** confirmation overlapped it, each Cancel closed only its own confirmation, and the switch prompt returned inside its route card on Routes;
+- after each switch, closing and reopening the app offered nothing to resume.
+
+Together with the `0.4.47` passes below — the stale-prompt check and the representative single confirmations, which stand and were not repeated — this **accepts item 119 on this iPhone**, at product level.
+
+**Not claimed:** VoiceOver announcing each confirmation's own title and message, which stays deferred; physical Android.
+
+### Installed-iPhone check of `0.4.47` (build `187b752`, item 119, reported 30 September 2026)
+
+**Device and build.** Installed Home Screen PWA, portrait; version `0.4.47`, build `187b752`, as reported.
+
+**Passed:**
+
+- the stale-prompt check — with a switch pending, resuming the paused ride from the Ride launcher left no prompt behind;
+- the representative single confirmations.
+
+**Finding, fixed in `0.4.48`.** With route A paused, route B's switch prompt opened from Routes, and End and switch pressed from **Ride**, B opened showing **Resume ride** instead of **Start riding**. The same path in Chromium and WebKit also stored A's fix and progress under B's route id, and offered to resume B after a reload. The cause and fix are in [`history/items-118-131.md`](history/items-118-131.md#item-119).
+
+**Not claimed:** the rest of the overlapping-switch check, which was not reported as passed and is rechecked in Session 5; VoiceOver; physical Android.
+
+### Installed-iPhone acceptance of `0.4.46` (build `94a4488`, item 123, reported 30 September 2026)
+
+**Device and build.** iPhone 13, installed Home Screen PWA, portrait; version `0.4.46`, build `94a4488`, as reported.
+
+**Passed** — all four of item 123's Session 5 checks, so that session is complete for this device:
+
+- the empty-draft hint in English and German;
+- a tap, a small pan, a pinch, a double-tap zoom and a double-tap-and-drag zoom add no waypoint and no Undo entry, with an empty draft and with a calculated route;
+- the crosshair control's Add, Move and Insert after act on the intended waypoint, and a map tap while Move or Insert after is pending neither completes it nor changes the label;
+- a Planning warning and a recognised climb on the Riding map before the ride still select on a tap.
+
+**Not claimed:** VoiceOver, landscape, enlarged text, physical Android, an Apple Pencil, or an external mouse or trackpad. The mouse double-click observation above is unchanged and remains separate.
 
 ### Installed-iPhone check of `0.4.45` (build `bac3553`, item 114, reported 29 September 2026)
 
