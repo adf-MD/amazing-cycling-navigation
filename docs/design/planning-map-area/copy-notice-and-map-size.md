@@ -2,7 +2,9 @@
 
 **Status (5 October 2026): a design proposal for the rider's combined decision. Nothing is implemented, and none of the wording below is approved catalogue text.**
 
-**Update (5 October 2026, later):** the rider approved the compact notice's direction, and a Calculate-first order was compared. See [Approved direction and the Calculate-first comparison](#approved-direction-and-the-calculate-first-comparison-5-october-2026), the newest record. The sections between here and there are the earlier record of the same day.
+**Update (5 October 2026, later):** the rider approved the compact notice's direction, and a Calculate-first order was compared. See [Approved direction and the Calculate-first comparison](#approved-direction-and-the-calculate-first-comparison-5-october-2026). The sections between here and there are the earlier record of the same day.
+
+**Final decisions (5 October 2026):** the rider then took the final design decisions for both items. See [Final design decisions](#final-design-decisions-5-october-2026), the newest record: item 141's notice is to be implemented first, then item 122's map and action order.
 
 This refines [item 122's report](README.md), which is not repeated here, and gives [item 141](../../project/backlog.md#item-141) its visual proposal. Everything was measured on scratch builds of `0.4.62` (application source identical to `5b2d295`), outside the repository, in the pinned Playwright container by digest: Chromium 149 and WebKit 26.5, which measured identically wherever both ran. **None of it is installed-iPhone evidence.**
 
@@ -330,6 +332,40 @@ If the extra 20 px matters more, **500 px with Calculate first** keeps Calculate
 - the earlier sections' limitations apply.
 
 The prototypes stayed in scratch. The reorder and the announcement are each a few lines of JSX: the `.planning-calculate-actions` block moved ahead of the editing-actions `role="group"`, with the key-status line moved after it.
+
+## Final design decisions (5 October 2026)
+
+**The rider's decisions, 5 October 2026.** They are design approvals, not installed-iPhone acceptance, and they settle the questions left by the [Calculate-first comparison](#the-measured-recommendation).
+
+**Item 122 — the map and the action order:**
+
+- **Calculate route directly below the map,** before the editing actions: Undo, Redo, Return to start, Reverse route, and Deselect waypoint when shown. The key-verification line follows the editing actions, then the routing options and Clear draft. Sizes, labels, enabled states and semantics are unchanged; nothing is sticky, duplicated or hidden.
+- **The 480 px rule at 390×844:** `clamp(340px, round(nearest, 56dvh, 20px), 560px)`, behind the existing `@supports` chain of a px fallback, then the `dvh` tier, then the `round()` tier. The 20 px snap stays load-bearing.
+- **Enlarged text:** item 114's enlarged layout keeps today's map height, without introducing the wider direction-dependent switching range [measured on 5 October](#the-enlarged-text-guard). The mechanism is left to item 122's implementation.
+
+**Item 141 — the compact notice:**
+
+- **The structure and labels approved earlier today:**
+  - "Editing a copy" / "Kopie in Bearbeitung" beside the Planning heading, as the disclosure button, outside the `h1`;
+  - for legacy reversed drafts, "Editing a reversed copy" / "Umgekehrte Kopie in Bearbeitung".
+- **The English and German qualifiers** with full stops, as in [the table above](#approved-direction-and-the-calculate-first-comparison-5-october-2026), both legacy reversed variants included.
+- **The full explanation,** today's text unchanged, in a nearby panel closed by default. The qualifier is hidden while the panel is open.
+- **Accessibility, settled while planning the implementation:**
+  - the button's accessible name is its visible label only, with its expanded state and its panel association;
+  - the panel is not a live region and exists only while open;
+  - the polite announcement is a stable, initially empty, visually hidden `role="status"` with `aria-atomic="true"`, present before its message. Its text follows the notice's existing lifecycle, and neither ordinary edits nor opening or closing the panel touch it.
+- **Not approved, and unverified:** a screen reader may read the full text twice while the panel is open, once from the announcement and once from the panel. This is a limitation for the VoiceOver check, not an accepted behaviour.
+
+**The evidence behind them** is browser measurement only, in the pinned container: Chromium with a WebKit spot-check, at **assumed** 47/34 safe-area insets. Nothing here establishes visibility on the rider's installed iPhone. On a smaller phone (375×667 was measured), reaching Calculate may still need a scroll.
+
+**The order** (root [`CLAUDE.md`](../../../CLAUDE.md)):
+
+1. item 141's implementation;
+2. item 122's implementation, after item 141's installed-iPhone acceptance;
+3. item 103;
+4. item 120.
+
+Items 125–127, 129, 130 and 134–140 stay unscheduled.
 
 ## Reproducing (a reconstruction)
 

@@ -4,6 +4,8 @@
 
 **Update (5 October 2026).** The rider asked for more map than C1's 480 px, with Calculate route visible where practical. A [follow-up report](copy-notice-and-map-size.md) measures 500, 480 and 420 px maps together with [item 141](../../project/backlog.md#item-141)'s compact Edit copy notice and an enlarged-text guard. It finds that 500 px keeps Calculate on the first screen only in the zero-inset comparison, and only for some drafts; that comparison does not include the installed PWA's safe-area insets. Everything below is the 4 October record, unchanged.
 
+**Final decisions (5 October 2026).** The rider then decided, as design approvals rather than device acceptance: Calculate route directly below the map, the 480 px rule (`clamp(340px, round(nearest, 56dvh, 20px), 560px)`), and today's height in the enlarged layout ([record](copy-notice-and-map-size.md#final-design-decisions-5-october-2026)). Item 122 is to be implemented after item 141's compact notice and that notice's installed-iPhone acceptance.
+
 **The problem.** On the installed iPhone, the Planning map felt too small for planning compared with free roam's map (item 113's first pass, 25 September 2026). Measured at 390×844, Planning's map is **358×380, 41% of the screen**; free roam's is **358×678, 74%**.
 
 **Recommendation: C1, a larger default map with the same page structure — about 56% of the screen height instead of 44%, between 320 and 560 px — at ordinary text only, keeping today's height while item 114's enlarged-text layout is engaged.** The trade-offs and the alternatives are in [Recommendation](#recommendation-and-trade-offs). The choices the rider needs to make are listed in [Decisions for the rider](#decisions-for-the-rider).
