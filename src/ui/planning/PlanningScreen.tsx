@@ -4,6 +4,7 @@ import { describeGpxExportFailure } from "../library/gpxMessages.ts";
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useReducer,
@@ -289,6 +290,14 @@ function buildPlanningProvenance(
   };
 }
 
+/** A hydrated edit-copy draft's seed provenance — see editCopyMeta's own
+ * comment inside PlanningScreen below. */
+interface EditCopyMeta {
+  sourceRouteId: string;
+  origin: "exact" | "derived";
+  operation: EditCopyOperation;
+}
+
 /** The read-only Planning notice text for a hydrated/autosaved edit-copy
  * draft — one of exactly four combinations of operation ("forward" from
  * Edit copy, "reverse" — legacy only, see below) and origin ("exact"
@@ -325,6 +334,35 @@ function describeEditCopyNotice(
   return meta.origin === "exact"
     ? translator.t("planning.editCopy.exact")
     : translator.t("planning.editCopy.estimated");
+}
+
+/** The compact Edit copy notice's visible parts (item 141): the disclosure
+ * button's label beside the Planning heading, and the short qualifier that
+ * stays visible while describeEditCopyNotice's full explanation, above and
+ * unchanged, sits in the panel closed by default. An exact forward copy
+ * needs no qualifier; an estimated one keeps both of its points visible —
+ * the waypoints were estimated, and recalculation may follow different
+ * roads — and a legacy reversed one keeps its caution. */
+function describeEditCopyIndicator(
+  translator: Translator,
+  meta: { origin: "exact" | "derived"; operation: EditCopyOperation },
+): { label: string; qualifier: string | null } {
+  if (meta.operation === "reverse") {
+    return {
+      label: translator.t("planning.editCopy.indicatorReversed"),
+      qualifier:
+        meta.origin === "exact"
+          ? translator.t("planning.editCopy.qualifierReversedExact")
+          : translator.t("planning.editCopy.qualifierReversedEstimated"),
+    };
+  }
+  return {
+    label: translator.t("planning.editCopy.indicator"),
+    qualifier:
+      meta.origin === "exact"
+        ? null
+        : translator.t("planning.editCopy.qualifierEstimated"),
+  };
 }
 
 /** The always-visible compact routing-preference summary shown beside
@@ -408,11 +446,16 @@ export function PlanningScreen({
   // informational notice below — never gates Save/Export, recalculation or
   // routing behaviour, all of which are already governed by the existing
   // waypoint/profile/avoidFerries fingerprint.
-  const [editCopyMeta, setEditCopyMeta] = useState<{
-    sourceRouteId: string;
-    origin: "exact" | "derived";
-    operation: EditCopyOperation;
-  } | null>(null);
+  const [editCopyMeta, setEditCopyMeta] = useState<EditCopyMeta | null>(null);
+  // Item 141: the edit-copy meta the compact notice's explanation panel was
+  // opened for. Bound to that object's identity, so a meta that is cleared
+  // (Save, Clear draft) or replaced always starts closed, with no effect.
+  // Held apart from editCopyMeta on purpose: the autosave effect depends on
+  // editCopyMeta, and opening or closing the panel is presentation only — it
+  // must never schedule a draft write.
+  const [copyDetailsOpenFor, setCopyDetailsOpenFor] = useState<EditCopyMeta | null>(null);
+  const isCopyDetailsOpen = editCopyMeta !== null && copyDetailsOpenFor === editCopyMeta;
+  const copyDetailsId = useId();
   const [saveError, setSaveError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [savedRouteFeedback, setSavedRouteFeedback] = useState<SavedRouteFeedback | null>(
@@ -2152,9 +2195,60 @@ export function PlanningScreen({
     </>
   );
 
+  const editCopyIndicator = editCopyMeta
+    ? describeEditCopyIndicator(translator, editCopyMeta)
+    : null;
+  const editCopyNotice = editCopyMeta
+    ? describeEditCopyNotice(translator, editCopyMeta)
+    : null;
+
   return (
     <section aria-label={t("planning.landmarkLabel")} className="screen planning-screen">
-      <h1 className="screen-title">{t("planning.title")}</h1>
+      {/* Item 141: the compact Edit copy notice. The disclosure button sits
+       * beside the heading, never inside the h1, and its accessible name is
+       * its visible label. The panel holding the full explanation exists only
+       * while open and is not a live region. The polite announcement is the
+       * visually hidden status, rendered from the first render and empty
+       * until hydration sets the meta, so the region exists before its
+       * message; its text then follows the meta alone, untouched by ordinary
+       * edits or by opening and closing the panel. Every child keeps a fixed
+       * position, so React never morphs one paragraph into another. */}
+      <div className="planning-heading">
+        <div className="planning-title-row">
+          <h1 className="screen-title">{t("planning.title")}</h1>
+          {editCopyIndicator ? (
+            <button
+              type="button"
+              className="planning-copy-toggle"
+              aria-expanded={isCopyDetailsOpen}
+              aria-controls={isCopyDetailsOpen ? copyDetailsId : undefined}
+              onClick={() => {
+                setCopyDetailsOpenFor((current) =>
+                  current === editCopyMeta ? null : editCopyMeta,
+                );
+              }}
+            >
+              <span className="planning-copy-toggle-label">
+                {editCopyIndicator.label}
+              </span>
+              <span aria-hidden="true" className="planning-copy-toggle-chevron">
+                ▾
+              </span>
+            </button>
+          ) : null}
+        </div>
+        {editCopyIndicator?.qualifier && !isCopyDetailsOpen ? (
+          <p className="planning-copy-qualifier">{editCopyIndicator.qualifier}</p>
+        ) : null}
+        <p className="visually-hidden" role="status" aria-atomic="true">
+          {editCopyNotice}
+        </p>
+        {editCopyNotice !== null && isCopyDetailsOpen ? (
+          <p id={copyDetailsId} className="status-row status-row--info">
+            {editCopyNotice}
+          </p>
+        ) : null}
+      </div>
 
       {!hasKey ? <NoApiKeyNotice onOpenSettings={onNavigateToSettings} /> : null}
 
@@ -2180,12 +2274,6 @@ export function PlanningScreen({
             {t("planning.retry")}
           </button>
         </div>
-      ) : null}
-
-      {editCopyMeta ? (
-        <p className="status-row status-row--info" role="status">
-          {describeEditCopyNotice(translator, editCopyMeta)}
-        </p>
       ) : null}
 
       <div

@@ -1,6 +1,6 @@
 # Completed backlog items 132–
 
-This file continues the 100– numeric range and opens at item 132. It was started when item 132 was completed (2 October 2026, `0.4.55`). Its entry belongs before item 133's in numeric order, and adding it to what was then `items-118-NN.md` would have taken that file to about 176,000 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md). That file was therefore closed at item 131 and renamed [`items-118-131.md`](items-118-131.md), and item 133's entry — completed earlier the same day as a CI-only change — moved here unchanged apart from its link to item 132, which now points within this file. No entry was shortened or rewritten by that split. Stable item numbers never change regardless of which file their text lives in: item 133 was completed before item 132 and is filed after it, since a number is an identifier and never a schedule.
+This file continues the 100– numeric range and opens at item 132. It was started when item 132 was completed (2 October 2026, `0.4.55`). Its entry belongs before item 133's in numeric order, and adding it to what was then `items-118-NN.md` would have taken that file to about 176,000 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md). That file was therefore closed at item 131 and renamed [`items-118-131.md`](items-118-131.md), and item 133's entry — completed earlier the same day as a CI-only change — moved here unchanged apart from its link to item 132, which now points within this file. No entry was shortened or rewritten by that split. Stable item numbers never change regardless of which file their text lives in: item 133 was completed before item 132 and is filed after it, since a number is an identifier and never a schedule. Item 141 — implemented in `0.4.63` on 5 October 2026, with its installed-iPhone acceptance pending — follows them, moved from `backlog.md` under the same convention.
 
 See [`README.md`](README.md) for the full history index, [`../backlog.md`](../backlog.md) for pending specifications, and [`../current-status.md`](../current-status.md) for the manual acceptance ledger.
 
@@ -361,3 +361,188 @@ Run [37055399688](https://github.com/adf-MD/amazing-cycling-navigation/actions/r
 - **The longest shard was 2, which runs Chromium only, not shard 4**, which carries every WebKit and Android test. The limitation above left this open, and equal test counts did not give equal durations. Why shard 2's 198 tests took the longest was not investigated.
 - **Parallelism, not speed.** The four test steps sum to 1,511 s, against 1,491 s (603 s + 888 s) for the two-shard run, so the suite's own work is unchanged and the gain is that the work is spread over four runners. Each shard still spends 60–82 s outside its test step, on container start-up, `npm ci` and the build.
 - **One run per configuration.** Every figure here comes from a single run, so none of it is a measured trend or a stable margin, and runner speed varies between runs. No further sharding or optimisation is requested.
+
+---
+
+<a id="item-141"></a>
+
+## Item 141 — A compact Edit copy notice in Planning — implemented, device acceptance pending
+
+_Category: Planning layout_
+
+141. **A compact Edit copy notice in Planning — design candidate, coordinated with item 122**
+     - **Origin: the rider's observation, reported 5 October 2026**, verbatim:
+
+       > The "you edit a copy" message above the screen is pretty big and takes a considerable amount of vertical space.
+
+       It is a rider observation about the Planning layout, **not a measured defect**. No version, build, language or pixel measurement was supplied with it, and none is assumed.
+
+     - **The notice today (source).** When Planning holds an Edit copy draft, `PlanningScreen.tsx` renders one `status-row status-row--info` paragraph with `role="status"` between the Planning heading and the map. `describeEditCopyNotice()` chooses exactly one of four catalogue strings (`planning.editCopy.*` in `src/i18n/messages.{en,de}.ts`) from the draft's stored provenance:
+       - **exact:** an editable copy created from the route's original planning waypoints; the saved route will remain unchanged;
+       - **estimated:** the editable waypoints were estimated from the route; recalculation may follow different roads; the saved route will remain unchanged;
+       - **reversed, exact** (legacy draft rows written by `0.3.17`–`0.3.28` only): a reversed editable copy; recalculate before saving, because one-way restrictions may make the new route differ from the original; the saved route remains unchanged;
+       - **reversed, estimated** (legacy): the reversed waypoints were estimated; recalculation may follow different roads, especially around one-way restrictions; the saved route remains unchanged.
+
+       Its contract, from [item 26](items-06-29.md#item-26) and [item 38](items-30-38.md#item-38): a small, persistent informational notice; it survives unrelated edits; it narrates how the draft was seeded, not later edits; and corrupt stored metadata suppresses it rather than showing a wrong one.
+
+     - **Why it is linked to [item 122](../backlog.md#item-122).** The notice sits above the map, so its full height pushes the map and **Calculate route** down the first screen. Item 122's measurements were made without it, and the rider's layout decision depends on the space it takes.
+     - **Approved design direction (the rider, 5 October 2026):**
+       - no automatic, timed disappearance;
+       - a compact, persistent indication that the draft is an editable copy;
+       - the full explanation in a nearby disclosure, closed by default;
+       - the important qualification about estimated waypoints kept visible rather than hidden behind the disclosure — both that the waypoints were estimated and that recalculation may follow different roads;
+       - the meaning of every existing variant preserved, the legacy reversed-copy cautions included.
+     - **Still open, for visual review:** the exact placement; the English and German labels and their wrapping ("Editing a copy" and "Copy details" are suggestions, not approved catalogue wording); the accessible name, and where, if anywhere, the `role="status"` announcement belongs.
+     - **Not authorised:** any change to draft provenance, persistence, editing, recalculation, saving or the source route — this is presentation only. It is design work coordinated with item 122 and considered before that item's final layout decision. Filing it schedules no implementation, and its sequencing is decided with item 122's decision, never ahead of the approved order in the root [`CLAUDE.md`](../../../CLAUDE.md).
+     - **When implemented, the tests that assert the notice are updated deliberately, never relaxed:** `e2e/editRouteAsPlanningCopy.spec.ts`, `e2e/reverseRoute.spec.ts`, `e2e/clearPlanningDraft.spec.ts` and `e2e/editCopyBusyState.smoke.spec.ts` (English and German, also run in WebKit); `src/ui/planning/PlanningScreen.test.tsx`, `PlanningScreen.draftHydration.test.tsx`, `PlanningScreen.clearDraft.test.tsx` and `PlanningScreen.reverseRoute.test.tsx`. Three hazards:
+       - a negative check (`not.toBeVisible`, `toBeHidden`, `/editable copy/i`) would pass vacuously once the full text sits in a closed disclosure, so it must target the new indicator;
+       - a DOM-presence check stops proving visibility if the panel is hidden;
+       - a heading-by-name query needs any new control kept outside the `h1`.
+
+       The evidence then covers English and German, 200% text and the installed PWA's safe-area insets.
+
+     - **Visual proposal, 5 October 2026 — design only, nothing implemented** ([report](../../design/planning-map-area/copy-notice-and-map-size.md)), measured with item 122's intermediate map sizes. It proposes:
+       - the indicator as a disclosure button in the heading's row;
+       - a visible qualifier for estimated and legacy reversed copies;
+       - today's full text in a panel closed by default.
+
+       The rider's combined notice and layout decision is awaited.
+
+     - **Direction approved, 5 October 2026** ([record](../../design/planning-map-area/copy-notice-and-map-size.md#approved-direction-and-the-calculate-first-comparison-5-october-2026)): the compact notice as proposed, with full stops in the short qualifiers and the polite announcement kept, separately from the disclosure button. It is the first of the two intended implementations, before item 122's map and layout change. Nothing is implemented yet.
+     - **Final decisions, 5 October 2026** ([record](../../design/planning-map-area/copy-notice-and-map-size.md#final-design-decisions-5-october-2026)). To be implemented first, before item 122. These are design approvals, not device acceptance:
+       - the approved structure and labels, with "Editing a reversed copy" / "Umgekehrte Kopie in Bearbeitung" for legacy reversed drafts;
+       - the English and German full-stop qualifiers;
+       - the button's accessible name as its visible label;
+       - a non-live panel rendered only while open;
+       - a stable, initially empty, visually hidden `role="status"` with `aria-atomic="true"` for the announcement.
+
+       Possible duplicate screen-reader reading while the panel is open is not approved; it is an unverified limitation for the VoiceOver check.
+
+### Implementation account (5 October 2026, `0.4.63`)
+
+The rider's [final design decisions](../../design/planning-map-area/copy-notice-and-map-size.md#final-design-decisions-5-october-2026) of the same day, implemented as presentation only. Item 122's map height, enlarged-text mechanism and action order are untouched; they are the next slice.
+
+**What the rider now sees,** while Planning holds an Edit copy draft:
+
+- **Beside "Plan a route" / "Route planen":** a compact button, "Editing a copy" / "Kopie in Bearbeitung" with a chevron. A legacy reversed draft shows "Editing a reversed copy" / "Umgekehrte Kopie in Bearbeitung". The button sits in the heading's row and wraps below the heading only when the row cannot hold both.
+- **Below that row, for estimated and legacy reversed copies only:** the short qualifier, as approved. For example, "Waypoints estimated. Recalculation may follow different roads." / "Wegpunkte geschätzt. Die Neuberechnung kann andere Straßen wählen." An exact copy shows no qualifier.
+- **Pressing the button** opens a panel below the row with **today's full explanation, unchanged**, and hides the qualifier. Pressing it again closes the panel and brings the qualifier back.
+- **The panel is closed** on every arrival in Planning, after a reload, and whenever the copy's metadata is cleared or replaced. Nothing disappears on a timer.
+
+**`src/ui/planning/PlanningScreen.tsx`:**
+
+- **The meta type.** The inline meta type became `interface EditCopyMeta`, a type-only change.
+- **`describeEditCopyIndicator`** returns the label and the qualifier, or `null` for an exact forward copy. It sits beside `describeEditCopyNotice`, which is unchanged.
+- **The open state** is `copyDetailsOpenFor`, the meta object the panel was opened for:
+  - `isCopyDetailsOpen` holds only while it is the current `editCopyMeta`, so a cleared or replaced meta starts closed without an effect;
+  - it is held apart from `editCopyMeta` because the autosave effect depends on `editCopyMeta`, so toggling can never schedule a draft write;
+  - the meta's one writer is hydration, which runs at most once per mount, and Planning unmounts on navigation.
+- **The heading block,** a `.planning-heading` wrapper:
+  - the title row, holding the `h1` and, for an edit copy, the button;
+  - the qualifier while closed;
+  - the announcement;
+  - the panel while open.
+
+  Every child keeps a fixed position, so React never turns one paragraph into another. The block now precedes `NoApiKeyNotice`; no test depends on that order.
+
+- **Unchanged:**
+  - `describeEditCopyNotice` and its four catalogue strings;
+  - hydration, autosave, Save and Clear draft, and the persistence of the copy metadata (`editCopySourceRouteId`, `editCopyWaypointsOrigin`, `editCopyOperation`);
+  - the map container and the enlarged-text logic.
+
+**Accessibility, as decided:**
+
+- **The button:**
+  - its accessible name is its visible label only, because the chevron is `aria-hidden`;
+  - `aria-expanded` gives its state;
+  - `aria-controls` names the panel only while the panel is open, following the repository's disclosure convention (`RouteLibrary.tsx`, `RidingUntrustedGpxNotice.tsx`).
+- **The panel** exists only while open and is not a live region.
+- **The announcement** is a visually hidden `<p role="status" aria-atomic="true">`.
+  - It is rendered from Planning's first render and stays empty until the asynchronous hydration sets the meta, so the region exists before its message (W3C's technique ARIA22).
+  - Its text then follows the meta alone: the full explanation until Save or Clear draft empties it.
+  - Neither ordinary edits nor opening and closing the panel touch the node or its text.
+
+**`src/index.css`,** at the top of the Planning section, with these rules:
+
+- **`.planning-heading`:** a flex column with a 4 px gap.
+- **`.planning-title-row`:**
+  - flex and wrap, with a 12 px column gap and a 4 px row gap;
+  - **no `min-height`**, so an ordinary draft's row is exactly the `h1`.
+- **`.planning-copy-toggle`:**
+  - inline-flex, with the info colours;
+  - 0.9rem text and `--radius-sm`;
+  - 4 px by 12 px padding, so a label wrapped at 200% clears the border;
+  - the global 44 px minimum, and no `nowrap`.
+- **Its chevron:** it mirrors `.tag-disclosure-chevron`'s 180° rotation. The global reduced-motion rule covers its transition.
+- **`.planning-copy-qualifier`:** 0.85rem text in the info colour.
+
+No map, enlarged-text or action rule changed.
+
+**Catalogues, `messages.en.ts` and `messages.de.ts`:**
+
+- **Five keys:** `planning.editCopy.indicator` and `.indicatorReversed`, and `.qualifierEstimated`, `.qualifierReversedExact` and `.qualifierReversedEstimated`. Their wording is the approved table.
+- **`messages.de.test.ts`:** the pinned plain count is now 743, up from 738.
+
+**Version** `0.4.63`.
+
+### Evidence — automated only
+
+**Unit tests** (Vitest): the four Planning notice suites and the three catalogue guards, **7 files and 369 tests, all passing**. The guards are `messages.de.test.ts`, `residualCopyAudit.test.ts` and `planningCopyMigration.test.ts`.
+
+- **A shared helper, `src/test/editCopyNotice.ts`,** now carries every existing notice assertion, deliberately and never relaxed. It checks:
+  - the indicator, by its exact name, collapsed and outside the `h1`;
+  - the qualifier, or its absence;
+  - no panel;
+  - exactly one atomic, visually hidden status holding the full text.
+
+  Its absence check names the indicator, the qualifier, the panel and the announcement's text one by one.
+
+- **Vacuous checks replaced.** `/editable copy/i` cannot match "Editing a copy", so the old absence checks would have passed against the new indicator.
+- **New cases:**
+  - the toggle by click, Enter and Space, with focus kept on the same button, `aria-controls` naming the panel only while open, a role-less panel and the qualifier hidden and restored;
+  - zero mutations of the announcement's node across toggles, Reverse route, a rename and an added waypoint, with the panel kept open across Reverse;
+  - the region present and empty before a delayed hydration, and the same node then receiving the text;
+  - a German render with no English leaks.
+
+**Browser tests,** in the CI image by digest (`mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294a…`):
+
+- **The new `e2e/editCopyNotice.smoke.spec.ts`: 22 of 22** (11 cases in Chromium and WebKit). It covers:
+  - **every variant in English and German, at ordinary and 200% text,** closed and open: names and states, the qualifier, no horizontal overflow, everything inside the content box, text unclipped and the 44 px target;
+  - **a 320×568 German reversed case** at 200% text;
+  - **pointer, Enter and Space** toggles on representative cases, from the top and from a 12 px scrolled start. In each, `scrollY` and the button's position are unchanged and focus does not move elsewhere;
+  - **the announcement:** first seen empty, then the same node with zero mutations across toggles and Reverse route;
+  - **persistence:** no draft writes over a second of toggling, and closed again after leaving Planning and after a reload;
+  - **the synthetic 47/34 insets case;**
+  - **a structural guard for ordinary drafts:** the heading block is exactly the `h1`, followed by the usual 16 px gap.
+- **The five updated specs: 94 of 94.** `editCopyBusyState.smoke` and `coldStartPausedRoute.smoke` ran in both engines; `editRouteAsPlanningCopy`, `reverseRoute` and `clearPlanningDraft` ran in Chromium.
+- **Static checks:** lint, typecheck (`tsc -b`) and the production build pass.
+- **Not run locally,** by the slice's proportionate scope:
+  - the full unit suite and the full browser suite (CI runs both);
+  - negative controls: the indicator and qualifier these checks require do not exist in `0.4.62`.
+
+### Findings worth carrying forward
+
+- **Playwright counts the 1×1 visually hidden announcement as visible,** so `getByText(fullText).toBeVisible()` would pass without the rider seeing anything. The helpers assert the indicator and qualifier for what is visible, and the announcement's text separately.
+- **"Kopie in Bearbeitung" is a substring of "Umgekehrte Kopie in Bearbeitung",** so every Playwright role query here is `exact: true`.
+- **Planning now always contains one empty `role="status"`.** Every existing status query on Planning filters by its text, so none gained a match.
+- **Linux WebKit focuses a clicked button; iOS Safari does not.** Pointer checks therefore accept focus on the button or unchanged, never anywhere else. Keyboard checks require the button.
+
+### Limitations, stated plainly
+
+- **No screen reader was available.** Names, states and the live region's structure are asserted in the DOM, but what VoiceOver announces is unverified, including:
+  - whether it speaks the arrival announcement;
+  - whether it reads the full text twice while the panel is open, once from the announcement and once from the panel. This possible duplicate reading is **not** an approved behaviour; it is a limitation for the VoiceOver check.
+- **Focus can fall to `<body>`.** If Save or Clear draft completes while focus is on the indicator, the button is removed and focus falls to `<body>`. That is the kind of focus continuity [item 135](../backlog.md#item-135) investigates. It is not rider-accepted and not fixed here.
+- **Assumed environment:**
+  - the 47/34 insets are assumed iPhone values;
+  - 200% root text in the container's fonts is not iOS Larger Text, and container fonts have not predicted iOS widths before;
+  - there is no physical Android evidence.
+- **Legacy reversed variants** are reachable only from draft rows written by `0.3.17`–`0.3.28`, so their evidence is automated only.
+
+### CI and deployment
+
+This entry was written before the push. The CI run, its shards and the deployed build are reported in the handoff and recorded here together with the device acceptance.
+
+### Installed-iPhone acceptance — pending
+
+Session 5 of [`current-status.md`](../current-status.md). Item 122's implementation waits for this acceptance.

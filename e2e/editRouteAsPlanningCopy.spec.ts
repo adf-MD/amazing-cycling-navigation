@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 import { readPlanningDraftRow } from "./support/rideStateDb.ts";
+import { expectEditCopyNotice } from "./support/editCopyNotice.ts";
 
 // Proves "Edit copy" (CLAUDE.md backlog item 26; the button itself was
 // renamed from "Edit copy in Planning" to "Edit copy" by item 38, which
@@ -252,11 +253,6 @@ async function assertPlanningDraftStaysCleared(page: Page): Promise<void> {
   }
 }
 
-const EXACT_NOTICE =
-  "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.";
-const DERIVED_NOTICE =
-  "Editable waypoints were estimated from this route. Recalculation may follow different roads. The saved route will remain unchanged.";
-
 test("recovers exact planning waypoints with zero routing requests until Calculate, edits and saves as a new route, leaving the original unchanged and reopenable", async ({
   page,
   context,
@@ -280,7 +276,7 @@ test("recovers exact planning waypoints with zero routing requests until Calcula
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
   expect(requestedCoordinatePairs).toHaveLength(1);
 
-  await expect(page.getByText(EXACT_NOTICE)).toBeVisible();
+  await expectEditCopyNotice(page, "exact");
   await expect(page.getByLabel("Route name")).toHaveValue(originalName);
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
   await expect(
@@ -395,7 +391,7 @@ test("derives at most 20 waypoints from an arbitrary GPX with no ACN extension, 
 
   await page.getByRole("button", { name: "Edit copy" }).click();
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
-  await expect(page.getByText(DERIVED_NOTICE)).toBeVisible();
+  await expectEditCopyNotice(page, "estimated");
 
   const waypointButtons = page.getByRole("button", { name: /^Waypoint \d+$/ });
   const derivedIntermediateCount = await waypointButtons.count();
@@ -486,7 +482,7 @@ test("shows a confirmation before replacing a meaningful existing Planning draft
     .click();
 
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
-  await expect(page.getByText(EXACT_NOTICE)).toBeVisible();
+  await expectEditCopyNotice(page, "exact");
   await expect(
     page.getByRole("button", { name: "Waypoint 2", exact: true }),
   ).toBeVisible();
@@ -547,7 +543,7 @@ test("exporting and offline re-importing the edited route preserves its new plan
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
   // "exact", not "derived" — the reimported file's own <acn:planning>
   // extension round-tripped the authored waypoints, not the geometry.
-  await expect(page.getByText(EXACT_NOTICE)).toBeVisible();
+  await expectEditCopyNotice(page, "exact");
   await expect(
     page.getByRole("button", { name: "Waypoint 2", exact: true }),
   ).toBeVisible();
@@ -603,7 +599,7 @@ test("a tampered acn:planning geometry digest falls back to derivation without f
 
   await page.getByRole("button", { name: "Edit copy" }).click();
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
-  await expect(page.getByText(DERIVED_NOTICE)).toBeVisible();
+  await expectEditCopyNotice(page, "estimated");
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);

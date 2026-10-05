@@ -370,6 +370,15 @@ export const de: Catalogue = {
   "planning.editCopy.estimated":
     "Anhand dieser Route wurden editierbare Wegpunkte näherungsweise ermittelt. Bei der Neuberechnung werden möglicherweise andere Straßen gewählt. Die gespeicherte Route bleibt unverändert.",
 
+  "planning.editCopy.indicator": "Kopie in Bearbeitung",
+  "planning.editCopy.indicatorReversed": "Umgekehrte Kopie in Bearbeitung",
+  "planning.editCopy.qualifierEstimated":
+    "Wegpunkte geschätzt. Die Neuberechnung kann andere Straßen wählen.",
+  "planning.editCopy.qualifierReversedExact":
+    "Vor dem Speichern neu berechnen. Einbahnregelungen können die Route ändern.",
+  "planning.editCopy.qualifierReversedEstimated":
+    "Wegpunkte geschätzt. Die Neuberechnung kann andere Straßen wählen, besonders wegen Einbahnregelungen.",
+
   // --- Planning: save, export, clear ---------------------------------
   "planning.save.heading": "Speichern oder exportieren",
   "planning.save.nameLabel": "Routenname",

@@ -38,6 +38,10 @@ import {
 } from "../../storage/planningDraftRepository.ts";
 import { getPlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
 import { saveRoute } from "../../storage/routesRepository.ts";
+import {
+  expectEditCopyNotice,
+  expectNoEditCopyNotice,
+} from "../../test/editCopyNotice.ts";
 
 const mockedGetDraft = vi.mocked(getDraft);
 const mockedSaveDraft = vi.mocked(saveDraft);
@@ -586,17 +590,15 @@ describe("PlanningScreen Reverse route (backlog item 38)", () => {
       }),
     });
 
-    const forwardNotice =
-      "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.";
-    expect(screen.getByText(forwardNotice)).toBeInTheDocument();
+    expectEditCopyNotice("exact");
 
     fireEvent.click(reverseRouteButton());
     await advancePastDebounce();
 
     // The notice is unchanged — it describes seed provenance, not live
     // edit history — and editCopyMeta is carried through on the autosave
-    // unchanged.
-    expect(screen.getByText(forwardNotice)).toBeInTheDocument();
+    // unchanged: still the forward label, never the legacy reversed one.
+    expectEditCopyNotice("exact");
     const saved = lastSavedDraft();
     expect(saved.editCopySourceRouteId).toBe("route-1");
     expect(saved.editCopyWaypointsOrigin).toBe("exact");
@@ -612,16 +614,12 @@ describe("PlanningScreen Reverse route (backlog item 38)", () => {
     map.triggerMapTap(WAYPOINT_B);
     await flushAsync();
 
-    expect(
-      screen.queryByText(/editable copy created|waypoints were estimated/i),
-    ).not.toBeInTheDocument();
+    expectNoEditCopyNotice();
 
     fireEvent.click(reverseRouteButton());
     await advancePastDebounce();
 
-    expect(
-      screen.queryByText(/editable copy created|waypoints were estimated/i),
-    ).not.toBeInTheDocument();
+    expectNoEditCopyNotice();
     const saved = lastSavedDraft();
     expect(saved.editCopySourceRouteId).toBeUndefined();
     expect(saved.waypoints.map((w) => w.coordinate)).toEqual([WAYPOINT_B, WAYPOINT_A]);

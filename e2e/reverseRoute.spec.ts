@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 import { readPlanningDraftRow } from "./support/rideStateDb.ts";
+import { expectEditCopyNotice } from "./support/editCopyNotice.ts";
 
 // Proves "Reverse route" (CLAUDE.md backlog item 38, superseding item 27's
 // original pre-ride implementation): a saved or imported route, opened via
@@ -275,16 +276,13 @@ async function assertPlanningDraftStaysCleared(page: Page): Promise<void> {
   }
 }
 
-// The "forward" Edit-copy notice text — reversing an already-open draft
-// inside Planning never touches editCopyMeta (it describes seed
-// provenance, not live edit history — see PlanningScreen.tsx's
-// describeEditCopyNotice doc comment), so this exact text stays visible,
-// unchanged, across a reversal. There is deliberately no reverse-specific
-// notice any more.
-const EXACT_EDIT_COPY_NOTICE =
-  "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.";
-const DERIVED_EDIT_COPY_NOTICE =
-  "Editable waypoints were estimated from this route. Recalculation may follow different roads. The saved route will remain unchanged.";
+// The "forward" Edit-copy notice — reversing an already-open draft inside
+// Planning never touches editCopyMeta (it describes seed provenance, not
+// live edit history — see PlanningScreen.tsx's describeEditCopyNotice doc
+// comment), so the forward label, never the legacy reversed one, and the
+// forward explanation stay unchanged across a reversal. There is
+// deliberately no reverse-specific notice any more. expectEditCopyNotice
+// also asserts the reversed label's absence.
 
 test("Reverse route inside Planning issues zero requests until Calculate — even past the recalculation debounce and across Undo/Redo — and restores order and name atomically", async ({
   page,
@@ -309,7 +307,7 @@ test("Reverse route inside Planning issues zero requests until Calculate — eve
   // forward notice (not a reverse-specific one); name and order both
   // reversed.
   expect(requestedCoordinatePairs).toHaveLength(1);
-  await expect(page.getByText(EXACT_EDIT_COPY_NOTICE)).toBeVisible();
+  await expectEditCopyNotice(page, "exact");
   await expect(page.getByLabel("Route name")).toHaveValue(`${originalName} (reversed)`);
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
   await expect(
@@ -414,7 +412,7 @@ test("exporting and offline re-importing a reversed route, then Edit copy, recov
 
   await openSavedRouteFromPlanning(page, originalName);
   await editCopyThenReverseInPlanning(page);
-  await expect(page.getByText(EXACT_EDIT_COPY_NOTICE)).toBeVisible();
+  await expectEditCopyNotice(page, "exact");
 
   const calculateButton = page.getByRole("button", { name: /calculate route/i });
   await expect(calculateButton).toBeEnabled();
@@ -462,7 +460,7 @@ test("exporting and offline re-importing a reversed route, then Edit copy, recov
   // round-tripped <acn:planning> provenance.
   await page.getByRole("button", { name: "Edit copy" }).click();
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
-  await expect(page.getByText(EXACT_EDIT_COPY_NOTICE)).toBeVisible();
+  await expectEditCopyNotice(page, "exact");
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Waypoint 2", exact: true }),
@@ -492,7 +490,7 @@ test("reversing a dense arbitrary GPX with no ACN extension stays within the 20-
   await expect(page.getByRole("heading", { name: "smoke-route" })).toBeVisible();
 
   await editCopyThenReverseInPlanning(page);
-  await expect(page.getByText(DERIVED_EDIT_COPY_NOTICE)).toBeVisible();
+  await expectEditCopyNotice(page, "estimated");
   await expect(page.getByLabel("Route name")).toHaveValue("smoke-route (reversed)");
 
   const waypointButtons = page.getByRole("button", { name: /^Waypoint \d+$/ });
@@ -591,7 +589,7 @@ test("reloading after reversing a draft inside Planning restores it without an a
   await page.reload();
   await openPlanningAndAwaitFraming(page);
 
-  await expect(page.getByText(EXACT_EDIT_COPY_NOTICE)).toBeVisible();
+  await expectEditCopyNotice(page, "exact");
   await expect(page.getByLabel("Route name")).toHaveValue(`${originalName} (reversed)`);
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
   await expect(

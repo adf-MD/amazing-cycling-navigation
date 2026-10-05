@@ -20,6 +20,14 @@ import { db } from "../../storage/db.ts";
 import { getDraft, saveDraft } from "../../storage/planningDraftRepository.ts";
 import { savePlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
 import { listRoutes } from "../../storage/routesRepository.ts";
+import {
+  EDIT_COPY_NOTICE,
+  expectEditCopyNotice,
+  expectNoEditCopyNotice,
+  getEditCopyAnnouncement,
+} from "../../test/editCopyNotice.ts";
+import { findEnglishLeaks } from "../../test/englishLeaks.ts";
+import { LanguageProvider } from "../../i18n/LanguageProvider.tsx";
 import { saveProviderKey } from "../../storage/providerKeyRepository.ts";
 
 interface MockMapHandle {
@@ -4709,10 +4717,7 @@ describe("PlanningScreen", () => {
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
       });
-      expect(screen.queryByText(/editable copy/i)).not.toBeInTheDocument();
-      expect(
-        screen.queryByText(/editable waypoints were estimated/i),
-      ).not.toBeInTheDocument();
+      expectNoEditCopyNotice();
     });
 
     it("shows the exact-provenance notice for a draft restored with exact edit-copy waypoints", async () => {
@@ -4732,11 +4737,7 @@ describe("PlanningScreen", () => {
       map.triggerLoad();
 
       await waitFor(() => {
-        expect(
-          screen.getByText(
-            "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.",
-          ),
-        ).toBeInTheDocument();
+        expectEditCopyNotice("exact");
       });
       // The one-time restored/seeded-waypoint camera fit applies equally
       // to an edit-copy-seeded draft — it flows through the exact same
@@ -4773,11 +4774,7 @@ describe("PlanningScreen", () => {
       map.triggerLoad();
 
       await waitFor(() => {
-        expect(
-          screen.getByText(
-            "Editable waypoints were estimated from this route. Recalculation may follow different roads. The saved route will remain unchanged.",
-          ),
-        ).toBeInTheDocument();
+        expectEditCopyNotice("estimated");
       });
       await waitFor(() => {
         expect(map.fitBoundsSpy).toHaveBeenCalledWith(
@@ -4808,7 +4805,7 @@ describe("PlanningScreen", () => {
       map.triggerLoad();
 
       await waitFor(() => {
-        expect(screen.getByText(/editable copy created/i)).toBeInTheDocument();
+        expectEditCopyNotice("exact");
       });
 
       // An unrelated edit (adding a third waypoint) triggers the debounced
@@ -4827,7 +4824,7 @@ describe("PlanningScreen", () => {
       const draft = await getDraft();
       expect(draft?.editCopySourceRouteId).toBe("route-1");
       expect(draft?.editCopyWaypointsOrigin).toBe("exact");
-      expect(screen.getByText(/editable copy created/i)).toBeInTheDocument();
+      expectEditCopyNotice("exact");
     });
 
     it("clears the edit-copy notice once the copy is saved", async () => {
@@ -4856,7 +4853,7 @@ describe("PlanningScreen", () => {
       map.triggerLoad();
 
       await waitFor(() => {
-        expect(screen.getByText(/editable copy created/i)).toBeInTheDocument();
+        expectEditCopyNotice("exact");
       });
 
       const calculateButton = await waitFor(() => {
@@ -4879,7 +4876,7 @@ describe("PlanningScreen", () => {
       await user.click(screen.getByRole("button", { name: /save route/i }));
 
       await waitFor(() => {
-        expect(screen.queryByText(/editable copy created/i)).not.toBeInTheDocument();
+        expectNoEditCopyNotice();
       });
 
       const draft = await getDraft();
@@ -4920,11 +4917,7 @@ describe("PlanningScreen", () => {
       map.triggerLoad();
 
       await waitFor(() => {
-        expect(
-          screen.getByText(
-            "Reversed editable copy created. Recalculate before saving; one-way restrictions may make the new route differ from the original. The saved route remains unchanged.",
-          ),
-        ).toBeInTheDocument();
+        expectEditCopyNotice("reversedExact");
       });
       // The fit mechanism doesn't discriminate on editCopyOperation — a
       // reversed-copy draft gets the same one-time waypoint fit.
@@ -4957,11 +4950,7 @@ describe("PlanningScreen", () => {
       map.triggerLoad();
 
       await waitFor(() => {
-        expect(
-          screen.getByText(
-            "Reversed waypoints were estimated from this route. Recalculation may follow different roads, especially around one-way restrictions. The saved route remains unchanged.",
-          ),
-        ).toBeInTheDocument();
+        expectEditCopyNotice("reversedEstimated");
       });
     });
 
@@ -4987,11 +4976,7 @@ describe("PlanningScreen", () => {
       map.triggerLoad();
 
       await waitFor(() => {
-        expect(
-          screen.getByText(
-            "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.",
-          ),
-        ).toBeInTheDocument();
+        expectEditCopyNotice("exact");
       });
       expect(screen.queryByText(/reversed/i)).not.toBeInTheDocument();
     });
@@ -5015,7 +5000,7 @@ describe("PlanningScreen", () => {
       map.triggerLoad();
 
       await waitFor(() => {
-        expect(screen.getByText(/reversed editable copy created/i)).toBeInTheDocument();
+        expectEditCopyNotice("reversedExact");
       });
 
       await addWaypointViaCrosshair(map, user, [0.02, 51]);
@@ -5032,7 +5017,7 @@ describe("PlanningScreen", () => {
       expect(draft?.editCopySourceRouteId).toBe("route-1");
       expect(draft?.editCopyWaypointsOrigin).toBe("exact");
       expect(draft?.editCopyOperation).toBe("reverse");
-      expect(screen.getByText(/reversed editable copy created/i)).toBeInTheDocument();
+      expectEditCopyNotice("reversedExact");
     });
 
     it("shows no notice for an ordinary hand-built draft, regardless of editCopyOperation's resolved default", async () => {
@@ -5056,8 +5041,167 @@ describe("PlanningScreen", () => {
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
       });
-      expect(screen.queryByText(/editable copy/i)).not.toBeInTheDocument();
+      expectNoEditCopyNotice();
       expect(screen.queryByText(/reversed/i)).not.toBeInTheDocument();
+    });
+
+    // Item 141: the compact notice's disclosure and its announcement.
+    async function renderEditCopyDraft(
+      origin: "exact" | "derived",
+      operation: "forward" | "reverse" = "forward",
+    ): Promise<MockMapHandle> {
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Coastal loop",
+        avoidFerries: true,
+        profile: "cycling-road",
+        editCopySourceRouteId: "route-1",
+        editCopyWaypointsOrigin: origin,
+        editCopyOperation: operation,
+      });
+      const map = createMockMapFactory();
+      render(<PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />);
+      map.triggerLoad();
+      return map;
+    }
+
+    it("opens and closes the full explanation from the indicator by click, Enter and Space, keeping focus on it", async () => {
+      const user = userEvent.setup();
+      await renderEditCopyDraft("derived");
+      const { label, full } = EDIT_COPY_NOTICE.estimated;
+      const indicator = await waitFor(() => expectEditCopyNotice("estimated"));
+
+      const expectOpen = (): void => {
+        expect(indicator).toHaveAttribute("aria-expanded", "true");
+        const panelId = indicator.getAttribute("aria-controls");
+        expect(panelId).toBeTruthy();
+        const panel = document.getElementById(panelId ?? "");
+        // The panel shows today's full text; it is not a live region.
+        expect(panel?.textContent).toBe(full);
+        expect(panel).not.toHaveAttribute("role");
+        expect(panel).not.toHaveAttribute("aria-live");
+        expect(document.querySelector(".planning-copy-qualifier")).toBeNull();
+        expect(getEditCopyAnnouncement().textContent).toBe(full);
+        expect(screen.getByRole("button", { name: label })).toBe(indicator);
+        expect(indicator).toHaveFocus();
+      };
+      const expectClosed = (): void => {
+        expect(expectEditCopyNotice("estimated")).toBe(indicator);
+        expect(indicator).toHaveFocus();
+      };
+
+      await user.click(indicator);
+      expectOpen();
+      await user.click(indicator);
+      expectClosed();
+      await user.keyboard("{Enter}");
+      expectOpen();
+      await user.keyboard("{Enter}");
+      expectClosed();
+      await user.keyboard(" ");
+      expectOpen();
+      await user.keyboard(" ");
+      expectClosed();
+    });
+
+    it("leaves the announcement's node and text untouched across toggles and ordinary edits, and keeps the panel open across Reverse route", async () => {
+      const user = userEvent.setup();
+      const map = await renderEditCopyDraft("exact");
+      const indicator = await waitFor(() => expectEditCopyNotice("exact"));
+      const announcement = getEditCopyAnnouncement();
+      const records: MutationRecord[] = [];
+      const observer = new MutationObserver((list) => {
+        records.push(...list);
+      });
+      observer.observe(announcement, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+        attributes: true,
+      });
+
+      await user.click(indicator);
+      await user.click(indicator);
+      await user.click(indicator);
+      await user.click(screen.getByRole("button", { name: "Reverse route" }));
+      expect(indicator).toHaveAttribute("aria-expanded", "true");
+      fireEvent.change(screen.getByLabelText("Route name"), {
+        target: { value: "Coastal loop, renamed" },
+      });
+      await addWaypointViaCrosshair(map, user, [0.02, 51]);
+      await waitFor(
+        async () => {
+          const draft = await getDraft();
+          expect(draft?.waypoints).toHaveLength(3);
+          expect(draft?.routeName).toBe("Coastal loop, renamed");
+        },
+        { timeout: 3000 },
+      );
+
+      records.push(...observer.takeRecords());
+      observer.disconnect();
+      expect(records).toEqual([]);
+      expect(getEditCopyAnnouncement()).toBe(announcement);
+      expect(announcement.textContent).toBe(EDIT_COPY_NOTICE.exact.full);
+      // Reverse route narrates nothing: the forward label stays, still open.
+      expect(screen.getByRole("button", { name: EDIT_COPY_NOTICE.exact.label })).toBe(
+        indicator,
+      );
+      expect(indicator).toHaveAttribute("aria-expanded", "true");
+    });
+
+    it("shows the compact notice in German, with today's German explanation in the announcement and the panel", async () => {
+      const user = userEvent.setup();
+      await saveDraft({
+        waypoints: [
+          { id: "a", coordinate: [0, 51] },
+          { id: "b", coordinate: [0.01, 51] },
+        ],
+        routeName: "Küstenrunde",
+        avoidFerries: true,
+        profile: "cycling-road",
+        editCopySourceRouteId: "route-1",
+        editCopyWaypointsOrigin: "derived",
+      });
+      const map = createMockMapFactory();
+      render(
+        <LanguageProvider
+          preference="de"
+          readLanguages={() => ["en-GB"]}
+          documentElement={{ lang: "" }}
+        >
+          <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />
+        </LanguageProvider>,
+      );
+      map.triggerLoad();
+      const full =
+        "Anhand dieser Route wurden editierbare Wegpunkte näherungsweise ermittelt. Bei der Neuberechnung werden möglicherweise andere Straßen gewählt. Die gespeicherte Route bleibt unverändert.";
+
+      const indicator = await screen.findByRole("button", {
+        name: "Kopie in Bearbeitung",
+      });
+      expect(indicator).toHaveAttribute("aria-expanded", "false");
+      expect(indicator.closest("h1")).toBeNull();
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Route planen" }),
+      ).toBeInTheDocument();
+      expect(document.querySelector(".planning-copy-qualifier")?.textContent).toBe(
+        "Wegpunkte geschätzt. Die Neuberechnung kann andere Straßen wählen.",
+      );
+      expect(getEditCopyAnnouncement().textContent).toBe(full);
+
+      await user.click(indicator);
+      const panel = document.getElementById(
+        indicator.getAttribute("aria-controls") ?? "",
+      );
+      expect(panel?.textContent).toBe(full);
+      expect(document.querySelector(".planning-copy-qualifier")).toBeNull();
+      const heading = document.querySelector(".planning-heading");
+      expect(heading).not.toBeNull();
+      if (heading !== null) expect(findEnglishLeaks(heading)).toEqual([]);
     });
 
     it("stamps planningProvenance from live waypoints, profile and avoid-ferries when saving", async () => {

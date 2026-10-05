@@ -41,6 +41,10 @@ import {
 } from "../../storage/planningDraftRepository.ts";
 import { getPlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
 import { saveRoute } from "../../storage/routesRepository.ts";
+import {
+  expectEditCopyNotice,
+  expectNoEditCopyNotice,
+} from "../../test/editCopyNotice.ts";
 
 const mockedGetDraft = vi.mocked(getDraft);
 const mockedSaveDraft = vi.mocked(saveDraft);
@@ -337,11 +341,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     expect(mockedClearDraft).not.toHaveBeenCalled();
     expect(mockedGetPlanningPreferences).not.toHaveBeenCalled();
     expect(screen.getByDisplayValue("Evening loop")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.",
-      ),
-    ).toBeInTheDocument();
+    expectEditCopyNotice("exact");
   });
 
   it("Escape preserves the draft exactly and issues no storage call", async () => {
@@ -413,11 +413,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     expect(
       screen.queryByRole("region", { name: "Route summary" }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(
-        "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.",
-      ),
-    ).not.toBeInTheDocument();
+    expectNoEditCopyNotice();
     expect(saveButton()).toBeDisabled();
 
     // The "Change" disclosure is a plain, uncontrolled native <details>
@@ -481,11 +477,7 @@ describe("PlanningScreen Clear draft (backlog item 37)", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     // Nothing was touched: the draft is exactly as it was.
     expect(screen.getByDisplayValue("Evening loop")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.",
-      ),
-    ).toBeInTheDocument();
+    expectEditCopyNotice("exact");
     // A failed clear closes the dialog and remounts the trigger (backlog
     // item 49) — re-query it, then confirm focus only lands once it is
     // genuinely re-enabled, i.e. the DOM has committed isClearing back

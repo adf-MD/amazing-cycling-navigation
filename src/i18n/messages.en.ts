@@ -415,6 +415,23 @@ export const en = {
   "planning.editCopy.estimated":
     "Editable waypoints were estimated from this route. Recalculation may follow different roads. The saved route will remain unchanged.",
 
+  // translator: the compact notice's button label beside the Planning
+  // heading, shown while the rider edits a copy of a saved route; it opens
+  // the full explanation above. Short: it shares a row with the heading.
+  "planning.editCopy.indicator": "Editing a copy",
+  // translator: the same label for a reversed copy, which only drafts saved
+  // by older versions of the app can still show.
+  "planning.editCopy.indicatorReversed": "Editing a reversed copy",
+  // translator: short qualifiers kept visible below that button while the
+  // full explanation is closed; each restates the most important part of
+  // the matching explanation above, as short complete sentences.
+  "planning.editCopy.qualifierEstimated":
+    "Waypoints estimated. Recalculation may follow different roads.",
+  "planning.editCopy.qualifierReversedExact":
+    "Recalculate before saving. One-way restrictions may change the route.",
+  "planning.editCopy.qualifierReversedEstimated":
+    "Waypoints estimated. Recalculation may follow different roads, especially around one-way restrictions.",
+
   // --- Planning: save, export, clear ---------------------------------
   "planning.save.heading": "Save or export",
   "planning.save.nameLabel": "Route name",

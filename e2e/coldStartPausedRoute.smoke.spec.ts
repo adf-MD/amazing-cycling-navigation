@@ -1,5 +1,6 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
+import { editCopyAnnouncement } from "./support/editCopyNotice.ts";
 import {
   readActiveRideStateRow,
   readSavedRouteId,
@@ -583,10 +584,13 @@ test("(en) Edit copy on the cold-start paused screen opens Planning with the rou
   await page.getByRole("button", { name: "Edit copy" }).click();
 
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
-  await expect(
-    page.getByText(
-      /^Editable (copy created from the route's original planning waypoints|waypoints were estimated from this route)\./,
-    ),
-  ).toBeVisible();
+  // Item 141's compact notice: the forward indicator, collapsed, with the
+  // copy's explanation in its announcement (either provenance).
+  const indicator = page.getByRole("button", { name: "Editing a copy", exact: true });
+  await expect(indicator).toBeVisible();
+  await expect(indicator).toHaveAttribute("aria-expanded", "false");
+  await expect(editCopyAnnouncement(page)).toHaveText(
+    /^Editable (copy created from the route's original planning waypoints|waypoints were estimated from this route)\./,
+  );
   expect(await watches(page)).toBe(0);
 });

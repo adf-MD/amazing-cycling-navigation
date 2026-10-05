@@ -3167,6 +3167,59 @@ button:focus-visible {
 
 /* --- Planning: workflow organisation (visual slice 4) --- */
 
+/* Item 141: the compact Edit copy notice. The heading row holds the h1 and,
+ * for an edit-copy draft, the disclosure button beside it, wrapping below
+ * the heading only when the row cannot hold both. The row has no
+ * min-height, so an ordinary draft's row stays exactly the h1's height.
+ * The visually hidden status inside .planning-heading is absolutely
+ * positioned and takes no gap. The toggle keeps the global 44px touch
+ * target and may wrap its own label at enlarged text; its vertical padding
+ * keeps a wrapped label clear of the border. */
+.planning-heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.planning-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-12);
+  row-gap: var(--space-4);
+}
+
+.planning-copy-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-12);
+  border: 1px solid var(--colour-info);
+  border-radius: var(--radius-sm);
+  background: var(--colour-info-soft);
+  color: var(--colour-info);
+  font-size: 0.9rem;
+  text-align: start;
+}
+
+/* Mirrors .tag-disclosure-chevron; the global prefers-reduced-motion rule
+ * already shortens its transition. */
+.planning-copy-toggle-chevron {
+  display: inline-block;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.planning-copy-toggle[aria-expanded="true"] .planning-copy-toggle-chevron {
+  transform: rotate(180deg);
+}
+
+.planning-copy-qualifier {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--colour-info);
+}
+
 /* Replaces the previous inline {height:320,position:"relative"} wrapper.
  * Unlike Riding's own equivalent, Planning's map is a single continuous
  * primary workspace throughout the whole authoring flow — there is no

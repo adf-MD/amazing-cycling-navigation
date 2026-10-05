@@ -6,7 +6,9 @@
 
 **Final decisions (5 October 2026):** the rider then took the final design decisions for both items. See [Final design decisions](#final-design-decisions-5-october-2026), the newest record: item 141's notice is to be implemented first, then item 122's map and action order.
 
-This refines [item 122's report](README.md), which is not repeated here, and gives [item 141](../../project/backlog.md#item-141) its visual proposal. Everything was measured on scratch builds of `0.4.62` (application source identical to `5b2d295`), outside the repository, in the pinned Playwright container by digest: Chromium 149 and WebKit 26.5, which measured identically wherever both ran. **None of it is installed-iPhone evidence.**
+**Implemented (5 October 2026):** item 141's notice shipped in `0.4.63` ([record](../../project/history/items-132-NN.md#item-141)); its installed-iPhone acceptance is pending, and item 122 waits for it.
+
+This refines [item 122's report](README.md), which is not repeated here, and gives [item 141](../../project/history/items-132-NN.md#item-141) its visual proposal. Everything was measured on scratch builds of `0.4.62` (application source identical to `5b2d295`), outside the repository, in the pinned Playwright container by digest: Chromium 149 and WebKit 26.5, which measured identically wherever both ran. **None of it is installed-iPhone evidence.**
 
 ## Summary
 
@@ -308,7 +310,7 @@ If the extra 20 px matters more, **500 px with Calculate first** keeps Calculate
 
 **The intended implementation split:**
 
-1. **The compact notice first ([item 141](../../project/backlog.md#item-141)):** catalogue wording, the heading-row disclosure, the visible qualifiers and the separate polite announcement. Its checks:
+1. **The compact notice first ([item 141](../../project/history/items-132-NN.md#item-141)):** catalogue wording, the heading-row disclosure, the visible qualifiers and the separate polite announcement. Its checks:
    - the notice-asserting tests updated deliberately, as item 141 lists;
    - English and German, and 200% text;
    - a screen-reader check of the announcement and the disclosure.

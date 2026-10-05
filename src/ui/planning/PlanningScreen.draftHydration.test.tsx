@@ -32,6 +32,12 @@ import {
   saveDraft,
 } from "../../storage/planningDraftRepository.ts";
 import { getPlanningPreferences } from "../../storage/planningPreferencesRepository.ts";
+import {
+  EDIT_COPY_NOTICE,
+  expectEditCopyNotice,
+  expectNoEditCopyNotice,
+  getEditCopyAnnouncement,
+} from "../../test/editCopyNotice.ts";
 
 const mockedGetDraft = vi.mocked(getDraft);
 const mockedSaveDraft = vi.mocked(saveDraft);
@@ -286,6 +292,11 @@ describe("PlanningScreen draft hydration lifecycle", () => {
     renderPlanningScreen(map, provider);
     map.triggerLoad();
 
+    // Item 141: the announcement region is established, empty, before the
+    // draft — and so the notice's message — arrives.
+    const announcement = getEditCopyAnnouncement();
+    expectNoEditCopyNotice();
+
     await advancePastDebounce();
     expect(mockedSaveDraft).not.toHaveBeenCalled();
     expect(mockedClearDraft).not.toHaveBeenCalled();
@@ -304,11 +315,10 @@ describe("PlanningScreen draft hydration lifecycle", () => {
     });
 
     expect(screen.getByDisplayValue("Evening loop")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.",
-      ),
-    ).toBeInTheDocument();
+    expectEditCopyNotice("exact");
+    // The same region, never a replacement, received the message.
+    expect(getEditCopyAnnouncement()).toBe(announcement);
+    expect(announcement.textContent).toBe(EDIT_COPY_NOTICE.exact.full);
   });
 
   it("survives a delayed hydration read for a reversed-copy draft with zero premature writes and zero routing requests", async () => {
@@ -345,11 +355,7 @@ describe("PlanningScreen draft hydration lifecycle", () => {
     });
 
     expect(screen.getByDisplayValue("Evening loop (reversed)")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Reversed waypoints were estimated from this route. Recalculation may follow different roads, especially around one-way restrictions. The saved route remains unchanged.",
-      ),
-    ).toBeInTheDocument();
+    expectEditCopyNotice("reversedEstimated");
     expect(calculateRouteSpy).not.toHaveBeenCalled();
   });
 

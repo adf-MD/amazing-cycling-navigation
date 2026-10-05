@@ -1,6 +1,10 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 import { readPlanningDraftRow, readSavedRouteId } from "./support/rideStateDb.ts";
+import {
+  expectEditCopyNotice,
+  expectNoEditCopyNotice,
+} from "./support/editCopyNotice.ts";
 
 // Backlog item 124's inventory case D-06 (Edit copy), in both engines (this
 // file runs under the "chromium" and "webkit-smoke" projects), at 390x844
@@ -84,7 +88,6 @@ const COPY = {
     routes: "Routes",
     ride: "Ride",
     plan: "Plan",
-    editCopyNotice: /Editable waypoints were estimated from this route/,
   },
   de: {
     editCopy: "Kopie bearbeiten",
@@ -97,7 +100,6 @@ const COPY = {
     routes: "Routen",
     ride: "Fahren",
     plan: "Planen",
-    editCopyNotice: /Anhand dieser Route wurden editierbare Wegpunkte/,
   },
 } as const;
 
@@ -557,7 +559,7 @@ const hasFieldValue = (page: Page, value: string): Promise<boolean> =>
 
 async function expectPlanningShowsCopy(page: Page, language: Language): Promise<void> {
   await expect.poll(() => currentDestination(page)).toBe(COPY[language].plan);
-  await expect(page.getByText(COPY[language].editCopyNotice)).toBeVisible();
+  await expectEditCopyNotice(page, "estimated", language);
   await expect.poll(() => hasFieldValue(page, ROUTE_NAME)).toBe(true);
 }
 
@@ -1014,7 +1016,7 @@ for (const fail of [false, true]) {
     await page.waitForTimeout(AUTOSAVE_SETTLE_MS);
     if (fail) {
       await expect.poll(() => hasFieldValue(page, OLD_DRAFT_NAME)).toBe(true);
-      await expect(page.getByText(COPY[language].editCopyNotice)).toBeHidden();
+      await expectNoEditCopyNotice(page, language);
       expect(await storedDraft(page)).toMatchObject({
         routeName: OLD_DRAFT_NAME,
         editCopySourceRouteId: null,

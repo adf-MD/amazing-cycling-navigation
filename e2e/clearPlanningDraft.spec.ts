@@ -1,6 +1,10 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { installLocalMapStyle } from "./support/localMapStyle.ts";
 import { readPlanningDraftRow } from "./support/rideStateDb.ts";
+import {
+  expectEditCopyNotice,
+  expectNoEditCopyNotice,
+} from "./support/editCopyNotice.ts";
 
 // Proves "Clear draft" (CLAUDE.md future-backlog item 37): a destructive,
 // confirmed action that wipes the entire mutable Planning draft — waypoints,
@@ -198,9 +202,6 @@ async function assertPlanningDraftStaysCleared(page: Page): Promise<void> {
   }
 }
 
-const EXACT_EDIT_COPY_NOTICE =
-  "Editable copy created from the route's original planning waypoints. The saved route will remain unchanged.";
-
 test("Clear draft wipes a populated, calculated, custom-routed, edit-copy-provenanced draft to a genuinely fresh session using the real current Settings defaults, and the row stays cleared", async ({
   page,
   context,
@@ -226,7 +227,7 @@ test("Clear draft wipes a populated, calculated, custom-routed, edit-copy-proven
   await expect(page.getByRole("heading", { name: sourceName })).toBeVisible();
   await page.getByRole("button", { name: "Edit copy" }).click();
   await expect(page.getByRole("heading", { name: "Plan a route" })).toBeVisible();
-  await expect(page.getByText(EXACT_EDIT_COPY_NOTICE)).toBeVisible();
+  await expectEditCopyNotice(page, "exact");
 
   // Custom name.
   const customName = "Custom Draft Before Clear";
@@ -282,7 +283,7 @@ test("Clear draft wipes a populated, calculated, custom-routed, edit-copy-proven
   // issued by the clear itself.
   await expect(page.getByText(/no waypoints yet/i)).toBeVisible();
   await expect(page.getByLabel("Route name")).toHaveValue("Planned route");
-  await expect(page.getByText(EXACT_EDIT_COPY_NOTICE)).not.toBeVisible();
+  await expectNoEditCopyNotice(page);
   await expect(page.getByRole("region", { name: "Route summary" })).not.toBeVisible();
   await expect(page.getByRole("button", { name: /save route/i })).toBeDisabled();
   expect(requestedCoordinatePairs.length).toBe(requestCountBeforeClear);
