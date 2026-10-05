@@ -135,6 +135,27 @@ async function setUpPlanningWithMockRoute(
   return summaryRegion;
 }
 
+/** Taps the fitted route on the map with a real click, `x` pixels into the
+ * map. Calculate route fits the camera to the route, a horizontal line at
+ * FIXTURE_LAT, so the camera is centred on that latitude and the line
+ * crosses the map's vertical centre. The tap therefore targets that centre
+ * rather than a fixed height: item 122 made the Planning map 400px tall at
+ * this 1280x720 viewport (320px before), so the line moved from y≈160 to
+ * y≈200, and the old fixed y=150 — 10px from the line before, inside the
+ * map's ±14px tap tolerance — landed 50px from it, where a mouse click
+ * places a waypoint instead of selecting the route. */
+async function tapFittedRoute(page: Page, x: number): Promise<void> {
+  const mapContainer = page.locator('[data-testid="map-container"]');
+  await expect
+    .poll(async () =>
+      Number((await mapContainer.getAttribute("data-camera-center"))?.split(",")[1]),
+    )
+    .toBeCloseTo(FIXTURE_LAT, 4);
+  const box = await mapContainer.boundingBox();
+  if (!box) throw new Error("the map is not laid out");
+  await mapContainer.click({ position: { x, y: Math.round(box.height / 2) } });
+}
+
 test.describe("Planning", () => {
   test("tapping the climb on the map selects it, shows the details panel, and clearing removes it", async ({
     page,
@@ -161,8 +182,7 @@ test.describe("Planning", () => {
     // The camera re-fits to the calculated route after Calculate route —
     // the climb is the eastern (second) half of the fitted route line, so
     // a tap well into the right side of the map lands on it.
-    const mapContainer = page.locator('[data-testid="map-container"]');
-    await mapContainer.click({ position: { x: 950, y: 150 } });
+    await tapFittedRoute(page, 950);
 
     const detailsPanel = summaryRegion.getByRole("region", {
       name: "Route feature details",
@@ -220,8 +240,7 @@ test.describe("Planning: surface-warning priority", () => {
     await expect(warningButton).toBeVisible();
     await expect(warningButton).toHaveAttribute("aria-pressed", "false");
 
-    const mapContainer = page.locator('[data-testid="map-container"]');
-    await mapContainer.click({ position: { x: 950, y: 150 } });
+    await tapFittedRoute(page, 950);
 
     // The warning — not the climb — is selected.
     await expect(warningButton).toHaveAttribute("aria-pressed", "true");

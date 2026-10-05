@@ -148,7 +148,18 @@ Each combination was measured before, with the stale note shown, during, and aft
 
 ### CI and deployment
 
-This entry was written before the push. The CI run, its shards and the deployed build are reported in the handoff and recorded here together with the device acceptance.
+**The first push, `e1e70cf`: run 37331241189.** Verify and build, and End-to-end shards 1, 2 and 4 passed. **Shard 3 failed** on two Chromium tests in `e2e/routeFeatureColouring.spec.ts`, so Deploy was skipped and the live site stayed `0.4.63`; the shard's other 283 tests passed.
+
+- **The setup:** both tests tapped the map at a fixed `{x: 950, y: 150}` after Calculate route had fitted the camera to the mocked route, a horizontal line.
+- **The cause:** item 122 makes the map 400 px tall at the default 1280×720 viewport, where it was 320 px, so the fitted line moved from y≈160 to y≈200. Reproduced in the CI image, the painted line ran at map-relative rows 195–204 in the tapped column.
+- **The effect:** the old tap was 10 px from the line before, inside the map's ±14 px tap tolerance (`MAP_FEATURE_TAP_HIT_TOLERANCE_PX`). It now landed about 50 px above the line, where a mouse click placed a third waypoint instead of selecting the climb or the warning. The failure screenshots show the new marker at the tap point, and the recalculation of the now-stale route failing against the fixed mock.
+- **The application's selection path was not at fault.**
+- **The test-only correction,** in the following commit:
+  - it asserts the camera is centred on the route's latitude, then taps the map's vertical centre with the same real click;
+  - the climb-details, warning-priority and clearing assertions are unchanged;
+  - no version change.
+
+The CI run for the corrected head and the deployed build are reported in the handoff and recorded here together with the device acceptance.
 
 ### Installed-iPhone acceptance — pending
 
