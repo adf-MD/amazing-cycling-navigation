@@ -250,9 +250,10 @@ async function openPlanningOffline(
 
 // Locator.click's `position` is relative to the ELEMENT's own top-left
 // corner, not the page/viewport — the map container itself is only
-// ~318-360px tall on this project's narrower 412px-wide, ~840px-tall
-// Pixel-7-emulated viewport (confirmed via this file's own logged
-// containerBox snapshots), so a page-scale y offset (e.g. 500) lands well
+// ~460px tall on this project's narrower 412px-wide, ~840px-tall
+// Pixel-7-emulated viewport since item 122 (~318-360px before, confirmed
+// then via this file's own logged containerBox snapshots), so a
+// page-scale y offset (e.g. 500) lands
 // past the container's own bottom edge, on the "planning-section" panel
 // below the map instead. x/y here are chosen to sit below every
 // top-anchored control cluster (.planning-map-zoom-controls top:8px/

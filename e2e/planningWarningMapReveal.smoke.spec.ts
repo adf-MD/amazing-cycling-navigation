@@ -1120,7 +1120,9 @@ test("nothing moves when the selected warning already fits", async ({
   test.skip(browserName === "webkit", "a Chromium guard");
   // A synthetic tall viewport, a stand-in for a desktop window, in which
   // the list is already on screen with the map but the page still scrolls.
-  await page.setViewportSize({ width: 390, height: 1900 });
+  // 2000px since item 122: the map reaches its 560px ceiling here, 100px
+  // taller than before, so 1900px no longer shows the list with the map.
+  await page.setViewportSize({ width: 390, height: 2000 });
   await planRoute(page, { language: "en" });
   const before = await measure(page);
   expect(before.maxScrollY, "precondition: the page can still scroll").toBeGreaterThan(0);

@@ -2434,6 +2434,114 @@ describe("PlanningScreen", () => {
     });
   });
 
+  it("orders the actions panel Calculate route first, then the editing actions, then Calculate's routing error or stale-route note, then the key line (item 122)", async () => {
+    const user = userEvent.setup();
+    await saveProviderKey("dummy-test-key");
+    const map = createMockMapFactory();
+    const route = buildRoute(10);
+    const { adapter } = buildFailThenSucceedAdapter(
+      new RoutingError({
+        reason: "provider-unavailable",
+        message: "OpenRouteService returned a server error.",
+        httpStatus: 502,
+      }),
+      route,
+    );
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={adapter}
+      />,
+    );
+    map.triggerLoad();
+    await addWaypointViaCrosshair(map, user, [0, 51]);
+    await addWaypointViaCrosshair(map, user, [0.01, 51]);
+    const calculate = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /calculate route/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+    const follows = (earlier: Element, later: Element) =>
+      (earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    const panel = calculate.parentElement;
+    if (panel === null) throw new Error("Calculate has no panel");
+    expect(panel.firstElementChild).toBe(calculate);
+    const group = within(panel).getByRole("group", { name: "Waypoint actions" });
+    const keyLine = screen.getByText("Key saved on this device, not yet verified");
+    const details = panel.querySelector("details");
+    if (details === null) throw new Error("no routing options");
+    expect(follows(calculate, group)).toBe(true);
+    expect(follows(group, keyLine)).toBe(true);
+    expect(follows(keyLine, details)).toBe(true);
+    expect(keyLine.closest("details")).toBeNull();
+
+    // A provider failure: its message follows the editing actions.
+    await user.click(calculate);
+    const alert = await screen.findByRole("alert");
+    expect(follows(group, alert)).toBe(true);
+    expect(follows(alert, keyLine)).toBe(true);
+    expect(panel.firstElementChild).toBe(
+      screen.getByRole("button", { name: "Try again" }),
+    );
+
+    // A stale route after an edit: its note follows the editing actions too.
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /calculate route/i })).toBeEnabled();
+    });
+    await addWaypointViaCrosshair(map, user, [0.02, 51]);
+    const stale = await screen.findByText(/^(Waiting to recalculate|Recalculating)/);
+    expect(follows(group, stale)).toBe(true);
+    expect(follows(stale, keyLine)).toBe(true);
+  });
+
+  it("decides item 114's switch from the map size reference, not from the taller map itself (item 122)", async () => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- restored below and re-invoked with its own receiver.
+    const originalRect = Element.prototype.getBoundingClientRect;
+    const rect = (width: number, height: number) =>
+      ({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: width,
+        bottom: height,
+        width,
+        height,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    // The reference keeps the enlarged layout's height (300px at 375x667);
+    // the ordinary map is taller (380px). At a 17.8px root, 300/17.8 is
+    // under 17 while 380/17.8 is not.
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this.classList.contains("planning-map-size-reference")) return rect(343, 300);
+      if (this.classList.contains("planning-map-container")) return rect(343, 380);
+      return originalRect.call(this);
+    };
+    document.documentElement.style.fontSize = "17.8px";
+    try {
+      const map = createMockMapFactory();
+      const { container } = render(
+        <PlanningScreen onNavigateToSettings={vi.fn()} mapFactory={map.factory} />,
+      );
+      map.triggerLoad();
+      await waitFor(() => {
+        expect(container.querySelector(".planning-map-container")).toHaveClass(
+          "planning-map-container--enlarged-text",
+        );
+      });
+      const reference = container.querySelector(".planning-map-size-reference");
+      expect(reference).toHaveAttribute("aria-hidden", "true");
+      expect(reference?.parentElement).toBe(
+        container.querySelector(".planning-map-container"),
+      );
+    } finally {
+      Element.prototype.getBoundingClientRect = originalRect;
+      document.documentElement.style.fontSize = "";
+    }
+  });
+
   it("relabels Calculate to Try again after a provider failure, and retry issues exactly one new request", async () => {
     const user = userEvent.setup();
     await saveProviderKey("dummy-test-key");

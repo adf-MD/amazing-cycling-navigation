@@ -4,7 +4,7 @@ The complete shipped implementation record, split into bounded files. See [`../R
 
 ## Completed backlog items
 
-Fifteen range files, each covering a contiguous range of item numbers in ascending order, plus item 124's own two files (pending/monitored/ledger items originally interleaved among these have moved to [`../backlog.md`](../backlog.md) or [`../current-status.md`](../current-status.md) instead — see each file's own intro for exactly which numbers it holds):
+Fifteen range files, each covering a contiguous range of item numbers in ascending order, plus item 124's own two files and item 122's own file (pending/monitored/ledger items originally interleaved among these have moved to [`../backlog.md`](../backlog.md) or [`../current-status.md`](../current-status.md) instead — see each file's own intro for exactly which numbers it holds):
 
 - [`items-06-29.md`](items-06-29.md)
 - [`items-30-38.md`](items-30-38.md)
@@ -21,6 +21,7 @@ Fifteen range files, each covering a contiguous range of item numbers in ascendi
 - [`items-114-117.md`](items-114-117.md) — continues the 100– range; holds items 114, 115, 116 and 117, with item 114 completed last (`0.4.45`) and filed first
 - [`items-118-131.md`](items-118-131.md) — continues the 100– range and closes at item 131; holds items 118, 119, 121 and 123, completed ahead of items 102, 103 and 120, item 128, completed after item 102, and item 131, completed ahead of item 124's remaining slices, with items 120, 122, 125–127, 129 and 130 reserved for when they are completed, and a pointer for item 124
 - [`item-124.md`](item-124.md) and [`item-124-continued.md`](item-124-continued.md) — item 124 alone, closed on 4 October 2026: its record, about 225,000 characters, exceeds the soft cap on its own, so it keeps the two-part split it had in `backlog.md`, with a pointer in `items-118-131.md`
+- [`item-122.md`](item-122.md) — item 122 alone, implemented in `0.4.64` on 5 October 2026: added to `items-118-131.md`, which is closed at item 131, it would take that file past the soft cap, so it has its own file, with a pointer in `items-118-131.md`
 - [`items-132-NN.md`](items-132-NN.md) — continues the 100– range; holds item 132 and item 133, a CI-only change completed before it and moved here when item 132 opened the file, and item 141, completed in `0.4.63` and accepted on the installed iPhone
 
 When a new item is completed, append it to whichever of these files its number naturally continues (in ascending numeric order). If that would push a file past roughly 150,000 characters, start a new range file (e.g. `items-74-NN.md`) instead of letting an existing file grow unbounded, and add it to the list above. An item whose record alone would exceed that cap gets its own `item-N.md` file, split further at an existing boundary if needed (as item 124's is), with a short pointer in its natural range file.

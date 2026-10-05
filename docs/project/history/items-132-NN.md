@@ -385,7 +385,7 @@ _Category: Planning layout_
 
        Its contract, from [item 26](items-06-29.md#item-26) and [item 38](items-30-38.md#item-38): a small, persistent informational notice; it survives unrelated edits; it narrates how the draft was seeded, not later edits; and corrupt stored metadata suppresses it rather than showing a wrong one.
 
-     - **Why it is linked to [item 122](../backlog.md#item-122).** The notice sits above the map, so its full height pushes the map and **Calculate route** down the first screen. Item 122's measurements were made without it, and the rider's layout decision depends on the space it takes.
+     - **Why it is linked to [item 122](item-122.md#item-122).** The notice sits above the map, so its full height pushes the map and **Calculate route** down the first screen. Item 122's measurements were made without it, and the rider's layout decision depends on the space it takes.
      - **Approved design direction (the rider, 5 October 2026):**
        - no automatic, timed disappearance;
        - a compact, persistent indication that the draft is an editable copy;

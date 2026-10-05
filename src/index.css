@@ -3222,9 +3222,9 @@ button:focus-visible {
 
 /* Replaces the previous inline {height:320,position:"relative"} wrapper.
  * Unlike Riding's own equivalent, Planning's map is a single continuous
- * primary workspace throughout the whole authoring flow — there is no
- * idle/active state transition to mirror with a second modifier class, so
- * this is one steady height. A plain px fallback first, then a dvh-aware
+ * primary workspace throughout the whole authoring flow, so the ordinary
+ * layout gives it one steady height; only item 114's enlarged-text layout,
+ * below, gives it another. A plain px fallback first, then a dvh-aware
  * override, then a round()-snapped override, each gated behind its own
  * @supports check — mirroring the exact three-tier structure Riding's own
  * pre-item-56 --active modifier originally introduced (since removed: its
@@ -3232,39 +3232,76 @@ button:focus-visible {
  * approach in backlog item 58) and its own documented minifier-safety
  * reason for using separate @supports-gated rules rather than stacked
  * declarations.
- * 44dvh keeps the map genuinely prominent on a 390x844 iPhone without
- * crowding the toolbar/waypoint list/route options below off screen; the
- * clamp() floor (280px) protects short/landscape viewports, its ceiling
- * (460px) lets the map read as the dominant workspace on a taller phone
- * or a wide desktop viewport. This slice originally shipped without
- * Riding's own round()-snapped 20px grid tier, on the strength of direct
- * real-browser drag-rotate testing that did not reproduce MapLibre's
- * stuck-gesture bug at Planning's height range. A subsequent CI run of
- * e2e/planning.spec.ts's "pressing Northwards twice" test failed exactly
- * that way — data-camera-bearing stayed "0" after a genuine right-button
- * drag, because MapLibre's drag-rotate handler never fired moveend — at
- * the unsnapped 44dvh height (≈316.8px on the project's default 1280×720
- * e2e viewport). That CI result is the real evidence: the earlier
- * from-first-principles verification simply didn't happen to hit the bad
- * band on the machine it ran on, which the repository's own existing
- * Riding investigation already documents as narrow and specific rather
- * than universally reproducible. The round()-snap tier below is
- * reinstated for exactly the reason Riding already carries it. */
+ *
+ * Item 122 (5 October 2026, the rider's decision after a measured design
+ * stage, docs/design/planning-map-area/): 56dvh, 480px at 390x844, between
+ * a 340px floor and a 560px ceiling, where it was 44dvh between 280 and
+ * 460px, so the map reads as Planning's workspace on a phone. The floor
+ * also keeps the imagery message clear of the crosshair at 320x568 in
+ * German. Calculate route sits directly below the map.
+ *
+ * The round()-snapped 20px tier is load-bearing. Planning first shipped
+ * without it, on the strength of real-browser drag-rotate testing that did
+ * not reproduce MapLibre's stuck-gesture bug at Planning's heights. A CI
+ * run then failed exactly that way — data-camera-bearing stayed "0" after
+ * a genuine right-button drag, because MapLibre's drag-rotate handler
+ * never fired moveend — at an unsnapped 44dvh (≈316.8px at the default
+ * 1280×720 e2e viewport). The snap was reinstated for exactly the reason
+ * Riding carries it. Item 122's design stage then saw no stuck gesture at
+ * any 20px step from 280 to 820px: no fault observed, which is not proof. */
 .planning-map-container {
   position: relative;
+  height: 480px;
+}
+
+@supports (height: 56dvh) {
+  .planning-map-container {
+    height: clamp(340px, 56dvh, 560px);
+  }
+}
+
+@supports (height: round(nearest, 56dvh, 20px)) {
+  .planning-map-container {
+    height: clamp(340px, round(nearest, 56dvh, 20px), 560px);
+  }
+}
+
+/* Item 122: item 114's enlarged-text layout keeps the map's earlier
+ * height — 44dvh between 280 and 460px, snapped the same way — so its
+ * accepted presentation (the attribution strip, the imagery message and
+ * Retry below the map) is unchanged. The invisible size reference inside
+ * the map container always has that same height and the map's width.
+ * useEnlargedTextLayout reads it rather than the map, so the switch
+ * decides at item 114's accepted points and the map's own change in height
+ * never feeds back into the decision. One shared rule keeps the two equal
+ * in every tier. Because 56dvh ≥ 44dvh, 340 ≥ 280 and 560 ≥ 460, the
+ * reference never exceeds the ordinary map. */
+.planning-map-container.planning-map-container--enlarged-text,
+.planning-map-size-reference {
   height: 340px;
 }
 
 @supports (height: 44dvh) {
-  .planning-map-container {
+  .planning-map-container.planning-map-container--enlarged-text,
+  .planning-map-size-reference {
     height: clamp(280px, 44dvh, 460px);
   }
 }
 
 @supports (height: round(nearest, 44dvh, 20px)) {
-  .planning-map-container {
+  .planning-map-container.planning-map-container--enlarged-text,
+  .planning-map-size-reference {
     height: clamp(280px, round(nearest, 44dvh, 20px), 460px);
   }
+}
+
+.planning-map-size-reference {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 /* --- Planning: enlarged-text layout (backlog item 114) ---
@@ -3273,12 +3310,13 @@ button:focus-visible {
  * messages and the placement control together. Measured at 200% text in the
  * pinned Playwright container: the attribution wraps to about 62px and
  * rises into the control, and the imagery banner grows to 265-405px tall
- * inside a map of only 300-380px, covering the control, the attribution and
- * the crosshair. No arrangement inside the map clears them all, so
- * useEnlargedTextLayout switches to this layout once the map is small
- * relative to the text (see enlargedTextLayout.ts for the threshold and how
- * it was derived). Below that threshold nothing here applies and Planning
- * is exactly its ordinary self.
+ * inside a map of only 300-380px (the height this layout keeps), covering
+ * the control, the attribution and the crosshair. No arrangement inside the
+ * map clears them all, so useEnlargedTextLayout switches to this layout
+ * once the map is small relative to the text, judged against the size
+ * reference that keeps this layout's height (item 122; see
+ * enlargedTextLayout.ts for the threshold and how it was derived). Below
+ * that threshold nothing here applies and Planning is its ordinary self.
  *
  * In this layout the attribution becomes a permanently visible strip
  * directly below the map. OpenStreetMap's attribution guidelines allow
@@ -3601,10 +3639,13 @@ button:focus-visible {
   box-shadow: 0 0 0 2px var(--colour-border);
 }
 
-/* Tight vertical grouping for the Calculate button and the status/error/
- * stale messages that explain it, mirroring .ride-elevation-section's
- * own "reads as one cohesive group" rationale. */
-.planning-calculate-actions {
+/* Tight vertical grouping for the messages that follow the editing
+ * actions (item 122): Calculate route's routing error and stale-route note,
+ * then the key-verification line, mirroring .ride-elevation-section's own
+ * "reads as one cohesive group" rationale. Calculate itself sits above the
+ * editing actions; its messages sit below them so the editing row never
+ * moves when a calculated route goes stale after an edit. */
+.planning-calculate-status {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);

@@ -5,7 +5,10 @@ import {
   isEnlargedTextLayout,
 } from "./enlargedTextLayout.ts";
 
-// Map sizes measured in item 114's Stage 1 (pinned container).
+// The switch's inputs: the map's width and, since item 122, the size
+// reference's height, which keeps the map's earlier height (44dvh between
+// 280 and 460px). These are the map sizes item 114's Stage 1 measured
+// (pinned container), which that reference reproduces.
 const MAP_390x844 = { widthPx: 358, heightPx: 380 };
 const MAP_320x844 = { widthPx: 288, heightPx: 380 };
 const MAP_375x667 = { widthPx: 343, heightPx: 300 };
@@ -18,7 +21,7 @@ describe("isEnlargedTextLayout", () => {
     }
   });
 
-  it("keeps the ordinary layout at 100% text even with the map at its 280px floor, as a layout-resizing keyboard could leave it", () => {
+  it("keeps the ordinary layout at 100% text even with the size reference at its 280px floor, as a layout-resizing keyboard could leave it", () => {
     expect(
       isEnlargedTextLayout(
         { widthPx: 358, heightPx: MAP_HEIGHT_FLOOR_PX, rootFontPx: 16 },

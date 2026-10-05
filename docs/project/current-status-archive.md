@@ -60,7 +60,7 @@ This **accepts item 128 on the installed iPhone in both languages**, at product 
 
 **Item 129 stays open.** The failed-Locate-me check passing does not resolve [item 129](backlog.md#item-129)'s finding about recovering from a denied location permission in the installed PWA.
 
-**Not claimed:** VoiceOver, iOS Larger Text, landscape, physical Android, or a separately tested light or dark appearance. Nor does it resolve the informative 320×568 German case, which still overlaps the crosshair by 15 px in automated measurement and is carried into [item 122](backlog.md#item-122).
+**Not claimed:** VoiceOver, iOS Larger Text, landscape, physical Android, or a separately tested light or dark appearance. Nor does it resolve the informative 320×568 German case, which still overlaps the crosshair by 15 px in automated measurement and is carried into [item 122](history/item-122.md#item-122).
 
 ### Installed-iPhone acceptance of item 102's navigation icons (`0.4.49`, reported 30 September 2026)
 

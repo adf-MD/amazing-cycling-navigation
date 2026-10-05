@@ -560,11 +560,15 @@ export function PlanningScreen({
   // attribution, messages and the placement control together, so the
   // attribution moves to a strip directly below the map and the messages
   // into normal flow beneath it. The slots are callback refs into state so
-  // MapView only ever receives an element that is actually attached.
-  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  // MapView only ever receives an element that is actually attached. The
+  // switch reads an invisible size reference that always keeps the
+  // enlarged layout's height, never the map itself, whose ordinary height
+  // is taller since item 122 — so the map's own change in height on a
+  // switch never feeds back into the decision.
+  const mapSizeReferenceRef = useRef<HTMLDivElement | null>(null);
   const placementControlRef = useRef<HTMLButtonElement | null>(null);
   const isEnlargedTextLayout = useEnlargedTextLayout(
-    mapContainerRef,
+    mapSizeReferenceRef,
     placementControlRef,
   );
   const [attributionSlot, setAttributionSlot] = useState<HTMLDivElement | null>(null);
@@ -2277,7 +2281,6 @@ export function PlanningScreen({
       ) : null}
 
       <div
-        ref={mapContainerRef}
         className={
           isEnlargedTextLayout
             ? "planning-map-container planning-map-container--enlarged-text"
@@ -2378,6 +2381,11 @@ export function PlanningScreen({
             {locateStatus === "locating" ? t("planning.map.locating") : <CrosshairIcon />}
           </button>
         </div>
+        <div
+          ref={mapSizeReferenceRef}
+          className="planning-map-size-reference"
+          aria-hidden="true"
+        />
       </div>
       {/* Planning's own messages follow the map in normal flow at every
        * text size (item 128), so a message appearing never moves the map,
@@ -2398,6 +2406,28 @@ export function PlanningScreen({
       </div>
 
       <div className="panel stack planning-section">
+        {/* Item 122: Calculate route directly below the map, then the
+         * editing actions, then Calculate's routing error and stale-route
+         * note, then the key-verification line. The messages follow the
+         * editing row so that row never moves when an edit makes a
+         * calculated route stale. DOM, visual and keyboard order agree. */}
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={routing.calculateNow}
+          disabled={
+            state.present.waypoints.length < 2 || !hasKey || routing.isCalculating
+          }
+        >
+          {routing.isCalculating
+            ? routing.updatingLegCount !== null
+              ? t("planning.calculatingSections", { count: routing.updatingLegCount })
+              : t("planning.calculating")
+            : routing.lastErrorMessage
+              ? t("planning.tryAgain")
+              : t("planning.calculate")}
+        </button>
+
         <div role="group" aria-label={t("planning.actions.group")} className="row">
           <button
             type="button"
@@ -2456,43 +2486,31 @@ export function PlanningScreen({
           ) : null}
         </div>
 
-        <div className="planning-calculate-actions">
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={routing.calculateNow}
-            disabled={
-              state.present.waypoints.length < 2 || !hasKey || routing.isCalculating
-            }
-          >
-            {routing.isCalculating
-              ? routing.updatingLegCount !== null
-                ? t("planning.calculatingSections", { count: routing.updatingLegCount })
-                : t("planning.calculating")
-              : routing.lastErrorMessage
-                ? t("planning.tryAgain")
-                : t("planning.calculate")}
-          </button>
-          {hasKey ? (
-            <p className="status-row" role="status">
-              {describeProviderKeyStatus(translator, key, verification, now).headline}
-            </p>
-          ) : null}
-          {routing.lastErrorMessage ? (
-            <p className="field-error" role="alert">
-              {routing.lastErrorMessage}
-            </p>
-          ) : null}
-          {routing.isStale && routing.state.kind === "routed" ? (
-            <p className="status-row" role="status">
-              {describeStaleRouteStatus(translator, {
-                previousProfile: routing.state.route.source.profile,
-                currentProfile: profile,
-                isCalculating: routing.isCalculating,
-              })}
-            </p>
-          ) : null}
-        </div>
+        {routing.lastErrorMessage ||
+        (routing.isStale && routing.state.kind === "routed") ||
+        hasKey ? (
+          <div className="planning-calculate-status">
+            {routing.lastErrorMessage ? (
+              <p className="field-error" role="alert">
+                {routing.lastErrorMessage}
+              </p>
+            ) : null}
+            {routing.isStale && routing.state.kind === "routed" ? (
+              <p className="status-row" role="status">
+                {describeStaleRouteStatus(translator, {
+                  previousProfile: routing.state.route.source.profile,
+                  currentProfile: profile,
+                  isCalculating: routing.isCalculating,
+                })}
+              </p>
+            ) : null}
+            {hasKey ? (
+              <p className="status-row" role="status">
+                {describeProviderKeyStatus(translator, key, verification, now).headline}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         <details className="settings-disclosure settings-disclosure--compact">
           <summary ref={clearDraftFocusParkRef}>

@@ -30,6 +30,9 @@ const DB_NAME = "amazing-cycling-navigation";
 const ORS_URL_GLOB = "https://api.heigit.org/**";
 const SIZES = {
   "375x667": { width: 375, height: 667 },
+  // Item 122: the 340px ordinary floor, where the German imagery message
+  // overlapped the crosshair by 15px at the earlier 280px floor.
+  "320x568": { width: 320, height: 568 },
   "320x844": { width: 320, height: 844 },
   "390x844": { width: 390, height: 844 },
   "430x932": { width: 430, height: 932 },
@@ -286,6 +289,8 @@ interface Box {
 interface Measurement {
   enlarged: boolean;
   map: { w: number; h: number };
+  /** Item 122's size reference: the box item 114's switch reads. */
+  reference: { w: number; h: number };
   ring: Box;
   control: Box;
   imagery: { testId: string; box: Box; inMap: boolean; retry: Box | null }[];
@@ -386,6 +391,10 @@ async function measureOnce(page: Page): Promise<Measurement> {
     return {
       enlarged: map.classList.contains("planning-map-container--enlarged-text"),
       map: { w: mr.width, h: mr.height },
+      reference: (() => {
+        const r = need(".planning-map-size-reference").getBoundingClientRect();
+        return { w: r.width, h: r.height };
+      })(),
       ring: rel(ringRect),
       control: rel(need(".planning-crosshair-callout").getBoundingClientRect()),
       imagery,
@@ -504,9 +513,11 @@ function expectMapUnmoved(
 }
 
 /** The root font size just below the size at which item 114's layout
- * engages (map width or height under 17rem): the largest ordinary text. */
+ * engages (width or height under 17rem): the largest ordinary text. Since
+ * item 122 the switch reads the size reference, which keeps the enlarged
+ * layout's height, not the taller ordinary map. */
 function justBelowSwitch(m: Measurement): string {
-  return `${(Math.min(m.map.w, m.map.h) / 17 - 0.02).toFixed(3)}px`;
+  return `${(Math.min(m.reference.w, m.reference.h) / 17 - 0.02).toFixed(3)}px`;
 }
 
 for (const size of Object.keys(SIZES) as SizeName[]) {
@@ -518,6 +529,12 @@ for (const size of Object.keys(SIZES) as SizeName[]) {
 
       const alone = await measure(page);
       expect(alone.enlarged).toBe(false);
+      if (size === "320x568") {
+        // Item 122's floor, with item 114's switch inactive: the ordinary map
+        // at 340px, the reference at its 280px floor (17.5rem at 16px).
+        expect(alone.map).toEqual({ w: 288, h: 340 });
+        expect(alone.reference).toEqual({ w: 288, h: 280 });
+      }
       expectImageryClearsCrosshair(alone, "imagery alone");
       expectNoEmptyGap(alone, "imagery alone");
 
@@ -643,8 +660,10 @@ for (const [size, language] of [
     await page.locator(".planning-map-status-message").evaluate((el) => {
       el.dataset.item128Node = "kept";
     });
+    // Item 122: the switch reads the size reference, so its ratios are
+    // computed from it, not from the taller ordinary map.
     const rootFor = (ratio: number) =>
-      `${(Math.min(ordinary.map.w, ordinary.map.h) / ratio).toFixed(3)}px`;
+      `${(Math.min(ordinary.reference.w, ordinary.reference.h) / ratio).toFixed(3)}px`;
     const enlargedClass = page.locator(".planning-map-container--enlarged-text");
 
     const expectEnlarged = async (context: string) => {
@@ -652,7 +671,10 @@ for (const [size, language] of [
       expect(m.enlarged, context).toBe(true);
       expect(m.nodeCounts, context).toEqual({ overlay: 1, attribution: 1, canvas: 1 });
       expect(m.canvasId, context).toBe(ordinary.canvasId);
-      expect(m.map, context).toEqual(ordinary.map);
+      // The enlarged layout keeps the earlier height: the map is the size
+      // of the reference, which itself never changes with the layout.
+      expect(m.map, context).toEqual(ordinary.reference);
+      expect(m.reference, context).toEqual(ordinary.reference);
       const order = await page.evaluate(() => {
         const messages = document.querySelector(".planning-map-messages");
         const imagery = document.querySelector(".map-status-message");
@@ -680,7 +702,7 @@ for (const [size, language] of [
 
     await setRootFontSize(
       page,
-      `${(Math.min(ordinary.map.w, ordinary.map.h) / 17 + 0.02).toFixed(3)}px`,
+      `${(Math.min(ordinary.reference.w, ordinary.reference.h) / 17 + 0.02).toFixed(3)}px`,
     );
     await expect(enlargedClass).toHaveCount(1);
     await expectEnlarged("engaged");

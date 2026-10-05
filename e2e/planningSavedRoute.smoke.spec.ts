@@ -1098,7 +1098,9 @@ test("a manual wheel scroll while open is kept, renders do not reveal again, and
 // area leaves that room, which the matrix records rather than hides.
 
 test.describe("a window tall enough for the whole Planning page", () => {
-  test.use({ viewport: { width: 390, height: 1800 } });
+  // 1900px since item 122: the map reaches its 560px ceiling here, 100px
+  // taller than before, so 1800px no longer leaves the confirmation room.
+  test.use({ viewport: { width: 390, height: 1900 } });
 
   test("the confirmation fits beneath Open saved route: opening, Cancel and Escape move nothing", async ({
     page,

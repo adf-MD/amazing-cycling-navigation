@@ -185,7 +185,7 @@ test.describe("ordinary text", () => {
     });
   }
 
-  test("a keyboard that shrank the layout viewport and left the map at its 280px floor would not switch layouts (a proxy, not device evidence)", async ({
+  test("a keyboard that shrank the layout viewport and left the switch's size reference at its 280px floor would not switch layouts (a proxy, not device evidence)", async ({
     page,
     context,
   }) => {
@@ -198,14 +198,24 @@ test.describe("ordinary text", () => {
     // one: a keyboard taking most of the height, as a resizes-content
     // browser would.
     await page.setViewportSize({ width: 390, height: 480 });
+    // Item 122: the switch reads the size reference, which keeps the
+    // enlarged layout's height and sits at its 280px floor (17.5rem at
+    // 16px); the ordinary map itself is at its own, higher 340px floor.
+    await expect
+      .poll(() =>
+        page
+          .locator(".planning-map-size-reference")
+          .evaluate((el) => Math.round(el.getBoundingClientRect().height)),
+      )
+      .toBe(280);
     await expect
       .poll(() =>
         page
           .locator(".planning-map-container")
           .evaluate((el) => Math.round(el.getBoundingClientRect().height)),
       )
-      .toBe(280);
-    expectOrdinarySignature(await readOrdinarySignature(page), "map at its floor");
+      .toBe(340);
+    expectOrdinarySignature(await readOrdinarySignature(page), "reference at its floor");
   });
 });
 

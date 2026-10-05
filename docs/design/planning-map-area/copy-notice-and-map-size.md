@@ -8,6 +8,8 @@
 
 **Implemented and accepted (5 October 2026):** item 141's notice shipped in `0.4.63` ([record](../../project/history/items-132-NN.md#item-141)), and its visual and functional checks were accepted on the installed iPhone in German and English, with VoiceOver not checked; item 122's implementation follows.
 
+**Implemented (5 October 2026):** item 122's map and Calculate-first order shipped in `0.4.64` ([record](../../project/history/item-122.md#item-122)); its installed-iPhone acceptance is pending. Two refinements from its planning and measurement are recorded [below](#refinements-during-implementation-5-october-2026).
+
 This refines [item 122's report](README.md), which is not repeated here, and gives [item 141](../../project/history/items-132-NN.md#item-141) its visual proposal. Everything was measured on scratch builds of `0.4.62` (application source identical to `5b2d295`), outside the repository, in the pinned Playwright container by digest: Chromium 149 and WebKit 26.5, which measured identically wherever both ran. **None of it is installed-iPhone evidence.**
 
 ## Summary
@@ -314,7 +316,7 @@ If the extra 20 px matters more, **500 px with Calculate first** keeps Calculate
    - the notice-asserting tests updated deliberately, as item 141 lists;
    - English and German, and 200% text;
    - a screen-reader check of the announcement and the disclosure.
-2. **Then the map and layout ([item 122](../../project/backlog.md#item-122)):** the chosen height rule with its fallback tiers and the enlarged-text behaviour, and the Calculate-first order if chosen. Its checks:
+2. **Then the map and layout ([item 122](../../project/history/item-122.md#item-122)):** the chosen height rule with its fallback tiers and the enlarged-text behaviour, and the Calculate-first order if chosen. Its checks:
    - a genuine-drag gesture test at the new heights in CI;
    - item 128's crosshair checks and item 114's enlarged-text contract;
    - P-18 and the confirmation reveals, and the Planning specs.
@@ -368,6 +370,16 @@ The prototypes stayed in scratch. The reorder and the announcement are each a fe
 4. item 120.
 
 Items 125–127, 129, 130 and 134–140 stay unscheduled.
+
+### Refinements during implementation (5 October 2026)
+
+- **The rider's decision: Calculate's messages follow the editing row.** On a calculated route, any edit marks the route stale in that same render, and the automatic recalculation follows 900 ms later. With the stale-route note above the editing row, the row would have moved down until the recalculation finished. So the routing error and stale-route note follow the editing actions, before the key line, and Calculate stays directly below the map.
+- **The rider's stopping condition:** if the editing row moved at 390×844 during a multi-section recalculation, implementation would stop before commit. Measured, the row stayed put at 390×844 in English and German, in both engines.
+  - On 375- and 320-wide screens, German's "2 Routenabschnitte werden berechnet…" wraps, and the row moves 16 px while the calculation runs.
+  - That is recorded as a limitation for device review, not accepted.
+- **The enlarged-text switch** reads an invisible size reference with the earlier height, plus any width a classic scrollbar takes, so neither the map's change of height nor a desktop scrollbar coming and going feeds back into the decision.
+
+The measurements and evidence are in [item 122's record](../../project/history/item-122.md#item-122).
 
 ## Reproducing (a reconstruction)
 

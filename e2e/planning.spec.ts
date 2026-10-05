@@ -1885,7 +1885,7 @@ test.describe("phone viewport", () => {
   // (future-backlog item 21): the same manual-rotation contract as the
   // desktop "pressing Northwards twice" test above, proven again at this
   // narrower height/width — Planning's own .planning-map-container height
-  // is viewport-relative (44dvh), so a rotation regression could plausibly
+  // is viewport-relative (56dvh since item 122), so a rotation regression could plausibly
   // reproduce at one width and not another. Reuses this describe block's
   // own 390×844 viewport rather than declaring a second one, and the same
   // MapLibre KeyboardHandler precondition mechanism as the desktop test
