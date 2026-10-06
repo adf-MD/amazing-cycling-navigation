@@ -1,6 +1,6 @@
 # Completed backlog items 132–
 
-This file continues the 100– numeric range and opens at item 132. It was started when item 132 was completed (2 October 2026, `0.4.55`). Its entry belongs before item 133's in numeric order, and adding it to what was then `items-118-NN.md` would have taken that file to about 176,000 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md). That file was therefore closed at item 131 and renamed [`items-118-131.md`](items-118-131.md), and item 133's entry — completed earlier the same day as a CI-only change — moved here unchanged apart from its link to item 132, which now points within this file. No entry was shortened or rewritten by that split. Stable item numbers never change regardless of which file their text lives in: item 133 was completed before item 132 and is filed after it, since a number is an identifier and never a schedule. Item 141 — completed in `0.4.63` on 5 October 2026 and accepted on the installed iPhone the same day — follows them, moved from `backlog.md` under the same convention. Item 134 — implemented in `0.4.67` on 6 October 2026, with its installed-iPhone acceptance pending — moved here from `backlog.md` the same day, under the same convention. Item 140 — completed in two slices, `0.4.65` and `0.4.66`, both accepted on the installed iPhone on 6 October 2026 — moved here from `backlog.md` on that day under the same convention and is filed before item 141, in numeric order, although item 141 was completed first.
+This file continues the 100– numeric range and opens at item 132. It was started when item 132 was completed (2 October 2026, `0.4.55`). Its entry belongs before item 133's in numeric order, and adding it to what was then `items-118-NN.md` would have taken that file to about 176,000 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md). That file was therefore closed at item 131 and renamed [`items-118-131.md`](items-118-131.md), and item 133's entry — completed earlier the same day as a CI-only change — moved here unchanged apart from its link to item 132, which now points within this file. No entry was shortened or rewritten by that split. Stable item numbers never change regardless of which file their text lives in: item 133 was completed before item 132 and is filed after it, since a number is an identifier and never a schedule. Item 141 — completed in `0.4.63` on 5 October 2026 and accepted on the installed iPhone the same day — follows them, moved from `backlog.md` under the same convention. Item 134 — implemented in `0.4.67` on 6 October 2026 and accepted on the installed iPhone the same day — moved here from `backlog.md` on that day, under the same convention. Item 140 — completed in two slices, `0.4.65` and `0.4.66`, both accepted on the installed iPhone on 6 October 2026 — moved here from `backlog.md` on that day under the same convention and is filed before item 141, in numeric order, although item 141 was completed first.
 
 See [`README.md`](README.md) for the full history index, [`../backlog.md`](../backlog.md) for pending specifications, and [`../current-status.md`](../current-status.md) for the manual acceptance ledger.
 
@@ -366,11 +366,11 @@ Run [37055399688](https://github.com/adf-MD/amazing-cycling-navigation/actions/r
 
 <a id="item-134"></a>
 
-## Item 134 — Resume ride offered while a confirmed End ride is still finishing — implemented, device acceptance pending
+## Item 134 — Resume ride offered while a confirmed End ride is still finishing — done
 
 _Category: Riding lifecycle_
 
-**Status: implemented in `0.4.67` on 6 October 2026; installed-iPhone acceptance pending.** The investigation its scheduling approved was made on 6 October 2026 on `c2cb9e6` (`0.4.66`), and the rider approved the change the same day. The entry moved here from `backlog.md` with its implementation, as item 141's did; item 134 stays first in the execution order until its device acceptance. The specification below is as filed; the investigation, decisions, implementation and evidence follow it.
+**Status: done — implemented in `0.4.67` on 6 October 2026, and its ordinary flows accepted on the installed iPhone in German and English, reported the same day, on build `9f73242`** ([acceptance](#installed-iphone-acceptance-reported-6-october-2026)). The investigation its scheduling approved was made on 6 October 2026 on `c2cb9e6` (`0.4.66`), and the rider approved the change the same day. The entry moved here from `backlog.md` with its implementation, as item 141's did. Item 134 stayed first in the execution order until its device acceptance; it is now removed from the order, which is 139 → 125 → 103 → 120. The specification below is as filed; the investigation, decisions, implementation, evidence, CI and acceptance follow it.
 
 134. **Resume ride offered while a confirmed End ride is still finishing — defect investigation**
      - Origin: observed while implementing item 124's slice 9 (`0.4.60`, 3 October 2026) and recorded in its [limitations](item-124-continued.md#slice-9--confirmations-closed-by-a-ride-transition-c-10-c-11-c-12-shipped-0460-3-october-2026). The rider's direction of 4 October 2026 asked that it get its own disposition; the [reconciliation](../../design/reveal-inventory/closure-reconciliation.md) sends it here. **Recording it here does not mean it is fixed or accepted.**
@@ -439,7 +439,7 @@ _Category: Riding lifecycle_
 - **Slice 9's guard**, which keeps a confirmation that is still ending when a ride transition happens, is unchanged; from source, no ordinary path reaching it is known after this change.
 - VoiceOver, enlarged text and physical Android are not covered, and focus after an End is [item 135](../backlog.md#item-135)'s.
 - **CI:** the first run failed in an unrelated, long Planning test, and a test-only repair followed ([below](#ci-run-37483537843-failed-and-a-test-only-repair-6-october-2026)).
-- **Installed-iPhone acceptance pending:** Session 5 of [`current-status.md`](../current-status.md).
+- **Installed-iPhone acceptance:** reported 6 October 2026 ([below](#installed-iphone-acceptance-reported-6-october-2026)).
 
 ### CI run 37483537843 failed, and a test-only repair (6 October 2026)
 
@@ -468,7 +468,34 @@ _Category: Riding lifecycle_
 
   These are recorded, not repaired: none of them is a failure CI demonstrated.
 
-- **CI and deployment** of the repair are reported in the handoff and recorded here with the device acceptance.
+- **CI and deployment** of the repair were reported in the handoff and are recorded below with the device acceptance.
+
+### CI and deployment — run 37491370472 (6 October 2026)
+
+This section was written after the run. Run [37491370472](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37491370472), for the test-only repair `9f73242`: **Verify and build, all four End-to-end shards and Deploy succeeded.**
+
+- Verify and build took 317 s.
+- The shard jobs took 692, 765, 525 and 719 s (shards 1 to 4). The longest, 765 s (shard 2), was 435 s under the E2E job's 1,200 s limit.
+- Deploy took 48 s.
+
+The live site then served `0.4.67` with build `9f73242`. Run 37483537843's failure on `964f585` and the repair stay as recorded above. One run, so no trend is claimed; the durations are also noted under "Monitored, corroborating only" in [`current-status.md`](../current-status.md).
+
+**The original timeout's cause stays qualified.** The local measurements above support a long test exhausting its 30 s budget under load, but run 37483537843's log and failure artefacts were not available, so that cause is not established. This run's success with the 90 s budget does not establish it either.
+
+**The stress-only observations stay unresolved:** the double-tap (`:460`) and two-finger-tap (`:482`) zoom tests, `androidMapCameraGestureRace.spec.ts:742`, `ridingShortTurnaroundWalkingPace.spec.ts:189` and `:528`'s durations. Every shard of this run succeeded with no retries configured, so they passed here, as they had in CI before; that is not evidence that any of them is fixed under the harsher load, and none is treated as fixed.
+
+### Installed-iPhone acceptance (reported 6 October 2026)
+
+**Accepted** on the installed iPhone, in German and English, at product level: Session 5's four checks ([dated record](../current-status.md#installed-iphone-acceptance-of-0467-build-9f73242-item-134-reported-6-october-2026)). The rider reported: "All checks pass in German and English. The installed version and build are 0.4.67 and 9f73242."
+
+- **The accepted checks:** ordinary Pause, Resume ride and Pause again; End ride cancelled on the full paused-route screen, then a successful Resume ride and Pause again; End ride confirmed from that full paused-route screen without going through Back to Ride options, reaching `Choose a route`; and nothing offered to resume after fully closing and reopening the app.
+- **The accepted build is `9f73242`**, and it stays so when later deployments change the deployed build ID.
+- **Automated evidence only:** Resume ride disabled during a held End; a failed End's recovery, with the ride paused and Resume ride available again; a refused End's hand-back.
+- **Unmeasured:** whether a naturally slow End exposes the pending state on an iPhone.
+- **VoiceOver** remains unverified; the report supplies no VoiceOver result.
+- **Not inferred:** a phone model, iOS version, measured geometry, GPS-watch count or physical-Android result.
+
+With this acceptance item 134 is complete within its approved scope. [Item 135](../backlog.md#item-135)'s focus questions and [items 142](../backlog.md#item-142), [143](../backlog.md#item-143) and [144](../backlog.md#item-144) stay outside it.
 
 ---
 
