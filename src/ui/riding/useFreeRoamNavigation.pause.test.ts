@@ -128,6 +128,7 @@ describe("useFreeRoamNavigation pause()", () => {
       toStoredFreeRoamState(
         "2026-01-01T00:00:00.000Z",
         null,
+        null,
         {
           mode: "overview",
           coordinate: null,

@@ -18,6 +18,8 @@ import {
   setActiveRideState,
 } from "../../storage/rideStateRepository.ts";
 import { systemClock, type Clock } from "../../platform/clock.ts";
+import { logError } from "../../platform/errorLog.ts";
+import { generateId } from "../../platform/idGenerator.ts";
 
 export interface FreeRoamNavigationState {
   geolocationStatus: GeolocationWatchStatus;
@@ -60,6 +62,10 @@ function defaultGetPersistableSnapshot(): {
 } {
   return { cameraState: DEFAULT_CAMERA_STATE, lastReliableBearingDegrees: null };
 }
+
+/** Where the mount restore read stands: still "pending", "settled" (a
+ * stored free-roam session adopted, or none found), or "failed". */
+type FreeRoamRestoration = "pending" | "settled" | "failed";
 
 export interface UseFreeRoamNavigationOptions {
   geolocationSource?: GeolocationSource;
@@ -116,6 +122,20 @@ export function useFreeRoamNavigation(
   const watchGenerationRef = useRef(0);
   const statusRef = useRef<GeolocationWatchStatus>("idle");
   const startedAtRef = useRef<string | null>(null);
+  // This session's identity — see useRideNavigation.ts's identical field
+  // (backlog item 140). Free roam's row is written by App before this
+  // screen mounts, so a session normally adopts App's id on restore; one is
+  // minted here only once the restore read has shown there is none.
+  const sessionIdRef = useRef<string | null>(null);
+  // The mount restore read's outcome (backlog item 140). This screen
+  // starts its watch on mount, so a fix can arrive before that read
+  // settles; nothing is persisted, and no identity minted, until it has.
+  // "failed" is not evidence that no session is stored, so after a failed
+  // read nothing is minted or written at all: the stored session, whatever
+  // it is, is left as it was. The promise lets pause() wait for the same
+  // outcome.
+  const [restoration, setRestoration] = useState<FreeRoamRestoration>("pending");
+  const restorationRef = useRef<Promise<FreeRoamRestoration> | null>(null);
   // Also read (never written) by pause() below, so a Pause attempt is
   // blocked while a Finish/End finalisation is in flight — finish() does
   // NOT symmetrically read isPausingRef in return; see that ref's own
@@ -133,13 +153,12 @@ export function useFreeRoamNavigation(
 
   const handleFix = useCallback(
     (fix: GeolocationFix) => {
-      startedAtRef.current ??= new Date(clock.now()).toISOString();
       setCurrentFix(fix);
       setIsStale(false);
       setStatus("watching");
       setGeolocationError(null);
     },
-    [clock, setStatus],
+    [setStatus],
   );
 
   const handleError = useCallback(
@@ -201,6 +220,7 @@ export function useFreeRoamNavigation(
     }
     stop();
     startedAtRef.current = null;
+    sessionIdRef.current = null;
     setCurrentFix(null);
     setIsStale(false);
     setGeolocationError(null);
@@ -225,11 +245,25 @@ export function useFreeRoamNavigation(
     if (isPausingRef.current || isFinalizingRef.current) return;
     isPausingRef.current = true;
     try {
-      startedAtRef.current ??= new Date(clock.now()).toISOString();
+      // A Pause in the restore read's first milliseconds waits for it, so
+      // it adopts App's identity rather than minting a replacement; after a
+      // failed read it saves nothing over the unknown stored session. Once
+      // the read has settled nothing is awaited here, so the write below is
+      // issued synchronously, exactly as before.
+      const restored =
+        restoration === "pending" ? await restorationRef.current : restoration;
+      if (restored === "failed") {
+        throw new Error("The stored free-roam session could not be read");
+      }
+      if (startedAtRef.current === null) {
+        startedAtRef.current = new Date(clock.now()).toISOString();
+        sessionIdRef.current = generateId();
+      }
       const snapshot = getPersistableSnapshot();
       await setActiveRideState(
         toStoredFreeRoamState(
           startedAtRef.current,
+          sessionIdRef.current,
           currentFix,
           snapshot.cameraState,
           snapshot.lastReliableBearingDegrees,
@@ -242,7 +276,7 @@ export function useFreeRoamNavigation(
     }
     stop();
     isPausingRef.current = false;
-  }, [clock, currentFix, getPersistableSnapshot, wakeLockDesired, stop]);
+  }, [clock, currentFix, getPersistableSnapshot, restoration, wakeLockDesired, stop]);
 
   useEffect(() => {
     return () => {
@@ -258,35 +292,52 @@ export function useFreeRoamNavigation(
   // a fresh mount always means a fresh restore attempt.
   useEffect(() => {
     let cancelled = false;
-    getActiveRideState()
-      .then((stored) => {
-        if (cancelled || !stored || !isStoredFreeRoamRideState(stored)) return;
+    const outcome = getActiveRideState().then(
+      (stored): FreeRoamRestoration => {
+        if (cancelled || !stored || !isStoredFreeRoamRideState(stored)) return "settled";
         const restored = fromStoredFreeRoamState(stored);
         startedAtRef.current = stored.startedAt;
+        sessionIdRef.current =
+          typeof stored.sessionId === "string" ? stored.sessionId : null;
         setCurrentFix(restored.lastFix);
         setIsStale(restored.lastFix !== null);
         setRestoredCameraState(restored.cameraState);
         setRestoredLastReliableBearingDegrees(restored.lastReliableBearingDegrees);
         setWakeLockDesired(restored.wakeLockDesired);
-      })
-      .catch(() => {
-        // No usable stored state; continue with a fresh session.
-      });
+        return "settled";
+      },
+      (error: unknown): FreeRoamRestoration => {
+        if (!cancelled) logError("free-roam-restore", error);
+        return "failed";
+      },
+    );
+    restorationRef.current = outcome;
+    void outcome.then((settled) => {
+      if (!cancelled) setRestoration(settled);
+    });
     return () => {
       cancelled = true;
     };
   }, []);
 
   // Persist after every accepted fix — mirrors useRideNavigation's own
-  // persistence effect exactly, including the isFinalizingRef/isPausingRef
-  // guards.
+  // persistence effect, including the isFinalizingRef/isPausingRef guards,
+  // but waits for the restore read to settle first (backlog item 140; see
+  // restoration above).
   useEffect(() => {
     if (isFinalizingRef.current || isPausingRef.current) return;
-    if (currentFix === null || startedAtRef.current === null) return;
+    if (restoration !== "settled" || currentFix === null) return;
+    // Only once the restore read has settled with nothing adopted is this
+    // a new session, whose start time and identity are minted together.
+    if (startedAtRef.current === null) {
+      startedAtRef.current = new Date(clock.now()).toISOString();
+      sessionIdRef.current = generateId();
+    }
     const snapshot = getPersistableSnapshot();
     setActiveRideState(
       toStoredFreeRoamState(
         startedAtRef.current,
+        sessionIdRef.current,
         currentFix,
         snapshot.cameraState,
         snapshot.lastReliableBearingDegrees,
@@ -296,7 +347,7 @@ export function useFreeRoamNavigation(
       // Persistence failure isn't fatal to an in-progress session; the next
       // successful write will catch the state up.
     });
-  }, [currentFix, getPersistableSnapshot, wakeLockDesired]);
+  }, [clock, currentFix, getPersistableSnapshot, restoration, wakeLockDesired]);
 
   // On visibilitychange/pageshow, mark the current fix stale and restart
   // the watch — but only if it was already running. Identical policy and

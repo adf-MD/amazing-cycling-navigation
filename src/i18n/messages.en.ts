@@ -785,6 +785,10 @@ export const en = {
     "This unfinished ride refers to a route that's no longer in your library, so it can't be resumed.",
   "launcher.unsupportedKind":
     "This unfinished ride can't be recovered by this version of the app.",
+  // Backlog item 140: an End ride or Discard confirmation whose session had
+  // already ended or been replaced (in another window) deletes nothing.
+  "launcher.staleSessionNotice":
+    "The previously shown ride had already ended or been replaced. Nothing was deleted.",
 
   // --- Climbs -------------------------------------------------------------
   "climb.selectorLabel": "Recognised climbs",

@@ -1269,3 +1269,119 @@ describe("useRideNavigation resuming after a long suspension gap on repeated geo
     ).toBeGreaterThan(riddenTo.distanceFromStartMetres);
   });
 });
+
+describe("useRideNavigation session identity (backlog item 140)", () => {
+  const STORED_ROW: StoredRideState = {
+    id: "active",
+    routeId: route.id,
+    startedAt: "2026-01-01T08:00:00.000Z",
+    lastFix: { coordinate: [0, 51], accuracyMetres: 6, timestampMs: 500 },
+    lastMatchedPointIndex: 0,
+    matchedDistanceFromStartMetres: 0,
+    offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+  };
+
+  async function storedFixTimestamp(): Promise<number | undefined> {
+    return (await getActiveRideState())?.lastFix?.timestampMs;
+  }
+
+  it("a new session keeps one identity through its writes and a Pause; after finish() the next session gets a new one", async () => {
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+    await waitFor(() => {
+      expect(result.current.restorationStatus).toBe("ready");
+    });
+
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(SAMPLE_FIX);
+    });
+    await waitFor(async () => {
+      expect(await storedFixTimestamp()).toBe(SAMPLE_FIX.timestampMs);
+    });
+    const first = (await getActiveRideState())?.sessionId;
+    expect(first).toEqual(expect.any(String));
+
+    act(() => {
+      fake.watches[0]?.emitFix(LATER_FIX);
+    });
+    await waitFor(async () => {
+      expect(await storedFixTimestamp()).toBe(LATER_FIX.timestampMs);
+    });
+    expect((await getActiveRideState())?.sessionId).toBe(first);
+    await act(async () => {
+      await result.current.pause();
+    });
+    expect((await getActiveRideState())?.sessionId).toBe(first);
+
+    act(() => {
+      result.current.start();
+    });
+    await act(async () => {
+      await result.current.finish();
+    });
+    expect(await getActiveRideState()).toBeUndefined();
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches.at(-1)?.emitFix(SAMPLE_FIX);
+    });
+    await waitFor(async () => {
+      expect((await getActiveRideState())?.sessionId).toEqual(expect.any(String));
+    });
+    expect((await getActiveRideState())?.sessionId).not.toBe(first);
+  });
+
+  it("adopts a restored session's identity and keeps it through the ride's writes", async () => {
+    await setActiveRideState({ ...STORED_ROW, sessionId: "session-restored" });
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+    await waitFor(() => {
+      expect(result.current.restoredForThisRoute).toBe(true);
+    });
+
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(LATER_FIX);
+    });
+    await waitFor(async () => {
+      expect(await storedFixTimestamp()).toBe(LATER_FIX.timestampMs);
+    });
+
+    expect((await getActiveRideState())?.sessionId).toBe("session-restored");
+  });
+
+  it("a restored row without an identity stays without one: only the Ride launcher assigns it", async () => {
+    await setActiveRideState(STORED_ROW);
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+    await waitFor(() => {
+      expect(result.current.restoredForThisRoute).toBe(true);
+    });
+
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(LATER_FIX);
+    });
+    await waitFor(async () => {
+      expect(await storedFixTimestamp()).toBe(LATER_FIX.timestampMs);
+    });
+
+    const stored = await getActiveRideState();
+    expect(stored).not.toHaveProperty("sessionId");
+    expect(stored?.startedAt).toBe(STORED_ROW.startedAt);
+  });
+});

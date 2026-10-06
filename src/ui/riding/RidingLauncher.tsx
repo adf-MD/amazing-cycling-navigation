@@ -8,8 +8,8 @@ import {
   isStoredRouteRideState,
 } from "../../storage/mapping.ts";
 import {
-  clearActiveRideState,
-  getActiveRideState,
+  clearActiveRideStateIfSession,
+  getActiveRideStateWithSessionId,
 } from "../../storage/rideStateRepository.ts";
 import { getRoute } from "../../storage/routesRepository.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
@@ -67,13 +67,28 @@ export interface RidingLauncherProps {
 
 type RidingLauncherHydrationStatus = "loading" | "ready" | "failed";
 
+/** Every stored session shown carries the identity it was read with
+ * (backlog item 140), which an End ride or Discard confirmation keeps. */
 type RidingLauncherSessionState =
   | { status: "none" }
-  | { status: "resumable-route"; route: PlannedRoute }
-  | { status: "resumable-free-roam" }
-  | { status: "unresumable"; reason: "route-missing" | "unsupported-kind" };
+  | { status: "resumable-route"; route: PlannedRoute; sessionId: string }
+  | { status: "resumable-free-roam"; sessionId: string }
+  | {
+      status: "unresumable";
+      reason: "route-missing" | "unsupported-kind";
+      sessionId: string;
+    };
 
 const NONE_SESSION_STATE: RidingLauncherSessionState = { status: "none" };
+
+function sessionIdOf(state: RidingLauncherSessionState): string | null {
+  return state.status === "none" ? null : state.sessionId;
+}
+
+/** The notice after a confirmation found its session gone or replaced
+ * (backlog item 140): "awaiting-read" until the launcher's re-read has
+ * succeeded, then "shown"; a failed re-read never shows it. */
+type StaleSessionNotice = "none" | "awaiting-read" | "shown";
 
 type LauncherClearAction = "end-ride" | "end-free-roam" | "discard-unfinished";
 
@@ -165,6 +180,11 @@ export function RidingLauncher({
   const [hydrationRetryToken, setHydrationRetryToken] = useState(0);
   const [sessionState, setSessionState] =
     useState<RidingLauncherSessionState>(NONE_SESSION_STATE);
+  // The session the open End ride or Discard confirmation was opened for,
+  // or null while none is open (backlog item 140). Captured when it opens
+  // and never replaced while it stays open; Confirm clears only this one.
+  const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<StaleSessionNotice>("none");
 
   // Mirrors PlanningScreen.tsx's own hydration-generation/retry-token
   // pattern exactly. A multi-step async read (ride state, then
@@ -173,41 +193,62 @@ export function RidingLauncher({
   useEffect(() => {
     const generation = ++hydrationGenerationRef.current;
 
+    // Shows what this read found. A confirmation stays anchored to the
+    // session it was opened for (backlog item 140): a read showing any
+    // other session closes it rather than re-targeting it. A notice
+    // awaiting this read is shown now that it has succeeded.
+    function present(next: RidingLauncherSessionState) {
+      setSessionState(next);
+      setHydrationStatus("ready");
+      setConfirmingSessionId((confirming) =>
+        confirming !== null && confirming !== sessionIdOf(next) ? null : confirming,
+      );
+      setStaleNotice((notice) => (notice === "awaiting-read" ? "shown" : notice));
+    }
+
     async function hydrate() {
-      const stored = await getActiveRideState();
+      // Gives a stored row without an identity one, in the same
+      // transaction as the read, so End ride or Discard below can only
+      // ever clear exactly this session (backlog item 140).
+      const stored = await getActiveRideStateWithSessionId();
       if (hydrationGenerationRef.current !== generation) return;
       if (!stored) {
         onSessionChecked?.(null);
-        setSessionState(NONE_SESSION_STATE);
-        setHydrationStatus("ready");
+        present(NONE_SESSION_STATE);
         return;
       }
+      // Read before the kind checks: an unsupported row narrows to never.
+      const { sessionId } = stored;
       if (isStoredFreeRoamRideState(stored)) {
         onSessionChecked?.(null);
-        setSessionState({ status: "resumable-free-roam" });
-        setHydrationStatus("ready");
+        present({ status: "resumable-free-roam", sessionId });
         return;
       }
       if (!isStoredRouteRideState(stored)) {
         onSessionChecked?.(null);
-        setSessionState({ status: "unresumable", reason: "unsupported-kind" });
-        setHydrationStatus("ready");
+        present({
+          status: "unresumable",
+          reason: "unsupported-kind",
+          sessionId,
+        });
         return;
       }
       const route = await getRoute(stored.routeId);
       if (hydrationGenerationRef.current !== generation) return;
       if (!route) {
         onSessionChecked?.(null);
-        setSessionState({ status: "unresumable", reason: "route-missing" });
-        setHydrationStatus("ready");
+        present({
+          status: "unresumable",
+          reason: "route-missing",
+          sessionId,
+        });
         return;
       }
       // The owner is opening this route's own paused screen in place of
       // the launcher, so nothing here changes: the checking status stays
       // until the launcher unmounts.
       if (onSessionChecked?.(route) === true) return;
-      setSessionState({ status: "resumable-route", route });
-      setHydrationStatus("ready");
+      present({ status: "resumable-route", route, sessionId });
     }
 
     hydrate().catch((error: unknown) => {
@@ -216,8 +257,10 @@ export function RidingLauncher({
       // Never "ready" — the failure UI below offers an explicit retry;
       // every "ready" render branch is gated strictly behind
       // hydrationStatus === "ready", so a failure is never mistaken for
-      // "no session".
+      // "no session". A notice awaiting this read is dropped: the existing
+      // failure explains the state instead.
       setHydrationStatus("failed");
+      setStaleNotice((notice) => (notice === "awaiting-read" ? "none" : notice));
     });
 
     return () => {
@@ -228,7 +271,6 @@ export function RidingLauncher({
   }, [hydrationRetryToken, sessionRefreshToken, onSessionChecked]);
 
   const clearTriggerRef = useRef<HTMLButtonElement>(null);
-  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
   const [activeClearAction, setActiveClearAction] = useState<LauncherClearAction | null>(
     null,
   );
@@ -263,31 +305,45 @@ export function RidingLauncher({
   // three LauncherClearAction values exactly like RidingScreen.tsx's own
   // performFinalizeRide(source) is parameterised on "end"/"finish": every
   // action does identical storage-clear-then-reset-to-"none" work and
-  // differs only in copy. Calls clearActiveRideState() directly rather than
-  // instantiating a navigation hook (which requires either a PlannedRoute —
-  // unavailable for the route-missing case — or, for free roam, a live
+  // differs only in copy. Clears through clearActiveRideStateIfSession()
+  // rather than instantiating a navigation hook (which requires either a
+  // PlannedRoute — unavailable for the route-missing case — or, for free roam, a live
   // GPS/camera/wake-lock session this screen never runs, since
   // FreeRoamScreen was never mounted for this session this page lifetime).
-  // This stays the one authoritative persisted-session clear path: this
-  // function and both useRideNavigation.finish()/useFreeRoamNavigation.finish()
-  // call through clearActiveRideState(); none of them reach into Dexie
-  // directly.
-  const performClearSession = async (action: LauncherClearAction) => {
+  // None of this, nor useRideNavigation.finish()/useFreeRoamNavigation.finish(),
+  // reaches into Dexie directly; all of it goes through
+  // rideStateRepository.ts.
+  //
+  // Backlog item 140: the clear is conditioned on the session this
+  // confirmation was opened for, checked and applied in one transaction.
+  // When that session is no longer the one stored — ended, or replaced by
+  // a newer one, in another window — nothing is deleted: the confirmation
+  // closes with neither success nor an error, the launcher re-reads what
+  // is actually stored, and once that read succeeds a notice says nothing
+  // was deleted. No focus is moved, as on success.
+  const performClearSession = async (action: LauncherClearAction, sessionId: string) => {
     if (isClearActionPendingRef.current) return;
     isClearActionPendingRef.current = true;
     setActiveClearAction(action);
     setClearError(null);
     try {
-      await clearActiveRideState();
-      setSessionState(NONE_SESSION_STATE);
-      setIsClearConfirmOpen(false);
+      const outcome = await clearActiveRideStateIfSession(sessionId);
+      if (outcome === "cleared") {
+        setSessionState(NONE_SESSION_STATE);
+        setConfirmingSessionId(null);
+      } else {
+        setConfirmingSessionId(null);
+        setStaleNotice("awaiting-read");
+        setHydrationStatus("loading");
+        setHydrationRetryToken((token) => token + 1);
+      }
     } catch (error) {
       logError(LAUNCHER_CLEAR_ACTION_COPY[action].logContext, error);
       setClearError({
         action,
         message: translator.t(LAUNCHER_CLEAR_ACTION_COPY[action].errorMessage),
       });
-      setIsClearConfirmOpen(false);
+      setConfirmingSessionId(null);
       // Restoring focus is deferred to the pending-ref effect below rather
       // than called directly here — mirrors RidingScreen.tsx's own
       // performFinalizeRide: the trigger is still disabled/absent in the
@@ -313,16 +369,19 @@ export function RidingLauncher({
   });
 
   const handleClearTriggerClick = () => {
-    if (isClearConfirmOpen || isClearActionPendingRef.current) return;
+    if (confirmingSessionId !== null || isClearActionPendingRef.current) return;
+    const presentedSessionId = sessionIdOf(sessionState);
+    if (presentedSessionId === null) return;
     setClearError(null);
-    setIsClearConfirmOpen(true);
+    setStaleNotice("none");
+    setConfirmingSessionId(presentedSessionId);
   };
 
   const handleClearCancel = () => {
     // Escape can bypass a disabled Cancel button, so guard here too.
     if (isClearActionPendingRef.current) return;
     pendingClearFocusRef.current = true;
-    setIsClearConfirmOpen(false);
+    setConfirmingSessionId(null);
   };
 
   // Renders the current clear action (End ride / Discard unfinished ride) in
@@ -338,10 +397,11 @@ export function RidingLauncher({
   function renderClearAction(): ReactNode {
     if (!clearAction) return null;
     const copy = LAUNCHER_CLEAR_ACTION_COPY[clearAction];
-    if (isClearConfirmOpen) {
+    if (confirmingSessionId !== null) {
+      const sessionId = confirmingSessionId;
       return (
         <ConfirmDialog
-          open={isClearConfirmOpen}
+          open
           title={t(copy.dialogTitle)}
           message={t(copy.dialogMessage)}
           confirmLabel={
@@ -353,7 +413,7 @@ export function RidingLauncher({
           confirmDisabled={activeClearAction === clearAction}
           cancelDisabled={activeClearAction === clearAction}
           onConfirm={() => {
-            void performClearSession(clearAction);
+            void performClearSession(clearAction, sessionId);
           }}
           onCancel={handleClearCancel}
         />
@@ -383,6 +443,15 @@ export function RidingLauncher({
     <section className="screen" aria-label={t("launcher.landmarkLabel")}>
       <h1 className="screen-title">{t("launcher.title")}</h1>
 
+      {/* Backlog item 140: a stable, initially empty polite region, present
+          before its message (as item 141's notice is), filled once when a
+          confirmation's session had gone and the re-read has succeeded.
+          Visually hidden, so it takes no place in the screen's gap; the
+          visible notice below is not live. */}
+      <p className="visually-hidden" role="status" aria-atomic="true">
+        {staleNotice === "shown" ? t("launcher.staleSessionNotice") : ""}
+      </p>
+
       {hydrationStatus === "loading" ? (
         <p className="status-row" role="status">
           {t("launcher.checking")}
@@ -398,6 +467,7 @@ export function RidingLauncher({
             type="button"
             className="btn-secondary"
             onClick={() => {
+              setStaleNotice("none");
               setHydrationStatus("loading");
               setHydrationRetryToken((token) => token + 1);
             }}
@@ -405,6 +475,10 @@ export function RidingLauncher({
             {t("launcher.retry")}
           </button>
         </div>
+      ) : null}
+
+      {hydrationStatus === "ready" && staleNotice === "shown" ? (
+        <p className="status-row">{t("launcher.staleSessionNotice")}</p>
       ) : null}
 
       {hydrationStatus === "ready" && sessionState.status === "none" ? (

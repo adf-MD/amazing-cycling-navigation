@@ -1,6 +1,6 @@
-# Current status — archive: dated records from 1 October back to 10 September 2026
+# Current status — archive: dated records from 2 October back to 10 September 2026
 
-This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order — on 1 October 2026 those from 25 September 2026 back, on 4 October 2026 the four of 28 and 29 September 2026, and on 5 October 2026 the seven of 30 September and 1 October 2026 that now open it — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
+This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order — on 1 October 2026 those from 25 September 2026 back, on 4 October 2026 the four of 28 and 29 September 2026, on 5 October 2026 the seven of 30 September and 1 October 2026, and on 6 October 2026 the six of 2 October 2026 that now open it — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
 
 **Where the moved text's positional references now point.** These records stood in `current-status.md` after its newer dated records and before its per-item entries from item 114 onwards, and their wording is kept exactly as written. Read them like this:
 
@@ -8,11 +8,105 @@ This file is **the continuation of [`current-status.md`](current-status.md)'s da
 - **"the checklist above", "the consolidated installed-iPhone checklist above", "Session 1", "Session 2", "Session 3", "the opportunistic monitoring above", "this file's own reading note above", "the umbrella above" and "the open-finding subsection above"** — in [`current-status.md`](current-status.md): its open checklist, its "How to read this ledger" notes, its "Physical Android — one umbrella" statement and its "Open device findings" subsection. "Session N" means the checklist's sessions as they stood when a record was written; a check named there may since have been accepted and removed.
 - **Item 121's "the dated `0.4.44` record above"**, under "Dated evidence, closures and limitations, by item" — that record stayed in `current-status.md` on 1 October 2026 and moved here on 4 October 2026, so it is again [above, in this file](#installed-iphone-acceptance-of-0444-build-8027c6a-item-121-reported-29-september-2026).
 - **In the seven records of 30 September and 1 October 2026, moved on 5 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist above" means `current-status.md`'s open checklist; "the item 102 entry below" means `current-status.md`'s per-item entry for item 102; and "the mouse double-click observation above" means the observation from automated testing in `current-status.md`'s checklist section. Their references to one another, such as "the `0.4.47` finding below", still point within this file.
+- **In the six records of 2 October 2026, moved on 6 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist" means `current-status.md`'s open checklist; and "the item 132 checks above" means that Session 5's checks, listed in the same record. Their references to one another, such as the `0.4.53` record's "that observation is kept below", still point within this file.
 - **"Item 115's installed-iPhone presentation checklist below"**, in the 12 September 2026 bicycle field test — the per-item checklists of that time, since consolidated into `current-status.md`'s Sessions 2 and 3.
 
 Links in these records are relative to `docs/project/`, as they were, and still resolve.
 
 ---
+
+### Installed-iPhone acceptance of `0.4.55` (build `501e1d4`, item 132, reported 2 October 2026)
+
+**Device and build.** Installed Home Screen PWA; version `0.4.55`, build `501e1d4`, as reported. The accepted build is `501e1d4`, and it stays so when later commits change the deployed build ID.
+
+**The rider's report, verbatim:** "On the installed iPhone, version 0.4.55, build 501e1d4, the item 132 checks above pass in English and German, including cold start, repeated Resume/Pause, staying paused across Routes → Ride, Back to Ride options staying on the summary, and reopening the same route from Routes." — item 132's Session 5, in English and German, so that session is complete for this device and has been removed from the checklist. Its checks were:
+
+- with a route ride paused and the PWA fully closed and reopened, the first **Ride** entry showed the route's full paused screen, with its last position stale, not the launcher's short summary, and started no tracking by itself;
+- that screen offered **Resume ride**, **Edit copy**, **Back to Ride options** and **End ride**;
+- **Resume ride** continued from the same progress with Follow, and **Pause** returned the paused screen, repeatedly;
+- Routes and back to Ride kept the ride paused, with tracking not restarted;
+- **Back to Ride options** showed the launcher's summary and stayed on it, including after Routes and back to Ride;
+- opening the same route from Routes showed the same paused screen.
+
+This **accepts item 132's ordinary installed-iPhone flows and their visible behaviour**, at product level, in English and German.
+
+**Separate, automated evidence only.** A failed storage read, a session removed between reads, a ride paused before its first fix and a departure from Ride without Pause are proved in component, App and browser tests with synthetic faults and stand-ins; that record is [`history/items-132-NN.md`](history/items-132-NN.md#item-132). Session 5 deliberately did not induce them on the phone, and **this report is not physical-device acceptance of them**.
+
+**Not established by this report:** a GPS-watch count; induced storage failures; the no-first-fix lifecycle; and a separately measured Follow-zoom persistence result — the checks covered Resume continuing with Follow, but whether the rider's own Follow zoom survived the restore was not measured.
+
+**Not claimed:** VoiceOver; a physical keyboard; enlarged text, whether browser scaling or iOS Larger Text; landscape; physical Android.
+
+### Installed-iPhone acceptance of `0.4.54` (build `041da6c`, item 124 slice 4, D-06, reported 2 October 2026)
+
+**Device and build.** Installed Home Screen PWA, portrait; version `0.4.54`, build `041da6c`, as reported.
+
+**The rider's report, verbatim:** "On installed-iPhone version 0.4.54, build 041da6c, checks 1–5 pass in German and English." — all five of D-06's Session 5 checks, so that session is complete for this device:
+
+- with a draft in Plan, **Edit copy** opened "Replace your current draft?" without the page moving;
+- **Cancel** closed it, and Plan still showed the draft, unchanged;
+- **Replace and edit** opened Planning with the route's copy and its editable-copy notice, the route itself unchanged in Routes;
+- with no draft, **Edit copy** went straight to Planning with the copy;
+- back in Plan later, the copy was still there, not replaced by the earlier draft.
+
+This **accepts D-06's ordinary reachable flow on the installed iPhone**, at product level, in German and English: opening and cancelling the replacement confirmation, a confirmed replacement, copying without an existing draft, and the copy persisting after returning to Planning. Item 124 stays active: D-01, D-02 and C-12's enlarged-text opening are approved and not implemented, and every other inventory case awaits the rider's review.
+
+**Separate, automated evidence only.** The working state while a write is pending, a write still running when the rider leaves Ride, and a failed write, with its focus and reveal, are proved by synthetic IndexedDB holds and faults in Chromium and WebKit; that record is item 124's slice 4 in [`history/item-124.md`](history/item-124.md#item-124). Session 5 deliberately did not induce them on the phone, and **this report is not physical-device acceptance of them**.
+
+**Not claimed:** a pending or failed write on the device, the working label, refused Cancel or Escape, or focus after a failure; iOS Larger Text; VoiceOver; a physical keyboard; landscape; physical Android.
+
+### iPhone 13 observation of C-12, Edit copy's replacement confirmation (item 124 inventory, reported 2 October 2026)
+
+**Device and build.** The rider's iPhone 13. **No build was stated**, so none is recorded.
+
+**The rider's report, verbatim:** "On my iPhone 13, I checked C-12 in both languages. Its replacement confirmation opened without moving the page and naturally fitted on screen. Edit copy was high enough that I could not arrange an opening where the confirmation would not fit by scrolling further upwards."
+
+**What it supports:** keeping C-12's ordinary opening behaviour unchanged, in English and German. **What it does not establish:** the layouts that were not tried on the device, and it approves none of [D-06](../design/reveal-inventory/README.md#d-06--edit-copy-has-no-busy-guard-and-focuses-a-disabled-button-after-failure)'s proposed changes. The inventory's desktop-browser measurements of [C-12](../design/reveal-inventory/README.md#c-12--edit-copy-replace-your-current-draft) are separate evidence and are not re-asserted by this report.
+
+**Not claimed:** a build; a keyboard or focus result; an oversized or off-screen device result; VoiceOver; physical Android.
+
+### Installed-iPhone acceptance of `0.4.53` (build `64bde8d`, item 131, reported 2 October 2026)
+
+**Device and build.** Installed Home Screen PWA. The build is `0.4.53` (`64bde8d`), the build targeted by the test context; **no separately reported reading of Status is claimed**.
+
+**The rider's report, verbatim:** "All the tests in both languages pass." — all five of item 131's Session 5 checks, in German and English, so that session is complete for this device:
+
+- after fully closing and reopening the PWA, **Resume ride** from the Ride launcher resumed tracking;
+- **Pause** showed the paused screen with **Resume ride** and **End ride**, not the resuming message;
+- switching to **Routes** and back to **Ride** left the ride paused;
+- an explicit **Resume ride** resumed tracking with the ride's progress kept;
+- a **second Pause** again showed the paused screen.
+
+This **accepts item 131 on the installed iPhone**, at product level, in German and English, and resolves the device finding of the same day; that observation is kept below exactly as recorded. Item 124 stays active: its other inventory cases still await the rider's review.
+
+**Separate from the automated evidence.** The component, App and browser evidence, with the baseline and negative controls, is item 131's record in [`history/items-118-131.md`](history/items-118-131.md#item-131); this report neither re-verifies nor replaces it.
+
+**Not claimed:** a Status reading; a measured progress value; a count of GPS watches; any other device evidence; how the ride in the original finding had been opened; VoiceOver; iOS Larger Text; landscape; physical Android.
+
+### Installed-iPhone acceptance of `0.4.52` (build `68e6697`, item 124 slice 3, reported 2 October 2026)
+
+**Device and build.** Installed Home Screen PWA, portrait. The build is `0.4.52` (`68e6697`), the current build as identified in the handoff for this report; **no separate reading of Status is claimed**.
+
+**The rider's report, verbatim:** "The checks pass on the current build, in German and English." — all five of item 124 slice 3's Session 5 checks, so that session is complete for this device:
+
+- **Save route** stayed in Planning, showed the saved message and left the unfinished ride alone;
+- **Open saved route** revealed its switch confirmation beneath the button;
+- **Cancel** preserved the page position, the saved route and the original resumable ride;
+- with no unfinished ride, **Open saved route** opened the saved route's pre-ride screen;
+- hiding a route through the **search** and through a **tag filter** each dismissed its unconfirmed Delete confirmation, which stayed closed when the route returned, without taking focus away from the search or interrupting typing.
+
+This **accepts item 124's third slice on the installed iPhone**, at product level, in German and English. Item 124 stays active: its other inventory cases still await the rider's review ([`history/item-124.md`](history/item-124.md#item-124)).
+
+**Separate from the automated evidence.** The browser geometry, baseline and controls of slice 3, in Chromium and WebKit in the pinned container, are recorded in item 124's [slice 3 record](history/item-124.md#item-124); this report neither re-verifies nor replaces them.
+
+**Not claimed:** VoiceOver; a physical Escape key; iOS Larger Text; landscape; physical Android.
+
+### Installed-iPhone observation: Pause did not show the expected paused screen (reported 2 October 2026; item 131)
+
+**A separate device finding from the same session**, recorded apart from the acceptance above, which it does not reopen. **Build:** as above; **how that ride had been opened was not reported**, and nothing here assumes it.
+
+**As reported:** while the rider was preparing a paused ride for the first check, tapping **Pause** did not produce the expected paused screen; the screen instead showed "Deine Fahrt wird fortgesetzt…". Switching to Routes and back to Riding returned to an **active** ride rather than the paused screen. The rider initially reproduced this even after fully closing the PWA; later, it behaved normally.
+
+**Not claimed:** that the first Pause failed to stop GPS — the observation alone cannot establish that. The diagnosis, which is component evidence rather than a device reproduction, and the repair are [item 131](history/items-118-131.md#item-131).
 
 ### Installed-iPhone observations of Planning's save-and-switch and a hidden Delete (item 124's C-14 and D-03, reported 1 October 2026)
 

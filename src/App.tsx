@@ -3,6 +3,7 @@ import type { PlannedRoute } from "./domain/types.ts";
 import type { MapFactory } from "./map/mapAdapter.ts";
 import { systemClock, type Clock } from "./platform/clock.ts";
 import { logError } from "./platform/errorLog.ts";
+import { generateId } from "./platform/idGenerator.ts";
 import { usePwaUpdate } from "./pwa/registerSW.ts";
 import { isStoredRouteRideState, toStoredFreeRoamState } from "./storage/mapping.ts";
 import {
@@ -605,6 +606,9 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
       await setActiveRideState(
         toStoredFreeRoamState(
           new Date(clock.now()).toISOString(),
+          // The new session's own identity (backlog item 140), which
+          // FreeRoamScreen adopts on restore and keeps through its writes.
+          generateId(),
           null,
           {
             mode: "overview",

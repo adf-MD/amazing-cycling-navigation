@@ -176,6 +176,7 @@ export interface StoredCameraState {
 export function toStoredRideState(
   routeId: string,
   startedAt: string,
+  sessionId: string | null,
   lastFix: GeolocationFix | null,
   core: RideNavigationCoreState,
   elevationViewMode: ElevationViewMode,
@@ -188,6 +189,9 @@ export function toStoredRideState(
     id: "active",
     routeId,
     startedAt,
+    // Omitted, never stored as null, for a session without an identity yet
+    // (backlog item 140): a restored legacy row stays as it was.
+    ...(sessionId !== null ? { sessionId } : {}),
     kind: "route",
     lastFix: lastFix
       ? {
@@ -284,6 +288,7 @@ export function fromStoredRideState(stored: StoredRouteRideState): RestoredRideS
 
 export function toStoredFreeRoamState(
   startedAt: string,
+  sessionId: string | null,
   lastFix: GeolocationFix | null,
   cameraState: StoredCameraState,
   lastReliableBearingDegrees: number | null,
@@ -293,6 +298,7 @@ export function toStoredFreeRoamState(
     id: "active",
     kind: "free-roam",
     startedAt,
+    ...(sessionId !== null ? { sessionId } : {}),
     lastFix: lastFix
       ? {
           coordinate: lastFix.coordinate,

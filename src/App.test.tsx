@@ -1289,14 +1289,23 @@ describe("App — first Ride entry after a cold start (item 132)", () => {
     return riding;
   }
 
-  /** Holds every getActiveRideState read until released, in call order. */
+  /** Holds every ride-state read until released, in call order: the
+   * launcher's (getActiveRideStateWithSessionId, since item 140) and the
+   * screen's (getActiveRideState). */
   function holdRideStateReads() {
     const realRead = rideStateRepository.getActiveRideState;
+    const realLauncherRead = rideStateRepository.getActiveRideStateWithSessionId;
     const pending: (() => Promise<void>)[] = [];
     vi.spyOn(rideStateRepository, "getActiveRideState").mockImplementation(
       () =>
         new Promise((resolve, reject) => {
           pending.push(() => realRead().then(resolve, reject));
+        }),
+    );
+    vi.spyOn(rideStateRepository, "getActiveRideStateWithSessionId").mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          pending.push(() => realLauncherRead().then(resolve, reject));
         }),
     );
     return {
@@ -1375,9 +1384,11 @@ describe("App — first Ride entry after a cold start (item 132)", () => {
     const { watchPositionSpy } = stubGeolocation();
     render(<App mapFactory={buildNoopMapFactory()} />);
     await seedPausedRoute(user);
-    vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
-      new Error("boom"),
-    );
+    // The launcher's own read (item 140).
+    vi.spyOn(
+      rideStateRepository,
+      "getActiveRideStateWithSessionId",
+    ).mockRejectedValueOnce(new Error("boom"));
 
     await user.click(navButton("Ride"));
     const launcher = await screen.findByRole("region", { name: "Ride" });
@@ -1396,10 +1407,11 @@ describe("App — first Ride entry after a cold start (item 132)", () => {
     const { watchPositionSpy } = stubGeolocation();
     render(<App mapFactory={buildNoopMapFactory()} />);
     const importedRoute = await seedPausedRoute(user);
-    const realRead = rideStateRepository.getActiveRideState;
-    vi.spyOn(rideStateRepository, "getActiveRideState")
-      .mockImplementationOnce(realRead)
-      .mockRejectedValueOnce(new Error("boom"));
+    // The screen's restore is the first getActiveRideState read: since item
+    // 140 the launcher reads through getActiveRideStateWithSessionId.
+    vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
+      new Error("boom"),
+    );
 
     await user.click(navButton("Ride"));
     const riding = await screen.findByRole("region", { name: "Riding" });
@@ -1499,9 +1511,15 @@ describe("App — first Ride entry after a cold start (item 132)", () => {
     stubGeolocation();
     render(<App mapFactory={buildNoopMapFactory()} />);
     await seedPausedRoute(user);
-    const staleRow = await getActiveRideState();
-    let settleHeldRead!: (value: Awaited<ReturnType<typeof getActiveRideState>>) => void;
-    vi.spyOn(rideStateRepository, "getActiveRideState").mockReturnValueOnce(
+    const storedRow = await getActiveRideState();
+    if (!storedRow) throw new Error("expected the seeded row");
+    const staleRow = { ...storedRow, sessionId: "session-stale" };
+    let settleHeldRead!: (
+      value: Awaited<
+        ReturnType<typeof rideStateRepository.getActiveRideStateWithSessionId>
+      >,
+    ) => void;
+    vi.spyOn(rideStateRepository, "getActiveRideStateWithSessionId").mockReturnValueOnce(
       new Promise((resolve) => {
         settleHeldRead = resolve;
       }),
@@ -1541,9 +1559,10 @@ describe("App — first Ride entry after a cold start (item 132)", () => {
     render(<App mapFactory={buildNoopMapFactory()} />);
     await seedPausedRoute(user);
     const realRead = rideStateRepository.getActiveRideState;
-    vi.spyOn(rideStateRepository, "getActiveRideState")
-      .mockImplementationOnce(realRead)
-      .mockImplementationOnce(async () => {
+    // The screen's restore is the first getActiveRideState read: since item
+    // 140 the launcher reads through getActiveRideStateWithSessionId.
+    vi.spyOn(rideStateRepository, "getActiveRideState").mockImplementationOnce(
+      async () => {
         // Replaced elsewhere, just before the screen restores.
         await setActiveRideState({
           id: "active",
@@ -1552,7 +1571,8 @@ describe("App — first Ride entry after a cold start (item 132)", () => {
           lastFix: null,
         });
         return realRead();
-      });
+      },
+    );
 
     await user.click(navButton("Ride"));
     expect(
@@ -1872,10 +1892,16 @@ describe("App — Back to Ride options (item 51)", () => {
     const [importedRoute] = await db.routes.toArray();
     if (!importedRoute) throw new Error("expected an imported route");
 
+    // A current-format row, with the identity every session has had since
+    // item 140: the launcher gives a row without one an identity when it
+    // reads it, which is a write of its own (covered in
+    // RidingLauncher.test.tsx), and this test is about returning causing
+    // none.
     await setActiveRideState({
       id: "active",
       routeId: importedRoute.id,
       startedAt: "2026-01-01T08:00:00.000Z",
+      sessionId: "session-seeded",
       lastFix: { coordinate: [0, 51], accuracyMetres: 6, timestampMs: 1000 },
       lastMatchedPointIndex: 0,
       matchedDistanceFromStartMetres: 0,
@@ -2531,11 +2557,15 @@ describe("App — Ride switch guard (item 73)", () => {
     return watchPositionSpy;
   }
 
+  // A current-format row, with the identity every session has had since
+  // item 140, so a launcher read in these tests changes nothing stored;
+  // rows without one are covered in RidingLauncher.test.tsx.
   async function seedRouteRow(routeId: string) {
     await setActiveRideState({
       id: "active",
       routeId,
       startedAt: "2026-01-01T08:00:00.000Z",
+      sessionId: "session-seeded",
       lastFix: { coordinate: [0, 51], accuracyMetres: 6, timestampMs: 1000 },
       lastMatchedPointIndex: 0,
       matchedDistanceFromStartMetres: 0,
@@ -3086,7 +3116,9 @@ describe("App — Ride switch guard (item 73)", () => {
     expect(writeOrder).toBeLessThan(watchOrder);
     const rows = await db.rideState.toArray();
     expect(rows).toHaveLength(1);
+    // The new session's own identity (backlog item 140) is written with it.
     expect(rows[0]).toMatchObject({ kind: "free-roam" });
+    expect(typeof rows[0]?.sessionId).toBe("string");
   });
 
   it("an unsupported/corrupt stored session fails closed as a conflict requiring discard, and Cancel preserves the row exactly", async () => {

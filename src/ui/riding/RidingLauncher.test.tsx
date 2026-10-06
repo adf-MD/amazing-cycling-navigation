@@ -10,7 +10,9 @@ import {
 import * as rideStateRepository from "../../storage/rideStateRepository.ts";
 import * as routesRepository from "../../storage/routesRepository.ts";
 import type { PlannedRoute } from "../../domain/types.ts";
-import type { StoredRideState, StoredRouteRideState } from "../../storage/db.ts";
+import type { StoredRouteRideState } from "../../storage/db.ts";
+import type { IdentifiedStoredRideState } from "../../storage/rideStateRepository.ts";
+import { LanguageProvider } from "../../i18n/LanguageProvider.tsx";
 
 const route: PlannedRoute = {
   id: "route-1",
@@ -57,12 +59,14 @@ afterEach(() => {
 
 describe("RidingLauncher", () => {
   it("shows a restrained loading state before hydration resolves, never a premature 'no session' state", async () => {
-    let resolveRead: ((value: StoredRideState | undefined) => void) | undefined;
-    const readSpy = vi.spyOn(rideStateRepository, "getActiveRideState").mockReturnValue(
-      new Promise((resolve) => {
-        resolveRead = resolve;
-      }),
-    );
+    let resolveRead: ((value: IdentifiedStoredRideState | undefined) => void) | undefined;
+    const readSpy = vi
+      .spyOn(rideStateRepository, "getActiveRideStateWithSessionId")
+      .mockReturnValue(
+        new Promise((resolve) => {
+          resolveRead = resolve;
+        }),
+      );
 
     render(
       <RidingLauncher
@@ -73,8 +77,11 @@ describe("RidingLauncher", () => {
       />,
     );
 
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Checking for an unfinished ride",
+    // Since item 140 the launcher also holds a stable, empty polite region
+    // for its notice, so the checking status is found by its text.
+    expect(screen.getByText(/Checking for an unfinished ride/)).toHaveAttribute(
+      "role",
+      "status",
     );
     expect(screen.queryByRole("button", { name: "Choose a route" })).toBeNull();
 
@@ -332,7 +339,7 @@ describe("RidingLauncher", () => {
     );
 
     const clearSpy = vi
-      .spyOn(rideStateRepository, "clearActiveRideState")
+      .spyOn(rideStateRepository, "clearActiveRideStateIfSession")
       .mockRejectedValueOnce(new Error("boom"));
 
     const endRideButton = await screen.findByRole("button", { name: "End ride" });
@@ -415,7 +422,7 @@ describe("RidingLauncher", () => {
     expect(await getActiveRideState()).toBeDefined();
 
     const clearSpy = vi
-      .spyOn(rideStateRepository, "clearActiveRideState")
+      .spyOn(rideStateRepository, "clearActiveRideStateIfSession")
       .mockRejectedValueOnce(new Error("boom"));
     await user.click(restoredDiscardButton);
     const failDialog = await screen.findByRole("dialog");
@@ -473,7 +480,7 @@ describe("RidingLauncher", () => {
 
   it("a genuine read failure shows an accessible error and retry, never falsely 'no session'", async () => {
     const readSpy = vi
-      .spyOn(rideStateRepository, "getActiveRideState")
+      .spyOn(rideStateRepository, "getActiveRideStateWithSessionId")
       .mockRejectedValueOnce(new Error("boom"));
 
     render(
@@ -750,8 +757,9 @@ describe("RidingLauncher — onSessionChecked (backlog item 132)", () => {
     );
     // Sampled: the summary never appears while the owner replaces it.
     for (let sample = 0; sample < 5; sample += 1) {
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "Checking for an unfinished ride",
+      expect(screen.getByText(/Checking for an unfinished ride/)).toHaveAttribute(
+        "role",
+        "status",
       );
       expect(screen.queryByText("You have an unfinished ride on this route.")).toBeNull();
       expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
@@ -817,7 +825,7 @@ describe("RidingLauncher — onSessionChecked (backlog item 132)", () => {
     await db.routes.put(route);
     await setActiveRideState(buildRideState());
     const readSpy = vi
-      .spyOn(rideStateRepository, "getActiveRideState")
+      .spyOn(rideStateRepository, "getActiveRideStateWithSessionId")
       .mockRejectedValueOnce(new Error("boom"));
     const onSessionChecked = vi.fn(() => false);
 
@@ -841,8 +849,8 @@ describe("RidingLauncher — onSessionChecked (backlog item 132)", () => {
 
   it("never reports a check that settles after the launcher has unmounted", async () => {
     await db.routes.put(route);
-    let resolveRead: ((value: StoredRideState | undefined) => void) | undefined;
-    vi.spyOn(rideStateRepository, "getActiveRideState").mockReturnValue(
+    let resolveRead: ((value: IdentifiedStoredRideState | undefined) => void) | undefined;
+    vi.spyOn(rideStateRepository, "getActiveRideStateWithSessionId").mockReturnValue(
       new Promise((resolve) => {
         resolveRead = resolve;
       }),
@@ -851,9 +859,245 @@ describe("RidingLauncher — onSessionChecked (backlog item 132)", () => {
 
     const { unmount } = renderLauncher(onSessionChecked);
     unmount();
-    resolveRead?.(buildRideState());
+    resolveRead?.({ ...buildRideState(), sessionId: "session-1" });
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(onSessionChecked).not.toHaveBeenCalled();
+  });
+});
+
+describe("RidingLauncher — a confirmation clears only the session it showed (backlog item 140)", () => {
+  const STALE_NOTICE =
+    "The previously shown ride had already ended or been replaced. Nothing was deleted.";
+
+  function renderPlainLauncher() {
+    return render(
+      <RidingLauncher
+        onResumeRoute={vi.fn()}
+        onChooseRoute={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
+      />,
+    );
+  }
+
+  /** The visible notice and the polite region's text, both read. */
+  function expectStaleNoticeShown(text = STALE_NOTICE) {
+    const visible = screen
+      .getAllByText(text)
+      .filter((element) => element.classList.contains("status-row"));
+    expect(visible).toHaveLength(1);
+    expect(visible[0]).not.toHaveAttribute("role");
+    const region = screen
+      .getAllByRole("status")
+      .filter((element) => element.classList.contains("visually-hidden"));
+    expect(region).toHaveLength(1);
+    expect(region[0]).toHaveTextContent(text);
+    expect(region[0]).toHaveAttribute("aria-atomic", "true");
+  }
+
+  function expectNoStaleNotice() {
+    expect(screen.queryByText(STALE_NOTICE)).toBeNull();
+  }
+
+  /** The stored row as `expected` plus an identity, every other field exact. */
+  async function expectStoredWithIdentity(expected: object): Promise<string> {
+    const stored = await getActiveRideState();
+    if (!stored) throw new Error("expected a stored row");
+    const { sessionId, ...rest } = stored;
+    expect(rest).toEqual(expected);
+    if (typeof sessionId !== "string") throw new Error("expected an identity");
+    return sessionId;
+  }
+
+  it("gives a stored row without an identity one when it reads it, keeps every other field, and End ride still clears it", async () => {
+    await db.routes.put(route);
+    const legacy = buildRideState();
+    await setActiveRideState(legacy);
+    const user = userEvent.setup();
+    renderPlainLauncher();
+
+    await screen.findByRole("button", { name: "End ride" });
+    await expectStoredWithIdentity(legacy);
+
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "End ride" }),
+    );
+
+    expect(await screen.findByRole("button", { name: "Choose a route" })).toBeVisible();
+    await expect(getActiveRideState()).resolves.toBeUndefined();
+    expectNoStaleNotice();
+  });
+
+  it("a confirmed Discard clears an unsupported session, which is given an identity like any other", async () => {
+    const unsupported = { ...buildRideState(), kind: "training-session" };
+    await db.rideState.put(unsupported);
+    const user = userEvent.setup();
+    renderPlainLauncher();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Discard unfinished ride" }),
+    );
+    await expectStoredWithIdentity(unsupported);
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Discard unfinished ride",
+      }),
+    );
+
+    expect(await screen.findByRole("button", { name: "Choose a route" })).toBeVisible();
+    await expect(getActiveRideState()).resolves.toBeUndefined();
+    expectNoStaleNotice();
+  });
+
+  it("End ride for a session replaced by a newer one on the same route deletes nothing, shows the newer session and says so, moving no focus", async () => {
+    await db.routes.put(route);
+    await setActiveRideState(buildRideState({ sessionId: "session-1" }));
+    const user = userEvent.setup();
+    renderPlainLauncher();
+
+    await user.click(await screen.findByRole("button", { name: "End ride" }));
+    const dialog = await screen.findByRole("dialog");
+    // Another window ends that ride and starts a new one on the same route.
+    const newer = buildRideState({
+      sessionId: "session-2",
+      startedAt: "2026-01-01T09:00:00.000Z",
+      matchedDistanceFromStartMetres: 0,
+    });
+    await setActiveRideState(newer);
+    expectNoStaleNotice();
+
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+
+    await waitFor(() => {
+      expectStaleNoticeShown();
+    });
+    await expect(getActiveRideState()).resolves.toEqual(newer);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("You have an unfinished ride on this route.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Resume ride" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "End ride" })).toBeVisible();
+    expect(document.body).toHaveFocus();
+
+    // Opening a new confirmation clears the notice; it is for the newer
+    // session and clears it.
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    expectNoStaleNotice();
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "End ride" }),
+    );
+    expect(await screen.findByRole("button", { name: "Choose a route" })).toBeVisible();
+    await expect(getActiveRideState()).resolves.toBeUndefined();
+  });
+
+  it("Discard for an unsupported session replaced by an identical one without an identity deletes nothing, and offers Discard for the replacement", async () => {
+    const unsupported = { ...buildRideState(), kind: "training-session" };
+    await db.rideState.put(unsupported);
+    const user = userEvent.setup();
+    renderPlainLauncher();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Discard unfinished ride" }),
+    );
+    const presented = await getActiveRideState();
+    const presentedSessionId = presented?.sessionId;
+    expect(presentedSessionId).toEqual(expect.any(String));
+    // Another window rewrites the row without an identity, every other
+    // field identical to the one shown.
+    await db.rideState.put(unsupported);
+
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Discard unfinished ride",
+      }),
+    );
+
+    await waitFor(() => {
+      expectStaleNoticeShown();
+    });
+    const replacementSessionId = await expectStoredWithIdentity(unsupported);
+    expect(replacementSessionId).not.toBe(presentedSessionId);
+    expect(screen.getByRole("button", { name: "Discard unfinished ride" })).toBeVisible();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("End ride for a session that has gone shows the empty launcher and says nothing was deleted", async () => {
+    await db.routes.put(route);
+    await setActiveRideState(buildRideState({ sessionId: "session-1" }));
+    const user = userEvent.setup();
+    renderPlainLauncher();
+
+    await user.click(await screen.findByRole("button", { name: "End ride" }));
+    const dialog = await screen.findByRole("dialog");
+    await db.rideState.clear();
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+
+    await waitFor(() => {
+      expectStaleNoticeShown();
+    });
+    expect(screen.getByRole("button", { name: "Choose a route" })).toBeVisible();
+    await expect(getActiveRideState()).resolves.toBeUndefined();
+  });
+
+  it("when the re-read after a refused confirmation fails, shows the existing check failure and no notice, and Retry shows the stored state without one", async () => {
+    await db.routes.put(route);
+    await setActiveRideState(buildRideState({ sessionId: "session-1" }));
+    const user = userEvent.setup();
+    renderPlainLauncher();
+
+    await user.click(await screen.findByRole("button", { name: "End ride" }));
+    const dialog = await screen.findByRole("dialog");
+    const newer = buildRideState({ sessionId: "session-2" });
+    await setActiveRideState(newer);
+    const readSpy = vi
+      .spyOn(rideStateRepository, "getActiveRideStateWithSessionId")
+      .mockRejectedValueOnce(new Error("synthetic re-read failure"));
+
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Your unfinished ride status could not be checked. Nothing has been changed.",
+    );
+    expect(readSpy).toHaveBeenCalledOnce();
+    expectNoStaleNotice();
+    await expect(getActiveRideState()).resolves.toEqual(newer);
+
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("button", { name: "Resume ride" })).toBeVisible();
+    expectNoStaleNotice();
+    await expect(getActiveRideState()).resolves.toEqual(newer);
+  });
+
+  it("says nothing was deleted in German", async () => {
+    await db.routes.put(route);
+    await setActiveRideState(buildRideState({ sessionId: "session-1" }));
+    const user = userEvent.setup();
+    render(
+      <LanguageProvider
+        preference="de"
+        readLanguages={() => ["de-DE"]}
+        documentElement={{ lang: "" }}
+      >
+        <RidingLauncher
+          onResumeRoute={vi.fn()}
+          onChooseRoute={vi.fn()}
+          onStartFreeRoam={vi.fn()}
+          onResumeFreeRoam={vi.fn()}
+        />
+      </LanguageProvider>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Fahrt beenden" }));
+    const dialog = await screen.findByRole("dialog");
+    await setActiveRideState(buildRideState({ sessionId: "session-2" }));
+    await user.click(within(dialog).getByRole("button", { name: "Fahrt beenden" }));
+
+    await waitFor(() => {
+      expectStaleNoticeShown(
+        "Die zuvor angezeigte Fahrt war bereits beendet oder ersetzt worden. Es wurde nichts gelöscht.",
+      );
+    });
   });
 });

@@ -30,6 +30,7 @@ import {
 } from "../../storage/rideStateRepository.ts";
 import { systemClock, type Clock } from "../../platform/clock.ts";
 import { logError } from "../../platform/errorLog.ts";
+import { generateId } from "../../platform/idGenerator.ts";
 import {
   INITIAL_RIDE_NAVIGATION_CORE_STATE,
   processFix,
@@ -247,6 +248,13 @@ export function useRideNavigation(
   // React state updates aren't applied mid-callback.
   const statusRef = useRef<GeolocationWatchStatus>("idle");
   const startedAtRef = useRef<string | null>(null);
+  // This session's identity (backlog item 140): minted only together with
+  // startedAt when a new session starts, adopted from the stored row on
+  // restore (null for a row that has none — never minted for it here), and
+  // reset with startedAt by finish(). Every write carries it unchanged, so
+  // an identity the Ride launcher assigned to the row survives this ride's
+  // own writes.
+  const sessionIdRef = useRef<string | null>(null);
   // Set synchronously as the first statement of finish(), before any
   // await — closes the window where a genuine fix arriving while
   // clearActiveRideState()'s own IndexedDB transaction is still pending
@@ -295,7 +303,10 @@ export function useRideNavigation(
   // still-live watch after a transient error (see handleError's policy).
   const handleFix = useCallback(
     (fix: GeolocationFix) => {
-      startedAtRef.current ??= new Date(clock.now()).toISOString();
+      if (startedAtRef.current === null) {
+        startedAtRef.current = new Date(clock.now()).toISOString();
+        sessionIdRef.current = generateId();
+      }
       setCurrentFix(fix);
       setIsStale(false);
       setStatus("watching");
@@ -399,6 +410,7 @@ export function useRideNavigation(
     }
     stop();
     startedAtRef.current = null;
+    sessionIdRef.current = null;
     setCurrentFix(null);
     setCoreState(INITIAL_RIDE_NAVIGATION_CORE_STATE);
     setIsStale(false);
@@ -451,11 +463,15 @@ export function useRideNavigation(
       // A Pause before the first fix must still create a valid resumable
       // row (never return to a launcher with nothing to resume) — mirrors
       // handleFix's own lazy-default idiom, applied eagerly here.
-      startedAtRef.current ??= new Date(clock.now()).toISOString();
+      if (startedAtRef.current === null) {
+        startedAtRef.current = new Date(clock.now()).toISOString();
+        sessionIdRef.current = generateId();
+      }
       await setActiveRideState(
         toStoredRideState(
           route.id,
           startedAtRef.current,
+          sessionIdRef.current,
           currentFix,
           coreState,
           elevationViewMode,
@@ -517,6 +533,8 @@ export function useRideNavigation(
         const restored = fromStoredRideState(stored);
         skipRestorationPersistRef.current = true;
         startedAtRef.current = stored.startedAt;
+        sessionIdRef.current =
+          typeof stored.sessionId === "string" ? stored.sessionId : null;
         setCoreState(restored.core);
         setCurrentFix(restored.lastFix);
         setIsStale(restored.lastFix !== null);
@@ -568,6 +586,7 @@ export function useRideNavigation(
       toStoredRideState(
         route.id,
         startedAtRef.current,
+        sessionIdRef.current,
         currentFix,
         coreState,
         elevationViewMode,

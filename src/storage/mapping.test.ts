@@ -60,6 +60,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     const stored = toStoredRideState(
       "route-1",
       "2026-01-01T00:00:00.000Z",
+      null,
       fix,
       coreState,
       upcoming10km,
@@ -81,6 +82,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     const stored = toStoredRideState(
       "route-1",
       "2026-01-01T00:00:00.000Z",
+      null,
       fix,
       coreState,
       upcoming10km,
@@ -97,6 +99,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     const stored = toStoredRideState(
       "route-1",
       "2026-01-01T00:00:00.000Z",
+      null,
       fix,
       coreState,
       upcoming10km,
@@ -114,6 +117,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     const stored = toStoredRideState(
       "route-1",
       "2026-01-01T00:00:00.000Z",
+      null,
       null,
       {
         lastMatch: null,
@@ -140,6 +144,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     const stored = toStoredRideState(
       "route-1",
       "2026-01-01T00:00:00.000Z",
+      null,
       fix,
       coreState,
       upcoming10km,
@@ -173,6 +178,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     const stored = toStoredRideState(
       "route-1",
       "2026-01-01T00:00:00.000Z",
+      null,
       fix,
       coreState,
       upcoming10km,
@@ -209,6 +215,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
     const stored = toStoredRideState(
       "route-1",
       "2026-01-01T00:00:00.000Z",
+      null,
       fix,
       coreState,
       upcoming10km,
@@ -276,6 +283,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       const stored = toStoredRideState(
         "route-1",
         "2026-01-01T00:00:00.000Z",
+        null,
         fix,
         coreState,
         { kind: "full" },
@@ -293,6 +301,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
         const stored = toStoredRideState(
           "route-1",
           "2026-01-01T00:00:00.000Z",
+          null,
           fix,
           coreState,
           { kind: "upcoming", windowMetres },
@@ -435,6 +444,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       const stored = toStoredRideState(
         "route-1",
         "2026-01-01T00:00:00.000Z",
+        null,
         fix,
         coreWithFrozenProgress,
         upcoming10km,
@@ -521,6 +531,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       const stored = toStoredRideState(
         "route-1",
         "2026-01-01T00:00:00.000Z",
+        null,
         fix,
         coreState,
         upcoming10km,
@@ -559,6 +570,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       const stored = toStoredRideState(
         "route-1",
         "2026-01-01T00:00:00.000Z",
+        null,
         fix,
         coreState,
         upcoming10km,
@@ -576,6 +588,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       const stored = toStoredRideState(
         "route-1",
         "2026-01-01T00:00:00.000Z",
+        null,
         fix,
         coreState,
         upcoming10km,
@@ -614,6 +627,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       const stored = toStoredRideState(
         "route-1",
         "2026-01-01T00:00:00.000Z",
+        null,
         fix,
         coreState,
         upcoming10km,
@@ -674,6 +688,7 @@ describe("toStoredRideState / fromStoredRideState", () => {
       const stored = toStoredRideState(
         "route-1",
         "2026-01-01T00:00:00.000Z",
+        null,
         fix,
         coreState,
         upcoming10km,
@@ -759,6 +774,38 @@ describe("isStoredRouteRideState / isStoredFreeRoamRideState", () => {
   });
 });
 
+describe("a stored session's identity (item 140)", () => {
+  it("writes the session id when there is one and omits the field when there is none", () => {
+    const route = (sessionId: string | null) =>
+      toStoredRideState(
+        "route-1",
+        "2026-01-01T00:00:00.000Z",
+        sessionId,
+        fix,
+        coreState,
+        upcoming10km,
+        overviewCamera,
+        false,
+        null,
+        false,
+      );
+    const freeRoam = (sessionId: string | null) =>
+      toStoredFreeRoamState(
+        "2026-01-01T00:00:00.000Z",
+        sessionId,
+        fix,
+        overviewCamera,
+        null,
+        false,
+      );
+
+    expect(route("session-1").sessionId).toBe("session-1");
+    expect(freeRoam("session-1").sessionId).toBe("session-1");
+    expect(route(null)).not.toHaveProperty("sessionId");
+    expect(freeRoam(null)).not.toHaveProperty("sessionId");
+  });
+});
+
 describe("toStoredFreeRoamState / fromStoredFreeRoamState", () => {
   const freeRoamCamera: StoredCameraState = {
     mode: "following",
@@ -771,6 +818,7 @@ describe("toStoredFreeRoamState / fromStoredFreeRoamState", () => {
   it("always writes the free-roam session kind and no route-only fields", () => {
     const stored = toStoredFreeRoamState(
       "2026-01-01T00:00:00.000Z",
+      null,
       fix,
       freeRoamCamera,
       95,
@@ -786,6 +834,7 @@ describe("toStoredFreeRoamState / fromStoredFreeRoamState", () => {
   it("round-trips a fix, camera state, last-reliable bearing and wake-lock preference", () => {
     const stored = toStoredFreeRoamState(
       "2026-01-01T00:00:00.000Z",
+      null,
       fix,
       freeRoamCamera,
       95,
@@ -804,6 +853,7 @@ describe("toStoredFreeRoamState / fromStoredFreeRoamState", () => {
     // Mirrors toStoredRideState's identical broadened-zoom-contract test.
     const stored = toStoredFreeRoamState(
       "2026-01-01T00:00:00.000Z",
+      null,
       fix,
       { ...freeRoamCamera, zoom: 18.5 },
       95,
@@ -823,6 +873,7 @@ describe("toStoredFreeRoamState / fromStoredFreeRoamState", () => {
   it("never persists speed or heading, and restores null for both", () => {
     const stored = toStoredFreeRoamState(
       "2026-01-01T00:00:00.000Z",
+      null,
       fix,
       freeRoamCamera,
       95,
@@ -839,6 +890,7 @@ describe("toStoredFreeRoamState / fromStoredFreeRoamState", () => {
   it("stores and restores a null lastFix and null lastReliableBearingDegrees for a brand-new session", () => {
     const stored = toStoredFreeRoamState(
       "2026-01-01T00:00:00.000Z",
+      null,
       null,
       {
         mode: "overview",
@@ -869,6 +921,7 @@ describe("toStoredFreeRoamState / fromStoredFreeRoamState", () => {
     };
     const stored = toStoredFreeRoamState(
       "2026-01-01T00:00:00.000Z",
+      null,
       fix,
       freeCamera,
       null,

@@ -233,6 +233,19 @@ export interface StoredRouteRideState {
   id: "active";
   routeId: string;
   startedAt: string;
+  /** This session instance's own identity (backlog item 140): a random id
+   * minted together with `startedAt` when the session starts, and carried
+   * unchanged through every later write of the same session. The singleton
+   * key names every session and `routeId` every session on one route, so
+   * neither can tell a newer session from the one a confirmation showed;
+   * `startedAt` is millisecond-resolution and clock-derived, so it is not
+   * unique either. Rows written before this field existed lack it, and so
+   * can a row another window rewrote; the Ride launcher assigns one, in
+   * the same transaction as its read, before offering End ride or Discard
+   * for such a row (src/storage/rideStateRepository.ts). Optional and
+   * non-indexed, like every field added since v1 — no Dexie version()
+   * bump required. */
+  sessionId?: string;
   lastFix: StoredGpsFix | null;
   lastMatchedPointIndex: number;
   matchedDistanceFromStartMetres: number;
@@ -358,6 +371,8 @@ export interface StoredFreeRoamRideState {
   id: "active";
   kind: "free-roam";
   startedAt: string;
+  /** Same meaning and lifecycle as StoredRouteRideState.sessionId above. */
+  sessionId?: string;
   lastFix: StoredGpsFix | null;
   cameraMode?: RideCameraMode;
   /** Only meaningful (non-null) when cameraMode is "free" — mirrors

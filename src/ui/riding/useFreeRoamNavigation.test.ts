@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useFreeRoamNavigation } from "./useFreeRoamNavigation.ts";
 import { browserGeolocationSource } from "../../platform/geolocation.ts";
@@ -8,7 +8,7 @@ import type {
   GeolocationSource,
 } from "../../platform/geolocation.ts";
 import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
-import { db } from "../../storage/db.ts";
+import { db, type StoredFreeRoamRideState } from "../../storage/db.ts";
 import {
   getActiveRideState,
   setActiveRideState,
@@ -601,5 +601,141 @@ describe("useFreeRoamNavigation finish()", () => {
 
     expect(await getActiveRideState()).toBeUndefined();
     expect(result.current.currentFix).toBeNull();
+  });
+});
+
+describe("useFreeRoamNavigation session identity (backlog item 140)", () => {
+  // App writes this row, with its own identity, before the screen mounts.
+  const APP_ROW: StoredFreeRoamRideState = {
+    id: "active",
+    kind: "free-roam",
+    startedAt: "2026-01-01T00:00:00.000Z",
+    sessionId: "session-app",
+    lastFix: null,
+  };
+
+  async function flushStorage(): Promise<void> {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+  }
+
+  it("an early fix before a delayed restore read writes nothing, and every write afterwards carries the stored session's identity", async () => {
+    await setActiveRideState(APP_ROW);
+    const realRead = rideStateRepository.getActiveRideState;
+    let releaseRead: (() => void) | undefined;
+    vi.spyOn(rideStateRepository, "getActiveRideState").mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseRead = () => {
+            resolve(realRead());
+          };
+        }),
+    );
+    const writeSpy = vi.spyOn(rideStateRepository, "setActiveRideState");
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useFreeRoamNavigation({ geolocationSource: fake.source }),
+    );
+
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(SAMPLE_FIX);
+    });
+    await flushStorage();
+
+    expect(result.current.currentFix?.coordinate).toEqual(SAMPLE_FIX.coordinate);
+    expect(writeSpy).not.toHaveBeenCalled();
+    await expect(getActiveRideState()).resolves.toEqual(APP_ROW);
+
+    await act(async () => {
+      releaseRead?.();
+      await Promise.resolve();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(LATER_FIX);
+    });
+    await waitFor(async () => {
+      expect((await getActiveRideState())?.lastFix?.timestampMs).toBe(
+        LATER_FIX.timestampMs,
+      );
+    });
+
+    expect(writeSpy).toHaveBeenCalled();
+    for (const [written] of writeSpy.mock.calls) {
+      expect(written).toMatchObject({
+        sessionId: APP_ROW.sessionId,
+        startedAt: APP_ROW.startedAt,
+      });
+    }
+  });
+
+  it("after a failed restore read mints nothing and writes nothing, and Pause fails, leaving the stored session as it was", async () => {
+    await setActiveRideState(APP_ROW);
+    vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
+      new Error("synthetic restore failure"),
+    );
+    const writeSpy = vi.spyOn(rideStateRepository, "setActiveRideState");
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useFreeRoamNavigation({ geolocationSource: fake.source }),
+    );
+
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(SAMPLE_FIX);
+    });
+    await flushStorage();
+    act(() => {
+      fake.watches[0]?.emitFix(LATER_FIX);
+    });
+    await flushStorage();
+
+    let pauseError: unknown = null;
+    await act(async () => {
+      try {
+        await result.current.pause();
+      } catch (error) {
+        pauseError = error;
+      }
+    });
+
+    expect(pauseError).toBeInstanceOf(Error);
+    expect(result.current.geolocationStatus).toBe("watching");
+    expect(writeSpy).not.toHaveBeenCalled();
+    await expect(getActiveRideState()).resolves.toEqual(APP_ROW);
+  });
+
+  it("with nothing stored, mints one identity for a new session and keeps it through its writes", async () => {
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useFreeRoamNavigation({ geolocationSource: fake.source }),
+    );
+    await flushStorage();
+
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(SAMPLE_FIX);
+    });
+    await waitFor(async () => {
+      expect((await getActiveRideState())?.sessionId).toEqual(expect.any(String));
+    });
+    const first = await getActiveRideState();
+    act(() => {
+      fake.watches[0]?.emitFix(LATER_FIX);
+    });
+    await waitFor(async () => {
+      expect((await getActiveRideState())?.lastFix?.timestampMs).toBe(
+        LATER_FIX.timestampMs,
+      );
+    });
+
+    expect((await getActiveRideState())?.sessionId).toBe(first?.sessionId);
   });
 });

@@ -710,6 +710,8 @@ export const de: Catalogue = {
     "Diese Fahrt wurde noch nicht beendet, aber die zugehörige Route ist nicht mehr in deiner Routenbibliothek gespeichert. Deshalb kann die Fahrt nicht fortgesetzt werden.",
   "launcher.unsupportedKind":
     "Diese App-Version kann die noch nicht beendete Fahrt nicht wiederherstellen.",
+  "launcher.staleSessionNotice":
+    "Die zuvor angezeigte Fahrt war bereits beendet oder ersetzt worden. Es wurde nichts gelöscht.",
 
   // --- Climbs -------------------------------------------------------------
   "climb.selectorLabel": "Erkannte Anstiege",
