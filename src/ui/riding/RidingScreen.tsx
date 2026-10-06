@@ -1851,6 +1851,12 @@ export function RidingScreen({
   // class, mirroring this screen's hidden-but-mounted map pane, so the
   // concealment also holds where stylesheets are not loaded (Vitest's
   // `css: false`).
+  //
+  // A failed End's error renders here only on the paused panel, where it
+  // wraps under its button. In the header it is its own row beneath the
+  // header instead (backlog item 139): inside the End slot, which never
+  // shrinks, the one-line sentence widened the slot, collapsed the title,
+  // pushed End ride left and ran off the fixed shell's edge.
   function renderEndRideTrigger(
     placement: "header" | "panel",
     concealed = false,
@@ -1870,7 +1876,7 @@ export function RidingScreen({
         >
           {placement === "header" ? t("ride.endRideCompact") : t("ride.endRide")}
         </button>
-        {!concealed && finalizeError?.source === "end" ? (
+        {placement === "panel" && finalizeError?.source === "end" ? (
           <p className="field-error" role="alert">
             {finalizeError.message}
           </p>
@@ -2293,7 +2299,10 @@ export function RidingScreen({
         // deliberate relocation, superseding item 40's "directly after
         // the offline notice" ordering for this active case only, per
         // item 55's own "show the full-width inline confirmation
-        // immediately below the compact header" requirement.
+        // immediately below the compact header" requirement. A failed
+        // End's error is the first of those rows (backlog item 139), so
+        // it wraps at the screen's width and Pause, the title and End
+        // ride keep their places.
         <>
           <RidingImmersiveHeader
             title={route.name}
@@ -2305,6 +2314,11 @@ export function RidingScreen({
             pauseButtonRef={pauseButtonRef}
             endAction={renderEndRideTrigger("header", isEndRideConfirmOpen)}
           />
+          {!isEndRideConfirmOpen && finalizeError?.source === "end" ? (
+            <p className="field-error" role="alert">
+              {finalizeError.message}
+            </p>
+          ) : null}
           {pauseError ? (
             <p className="field-error" role="alert">
               {pauseError}

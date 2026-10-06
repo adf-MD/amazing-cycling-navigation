@@ -402,6 +402,59 @@ describe("RidingScreen Finish/End ride", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows a failed End's error on its own row directly beneath the riding header, outside End's slot (backlog item 139)", async () => {
+    const user = userEvent.setup();
+    const fake = buildFakeGeolocationSource();
+    const { container } = render(
+      <RidingScreen
+        route={route}
+        geolocationSource={fake.source}
+        mapFactory={createMockMapFactory().factory}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+    act(() => {
+      fake.watches[0]?.emitFix(midpointFix(1000));
+    });
+    vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession").mockRejectedValueOnce(
+      new Error("boom"),
+    );
+
+    await user.click(await screen.findByRole("button", { name: "End ride" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+
+    const error = await screen.findByRole("alert");
+    expect(error.textContent).toBe(
+      "The ride could not be ended on this device. Try again.",
+    );
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    const header = container.querySelector("header.riding-immersive-header");
+    expect(header).not.toBeNull();
+    expect(header).not.toContainElement(error);
+    expect(header?.nextElementSibling).toBe(error);
+    // End's slot holds the button alone, so it keeps its width; Pause stays
+    // in its own slot.
+    const endRide = screen.getByRole("button", { name: "End ride" });
+    const endSlot = header?.querySelector(".riding-immersive-header-end");
+    expect(endSlot?.children).toHaveLength(1);
+    expect(endSlot).toContainElement(endRide);
+    expect(header?.querySelector(".riding-immersive-header-start")).toContainElement(
+      screen.getByRole("button", { name: "Pause" }),
+    );
+    expect(endRide).toHaveFocus();
+
+    // Opening the confirmation again clears the error, as before, and the
+    // confirmation row directly follows the header.
+    await user.click(endRide);
+    await screen.findByRole("dialog");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(header?.nextElementSibling).toBe(
+      container.querySelector(".ride-end-ride-confirm-row"),
+    );
+  });
+
   it("a confirmed completion candidate shows Route complete without clearing anything automatically", async () => {
     const user = userEvent.setup();
     const fake = buildFakeGeolocationSource();
@@ -1935,6 +1988,16 @@ describe("RidingScreen — Resume ride while a confirmed End ride is finishing (
 
     expect(onRideFinalized).not.toHaveBeenCalled();
     expect(error.closest(".ride-start-panel")).not.toBeNull();
+    // The paused panel keeps its own presentation (backlog item 139 moved
+    // only the riding header's): the error follows its End ride button in
+    // the panel's row, and is the only alert.
+    const panelRow = error.closest<HTMLElement>(".ride-end-ride-panel-row");
+    if (!panelRow) throw new Error("expected the paused panel's End ride row");
+    const panelEndRide = within(panelRow).getByRole("button", { name: "End ride" });
+    expect(
+      panelEndRide.compareDocumentPosition(error) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
     await expectStoredSessionToStay(before);
     const resume = screen.getByRole("button", { name: "Resume ride" });

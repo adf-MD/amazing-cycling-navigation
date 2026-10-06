@@ -226,7 +226,7 @@ Each keeps its own evidence level. **Recording or deferring one does not mean it
 | A failed End ride returns focus with a plain `focus()`, which could leave End ride under the navigation           | [S]; failure [Syn]; not measured              | Deferred investigation                                                               | Item 135                                                                           |
 | A Planning switch prompt fallen back to the page-level dialog restores no focus on Cancel                         | [S]                                           | Deferred investigation                                                               | Item 135                                                                           |
 | Whether VoiceOver announces the title focus park used by D-01, D-02 and D-06 while a write runs                   | Untested                                      | Deferred investigation                                                               | Item 135                                                                           |
-| A failed End ride shows its message inside the riding header's end slot, a placement no test measures             | [Syn][M] 4 Oct: clipped at the screen's edge  | Investigated (decision 9's check); **filed as item 139**, decision 13: **not fixed** | [Item 139](../../project/backlog.md#item-139) (decision 13): a presentation defect |
+| A failed End ride shows its message inside the riding header's end slot, a placement no test measures             | [Syn][M] 4 Oct: clipped at the screen's edge  | Investigated (decision 9's check); **filed as item 139**, decision 13: **not fixed** | [Item 139][item-139-moved-to-items-132-NN-md] (decision 13): a presentation defect |
 | The launcher's open confirmation is not reset when its session is re-read, for example after another tab's change | [M] 4 Oct, two browser tabs: no re-read       | Investigated (decision 9's check); **filed as item 140**, decision 14: **not fixed** | [Item 140][item-140-history] (decision 14): a correctness item                     |
 | German `routes.wouldRemain.other` reads "übrig blieben"                                                           | [S], present at `e2ba7cf`                     | Deferred                                                                             | [Item 138](../../project/backlog.md#item-138)                                      |
 | Stale comments: `RidingScreen.tsx` (gradient-colours disclosure), `index.css` (wake-lock popover)                 | [S], present                                  | Deferred                                                                             | Item 138                                                                           |
@@ -236,6 +236,7 @@ Each keeps its own evidence level. **Recording or deferring one does not mean it
 
 [item-134-history]: ../../project/history/items-132-NN.md#item-134
 [item-140-history]: ../../project/history/items-132-NN.md#item-140
+[item-139-moved-to-items-132-NN-md]: ../../project/history/items-132-NN.md#item-139
 
 ## Follow-up destinations
 
@@ -255,7 +256,7 @@ Each new item was checked against every pending backlog entry and found distinct
 
 **Added on 4 October 2026, after slice 10's acceptance** ([decisions 10–14](../../project/history/item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice)), both unscheduled, with specifications in [`backlog.md`](../../project/backlog.md):
 
-- **[Item 139](../../project/backlog.md#item-139)** — A failed End ride's message clipped in the riding header: a presentation defect.
+- **[Item 139](../../project/history/items-132-NN.md#item-139)** — A failed End ride's message clipped in the riding header: a presentation defect.
 - **[Item 140](../../project/history/items-132-NN.md#item-140)** — A stale Ride-launcher confirmation clearing a newer session: a correctness investigation.
 
 [Item 135](../../project/backlog.md#item-135) also receives P-01 and, as a separate finding, its desktop action-row clipping.
@@ -336,7 +337,7 @@ Asked for by the rider with slice 10: P-01 after the device observation, P-15 un
   - **The paused panel (C-11):** the same message wraps under its button, 324 px wide, wholly on screen.
 - **What this establishes.** A demonstrated presentation defect in the riding header, reached here only through a synthetic failure; a genuine failure would render the same way. How often a clear fails on the phone is unknown. Focus returned to **End ride** in every run; its scrolling question stays with item 135.
 - **Disposition: investigated, awaiting the rider's decision.** It is not a reveal question, and no existing item covers it: item 134 concerns a finishing End ride, item 135 focus only, item 137 the export failure beside a route card, and item 103 control styling. **Recommended: a new unscheduled item**, numbered only if the rider agrees — a design candidate that shows the failure on its own wrapping line below the header row, leaving **Pause** and **End ride** where they are.
-- **Decided 4 October 2026:** filed as unscheduled [item 139](../../project/backlog.md#item-139) ([decision 13](../../project/history/item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice)). Not fixed.
+- **Decided 4 October 2026:** filed as unscheduled [item 139](../../project/history/items-132-NN.md#item-139) ([decision 13](../../project/history/item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice)). Not fixed.
 
 ### The launcher confirmation after a re-read
 

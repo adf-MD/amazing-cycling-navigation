@@ -1,6 +1,6 @@
 # Completed backlog items 132–
 
-This file continues the 100– numeric range and opens at item 132. It was started when item 132 was completed (2 October 2026, `0.4.55`). Its entry belongs before item 133's in numeric order, and adding it to what was then `items-118-NN.md` would have taken that file to about 176,000 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md). That file was therefore closed at item 131 and renamed [`items-118-131.md`](items-118-131.md), and item 133's entry — completed earlier the same day as a CI-only change — moved here unchanged apart from its link to item 132, which now points within this file. No entry was shortened or rewritten by that split. Stable item numbers never change regardless of which file their text lives in: item 133 was completed before item 132 and is filed after it, since a number is an identifier and never a schedule. Item 141 — completed in `0.4.63` on 5 October 2026 and accepted on the installed iPhone the same day — follows them, moved from `backlog.md` under the same convention. Item 134 — implemented in `0.4.67` on 6 October 2026 and accepted on the installed iPhone the same day — moved here from `backlog.md` on that day, under the same convention. Item 140 — completed in two slices, `0.4.65` and `0.4.66`, both accepted on the installed iPhone on 6 October 2026 — moved here from `backlog.md` on that day under the same convention and is filed before item 141, in numeric order, although item 141 was completed first.
+This file continues the 100– numeric range and opens at item 132. It was started when item 132 was completed (2 October 2026, `0.4.55`). Its entry belongs before item 133's in numeric order, and adding it to what was then `items-118-NN.md` would have taken that file to about 176,000 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md). That file was therefore closed at item 131 and renamed [`items-118-131.md`](items-118-131.md), and item 133's entry — completed earlier the same day as a CI-only change — moved here unchanged apart from its link to item 132, which now points within this file. No entry was shortened or rewritten by that split. Stable item numbers never change regardless of which file their text lives in: item 133 was completed before item 132 and is filed after it, since a number is an identifier and never a schedule. Item 141 — completed in `0.4.63` on 5 October 2026 and accepted on the installed iPhone the same day — follows them, moved from `backlog.md` under the same convention. Item 134 — implemented in `0.4.67` on 6 October 2026 and accepted on the installed iPhone the same day — moved here from `backlog.md` on that day, under the same convention. Item 139 — implemented in `0.4.68` on 6 October 2026, with its installed-iPhone acceptance pending — moved here from `backlog.md` the same day, under the same convention, and is filed between items 134 and 140 in numeric order. Item 140 — completed in two slices, `0.4.65` and `0.4.66`, both accepted on the installed iPhone on 6 October 2026 — moved here from `backlog.md` on that day under the same convention and is filed before item 141, in numeric order, although item 141 was completed first.
 
 See [`README.md`](README.md) for the full history index, [`../backlog.md`](../backlog.md) for pending specifications, and [`../current-status.md`](../current-status.md) for the manual acceptance ledger.
 
@@ -499,6 +499,190 @@ With this acceptance item 134 is complete within its approved scope. [Item 135](
 
 ---
 
+<a id="item-139"></a>
+
+## Item 139 — A failed End ride's message clipped in the riding header — implemented, device acceptance pending
+
+_Category: Riding presentation_
+
+**Status: implemented in `0.4.68` on 6 October 2026; installed-iPhone acceptance pending.** The rider approved its candidate the same day, together with item 134's acceptance, and the entry moved here from `backlog.md` with its implementation, as item 134's did. Item 139 stays first in the execution order until its device acceptance. The specification below is as filed, with its links adjusted for this file; the baseline, decision, implementation and evidence follow it.
+
+139. **A failed End ride's message clipped in the riding header — presentation defect**
+     - Origin: item 124's close-out investigation of 4 October 2026 ([findings](../../design/reveal-inventory/closure-reconciliation.md#a-failed-end-rides-message)), filed by the rider's disposition the same day ([decision 13](item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice)). **Filing it here does not mean it is fixed or accepted.**
+     - **Scheduled on 5 October 2026**, third in the approved execution order, after items 140 and 134 and before items 125, 103 and 120, by the rider's decision ([order](../../../CLAUDE.md)); it was unscheduled until then. **Scheduling approves no change:** the candidate below is not a decision. **Update, 6 October 2026:** with items 140 and 134 completed, it is first in the order, ahead of items 125, 103 and 120.
+     - **What was measured**, in desktop Chromium and WebKit in the pinned container at 390×844 portrait, identically in both engines. The failure is **synthetic**: the existing test-only seam `window.__acnE2eRideStateClearFailure` fails the first clear of the stored session only.
+       - **Route riding's header (C-10):** the message "The ride could not be ended on this device. Try again." sits on one line in the header's end slot, beside **End ride**. It is 318 px wide in English, from x = 216 to 534 on a 390 px screen, and 464 px wide in German, to x = 685. The fixed riding shell clips it at the screen's edge, so about 55% of the English sentence and 36% of the German one are visible. The page itself does not overflow.
+       - **Free roam's header (C-13):** the same placement and clipping, measured in English only.
+       - **Beside it:** the route's title collapses to 16 px, and **End ride** moves left, to x = 125–216, but stays visible and works. The retry ended the ride and cleared the stored session, and focus returned to **End ride** in every run.
+     - **The comparison that reads well:** on the paused panel (C-11), the same message wraps under its button, 324 px wide, wholly on screen.
+     - **Not established:**
+       - how often a clear fails on a phone;
+       - anything on the installed iPhone, where nothing was reproduced; a genuine failure is expected, not shown, to render the same way;
+       - German free roam and enlarged text, which were not measured.
+     - **A candidate, not a decision:** show the failure on its own wrapping line below the header row, leaving **Pause** and **End ride** where they are.
+     - **Coordinate with:**
+       - [item 134](#item-134), Resume while an End ride is finishing;
+       - [item 135](../backlog.md#item-135), focus after a failure, including the plain `focus()` noted there;
+       - [item 103](../backlog.md#item-103), control styling;
+       - the riding header's existing layout decisions: items 68 and 76, and item 113's `0.4.42` and `0.4.43` header corrections.
+     - **Evidence required when implemented:**
+       - the synthetic failure in Chromium and WebKit, in English and German, at 100% and 200% root text, on route riding and free roam;
+       - the message measured wholly visible, with **Pause** and **End ride** unmoved;
+       - a negative control;
+       - an installed-iPhone check of an ordinary End ride, since a failure cannot be induced on the phone.
+
+### Baseline — measured on `8eee8eb` (6 October 2026)
+
+**The application measured.** `8eee8eb` is item 134's documentation-only acceptance commit. Its tree differs from `9f73242` (`0.4.67`) only under `docs/` and in `CLAUDE.md`, so its application sources are those of `9f73242`. The build was made locally, so its build identity is the local one (`dev`), not CI's, and it is not claimed to be byte-identical to the deployed bundle. Its main script was `index-BR6O8acP.js`.
+
+**Method.** A temporary diagnostic, kept outside the repository and never committed, ran in Chromium and WebKit in the CI image by digest (`mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294a…`, digest confirmed locally), at 390×844 portrait, against that build, served by a freshly started preview. It covered English and German, 100% and 200% root text, and route riding and free roam: 16 cases.
+
+- Each ride was started through the interface, and its stored session was read.
+- The seam was set immediately before End was confirmed, with a counter failing call 1 only. In every case the counter read 1 after the failure and 2 after the retry, so the End's own clear was the one failed and the retry cleared again.
+- Before the confirmation opened, and again after the failure, the diagnostic recorded:
+  - the Pause, End ride, End slot and title boxes;
+  - the message's box, and its text extent line by line;
+  - page overflow;
+  - the content area holding the map (the visible map region), and the focused element.
+- The stored session was read before the End and after the failure.
+
+**Findings**, identical in Chromium and WebKit to within 0.5 px, and identical between route riding and free roam for everything in the header:
+
+| Case               | End ride's left edge | Title width | End slot width | The message                        | Visible |
+| ------------------ | -------------------- | ----------- | -------------- | ---------------------------------- | ------- |
+| English, 100% text | 282.8 → 125.1 px     | 173.7 → 16  | 91.2 → 409.1   | one line, 318 px, x = 216.3–534.2  | 54.6%   |
+| German, 100% text  | 278.3 → 125.1 px     | 169.2 → 16  | 95.7 → 559.9   | one line, 464 px, x = 220.8–685.0  | 36.4%   |
+| English, 200% text | 225.6 → 168.3 px     | 73.3 → 16   | 148.4 → 784.2  | one line, 636 px, x = 316.7–952.5  | 11.5%   |
+| German, 200% text  | 216.7 → 168.3 px     | 64.4 → 16   | 157.3 → 1085.7 | one line, 928 px, x = 325.6–1254.0 | 6.9%    |
+
+- **Visible** is the share of the sentence's line width inside both the screen and the fixed shell, which clipped the rest. WebKit read 36.5% for German at 100%.
+- **Pause did not move** in any case (x = 16–93.1 at 100%, 16–136.3 at 200%). The page did not overflow (`scrollWidth` 390 against 390), and the map region kept its height, because the one-line message did not make the header taller.
+- **Focus** was on End ride after every failure. The stored session kept its `sessionId` through the failure, and the retry ended the ride: the Ride launcher showed **Choose a route** / **Route wählen**, and the stored session was gone.
+- The German and enlarged-text cases the filing had not measured behave the same way, and worse: at 200% only 6.9–11.5% of the sentence is visible.
+
+### The rider's decision (6 October 2026)
+
+With item 134's acceptance, the rider approved the candidate for this slice: **show a failed End ride's existing error on its own wrapping row immediately below the immersive header's action/title row**, in both route riding and free roam.
+
+- **The full error sentence is visible**, without horizontal clipping or truncation.
+- **The header holds still:**
+  - Pause and End ride keep their positions and dimensions when the error appears;
+  - the error no longer takes the header's End slot or collapses the title's available width.
+- **What stays the same:**
+  - the existing wording, a single alert, and the existing announcement semantics;
+  - the End confirmation, retry, session protection and tracking;
+  - the paused-route panel's wrapping error presentation;
+  - item 134's pending-End Resume condition.
+- **A scoped presentation change only:** no redesigned controls, no change of focus policy, no new announcement mechanism, and no broad restyling of unrelated errors. Items 135 and 103 keep those wider questions.
+
+### Implementation (`0.4.68`, 6 October 2026)
+
+- **Route riding (`src/ui/riding/RidingScreen.tsx`):**
+  - `renderEndRideTrigger` now renders the error only for its `"panel"` placement, so the paused panel is unchanged;
+  - the active branch renders the same `<p className="field-error" role="alert">` directly after `<RidingImmersiveHeader/>`, before the existing Pause-error row, under the guard the header's `concealed` flag expressed before (`!isEndRideConfirmOpen && finalizeError?.source === "end"`).
+- **Free roam (`src/ui/riding/FreeRoamScreen.tsx`):** the same. The header trigger is now the button alone, and the error row follows the header.
+- **`RidingImmersiveHeader.tsx`:** only its `endAction` comment changed, to say the slot holds the button alone.
+- **Precedent:** both screens already showed a failed Pause's error as exactly this kind of row, beneath the header.
+- **No CSS changed.** In the fixed shell's flex column the paragraph wraps at the column's width, 16 px below the header's border, and the content area holding the map gives up the row's height.
+- **Unchanged:**
+  - the wording, `role="alert"` mounted when the failure occurs, and one alert;
+  - the confirmation, which still clears the error when it opens again;
+  - session identity, the retry and tracking;
+  - focus, still a plain `focus()` on End ride ([item 135](../backlog.md#item-135));
+  - item 134's `disabled={activeFinalizeSource !== null}`.
+- **Version:** `0.4.68`.
+
+### Evidence — automated only
+
+**After the change**, measured by the same diagnostic on the fixed build (`index-Dzk-e09h.js`), identical in Chromium and WebKit to within 0.5 px:
+
+| Case               | The message on its own row                 | Map region, route riding | Map region, free roam |
+| ------------------ | ------------------------------------------ | ------------------------ | --------------------- |
+| English, 100% text | one line, y = 77–94, text x = 16–333.9     | 518 → 484 px             | 678 → 644 px          |
+| German, 100% text  | two lines, y = 77–112, text x = 16–356.7   | 499 → 447 px             | 678 → 626 px          |
+| English, 200% text | two lines, y = 96–166, text x = 16–348.3   | 174 → 86 px              | 543 → 455 px          |
+| German, 200% text  | three lines, y = 96–202, text x = 16–352.6 | 134 → 10 px              | 543 → 419 px          |
+
+- **The message is wholly visible** in every case: 100% of the sentence, inside a 358 px row on the 390 px screen.
+- **The header holds still.** Pause, End ride, End's slot and the title kept their boxes exactly, before the confirmation and after the failure, so the title kept its full width.
+- **Elsewhere:**
+  - the page did not overflow;
+  - End ride kept focus, and the error was the only alert;
+  - the stored session kept its `sessionId`;
+  - the retry ended the ride, with the seam's count reaching 2.
+- **The map region** is the content area that holds the map, which is the map the rider can see. In route riding at 200% the map container itself stays at its 160 px defensive floor, and that content area clips it; the Map/Profile switcher and the status card are unmoved.
+
+**Component tests:**
+
+- **`src/ui/riding/RidingScreen.finishEndRide.test.tsx`**, a new test. After a failed End:
+  - exactly one alert, with the exact text;
+  - it is the riding header's next sibling, not inside the header;
+  - End's slot holds End ride alone, and Pause stays in its own slot;
+  - End ride has focus;
+  - opening the confirmation again clears the error, and the confirmation row again follows the header directly.
+
+  The existing paused-panel failure test also asserts that the error follows the panel's End ride button in its row and is the only alert. That guards the preserved panel presentation.
+
+- **`src/ui/riding/FreeRoamScreen.endRide.test.tsx`:** the equivalent new test.
+
+**Browser:** `e2e/endRideFailureHeader.smoke.spec.ts`, 8 cases per engine, in Chromium and WebKit. Each case asserts:
+
+- **[behaviour], first and soft**, so a regression reports what the rider sees before anything structural:
+  - every line of the sentence inside the screen, the fixed shell and its own box;
+  - no overflow of the message or the page;
+  - Pause, End ride, End's slot and the title unmoved, within 0.5 px.
+- **[structure]:** the only alert, outside the header and below it.
+- **Then:** End ride focused, the stored session's `sessionId` kept, and the seam's counts of 1 and then 2 around an ordinary retry that reaches **Choose a route** / **Route wählen** with nothing stored.
+- **The map region** is recorded as an annotation, not asserted.
+
+**Negative control.** Only the old placement was restored, by putting both screens back to their `8eee8eb` text, while the new tests were kept.
+
+- **The build:** it compiled with exit 0 into `index-BR6O8acP.js`, the baseline's own bundle name, distinct from the fix's `index-Dzk-e09h.js`. It was served by a freshly started preview.
+- **The browser spec failed all 16 cases.** Every case reported, in order:
+  - "lines not wholly visible" — for example English at 100%, the line at x = 216.3–534.2;
+  - "End ride x", moved 157.7 px at English 100% and 57.3 px at English 200%;
+  - "End's slot x" and "End's slot width";
+  - "title width";
+  - then the structural check, the error inside the header.
+
+  The error's own overflow, page overflow and Pause did not fail, because in the old placement the slot sized the paragraph to its text, the fixed shell clipped it, and Pause never moved.
+
+- **The ordering behind those results.** The spec's first version put the structural check first, and the control failed all 16 cases there, before the visibility and geometry checks ran. So the visibility and geometry checks were made soft and moved ahead of it, and the control was run again for the results above.
+- **The component tests:** both new tests failed at `not.toContainElement`, with the header containing the alert. The paused-panel guard passed, as expected, since that presentation is unchanged.
+- **The fix restored:** it was restored from saved copies, with SHA-256 matches for both screens. The rebuilt bundle was again `index-Dzk-e09h.js`, and with the version raised to `0.4.68`, `index-DLFr4bV6.js`.
+
+**Also run, once, on the final build:**
+
+- **Unit tests**, 352 in all:
+  - the two complete End-ride files above;
+  - `RidingScreen.test.tsx`, whose header tests assert the End slot and the confirmation row's position;
+  - `germanRenderLeak.test.tsx`, which reads the End slot.
+- **In the CI image:**
+  - the new spec in both engines;
+  - `ridingFinishAndEnd`, `freeRoam`, `germanRidingHeader` and `ridingImmersiveShell` in Chromium;
+  - `endRidePausedConfirmationReveal`, `resumeDuringEndRide` and `staleSessionActions` in both engines.
+- **Lint, typecheck, the build, links, whitespace and formatting.**
+
+**One unexplained failure in those browser runs.** The first combined run (164 tests) failed two WebKit cases of `endRidePausedConfirmationReveal.smoke.spec.ts`: "(en, 100%)" and "(de, 100%) scrolled with End ride's slot under the navigation, then Cancel". Both failed at the test's own precondition, "wheel input put End ride's slot under the navigation".
+
+- **Not reproduced:**
+  - a second identical combined run on the same build passed 164 of 164;
+  - the case passed 12 of 12 in isolation, both on that build and on the baseline build;
+  - one combined run on the baseline build failed only the new spec's 16 cases, by design.
+- That case concerns the paused panel, whose markup this change does not alter, since the active header branch is not rendered while paused.
+- **No cause is established.** The failure's artefacts were overwritten by the later runs and were not inspected, and nothing here calls it unrelated or a flake.
+
+### Limitations and observations
+
+- **The failure is synthetic.** A clear cannot be made to fail through the installed PWA's interface, so the error row itself has automated evidence only. A genuine failure is expected, not shown, to render the same way.
+- **The map gives up the row's height while the error shows.** At ordinary text that is 34 px in English and 52 px in German. In route riding at 200% root text, the visible map region falls from 174 to 86 px in English and from 134 to 10 px in German. That is recorded, not changed: the approved row is in flow by design, the error lasts until the next End attempt, and the header, status card and Map/Profile switcher stay usable.
+- **Browser text scaling is not iOS Larger Text.** VoiceOver and physical Android are not covered. Every measurement is desktop Chromium or WebKit, with the container's fonts.
+- **Out of scope:** focus after a failure, still a plain `focus()`, stays with [item 135](../backlog.md#item-135), and control styling with [item 103](../backlog.md#item-103).
+- **If both errors show at once**, after a failed Pause and then a failed End, the End error is the first row and the Pause error follows. That combination was not measured.
+- **Installed-iPhone acceptance pending:** Session 5 of [`current-status.md`](../current-status.md), an ordinary End ride in route riding and in free roam.
+
+---
+
 <a id="item-140"></a>
 
 ## Item 140 — A stale Ride-launcher confirmation clearing a newer session — done
@@ -585,7 +769,7 @@ _Category: Riding lifecycle_
          - **Updated by intent, not weakened:** spies moved to the conditional functions and the identity-assigning read; free-roam tests open the screen with App's owned row; held clears resolve an outcome; id-less seeded rows either carry an identity or assert its assignment; the two "write after a successful clear" tests are rewritten for the replacement.
          - **Existing specs, once:** `rideSessionSwitchGuard`, `ridingFinishAndEnd` and `freeRoam` in Chromium; `confirmationDialogs`, `coldStartPausedRoute`, `rideLauncherStaleConfirmation` and Planning's End and switch in both engines; the affected unit suites; lint, typecheck, build, the catalogue guards, links and formatting.
          - **First CI run failed; test-only repair:** run 37458478038 on `7da1f19` failed 17 tests, so nothing was deployed from it. In `confirmationRevealSettled` and `planningSavedRoute`, neither of which had been run in full before the push, a seeded id-less paused ride gained an identity from the guard's read. That is the planned assignment, with every other field kept, and each test's exact comparison after Cancel caught it. The repair gives those seeds an identity, as `rideSessionSwitchGuard`'s already had. Both specs then passed in Chromium and WebKit, and reproducing shards 1, 2 and 4 in the CI image found no other failure. The application is unchanged.
-       - **Limitations:** the two-window races cannot be reached in the installed PWA; End and switch to free roam is reached only from a launcher that read nothing stored, so it has automated evidence only; VoiceOver is untested; after a refusal focus is on the page ([item 135](../backlog.md#item-135)); [item 134](#item-134)'s Resume stays enabled during an End, and a refusal still stops the watch; [item 139](../backlog.md#item-139)'s header error layout is unchanged.
+       - **Limitations:** the two-window races cannot be reached in the installed PWA; End and switch to free roam is reached only from a launcher that read nothing stored, so it has automated evidence only; VoiceOver is untested; after a refusal focus is on the page ([item 135](../backlog.md#item-135)); [item 134](#item-134)'s Resume stays enabled during an End, and a refusal still stops the watch; [item 139](#item-139)'s header error layout is unchanged.
        - **CI and deployment.** Nothing was deployed from `7da1f19` (run 37458478038, above). Run [37461451985](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37461451985), for the test-only repair `c2cb9e6`: Verify and build, all four End-to-end shards and Deploy succeeded. Verify and build took 209 s; the shard jobs took 671, 864, 461 and 926 s (shards 1 to 4); Deploy took 11 s. The live site then served `0.4.66` with build `c2cb9e6`.
        - **The longest shard job, 926 s (shard 4), against the E2E job's 20-minute (1,200 s) limit** — 274 s under it. For comparison only, the longest shard jobs of the day's two earlier successful runs were 877 s (run [37434895346](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37434895346), `1d59d95`, shard 2) and 819 s (run 37448703698, `351ae8f`, documentation only, shard 4). These are three single runs: no trend is established, no cause is attributed to the duration and it is not called normal variance. CI was not changed. It is also recorded under "Monitored, corroborating only" in [`current-status.md`](../current-status.md).
        - **Installed-iPhone acceptance (reported 6 October 2026).** **Accepted** on the installed iPhone, in English and German, at product level: Session 5's checks 1 to 5 ([dated record](../current-status.md#installed-iphone-acceptance-of-0466-build-c2cb9e6-item-140-slice-2-reported-6-october-2026)). That is End and switch from a paused route ride to another route — cancellation, the target opening ready to start, and reopening — and from paused free roam to a route, with cancellation and reopening; and End ride from active route riding, from the full paused-route screen without going through Back to Ride options, and from active free roam, with cancellation and reopening. The accepted build is `c2cb9e6`, and it stays so when later documentation deployments change the deployed build ID; the launcher slice's stays `1d59d95`.

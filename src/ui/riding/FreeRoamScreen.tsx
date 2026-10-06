@@ -415,31 +415,26 @@ export function FreeRoamScreen({
   // outside the accessibility tree and the tab order, and disabled while
   // the confirmation is open below, so the header's title and Pause never
   // move — see RidingScreen.tsx's renderEndRideTrigger for the full
-  // rationale (0.4.42 installed-iPhone recheck).
+  // rationale (0.4.42 installed-iPhone recheck). A failed End's error is
+  // not part of it: it is its own row beneath the header (backlog item
+  // 139), for the reason given there.
   function renderEndRideTrigger(concealed = false): ReactNode {
     return (
-      <>
-        <button
-          type="button"
-          className="btn-danger"
-          ref={endRideTriggerRef}
-          onClick={handleEndRideClick}
-          disabled={concealed || isFinalizing || isPausePending}
-          // The compact header label, with the full accessible name — see
-          // RidingScreen.tsx's renderEndRideAction for why.
-          aria-label={t("ride.endRide")}
-          aria-hidden={concealed ? true : undefined}
-          tabIndex={concealed ? -1 : undefined}
-          style={concealed ? { visibility: "hidden" } : undefined}
-        >
-          {t("ride.endRideCompact")}
-        </button>
-        {!concealed && finalizeError ? (
-          <p className="field-error" role="alert">
-            {finalizeError}
-          </p>
-        ) : null}
-      </>
+      <button
+        type="button"
+        className="btn-danger"
+        ref={endRideTriggerRef}
+        onClick={handleEndRideClick}
+        disabled={concealed || isFinalizing || isPausePending}
+        // The compact header label, with the full accessible name — see
+        // RidingScreen.tsx's renderEndRideAction for why.
+        aria-label={t("ride.endRide")}
+        aria-hidden={concealed ? true : undefined}
+        tabIndex={concealed ? -1 : undefined}
+        style={concealed ? { visibility: "hidden" } : undefined}
+      >
+        {t("ride.endRideCompact")}
+      </button>
     );
   }
 
@@ -462,6 +457,11 @@ export function FreeRoamScreen({
         pauseButtonRef={pauseButtonRef}
         endAction={renderEndRideTrigger(isEndRideConfirmOpen)}
       />
+      {!isEndRideConfirmOpen && finalizeError ? (
+        <p className="field-error" role="alert">
+          {finalizeError}
+        </p>
+      ) : null}
       {pauseError ? (
         <p className="field-error" role="alert">
           {pauseError}

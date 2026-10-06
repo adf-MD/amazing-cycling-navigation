@@ -15,8 +15,11 @@ export interface RidingImmersiveHeaderProps {
   onPause: () => void;
   pauseDisabled: boolean;
   pauseButtonRef?: Ref<HTMLButtonElement>;
-  /** Whatever the owning screen's own End-ride trigger currently renders
-   * (button + inline error). While its confirmation is shown elsewhere in
+  /** Whatever the owning screen's own End-ride trigger currently renders:
+   * the button alone. A failed End's error is the screens' own row beneath
+   * this header (backlog item 139), never part of this slot, which does not
+   * shrink — a sentence here once collapsed the title and pushed End ride
+   * aside. While its confirmation is shown elsewhere in
    * the screen's own body, the screens pass the same trigger concealed and
    * disabled rather than null, so this slot keeps its width and the title
    * and Pause never move (0.4.42 installed-iPhone recheck). This component owns no

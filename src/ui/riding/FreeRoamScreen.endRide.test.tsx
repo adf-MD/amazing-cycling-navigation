@@ -290,6 +290,63 @@ describe("FreeRoamScreen End ride", () => {
     expect(onRideFinalized).toHaveBeenCalledTimes(1);
   });
 
+  it("shows a failed End's error on its own row directly beneath the header, outside End's slot (backlog item 139)", async () => {
+    const user = userEvent.setup();
+    const fake = buildFakeGeolocationSource();
+    const { container } = render(
+      <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
+        geolocationSource={fake.source}
+        mapFactory={createMockMapFactory().factory}
+        onRideFinalized={vi.fn()}
+      />,
+    );
+    act(() => {
+      fake.watches[0]?.emitFix({
+        coordinate: [0, 51],
+        accuracyMetres: 8,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+    });
+    await waitFor(async () => {
+      expect(await getActiveRideState()).toBeDefined();
+    });
+    vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession").mockRejectedValueOnce(
+      new Error("boom"),
+    );
+
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+
+    const error = await screen.findByRole("alert");
+    expect(error.textContent).toBe(
+      "The ride could not be ended on this device. Try again.",
+    );
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    const header = container.querySelector("header.riding-immersive-header");
+    expect(header).not.toBeNull();
+    expect(header).not.toContainElement(error);
+    expect(header?.nextElementSibling).toBe(error);
+    // End's slot holds the button alone, so it keeps its width.
+    const endRide = screen.getByRole("button", { name: "End ride" });
+    const endSlot = header?.querySelector(".riding-immersive-header-end");
+    expect(endSlot?.children).toHaveLength(1);
+    expect(endSlot).toContainElement(endRide);
+    expect(endRide).toHaveFocus();
+
+    // Opening the confirmation again clears the error, as before, and the
+    // confirmation row directly follows the header.
+    await user.click(endRide);
+    await screen.findByRole("dialog");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(header?.nextElementSibling).toBe(
+      container.querySelector(".ride-end-ride-confirm-row"),
+    );
+  });
+
   it("a rapid double confirm click clears storage and calls onRideFinalized at most once", async () => {
     const user = userEvent.setup();
     const fake = buildFakeGeolocationSource();
