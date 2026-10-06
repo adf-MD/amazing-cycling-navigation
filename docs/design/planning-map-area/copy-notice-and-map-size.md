@@ -8,7 +8,7 @@
 
 **Implemented and accepted (5 October 2026):** item 141's notice shipped in `0.4.63` ([record](../../project/history/items-132-NN.md#item-141)), and its visual and functional checks were accepted on the installed iPhone in German and English, with VoiceOver not checked; item 122's implementation follows.
 
-**Implemented (5 October 2026):** item 122's map and Calculate-first order shipped in `0.4.64` ([record](../../project/history/item-122.md#item-122)); its installed-iPhone acceptance is pending. Two refinements from its planning and measurement are recorded [below](#refinements-during-implementation-5-october-2026).
+**Implemented and accepted (5 October 2026):** item 122's map and Calculate-first order shipped in `0.4.64` ([record](../../project/history/item-122.md#item-122)), and its visual and functional checks were accepted on the installed iPhone in English and German the same day; the German multi-section shift below is neither resolved nor accepted by that. Two refinements from its planning and measurement are recorded [below](#refinements-during-implementation-5-october-2026).
 
 This refines [item 122's report](README.md), which is not repeated here, and gives [item 141](../../project/history/items-132-NN.md#item-141) its visual proposal. Everything was measured on scratch builds of `0.4.62` (application source identical to `5b2d295`), outside the repository, in the pinned Playwright container by digest: Chromium 149 and WebKit 26.5, which measured identically wherever both ran. **None of it is installed-iPhone evidence.**
 

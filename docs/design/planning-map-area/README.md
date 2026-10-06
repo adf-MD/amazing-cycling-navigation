@@ -6,7 +6,7 @@
 
 **Final decisions (5 October 2026).** The rider then decided, as design approvals rather than device acceptance: Calculate route directly below the map, the 480 px rule (`clamp(340px, round(nearest, 56dvh, 20px), 560px)`), and today's height in the enlarged layout ([record](copy-notice-and-map-size.md#final-design-decisions-5-october-2026)). Item 122 is to be implemented after item 141's compact notice and that notice's installed-iPhone acceptance. Item 141 shipped in `0.4.63` on 5 October 2026 ([record](../../project/history/items-132-NN.md#item-141)), and its visual and functional checks were accepted on the installed iPhone the same day.
 
-**Implemented (5 October 2026):** item 122 shipped in `0.4.64` with the decided map rule, Calculate first, and Calculate's messages following the editing actions ([record](../../project/history/item-122.md#item-122)); its installed-iPhone acceptance is pending.
+**Implemented and accepted (5 October 2026):** item 122 shipped in `0.4.64` with the decided map rule, Calculate first, and Calculate's messages following the editing actions ([record](../../project/history/item-122.md#item-122)), and its visual and functional checks were accepted on the installed iPhone in English and German the same day. German's multi-section Calculate label wrapping at 375 and 320 px wide, which moves the editing row 16 px, is neither resolved nor accepted by that.
 
 **The problem.** On the installed iPhone, the Planning map felt too small for planning compared with free roam's map (item 113's first pass, 25 September 2026). Measured at 390×844, Planning's map is **358×380, 41% of the screen**; free roam's is **358×678, 74%**.
 

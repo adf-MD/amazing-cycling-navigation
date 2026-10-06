@@ -8,7 +8,7 @@ See [`README.md`](README.md) for the full history index, [`../backlog.md`](../ba
 
 <a id="item-122"></a>
 
-## Item 122 — Planning map area on a phone — implemented, device acceptance pending
+## Item 122 — Planning map area on a phone — done
 
 _Category: Planning layout_
 
@@ -159,8 +159,22 @@ Each combination was measured before, with the stale note shown, during, and aft
   - the climb-details, warning-priority and clearing assertions are unchanged;
   - no version change.
 
-The CI run for the corrected head and the deployed build are reported in the handoff and recorded here together with the device acceptance.
+**The corrected head, `0c69101`: run [37334772213](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37334772213).** Verify and build, all four End-to-end shards and Deploy succeeded.
 
-### Installed-iPhone acceptance — pending
+- Verify and build took 309 s.
+- The shards took 674, 856, 524 and 745 s (shards 1 to 4). The longest was 344 s under the 1,200 s limit.
+- Deploy took 16 s.
 
-Session 5 of [`current-status.md`](../current-status.md).
+The live site then served `0.4.64` with build `0c69101`.
+
+### Installed-iPhone acceptance (reported 5 October 2026)
+
+**Accepted** on the installed iPhone, in English and German: Session 5's six visual and functional checks, at product level.
+
+- **The build** was deployed `0.4.64` (`0c69101`). That is the deployed context: no version, build, phone model, iOS version or viewport was reported from the device, and no measurement was made on it.
+- **The verbatim report,** and what it does not establish, is in [`current-status.md`](../current-status.md#installed-iphone-acceptance-of-0464-build-0c69101-item-122-reported-5-october-2026).
+- **The German multi-section shift is neither resolved nor accepted.** On 375- and 320-wide layouts German's multi-section Calculate label wraps and the enabled editing buttons move down 16 px while such a recalculation runs; the report does not cover it, and it stays a recorded limitation.
+- **VoiceOver and physical Android** were not checked and stay untested.
+- **Item 135's focus limitations** are separate and unchanged.
+
+Item 140 follows, under the execution order the rider revised the same day.
