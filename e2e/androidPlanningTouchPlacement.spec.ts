@@ -582,6 +582,15 @@ test.describe("Planning touch placement under genuine touch (item 123)", () => {
     page,
     context,
   }) => {
+    // The longest test here: three paced touch pans, a tap with its
+    // settle, four row toggles and three autosave polls, every phase
+    // needed. Measured on 6 October 2026, in the CI image with tracing:
+    // 17.7s alone and unloaded; CI run 37483537843 spent the default 30s
+    // and stopped at its last pan, every earlier step having passed; and
+    // under a deliberately harsher load (4 CPUs, 2 workers) it completed,
+    // every assertion passing, in 48-66s on both 0.4.66 and 0.4.67. The
+    // budget covers that with margin; nothing waits longer as a result.
+    test.setTimeout(90_000);
     const fixture = await openPlanning(page, context);
     const { callout } = fixture;
 

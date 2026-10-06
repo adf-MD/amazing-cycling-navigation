@@ -438,8 +438,37 @@ _Category: Riding lifecycle_
 - **Edit copy stays available while an End ride finishes.** Read from source, not measured; it starts no tracking, it is unchanged by item 134, and no defect is claimed.
 - **Slice 9's guard**, which keeps a confirmation that is still ending when a ride transition happens, is unchanged; from source, no ordinary path reaching it is known after this change.
 - VoiceOver, enlarged text and physical Android are not covered, and focus after an End is [item 135](../backlog.md#item-135)'s.
-- **CI and deployment** are reported in the handoff and recorded here with the device acceptance.
+- **CI:** the first run failed in an unrelated, long Planning test, and a test-only repair followed ([below](#ci-run-37483537843-failed-and-a-test-only-repair-6-october-2026)).
 - **Installed-iPhone acceptance pending:** Session 5 of [`current-status.md`](../current-status.md).
+
+### CI run 37483537843 failed, and a test-only repair (6 October 2026)
+
+- **The failure.** CI run 37483537843, for `964f585`, deployed nothing.
+  - **Jobs:** Verify and build (305 s) and shards 1, 2 and 4 (680, 900 and 963 s) succeeded. Shard 3 (job 112337636300, 544 s) failed one test of 289, so Deploy was skipped and `0.4.67` was not deployed.
+  - **The test:** `android-chrome`, `e2e/androidPlanningTouchPlacement.spec.ts`'s "the crosshair control adds, moves and inserts on the intended waypoint by touch, and a map tap never completes a pending Move" (item 123's). It used up the default 30 s budget during its third and last touch pan, with every earlier assertion passed.
+  - **The runner** was GitHub-hosted `ubuntu-latest`. Its CPU count and Playwright's worker count appear only in the job log, which cannot be read without authentication, so they are not recorded.
+  - **The failure evidence** uploaded with the run (`playwright-failures-37483537843-1-shard-3`) also needs authentication and was not inspected. The error text is the rider's.
+- **Diagnosis**, in the CI image by digest, on fresh builds of `964f585` and of `61e8644` (a temporary worktree, since removed):
+  - **Nothing points to the riding change.** The spec, the Playwright configuration and the workflow are unchanged; the application change is confined to the riding screen; and shard 3 holds the same tests at both heads but for one WebKit test.
+  - **Alone and unloaded**, with tracing, the test passed in 17.7 s: setup about 2.5 s, each genuine touch pan 1.7–1.9 s, three autosave polls of 1.1–1.4 s each, and a 1.2 s settle. No step waited on something that did not arrive.
+  - **Under a deliberately harsher load than CI** — 4 CPUs and 2 workers, under which the whole shard took 13.9 min against CI's 8.1 — the same test timed out. Every step was still progressing, though a 40 ms wait took 0.3–0.8 s.
+  - **Given a temporary 120 s budget,** for diagnosis only, it completed with every assertion passing: in 57.8 s and 48.9 s on `964f585`, and in 66 s and 47.9 s on `61e8644`.
+  - **Conclusion:** a long test running close to its budget, not a stall, a missed gesture or an application change. That this CI run needed slightly over 30 s is inferred from where the test stopped; its usual CI duration is not known.
+- **The repair, test-only.** That test alone gets `test.setTimeout(90_000)`, the per-test budget pattern other specs here already use, with a comment citing these measurements.
+  - **Unchanged:** genuine touch input and its 40 ms pacing; every Add, pending Move, completed Move and Insert check; the waypoint identity and coordinate assertions; the proof that a map tap never completes a Move; the autosave settling.
+  - **Not added:** a global timeout, a retry.
+- **Verification:**
+  - **The complete spec in `android-chrome`, unloaded:** 8/8 passed, the repaired test in 15.7 s.
+  - **The same spec under the harsher load, run twice:** the repaired test passed both times, in 56.3 s and 38.4 s, within its budget.
+  - **Also passed:** lint, typecheck and the build, whose bundle is unchanged.
+- **Unresolved, and seen only under the harsher load; none failed in CI:**
+  - **The same spec's double-tap zoom test (`:460`)** failed in both runs on each head. Its two-finger-tap test (`:482`) failed once on `964f585`. In each case the zoom did not change within the poll's 5 s. With 40 ms contacts stretched several-fold, the gesture probably fell outside MapLibre's recognition window; that is an inference, not established.
+  - **`androidMapCameraGestureRace.spec.ts:742` and `ridingShortTurnaroundWalkingPace.spec.ts:189`** each used up 30 s in the shard run under that load, still progressing through their last steps.
+  - **That spec's `:528` test** took 31.2 s and 32.5 s on `61e8644`, and 25.5 s and 30.8 s on `964f585`.
+
+  These are recorded, not repaired: none of them is a failure CI demonstrated.
+
+- **CI and deployment** of the repair are reported in the handoff and recorded here with the device acceptance.
 
 ---
 
