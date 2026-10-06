@@ -513,13 +513,16 @@ async function openPlanning(
     await page.reload();
   }
   // Written without a reload, so the app does not restore the ride; the
-  // guard reads storage at the moment Open saved route is pressed.
+  // guard reads storage at the moment Open saved route is pressed. Each is a
+  // current-version session, with its own identity (backlog item 140), so the
+  // guard's read leaves it exactly as it is.
   if (ride === "paused-route" && unfinishedRouteId) {
     await putRideRow(page, {
       id: "active",
       kind: "route",
       routeId: unfinishedRouteId,
       startedAt: "2026-01-01T08:00:00.000Z",
+      sessionId: "seeded-route-session",
       lastFix: null,
       lastMatchedPointIndex: 0,
       matchedDistanceFromStartMetres: 0,
@@ -530,6 +533,7 @@ async function openPlanning(
       id: "active",
       kind: "free-roam",
       startedAt: "2026-01-01T08:00:00.000Z",
+      sessionId: "seeded-free-roam-session",
       lastFix: null,
     });
   }

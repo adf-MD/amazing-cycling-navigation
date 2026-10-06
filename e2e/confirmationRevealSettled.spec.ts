@@ -469,7 +469,9 @@ async function openPlanningWithSavedRouteAndPausedRide(
   ).toBeVisible();
   const pausedId = await readSavedRouteId(page, "Paused ride");
   // Written without a reload, so the app does not restore the ride; the
-  // guard reads storage at the moment Open saved route is pressed.
+  // guard reads storage at the moment Open saved route is pressed. A
+  // current-version session, with its own identity (backlog item 140), so the
+  // guard's read leaves it exactly as it is.
   await page.evaluate(
     (routeId) =>
       new Promise<void>((resolve, reject) => {
@@ -485,6 +487,7 @@ async function openPlanningWithSavedRouteAndPausedRide(
             kind: "route",
             routeId,
             startedAt: "2026-01-01T08:00:00.000Z",
+            sessionId: "seeded-route-session",
             lastFix: null,
             lastMatchedPointIndex: 0,
             matchedDistanceFromStartMetres: 0,
