@@ -2359,10 +2359,14 @@ export function RidingScreen({
           <p>
             {hasResumableSession ? t("riding.resumePrompt") : t("riding.startPrompt")}
           </p>
+          {/* Unavailable while a confirmed End ride is finishing (backlog
+           * item 134), as Back to Ride options below is: a Resume there
+           * would start tracking a ride that is being ended. */}
           <button
             type="button"
             className="btn-primary ride-start-panel-button"
             onClick={handleStart}
+            disabled={activeFinalizeSource !== null}
           >
             {hasResumableSession ? t("riding.resumeRide") : t("riding.startRiding")}
           </button>

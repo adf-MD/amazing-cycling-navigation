@@ -27,6 +27,7 @@ import { saveDraft } from "../../storage/planningDraftRepository.ts";
 import * as guardModule from "../shared/operationInteractionGuard.ts";
 import type { OperationInteractionGuard } from "../shared/operationInteractionGuard.ts";
 import type { StoredRouteRideState } from "../../storage/db.ts";
+import { holdIdbStore, releaseAllIdbHolds } from "../../test/idbHold.ts";
 
 const routePoints = buildRoutePointsFromWaypoints(
   [
@@ -1511,7 +1512,16 @@ describe("End ride's confirmation on the paused screen (backlog item 124, C-11)"
       expect(screen.getByRole("dialog", { name: "End this ride?" })).toBe(dialog);
     });
 
-    it("keeps a confirmed End ride's confirmation, still ending, when Resume ride is pressed while it runs", async () => {
+    // Until backlog item 134 (0.4.67) Resume ride stayed enabled while a
+    // confirmed End ride was finishing, and this test pressed it: the ride
+    // started, and the confirmation was carried, still "Ending ride…", into
+    // the riding header. Resume ride is now unavailable for that time, as
+    // Back to Ride options is, so that transition can no longer happen and
+    // the confirmation stays in the paused panel until the End completes.
+    // The mocked clear here covers the confirmation only; the stored
+    // session's outcomes are in the backlog item 134 describe below, on the
+    // real database.
+    it("keeps a confirmed End ride's confirmation in the paused panel, still ending, with Resume ride unavailable while it runs", async () => {
       const user = userEvent.setup();
       await renderPaused();
       stubGeometry(wouldMove);
@@ -1532,13 +1542,10 @@ describe("End ride's confirmation on the paused screen (backlog item 124, C-11)"
       await user.click(within(dialog).getByRole("button", { name: "End ride" }));
       expect(within(dialog).getByRole("button", { name: "Ending ride…" })).toBeDisabled();
 
-      await user.click(screen.getByRole("button", { name: "Resume ride" }));
-      await screen.findByRole("button", { name: "Pause" });
-      const carried = await endConfirm();
-      expect(
-        within(carried).getByRole("button", { name: "Ending ride…" }),
-      ).toBeDisabled();
-      expect(within(carried).getByRole("button", { name: "Cancel" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Resume ride" })).toBeDisabled();
+      expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
+      expect(screen.getByRole("dialog", { name: "End this ride?" })).toBe(dialog);
+      expect(cancelIn(dialog)).toBeDisabled();
 
       await act(async () => {
         releaseClear();
@@ -1778,5 +1785,195 @@ describe("RidingScreen — End ride and Finish ride for a session gone elsewhere
     expect(screen.queryByRole("alert")).toBeNull();
     expect(fake.watches[0]?.disposed).toBe(true);
     await expect(getActiveRideState()).resolves.toBeUndefined();
+  });
+});
+
+// Backlog item 134: on the paused route screen, Resume ride is unavailable
+// while a confirmed End ride is finishing, as Back to Ride options is.
+// These run on the real database: the End's conditional clear is held
+// behind a real readwrite transaction (holdIdbStore), so the stored session
+// read afterwards is what the clear actually left, never a mocked outcome.
+describe("RidingScreen — Resume ride while a confirmed End ride is finishing (backlog item 134)", () => {
+  const pausedRow: StoredRouteRideState = {
+    id: "active",
+    routeId: route.id,
+    startedAt: "2026-01-01T08:00:00.000Z",
+    sessionId: "session-paused",
+    lastFix: { coordinate: MIDPOINT_COORDINATE, accuracyMetres: 6, timestampMs: 1000 },
+    lastMatchedPointIndex: 10,
+    matchedDistanceFromStartMetres: route.distanceMetres / 2,
+    offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+  };
+
+  afterEach(async () => {
+    await releaseAllIdbHolds();
+    vi.restoreAllMocks();
+  });
+
+  async function renderPausedRide() {
+    await setActiveRideState(pausedRow);
+    const fake = buildFakeGeolocationSource();
+    const onRideFinalized = vi.fn();
+    const onSessionGone = vi.fn();
+    render(
+      <RidingScreen
+        route={route}
+        geolocationSource={fake.source}
+        mapFactory={createMockMapFactory().factory}
+        onRideFinalized={onRideFinalized}
+        onSessionGone={onSessionGone}
+      />,
+    );
+    await screen.findByRole("button", { name: "Resume ride" });
+    return { fake, onRideFinalized, onSessionGone, user: userEvent.setup() };
+  }
+
+  /** Opens and confirms the paused panel's End ride; with the store held,
+   * its clear waits behind the hold. */
+  async function confirmEndRide(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    const dialog = await screen.findByRole("dialog", { name: "End this ride?" });
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+    expect(within(dialog).getByRole("button", { name: "Ending ride…" })).toBeDisabled();
+  }
+
+  /** Aborts the transaction of the next delete issued on rideState, at the
+   * moment it is issued, and records whether it really aborted. The
+   * conditional clear reads before it deletes, so its delete is issued only
+   * once the hold is released: aborting deletes captured while the store is
+   * held would catch nothing, and the clear would succeed. */
+  function abortNextRideStateDelete() {
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalDelete = IDBObjectStore.prototype.delete;
+    const record = {
+      transaction: null as IDBTransaction | null,
+      aborted: false,
+      completed: false,
+    };
+    vi.spyOn(IDBObjectStore.prototype, "delete").mockImplementation(function (
+      this: IDBObjectStore,
+      query: IDBValidKey | IDBKeyRange,
+    ) {
+      const request = originalDelete.call(this, query);
+      if (this.name === "rideState" && record.transaction === null) {
+        const transaction = this.transaction;
+        record.transaction = transaction;
+        transaction.addEventListener("abort", () => {
+          record.aborted = true;
+        });
+        transaction.addEventListener("complete", () => {
+          record.completed = true;
+        });
+        transaction.abort();
+      }
+      return request;
+    });
+    return record;
+  }
+
+  /** Reads the stored session repeatedly, never stopping at the first
+   * match, so a late write cannot hide behind an early read. */
+  async function expectStoredSessionToStay(
+    expected: Awaited<ReturnType<typeof getActiveRideState>>,
+  ) {
+    for (let sample = 0; sample < 5; sample += 1) {
+      expect(
+        await getActiveRideState(),
+        `stored session, sample ${String(sample)}`,
+      ).toEqual(expected);
+      await new Promise((resolve) => {
+        setTimeout(resolve, 20);
+      });
+    }
+  }
+
+  it("keeps Resume ride unavailable while the clear is held, starts no watch, and leaves the session cleared once the End succeeds", async () => {
+    const { fake, onRideFinalized, onSessionGone, user } = await renderPausedRide();
+    const hold = await holdIdbStore("rideState");
+    await confirmEndRide(user);
+
+    const resume = screen.getByRole("button", { name: "Resume ride" });
+    expect(resume).toBeDisabled();
+    // A tap reaches nothing: user-event, like a browser, delivers no click
+    // to a disabled button.
+    await user.click(resume);
+    expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
+    expect(fake.watchPositionSpy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await hold.release();
+    });
+    await waitFor(() => {
+      expect(onRideFinalized).toHaveBeenCalledOnce();
+    });
+    expect(onSessionGone).not.toHaveBeenCalled();
+    await screen.findByRole("button", { name: "Start riding" });
+    await expectStoredSessionToStay(undefined);
+    expect(fake.watchPositionSpy).not.toHaveBeenCalled();
+  });
+
+  it("after a failed End keeps the stored session and the paused screen, offers Resume ride again, and an explicit Resume continues the same session", async () => {
+    const { fake, onRideFinalized, user } = await renderPausedRide();
+    const before = await getActiveRideState();
+    const hold = await holdIdbStore("rideState");
+    const abort = abortNextRideStateDelete();
+    await confirmEndRide(user);
+    expect(screen.getByRole("button", { name: "Resume ride" })).toBeDisabled();
+
+    await act(async () => {
+      await hold.release();
+    });
+    const error = await screen.findByRole("alert");
+    expect(error).toHaveTextContent(
+      "The ride could not be ended on this device. Try again.",
+    );
+    // The fixture failed the clear's own transaction: caught as its delete
+    // was issued, aborted, and never completed.
+    expect(abort.transaction).not.toBeNull();
+    expect(abort.aborted).toBe(true);
+    expect(abort.completed).toBe(false);
+
+    expect(onRideFinalized).not.toHaveBeenCalled();
+    expect(error.closest(".ride-start-panel")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
+    await expectStoredSessionToStay(before);
+    const resume = screen.getByRole("button", { name: "Resume ride" });
+    expect(resume).toBeEnabled();
+    expect(fake.watchPositionSpy).not.toHaveBeenCalled();
+
+    // Tracking starts only from the rider's own Resume.
+    await user.click(resume);
+    await screen.findByRole("button", { name: "Pause" });
+    expect(fake.watchPositionSpy).toHaveBeenCalledOnce();
+    act(() => {
+      fake.watches[0]?.emitFix(midpointFix(5000));
+    });
+    await waitFor(async () => {
+      expect((await getActiveRideState())?.lastFix?.timestampMs).toBe(5000);
+    });
+    expect((await getActiveRideState())?.sessionId).toBe("session-paused");
+  });
+
+  it("after another window replaced the session keeps Resume ride unavailable during the End, then hands back with the newer session untouched", async () => {
+    const { fake, onRideFinalized, onSessionGone, user } = await renderPausedRide();
+    const newer: StoredRouteRideState = {
+      ...pausedRow,
+      sessionId: "session-newer",
+      startedAt: "2026-01-02T08:00:00.000Z",
+    };
+    await db.rideState.put(newer);
+    const hold = await holdIdbStore("rideState");
+    await confirmEndRide(user);
+    expect(screen.getByRole("button", { name: "Resume ride" })).toBeDisabled();
+
+    await act(async () => {
+      await hold.release();
+    });
+    await waitFor(() => {
+      expect(onSessionGone).toHaveBeenCalledOnce();
+    });
+    expect(onRideFinalized).not.toHaveBeenCalled();
+    expect(fake.watchPositionSpy).not.toHaveBeenCalled();
+    await expectStoredSessionToStay(newer);
   });
 });

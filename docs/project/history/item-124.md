@@ -91,7 +91,7 @@ The longest job, shard 4, left 362 s below the E2E jobs' 1,200-second timeout. T
   - P-21 and P-26's cue to where map- and chart-selected details appear → [item 136](../backlog.md#item-136);
   - P-06, a route's export failure → [item 137](../backlog.md#item-137);
   - copy and comment corrections → [item 138](../backlog.md#item-138);
-  - Resume offered while a confirmed End ride is still finishing → [item 134](../backlog.md#item-134);
+  - Resume offered while a confirmed End ride is still finishing → [item 134](items-132-NN.md#item-134);
   - a failed End ride's clipped message → [item 139](../backlog.md#item-139);
   - a stale Ride-launcher confirmation clearing a newer session → [item 140](items-132-NN.md#item-140);
   - C-14's button styling → [item 103](../backlog.md#item-103);

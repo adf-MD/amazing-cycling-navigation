@@ -1,6 +1,6 @@
 # Completed backlog items 132–
 
-This file continues the 100– numeric range and opens at item 132. It was started when item 132 was completed (2 October 2026, `0.4.55`). Its entry belongs before item 133's in numeric order, and adding it to what was then `items-118-NN.md` would have taken that file to about 176,000 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md). That file was therefore closed at item 131 and renamed [`items-118-131.md`](items-118-131.md), and item 133's entry — completed earlier the same day as a CI-only change — moved here unchanged apart from its link to item 132, which now points within this file. No entry was shortened or rewritten by that split. Stable item numbers never change regardless of which file their text lives in: item 133 was completed before item 132 and is filed after it, since a number is an identifier and never a schedule. Item 141 — completed in `0.4.63` on 5 October 2026 and accepted on the installed iPhone the same day — follows them, moved from `backlog.md` under the same convention. Item 140 — completed in two slices, `0.4.65` and `0.4.66`, both accepted on the installed iPhone on 6 October 2026 — moved here from `backlog.md` on that day under the same convention and is filed before item 141, in numeric order, although item 141 was completed first.
+This file continues the 100– numeric range and opens at item 132. It was started when item 132 was completed (2 October 2026, `0.4.55`). Its entry belongs before item 133's in numeric order, and adding it to what was then `items-118-NN.md` would have taken that file to about 176,000 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md). That file was therefore closed at item 131 and renamed [`items-118-131.md`](items-118-131.md), and item 133's entry — completed earlier the same day as a CI-only change — moved here unchanged apart from its link to item 132, which now points within this file. No entry was shortened or rewritten by that split. Stable item numbers never change regardless of which file their text lives in: item 133 was completed before item 132 and is filed after it, since a number is an identifier and never a schedule. Item 141 — completed in `0.4.63` on 5 October 2026 and accepted on the installed iPhone the same day — follows them, moved from `backlog.md` under the same convention. Item 134 — implemented in `0.4.67` on 6 October 2026, with its installed-iPhone acceptance pending — moved here from `backlog.md` the same day, under the same convention. Item 140 — completed in two slices, `0.4.65` and `0.4.66`, both accepted on the installed iPhone on 6 October 2026 — moved here from `backlog.md` on that day under the same convention and is filed before item 141, in numeric order, although item 141 was completed first.
 
 See [`README.md`](README.md) for the full history index, [`../backlog.md`](../backlog.md) for pending specifications, and [`../current-status.md`](../current-status.md) for the manual acceptance ledger.
 
@@ -364,6 +364,85 @@ Run [37055399688](https://github.com/adf-MD/amazing-cycling-navigation/actions/r
 
 ---
 
+<a id="item-134"></a>
+
+## Item 134 — Resume ride offered while a confirmed End ride is still finishing — implemented, device acceptance pending
+
+_Category: Riding lifecycle_
+
+**Status: implemented in `0.4.67` on 6 October 2026; installed-iPhone acceptance pending.** The investigation its scheduling approved was made on 6 October 2026 on `c2cb9e6` (`0.4.66`), and the rider approved the change the same day. The entry moved here from `backlog.md` with its implementation, as item 141's did; item 134 stays first in the execution order until its device acceptance. The specification below is as filed; the investigation, decisions, implementation and evidence follow it.
+
+134. **Resume ride offered while a confirmed End ride is still finishing — defect investigation**
+     - Origin: observed while implementing item 124's slice 9 (`0.4.60`, 3 October 2026) and recorded in its [limitations](item-124-continued.md#slice-9--confirmations-closed-by-a-ride-transition-c-10-c-11-c-12-shipped-0460-3-october-2026). The rider's direction of 4 October 2026 asked that it get its own disposition; the [reconciliation](../../design/reveal-inventory/closure-reconciliation.md) sends it here. **Recording it here does not mean it is fixed or accepted.**
+     - **Scheduled on 5 October 2026**, second in the approved execution order, after item 140 and before items 139, 125, 103 and 120, by the rider's decision ([order](../../../CLAUDE.md)); it was unscheduled until then. **Scheduling approves the investigation, not the candidate below or any other change.** **Update, 6 October 2026:** with item 140 completed, it is first in the order, ahead of items 139, 125, 103 and 120.
+     - **Present facts, from source (`src/ui/riding/RidingScreen.tsx`, at `e2ba7cf`):** after End ride is confirmed on the paused screen, its confirmation reads "Ending ride…" with both actions disabled, and **Back to Ride options** is disabled while the ending runs (`activeFinalizeSource !== null`). The panel's **Resume ride** has no such condition and stays enabled.
+     - **What a component test shows, with a synthetic hold:** `RidingScreen.finishEndRide.test.tsx` ("keeps a confirmed End ride's confirmation, still ending, when Resume ride is pressed while it runs") holds the stored session's clear open. Pressing **Resume ride** then starts riding: the riding header and **Pause** appear, with "Ending ride…" carried below it. Once the clear is released, the screen returns to the pre-ride state with **Start riding**. Slice 9 kept that behaviour and changed nothing else.
+     - **Not established:** whether a rider can reach the window on a device, since how long the clear takes there is unknown; whether a fix accepted inside the window writes anything to storage after the clear; whether the location watch is always stopped; and how item 131's one-use resume instruction behaves there. It has not been reproduced in a browser or on the installed iPhone.
+     - **A candidate, not a decision:** keep **Resume ride** unavailable while an End ride finishes, as **Back to Ride options** already is.
+     - **Evidence required when resolved:** a component test and a browser test, in Chromium and WebKit, that each hold the clear; the stored session read after the release; a negative control; and the installed-iPhone End ride check.
+
+### Investigation — the baseline, measured on `c2cb9e6` (6 October 2026)
+
+**Method.** Two temporary diagnostics, removed afterwards and never committed: a component test on the real database (Dexie on fake-indexeddb), and a browser test in Chromium and WebKit, in the CI image by digest, on a fresh build. Each held the End's conditional clear behind a real readwrite transaction on `rideState` (`holdIdbStore` in the component, an in-page equivalent in the browser), counted `watchPosition` and `clearWatch` calls and `rideState` writes, and read the stored row only once the hold had been released.
+
+**The failure fixture.** An interceptor aborted the transaction of the next delete issued on `rideState`, at the moment it was issued. The conditional clear reads before it deletes, so its delete is issued only once the hold is released: a fixture aborting deletes captured while the store was held would have caught nothing and let the clear succeed — the rider's correction of the first plan. In every run the clear's own transaction was confirmed captured and aborted, and it never completed, before any result was read as a failure.
+
+**Findings**, the same in both engines and in the component:
+
+- **Reachable:** while "Ending ride…" showed on the full paused-route screen, Resume ride stayed enabled although Back to Ride options was disabled. A tap started one location watch, switched to the immersive riding shell — main navigation hidden, Pause disabled — and carried "Ending ride…" into the riding header.
+- **Writes during the window:** fixes accepted then caused no write at all — no call to the write function and no `put` request on `rideState` — because `isFinalizingRef` stops the persistence effect.
+- **A successful End:** the clear reported "cleared", the watch was cleared, and App showed the empty Ride launcher. The stored row stayed absent over repeated reads, after a later fix and after a reload.
+- **A failed End:** the ride carried on. The watch stayed live, "The ride could not be ended on this device. Try again." appeared in the riding header — item 139's layout — and the next fix wrote the session back, with the same `sessionId`. Without the Resume tap, the paused screen showed the error under its button, Resume ride was available, nothing was tracked and the row was unchanged.
+- **A refused End** (a newer session stored first): "session-gone". The watch was cleared, the screen handed back, and the Ride launcher showed the existing notice; the newer row was untouched.
+- **Other entry points, none of which offered tracking during the End:**
+  - **Leaving for Routes and returning to Ride:** while the clear was held, the remounted screen showed "Restoring your unfinished ride…" with no start control; after release, the Ride launcher. No watch, nothing stored.
+  - **Opening another route from Routes:** 800 ms after its card was tapped, with the clear still held, Routes was still shown, with no target screen and no Start control. After release the target's pre-ride screen appeared, ready to start, with no watch. That matches the storage ordering: App's check before opening a route (`getActiveRideStateWithSessionId`, which reads first) queues behind the clear's readwrite transaction. The latency from release to display was not measured.
+  - **A `visibilitychange`** on the paused screen, before or during the End, started nothing.
+  - **From source:** the status card's Try again appears only when location tracking has failed, never on the idle paused screen; and item 131's one-use resume instruction is consumed before the paused panel, and its End ride, are shown.
+- **The existing component test** that pressed Resume during an End mocked the clear's result. The mocked "cleared" deleted nothing, so the real stored row survived it: that test could say nothing about storage.
+- **No storage loss or recreation was observed in these measured cases.** What they showed was a tracking and presentation problem: a tap during the End briefly started a location watch — on the iPhone, possibly a permission prompt — and switched the screen, and a failing End then left the ride running.
+
+### The rider's decisions (6 October 2026)
+
+- Resume ride on the full paused-route screen is disabled while a confirmed End ride is finishing, with `disabled={activeFinalizeSource !== null}`, as Back to Ride options is.
+- A successful End returns to the empty Ride launcher.
+- A failed End keeps the stored session, keeps the screen paused with the existing error, and makes Resume ride available again; tracking restarts only when the rider chooses Resume.
+- A refused End keeps item 140's retirement and hand-back.
+- Resume ride stays available while an End confirmation is still unconfirmed, and item 124's quiet closing of that confirmation when Resume succeeds is kept.
+- Edit copy stays outside item 134; its availability during an End is recorded as an unmeasured observation.
+
+### Implementation (`0.4.67`, 6 October 2026)
+
+- **One change:** `src/ui/riding/RidingScreen.tsx` gives the paused panel's Resume ride `disabled={activeFinalizeSource !== null}`. No label, confirmation behaviour, layout, focus policy, navigation hook or App code changed, and item 140's identity checks, atomic clears, cancellation of pending writes, retirement and hand-back are untouched.
+- **Against the baseline:** while an End finishes, Resume ride is unavailable and the screen no longer switches; a failed End now leaves the ride paused, where a Resume in the window used to leave it running. Successful and refused Ends end as before.
+
+### Evidence — automated only
+
+- **Component**, a new describe in `src/ui/riding/RidingScreen.finishEndRide.test.tsx`, on the real database with `holdIdbStore`:
+  - **success:** Resume ride is disabled while the clear is held and a tap starts no watch; after release the screen returns to its pre-ride state, and the stored session stays absent over repeated reads, with still no watch;
+  - **failure:** the clear's own transaction is aborted as its delete is issued, and asserted captured, aborted and never completed; the error shows on the paused panel, the stored session equals its snapshot from before the End, and Resume ride is enabled with no watch. Pressing it starts exactly one watch, and a fix then persists the same `sessionId`;
+  - **refusal:** Resume ride is disabled during the End; `onSessionGone` is called once, no watch starts, and the newer session is untouched.
+- **Replaced by intent:** the decision-4 test "keeps a confirmed End ride's confirmation, still ending, when Resume ride is pressed while it runs". The transition it asserted — the confirmation carried into the riding header by a Resume — is no longer available. Its replacement checks that the confirmation stays in the paused panel, still ending, with Resume ride disabled. The decision-4 tests in which Resume ride succeeds while End ride's confirmation is still unconfirmed, and that confirmation closes quietly, are unchanged. No other unit or browser test encoded the old behaviour.
+- **Browser**, `e2e/resumeDuringEndRide.smoke.spec.ts`, in Chromium and WebKit, in the CI image by digest, on a fresh build:
+  - **success:** Resume ride is disabled and never clicked; no watch is added while the location moves; then the Ride launcher, with the row absent after release and after a reload;
+  - **failure:** the fixture's validity is asserted; the error shows on the paused screen, the row equals its snapshot, and Resume ride is enabled. A real Resume then starts exactly one watch, and a moved location persists the same `sessionId`; after a reload the paused screen offers Resume ride.
+- **Negative control:** only the new `disabled` removed.
+  - In the component, all four tests that check it — the three new ones and the replaced decision-4 test — failed at their Resume ride `toBeDisabled()` assertion, before any watch or storage check.
+  - In the browser, the control build compiled (exit 0, with its own asset hash) and was served by a newly started preview server; both tests failed in both engines at `toBeDisabled()` ("Received: enabled").
+  - The line was restored by edit, its SHA-256 matched the fixed file, and the rebuilt application passed.
+- **Also run, once:** the three complete `RidingScreen` unit files and the catalogue guards (673 tests); the new spec with `endRidePausedConfirmationReveal`, `editCopyConfirmationReveal`, `coldStartPausedRoute`, `ridingPauseAfterResume` and `staleSessionActions` in both engines and `ridingFinishAndEnd` in Chromium (138 runs); lint, typecheck, the build, links, whitespace and formatting.
+
+### Limitations and observations
+
+- **The held window and the synthetic failure cannot be induced through an ordinary phone checklist** and keep automated evidence only. Whether a naturally slow End shows the pending state on an iPhone is unmeasured.
+- **Edit copy stays available while an End ride finishes.** Read from source, not measured; it starts no tracking, it is unchanged by item 134, and no defect is claimed.
+- **Slice 9's guard**, which keeps a confirmation that is still ending when a ride transition happens, is unchanged; from source, no ordinary path reaching it is known after this change.
+- VoiceOver, enlarged text and physical Android are not covered, and focus after an End is [item 135](../backlog.md#item-135)'s.
+- **CI and deployment** are reported in the handoff and recorded here with the device acceptance.
+- **Installed-iPhone acceptance pending:** Session 5 of [`current-status.md`](../current-status.md).
+
+---
+
 <a id="item-140"></a>
 
 ## Item 140 — A stale Ride-launcher confirmation clearing a newer session — done
@@ -393,7 +472,7 @@ _Category: Riding lifecycle_
      - **It must also inventory every caller of the identity-less clear** — the launcher's **Discard** among them — and establish which share the hazard.
      - **Coordinate with:**
        - [item 119](items-118-131.md#item-119)'s switch guard, which protects **Resume** comparably; it is precedent, not a fix here;
-       - [item 134](../backlog.md#item-134), an End ride still finishing;
+       - [item 134](#item-134), an End ride still finishing;
        - [item 135](../backlog.md#item-135), focus after **End and switch**;
        - item 124's C-09, whose accepted flow is to be verified again if the launcher's shared code changes.
      - **Evidence required when resolved:**
@@ -450,7 +529,7 @@ _Category: Riding lifecycle_
          - **Updated by intent, not weakened:** spies moved to the conditional functions and the identity-assigning read; free-roam tests open the screen with App's owned row; held clears resolve an outcome; id-less seeded rows either carry an identity or assert its assignment; the two "write after a successful clear" tests are rewritten for the replacement.
          - **Existing specs, once:** `rideSessionSwitchGuard`, `ridingFinishAndEnd` and `freeRoam` in Chromium; `confirmationDialogs`, `coldStartPausedRoute`, `rideLauncherStaleConfirmation` and Planning's End and switch in both engines; the affected unit suites; lint, typecheck, build, the catalogue guards, links and formatting.
          - **First CI run failed; test-only repair:** run 37458478038 on `7da1f19` failed 17 tests, so nothing was deployed from it. In `confirmationRevealSettled` and `planningSavedRoute`, neither of which had been run in full before the push, a seeded id-less paused ride gained an identity from the guard's read. That is the planned assignment, with every other field kept, and each test's exact comparison after Cancel caught it. The repair gives those seeds an identity, as `rideSessionSwitchGuard`'s already had. Both specs then passed in Chromium and WebKit, and reproducing shards 1, 2 and 4 in the CI image found no other failure. The application is unchanged.
-       - **Limitations:** the two-window races cannot be reached in the installed PWA; End and switch to free roam is reached only from a launcher that read nothing stored, so it has automated evidence only; VoiceOver is untested; after a refusal focus is on the page ([item 135](../backlog.md#item-135)); [item 134](../backlog.md#item-134)'s Resume stays enabled during an End, and a refusal still stops the watch; [item 139](../backlog.md#item-139)'s header error layout is unchanged.
+       - **Limitations:** the two-window races cannot be reached in the installed PWA; End and switch to free roam is reached only from a launcher that read nothing stored, so it has automated evidence only; VoiceOver is untested; after a refusal focus is on the page ([item 135](../backlog.md#item-135)); [item 134](#item-134)'s Resume stays enabled during an End, and a refusal still stops the watch; [item 139](../backlog.md#item-139)'s header error layout is unchanged.
        - **CI and deployment.** Nothing was deployed from `7da1f19` (run 37458478038, above). Run [37461451985](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37461451985), for the test-only repair `c2cb9e6`: Verify and build, all four End-to-end shards and Deploy succeeded. Verify and build took 209 s; the shard jobs took 671, 864, 461 and 926 s (shards 1 to 4); Deploy took 11 s. The live site then served `0.4.66` with build `c2cb9e6`.
        - **The longest shard job, 926 s (shard 4), against the E2E job's 20-minute (1,200 s) limit** — 274 s under it. For comparison only, the longest shard jobs of the day's two earlier successful runs were 877 s (run [37434895346](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37434895346), `1d59d95`, shard 2) and 819 s (run 37448703698, `351ae8f`, documentation only, shard 4). These are three single runs: no trend is established, no cause is attributed to the duration and it is not called normal variance. CI was not changed. It is also recorded under "Monitored, corroborating only" in [`current-status.md`](../current-status.md).
        - **Installed-iPhone acceptance (reported 6 October 2026).** **Accepted** on the installed iPhone, in English and German, at product level: Session 5's checks 1 to 5 ([dated record](../current-status.md#installed-iphone-acceptance-of-0466-build-c2cb9e6-item-140-slice-2-reported-6-october-2026)). That is End and switch from a paused route ride to another route — cancellation, the target opening ready to start, and reopening — and from paused free roam to a route, with cancellation and reopening; and End ride from active route riding, from the full paused-route screen without going through Back to Ride options, and from active free roam, with cancellation and reopening. The accepted build is `c2cb9e6`, and it stays so when later documentation deployments change the deployed build ID; the launcher slice's stays `1d59d95`.

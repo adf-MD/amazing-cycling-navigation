@@ -218,7 +218,7 @@ Each keeps its own evidence level. **Recording or deferring one does not mean it
 
 | Finding                                                                                                           | Evidence                                      | Disposition                                                                          | Destination                                                                        |
 | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| **Resume ride** stays enabled on the paused screen while a confirmed End ride is finishing                        | [S]; a component test with a held clear [Syn] | Deferred investigation — **not fixed**                                               | [Item 134](../../project/backlog.md#item-134)                                      |
+| **Resume ride** stays enabled on the paused screen while a confirmed End ride is finishing                        | [S]; a component test with a held clear [Syn] | Deferred investigation — **not fixed**                                               | [Item 134][item-134-history]                                                       |
 | Unconfirmed End ride and Edit copy confirmations surviving Start riding, Pause and Resume ride                    | [M], reviews and slices 4 and 7               | Completed                                                                            | Slice 9, [A] 4 Oct                                                                 |
 | A Cancel in the riding header while a Pause is still being saved left a deferred focus                            | [S] in the review                             | Completed: slice 8 guards the wait                                                   | Slice 8, [Syn][M] only                                                             |
 | A committed deletion whose list then fails to re-read keeps a disabled "Deleting…" card                           | [Syn], slice 6                                | Deferred investigation                                                               | Opportunistic monitoring in `current-status.md`                                    |
@@ -234,13 +234,14 @@ Each keeps its own evidence level. **Recording or deferring one does not mean it
 | C-14's confirm action is always `btn-danger`, even for **Retry**, **Check again** and **Try again**               | [S], present                                  | Deferred                                                                             | [Item 103](../../project/backlog.md#item-103), an input note                       |
 | C-02 orders its actions End and switch, Return, Cancel, unlike the inventory's general statement                  | [S]                                           | Approved retention (item 95, protected)                                              | The inventory's correction note stands                                             |
 
+[item-134-history]: ../../project/history/items-132-NN.md#item-134
 [item-140-history]: ../../project/history/items-132-NN.md#item-140
 
 ## Follow-up destinations
 
 Each new item was checked against every pending backlog entry and found distinct. Items 125, 127 and 103 are the nearest, and each is coordinated rather than duplicated. All five new items are **unscheduled**, with specifications in [`backlog.md`](../../project/backlog.md):
 
-- **[Item 134](../../project/backlog.md#item-134)** — Resume ride offered while a confirmed End ride is still finishing: a defect investigation.
+- **[Item 134](../../project/history/items-132-NN.md#item-134)** — Resume ride offered while a confirmed End ride is still finishing: a defect investigation.
 - **[Item 135](../../project/backlog.md#item-135)** — Focus continuity when a control disappears or an operation ends: an accessibility investigation that includes VoiceOver, and any scrolling or software-keyboard effect of a focus target.
 - **[Item 136](../../project/backlog.md#item-136)** — Showing where map- and chart-selected details appear (P-21, P-26): a design candidate.
 - **[Item 137](../../project/backlog.md#item-137)** — A route's export failure shown beside its card (P-06): a design candidate.
