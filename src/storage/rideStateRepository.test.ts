@@ -7,6 +7,7 @@ import {
   clearActiveRideStateIfSession,
   getActiveRideState,
   getActiveRideStateWithSessionId,
+  replaceActiveRideStateIfSession,
   setActiveRideState,
 } from "./rideStateRepository.ts";
 
@@ -238,6 +239,112 @@ describe("clearActiveRideStateIfSession (item 140)", () => {
     if (competing.write === null) throw new Error("expected the competing write");
     await competing.write;
 
+    await expect(getActiveRideState()).resolves.toEqual(newer);
+  });
+});
+
+describe("replaceActiveRideStateIfSession (item 140)", () => {
+  afterEach(() => {
+    delete window.__acnE2eRideStateClearFailure;
+  });
+
+  const freshFreeRoam = buildFreeRoamState({ sessionId: "session-fresh" });
+
+  it("replaces the session it is given", async () => {
+    await setActiveRideState(buildRideState({ sessionId: "session-1" }));
+
+    await expect(
+      replaceActiveRideStateIfSession("session-1", freshFreeRoam),
+    ).resolves.toBe("replaced");
+
+    await expect(getActiveRideState()).resolves.toEqual(freshFreeRoam);
+  });
+
+  it("writes nothing for a missing session", async () => {
+    await expect(
+      replaceActiveRideStateIfSession("session-1", freshFreeRoam),
+    ).resolves.toBe("missing");
+
+    await expect(getActiveRideState()).resolves.toBeUndefined();
+  });
+
+  it("leaves a different session — on the same route, or without an identity — untouched", async () => {
+    const newer = buildRideState({ sessionId: "session-2" });
+    await setActiveRideState(newer);
+    await expect(
+      replaceActiveRideStateIfSession("session-1", freshFreeRoam),
+    ).resolves.toBe("changed");
+    await expect(getActiveRideState()).resolves.toEqual(newer);
+
+    const idless = buildRideState();
+    await setActiveRideState(idless);
+    await expect(
+      replaceActiveRideStateIfSession("session-1", freshFreeRoam),
+    ).resolves.toBe("changed");
+    await expect(getActiveRideState()).resolves.toEqual(idless);
+  });
+
+  it("fails through the existing clear-failure seam, leaving the session stored", async () => {
+    const stored = buildRideState({ sessionId: "session-1" });
+    await setActiveRideState(stored);
+    const failure = new Error("synthetic clear failure");
+    window.__acnE2eRideStateClearFailure = () => failure;
+
+    await expect(
+      replaceActiveRideStateIfSession("session-1", freshFreeRoam),
+    ).rejects.toBe(failure);
+
+    await expect(getActiveRideState()).resolves.toEqual(stored);
+  });
+
+  it("a write that fails inside the transaction aborts it, leaving the session that was stored", async () => {
+    const stored = buildRideState({ sessionId: "session-1" });
+    await setActiveRideState(stored);
+    const putSpy = vi
+      .spyOn(db.rideState, "put")
+      .mockRejectedValueOnce(new Error("synthetic write failure"));
+
+    await expect(
+      replaceActiveRideStateIfSession("session-1", freshFreeRoam),
+    ).rejects.toThrow("synthetic write failure");
+    putSpy.mockRestore();
+
+    await expect(getActiveRideState()).resolves.toEqual(stored);
+  });
+
+  it("checks and writes in one transaction: a write started after its read lands after its replacement", async () => {
+    await setActiveRideState(buildRideState({ sessionId: "session-1" }));
+    const newer = buildFreeRoamState({ sessionId: "session-2" });
+    // As for the conditional clear: started outside the transaction once
+    // its read has succeeded, kept, and awaited only afterwards.
+    const competing: { write: Promise<unknown> | null } = { write: null };
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalGet = IDBObjectStore.prototype.get;
+    const getSpy = vi.spyOn(IDBObjectStore.prototype, "get").mockImplementation(function (
+      this: IDBObjectStore,
+      query,
+    ) {
+      const request = originalGet.call(this, query);
+      if (this.name === "rideState" && competing.write === null) {
+        request.addEventListener("success", () => {
+          competing.write = Dexie.ignoreTransaction(() => db.rideState.put(newer));
+        });
+      }
+      return request;
+    });
+
+    try {
+      await expect(
+        replaceActiveRideStateIfSession("session-1", freshFreeRoam),
+      ).resolves.toBe("replaced");
+    } finally {
+      getSpy.mockRestore();
+    }
+    if (competing.write === null) throw new Error("expected the competing write");
+    await competing.write;
+
+    // The competing write committed after the replacement, never before
+    // its check: what is stored is the later write, not a replacement of it.
     await expect(getActiveRideState()).resolves.toEqual(newer);
   });
 });

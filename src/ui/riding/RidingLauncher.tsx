@@ -63,6 +63,16 @@ export interface RidingLauncherProps {
    * generation guard below before it can call it. Must keep a stable
    * identity: it is a dependency of the hydration effect. */
   onSessionChecked?: (route: PlannedRoute | null) => boolean;
+  /** True when this launcher is shown because a riding screen's End ride
+   * or Finish ride — or its restore — found that screen's session already
+   * ended or replaced elsewhere (backlog item 140). The launcher's first
+   * read then shows the same notice as a refused launcher confirmation,
+   * once that read has succeeded; a failed read shows the existing failure
+   * and Retry instead. Read when the launcher mounts. */
+  staleNoticeRequested?: boolean;
+  /** Called once a mounted launcher has taken up staleNoticeRequested, so
+   * the owner can drop the request and never show the notice twice. */
+  onStaleNoticeRequestHandled?: () => void;
 }
 
 type RidingLauncherHydrationStatus = "loading" | "ready" | "failed";
@@ -171,6 +181,8 @@ export function RidingLauncher({
   freeRoamError = null,
   sessionRefreshToken,
   onSessionChecked,
+  staleNoticeRequested = false,
+  onStaleNoticeRequestHandled,
 }: RidingLauncherProps) {
   const translator = useTranslate();
   const { t } = translator;
@@ -184,7 +196,12 @@ export function RidingLauncher({
   // or null while none is open (backlog item 140). Captured when it opens
   // and never replaced while it stays open; Confirm clears only this one.
   const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
-  const [staleNotice, setStaleNotice] = useState<StaleSessionNotice>("none");
+  const [staleNotice, setStaleNotice] = useState<StaleSessionNotice>(() =>
+    staleNoticeRequested ? "awaiting-read" : "none",
+  );
+  useEffect(() => {
+    if (staleNoticeRequested) onStaleNoticeRequestHandled?.();
+  }, [staleNoticeRequested, onStaleNoticeRequestHandled]);
 
   // Mirrors PlanningScreen.tsx's own hydration-generation/retry-token
   // pattern exactly. A multi-step async read (ride state, then

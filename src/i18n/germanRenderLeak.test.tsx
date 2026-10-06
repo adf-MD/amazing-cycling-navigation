@@ -11,6 +11,10 @@ import { RidingScreen } from "../ui/riding/RidingScreen.tsx";
 import { FreeRoamScreen } from "../ui/riding/FreeRoamScreen.tsx";
 import { db } from "../storage/db.ts";
 import { setActiveRideState } from "../storage/rideStateRepository.ts";
+import {
+  OWNED_FREE_ROAM_SESSION_ID,
+  seedOwnedFreeRoamSession,
+} from "../test/freeRoamSession.ts";
 import type { MapFactory, MapLibreLike } from "../map/mapAdapter.ts";
 import type { PlannedRoute } from "../domain/types.ts";
 import { buildRoutePointsFromWaypoints } from "../test/fixtures/routeGeometry.ts";
@@ -268,10 +272,12 @@ describe("route Riding renders no English in German", () => {
 
 describe("free roam renders no English in German", () => {
   for (const [language, translator] of LANGUAGES) {
-    it(`the header (${language})`, () => {
+    it(`the header (${language})`, async () => {
+      await seedOwnedFreeRoamSession();
       const { container } = withLanguage(
         language,
         <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
           geolocationSource={buildFakeGeolocationSource().source}
           mapFactory={createMockMapFactory()}
         />,

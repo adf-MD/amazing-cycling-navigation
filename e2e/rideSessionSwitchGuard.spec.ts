@@ -226,7 +226,7 @@ test("route A unfinished + opening route B shows a confirmation before any repla
   expect(consoleErrors).toEqual([]);
 });
 
-test("a stale launcher render exposing Start free roam is still guarded once a route session becomes active after hydration — clear happens before the fresh free-roam row is written, before the watch starts", async ({
+test("a stale launcher render exposing Start free roam is still guarded once a route session becomes active after hydration — the stored ride is replaced by the fresh free-roam row in one step, before the watch starts", async ({
   page,
   context,
 }) => {
@@ -253,10 +253,13 @@ test("a stale launcher render exposing Start free roam is still guarded once a r
   // interaction alone (the app never writes a conflicting row behind its
   // own back), so it's injected directly, mirroring this file's other
   // tests' reliance on direct IndexedDB fixtures for preconditions.
+  // A current-version session, with its own identity (backlog item 140),
+  // so the guard's read leaves it exactly as it is.
   const injectedRouteRow = {
     id: "active",
     routeId: "stale-hydration-route-id",
     startedAt: new Date().toISOString(),
+    sessionId: "injected-route-session",
     lastFix: null,
     lastMatchedPointIndex: 0,
     matchedDistanceFromStartMetres: 0,

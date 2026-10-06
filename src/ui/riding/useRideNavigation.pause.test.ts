@@ -332,7 +332,7 @@ describe("useRideNavigation pause()", () => {
       await Promise.resolve();
     });
 
-    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession");
 
     await act(async () => {
       await result.current.pause();
@@ -370,8 +370,10 @@ describe("useRideNavigation pause()", () => {
       .spyOn(rideStateRepository, "setActiveRideState")
       .mockImplementationOnce(
         () =>
-          new Promise<void>((resolve) => {
-            pending.resolveWrite = resolve;
+          new Promise<boolean>((resolve) => {
+            pending.resolveWrite = () => {
+              resolve(true);
+            };
           }),
       );
 
@@ -426,7 +428,10 @@ describe("useRideNavigation pause()", () => {
     await act(async () => {
       // finish() is called first — its synchronous guard-set runs before
       // pause() is ever invoked.
-      await Promise.all([result.current.finish(), result.current.pause()]);
+      await Promise.all([
+        result.current.finish(result.current.getSessionId()),
+        result.current.pause(),
+      ]);
     });
 
     // finish() alone applied: storage cleared, every field reset.
@@ -457,7 +462,10 @@ describe("useRideNavigation pause()", () => {
       // reset always applies last here (its clearActiveRideState() call
       // is issued after pause()'s own write), so the final state matches
       // a plain finish().
-      await Promise.all([result.current.pause(), result.current.finish()]);
+      await Promise.all([
+        result.current.pause(),
+        result.current.finish(result.current.getSessionId()),
+      ]);
     });
 
     expect(result.current.geolocationStatus).toBe("idle");

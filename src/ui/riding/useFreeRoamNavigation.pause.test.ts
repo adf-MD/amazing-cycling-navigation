@@ -5,6 +5,10 @@ import type { GeolocationFix } from "../../platform/geolocation.ts";
 import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
 import { db } from "../../storage/db.ts";
 import {
+  OWNED_FREE_ROAM_SESSION_ID,
+  seedOwnedFreeRoamSession,
+} from "../../test/freeRoamSession.ts";
+import {
   getActiveRideState,
   setActiveRideState,
 } from "../../storage/rideStateRepository.ts";
@@ -33,6 +37,8 @@ const LATER_FIX: GeolocationFix = {
 beforeEach(async () => {
   await db.routes.clear();
   await db.rideState.clear();
+  // App stores the owned session before the screen mounts (item 140).
+  await seedOwnedFreeRoamSession();
 });
 
 afterEach(() => {
@@ -55,6 +61,7 @@ describe("useFreeRoamNavigation pause()", () => {
     };
     const { result } = renderHook(() =>
       useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
         geolocationSource: fake.source,
         getPersistableSnapshot: () => snapshot,
       }),
@@ -99,7 +106,10 @@ describe("useFreeRoamNavigation pause()", () => {
   it("the stored row remains present and resumable after a successful pause", async () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -127,7 +137,8 @@ describe("useFreeRoamNavigation pause()", () => {
     await setActiveRideState(
       toStoredFreeRoamState(
         "2026-01-01T00:00:00.000Z",
-        null,
+        // App's own row for the owned session (backlog item 140).
+        OWNED_FREE_ROAM_SESSION_ID,
         null,
         {
           mode: "overview",
@@ -142,7 +153,10 @@ describe("useFreeRoamNavigation pause()", () => {
     );
 
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -170,7 +184,10 @@ describe("useFreeRoamNavigation pause()", () => {
   it("preserves the wake-lock preference", async () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -202,7 +219,10 @@ describe("useFreeRoamNavigation pause()", () => {
   it("a storage rejection leaves the watch and session fully live and permits a retry", async () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -241,7 +261,10 @@ describe("useFreeRoamNavigation pause()", () => {
   it("duplicate concurrent pause() calls cannot double-write or double-stop", async () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -268,7 +291,10 @@ describe("useFreeRoamNavigation pause()", () => {
   it("late callbacks from the stopped generation are ignored", async () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -295,7 +321,10 @@ describe("useFreeRoamNavigation pause()", () => {
   it("never calls clearActiveRideState", async () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -327,7 +356,10 @@ describe("useFreeRoamNavigation pause()", () => {
   it("pause() is blocked while finish() is already in flight", async () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -341,7 +373,10 @@ describe("useFreeRoamNavigation pause()", () => {
     });
 
     await act(async () => {
-      await Promise.all([result.current.finish(), result.current.pause()]);
+      await Promise.all([
+        result.current.finish(OWNED_FREE_ROAM_SESSION_ID),
+        result.current.pause(),
+      ]);
     });
 
     expect(await getActiveRideState()).toBeUndefined();
@@ -352,7 +387,10 @@ describe("useFreeRoamNavigation pause()", () => {
   it("a finish() called while pause() is already in flight is not blocked at the hook level (known, accepted asymmetry)", async () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -366,7 +404,10 @@ describe("useFreeRoamNavigation pause()", () => {
     });
 
     await act(async () => {
-      await Promise.all([result.current.pause(), result.current.finish()]);
+      await Promise.all([
+        result.current.pause(),
+        result.current.finish(OWNED_FREE_ROAM_SESSION_ID),
+      ]);
     });
 
     expect(result.current.geolocationStatus).toBe("idle");

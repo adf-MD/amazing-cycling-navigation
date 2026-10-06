@@ -24,6 +24,10 @@ import { useFreeRoamCamera } from "./useFreeRoamCamera.ts";
 import { useFreeRoamNavigation } from "./useFreeRoamNavigation.ts";
 
 export interface FreeRoamScreenProps {
+  /** The free-roam session App opened this screen for (backlog item 140):
+   * written, or validated on Resume, by App before mounting. Every write
+   * and End ride act only on this session. */
+  sessionId: string;
   geolocationSource?: GeolocationSource;
   mapFactory?: MapFactory;
   clock?: Clock;
@@ -37,6 +41,12 @@ export interface FreeRoamScreenProps {
    * clears its own ride-content selection in response, which is what
    * actually unmounts this screen and shows the empty Ride launcher again. */
   onRideFinalized?: () => void;
+  /** Called instead of onRideFinalized when End ride found this session
+   * already ended or replaced elsewhere, or when the screen's restore
+   * found it gone (backlog item 140): nothing was deleted or written, the
+   * watch is stopped, and the caller hands back to the Ride launcher.
+   * Called at most once. */
+  onSessionGone?: () => void;
   /** Called once a successful Pause (backlog item 55) has fully completed —
    * mirrors RidingScreen.tsx's identically-named/shaped prop exactly,
    * including the "storage retained, only the watch stopped, callback fires
@@ -111,12 +121,14 @@ function formatGeolocationError(translator: Translator, error: GeolocationError)
  * grow an approximation of).
  */
 export function FreeRoamScreen({
+  sessionId,
   geolocationSource,
   mapFactory,
   clock = systemClock,
   wakeLockSource,
   onRidingActiveChange,
   onRideFinalized,
+  onSessionGone,
   onRidePaused,
 }: FreeRoamScreenProps) {
   const translator = useTranslate();
@@ -132,7 +144,11 @@ export function FreeRoamScreen({
   }>({ cameraState: DEFAULT_CAMERA_STATE, lastReliableBearingDegrees: null });
   const getPersistableSnapshot = useCallback(() => persistableSnapshotRef.current, []);
 
-  const nav = useFreeRoamNavigation({ geolocationSource, clock, getPersistableSnapshot });
+  const nav = useFreeRoamNavigation({
+    sessionId,
+    geolocationSource,
+    getPersistableSnapshot,
+  });
   const camera = useFreeRoamCamera({
     currentFix: nav.currentFix,
     isStale: nav.isStale,
@@ -240,14 +256,43 @@ export function FreeRoamScreen({
   const [pauseError, setPauseError] = useState<string | null>(null);
   const isPauseActionPendingRef = useRef(false);
 
-  const performFinalizeRide = async () => {
+  // Reports, at most once, that this session is gone (backlog item 140) —
+  // found so by End ride or by the restore read.
+  const sessionGoneReportedRef = useRef(false);
+  const reportSessionGone = useCallback(() => {
+    if (sessionGoneReportedRef.current) return;
+    sessionGoneReportedRef.current = true;
+    try {
+      onSessionGone?.();
+    } catch (callbackError) {
+      logError("free-roam-session-gone-callback", callbackError);
+    }
+  }, [onSessionGone]);
+  useEffect(() => {
+    if (nav.sessionGone) reportSessionGone();
+  }, [nav.sessionGone, reportSessionGone]);
+
+  // `expectedSessionId` is the session End ride's confirmation was opened
+  // for (backlog item 140); only that session is cleared.
+  const performFinalizeRide = async (expectedSessionId: string | null) => {
     // Cross-guard with Pause — see isPauseActionPendingRef's own comment.
     if (isFinalizeActionPendingRef.current || isPauseActionPendingRef.current) return;
     isFinalizeActionPendingRef.current = true;
     setIsFinalizing(true);
     setFinalizeError(null);
     try {
-      await nav.finish();
+      const outcome = await nav.finish(expectedSessionId);
+      if (outcome === "ignored") {
+        setIsEndRideConfirmOpen(false);
+        return;
+      }
+      if (outcome === "session-gone") {
+        // Nothing was deleted and nothing is reported as ended; the watch
+        // has stopped, and the caller hands back to the Ride launcher.
+        setIsEndRideConfirmOpen(false);
+        reportSessionGone();
+        return;
+      }
       camera.resetCamera();
       setIsEndRideConfirmOpen(false);
       // Finalisation has now fully succeeded — storage cleared and this
@@ -321,9 +366,16 @@ export function FreeRoamScreen({
     trigger.focus();
   });
 
+  // The session End ride's open confirmation was opened for (backlog item
+  // 140), captured as it opens.
+  const [endRideConfirmSessionId, setEndRideConfirmSessionId] = useState<string | null>(
+    null,
+  );
+
   const handleEndRideClick = () => {
     if (isEndRideConfirmOpen || isFinalizeActionPendingRef.current) return;
     setFinalizeError(null);
+    setEndRideConfirmSessionId(nav.getSessionId());
     setIsEndRideConfirmOpen(true);
   };
 
@@ -350,7 +402,7 @@ export function FreeRoamScreen({
           confirmDisabled={isFinalizing}
           cancelDisabled={isFinalizing}
           onConfirm={() => {
-            void performFinalizeRide();
+            void performFinalizeRide(endRideConfirmSessionId);
           }}
           onCancel={handleEndRideCancel}
         />

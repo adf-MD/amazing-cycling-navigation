@@ -12,6 +12,7 @@ import {
   setActiveRideState,
 } from "../../storage/rideStateRepository.ts";
 import * as rideStateRepository from "../../storage/rideStateRepository.ts";
+import type { IdentifiedStoredRideState } from "../../storage/rideStateRepository.ts";
 import * as planningPreferencesRepository from "../../storage/planningPreferencesRepository.ts";
 import * as confirmationRevealScroll from "../shared/confirmationRevealScroll.ts";
 import * as guardModule from "../shared/operationInteractionGuard.ts";
@@ -2391,7 +2392,7 @@ describe("RidingScreen", () => {
       await seedResumableRideState();
       let rejectClear: ((reason?: unknown) => void) | undefined;
       const clearSpy = vi
-        .spyOn(rideStateRepository, "clearActiveRideState")
+        .spyOn(rideStateRepository, "clearActiveRideStateIfSession")
         .mockReturnValue(
           new Promise((_resolve, reject) => {
             rejectClear = reject;
@@ -4451,11 +4452,14 @@ describe("RidingScreen", () => {
     });
 
     it("a deliberately deferred restoration promise blocks auto-start until it resolves, then starts exactly one watch and requests Follow once", async () => {
-      let resolveRead!: (value: StoredRideState | undefined) => void;
-      const deferred = new Promise<StoredRideState | undefined>((resolve) => {
+      let resolveRead!: (value: IdentifiedStoredRideState | undefined) => void;
+      const deferred = new Promise<IdentifiedStoredRideState | undefined>((resolve) => {
         resolveRead = resolve;
       });
-      vi.spyOn(rideStateRepository, "getActiveRideState").mockReturnValueOnce(deferred);
+      vi.spyOn(
+        rideStateRepository,
+        "getActiveRideStateWithSessionId",
+      ).mockReturnValueOnce(deferred);
 
       const stub = buildStubGeolocationSource();
       const map = buildStubMapFactory();
@@ -4476,7 +4480,7 @@ describe("RidingScreen", () => {
       expect(screen.queryByRole("button", { name: "Resume ride" })).toBeNull();
       expect(screen.queryByRole("button", { name: "Start riding" })).toBeNull();
 
-      resolveRead(RESUMABLE_ROW);
+      resolveRead({ ...RESUMABLE_ROW, sessionId: "session-1" });
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
@@ -4486,9 +4490,10 @@ describe("RidingScreen", () => {
 
     it("a restoration rejection shows a retryable error, starts no watch, preserves the saved row, and completes the same resume intent once retried", async () => {
       await setActiveRideState(RESUMABLE_ROW);
-      vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
-        new Error("boom"),
-      );
+      vi.spyOn(
+        rideStateRepository,
+        "getActiveRideStateWithSessionId",
+      ).mockRejectedValueOnce(new Error("boom"));
 
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
@@ -4517,9 +4522,10 @@ describe("RidingScreen", () => {
 
     it("Back to Ride options from the restoration-error state returns to the launcher without starting GPS", async () => {
       await setActiveRideState(RESUMABLE_ROW);
-      vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
-        new Error("boom"),
-      );
+      vi.spyOn(
+        rideStateRepository,
+        "getActiveRideStateWithSessionId",
+      ).mockRejectedValueOnce(new Error("boom"));
 
       const user = userEvent.setup();
       const onReturnToRideLauncher = vi.fn();
@@ -4715,11 +4721,14 @@ describe("RidingScreen", () => {
     });
 
     it("reports a consumed resume intent with its own token, and never while restoration is still deferred (item 131)", async () => {
-      let resolveRead!: (value: StoredRideState | undefined) => void;
-      const deferred = new Promise<StoredRideState | undefined>((resolve) => {
+      let resolveRead!: (value: IdentifiedStoredRideState | undefined) => void;
+      const deferred = new Promise<IdentifiedStoredRideState | undefined>((resolve) => {
         resolveRead = resolve;
       });
-      vi.spyOn(rideStateRepository, "getActiveRideState").mockReturnValueOnce(deferred);
+      vi.spyOn(
+        rideStateRepository,
+        "getActiveRideStateWithSessionId",
+      ).mockReturnValueOnce(deferred);
       const stub = buildStubGeolocationSource();
       const onResumeIntentHandled = vi.fn();
       render(
@@ -4735,7 +4744,7 @@ describe("RidingScreen", () => {
       expect(await screen.findByText(/resuming your ride/i)).toBeInTheDocument();
       expect(onResumeIntentHandled).not.toHaveBeenCalled();
 
-      resolveRead(RESUMABLE_ROW);
+      resolveRead({ ...RESUMABLE_ROW, sessionId: "session-1" });
       await screen.findByRole("button", { name: "Pause" });
       expect(stub.watchPositionSpy).toHaveBeenCalledOnce();
       expect(onResumeIntentHandled).toHaveBeenCalled();
@@ -4744,9 +4753,10 @@ describe("RidingScreen", () => {
 
     it("does not report a resume intent while restoration has failed, and reports it once Retry succeeds (item 131)", async () => {
       await setActiveRideState(RESUMABLE_ROW);
-      vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
-        new Error("boom"),
-      );
+      vi.spyOn(
+        rideStateRepository,
+        "getActiveRideStateWithSessionId",
+      ).mockRejectedValueOnce(new Error("boom"));
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
       const onResumeIntentHandled = vi.fn();
@@ -4905,9 +4915,12 @@ describe("RidingScreen", () => {
     }
 
     it("while the restoration read is pending, shows Restoring your unfinished ride and holds back every control, then shows the paused panel without starting a watch", async () => {
-      let resolveRead!: (value: StoredRideState | undefined) => void;
-      vi.spyOn(rideStateRepository, "getActiveRideState").mockReturnValueOnce(
-        new Promise<StoredRideState | undefined>((resolve) => {
+      let resolveRead!: (value: IdentifiedStoredRideState | undefined) => void;
+      vi.spyOn(
+        rideStateRepository,
+        "getActiveRideStateWithSessionId",
+      ).mockReturnValueOnce(
+        new Promise<IdentifiedStoredRideState | undefined>((resolve) => {
           resolveRead = resolve;
         }),
       );
@@ -4928,7 +4941,7 @@ describe("RidingScreen", () => {
       await expectNoWatch(stub.watchPositionSpy);
 
       await act(async () => {
-        resolveRead(STORED_ROW);
+        resolveRead({ ...STORED_ROW, sessionId: "session-1" });
         await Promise.resolve();
       });
 
@@ -4947,9 +4960,10 @@ describe("RidingScreen", () => {
 
     it("a failed restoration shows the restore alert with Retry and Back to Ride options, and a passive Retry restores without starting a watch", async () => {
       await setActiveRideState(STORED_ROW);
-      vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
-        new Error("boom"),
-      );
+      vi.spyOn(
+        rideStateRepository,
+        "getActiveRideStateWithSessionId",
+      ).mockRejectedValueOnce(new Error("boom"));
       const user = userEvent.setup();
       const stub = buildStubGeolocationSource();
       const onReturnToRideLauncher = vi.fn();
@@ -4981,7 +4995,14 @@ describe("RidingScreen", () => {
       ).toBeInTheDocument();
       expect(screen.queryByRole("alert")).toBeNull();
       await expectNoWatch(stub.watchPositionSpy);
-      expect(await getActiveRideState()).toEqual(STORED_ROW);
+      // Preserved, apart from the identity the restore's read gives a row
+      // stored without one (backlog item 140).
+      const preserved = await getActiveRideState();
+      expect(typeof preserved?.sessionId).toBe("string");
+      expect({ ...preserved, sessionId: undefined }).toEqual({
+        ...STORED_ROW,
+        sessionId: undefined,
+      });
     });
 
     it("finding no stored row, or another route's row, reports the missing session once and never offers Start riding", async () => {

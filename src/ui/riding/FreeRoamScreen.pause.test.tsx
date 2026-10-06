@@ -9,8 +9,13 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FreeRoamScreen } from "./FreeRoamScreen.tsx";
 import { db } from "../../storage/db.ts";
+import {
+  OWNED_FREE_ROAM_SESSION_ID,
+  seedOwnedFreeRoamSession,
+} from "../../test/freeRoamSession.ts";
 import { getActiveRideState } from "../../storage/rideStateRepository.ts";
 import * as rideStateRepository from "../../storage/rideStateRepository.ts";
+import type { ConditionalRideStateClearResult } from "../../storage/rideStateRepository.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
 import { buildFakeWakeLockSource } from "../../test/fixtures/wakeLockSource.ts";
@@ -55,6 +60,8 @@ function createMockMapFactory(): { factory: MapFactory } {
 
 beforeEach(async () => {
   await db.rideState.clear();
+  // App stores the owned session before mounting the screen (item 140).
+  await seedOwnedFreeRoamSession();
 });
 
 afterEach(() => {
@@ -66,6 +73,7 @@ describe("FreeRoamScreen Pause (backlog item 55)", () => {
   it("shows Pause with the title 'Free roam' immediately — free roam auto-starts, no pre-ride idle state", () => {
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={buildFakeGeolocationSource().source}
         mapFactory={createMockMapFactory().factory}
       />,
@@ -81,6 +89,7 @@ describe("FreeRoamScreen Pause (backlog item 55)", () => {
     const user = userEvent.setup();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={buildFakeGeolocationSource().source}
         mapFactory={createMockMapFactory().factory}
       />,
@@ -96,6 +105,7 @@ describe("FreeRoamScreen Pause (backlog item 55)", () => {
     const onRidePaused = vi.fn();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={fake.source}
         mapFactory={createMockMapFactory().factory}
         onRidePaused={onRidePaused}
@@ -113,9 +123,10 @@ describe("FreeRoamScreen Pause (backlog item 55)", () => {
     });
     // Let the ordinary fix-triggered persistence effect's own write settle
     // first, so the deferred mock installed below is only ever consumed by
-    // pause()'s own explicit write.
+    // pause()'s own explicit write. App's row is stored from the start
+    // (backlog item 140), so wait for the fix itself.
     await waitFor(async () => {
-      expect(await getActiveRideState()).toBeDefined();
+      expect((await getActiveRideState())?.lastFix).not.toBeNull();
     });
 
     let resolveWrite: (() => void) | undefined;
@@ -123,8 +134,10 @@ describe("FreeRoamScreen Pause (backlog item 55)", () => {
       .spyOn(rideStateRepository, "setActiveRideState")
       .mockImplementationOnce(
         () =>
-          new Promise<void>((resolve) => {
-            resolveWrite = resolve;
+          new Promise<boolean>((resolve) => {
+            resolveWrite = () => {
+              resolve(true);
+            };
           }),
       );
 
@@ -155,6 +168,7 @@ describe("FreeRoamScreen Pause (backlog item 55)", () => {
     const onRideFinalized = vi.fn();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={fake.source}
         mapFactory={createMockMapFactory().factory}
         onRidePaused={onRidePaused}
@@ -181,6 +195,7 @@ describe("FreeRoamScreen Pause (backlog item 55)", () => {
 
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={buildFakeGeolocationSource().source}
         mapFactory={createMockMapFactory().factory}
       />,
@@ -214,6 +229,7 @@ describe("FreeRoamScreen Pause (backlog item 55)", () => {
 
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={buildFakeGeolocationSource().source}
         mapFactory={createMockMapFactory().factory}
       />,
@@ -231,6 +247,7 @@ describe("FreeRoamScreen Pause (backlog item 55)", () => {
     const user = userEvent.setup();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={buildFakeGeolocationSource().source}
         mapFactory={createMockMapFactory().factory}
       />,
@@ -249,15 +266,21 @@ describe("FreeRoamScreen Pause (backlog item 55)", () => {
   it("mutual exclusion: Pause is disabled while an End-ride finalisation is genuinely in flight", async () => {
     const user = userEvent.setup();
     let resolveClear: (() => void) | undefined;
-    vi.spyOn(rideStateRepository, "clearActiveRideState").mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveClear = resolve;
+    // Held, then released through to the real conditional clear, so the
+    // finalisation's success shows in storage (backlog item 140).
+    const realClear = rideStateRepository.clearActiveRideStateIfSession;
+    vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession").mockImplementationOnce(
+      (sessionId) =>
+        new Promise<ConditionalRideStateClearResult>((resolve) => {
+          resolveClear = () => {
+            resolve(realClear(sessionId));
+          };
         }),
     );
 
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={buildFakeGeolocationSource().source}
         mapFactory={createMockMapFactory().factory}
       />,
@@ -290,13 +313,16 @@ describe("FreeRoamScreen Pause (backlog item 55)", () => {
     let resolveWrite: (() => void) | undefined;
     vi.spyOn(rideStateRepository, "setActiveRideState").mockImplementationOnce(
       () =>
-        new Promise<void>((resolve) => {
-          resolveWrite = resolve;
+        new Promise<boolean>((resolve) => {
+          resolveWrite = () => {
+            resolve(true);
+          };
         }),
     );
 
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={buildFakeGeolocationSource().source}
         mapFactory={createMockMapFactory().factory}
       />,
@@ -319,6 +345,7 @@ describe("FreeRoamScreen Pause (backlog item 55)", () => {
     const fakeWakeLock = buildFakeWakeLockSource();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={buildFakeGeolocationSource().source}
         mapFactory={createMockMapFactory().factory}
         wakeLockSource={fakeWakeLock.source}

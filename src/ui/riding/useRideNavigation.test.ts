@@ -23,6 +23,7 @@ import {
   setActiveRideState,
 } from "../../storage/rideStateRepository.ts";
 import * as rideStateRepository from "../../storage/rideStateRepository.ts";
+import type { IdentifiedStoredRideState } from "../../storage/rideStateRepository.ts";
 import { DEFAULT_ELEVATION_VIEW_MODE } from "../../navigation/upcomingElevation.ts";
 import { OFF_ROUTE_BASE_METRES } from "../../navigation/offRoute.ts";
 import { getRecentErrors } from "../../platform/errorLog.ts";
@@ -591,7 +592,7 @@ describe("useRideNavigation finish()", () => {
     expect(await getActiveRideState()).toBeDefined();
 
     await act(async () => {
-      await result.current.finish();
+      await result.current.finish(result.current.getSessionId());
     });
 
     expect(await getActiveRideState()).toBeUndefined();
@@ -625,12 +626,12 @@ describe("useRideNavigation finish()", () => {
     });
 
     const clearSpy = vi
-      .spyOn(rideStateRepository, "clearActiveRideState")
+      .spyOn(rideStateRepository, "clearActiveRideStateIfSession")
       .mockRejectedValueOnce(new Error("boom"));
 
     await expect(
       act(async () => {
-        await result.current.finish();
+        await result.current.finish(result.current.getSessionId());
       }),
     ).rejects.toThrow("boom");
 
@@ -669,10 +670,13 @@ describe("useRideNavigation finish()", () => {
       await Promise.resolve();
     });
 
-    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession");
 
     await act(async () => {
-      await Promise.all([result.current.finish(), result.current.finish()]);
+      await Promise.all([
+        result.current.finish(result.current.getSessionId()),
+        result.current.finish(result.current.getSessionId()),
+      ]);
     });
 
     expect(clearSpy).toHaveBeenCalledTimes(1);
@@ -696,9 +700,9 @@ describe("useRideNavigation finish()", () => {
     });
     expect(await getActiveRideState()).toBeDefined();
 
-    let finishPromise: Promise<void> = Promise.resolve();
+    let finishPromise: Promise<unknown> = Promise.resolve();
     act(() => {
-      finishPromise = result.current.finish();
+      finishPromise = result.current.finish(result.current.getSessionId());
     });
 
     // The clear's own IndexedDB transaction is still pending here — the
@@ -810,9 +814,10 @@ describe("useRideNavigation restoration lifecycle (backlog item 72)", () => {
   });
 
   it("a rejected read sets restorationStatus to error and logs, leaving every restorable field at its untouched default", async () => {
-    vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
-      new Error("boom"),
-    );
+    vi.spyOn(
+      rideStateRepository,
+      "getActiveRideStateWithSessionId",
+    ).mockRejectedValueOnce(new Error("boom"));
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
       useRideNavigation(route, { geolocationSource: fake.source }),
@@ -830,7 +835,7 @@ describe("useRideNavigation restoration lifecycle (backlog item 72)", () => {
 
   it("retryRestoration re-invokes the read and can transition error -> ready", async () => {
     const getActiveRideStateSpy = vi
-      .spyOn(rideStateRepository, "getActiveRideState")
+      .spyOn(rideStateRepository, "getActiveRideStateWithSessionId")
       .mockRejectedValueOnce(new Error("boom"));
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
@@ -857,11 +862,13 @@ describe("useRideNavigation restoration lifecycle (backlog item 72)", () => {
   });
 
   it("a cancelled-by-unmount restoration applies no state after unmount, without throwing or warning", async () => {
-    let resolveRead!: (value: StoredRideState | undefined) => void;
-    const deferred = new Promise<StoredRideState | undefined>((resolve) => {
+    let resolveRead!: (value: IdentifiedStoredRideState | undefined) => void;
+    const deferred = new Promise<IdentifiedStoredRideState | undefined>((resolve) => {
       resolveRead = resolve;
     });
-    vi.spyOn(rideStateRepository, "getActiveRideState").mockReturnValueOnce(deferred);
+    vi.spyOn(rideStateRepository, "getActiveRideStateWithSessionId").mockReturnValueOnce(
+      deferred,
+    );
 
     const fake = buildFakeGeolocationSource();
     const { result, unmount } = renderHook(() =>
@@ -873,7 +880,7 @@ describe("useRideNavigation restoration lifecycle (backlog item 72)", () => {
 
     // Resolving after unmount must not throw — the effect's own `cancelled`
     // guard silently no-ops every setter it would otherwise call.
-    resolveRead(RESUMABLE_ROW);
+    resolveRead({ ...RESUMABLE_ROW, sessionId: "session-1" });
     await act(async () => {
       await Promise.resolve();
     });
@@ -1322,7 +1329,7 @@ describe("useRideNavigation session identity (backlog item 140)", () => {
       result.current.start();
     });
     await act(async () => {
-      await result.current.finish();
+      await result.current.finish(result.current.getSessionId());
     });
     expect(await getActiveRideState()).toBeUndefined();
     act(() => {
@@ -1360,7 +1367,7 @@ describe("useRideNavigation session identity (backlog item 140)", () => {
     expect((await getActiveRideState())?.sessionId).toBe("session-restored");
   });
 
-  it("a restored row without an identity stays without one: only the Ride launcher assigns it", async () => {
+  it("a restored row without an identity is given one in the restore's own read, and the ride's writes carry it", async () => {
     await setActiveRideState(STORED_ROW);
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
@@ -1369,6 +1376,9 @@ describe("useRideNavigation session identity (backlog item 140)", () => {
     await waitFor(() => {
       expect(result.current.restoredForThisRoute).toBe(true);
     });
+    const assigned = (await getActiveRideState())?.sessionId;
+    expect(assigned).toEqual(expect.any(String));
+    expect(result.current.getSessionId()).toBe(assigned);
 
     act(() => {
       result.current.start();
@@ -1381,7 +1391,221 @@ describe("useRideNavigation session identity (backlog item 140)", () => {
     });
 
     const stored = await getActiveRideState();
-    expect(stored).not.toHaveProperty("sessionId");
+    expect(stored?.sessionId).toBe(assigned);
     expect(stored?.startedAt).toBe(STORED_ROW.startedAt);
+  });
+
+  for (const [label, replace] of [
+    ["missing", () => db.rideState.clear()],
+    [
+      "replaced by a newer ride on the same route",
+      () =>
+        setActiveRideState({
+          ...STORED_ROW,
+          startedAt: "2026-01-01T09:00:00.000Z",
+          sessionId: "session-newer-same-route",
+        }),
+    ],
+  ] as const) {
+    it(`End ride for a stored session ${label} elsewhere deletes nothing, stops the watch and retires: no later fix or Pause writes`, async () => {
+      const fake = buildFakeGeolocationSource();
+      const { result } = renderHook(() =>
+        useRideNavigation(route, { geolocationSource: fake.source }),
+      );
+      await waitFor(() => {
+        expect(result.current.restorationStatus).toBe("ready");
+      });
+      act(() => {
+        result.current.start();
+      });
+      act(() => {
+        fake.watches[0]?.emitFix(SAMPLE_FIX);
+      });
+      await waitFor(async () => {
+        expect(await storedFixTimestamp()).toBe(SAMPLE_FIX.timestampMs);
+      });
+      const ownSessionId = result.current.getSessionId();
+      await replace();
+      const newer = await getActiveRideState();
+      const writeSpy = vi.spyOn(rideStateRepository, "setActiveRideState");
+
+      let outcome: unknown;
+      await act(async () => {
+        outcome = await result.current.finish(ownSessionId);
+      });
+
+      expect(outcome).toBe("session-gone");
+      expect(fake.watches[0]?.disposed).toBe(true);
+      expect(result.current.geolocationStatus).toBe("idle");
+      act(() => {
+        fake.watches[0]?.emitFix(LATER_FIX);
+      });
+      act(() => {
+        result.current.start();
+      });
+      await act(async () => {
+        await result.current.pause();
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(fake.watches).toHaveLength(1);
+      expect(writeSpy).not.toHaveBeenCalled();
+      await expect(getActiveRideState()).resolves.toEqual(newer);
+    });
+  }
+
+  it("ending a ride before its first fix, while another session is stored, deletes nothing: that session was never this ride's", async () => {
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+    await waitFor(() => {
+      expect(result.current.restorationStatus).toBe("ready");
+    });
+    act(() => {
+      result.current.start();
+    });
+    const unrelated = {
+      ...STORED_ROW,
+      routeId: "another-route",
+      sessionId: "session-unrelated",
+    };
+    await setActiveRideState(unrelated);
+
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.finish(result.current.getSessionId());
+    });
+
+    expect(outcome).toBe("ended");
+    expect(fake.watches[0]?.disposed).toBe(true);
+    await expect(getActiveRideState()).resolves.toEqual(unrelated);
+  });
+
+  it("a first write still held before its transaction when End begins is cancelled: the ride was never stored, so End ends it and nothing is written or deleted", async () => {
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+    await waitFor(() => {
+      expect(result.current.restorationStatus).toBe("ready");
+    });
+    let releaseWrite: (() => void) | undefined;
+    window.__acnE2eRideStateWriteDelay = () =>
+      new Promise<void>((resolve) => {
+        releaseWrite = resolve;
+      });
+    try {
+      act(() => {
+        result.current.start();
+      });
+      act(() => {
+        fake.watches[0]?.emitFix(SAMPLE_FIX);
+      });
+      await waitFor(() => {
+        expect(releaseWrite).toBeDefined();
+      });
+    } finally {
+      delete window.__acnE2eRideStateWriteDelay;
+    }
+    // Another window stores its own session meanwhile.
+    const unrelated = { ...STORED_ROW, sessionId: "session-other-window" };
+    await setActiveRideState(unrelated);
+
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.finish(result.current.getSessionId());
+    });
+    expect(outcome).toBe("ended");
+
+    await act(async () => {
+      releaseWrite?.();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    await expect(getActiveRideState()).resolves.toEqual(unrelated);
+  });
+
+  it("a write held before its transaction when a refused End begins is never issued: the newer session stays unchanged", async () => {
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+    await waitFor(() => {
+      expect(result.current.restorationStatus).toBe("ready");
+    });
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(SAMPLE_FIX);
+    });
+    await waitFor(async () => {
+      expect(await storedFixTimestamp()).toBe(SAMPLE_FIX.timestampMs);
+    });
+    const ownSessionId = result.current.getSessionId();
+
+    let releaseWrite: (() => void) | undefined;
+    window.__acnE2eRideStateWriteDelay = () =>
+      new Promise<void>((resolve) => {
+        releaseWrite = resolve;
+      });
+    try {
+      act(() => {
+        fake.watches[0]?.emitFix(LATER_FIX);
+      });
+      await waitFor(() => {
+        expect(releaseWrite).toBeDefined();
+      });
+    } finally {
+      delete window.__acnE2eRideStateWriteDelay;
+    }
+    const newer = {
+      ...STORED_ROW,
+      startedAt: "2026-01-01T09:00:00.000Z",
+      sessionId: "session-newer-same-route",
+    };
+    await setActiveRideState(newer);
+
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.finish(ownSessionId);
+    });
+    expect(outcome).toBe("session-gone");
+
+    await act(async () => {
+      releaseWrite?.();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    await expect(getActiveRideState()).resolves.toEqual(newer);
+  });
+
+  it("a confirmation captured for an identity the hook no longer holds does nothing", async () => {
+    const fake = buildFakeGeolocationSource();
+    const { result } = renderHook(() =>
+      useRideNavigation(route, { geolocationSource: fake.source }),
+    );
+    await waitFor(() => {
+      expect(result.current.restorationStatus).toBe("ready");
+    });
+    act(() => {
+      result.current.start();
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(SAMPLE_FIX);
+    });
+    await waitFor(async () => {
+      expect(await storedFixTimestamp()).toBe(SAMPLE_FIX.timestampMs);
+    });
+    const stored = await getActiveRideState();
+
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.finish("session-from-an-older-confirmation");
+    });
+
+    expect(outcome).toBe("ignored");
+    expect(result.current.geolocationStatus).toBe("watching");
+    await expect(getActiveRideState()).resolves.toEqual(stored);
   });
 });

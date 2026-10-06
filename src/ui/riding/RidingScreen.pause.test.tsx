@@ -10,6 +10,7 @@ import { RidingScreen } from "./RidingScreen.tsx";
 import { db } from "../../storage/db.ts";
 import { getActiveRideState } from "../../storage/rideStateRepository.ts";
 import * as rideStateRepository from "../../storage/rideStateRepository.ts";
+import type { ConditionalRideStateClearResult } from "../../storage/rideStateRepository.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import type { Coordinate, PlannedRoute } from "../../domain/types.ts";
 import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry.ts";
@@ -185,9 +186,9 @@ describe("RidingScreen Pause (backlog item 55)", () => {
       .spyOn(rideStateRepository, "setActiveRideState")
       .mockImplementationOnce(
         () =>
-          new Promise<void>((resolve) => {
+          new Promise<boolean>((resolve) => {
             resolveWrite = () => {
-              resolve();
+              resolve(true);
             };
           }),
       );
@@ -356,10 +357,12 @@ describe("RidingScreen Pause (backlog item 55)", () => {
     const fake = buildFakeGeolocationSource();
 
     let resolveClear: (() => void) | undefined;
-    vi.spyOn(rideStateRepository, "clearActiveRideState").mockImplementationOnce(
+    vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession").mockImplementationOnce(
       () =>
-        new Promise<void>((resolve) => {
-          resolveClear = resolve;
+        new Promise<ConditionalRideStateClearResult>((resolve) => {
+          resolveClear = () => {
+            resolve("cleared");
+          };
         }),
     );
 
@@ -421,8 +424,10 @@ describe("RidingScreen Pause (backlog item 55)", () => {
     let resolveWrite: (() => void) | undefined;
     vi.spyOn(rideStateRepository, "setActiveRideState").mockImplementationOnce(
       () =>
-        new Promise<void>((resolve) => {
-          resolveWrite = resolve;
+        new Promise<boolean>((resolve) => {
+          resolveWrite = () => {
+            resolve(true);
+          };
         }),
     );
 

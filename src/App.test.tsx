@@ -1066,7 +1066,7 @@ describe("App — Ride launcher session recovery", () => {
   it("a resumable session (never selectedRoute) drives the launcher's summary, reached through the paused screen's Back to Ride options, and its Resume ride opens it directly into active tracking (backlog items 72 and 132)", async () => {
     const user = userEvent.setup();
     const watchPositionSpy = stubGeolocationWatch();
-    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession");
     render(<App mapFactory={buildNoopMapFactory()} />);
 
     await importFixture(user, "Route A.gpx");
@@ -1181,7 +1181,7 @@ describe("App — Ride launcher session recovery", () => {
     await screen.findByRole("button", { name: "Pause" });
 
     const clearSpy = vi
-      .spyOn(rideStateRepository, "clearActiveRideState")
+      .spyOn(rideStateRepository, "clearActiveRideStateIfSession")
       .mockRejectedValueOnce(new Error("boom"));
 
     await user.click(screen.getByRole("button", { name: "End ride" }));
@@ -1236,11 +1236,15 @@ describe("App — first Ride entry after a cold start (item 132)", () => {
     cameraZoom: 15.5,
   } as const;
 
+  // A current-format row, with the identity every session has had since
+  // item 140; rows without one are covered in RidingLauncher.test.tsx and
+  // rideStateRepository.test.ts.
   function routeRow(routeId: string) {
     return {
       id: "active" as const,
       routeId,
       startedAt: "2026-01-01T08:00:00.000Z",
+      sessionId: "session-seeded",
       lastFix: { coordinate: [0, 51] as const, accuracyMetres: 6, timestampMs: 1000 },
       lastMatchedPointIndex: 2,
       matchedDistanceFromStartMetres: 40,
@@ -1407,11 +1411,12 @@ describe("App — first Ride entry after a cold start (item 132)", () => {
     const { watchPositionSpy } = stubGeolocation();
     render(<App mapFactory={buildNoopMapFactory()} />);
     const importedRoute = await seedPausedRoute(user);
-    // The screen's restore is the first getActiveRideState read: since item
-    // 140 the launcher reads through getActiveRideStateWithSessionId.
-    vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
-      new Error("boom"),
-    );
+    // The launcher's read comes first, then the screen's restore: since
+    // item 140 both read through getActiveRideStateWithSessionId.
+    const realRead = rideStateRepository.getActiveRideStateWithSessionId;
+    vi.spyOn(rideStateRepository, "getActiveRideStateWithSessionId")
+      .mockImplementationOnce(realRead)
+      .mockRejectedValueOnce(new Error("boom"));
 
     await user.click(navButton("Ride"));
     const riding = await screen.findByRole("region", { name: "Riding" });
@@ -1558,11 +1563,12 @@ describe("App — first Ride entry after a cold start (item 132)", () => {
     const { watchPositionSpy } = stubGeolocation();
     render(<App mapFactory={buildNoopMapFactory()} />);
     await seedPausedRoute(user);
-    const realRead = rideStateRepository.getActiveRideState;
-    // The screen's restore is the first getActiveRideState read: since item
-    // 140 the launcher reads through getActiveRideStateWithSessionId.
-    vi.spyOn(rideStateRepository, "getActiveRideState").mockImplementationOnce(
-      async () => {
+    const realRead = rideStateRepository.getActiveRideStateWithSessionId;
+    // The launcher's read comes first, then the screen's restore: since
+    // item 140 both read through getActiveRideStateWithSessionId.
+    vi.spyOn(rideStateRepository, "getActiveRideStateWithSessionId")
+      .mockImplementationOnce(realRead)
+      .mockImplementationOnce(async () => {
         // Replaced elsewhere, just before the screen restores.
         await setActiveRideState({
           id: "active",
@@ -1571,8 +1577,7 @@ describe("App — first Ride entry after a cold start (item 132)", () => {
           lastFix: null,
         });
         return realRead();
-      },
-    );
+      });
 
     await user.click(navButton("Ride"));
     expect(
@@ -1792,11 +1797,12 @@ describe("App — first Ride entry after a cold start (item 132)", () => {
     const routeB = routes.find((route) => route.name === "Route B");
     if (!routeA || !routeB) throw new Error("expected Route A and Route B");
     await setActiveRideState(routeRow(routeA.id));
-    const realRead = rideStateRepository.getActiveRideState;
+    const realRead = rideStateRepository.getActiveRideStateWithSessionId;
 
-    // Routes card: the guard's read succeeds, the screen's fails.
+    // Routes card: the guard's read succeeds, the screen's fails. Since
+    // item 140 both read through getActiveRideStateWithSessionId.
     const readSpy = vi
-      .spyOn(rideStateRepository, "getActiveRideState")
+      .spyOn(rideStateRepository, "getActiveRideStateWithSessionId")
       .mockImplementationOnce(realRead)
       .mockRejectedValueOnce(new Error("boom"));
     await user.click(screen.getByRole("button", { name: "Route A" }));
@@ -1813,9 +1819,12 @@ describe("App — first Ride entry after a cold start (item 132)", () => {
     await user.click(navButton("Routes"));
     await user.click(await screen.findByRole("button", { name: "Route B" }));
     const dialog = await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
-    vi.spyOn(rideStateRepository, "getActiveRideState")
-      .mockImplementationOnce(realRead)
-      .mockRejectedValueOnce(new Error("boom"));
+    // Return's own revalidation is a plain read; the screen's restore then
+    // fails.
+    vi.spyOn(
+      rideStateRepository,
+      "getActiveRideStateWithSessionId",
+    ).mockRejectedValueOnce(new Error("boom"));
     await user.click(
       within(dialog).getByRole("button", { name: "Return to paused ride" }),
     );
@@ -2131,6 +2140,7 @@ describe("App — Free roam", () => {
       id: "active" as const,
       kind: "free-roam" as const,
       startedAt: "2026-01-01T08:00:00.000Z",
+      sessionId: "free-roam-session-seeded",
       lastFix: null,
     };
     await setActiveRideState(freeRoamRow);
@@ -2186,8 +2196,10 @@ describe("App — Free roam", () => {
     await importFixture(user, "Route A.gpx");
     const [routeA] = await db.routes.toArray();
     if (!routeA) throw new Error("expected an imported route");
+    // The guard's check reads through getActiveRideStateWithSessionId since
+    // item 140.
     const readSpy = vi
-      .spyOn(rideStateRepository, "getActiveRideState")
+      .spyOn(rideStateRepository, "getActiveRideStateWithSessionId")
       .mockRejectedValueOnce(new Error("boom"));
 
     await user.click(screen.getByRole("button", { name: "Route A" }));
@@ -2456,21 +2468,24 @@ describe("App — a launcher Resume's one-use instruction (item 131)", () => {
     const importedRoute = await seedPausedRoute(user);
 
     // Holds the screen's restoration read: once armed, the guard's own
-    // check is the first read and restoration the second.
-    const realRead = rideStateRepository.getActiveRideState;
+    // check is the first read and restoration the second (both through
+    // getActiveRideStateWithSessionId since item 140).
+    const realRead = rideStateRepository.getActiveRideStateWithSessionId;
     let armed = false;
     let readsSinceArmed = 0;
     let resolveHeld!: (value: Awaited<ReturnType<typeof realRead>>) => void;
     const held = new Promise<Awaited<ReturnType<typeof realRead>>>((resolve) => {
       resolveHeld = resolve;
     });
-    vi.spyOn(rideStateRepository, "getActiveRideState").mockImplementation(() => {
-      if (armed) {
-        readsSinceArmed += 1;
-        if (readsSinceArmed === 2) return held;
-      }
-      return realRead();
-    });
+    vi.spyOn(rideStateRepository, "getActiveRideStateWithSessionId").mockImplementation(
+      () => {
+        if (armed) {
+          readsSinceArmed += 1;
+          if (readsSinceArmed === 2) return held;
+        }
+        return realRead();
+      },
+    );
 
     // The launcher is behind the paused screen (backlog item 132); the
     // count is armed only once its summary shows, so the reads before it —
@@ -2576,7 +2591,7 @@ describe("App — Ride switch guard (item 73)", () => {
 
   it("no stored session — opening a route proceeds immediately, with no dialog and no clear", async () => {
     const user = userEvent.setup();
-    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession");
     render(<App mapFactory={buildNoopMapFactory()} />);
 
     await importFixture(user, "Route A.gpx");
@@ -2591,7 +2606,7 @@ describe("App — Ride switch guard (item 73)", () => {
   it("route A unfinished + route B opened: confirmation inside B's own card before any replacement, names A and offers Return, Cancel leaves A's exact row and screen untouched, confirming clears once then opens B idle with no watch until Start riding", async () => {
     const user = userEvent.setup();
     const watchPositionSpy = stubGeolocationWatch();
-    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession");
     render(<App mapFactory={buildNoopMapFactory()} />);
 
     await importFixture(user, "Route A.gpx");
@@ -2674,11 +2689,11 @@ describe("App — Ride switch guard (item 73)", () => {
     const scrollCallsAtOpen = scrollIntoViewMock.mock.calls.length;
 
     let resolveClear: (() => void) | undefined;
-    vi.spyOn(rideStateRepository, "clearActiveRideState").mockImplementationOnce(
+    vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession").mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           resolveClear = () => {
-            resolve(undefined);
+            resolve("cleared");
           };
         }),
     );
@@ -2697,12 +2712,12 @@ describe("App — Ride switch guard (item 73)", () => {
     expect(await screen.findByRole("heading", { name: "Route B" })).toBeInTheDocument();
   });
 
-  it("a stale launcher render exposing Start free roam is still guarded when a route session became active after hydration — clear happens before the fresh free-roam row is written and before the watch starts", async () => {
+  it("a stale launcher render exposing Start free roam is still guarded when a route session became active after hydration — the route session is replaced by the fresh free-roam row in one step, before the watch starts (item 140)", async () => {
     const user = userEvent.setup();
     const watchPositionSpy = stubGeolocationWatch();
-    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
-    const writeSpy = vi.spyOn(rideStateRepository, "setActiveRideState");
-    const readSpy = vi.spyOn(rideStateRepository, "getActiveRideState");
+    const replaceSpy = vi.spyOn(rideStateRepository, "replaceActiveRideStateIfSession");
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession");
+    const readSpy = vi.spyOn(rideStateRepository, "getActiveRideStateWithSessionId");
     render(<App mapFactory={buildNoopMapFactory()} />);
 
     await importFixture(user, "Route A.gpx");
@@ -2738,16 +2753,18 @@ describe("App — Ride switch guard (item 73)", () => {
     await waitFor(() => {
       expect(watchPositionSpy).toHaveBeenCalledOnce();
     });
-    expect(clearSpy).toHaveBeenCalledOnce();
-    // Clear happened before the fresh free-roam write, which happened
-    // before the watch started.
-    const clearOrder = clearSpy.mock.invocationCallOrder[0] ?? Infinity;
-    const writeOrder = writeSpy.mock.invocationCallOrder.find(
-      (order) => order > clearOrder,
-    );
+    // One guarded replacement of exactly the session the prompt showed —
+    // no separate clear and write — before the watch started.
+    expect(replaceSpy).toHaveBeenCalledOnce();
+    expect(replaceSpy.mock.calls[0]?.[0]).toBe(routeRow?.sessionId);
+    expect(clearSpy).not.toHaveBeenCalled();
+    const replaceOrder = replaceSpy.mock.invocationCallOrder[0] ?? Infinity;
     const watchOrder = watchPositionSpy.mock.invocationCallOrder[0] ?? -Infinity;
-    if (writeOrder === undefined) throw new Error("expected a write order");
-    expect(writeOrder).toBeLessThan(watchOrder);
+    expect(replaceOrder).toBeLessThan(watchOrder);
+    const stored = await getActiveRideState();
+    expect(stored).toMatchObject({ kind: "free-roam" });
+    expect(typeof stored?.sessionId).toBe("string");
+    expect(stored?.sessionId).not.toBe(routeRow?.sessionId);
     expect(
       await screen.findByRole("heading", { level: 1, name: "Free roam" }),
     ).toBeInTheDocument();
@@ -2767,7 +2784,7 @@ describe("App — Ride switch guard (item 73)", () => {
     const routeARow = await seedRouteRow(routeA.id);
 
     const clearSpy = vi
-      .spyOn(rideStateRepository, "clearActiveRideState")
+      .spyOn(rideStateRepository, "clearActiveRideStateIfSession")
       .mockRejectedValueOnce(new Error("boom"));
     const getRouteSpy = vi.spyOn(routesRepository, "getRoute");
     const routeBRecordBefore = await db.routes.get(routeB.id);
@@ -2808,10 +2825,10 @@ describe("App — Ride switch guard (item 73)", () => {
     expect(await db.routes.get(routeB.id)).toEqual(routeBRecordBefore);
   });
 
-  it("a failed new free-roam write after a successful old-session clear starts no watch and reports an honest retryable state, without fabricating the old session's return", async () => {
+  it("a free-roam write that fails inside End and switch's replacement rolls back: the old session stays stored, no watch starts, and End and switch retries the same guarded replacement (item 140)", async () => {
     const user = userEvent.setup();
     const watchPositionSpy = stubGeolocationWatch();
-    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+    const replaceSpy = vi.spyOn(rideStateRepository, "replaceActiveRideStateIfSession");
     render(<App mapFactory={buildNoopMapFactory()} />);
 
     await importFixture(user, "Route A.gpx");
@@ -2824,28 +2841,30 @@ describe("App — Ride switch guard (item 73)", () => {
     });
     // Storage changes after hydration (as in the stale-launcher test
     // above) so the guard has a route conflict to resolve.
-    await seedRouteRow(importedRoute.id);
-
-    const writeSpy = vi
-      .spyOn(rideStateRepository, "setActiveRideState")
-      .mockRejectedValueOnce(new Error("boom"));
+    const routeRow = await seedRouteRow(importedRoute.id);
 
     await user.click(startFreeRoamButton);
     const dialog = await screen.findByRole("dialog");
+    // The replacement's own write fails inside its transaction.
+    const putSpy = vi
+      .spyOn(db.rideState, "put")
+      .mockRejectedValueOnce(new Error("synthetic write failure"));
     await user.click(within(dialog).getByRole("button", { name: "End and switch" }));
 
     expect(
-      await screen.findByText(/free roam could not be started on this device/i),
+      await within(dialog).findByText(
+        "This unfinished ride could not be ended on this device. Try again.",
+      ),
     ).toBeInTheDocument();
     expect(watchPositionSpy).not.toHaveBeenCalled();
-    // The old route session was genuinely ended — not fabricated back —
-    // and the write failure left nothing else in its place.
-    expect(await getActiveRideState()).toBeUndefined();
+    // The transaction aborted: the old route session is still stored,
+    // exactly as it was, and nothing replaced it.
+    expect(await getActiveRideState()).toEqual(routeRow);
+    putSpy.mockRestore();
 
-    // mockRejectedValueOnce's one-shot rejection is now exhausted — the
-    // retry falls through to the real implementation, so leave the spy
-    // attached (not .mockRestore()'d) to keep its call count meaningful.
-    await user.click(screen.getByRole("button", { name: "Try again" }));
+    // The retry is End and switch again — the same guarded replacement of
+    // the same session.
+    await user.click(within(dialog).getByRole("button", { name: "End and switch" }));
 
     await waitFor(() => {
       expect(watchPositionSpy).toHaveBeenCalledOnce();
@@ -2853,34 +2872,25 @@ describe("App — Ride switch guard (item 73)", () => {
     expect(
       await screen.findByRole("heading", { level: 1, name: "Free roam" }),
     ).toBeInTheDocument();
-    // Exactly one original clear across the whole failure+retry sequence —
-    // Try again retries only the write step, never a second clear.
-    expect(clearSpy).toHaveBeenCalledOnce();
-    // Exactly two write attempts: the failed one, then the successful retry.
-    expect(writeSpy).toHaveBeenCalledTimes(2);
-    const [clearOrder] = clearSpy.mock.invocationCallOrder;
-    if (clearOrder === undefined) throw new Error("expected one clear call");
-    expect(writeSpy.mock.invocationCallOrder.every((order) => order > clearOrder)).toBe(
-      true,
-    );
-    // GPS starts only after the successful replacement row's own write
-    // resolves, not merely after some write attempt happens.
-    const [, successfulWriteOrder] = writeSpy.mock.invocationCallOrder;
+    expect(replaceSpy).toHaveBeenCalledTimes(2);
+    expect(replaceSpy.mock.calls.map(([sessionId]) => sessionId)).toEqual([
+      routeRow?.sessionId,
+      routeRow?.sessionId,
+    ]);
+    const [, replacedOrder] = replaceSpy.mock.invocationCallOrder;
     const [watchOrder] = watchPositionSpy.mock.invocationCallOrder;
-    if (successfulWriteOrder === undefined) throw new Error("expected two write calls");
-    if (watchOrder === undefined) throw new Error("expected the watch to have started");
-    expect(successfulWriteOrder).toBeLessThan(watchOrder);
-    // The replacement row itself, read directly, is a genuine free-roam
-    // row, not a stale leftover.
+    if (replacedOrder === undefined || watchOrder === undefined) {
+      throw new Error("expected the second replacement and the watch");
+    }
+    expect(replacedOrder).toBeLessThan(watchOrder);
     const finalRows = await db.rideState.toArray();
     expect(finalRows).toHaveLength(1);
     expect(finalRows[0]).toMatchObject({ kind: "free-roam" });
   });
 
-  it("an interrupted new free-roam write (never resolves) leaves the real rideState table genuinely empty — not partially written — while the dialog stays in its own busy state", async () => {
+  it("a held free-roam replacement keeps the old session stored and the dialog busy until it settles: nothing is ever half-cleared (item 140)", async () => {
     const user = userEvent.setup();
     const watchPositionSpy = stubGeolocationWatch();
-    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
     render(<App mapFactory={buildNoopMapFactory()} />);
 
     await importFixture(user, "Route A.gpx");
@@ -2891,17 +2901,13 @@ describe("App — Ride switch guard (item 73)", () => {
     const startFreeRoamButton = await screen.findByRole("button", {
       name: "Start free roam",
     });
-    // Storage changes after hydration (as in the stale-launcher test above)
-    // so the guard has a route conflict to resolve.
-    await seedRouteRow(importedRoute.id);
+    const routeRow = await seedRouteRow(importedRoute.id);
 
-    // The replacement write never settles — neither resolves nor rejects —
-    // simulating an interrupted/crashed second step of the two-step
-    // clear-then-create sequence. A plain never-resolving promise schedules
-    // no timer/handle and never rejects, so this needs no fake timers and
-    // leaves nothing for Vitest/jsdom to clean up at teardown.
-    const writeSpy = vi
-      .spyOn(rideStateRepository, "setActiveRideState")
+    // The replacement never settles. A plain never-resolving promise
+    // schedules no timer/handle and never rejects, so this needs no fake
+    // timers and leaves nothing for Vitest/jsdom to clean up at teardown.
+    const replaceSpy = vi
+      .spyOn(rideStateRepository, "replaceActiveRideStateIfSession")
       // eslint-disable-next-line @typescript-eslint/no-empty-function -- deliberately never settles
       .mockImplementationOnce(() => new Promise(() => {}));
 
@@ -2909,18 +2915,12 @@ describe("App — Ride switch guard (item 73)", () => {
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "End and switch" }));
 
-    expect(await screen.findByText("Starting free roam…")).toBeInTheDocument();
-    expect(clearSpy).toHaveBeenCalledOnce();
-    expect(writeSpy).toHaveBeenCalledOnce();
-    // The real table, read directly (not a mock-call count), is genuinely
-    // empty — the clear succeeded and the stuck write never landed a row.
-    expect(await db.rideState.toArray()).toEqual([]);
-    expect(await getActiveRideState()).toBeUndefined();
+    expect(await screen.findByText("Ending your current ride…")).toBeInTheDocument();
+    expect(replaceSpy).toHaveBeenCalledOnce();
+    // Read directly: the old session is still the stored one.
+    expect(await getActiveRideState()).toEqual(routeRow);
     expect(watchPositionSpy).not.toHaveBeenCalled();
-    // The dialog reflects this stuck-but-safe state honestly — both
-    // actions stay disabled, never silently re-enabled as though nothing
-    // were wrong.
-    expect(within(dialog).getByRole("button", { name: "Starting…" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Ending…" })).toBeDisabled();
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
   });
 
@@ -2940,11 +2940,19 @@ describe("App — Ride switch guard (item 73)", () => {
     const routeARow = await seedRouteRow(routeA.id);
 
     let resolveFirstRead:
-      ((value: Awaited<ReturnType<typeof getActiveRideState>>) => void) | undefined;
+      | ((
+          value: Awaited<
+            ReturnType<typeof rideStateRepository.getActiveRideStateWithSessionId>
+          >,
+        ) => void)
+      | undefined;
     // Overrides only the FIRST call (Route B's own check) to hang; Route
     // C's later check falls through to the real implementation and reads
     // current storage directly.
-    vi.spyOn(rideStateRepository, "getActiveRideState").mockImplementationOnce(
+    vi.spyOn(
+      rideStateRepository,
+      "getActiveRideStateWithSessionId",
+    ).mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           resolveFirstRead = resolve;
@@ -2958,7 +2966,8 @@ describe("App — Ride switch guard (item 73)", () => {
 
     // Now let B's stale check resolve, deliberately last, with what a real
     // read would have returned at the time it was issued.
-    resolveFirstRead?.(routeARow);
+    if (!routeARow?.sessionId) throw new Error("expected the seeded row's identity");
+    resolveFirstRead?.({ ...routeARow, sessionId: routeARow.sessionId });
 
     // Only C's own (newer) outcome may ever be applied — inside C's own
     // card, never B's (a stale result must never reopen an older card).
@@ -3033,9 +3042,10 @@ describe("App — Ride switch guard (item 73)", () => {
     const routeB = routes.find((route) => route.name === "Route B");
     if (!routeA || !routeB) throw new Error("expected Route A and Route B");
 
-    vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
-      new Error("boom"),
-    );
+    vi.spyOn(
+      rideStateRepository,
+      "getActiveRideStateWithSessionId",
+    ).mockRejectedValueOnce(new Error("boom"));
 
     await user.click(screen.getByRole("button", { name: "Route A" }));
     const dialog = await within(getListItemByRouteId(routeA.id)).findByRole("dialog");
@@ -3083,9 +3093,10 @@ describe("App — Ride switch guard (item 73)", () => {
       name: "Start free roam",
     });
 
-    vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
-      new Error("boom"),
-    );
+    vi.spyOn(
+      rideStateRepository,
+      "getActiveRideStateWithSessionId",
+    ).mockRejectedValueOnce(new Error("boom"));
 
     await user.click(startFreeRoamButton);
     const dialog = await screen.findByRole("dialog");
@@ -3157,9 +3168,29 @@ describe("App — Ride switch guard (item 73)", () => {
       within(dialog).queryByRole("button", { name: "Return to paused ride" }),
     ).toBeNull();
 
+    // The guard's check gave the unsupported row an identity, keeping every
+    // other field, its unknown kind included (item 140).
+    const identified = await getActiveRideState();
+    expect(typeof identified?.sessionId).toBe("string");
+    expect({ ...identified, sessionId: undefined }).toEqual({
+      ...unsupportedRow,
+      sessionId: undefined,
+    });
+
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    expect(await getActiveRideState()).toEqual(unsupportedRow);
+    expect(await getActiveRideState()).toEqual(identified);
     expect(screen.queryByRole("heading", { name: "Route B" })).toBeNull();
+
+    // Discard and continue clears exactly that session, then opens Route B.
+    await user.click(screen.getByRole("button", { name: "Route B" }));
+    const discardDialog = await within(getListItemByRouteId(routeB.id)).findByRole(
+      "dialog",
+    );
+    await user.click(
+      within(discardDialog).getByRole("button", { name: "Discard and continue" }),
+    );
+    expect(await screen.findByRole("heading", { name: "Route B" })).toBeInTheDocument();
+    expect(await getActiveRideState()).toBeUndefined();
   });
 
   it("shows only Cancel and End and switch — with the existing generic wording — when the paused route can't be resolved before the conflict is even detected", async () => {
@@ -3196,7 +3227,7 @@ describe("App — Ride switch guard (item 73)", () => {
   it("Return to paused ride reopens the paused route in its idle 'Resume ride' state, without clearing storage, stamping a resume token, or starting geolocation", async () => {
     const user = userEvent.setup();
     const watchPositionSpy = stubGeolocationWatch();
-    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession");
     render(<App mapFactory={buildNoopMapFactory()} />);
 
     await importFixture(user, "Route A.gpx");
@@ -3796,7 +3827,7 @@ describe("App — Ride switch guard (item 73)", () => {
     it("resuming the paused ride from the launcher withdraws the older switch prompt and keeps the paused ride", async () => {
       const user = userEvent.setup();
       const watchPositionSpy = stubGeolocationWatch();
-      const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+      const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession");
       render(<App mapFactory={buildNoopMapFactory()} />);
       const { routeA } = await armSwitchFromRouteCard(user);
 
@@ -3814,7 +3845,7 @@ describe("App — Ride switch guard (item 73)", () => {
     it("starting to ride the open paused route from its own screen withdraws the older switch prompt", async () => {
       const user = userEvent.setup();
       stubGeolocationWatch();
-      const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+      const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession");
       render(<App mapFactory={buildNoopMapFactory()} />);
       const { routeB } = await armSwitchFromRouteCard(user);
 
@@ -3844,7 +3875,7 @@ describe("App — Ride switch guard (item 73)", () => {
     it("a superseded prompt's End and switch never shows a busy state and never clears storage", async () => {
       const user = userEvent.setup();
       stubGeolocationWatch();
-      const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+      const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession");
       render(<App mapFactory={buildNoopMapFactory()} />);
       const { routeA, seededRow } = await armSwitchFromRouteCard(user);
       await user.click(navButton("Ride"));
@@ -3853,13 +3884,14 @@ describe("App — Ride switch guard (item 73)", () => {
       // Hold the newer request's storage read, so the older prompt is
       // still on screen after that request has superseded it.
       const readGate = deferred();
-      const realGetActiveRideState = rideStateRepository.getActiveRideState;
-      vi.spyOn(rideStateRepository, "getActiveRideState").mockImplementationOnce(
-        async () => {
-          await readGate.promise;
-          return realGetActiveRideState();
-        },
-      );
+      const realGetActiveRideState = rideStateRepository.getActiveRideStateWithSessionId;
+      vi.spyOn(
+        rideStateRepository,
+        "getActiveRideStateWithSessionId",
+      ).mockImplementationOnce(async () => {
+        await readGate.promise;
+        return realGetActiveRideState();
+      });
       await user.click(resumeButton);
       const stalePrompt = confirmationNamed('Switch to "Route B"?');
       await user.click(
@@ -3886,12 +3918,12 @@ describe("App — Ride switch guard (item 73)", () => {
       const resumeButton = await screen.findByRole("button", { name: "Resume ride" });
 
       const clearGate = deferred();
-      const realClear = rideStateRepository.clearActiveRideState;
+      const realClear = rideStateRepository.clearActiveRideStateIfSession;
       const clearSpy = vi
-        .spyOn(rideStateRepository, "clearActiveRideState")
-        .mockImplementationOnce(async () => {
+        .spyOn(rideStateRepository, "clearActiveRideStateIfSession")
+        .mockImplementationOnce(async (sessionId) => {
           await clearGate.promise;
-          await realClear();
+          return realClear(sessionId);
         });
       await user.click(
         within(confirmationNamed('Switch to "Route B"?')).getByRole("button", {
@@ -3925,11 +3957,13 @@ describe("App — Ride switch guard (item 73)", () => {
       const resumeButton = await screen.findByRole("button", { name: "Resume ride" });
 
       const clearGate = deferred();
-      vi.spyOn(rideStateRepository, "clearActiveRideState").mockImplementationOnce(
-        async () => {
-          await clearGate.promise;
-        },
-      );
+      vi.spyOn(
+        rideStateRepository,
+        "clearActiveRideStateIfSession",
+      ).mockImplementationOnce(async () => {
+        await clearGate.promise;
+        return "cleared" as const;
+      });
       await user.click(
         within(confirmationNamed('Switch to "Route B"?')).getByRole("button", {
           name: "End and switch",
@@ -3956,11 +3990,13 @@ describe("App — Ride switch guard (item 73)", () => {
       const { seededRow } = await armSwitchFromRouteCard(user);
 
       const clearGate = deferred();
-      vi.spyOn(rideStateRepository, "clearActiveRideState").mockImplementationOnce(
-        async () => {
-          await clearGate.promise;
-        },
-      );
+      vi.spyOn(
+        rideStateRepository,
+        "clearActiveRideStateIfSession",
+      ).mockImplementationOnce(async () => {
+        await clearGate.promise;
+        return "cleared" as const;
+      });
       await user.click(
         within(confirmationNamed('Switch to "Route B"?')).getByRole("button", {
           name: "End and switch",
@@ -3991,13 +4027,14 @@ describe("App — Ride switch guard (item 73)", () => {
       await armSwitchFromRouteCard(user);
 
       const clearGate = deferred();
-      const realClear = rideStateRepository.clearActiveRideState;
-      vi.spyOn(rideStateRepository, "clearActiveRideState").mockImplementationOnce(
-        async () => {
-          await clearGate.promise;
-          await realClear();
-        },
-      );
+      const realClear = rideStateRepository.clearActiveRideStateIfSession;
+      vi.spyOn(
+        rideStateRepository,
+        "clearActiveRideStateIfSession",
+      ).mockImplementationOnce(async (sessionId) => {
+        await clearGate.promise;
+        return realClear(sessionId);
+      });
       await user.click(
         within(confirmationNamed('Switch to "Route B"?')).getByRole("button", {
           name: "End and switch",
@@ -4284,5 +4321,241 @@ describe("App — Settings section (backlog item 121)", () => {
       await screen.findByRole("button", { name: "Resume free roam" }),
     ).toBeInTheDocument();
     expect(watchPositionSpy).toHaveBeenCalledTimes(watchesBeforeVisit);
+  });
+});
+
+describe("App — destructive ride actions act only on the session they represent (backlog item 140)", () => {
+  const STALE_NOTICE =
+    "The previously shown ride had already ended or been replaced. Nothing was deleted.";
+
+  beforeEach(async () => {
+    await db.routes.clear();
+    await db.rideState.clear();
+    await db.routeLibraryPreferences.clear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  function stubGeolocationWatch() {
+    const watchPositionSpy = vi.fn();
+    vi.stubGlobal("navigator", {
+      onLine: navigator.onLine,
+      geolocation: {
+        watchPosition: watchPositionSpy,
+        getCurrentPosition: vi.fn(),
+        clearWatch: vi.fn(),
+      },
+    });
+    return watchPositionSpy;
+  }
+
+  function routeRow(
+    routeId: string,
+    sessionId: string,
+    startedAt = "2026-01-01T08:00:00.000Z",
+  ) {
+    return {
+      id: "active" as const,
+      routeId,
+      startedAt,
+      sessionId,
+      lastFix: { coordinate: [0, 51] as const, accuracyMetres: 6, timestampMs: 1000 },
+      lastMatchedPointIndex: 0,
+      matchedDistanceFromStartMetres: 0,
+      offRouteMachineState: {
+        level: "on-route" as const,
+        candidateLevel: null,
+        streak: 0,
+      },
+    };
+  }
+
+  /** The App-level polite region's text, and how many status regions carry
+   * the notice. */
+  function noticeRegions(): HTMLElement[] {
+    return screen
+      .getAllByRole("status")
+      .filter((element) => element.textContent === STALE_NOTICE);
+  }
+
+  async function importTwoRoutes(user: ReturnType<typeof userEvent.setup>) {
+    await importFixture(user, "Route A.gpx");
+    await importFixture(user, "Route B.gpx");
+    const routes = await db.routes.toArray();
+    const routeA = routes.find((route) => route.name === "Route A");
+    const routeB = routes.find((route) => route.name === "Route B");
+    if (!routeA || !routeB) throw new Error("expected Route A and Route B");
+    return { routeA, routeB };
+  }
+
+  for (const [label, replace] of [
+    [
+      "replaced by a newer ride on the same route",
+      (routeAId: string) =>
+        setActiveRideState(
+          routeRow(routeAId, "session-newer", "2026-01-02T08:00:00.000Z"),
+        ),
+    ],
+    ["missing", () => db.rideState.clear()],
+  ] as const) {
+    it(`End and switch for a session ${label} elsewhere clears nothing, opens nothing and says so; Check again checks afresh`, async () => {
+      const user = userEvent.setup();
+      const watchPositionSpy = stubGeolocationWatch();
+      render(<App mapFactory={buildNoopMapFactory()} />);
+      const { routeA, routeB } = await importTwoRoutes(user);
+      await setActiveRideState(routeRow(routeA.id, "session-shown"));
+      expect(noticeRegions()).toHaveLength(0);
+
+      await user.click(screen.getByRole("button", { name: "Route B" }));
+      const dialog = await within(getListItemByRouteId(routeB.id)).findByRole("dialog");
+      await replace(routeA.id);
+      const stored = await getActiveRideState();
+      await user.click(within(dialog).getByRole("button", { name: "End and switch" }));
+
+      expect(
+        await within(dialog).findByRole("button", { name: "Check again" }),
+      ).toBeInTheDocument();
+      expect(await getActiveRideState()).toEqual(stored);
+      expect(within(dialog).getByText(STALE_NOTICE)).toBeInTheDocument();
+      expect(within(dialog).queryByRole("button", { name: "End and switch" })).toBeNull();
+      expect(
+        within(dialog).queryByRole("button", { name: "Return to paused ride" }),
+      ).toBeNull();
+      expect(noticeRegions()).toHaveLength(1);
+      expect(screen.getByRole("heading", { name: "Routes" })).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Route B" })).toBeNull();
+      expect(watchPositionSpy).not.toHaveBeenCalled();
+
+      // Check again is an explicit fresh check: a stored session raises a
+      // new prompt for it; nothing stored opens Route B, idle.
+      await user.click(within(dialog).getByRole("button", { name: "Check again" }));
+      if (stored) {
+        const fresh = await within(getListItemByRouteId(routeB.id)).findByRole("button", {
+          name: "End and switch",
+        });
+        expect(fresh).toBeInTheDocument();
+        expect(await getActiveRideState()).toEqual(stored);
+      } else {
+        expect(
+          await screen.findByRole("heading", { name: "Route B" }),
+        ).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
+      }
+      expect(noticeRegions()).toHaveLength(0);
+      expect(watchPositionSpy).not.toHaveBeenCalled();
+    });
+  }
+
+  it("End and switch to free roam for a session replaced elsewhere writes no free-roam session and starts no watch", async () => {
+    const user = userEvent.setup();
+    const watchPositionSpy = stubGeolocationWatch();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    await importFixture(user, "Route A.gpx");
+    const [routeA] = await db.routes.toArray();
+    if (!routeA) throw new Error("expected an imported route");
+    await user.click(screen.getByRole("button", { name: "Ride" }));
+    const startFreeRoam = await screen.findByRole("button", { name: "Start free roam" });
+    await setActiveRideState(routeRow(routeA.id, "session-shown"));
+
+    await user.click(startFreeRoam);
+    const dialog = await screen.findByRole("dialog");
+    const newer = {
+      id: "active" as const,
+      kind: "free-roam" as const,
+      startedAt: "2026-01-02T08:00:00.000Z",
+      sessionId: "free-roam-session-newer",
+      lastFix: null,
+    };
+    await setActiveRideState(newer);
+    await user.click(within(dialog).getByRole("button", { name: "End and switch" }));
+
+    expect(
+      await within(dialog).findByRole("button", { name: "Check again" }),
+    ).toBeInTheDocument();
+    expect(await getActiveRideState()).toEqual(newer);
+    expect(noticeRegions()).toHaveLength(1);
+    expect(screen.queryByRole("heading", { level: 1, name: "Free roam" })).toBeNull();
+    expect(watchPositionSpy).not.toHaveBeenCalled();
+  });
+
+  it("a riding screen's End ride for a session replaced elsewhere hands back to the Ride launcher, which shows what is stored with the notice", async () => {
+    const user = userEvent.setup();
+    stubGeolocationWatch();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    const { routeA } = await importTwoRoutes(user);
+    await setActiveRideState(routeRow(routeA.id, "session-shown"));
+    await user.click(navButton("Ride"));
+    const riding = await screen.findByRole("region", { name: "Riding" });
+    await user.click(await within(riding).findByRole("button", { name: "End ride" }));
+    const confirmation = await within(riding).findByRole("dialog", {
+      name: "End this ride?",
+    });
+    const newer = {
+      id: "active" as const,
+      kind: "free-roam" as const,
+      startedAt: "2026-01-02T08:00:00.000Z",
+      sessionId: "free-roam-session-newer",
+      lastFix: null,
+    };
+    await setActiveRideState(newer);
+
+    await user.click(within(confirmation).getByRole("button", { name: "End ride" }));
+
+    const launcher = await screen.findByRole("region", { name: "Ride" });
+    expect(
+      await within(launcher).findByRole("button", { name: "Resume free roam" }),
+    ).toBeInTheDocument();
+    expect(within(launcher).getAllByText(STALE_NOTICE).length).toBeGreaterThan(0);
+    expect(noticeRegions()).toHaveLength(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(await getActiveRideState()).toEqual(newer);
+  });
+
+  it("a hand-back reported after a newer ride choice never resets that choice", async () => {
+    const user = userEvent.setup();
+    stubGeolocationWatch();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    const { routeA } = await importTwoRoutes(user);
+    await setActiveRideState(routeRow(routeA.id, "session-shown"));
+    await user.click(navButton("Ride"));
+    const riding = await screen.findByRole("region", { name: "Riding" });
+    await user.click(await within(riding).findByRole("button", { name: "End ride" }));
+    const confirmation = await within(riding).findByRole("dialog", {
+      name: "End this ride?",
+    });
+
+    // Route A's End is held; meanwhile its session ends elsewhere, and the
+    // rider opens Route B, which nothing now blocks.
+    let releaseClear: (() => void) | undefined;
+    const realClear = rideStateRepository.clearActiveRideStateIfSession;
+    vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession").mockImplementationOnce(
+      (sessionId) =>
+        new Promise((resolve) => {
+          releaseClear = () => {
+            resolve(realClear(sessionId));
+          };
+        }),
+    );
+    await user.click(within(confirmation).getByRole("button", { name: "End ride" }));
+    await waitFor(() => {
+      expect(releaseClear).toBeDefined();
+    });
+    await db.rideState.clear();
+    await user.click(navButton("Routes"));
+    await user.click(await screen.findByRole("button", { name: "Route B" }));
+    expect(await screen.findByRole("heading", { name: "Route B" })).toBeInTheDocument();
+
+    await act(async () => {
+      releaseClear?.();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+
+    expect(screen.getByRole("heading", { name: "Route B" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start riding" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Ride" })).toBeNull();
   });
 });

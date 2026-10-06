@@ -6,6 +6,10 @@ import { FreeRoamScreen } from "./FreeRoamScreen.tsx";
 import { NORTH_LETTER_PATH } from "../shared/northArrowGeometry.ts";
 import { FOLLOW_PITCH_DEGREES, NAVIGATION_ZOOM } from "./rideCamera.ts";
 import { db } from "../../storage/db.ts";
+import {
+  OWNED_FREE_ROAM_SESSION_ID,
+  seedOwnedFreeRoamSession,
+} from "../../test/freeRoamSession.ts";
 import type { Coordinate } from "../../domain/types.ts";
 import type { GeolocationError, GeolocationFix } from "../../platform/geolocation.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
@@ -139,6 +143,8 @@ function buildStubMapFactory(): {
 
 beforeEach(async () => {
   await db.rideState.clear();
+  // App stores the owned session before mounting the screen (item 140).
+  await seedOwnedFreeRoamSession();
 });
 
 afterEach(() => {
@@ -163,6 +169,7 @@ describe("FreeRoamScreen", () => {
     const fake = buildFakeGeolocationSource();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={fake.source}
         mapFactory={buildStubMapFactory().factory}
       />,
@@ -176,9 +183,16 @@ describe("FreeRoamScreen", () => {
   it("StrictMode double-invocation still creates exactly one live watch", () => {
     const fake = buildFakeGeolocationSource();
     const map = buildStubMapFactory();
-    render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />, {
-      wrapper: StrictMode,
-    });
+    render(
+      <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
+        geolocationSource={fake.source}
+        mapFactory={map.factory}
+      />,
+      {
+        wrapper: StrictMode,
+      },
+    );
 
     // Under StrictMode, either exactly one watch was ever created, or a
     // first mount/cleanup/remount cycle disposed the first before the
@@ -190,6 +204,7 @@ describe("FreeRoamScreen", () => {
   it("renders exactly one h1, named Free roam", () => {
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={buildFakeGeolocationSource().source}
         mapFactory={buildStubMapFactory().factory}
       />,
@@ -205,6 +220,7 @@ describe("FreeRoamScreen", () => {
     const fake = buildFakeGeolocationSource();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={fake.source}
         mapFactory={buildStubMapFactory().factory}
       />,
@@ -225,6 +241,7 @@ describe("FreeRoamScreen", () => {
     const fake = buildFakeGeolocationSource();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={fake.source}
         mapFactory={buildStubMapFactory().factory}
       />,
@@ -248,6 +265,7 @@ describe("FreeRoamScreen", () => {
     const fake = buildFakeGeolocationSource();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={fake.source}
         mapFactory={buildStubMapFactory().factory}
       />,
@@ -266,6 +284,7 @@ describe("FreeRoamScreen", () => {
     const fake = buildFakeGeolocationSource();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={fake.source}
         mapFactory={buildStubMapFactory().factory}
       />,
@@ -287,7 +306,13 @@ describe("FreeRoamScreen", () => {
     it("relocates a mid-session tile error into the active status card, out of the map's own overlay", () => {
       const fake = buildFakeGeolocationSource();
       const map = buildStubMapFactory();
-      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      render(
+        <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
+          geolocationSource={fake.source}
+          mapFactory={map.factory}
+        />,
+      );
       act(() => {
         fake.watches[0]?.emitFix(SAMPLE_FIX);
       });
@@ -312,7 +337,13 @@ describe("FreeRoamScreen", () => {
       const user = userEvent.setup();
       const fake = buildFakeGeolocationSource();
       const map = buildStubMapFactory();
-      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      render(
+        <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
+          geolocationSource={fake.source}
+          mapFactory={map.factory}
+        />,
+      );
       act(() => {
         fake.watches[0]?.emitFix(SAMPLE_FIX);
       });
@@ -351,7 +382,13 @@ describe("FreeRoamScreen", () => {
     it("clears the relocated imagery-recovery row automatically on genuine imagery recovery, via the same signal that clears the map-owned banner", async () => {
       const fake = buildFakeGeolocationSource();
       const map = buildStubMapFactory();
-      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      render(
+        <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
+          geolocationSource={fake.source}
+          mapFactory={map.factory}
+        />,
+      );
       act(() => {
         fake.watches[0]?.emitFix(SAMPLE_FIX);
       });
@@ -378,6 +415,7 @@ describe("FreeRoamScreen", () => {
     const fake = buildFakeGeolocationSource();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={fake.source}
         mapFactory={buildStubMapFactory().factory}
       />,
@@ -410,7 +448,13 @@ describe("FreeRoamScreen", () => {
     function renderFreeRoam() {
       const fake = buildFakeGeolocationSource();
       const map = buildStubMapFactory();
-      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      render(
+        <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
+          geolocationSource={fake.source}
+          mapFactory={map.factory}
+        />,
+      );
       map.triggerLoad();
       return {
         map,
@@ -524,7 +568,13 @@ describe("FreeRoamScreen", () => {
     function renderFreeRoam() {
       const fake = buildFakeGeolocationSource();
       const map = buildStubMapFactory();
-      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      render(
+        <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
+          geolocationSource={fake.source}
+          mapFactory={map.factory}
+        />,
+      );
       map.triggerLoad();
       return { map, fake };
     }
@@ -619,6 +669,7 @@ describe("FreeRoamScreen", () => {
       const fake = buildFakeGeolocationSource();
       render(
         <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
           geolocationSource={fake.source}
           mapFactory={buildStubMapFactory().factory}
         />,
@@ -640,7 +691,13 @@ describe("FreeRoamScreen", () => {
       const user = userEvent.setup();
       const fake = buildFakeGeolocationSource();
       const map = buildStubMapFactory();
-      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      render(
+        <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
+          geolocationSource={fake.source}
+          mapFactory={map.factory}
+        />,
+      );
       map.triggerLoad();
 
       await user.click(screen.getByRole("button", { name: "Zoom in" }));
@@ -660,7 +717,13 @@ describe("FreeRoamScreen", () => {
       const user = userEvent.setup();
       const fake = buildFakeGeolocationSource();
       const map = buildStubMapFactory();
-      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      render(
+        <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
+          geolocationSource={fake.source}
+          mapFactory={map.factory}
+        />,
+      );
       map.triggerLoad();
       act(() => {
         fake.watches[0]?.emitFix(SAMPLE_FIX);
@@ -692,7 +755,13 @@ describe("FreeRoamScreen", () => {
       const user = userEvent.setup();
       const fake = buildFakeGeolocationSource();
       const map = buildStubMapFactory();
-      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      render(
+        <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
+          geolocationSource={fake.source}
+          mapFactory={map.factory}
+        />,
+      );
       map.triggerLoad();
       act(() => {
         fake.watches[0]?.emitFix(SAMPLE_FIX);
@@ -724,7 +793,13 @@ describe("FreeRoamScreen", () => {
     it("a genuine manual gesture still pauses Follow and shows the toast, unaffected by the new zoom controls", async () => {
       const fake = buildFakeGeolocationSource();
       const map = buildStubMapFactory();
-      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      render(
+        <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
+          geolocationSource={fake.source}
+          mapFactory={map.factory}
+        />,
+      );
       map.triggerLoad();
       act(() => {
         fake.watches[0]?.emitFix(SAMPLE_FIX);
@@ -744,6 +819,7 @@ describe("FreeRoamScreen", () => {
     const fake = buildFakeGeolocationSource();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={fake.source}
         mapFactory={buildStubMapFactory().factory}
       />,
@@ -768,6 +844,7 @@ describe("FreeRoamScreen", () => {
       const fakeWakeLock = buildFakeWakeLockSource();
       render(
         <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
           geolocationSource={buildFakeGeolocationSource().source}
           mapFactory={buildStubMapFactory().factory}
           wakeLockSource={fakeWakeLock.source}
@@ -781,6 +858,7 @@ describe("FreeRoamScreen", () => {
       vi.stubGlobal("navigator", { onLine: true });
       render(
         <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
           geolocationSource={buildFakeGeolocationSource().source}
           mapFactory={buildStubMapFactory().factory}
         />,
@@ -798,6 +876,7 @@ describe("FreeRoamScreen", () => {
       const fakeWakeLock = buildFakeWakeLockSource();
       render(
         <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
           geolocationSource={buildFakeGeolocationSource().source}
           mapFactory={buildStubMapFactory().factory}
           wakeLockSource={fakeWakeLock.source}
@@ -816,6 +895,7 @@ describe("FreeRoamScreen", () => {
   it("never renders a Map/Profile switcher — free roam has no route profile to switch to (backlog item 58)", () => {
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={buildFakeGeolocationSource().source}
         mapFactory={buildStubMapFactory().factory}
       />,
@@ -830,6 +910,7 @@ describe("FreeRoamScreen", () => {
     it("renders the immersive header with centre text 'Free roam', with the global nav's own concerns entirely absent from this screen", () => {
       render(
         <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
           geolocationSource={buildFakeGeolocationSource().source}
           mapFactory={buildStubMapFactory().factory}
         />,
@@ -844,6 +925,7 @@ describe("FreeRoamScreen", () => {
     it("marks the screen as the fixed, non-scrolling immersive shell", () => {
       const { container } = render(
         <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
           geolocationSource={buildFakeGeolocationSource().source}
           mapFactory={buildStubMapFactory().factory}
         />,
@@ -857,6 +939,7 @@ describe("FreeRoamScreen", () => {
     it("wraps the map in the flex-filling immersive content area, never the pre-item-58 --active/--overview vocabulary", () => {
       const { container } = render(
         <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
           geolocationSource={buildFakeGeolocationSource().source}
           mapFactory={buildStubMapFactory().factory}
         />,
@@ -878,7 +961,11 @@ describe("FreeRoamScreen", () => {
       const fake = buildFakeGeolocationSource();
       const map = buildStubMapFactory();
       const { container } = render(
-        <FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />,
+        <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
+          geolocationSource={fake.source}
+          mapFactory={map.factory}
+        />,
       );
       map.triggerLoad();
       act(() => {
@@ -901,6 +988,7 @@ describe("FreeRoamScreen", () => {
       const fake = buildFakeGeolocationSource();
       const { unmount } = render(
         <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
           geolocationSource={fake.source}
           mapFactory={buildStubMapFactory().factory}
           onRidingActiveChange={onRidingActiveChange}
@@ -921,7 +1009,13 @@ describe("FreeRoamScreen: hosted imagery status and route-free copy (backlog ite
     try {
       const fake = buildFakeGeolocationSource();
       const map = buildStubMapFactory();
-      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      render(
+        <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
+          geolocationSource={fake.source}
+          mapFactory={map.factory}
+        />,
+      );
       act(() => {
         fake.watches[0]?.emitFix(SAMPLE_FIX);
       });
@@ -959,7 +1053,13 @@ describe("FreeRoamScreen: hosted imagery status and route-free copy (backlog ite
     try {
       const fake = buildFakeGeolocationSource();
       const map = buildStubMapFactory();
-      render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+      render(
+        <FreeRoamScreen
+          sessionId={OWNED_FREE_ROAM_SESSION_ID}
+          geolocationSource={fake.source}
+          mapFactory={map.factory}
+        />,
+      );
       act(() => {
         fake.watches[0]?.emitFix(SAMPLE_FIX);
       });
@@ -997,7 +1097,13 @@ describe("FreeRoamScreen: hosted imagery status and route-free copy (backlog ite
   it("uses position-only wording for a mid-session tile error, never claiming a route", () => {
     const fake = buildFakeGeolocationSource();
     const map = buildStubMapFactory();
-    render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+    render(
+      <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
+        geolocationSource={fake.source}
+        mapFactory={map.factory}
+      />,
+    );
     act(() => {
       fake.watches[0]?.emitFix(SAMPLE_FIX);
     });
@@ -1024,7 +1130,13 @@ describe("FreeRoamScreen: hosted imagery status and route-free copy (backlog ite
     const user = userEvent.setup();
     const fake = buildFakeGeolocationSource();
     const map = buildStubMapFactory();
-    render(<FreeRoamScreen geolocationSource={fake.source} mapFactory={map.factory} />);
+    render(
+      <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
+        geolocationSource={fake.source}
+        mapFactory={map.factory}
+      />,
+    );
 
     // No fix has ever arrived, so pausing leaves the card with nothing to
     // show and it unmounts entirely.

@@ -174,6 +174,13 @@ export interface RidingScreenProps {
    * already fully succeeded by this point, so a bug in the caller's own
    * handler must never be reported as a finalisation failure. */
   onRideFinalized?: () => void;
+  /** Called instead of onRideFinalized when End ride or Finish ride found
+   * this ride's stored session already ended or replaced elsewhere
+   * (backlog item 140): nothing was deleted, this screen's watch is
+   * stopped and it will not write again, and the caller hands back to the
+   * Ride launcher, which shows what is stored. Never called for an
+   * ordinary End or Finish, a cancellation or a genuine storage failure. */
+  onSessionGone?: () => void;
   /** Called when the rider taps the pre-ride-only "Back to Ride options"
    * action (backlog item 51) — a synchronous, non-destructive reset with
    * no confirmation, no persisted-storage write, and no geolocation/
@@ -299,6 +306,7 @@ export function RidingScreen({
   onRidingActiveChange,
   onNavigateToPlanning,
   onRideFinalized,
+  onSessionGone,
   onReturnToRideLauncher,
   onRidePaused,
   stickyHeaderRef,
@@ -942,6 +950,11 @@ export function RidingScreen({
   const endRideTriggerRef = useRef<HTMLButtonElement>(null);
   const finishRideButtonRef = useRef<HTMLButtonElement>(null);
   const [isEndRideConfirmOpen, setIsEndRideConfirmOpen] = useState(false);
+  // The session End ride's open confirmation was opened for (backlog item
+  // 140): captured as it opens, so Confirm ends that session and no other.
+  const [endRideConfirmSessionId, setEndRideConfirmSessionId] = useState<string | null>(
+    null,
+  );
   const [activeFinalizeSource, setActiveFinalizeSource] = useState<
     "end" | "finish" | null
   >(null);
@@ -1060,7 +1073,13 @@ export function RidingScreen({
     nav.setCompletionArmed(true);
   }
 
-  const performFinalizeRide = async (source: "end" | "finish") => {
+  // `expectedSessionId` is the session this action represents (backlog item
+  // 140): End ride's, captured as its confirmation opened; Finish ride's,
+  // captured as it was pressed. Only that session is cleared.
+  const performFinalizeRide = async (
+    source: "end" | "finish",
+    expectedSessionId: string | null,
+  ) => {
     // Cross-guard with Pause, so End/Finish is blocked while a Pause is
     // genuinely in flight (backlog item 55) — the primary, bidirectional
     // enforcement; see isPauseActionPendingRef's own declaration comment.
@@ -1069,7 +1088,23 @@ export function RidingScreen({
     setActiveFinalizeSource(source);
     setFinalizeError(null);
     try {
-      await nav.finish();
+      const outcome = await nav.finish(expectedSessionId);
+      if (outcome === "ignored") {
+        setIsEndRideConfirmOpen(false);
+        return;
+      }
+      if (outcome === "session-gone") {
+        // Nothing was deleted and nothing is reported as ended: the stored
+        // session is someone else's now, or none. This screen has stopped,
+        // and the caller hands back to the Ride launcher.
+        setIsEndRideConfirmOpen(false);
+        try {
+          onSessionGone?.();
+        } catch (callbackError) {
+          logError("riding-session-gone-callback", callbackError);
+        }
+        return;
+      }
       camera.resetCamera();
       completion.reset();
       // handleStart never resets this (correct for Resume riding); a
@@ -1189,6 +1224,7 @@ export function RidingScreen({
     if (isEndRideConfirmOpen || isFinalizeActionPendingRef.current) return;
     dropPendingEndRideCancel();
     setFinalizeError(null);
+    setEndRideConfirmSessionId(nav.getSessionId());
     setIsEndRideConfirmOpen(true);
   };
 
@@ -1793,7 +1829,7 @@ export function RidingScreen({
         confirmDisabled={activeFinalizeSource === "end"}
         cancelDisabled={activeFinalizeSource === "end"}
         onConfirm={() => {
-          void performFinalizeRide("end");
+          void performFinalizeRide("end", endRideConfirmSessionId);
         }}
         onCancel={() => {
           handleEndRideCancel(placement);
@@ -2461,7 +2497,7 @@ export function RidingScreen({
       {completion.isConfirmed ? (
         <RidingRouteCompletionPanel
           onFinish={() => {
-            void performFinalizeRide("finish");
+            void performFinalizeRide("finish", nav.getSessionId());
           }}
           onKeepRiding={completion.dismiss}
           isFinishing={activeFinalizeSource === "finish"}

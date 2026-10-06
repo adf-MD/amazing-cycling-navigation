@@ -8,7 +8,12 @@ import type {
   GeolocationSource,
 } from "../../platform/geolocation.ts";
 import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
-import { db, type StoredFreeRoamRideState } from "../../storage/db.ts";
+import { db } from "../../storage/db.ts";
+import {
+  OWNED_FREE_ROAM_SESSION_ID,
+  ownedFreeRoamRow,
+  seedOwnedFreeRoamSession,
+} from "../../test/freeRoamSession.ts";
 import {
   getActiveRideState,
   setActiveRideState,
@@ -40,6 +45,8 @@ const PERMISSION_DENIED_ERROR: GeolocationError = {
 beforeEach(async () => {
   await db.routes.clear();
   await db.rideState.clear();
+  // App stores the owned session before the screen mounts (item 140).
+  await seedOwnedFreeRoamSession();
 });
 
 afterEach(() => {
@@ -51,7 +58,10 @@ describe("useFreeRoamNavigation geolocation watch lifecycle", () => {
   it("never calls watchPosition before start() is called", () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     expect(fake.watchPositionSpy).not.toHaveBeenCalled();
@@ -61,7 +71,10 @@ describe("useFreeRoamNavigation geolocation watch lifecycle", () => {
   it("start() creates exactly one watch and enters watching", () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -75,7 +88,10 @@ describe("useFreeRoamNavigation geolocation watch lifecycle", () => {
   it("the first fix is fresh and clears any prior error", () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -94,7 +110,10 @@ describe("useFreeRoamNavigation geolocation watch lifecycle", () => {
   it("an error enters the explicit error state and marks a retained fix stale", () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -116,7 +135,10 @@ describe("useFreeRoamNavigation geolocation watch lifecycle", () => {
   it("Try again after an error disposes the old watch and creates a new one", () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -138,7 +160,10 @@ describe("useFreeRoamNavigation geolocation watch lifecycle", () => {
   it("repeated Try again while already watching does not create a second watch", () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -152,7 +177,10 @@ describe("useFreeRoamNavigation geolocation watch lifecycle", () => {
   it("a callback from an obsolete (pre-retry) watch is ignored", () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -175,7 +203,10 @@ describe("useFreeRoamNavigation geolocation watch lifecycle", () => {
   it("an unsupported browser reports the unsupported reason, and start() after geolocation becomes available succeeds", () => {
     vi.stubGlobal("navigator", {});
     const { result, unmount } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: browserGeolocationSource }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: browserGeolocationSource,
+      }),
     );
 
     act(() => {
@@ -221,7 +252,10 @@ describe("useFreeRoamNavigation geolocation watch lifecycle", () => {
       },
     };
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: source,
+      }),
     );
     hookStart = result.current.start;
 
@@ -237,7 +271,10 @@ describe("useFreeRoamNavigation geolocation watch lifecycle", () => {
   it("unmount disposes the current watch exactly once while watching", () => {
     const fake = buildFakeGeolocationSource();
     const { result, unmount } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -251,7 +288,10 @@ describe("useFreeRoamNavigation geolocation watch lifecycle", () => {
   it("visibility restart disposes the old watch and leaves exactly one active", () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -273,7 +313,10 @@ describe("useFreeRoamNavigation geolocation watch lifecycle", () => {
   it("pageshow restart disposes the old watch and leaves exactly one active", () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -294,7 +337,12 @@ describe("useFreeRoamNavigation geolocation watch lifecycle", () => {
 
   it("visibilitychange while idle does not request a watch", () => {
     const fake = buildFakeGeolocationSource();
-    renderHook(() => useFreeRoamNavigation({ geolocationSource: fake.source }));
+    renderHook(() =>
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
+    );
 
     act(() => {
       document.dispatchEvent(new Event("visibilitychange"));
@@ -306,7 +354,10 @@ describe("useFreeRoamNavigation geolocation watch lifecycle", () => {
   it("a stale callback from the pre-restart watch is ignored after a visibility-triggered restart", () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -332,10 +383,13 @@ describe("useFreeRoamNavigation geolocation watch lifecycle", () => {
 });
 
 describe("useFreeRoamNavigation restore", () => {
-  it("restores nothing when no active row exists — a fresh session", () => {
+  it("restores nothing from App's fresh row, which stores no fix or camera", () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     expect(result.current.currentFix).toBeNull();
@@ -348,6 +402,7 @@ describe("useFreeRoamNavigation restore", () => {
       id: "active",
       kind: "free-roam",
       startedAt: "2026-01-01T00:00:00.000Z",
+      sessionId: OWNED_FREE_ROAM_SESSION_ID,
       lastFix: { coordinate: [0, 51], accuracyMetres: 8, timestampMs: 1000 },
       cameraMode: "following",
       lastReliableBearingDegrees: 88,
@@ -356,7 +411,10 @@ describe("useFreeRoamNavigation restore", () => {
 
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     await act(async () => {
@@ -395,7 +453,10 @@ describe("useFreeRoamNavigation restore", () => {
 
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     await act(async () => {
@@ -404,6 +465,9 @@ describe("useFreeRoamNavigation restore", () => {
 
     expect(result.current.currentFix).toBeNull();
     expect(result.current.restoredCameraState).toBeNull();
+    // A route session stored in place of App's own: the owned session is
+    // gone (backlog item 140).
+    expect(result.current.sessionGone).toBe(true);
   });
 });
 
@@ -411,7 +475,10 @@ describe("useFreeRoamNavigation persistence", () => {
   it("persists a free-roam-kind row on every accepted fix", async () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -443,7 +510,11 @@ describe("useFreeRoamNavigation persistence", () => {
       lastReliableBearingDegrees: 77,
     }));
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source, getPersistableSnapshot }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+        getPersistableSnapshot,
+      }),
     );
 
     act(() => {
@@ -470,7 +541,10 @@ describe("useFreeRoamNavigation finish()", () => {
   it("clears persisted state, resets every field to fresh-session defaults, and disposes the watch", async () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -485,7 +559,7 @@ describe("useFreeRoamNavigation finish()", () => {
     expect(await getActiveRideState()).toBeDefined();
 
     await act(async () => {
-      await result.current.finish();
+      await result.current.finish(OWNED_FREE_ROAM_SESSION_ID);
     });
 
     expect(await getActiveRideState()).toBeUndefined();
@@ -502,7 +576,10 @@ describe("useFreeRoamNavigation finish()", () => {
   it("a storage-clear failure leaves the session completely untouched and re-arms persistence", async () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -516,12 +593,12 @@ describe("useFreeRoamNavigation finish()", () => {
     });
 
     const clearSpy = vi
-      .spyOn(rideStateRepository, "clearActiveRideState")
+      .spyOn(rideStateRepository, "clearActiveRideStateIfSession")
       .mockRejectedValueOnce(new Error("boom"));
 
     await expect(
       act(async () => {
-        await result.current.finish();
+        await result.current.finish(OWNED_FREE_ROAM_SESSION_ID);
       }),
     ).rejects.toThrow("boom");
 
@@ -545,7 +622,10 @@ describe("useFreeRoamNavigation finish()", () => {
   it("a redundant concurrent call is a silent no-op", async () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -558,10 +638,13 @@ describe("useFreeRoamNavigation finish()", () => {
       await Promise.resolve();
     });
 
-    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession");
 
     await act(async () => {
-      await Promise.all([result.current.finish(), result.current.finish()]);
+      await Promise.all([
+        result.current.finish(OWNED_FREE_ROAM_SESSION_ID),
+        result.current.finish(OWNED_FREE_ROAM_SESSION_ID),
+      ]);
     });
 
     expect(clearSpy).toHaveBeenCalledTimes(1);
@@ -571,7 +654,10 @@ describe("useFreeRoamNavigation finish()", () => {
   it("a fix arriving while the clear is still pending cannot recreate the row afterwards", async () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -585,9 +671,9 @@ describe("useFreeRoamNavigation finish()", () => {
     });
     expect(await getActiveRideState()).toBeDefined();
 
-    let finishPromise: Promise<void> = Promise.resolve();
+    let finishPromise: Promise<unknown> = Promise.resolve();
     act(() => {
-      finishPromise = result.current.finish();
+      finishPromise = result.current.finish(OWNED_FREE_ROAM_SESSION_ID);
     });
 
     act(() => {
@@ -605,23 +691,14 @@ describe("useFreeRoamNavigation finish()", () => {
 });
 
 describe("useFreeRoamNavigation session identity (backlog item 140)", () => {
-  // App writes this row, with its own identity, before the screen mounts.
-  const APP_ROW: StoredFreeRoamRideState = {
-    id: "active",
-    kind: "free-roam",
-    startedAt: "2026-01-01T00:00:00.000Z",
-    sessionId: "session-app",
-    lastFix: null,
-  };
-
   async function flushStorage(): Promise<void> {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
   }
 
-  it("an early fix before a delayed restore read writes nothing, and every write afterwards carries the stored session's identity", async () => {
-    await setActiveRideState(APP_ROW);
+  it("an early fix before a delayed restore read writes nothing and is kept; every write afterwards carries App's session", async () => {
+    const appRow = await getActiveRideState();
     const realRead = rideStateRepository.getActiveRideState;
     let releaseRead: (() => void) | undefined;
     vi.spyOn(rideStateRepository, "getActiveRideState").mockImplementationOnce(
@@ -635,7 +712,10 @@ describe("useFreeRoamNavigation session identity (backlog item 140)", () => {
     const writeSpy = vi.spyOn(rideStateRepository, "setActiveRideState");
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -646,14 +726,15 @@ describe("useFreeRoamNavigation session identity (backlog item 140)", () => {
     });
     await flushStorage();
 
-    expect(result.current.currentFix?.coordinate).toEqual(SAMPLE_FIX.coordinate);
     expect(writeSpy).not.toHaveBeenCalled();
-    await expect(getActiveRideState()).resolves.toEqual(APP_ROW);
+    await expect(getActiveRideState()).resolves.toEqual(appRow);
 
     await act(async () => {
       releaseRead?.();
       await Promise.resolve();
     });
+    // The fresh fix is not replaced by the row's stored one (none).
+    expect(result.current.currentFix).toEqual(SAMPLE_FIX);
     act(() => {
       fake.watches[0]?.emitFix(LATER_FIX);
     });
@@ -666,21 +747,24 @@ describe("useFreeRoamNavigation session identity (backlog item 140)", () => {
     expect(writeSpy).toHaveBeenCalled();
     for (const [written] of writeSpy.mock.calls) {
       expect(written).toMatchObject({
-        sessionId: APP_ROW.sessionId,
-        startedAt: APP_ROW.startedAt,
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        startedAt: appRow?.startedAt,
       });
     }
   });
 
-  it("after a failed restore read mints nothing and writes nothing, and Pause fails, leaving the stored session as it was", async () => {
-    await setActiveRideState(APP_ROW);
+  it("after a failed restore read writes nothing and Pause fails, yet End ride still clears only App's session", async () => {
+    const appRow = await getActiveRideState();
     vi.spyOn(rideStateRepository, "getActiveRideState").mockRejectedValueOnce(
       new Error("synthetic restore failure"),
     );
     const writeSpy = vi.spyOn(rideStateRepository, "setActiveRideState");
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
 
     act(() => {
@@ -690,11 +774,6 @@ describe("useFreeRoamNavigation session identity (backlog item 140)", () => {
       fake.watches[0]?.emitFix(SAMPLE_FIX);
     });
     await flushStorage();
-    act(() => {
-      fake.watches[0]?.emitFix(LATER_FIX);
-    });
-    await flushStorage();
-
     let pauseError: unknown = null;
     await act(async () => {
       try {
@@ -707,16 +786,116 @@ describe("useFreeRoamNavigation session identity (backlog item 140)", () => {
     expect(pauseError).toBeInstanceOf(Error);
     expect(result.current.geolocationStatus).toBe("watching");
     expect(writeSpy).not.toHaveBeenCalled();
-    await expect(getActiveRideState()).resolves.toEqual(APP_ROW);
+    await expect(getActiveRideState()).resolves.toEqual(appRow);
+
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.finish(OWNED_FREE_ROAM_SESSION_ID);
+    });
+    expect(outcome).toBe("ended");
+    await expect(getActiveRideState()).resolves.toBeUndefined();
   });
 
-  it("with nothing stored, mints one identity for a new session and keeps it through its writes", async () => {
+  for (const [label, replace] of [
+    ["missing", () => db.rideState.clear()],
+    [
+      "replaced by another free roam",
+      () =>
+        setActiveRideState(ownedFreeRoamRow({ sessionId: "free-roam-session-newer" })),
+    ],
+  ] as const) {
+    it(`a missing owned session is gone at restore — ${label}: no write on a later fix, the watch stops and it is reported`, async () => {
+      await replace();
+      const before = await getActiveRideState();
+      const writeSpy = vi.spyOn(rideStateRepository, "setActiveRideState");
+      const fake = buildFakeGeolocationSource();
+      const { result } = renderHook(() =>
+        useFreeRoamNavigation({
+          sessionId: OWNED_FREE_ROAM_SESSION_ID,
+          geolocationSource: fake.source,
+        }),
+      );
+
+      act(() => {
+        result.current.start();
+      });
+      await waitFor(() => {
+        expect(result.current.sessionGone).toBe(true);
+      });
+      expect(fake.watches[0]?.disposed).toBe(true);
+      expect(result.current.geolocationStatus).toBe("idle");
+      act(() => {
+        fake.watches[0]?.emitFix(SAMPLE_FIX);
+      });
+      act(() => {
+        result.current.start();
+      });
+      await flushStorage();
+
+      expect(fake.watches).toHaveLength(1);
+      expect(writeSpy).not.toHaveBeenCalled();
+      await expect(getActiveRideState()).resolves.toEqual(before);
+    });
+  }
+
+  for (const [label, replace] of [
+    ["missing", () => db.rideState.clear()],
+    [
+      "replaced by a newer free roam",
+      () =>
+        setActiveRideState(ownedFreeRoamRow({ sessionId: "free-roam-session-newer" })),
+    ],
+  ] as const) {
+    it(`End ride for a session ${label} elsewhere deletes nothing, stops the watch and retires the hook: no later fix or Pause writes`, async () => {
+      const fake = buildFakeGeolocationSource();
+      const { result } = renderHook(() =>
+        useFreeRoamNavigation({
+          sessionId: OWNED_FREE_ROAM_SESSION_ID,
+          geolocationSource: fake.source,
+        }),
+      );
+      act(() => {
+        result.current.start();
+      });
+      act(() => {
+        fake.watches[0]?.emitFix(SAMPLE_FIX);
+      });
+      await waitFor(async () => {
+        expect((await getActiveRideState())?.lastFix?.timestampMs).toBe(
+          SAMPLE_FIX.timestampMs,
+        );
+      });
+      await replace();
+      const newer = await getActiveRideState();
+      const writeSpy = vi.spyOn(rideStateRepository, "setActiveRideState");
+
+      let outcome: unknown;
+      await act(async () => {
+        outcome = await result.current.finish(OWNED_FREE_ROAM_SESSION_ID);
+      });
+
+      expect(outcome).toBe("session-gone");
+      expect(fake.watches[0]?.disposed).toBe(true);
+      act(() => {
+        fake.watches[0]?.emitFix(LATER_FIX);
+      });
+      await act(async () => {
+        await result.current.pause();
+      });
+      await flushStorage();
+      expect(writeSpy).not.toHaveBeenCalled();
+      await expect(getActiveRideState()).resolves.toEqual(newer);
+    });
+  }
+
+  it("a write held before its transaction when End begins is cancelled: refused End, then the released write leaves the newer session unchanged", async () => {
     const fake = buildFakeGeolocationSource();
     const { result } = renderHook(() =>
-      useFreeRoamNavigation({ geolocationSource: fake.source }),
+      useFreeRoamNavigation({
+        sessionId: OWNED_FREE_ROAM_SESSION_ID,
+        geolocationSource: fake.source,
+      }),
     );
-    await flushStorage();
-
     act(() => {
       result.current.start();
     });
@@ -724,18 +903,39 @@ describe("useFreeRoamNavigation session identity (backlog item 140)", () => {
       fake.watches[0]?.emitFix(SAMPLE_FIX);
     });
     await waitFor(async () => {
-      expect((await getActiveRideState())?.sessionId).toEqual(expect.any(String));
-    });
-    const first = await getActiveRideState();
-    act(() => {
-      fake.watches[0]?.emitFix(LATER_FIX);
-    });
-    await waitFor(async () => {
       expect((await getActiveRideState())?.lastFix?.timestampMs).toBe(
-        LATER_FIX.timestampMs,
+        SAMPLE_FIX.timestampMs,
       );
     });
 
-    expect((await getActiveRideState())?.sessionId).toBe(first?.sessionId);
+    // Hold the next write before its transaction exists, as the e2e
+    // write-delay seam does.
+    let releaseWrite: (() => void) | undefined;
+    window.__acnE2eRideStateWriteDelay = () =>
+      new Promise<void>((resolve) => {
+        releaseWrite = resolve;
+      });
+    act(() => {
+      fake.watches[0]?.emitFix(LATER_FIX);
+    });
+    await waitFor(() => {
+      expect(releaseWrite).toBeDefined();
+    });
+    delete window.__acnE2eRideStateWriteDelay;
+
+    // Another window replaces the session; this one's End is refused.
+    const newer = ownedFreeRoamRow({ sessionId: "free-roam-session-newer" });
+    await db.rideState.put(newer);
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.finish(OWNED_FREE_ROAM_SESSION_ID);
+    });
+    expect(outcome).toBe("session-gone");
+
+    await act(async () => {
+      releaseWrite?.();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    await expect(getActiveRideState()).resolves.toEqual(newer);
   });
 });

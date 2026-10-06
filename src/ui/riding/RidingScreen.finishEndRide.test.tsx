@@ -15,6 +15,7 @@ import {
   setActiveRideState,
 } from "../../storage/rideStateRepository.ts";
 import * as rideStateRepository from "../../storage/rideStateRepository.ts";
+import type { ConditionalRideStateClearResult } from "../../storage/rideStateRepository.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
 import type { PlannedRoute } from "../../domain/types.ts";
 import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry.ts";
@@ -370,7 +371,7 @@ describe("RidingScreen Finish/End ride", () => {
     });
 
     const clearSpy = vi
-      .spyOn(rideStateRepository, "clearActiveRideState")
+      .spyOn(rideStateRepository, "clearActiveRideStateIfSession")
       .mockRejectedValueOnce(new Error("boom"));
 
     const endRideButton = await screen.findByRole("button", { name: "End ride" });
@@ -645,11 +646,11 @@ describe("RidingScreen onRideFinalized", () => {
     const fake = buildFakeGeolocationSource();
     let resolveClear: (() => void) | undefined;
     const clearSpy = vi
-      .spyOn(rideStateRepository, "clearActiveRideState")
+      .spyOn(rideStateRepository, "clearActiveRideStateIfSession")
       .mockReturnValue(
-        new Promise((resolve) => {
+        new Promise<ConditionalRideStateClearResult>((resolve) => {
           resolveClear = () => {
-            resolve(undefined);
+            resolve("cleared");
           };
         }),
       );
@@ -769,7 +770,7 @@ describe("RidingScreen onRideFinalized", () => {
     });
 
     const clearSpy = vi
-      .spyOn(rideStateRepository, "clearActiveRideState")
+      .spyOn(rideStateRepository, "clearActiveRideStateIfSession")
       .mockRejectedValueOnce(new Error("boom"));
 
     const endRideButton = await screen.findByRole("button", { name: "End ride" });
@@ -1058,8 +1059,10 @@ describe("End ride's confirmation on the paused screen (backlog item 124, C-11)"
     let rejectWrite: (error: Error) => void = () => undefined;
     vi.spyOn(rideStateRepository, "setActiveRideState").mockImplementationOnce(
       () =>
-        new Promise<void>((resolve, reject) => {
-          resolveWrite = resolve;
+        new Promise<boolean>((resolve, reject) => {
+          resolveWrite = () => {
+            resolve(true);
+          };
           rejectWrite = reject;
         }),
     );
@@ -1207,9 +1210,9 @@ describe("End ride's confirmation on the paused screen (backlog item 124, C-11)"
     const { container } = await renderPaused();
     stubGeometry({ trigger: { top: 30, bottom: 74 } });
     let rejectClear: (error: Error) => void = () => undefined;
-    vi.spyOn(rideStateRepository, "clearActiveRideState").mockImplementationOnce(
+    vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession").mockImplementationOnce(
       () =>
-        new Promise<void>((_resolve, reject) => {
+        new Promise<ConditionalRideStateClearResult>((_resolve, reject) => {
           rejectClear = reject;
         }),
     );
@@ -1513,10 +1516,15 @@ describe("End ride's confirmation on the paused screen (backlog item 124, C-11)"
       await renderPaused();
       stubGeometry(wouldMove);
       let releaseClear: () => void = () => undefined;
-      vi.spyOn(rideStateRepository, "clearActiveRideState").mockImplementationOnce(
+      vi.spyOn(
+        rideStateRepository,
+        "clearActiveRideStateIfSession",
+      ).mockImplementationOnce(
         () =>
-          new Promise<void>((resolve) => {
-            releaseClear = resolve;
+          new Promise<ConditionalRideStateClearResult>((resolve) => {
+            releaseClear = () => {
+              resolve("cleared");
+            };
           }),
       );
       await user.click(screen.getByRole("button", { name: "End ride" }));
@@ -1676,5 +1684,99 @@ describe("End ride's confirmation on the paused screen (backlog item 124, C-11)"
       await write.release();
       expect(log).toEqual([]);
     });
+  });
+});
+
+describe("RidingScreen — End ride and Finish ride for a session gone elsewhere (backlog item 140)", () => {
+  async function startRideWithStoredFix(
+    fake: ReturnType<typeof buildFakeGeolocationSource>,
+  ) {
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Start riding" }));
+    act(() => {
+      fake.watches[0]?.emitFix(midpointFix(1000));
+    });
+    await waitFor(async () => {
+      expect((await getActiveRideState())?.lastFix?.timestampMs).toBe(1000);
+    });
+    return user;
+  }
+
+  it("End ride, after another window replaced the ride with a newer one on the same route, deletes nothing and hands back through onSessionGone, not onRideFinalized", async () => {
+    const fake = buildFakeGeolocationSource();
+    const onRideFinalized = vi.fn();
+    const onSessionGone = vi.fn();
+    render(
+      <RidingScreen
+        route={route}
+        geolocationSource={fake.source}
+        mapFactory={createMockMapFactory().factory}
+        onRideFinalized={onRideFinalized}
+        onSessionGone={onSessionGone}
+      />,
+    );
+    const user = await startRideWithStoredFix(fake);
+    await user.click(await screen.findByRole("button", { name: "End ride" }));
+    const dialog = await screen.findByRole("dialog");
+    // Another window replaces the session while the confirmation is open.
+    const stored = await getActiveRideState();
+    if (!stored) throw new Error("expected the ride's stored row");
+    const newer = {
+      ...stored,
+      sessionId: "session-newer",
+      startedAt: "2026-01-02T08:00:00.000Z",
+    };
+    await db.rideState.put(newer);
+
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+
+    await waitFor(() => {
+      expect(onSessionGone).toHaveBeenCalledOnce();
+    });
+    expect(onRideFinalized).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(fake.watches[0]?.disposed).toBe(true);
+    await expect(getActiveRideState()).resolves.toEqual(newer);
+  });
+
+  it("Finish ride, after another window ended the ride, deletes nothing and hands back through onSessionGone", async () => {
+    const fake = buildFakeGeolocationSource();
+    const onRideFinalized = vi.fn();
+    const onSessionGone = vi.fn();
+    render(
+      <RidingScreen
+        route={route}
+        geolocationSource={fake.source}
+        mapFactory={createMockMapFactory().factory}
+        onRideFinalized={onRideFinalized}
+        onSessionGone={onSessionGone}
+      />,
+    );
+    const user = await startRideWithStoredFix(fake);
+    act(() => {
+      fake.watches[0]?.emitFix(midpointFix(1500));
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(nearEndFix(2000));
+    });
+    act(() => {
+      fake.watches[0]?.emitFix(nearEndFix(3000));
+    });
+    const finish = await screen.findByRole("button", { name: "Finish ride" });
+    await waitFor(async () => {
+      expect((await getActiveRideState())?.lastFix?.timestampMs).toBe(3000);
+    });
+    await db.rideState.clear();
+
+    await user.click(finish);
+
+    await waitFor(() => {
+      expect(onSessionGone).toHaveBeenCalledOnce();
+    });
+    expect(onRideFinalized).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(fake.watches[0]?.disposed).toBe(true);
+    await expect(getActiveRideState()).resolves.toBeUndefined();
   });
 });

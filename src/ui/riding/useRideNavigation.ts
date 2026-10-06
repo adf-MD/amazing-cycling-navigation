@@ -24,8 +24,8 @@ import {
   type StoredCameraState,
 } from "../../storage/mapping.ts";
 import {
-  clearActiveRideState,
-  getActiveRideState,
+  clearActiveRideStateIfSession,
+  getActiveRideStateWithSessionId,
   setActiveRideState,
 } from "../../storage/rideStateRepository.ts";
 import { systemClock, type Clock } from "../../platform/clock.ts";
@@ -44,6 +44,10 @@ import {
 export type ElevationProfileDisplay =
   | { kind: "full"; marker: FullProfileMarker | null }
   | { kind: "upcoming"; window: UpcomingElevationWindow };
+
+/** What a riding screen's End ride or Finish ride did (backlog item 140);
+ * see RideNavigationState.finish. */
+export type RideFinishOutcome = "ended" | "session-gone" | "ignored";
 
 export interface RideNavigationState {
   geolocationStatus: GeolocationWatchStatus;
@@ -99,16 +103,31 @@ export interface RideNavigationState {
   completionArmed: boolean;
   setCompletionArmed: (next: boolean) => void;
   start: () => void;
-  /** The shared End ride/Finish ride finaliser: clears the persisted
-   * active ride via clearActiveRideState() first — if that rejects,
-   * nothing else changes and the ride remains fully active/resumable, so
-   * the caller can show a retryable error — then, only on success, stops
-   * the geolocation watch and resets every piece of in-memory session
-   * state to fresh-ride defaults (currentFix back to null is what makes
-   * the existing Start/Resume label logic correct for free). Guards its
-   * own re-entrancy as a silent no-op; RidingScreen owns the primary
+  /** This ride's session identity, or null before a session exists
+   * (backlog item 140). Read in event handlers only — an End ride
+   * confirmation captures it when it opens, Finish ride when it is
+   * pressed — never during render. */
+  getSessionId: () => string | null;
+  /** The shared End ride/Finish ride finaliser (backlog item 140). Clears
+   * the stored session only if it is `expectedSessionId`, the identity the
+   * caller captured, checked and deleted in one transaction — if that
+   * rejects, nothing else changes and the ride remains fully active/
+   * resumable, so the caller can show a retryable error. Resolves to:
+   * - "ended": this ride's session was cleared, or was never stored (no
+   *   committed write and nothing restored — nothing is deleted then); the
+   *   watch is stopped and every piece of in-memory session state reset
+   *   to fresh-ride defaults (currentFix back to null is what makes the
+   *   existing Start/Resume label logic correct for free);
+   * - "session-gone": this ride's stored session had already been ended
+   *   or replaced elsewhere. Nothing is deleted; the watch is stopped and
+   *   this hook is retired — it never starts, persists or pauses again —
+   *   so the caller hands back to the Ride launcher;
+   * - "ignored": a re-entrant call, or an identity this hook no longer
+   *   holds; nothing happens.
+   * Any of this ride's writes not yet issued when this begins is
+   * cancelled (see setActiveRideState). RidingScreen owns the primary
    * duplicate-submission UX guard. */
-  finish: () => Promise<void>;
+  finish: (expectedSessionId: string | null) => Promise<RideFinishOutcome>;
   /** The reversible counterpart to finish() (backlog item 55): writes a
    * resumable snapshot of the current in-memory session — reading the
    * camera state fresh at call time via getCameraState(), never waiting
@@ -133,7 +152,7 @@ export interface RideNavigationState {
    * correct and doesn't need a restore event dispatched. */
   restoredCameraState: StoredCameraState | null;
   /** Explicit lifecycle for the mount-time restoration read (backlog item
-   * 72) — "loading" until getActiveRideState() settles, then "ready"
+   * 72) — "loading" until the restoration read settles, then "ready"
    * regardless of whether anything actually matched (see
    * restoredForThisRoute for that distinction), or "error" if the read
    * itself rejected. Restoration itself never touches geolocationStatus —
@@ -255,6 +274,22 @@ export function useRideNavigation(
   // an identity the Ride launcher assigned to the row survives this ride's
   // own writes.
   const sessionIdRef = useRef<string | null>(null);
+  // Whether this ride's session is known to be stored (backlog item 140):
+  // restored from storage, or one of its own writes has committed. Kept in
+  // a ref, set in the write's own continuation, so finish() never depends
+  // on a hasStoredSession update that has not rendered yet. A write
+  // issued before finish() commits before finish()'s own transaction, and
+  // its continuation runs before that transaction's read completes, so
+  // this is current when finish() classifies its result.
+  const storedSessionRef = useRef(false);
+  // Bumped as finish() begins. Each write captures the value it was
+  // invoked under and is cancelled, at the moment it would be issued, if
+  // the value has moved on — so a write invoked before an End and still
+  // waiting is never issued after it (backlog item 140).
+  const persistenceEpochRef = useRef(0);
+  // Set once finish() has found this ride's stored session ended or
+  // replaced elsewhere: the hook never starts, persists or pauses again.
+  const isRetiredRef = useRef(false);
   // Set synchronously as the first statement of finish(), before any
   // await — closes the window where a genuine fix arriving while
   // clearActiveRideState()'s own IndexedDB transaction is still pending
@@ -343,6 +378,15 @@ export function useRideNavigation(
     // "watching", so duplicate taps never create a second concurrent
     // watch.
     if (statusRef.current === "watching") return;
+    if (isRetiredRef.current) return;
+
+    // A new session's identity is minted as it starts (backlog item 140),
+    // so End ride's confirmation always has one to capture, even before
+    // the first fix; a restored session keeps the one it was stored with.
+    if (startedAtRef.current === null) {
+      startedAtRef.current = new Date(clock.now()).toISOString();
+      sessionIdRef.current = generateId();
+    }
 
     // Dispose whatever watch is currently registered — a no-op when
     // idle, and the explicit "dispose the obsolete/error-state watch"
@@ -376,7 +420,9 @@ export function useRideNavigation(
       return;
     }
     clearWatchRef.current = clear;
-  }, [geolocationSource, handleFix, handleError, setStatus]);
+  }, [clock, geolocationSource, handleFix, handleError, setStatus]);
+
+  const getSessionId = useCallback(() => sessionIdRef.current, []);
 
   const stop = useCallback(() => {
     // Invalidate any in-flight callback from the watch being stopped
@@ -396,33 +442,60 @@ export function useRideNavigation(
   // in-memory session before storage is proven cleared". Only on success
   // does this stop the watch (reusing stop()) and reset every piece of
   // in-memory session state a fresh ride should start clean from.
-  const finish = useCallback(async () => {
-    // Deliberately does not also check isPausingRef here — see that ref's
-    // own declaration comment for why (a react-hooks/immutability lint
-    // constraint) and why the asymmetry is safe in practice.
-    if (isFinalizingRef.current) return;
-    isFinalizingRef.current = true;
-    try {
-      await clearActiveRideState();
-    } catch (error) {
+  const finish = useCallback(
+    async (expectedSessionId: string | null): Promise<RideFinishOutcome> => {
+      // Deliberately does not also check isPausingRef here — see that ref's
+      // own declaration comment for why (a react-hooks/immutability lint
+      // constraint) and why the asymmetry is safe in practice.
+      if (isFinalizingRef.current) return "ignored";
+      // Only the session the caller captured, and only while this hook still
+      // holds it: a confirmation never acts on a session it did not show.
+      if (expectedSessionId !== sessionIdRef.current) return "ignored";
+      isFinalizingRef.current = true;
+      // Any of this ride's writes not yet issued is cancelled from here on.
+      persistenceEpochRef.current += 1;
+      let outcome: "cleared" | "missing" | "changed" | "never-stored";
+      try {
+        outcome =
+          expectedSessionId === null
+            ? "never-stored"
+            : await clearActiveRideStateIfSession(expectedSessionId);
+      } catch (error) {
+        isFinalizingRef.current = false;
+        throw error;
+      }
+      // Ended or replaced elsewhere: nothing was deleted. Retire this hook,
+      // keeping isFinalizingRef set so nothing is persisted again.
+      if (
+        outcome !== "cleared" &&
+        outcome !== "never-stored" &&
+        storedSessionRef.current
+      ) {
+        isRetiredRef.current = true;
+        stop();
+        return "session-gone";
+      }
+      // Cleared — or never stored at all: no committed write and nothing
+      // restored, so nothing of this ride's was there to delete.
+      stop();
+      startedAtRef.current = null;
+      sessionIdRef.current = null;
+      storedSessionRef.current = false;
+      setCurrentFix(null);
+      setCoreState(INITIAL_RIDE_NAVIGATION_CORE_STATE);
+      setIsStale(false);
+      setGeolocationError(null);
+      setElevationViewMode(DEFAULT_ELEVATION_VIEW_MODE);
+      setWakeLockDesired(false);
+      setDismissedClimbFeatureId(null);
+      setRestoredCameraState(null);
+      setCompletionArmed(false);
+      setHasStoredSession(false);
       isFinalizingRef.current = false;
-      throw error;
-    }
-    stop();
-    startedAtRef.current = null;
-    sessionIdRef.current = null;
-    setCurrentFix(null);
-    setCoreState(INITIAL_RIDE_NAVIGATION_CORE_STATE);
-    setIsStale(false);
-    setGeolocationError(null);
-    setElevationViewMode(DEFAULT_ELEVATION_VIEW_MODE);
-    setWakeLockDesired(false);
-    setDismissedClimbFeatureId(null);
-    setRestoredCameraState(null);
-    setCompletionArmed(false);
-    setHasStoredSession(false);
-    isFinalizingRef.current = false;
-  }, [stop]);
+      return "ended";
+    },
+    [stop],
+  );
 
   // Set synchronously as pause()'s first statement, before any await — same
   // rationale as isFinalizingRef above, but for the non-destructive Pause
@@ -467,7 +540,8 @@ export function useRideNavigation(
         startedAtRef.current = new Date(clock.now()).toISOString();
         sessionIdRef.current = generateId();
       }
-      await setActiveRideState(
+      const epoch = persistenceEpochRef.current;
+      const written = await setActiveRideState(
         toStoredRideState(
           route.id,
           startedAtRef.current,
@@ -482,7 +556,15 @@ export function useRideNavigation(
           dismissedClimbFeatureId,
           completionArmed,
         ),
+        { isCancelled: () => persistenceEpochRef.current !== epoch },
       );
+      if (!written) {
+        // An End or Finish began while this write was still waiting to be
+        // issued; it was dropped, and that finalisation takes over.
+        isPausingRef.current = false;
+        return;
+      }
+      storedSessionRef.current = true;
     } catch (error) {
       isPausingRef.current = false;
       throw error; // ride stays fully live/resumable; caller shows a retryable error
@@ -522,7 +604,12 @@ export function useRideNavigation(
   // read from scratch without needing a distinct effect (backlog item 72).
   useEffect(() => {
     let cancelled = false;
-    getActiveRideState()
+    // Reads through the identity-assigning read (backlog item 140): a
+    // stored row without an id is given one in the same transaction, so a
+    // restored legacy session has an identity before End ride is offered,
+    // and every later write carries it. A failed read or assignment is the
+    // existing restore failure, with its Retry.
+    getActiveRideStateWithSessionId()
       .then((stored) => {
         if (cancelled) return;
         if (!stored || !isStoredRouteRideState(stored) || stored.routeId !== route.id) {
@@ -533,8 +620,8 @@ export function useRideNavigation(
         const restored = fromStoredRideState(stored);
         skipRestorationPersistRef.current = true;
         startedAtRef.current = stored.startedAt;
-        sessionIdRef.current =
-          typeof stored.sessionId === "string" ? stored.sessionId : null;
+        sessionIdRef.current = stored.sessionId;
+        storedSessionRef.current = true;
         setCoreState(restored.core);
         setCurrentFix(restored.lastFix);
         setIsStale(restored.lastFix !== null);
@@ -582,11 +669,13 @@ export function useRideNavigation(
     if (isFinalizingRef.current || isPausingRef.current) return;
     if (route.id !== sessionRouteIdRef.current) return;
     if (currentFix === null || startedAtRef.current === null) return;
+    const epoch = persistenceEpochRef.current;
+    const writtenSessionId = sessionIdRef.current;
     setActiveRideState(
       toStoredRideState(
         route.id,
         startedAtRef.current,
-        sessionIdRef.current,
+        writtenSessionId,
         currentFix,
         coreState,
         elevationViewMode,
@@ -595,8 +684,11 @@ export function useRideNavigation(
         dismissedClimbFeatureId,
         completionArmed,
       ),
+      { isCancelled: () => persistenceEpochRef.current !== epoch },
     ).then(
-      () => {
+      (written) => {
+        if (!written) return;
+        if (sessionIdRef.current === writtenSessionId) storedSessionRef.current = true;
         setHasStoredSession(true);
       },
       () => {
@@ -725,6 +817,7 @@ export function useRideNavigation(
     completionArmed,
     setCompletionArmed,
     start,
+    getSessionId,
     finish,
     pause,
     restoredCameraState,

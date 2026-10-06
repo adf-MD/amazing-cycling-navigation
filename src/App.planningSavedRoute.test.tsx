@@ -195,11 +195,15 @@ describe("App — Planning's Open saved route (item 124, slice 3)", () => {
     return { routeA, routeB };
   }
 
+  // A current-format row, with the identity every session has had since
+  // item 140; rows without one are covered in RidingLauncher.test.tsx and
+  // rideStateRepository.test.ts.
   async function pauseRouteA(routeId: string) {
     await setActiveRideState({
       id: "active",
       routeId,
       startedAt: "2026-01-01T08:00:00.000Z",
+      sessionId: "session-seeded",
       lastFix: { coordinate: [0, 51], accuracyMetres: 6, timestampMs: 1000 },
       lastMatchedPointIndex: 0,
       matchedDistanceFromStartMetres: 0,
@@ -215,7 +219,7 @@ describe("App — Planning's Open saved route (item 124, slice 3)", () => {
 
   it("with nothing unfinished, opens the saved route's pre-ride screen, with no dialog and no location tracking", async () => {
     const user = userEvent.setup();
-    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession");
     await setUp(user);
 
     await openFromPlanning(user);
@@ -247,12 +251,13 @@ describe("App — Planning's Open saved route (item 124, slice 3)", () => {
 
   it("with free roam unfinished, presents it inline too; End and switch clears it once and then opens the saved route", async () => {
     const user = userEvent.setup();
-    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession");
     await setUp(user);
     await setActiveRideState({
       id: "active",
       kind: "free-roam",
       startedAt: "2026-01-01T08:00:00.000Z",
+      sessionId: "free-roam-session-seeded",
       lastFix: null,
     });
 
@@ -334,12 +339,14 @@ describe("App — Planning's Open saved route (item 124, slice 3)", () => {
     const user = userEvent.setup();
     const { routeA } = await setUp(user);
     await pauseRouteA(routeA.id);
-    const realClear = rideStateRepository.clearActiveRideState;
+    const realClear = rideStateRepository.clearActiveRideStateIfSession;
     const held = controlledPromise<undefined>();
-    vi.spyOn(rideStateRepository, "clearActiveRideState").mockImplementation(async () => {
-      await held.promise;
-      await realClear();
-    });
+    vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession").mockImplementation(
+      async (sessionId) => {
+        await held.promise;
+        return realClear(sessionId);
+      },
+    );
 
     await openFromPlanning(user);
     const prompt = await waitFor(() => {
@@ -378,9 +385,12 @@ describe("App — Planning's Open saved route (item 124, slice 3)", () => {
     const { routeA } = await setUp(user);
     const routeARow = await pauseRouteA(routeA.id);
     const held = controlledPromise<undefined>();
-    vi.spyOn(rideStateRepository, "clearActiveRideState").mockImplementation(async () => {
-      await held.promise;
-    });
+    vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession").mockImplementation(
+      async () => {
+        await held.promise;
+        return "cleared" as const;
+      },
+    );
 
     await openFromPlanning(user);
     const prompt = await waitFor(() => {
@@ -411,14 +421,16 @@ describe("App — Planning's Open saved route (item 124, slice 3)", () => {
   it("keeps a held Retry read represented when the anchor vanishes, and lets its outcome open the saved route", async () => {
     const user = userEvent.setup();
     await setUp(user);
-    const realGet = rideStateRepository.getActiveRideState;
+    const realGet = rideStateRepository.getActiveRideStateWithSessionId;
     let mode: "reject" | "hold" | "real" = "real";
     const heldRead = controlledPromise<undefined>();
-    vi.spyOn(rideStateRepository, "getActiveRideState").mockImplementation(async () => {
-      if (mode === "reject") throw new Error("read failed");
-      if (mode === "hold") return heldRead.promise;
-      return realGet();
-    });
+    vi.spyOn(rideStateRepository, "getActiveRideStateWithSessionId").mockImplementation(
+      async () => {
+        if (mode === "reject") throw new Error("read failed");
+        if (mode === "hold") return heldRead.promise;
+        return realGet();
+      },
+    );
 
     mode = "reject";
     await openFromPlanning(user);
@@ -457,14 +469,16 @@ describe("App — Planning's Open saved route (item 124, slice 3)", () => {
     const user = userEvent.setup();
     const { routeA } = await setUp(user);
     const routeARow = await pauseRouteA(routeA.id);
-    const realGet = rideStateRepository.getActiveRideState;
+    const realGet = rideStateRepository.getActiveRideStateWithSessionId;
     let mode: "reject" | "hold" | "real" = "real";
     const heldRead = controlledPromise<undefined>();
-    vi.spyOn(rideStateRepository, "getActiveRideState").mockImplementation(async () => {
-      if (mode === "reject") throw new Error("read failed");
-      if (mode === "hold") return heldRead.promise;
-      return realGet();
-    });
+    vi.spyOn(rideStateRepository, "getActiveRideStateWithSessionId").mockImplementation(
+      async () => {
+        if (mode === "reject") throw new Error("read failed");
+        if (mode === "hold") return heldRead.promise;
+        return realGet();
+      },
+    );
 
     mode = "reject";
     await openFromPlanning(user);
@@ -530,8 +544,8 @@ describe("App — Planning's Open saved route (item 124, slice 3)", () => {
     const { routeB } = await setUp(user);
     // The helper pauses whichever route it is given: here the saved route.
     await pauseRouteA(routeB.id);
-    const realRead = rideStateRepository.getActiveRideState;
-    vi.spyOn(rideStateRepository, "getActiveRideState")
+    const realRead = rideStateRepository.getActiveRideStateWithSessionId;
+    vi.spyOn(rideStateRepository, "getActiveRideStateWithSessionId")
       .mockImplementationOnce(realRead)
       .mockRejectedValueOnce(new Error("boom"));
 

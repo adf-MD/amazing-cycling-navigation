@@ -6,9 +6,12 @@ import { logError } from "./platform/errorLog.ts";
 import { generateId } from "./platform/idGenerator.ts";
 import { usePwaUpdate } from "./pwa/registerSW.ts";
 import { isStoredRouteRideState, toStoredFreeRoamState } from "./storage/mapping.ts";
+import type { StoredFreeRoamRideState } from "./storage/db.ts";
 import {
-  clearActiveRideState,
+  clearActiveRideStateIfSession,
   getActiveRideState,
+  getActiveRideStateWithSessionId,
+  replaceActiveRideStateIfSession,
   setActiveRideState,
 } from "./storage/rideStateRepository.ts";
 import { getRoute } from "./storage/routesRepository.ts";
@@ -95,7 +98,15 @@ type RidingContent =
       route: PlannedRoute;
       intent?: RideIntent;
     }
-  | { kind: "free-roam" };
+  // The free-roam session App opened (backlog item 140): App wrote it, or
+  // validated it on Resume, and owns its identity; FreeRoamScreen acts only
+  // on this session.
+  | { kind: "free-roam"; sessionId: string };
+
+/** What opening ride content needs: a route, or the identity of the
+ * free-roam session App has just stored or validated. */
+type OpenedRideTarget =
+  { kind: "route"; route: PlannedRoute } | { kind: "free-roam"; sessionId: string };
 
 const NONE_RIDING_CONTENT: RidingContent = { kind: "none" };
 
@@ -138,11 +149,18 @@ interface PendingRideSwitch {
   existing: "route" | "free-roam" | "unsupported" | null;
   existingRouteId: string | null;
   existingRoute: PlannedRoute | null;
+  /** The identity of the stored session this prompt showed (backlog item
+   * 140), established by the identity-assigning read that created it — null
+   * only for "check-failed". End and switch and Discard and continue act on
+   * this session and no other; a newer stored session is never silently
+   * substituted while the prompt stays open. */
+  existingSessionId: string | null;
   status:
     | "check-failed"
     | "conflict"
     | "clearing"
     | "clear-failed"
+    | "session-changed"
     | "starting-free-roam"
     | "start-free-roam-failed"
     | "returning"
@@ -248,6 +266,17 @@ function describePendingRideSwitch(
         title,
         message: translator.t("switch.returning"),
         confirmLabel,
+      };
+    case "session-changed":
+      // Backlog item 140: End and switch found the session this prompt
+      // showed already ended or replaced elsewhere, so nothing was ended,
+      // written or opened. Like "return-failed" below, never a destructive
+      // action against that stale snapshot: "Check again" re-runs the
+      // check first. The wording is the Ride launcher's approved notice.
+      return {
+        title,
+        message: translator.t("launcher.staleSessionNotice"),
+        confirmLabel: translator.t("switch.checkAgain"),
       };
     case "return-failed":
       // Deliberately never "End and switch": returnToPausedRide only
@@ -515,13 +544,20 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // `stored` row before it would otherwise be discarded — no extra I/O.
   // Resolving that id to a full route (for the inline card's name/Return
   // action) is deliberately NOT done here; see resolveExistingRouteForConflict.
+  //
+  // Backlog item 140: the read gives a stored row without an identity one,
+  // in the same transaction, so a conflict's prompt — and a resumed free
+  // roam — carries the identity of exactly the session it read; its unknown
+  // fields, for an unsupported row, are kept. A failed assignment is a
+  // failed read: "read-failed", never a conflict.
   type RideTransitionCheckResult =
     | { kind: "proceed" }
-    | { kind: "resume" }
+    | { kind: "resume"; sessionId: string }
     | {
         kind: "conflict";
         existing: "route" | "free-roam" | "unsupported";
         existingRouteId: string | null;
+        existingSessionId: string;
       }
     | { kind: "read-failed" };
 
@@ -536,17 +572,18 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     target: RideSessionTarget,
   ): Promise<RideTransitionCheckResult> {
     try {
-      const stored = await getActiveRideState();
+      const stored = await getActiveRideStateWithSessionId();
       const outcome = classifyRideTransition(stored, target);
-      if (outcome.kind !== "conflict") return outcome;
+      if (outcome.kind === "proceed" || stored === undefined) return { kind: "proceed" };
+      if (outcome.kind === "resume")
+        return { kind: "resume", sessionId: stored.sessionId };
       return {
         ...outcome,
         existingRouteId:
-          outcome.existing === "route" &&
-          stored !== undefined &&
-          isStoredRouteRideState(stored)
+          outcome.existing === "route" && isStoredRouteRideState(stored)
             ? stored.routeId
             : null,
+        existingSessionId: stored.sessionId,
       };
     } catch (error) {
       logError("app-check-ride-transition", error);
@@ -576,7 +613,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // rider has opened anything, a launcher check still in flight can no
   // longer replace it.
   function openRideTarget(
-    target: RideSessionTarget,
+    target: OpenedRideTarget,
     options: { intent?: RideIntent } = {},
   ) {
     coldStartAutoOpenArmedRef.current = false;
@@ -588,7 +625,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         ...(options.intent !== undefined ? { intent: options.intent } : {}),
       });
     } else {
-      setRidingContent({ kind: "free-roam" });
+      setRidingContent({ kind: "free-roam", sessionId: target.sessionId });
     }
     setScreen("riding");
     notifyNewRideContent();
@@ -601,31 +638,42 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   // "proceed"/confirmed-clear outcome; a rejection here starts no GPS and
   // leaves the rider on a retryable state (backlog item 42's own
   // requirement, preserved).
-  async function writeFreshFreeRoamState(): Promise<boolean> {
+  //
+  // Resolves to the new session's identity (backlog item 140), which App
+  // owns and FreeRoamScreen is opened with, or null when the write failed.
+  async function writeFreshFreeRoamState(): Promise<string | null> {
+    const fresh = buildFreshFreeRoamState();
     try {
-      await setActiveRideState(
-        toStoredFreeRoamState(
-          new Date(clock.now()).toISOString(),
-          // The new session's own identity (backlog item 140), which
-          // FreeRoamScreen adopts on restore and keeps through its writes.
-          generateId(),
-          null,
-          {
-            mode: "overview",
-            coordinate: null,
-            zoom: null,
-            bearingDegrees: 0,
-            pitchDegrees: 0,
-          },
-          null,
-          false,
-        ),
-      );
-      return true;
+      await setActiveRideState(fresh);
+      return fresh.sessionId;
     } catch (error) {
       logError("app-start-free-roam", error);
-      return false;
+      return null;
     }
+  }
+
+  // A brand-new free-roam session row, with its own identity (backlog item
+  // 140): written by writeFreshFreeRoamState, or, for End and switch, as
+  // the guarded replacement of the session its prompt showed.
+  function buildFreshFreeRoamState(): StoredFreeRoamRideState & { sessionId: string } {
+    const sessionId = generateId();
+    return {
+      ...toStoredFreeRoamState(
+        new Date(clock.now()).toISOString(),
+        sessionId,
+        null,
+        {
+          mode: "overview",
+          coordinate: null,
+          zoom: null,
+          bearingDegrees: 0,
+          pitchDegrees: 0,
+        },
+        null,
+        false,
+      ),
+      sessionId,
+    };
   }
 
   // Backlog item 119: a pending-switch action only ever changes the
@@ -745,6 +793,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
       existing: outcome.kind === "read-failed" ? null : outcome.existing,
       existingRouteId,
       existingRoute,
+      existingSessionId: outcome.kind === "conflict" ? outcome.existingSessionId : null,
       status: outcome.kind === "read-failed" ? "check-failed" : "conflict",
       errorMessage: null,
     });
@@ -781,20 +830,20 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     if (outcome.kind === "resume") {
       setFreeRoamTransitionPending(false);
       withdrawPromptsOlderThan(requestId);
-      openRideTarget(target);
+      openRideTarget({ kind: "free-roam", sessionId: outcome.sessionId });
       return;
     }
 
     if (outcome.kind === "proceed") {
-      const wroteState = await writeFreshFreeRoamState();
+      const writtenSessionId = await writeFreshFreeRoamState();
       if (transitionRequestIdRef.current !== requestId) {
         setFreeRoamTransitionPending(false);
         return;
       }
       setFreeRoamTransitionPending(false);
-      if (wroteState) {
+      if (writtenSessionId !== null) {
         withdrawPromptsOlderThan(requestId);
-        openRideTarget(target);
+        openRideTarget({ kind: "free-roam", sessionId: writtenSessionId });
       } else {
         setFreeRoamTransitionError(t("switch.startFreeRoamFailed"));
       }
@@ -813,6 +862,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
       existing: outcome.kind === "read-failed" ? null : outcome.existing,
       existingRouteId: outcome.kind === "conflict" ? outcome.existingRouteId : null,
       existingRoute: null,
+      existingSessionId: outcome.kind === "conflict" ? outcome.existingSessionId : null,
       status: outcome.kind === "read-failed" ? "check-failed" : "conflict",
       errorMessage: null,
     });
@@ -846,13 +896,19 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     void requestFreeRoamTransition();
   };
 
-  // Confirming a pending different-session switch: clear storage first
-  // (the sole authoritative clear path, item 29's convention), only then
-  // complete the originally requested transition. A route target opens its
-  // normal idle/pre-ride presentation immediately once the clear succeeds
-  // — confirmation to end the old ride is not permission to start GPS for
-  // the new one. A free-roam target must persist its own fresh minimal row
-  // before mounting, exactly like the direct "no conflict" path.
+  // Confirming a pending different-session switch (backlog item 140): ends
+  // only the session this prompt showed — its existingSessionId — checked
+  // and applied in one transaction. A route target clears that session,
+  // then opens its normal idle/pre-ride presentation: confirmation to end
+  // the old ride is not permission to start GPS for the new one. A free-roam
+  // target replaces that session with its own fresh row in the same single
+  // transaction, so no other window's write can land between the end and
+  // the start; a write that fails aborts it, leaving the old session stored,
+  // so the prompt returns to "clear-failed" with End and switch — the same
+  // guarded replacement — as its retry. When that session has already ended
+  // or been replaced elsewhere, nothing is cleared, written, opened or
+  // tracked: the prompt shows "session-changed", which offers only a fresh
+  // check.
   async function confirmPendingSwitch(pending: PendingRideSwitch): Promise<void> {
     if (isPendingSwitchActionPendingRef.current) return;
     // A superseded prompt never clears storage and never shows a busy
@@ -861,11 +917,28 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
       updateOwnPrompt(pending, null);
       return;
     }
+    // Only a "check-failed" prompt lacks an identity, and it never offers
+    // this action.
+    const expectedSessionId = pending.existingSessionId;
+    if (expectedSessionId === null) return;
     isPendingSwitchActionPendingRef.current = true;
     try {
       updateOwnPrompt(pending, { ...pending, status: "clearing", errorMessage: null });
+      const fresh =
+        pending.target.kind === "free-roam" ? buildFreshFreeRoamState() : null;
+      let outcome: "done" | "missing" | "changed";
       try {
-        await trackSwitchStorageMutation(clearActiveRideState());
+        if (fresh) {
+          const replaced = await trackSwitchStorageMutation(
+            replaceActiveRideStateIfSession(expectedSessionId, fresh),
+          );
+          outcome = replaced === "replaced" ? "done" : replaced;
+        } else {
+          const cleared = await trackSwitchStorageMutation(
+            clearActiveRideStateIfSession(expectedSessionId),
+          );
+          outcome = cleared === "cleared" ? "done" : cleared;
+        }
       } catch (error) {
         if (transitionRequestIdRef.current !== pending.requestId) return;
         logError("app-clear-ride-for-switch", error);
@@ -876,36 +949,28 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         });
         return;
       }
-      // The clear genuinely succeeded — bump this regardless of what
-      // happens next, even if a newer request has superseded this one, so
-      // a stale RidingLauncher underneath (if that's where this switch
-      // originated) never continues showing the just-cleared session, even
-      // if the steps below fail.
+      // Storage changed, or was found changed elsewhere — bump this
+      // regardless of what happens next, even if a newer request has
+      // superseded this one, so a stale RidingLauncher underneath (if that's
+      // where this switch originated) never continues showing a session
+      // that is no longer the stored one.
       setLauncherSessionRefreshToken((token) => token + 1);
       if (transitionRequestIdRef.current !== pending.requestId) return;
 
-      if (pending.target.kind === "route") {
-        updateOwnPrompt(pending, null);
-        openRideTarget(pending.target);
-        return;
-      }
-
-      updateOwnPrompt(pending, {
-        ...pending,
-        status: "starting-free-roam",
-        errorMessage: null,
-      });
-      const wroteState = await trackSwitchStorageMutation(writeFreshFreeRoamState());
-      if (transitionRequestIdRef.current !== pending.requestId) return;
-      if (wroteState) {
-        updateOwnPrompt(pending, null);
-        openRideTarget(pending.target);
-      } else {
+      if (outcome !== "done") {
         updateOwnPrompt(pending, {
           ...pending,
-          status: "start-free-roam-failed",
-          errorMessage: t("switch.startFreeRoamFailed"),
+          existingRoute: null,
+          status: "session-changed",
+          errorMessage: null,
         });
+        return;
+      }
+      updateOwnPrompt(pending, null);
+      if (fresh) {
+        openRideTarget({ kind: "free-roam", sessionId: fresh.sessionId });
+      } else if (pending.target.kind === "route") {
+        openRideTarget(pending.target);
       }
     } finally {
       isPendingSwitchActionPendingRef.current = false;
@@ -930,14 +995,13 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
 
       if (outcome.kind === "resume") {
         updateOwnPrompt(pending, null);
-        openRideTarget(
-          pending.target,
-          pending.target.kind === "route"
-            ? {
-                intent: { kind: "restore", token: (nextRideIntentTokenRef.current += 1) },
-              }
-            : {},
-        );
+        if (pending.target.kind === "route") {
+          openRideTarget(pending.target, {
+            intent: { kind: "restore", token: (nextRideIntentTokenRef.current += 1) },
+          });
+        } else {
+          openRideTarget({ kind: "free-roam", sessionId: outcome.sessionId });
+        }
         return;
       }
       if (outcome.kind === "proceed") {
@@ -955,11 +1019,13 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
           status: "starting-free-roam",
           errorMessage: null,
         });
-        const wroteState = await trackSwitchStorageMutation(writeFreshFreeRoamState());
+        const writtenSessionId = await trackSwitchStorageMutation(
+          writeFreshFreeRoamState(),
+        );
         if (transitionRequestIdRef.current !== pending.requestId) return;
-        if (wroteState) {
+        if (writtenSessionId !== null) {
           updateOwnPrompt(pending, null);
-          openRideTarget(pending.target);
+          openRideTarget({ kind: "free-roam", sessionId: writtenSessionId });
         } else {
           updateOwnPrompt(pending, {
             ...pending,
@@ -983,6 +1049,9 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         existing: outcome.kind === "read-failed" ? null : outcome.existing,
         existingRouteId,
         existingRoute,
+        // An explicit fresh check (Retry or Check again) re-anchors the
+        // prompt to the session it has just read, never silently.
+        existingSessionId: outcome.kind === "conflict" ? outcome.existingSessionId : null,
         status: outcome.kind === "read-failed" ? "check-failed" : "conflict",
         errorMessage: null,
       });
@@ -992,9 +1061,10 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   }
 
   // Retries only the free-roam row write (the "start-free-roam-failed"
-  // status) — the old session was already successfully cleared, so there
-  // is nothing left to reclear; retrying re-attempts exactly the one step
-  // that failed.
+  // status). Since backlog item 140 that status follows only a fresh check
+  // that found nothing stored — End and switch's own replacement keeps the
+  // old session when it fails, and retries as End and switch — so there is
+  // nothing to clear; retrying re-attempts exactly the one step that failed.
   async function retryFreeRoamWriteForPendingSwitch(
     pending: PendingRideSwitch,
   ): Promise<void> {
@@ -1011,11 +1081,13 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         status: "starting-free-roam",
         errorMessage: null,
       });
-      const wroteState = await trackSwitchStorageMutation(writeFreshFreeRoamState());
+      const writtenSessionId = await trackSwitchStorageMutation(
+        writeFreshFreeRoamState(),
+      );
       if (transitionRequestIdRef.current !== pending.requestId) return;
-      if (wroteState) {
+      if (writtenSessionId !== null) {
         updateOwnPrompt(pending, null);
-        openRideTarget(pending.target);
+        openRideTarget({ kind: "free-roam", sessionId: writtenSessionId });
       } else {
         updateOwnPrompt(pending, {
           ...pending,
@@ -1125,7 +1197,8 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     if (!pendingRideSwitch || isPendingSwitchActionPendingRef.current) return;
     if (
       pendingRideSwitch.status === "check-failed" ||
-      pendingRideSwitch.status === "return-failed"
+      pendingRideSwitch.status === "return-failed" ||
+      pendingRideSwitch.status === "session-changed"
     ) {
       void retryPendingSwitchCheck(pendingRideSwitch);
     } else if (pendingRideSwitch.status === "start-free-roam-failed") {
@@ -1252,6 +1325,23 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   const handleRideFinalized = () => {
     resetRidingContentToLauncher();
   };
+
+  // Backlog item 140: a riding screen's End ride or Finish ride — or free
+  // roam's restore — found its session already ended or replaced
+  // elsewhere. Nothing was deleted; the screen has stopped. Hand back to
+  // the Ride launcher, which re-reads storage and, once that read has
+  // succeeded, shows what is stored with the notice. `seen` is the ride
+  // content that screen was showing: a report from content a newer ride
+  // choice has since replaced never resets that newer choice.
+  const [launcherStaleNoticeRequested, setLauncherStaleNoticeRequested] = useState(false);
+  const handleSessionGone = (seen: RidingContent) => {
+    if (ridingContentRef.current !== seen) return;
+    setLauncherStaleNoticeRequested(true);
+    resetRidingContentToLauncher();
+  };
+  const handleLauncherStaleNoticeRequestHandled = useCallback(() => {
+    setLauncherStaleNoticeRequested(false);
+  }, []);
 
   // The sole success-path integration point from RidingScreen's/
   // FreeRoamScreen's shared Pause lifecycle (backlog item 55). Called only
@@ -1423,6 +1513,16 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
 
   return (
     <div className="app-shell">
+      {/* Backlog item 140: a stable, initially empty polite region, present
+          before its message, announcing once that End and switch found the
+          session its prompt showed already ended or replaced. The route
+          card, Planning and page-level prompts show the same words but
+          have no live region of their own. */}
+      <p className="visually-hidden" role="status" aria-atomic="true">
+        {pendingRideSwitch?.status === "session-changed"
+          ? t("launcher.staleSessionNotice")
+          : ""}
+      </p>
       {isImmersive ? null : (
         <header className="app-header--sticky" ref={stickyHeaderRef}>
           <MainNavigation screen={screen} onNavigate={handlePrimaryNavigate} />
@@ -1497,15 +1597,23 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
               onRidingActiveChange={handleRidingActiveChange}
               onNavigateToPlanning={handleNavigateToPlanning}
               onRideFinalized={handleRideFinalized}
+              onSessionGone={() => {
+                handleSessionGone(ridingContent);
+              }}
               onReturnToRideLauncher={handleReturnToRideLauncher}
               onRidePaused={handleRidePaused}
               stickyHeaderRef={stickyHeaderRef}
             />
           ) : ridingContent.kind === "free-roam" ? (
             <FreeRoamScreen
+              key={ridingContent.sessionId}
+              sessionId={ridingContent.sessionId}
               mapFactory={mapFactory}
               onRidingActiveChange={handleRidingActiveChange}
               onRideFinalized={handleRideFinalized}
+              onSessionGone={() => {
+                handleSessionGone(ridingContent);
+              }}
               onRidePaused={handleRidePaused}
             />
           ) : (
@@ -1520,6 +1628,8 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
               freeRoamError={freeRoamTransitionError}
               sessionRefreshToken={launcherSessionRefreshToken}
               onSessionChecked={handleLauncherSessionChecked}
+              staleNoticeRequested={launcherStaleNoticeRequested}
+              onStaleNoticeRequestHandled={handleLauncherStaleNoticeRequestHandled}
             />
           ))}
         {screen === "planning" && (

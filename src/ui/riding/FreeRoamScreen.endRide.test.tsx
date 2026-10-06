@@ -7,6 +7,11 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FreeRoamScreen } from "./FreeRoamScreen.tsx";
 import { db } from "../../storage/db.ts";
+import {
+  OWNED_FREE_ROAM_SESSION_ID,
+  ownedFreeRoamRow,
+  seedOwnedFreeRoamSession,
+} from "../../test/freeRoamSession.ts";
 import { getActiveRideState } from "../../storage/rideStateRepository.ts";
 import * as rideStateRepository from "../../storage/rideStateRepository.ts";
 import type { MapFactory, MapLibreLike } from "../../map/mapAdapter.ts";
@@ -55,6 +60,8 @@ function createMockMapFactory(): { factory: MapFactory } {
 
 beforeEach(async () => {
   await db.rideState.clear();
+  // App stores the owned session before mounting the screen (item 140).
+  await seedOwnedFreeRoamSession();
   clearErrorLog();
 });
 
@@ -67,6 +74,7 @@ describe("FreeRoamScreen End ride", () => {
   it("shows the End-ride button immediately — free roam auto-starts, so there is no pre-ride idle state to gate it behind", () => {
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={buildFakeGeolocationSource().source}
         mapFactory={createMockMapFactory().factory}
       />,
@@ -79,6 +87,7 @@ describe("FreeRoamScreen End ride", () => {
     const user = userEvent.setup();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={buildFakeGeolocationSource().source}
         mapFactory={createMockMapFactory().factory}
       />,
@@ -100,6 +109,7 @@ describe("FreeRoamScreen End ride", () => {
     const fake = buildFakeGeolocationSource();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={fake.source}
         mapFactory={createMockMapFactory().factory}
       />,
@@ -141,6 +151,7 @@ describe("FreeRoamScreen End ride", () => {
     const fake = buildFakeGeolocationSource();
     const { container } = render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={fake.source}
         mapFactory={createMockMapFactory().factory}
       />,
@@ -196,6 +207,7 @@ describe("FreeRoamScreen End ride", () => {
     const onRideFinalized = vi.fn();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={fake.source}
         mapFactory={createMockMapFactory().factory}
         onRideFinalized={onRideFinalized}
@@ -231,6 +243,7 @@ describe("FreeRoamScreen End ride", () => {
     const onRideFinalized = vi.fn();
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={fake.source}
         mapFactory={createMockMapFactory().factory}
         onRideFinalized={onRideFinalized}
@@ -250,7 +263,7 @@ describe("FreeRoamScreen End ride", () => {
     });
 
     const clearSpy = vi
-      .spyOn(rideStateRepository, "clearActiveRideState")
+      .spyOn(rideStateRepository, "clearActiveRideStateIfSession")
       .mockRejectedValueOnce(new Error("boom"));
 
     const endRideButton = screen.getByRole("button", { name: "End ride" });
@@ -281,9 +294,10 @@ describe("FreeRoamScreen End ride", () => {
     const user = userEvent.setup();
     const fake = buildFakeGeolocationSource();
     const onRideFinalized = vi.fn();
-    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideState");
+    const clearSpy = vi.spyOn(rideStateRepository, "clearActiveRideStateIfSession");
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={fake.source}
         mapFactory={createMockMapFactory().factory}
         onRideFinalized={onRideFinalized}
@@ -309,6 +323,7 @@ describe("FreeRoamScreen End ride", () => {
     });
     render(
       <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
         geolocationSource={buildFakeGeolocationSource().source}
         mapFactory={createMockMapFactory().factory}
         onRideFinalized={onRideFinalized}
@@ -328,5 +343,70 @@ describe("FreeRoamScreen End ride", () => {
         (entry) => entry.context === "free-roam-ride-finalized-callback",
       ),
     ).toBe(true);
+  });
+});
+
+describe("FreeRoamScreen — a session gone elsewhere (backlog item 140)", () => {
+  it("End ride, after another window replaced the session, deletes nothing and hands back through onSessionGone, not onRideFinalized", async () => {
+    const user = userEvent.setup();
+    const fake = buildFakeGeolocationSource();
+    const onRideFinalized = vi.fn();
+    const onSessionGone = vi.fn();
+    render(
+      <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
+        geolocationSource={fake.source}
+        mapFactory={createMockMapFactory().factory}
+        onRideFinalized={onRideFinalized}
+        onSessionGone={onSessionGone}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "End ride" }));
+    const dialog = await screen.findByRole("dialog");
+    const newer = ownedFreeRoamRow({ sessionId: "free-roam-session-newer" });
+    await db.rideState.put(newer);
+
+    await user.click(within(dialog).getByRole("button", { name: "End ride" }));
+
+    await waitFor(() => {
+      expect(onSessionGone).toHaveBeenCalledOnce();
+    });
+    expect(onRideFinalized).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(fake.watches[0]?.disposed).toBe(true);
+    await expect(getActiveRideState()).resolves.toEqual(newer);
+  });
+
+  it("reports once, without writing, when its restore finds App's session gone", async () => {
+    await db.rideState.clear();
+    const fake = buildFakeGeolocationSource();
+    const onSessionGone = vi.fn();
+    render(
+      <FreeRoamScreen
+        sessionId={OWNED_FREE_ROAM_SESSION_ID}
+        geolocationSource={fake.source}
+        mapFactory={createMockMapFactory().factory}
+        onSessionGone={onSessionGone}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onSessionGone).toHaveBeenCalledOnce();
+    });
+    expect(fake.watches[0]?.disposed).toBe(true);
+    act(() => {
+      fake.watches[0]?.emitFix({
+        coordinate: [0, 51],
+        accuracyMetres: 8,
+        timestampMs: 1000,
+        speedMetresPerSecond: null,
+        headingDegrees: null,
+      });
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(onSessionGone).toHaveBeenCalledOnce();
+    await expect(getActiveRideState()).resolves.toBeUndefined();
   });
 });

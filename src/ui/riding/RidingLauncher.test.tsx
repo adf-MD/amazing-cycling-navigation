@@ -783,7 +783,7 @@ describe("RidingLauncher — onSessionChecked (backlog item 132)", () => {
   });
 
   it("reports null for no session, a free roam, a missing route and an unsupported kind, then renders each branch as before", async () => {
-    const cases: { seed: () => Promise<void>; expectText: string }[] = [
+    const cases: { seed: () => Promise<unknown>; expectText: string }[] = [
       { seed: () => Promise.resolve(), expectText: "Choose a route" },
       {
         seed: () =>
@@ -1099,5 +1099,61 @@ describe("RidingLauncher — a confirmation clears only the session it showed (b
         "Die zuvor angezeigte Fahrt war bereits beendet oder ersetzt worden. Es wurde nichts gelöscht.",
       );
     });
+  });
+});
+
+describe("RidingLauncher — a notice requested by a riding screen's hand-back (backlog item 140)", () => {
+  const STALE_NOTICE =
+    "The previously shown ride had already ended or been replaced. Nothing was deleted.";
+
+  function renderRequested(onHandled = vi.fn()) {
+    render(
+      <RidingLauncher
+        onResumeRoute={vi.fn()}
+        onChooseRoute={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
+        staleNoticeRequested
+        onStaleNoticeRequestHandled={onHandled}
+      />,
+    );
+    return onHandled;
+  }
+
+  it("shows the notice with what is stored once the launcher's own read has succeeded, and reports the request handled once", async () => {
+    await db.routes.put(route);
+    await setActiveRideState(buildRideState({ sessionId: "session-newer" }));
+
+    const onHandled = renderRequested();
+
+    expect(await screen.findByRole("button", { name: "Resume ride" })).toBeVisible();
+    const visible = screen
+      .getAllByText(STALE_NOTICE)
+      .filter((element) => element.classList.contains("status-row"));
+    expect(visible).toHaveLength(1);
+    expect(
+      screen
+        .getAllByRole("status")
+        .filter((element) => element.textContent === STALE_NOTICE),
+    ).toHaveLength(1);
+    expect(onHandled).toHaveBeenCalledOnce();
+  });
+
+  it("after a failed read shows the existing check failure and no notice, and Retry brings none", async () => {
+    vi.spyOn(
+      rideStateRepository,
+      "getActiveRideStateWithSessionId",
+    ).mockRejectedValueOnce(new Error("synthetic read failure"));
+
+    renderRequested();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Your unfinished ride status could not be checked. Nothing has been changed.",
+    );
+    expect(screen.queryByText(STALE_NOTICE)).toBeNull();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("button", { name: "Choose a route" })).toBeVisible();
+    expect(screen.queryByText(STALE_NOTICE)).toBeNull();
   });
 });
