@@ -1,6 +1,6 @@
-# Current status — archive: dated records from 2 October back to 10 September 2026
+# Current status — archive: dated records from 3 October back to 10 September 2026
 
-This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order — on 1 October 2026 those from 25 September 2026 back, on 4 October 2026 the four of 28 and 29 September 2026, on 5 October 2026 the seven of 30 September and 1 October 2026, and on 6 October 2026 the six of 2 October 2026 that now open it — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
+This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order — on 1 October 2026 those from 25 September 2026 back, on 4 October 2026 the four of 28 and 29 September 2026, on 5 October 2026 the seven of 30 September and 1 October 2026, and on 6 October 2026 the six of 2 October 2026 and, later that day, the six of 3 October 2026 that now open it — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
 
 **Where the moved text's positional references now point.** These records stood in `current-status.md` after its newer dated records and before its per-item entries from item 114 onwards, and their wording is kept exactly as written. Read them like this:
 
@@ -9,11 +9,107 @@ This file is **the continuation of [`current-status.md`](current-status.md)'s da
 - **Item 121's "the dated `0.4.44` record above"**, under "Dated evidence, closures and limitations, by item" — that record stayed in `current-status.md` on 1 October 2026 and moved here on 4 October 2026, so it is again [above, in this file](#installed-iphone-acceptance-of-0444-build-8027c6a-item-121-reported-29-september-2026).
 - **In the seven records of 30 September and 1 October 2026, moved on 5 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist above" means `current-status.md`'s open checklist; "the item 102 entry below" means `current-status.md`'s per-item entry for item 102; and "the mouse double-click observation above" means the observation from automated testing in `current-status.md`'s checklist section. Their references to one another, such as "the `0.4.47` finding below", still point within this file.
 - **In the six records of 2 October 2026, moved on 6 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist" means `current-status.md`'s open checklist; and "the item 132 checks above" means that Session 5's checks, listed in the same record. Their references to one another, such as the `0.4.53` record's "that observation is kept below", still point within this file.
+- **In the six records of 3 October 2026, moved later on 6 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist" means `current-status.md`'s open checklist. Their references to one another, such as "the C-09 report above" and "D-02's acceptance below", still point within this file.
 - **"Item 115's installed-iPhone presentation checklist below"**, in the 12 September 2026 bicycle field test — the per-item checklists of that time, since consolidated into `current-status.md`'s Sessions 2 and 3.
 
 Links in these records are relative to `docs/project/`, as they were, and still resolve.
 
 ---
+
+### Installed-iPhone acceptance of `0.4.59` (build `bc4fb11`, item 124 slice 8, C-11, reported 3 October 2026)
+
+**Device and build.** Installed Home Screen PWA; version `0.4.59`, build `bc4fb11`, in English and German, as reported. The accepted build is `bc4fb11`, and it stays so when later documentation or implementation deployments change the deployed build ID.
+
+**The rider's report, verbatim:**
+
+> On the installed iPhone, version 0.4.59, build bc4fb11, item 124 slice 8’s C-11 checks pass in English and German: opening and cancelling End ride works on the in-session and cold-start paused screens, the ride remains paused, reopening works, and Resume preserves the ride’s position and progress.
+> The scrolled-cancellation check also passed: End ride returned fully into view with only the necessary adjustment.
+
+That is C-11's Session 5, in English and German, so that session is complete for this device and has been removed from the checklist. Its checks were:
+
+- after **Start riding**, a position and **Pause**, **End ride** on the paused screen opened "End this ride?" in its place, completely visible, without the page moving;
+- **Cancel** closed it with the ride still paused and **Resume ride** still offered, and opening it again worked;
+- **the scrolled cancellation:** with the page dragged until the top of "End this ride?" was behind the navigation bar, **Cancel** brought **End ride** fully back into view with only the necessary adjustment;
+- after the PWA was fully closed and reopened with the ride still paused, it opened and cancelled the same way on the paused route screen that **Ride** shows;
+- **Resume ride** then resumed the ride with its position and progress preserved.
+
+This **accepts C-11's ordinary-flow checks on build `bc4fb11`**, the scrolled cancellation included, at product level, in English and German. The position-and-progress result is the rider's own observation: no progress value, camera value or location-watch count was measured on the phone.
+
+**Separate, automated evidence only.** The enlarged-text openings and cancellations and their measured amounts, the oversized branches (unit-tested only), a Cancel made while a Pause is held (a synthetic e2e seam), and the confirmation that survives Pause (tested with scroll anchoring switched off) are proved in component tests and in Chromium and WebKit in the pinned container; that record is item 124's [slice 8](history/item-124-continued.md#slice-8--end-rides-confirmation-on-the-paused-screen-c-11-shipped-0459-3-october-2026). Session 5 deliberately did not induce them on the phone, and **this report is not physical-device acceptance of them**. The confirmation's survival across **Pause** and **Resume ride** stays recorded and unfixed here; it is decision 4's separate slice.
+
+**Not claimed:** VoiceOver; a physical keyboard, Escape included; enlarged text or iOS Larger Text; landscape; physical Android.
+
+### Installed-iPhone acceptance of `0.4.58` (build `7e46daf`, item 124 slice 7, C-12, reported 3 October 2026)
+
+**Device and build.** Installed Home Screen PWA; version `0.4.58`, build `7e46daf`, in English and German, as reported. The accepted build is `7e46daf`, and it stays so when later documentation deployments change the deployed build ID.
+
+**The rider's report, verbatim:** "On the installed iPhone, version 0.4.58, build 7e46daf, item 124 slice 7’s ordinary-flow checks pass in English and German. Edit copy’s confirmation is fully visible without unwanted movement from pre-ride, paused and cold-start paused screens. Cancel and reopening preserve the original draft; Replace and edit opens the route’s copy in Plan and leaves the saved route unchanged." — C-12's Session 5, in English and German, so that session is complete for this device and has been removed from the checklist. Its checks were:
+
+- with a draft of at least one waypoint in **Plan**, **Edit copy** on a route's pre-ride screen opened "Replace your current draft?" beneath it, complete on screen, without the page moving;
+- **Cancel** closed it, the route's screen stayed, and **Plan** still showed the earlier draft — and opening and cancelling it again behaved the same way;
+- after **Start riding**, a position and **Pause**, it opened the same way on the paused screen;
+- after the PWA was fully closed and reopened with the ride still paused, it opened the same way on the paused route screen that **Ride** shows;
+- **Replace and edit** opened **Plan** with the route's copy in place of the earlier draft, and the saved route stayed unchanged.
+
+This **accepts C-12's ordinary-flow checks on build `7e46daf`**, at product level, in English and German.
+
+**Separate, automated evidence only.** The enlarged-text geometry, the oversized case whose action row already shows (a synthetic safe-area inset), the comparison of the confirmation that reappears on Pause after surviving **Start riding**, and pending and failed writes are proved in component tests and in Chromium and WebKit in the pinned container, at 200% root text where it matters; that record is item 124's [slice 7](history/item-124-continued.md#slice-7--edit-copys-replacement-confirmation-opening-c-12-shipped-0458-3-october-2026). Session 5 deliberately did not induce them on the phone, and **this report is not physical-device acceptance of them**. The confirmation's survival across **Start riding** and **Pause** stays recorded and unfixed.
+
+**Not claimed:** VoiceOver; a physical keyboard; enlarged text or iOS Larger Text; landscape; physical Android.
+
+### Installed-iPhone report of C-09's missing-route variant (`0.4.57`, build `bd688d7`, item 124 inventory, reported 3 October 2026)
+
+**Device and build.** Installed Home Screen PWA; version `0.4.57`, build `bd688d7`, in English and German, as reported.
+
+**The rider's report, verbatim:** "C-09 on version 0.4.57, build bd688d7, English and German: the missing-route confirmation is readable and fits without unwanted movement; Cancel preserves the unfinished-session warning; confirmed Discard removes it, and it stays gone after leaving and returning. Other saved routes remain. A lower opening position was not reachable."
+
+**What it establishes:** installed-iPhone evidence for [C-09](../design/reveal-inventory/README.md#c-09--discard-unfinished-ride-launcher)'s **missing-route variant**, at product level, in English and German — the confirmation opens readable and without unwanted movement, Cancel keeps the unfinished-session warning, a confirmed Discard removes it for good, and other saved routes remain. That a lower opening position could not be reached on this phone does not establish that it is unreachable at every supported phone size.
+
+**Not covered:** enlarged text; the unsupported or corrupt-session variant; storage failures. **Not claimed:** VoiceOver; a physical keyboard; landscape; physical Android. It records no policy decision for C-09, and it is separate from D-02's acceptance below.
+
+### Installed-iPhone observation of C-07, C-08, C-10, C-11 and C-13, with the rider's policy approval (item 124 inventory, reported 3 October 2026)
+
+**Device and build.** The installed iPhone. **No version, build or language was attached to this observation**, so none is recorded, and none is borrowed from the C-09 report above.
+
+**The rider's words, verbatim:** "Keep these placements and existing ride semantics, and require the common opening/cancellation behaviour above. Make only targeted corrections where current checks or enlarged-text measurements demonstrate a mismatch. I can't position the cancel buttons low enough though for C10, C11, C07, C13 and C08. Please give me instructions for C09 too, then we can finish this slice."
+
+**What it is:** a policy approval — recorded as a decision in the [inventory](../design/reveal-inventory/README.md#decisions-and-observations--c-07-to-c-13-3-october-2026), not here — plus a device observation: the rider could not position the Cancel buttons low enough to reach a lower opening position for C-07, C-08, C-10, C-11 or C-13. It is **not** a report that every action passed on those five surfaces. That a lower position could not be reached on this phone does not establish that it is unreachable at every supported phone size.
+
+**Not claimed:** any individual check passing; a version, build or language; enlarged text; VoiceOver; a physical keyboard; landscape; physical Android.
+
+### Installed-iPhone acceptance of `0.4.57` (build `bd688d7`, item 124 slice 6, D-02, reported 3 October 2026)
+
+**Device and build.** Installed Home Screen PWA; version `0.4.57`, build `bd688d7`, as reported. The accepted build is `bd688d7`, and it stays so when later deployments change the deployed build ID.
+
+**The rider's report, verbatim:** "All checks passed. On the installed iPhone, version 0.4.57, build bd688d7, item 124 slice 6’s ordinary-flow checks pass in English and German: cancelling Delete preserves the route, confirmed deletion and repeated use work without unexpected page jumps or stale states, and hiding an unconfirmed Delete with Search or a tag filter keeps it closed when the route returns. Search typing remains uninterrupted." — D-02's Session 5, in English and German, so that session is complete for this device and has been removed from the checklist. Its checks were:
+
+- **Cancel** on a route in the middle of the list closed the confirmation, left the route unchanged and did not jump the page;
+- **Delete route** removed the route — showing **Deleting…** for at most a moment, and never as an ordinary card in between — without the page jumping;
+- deleting a second route the same way, then opening and cancelling a third, left no stale **Deleting…**, message or unavailable control;
+- an unconfirmed **Delete** hidden by **Search routes**, and by **Filter by tags**, closed quietly, typing continued, and the route came back closed.
+
+This **accepts D-02's ordinary-flow regression checks on build `bd688d7`**, at product level, in English and German.
+
+**Separate, automated evidence only.** A pending deletion, the synthetic failures, failure recovery and the committed-but-unreconciled state are proved by synthetic IndexedDB holds, aborts and faults, and by 200% root text, in Chromium and WebKit; that record is item 124's [slice 6](history/item-124.md#slice-6--delete-route-pending-and-failing-d-02-shipped-0457-3-october-2026). Session 5 deliberately did not induce them on the phone, and **this report is not physical-device acceptance of them**. The Search result is an installed-iPhone typing result, not physical-keyboard evidence.
+
+**Not claimed:** a physical keyboard; VoiceOver; enlarged text or iOS Larger Text; landscape; physical Android.
+
+### Installed-iPhone acceptance of `0.4.56` (build `439e578`, item 124 slice 5, D-01, reported 3 October 2026)
+
+**Device and build.** Installed Home Screen PWA; version `0.4.56`, build `439e578`, as reported. The accepted build is `439e578`, and it stays so when later documentation commits change the deployed build ID.
+
+**The rider's report, verbatim:** "On the installed iPhone, version 0.4.56, build 439e578, item 124 slice 5’s ordinary-flow checks pass in English and German: opening Clear draft, cancelling without losing the draft, confirming a successful clear, and repeating with a new draft. No stale error or busy state remains." — D-01's Session 5, in English and German, so that session is complete for this device and has been removed from the checklist. Its checks were:
+
+- with a draft of at least two waypoints in Plan, **Clear draft** opened its confirmation with no page movement when it fitted, and otherwise moved the page only as far as needed to show it;
+- **Cancel** closed it and left the draft unchanged;
+- confirming with the confirmation's own **Clear draft** cleared the draft to an empty plan;
+- with another small draft, opening, cancelling, reopening and confirming again left no stale error message and no lingering **Clearing…** / **Wird verworfen…** busy state.
+
+This **accepts D-01's ordinary-flow regression checks on build `439e578`**, at product level, in English and German.
+
+**Separate, automated evidence only.** A failing clear, a delayed completion, a retry after a failure and the enlarged-text handling are proved by synthetic IndexedDB faults, holds and aborts, and by 200% root text, in Chromium and WebKit; that record is item 124's slice 5 in [`history/item-124.md`](history/item-124.md#item-124). Session 5 deliberately did not induce them on the phone, and **this report is not physical-device acceptance of them**.
+
+**Not claimed:** a physical keyboard; VoiceOver; iOS Larger Text; landscape; physical Android.
 
 ### Installed-iPhone acceptance of `0.4.55` (build `501e1d4`, item 132, reported 2 October 2026)
 

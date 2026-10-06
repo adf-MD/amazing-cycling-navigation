@@ -934,7 +934,7 @@ The longest job, shard 4, left 343 s below the E2E jobs' 1,200-second timeout. T
     - **Hidden document, by the rider's further answer:** the document becoming hidden while a test is in flight — switching apps or locking the phone — also counts as moving on, for that attempt. Returning does not re-enable it, and the request and its result are neither cancelled nor suppressed.
     - **Focus questions** stay with item 135.
 13. **A failed End ride's message — filed as [item 139](../backlog.md#item-139)**, a separate, unscheduled presentation defect. No fix comes with slice 11.
-14. **The stale launcher confirmation — filed as [item 140](../backlog.md#item-140)**, a separate, unscheduled correctness item. No priority is assigned, and the execution order is unchanged.
+14. **The stale launcher confirmation — filed as [item 140](items-132-NN.md#item-140)**, a separate, unscheduled correctness item. No priority is assigned, and the execution order is unchanged.
 
 **Where item 124 stands.** Slice 11, P-15, is the next and only approved slice. Every other inventory entry now has a disposition ([reconciliation](../../design/reveal-inventory/closure-reconciliation.md#dispositions-after-slice-10s-acceptance-4-october-2026)), and item 124 stays active until slice 11's installed-iPhone acceptance. Item 122's design stage has not started.
 
