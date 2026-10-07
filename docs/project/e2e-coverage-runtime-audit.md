@@ -109,16 +109,16 @@ The summaries also found assertions that are pure state or logic, already covere
 
 Each was checked by hand against the source.
 
-| #   | Candidate                                                                                                                  | Evidence                                                                                                                                                                                                                                                                                      | Coverage that would remain                                                                                                                                       | Disposition                        |
-| --- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| C1  | `androidPlanning.spec.ts` (7.9 s)                                                                                          | Same title, clicks (100,100 / 200,150) and captured-URL check as `planning.spec.ts:265`, which also asserts the surface rows and more. No assertion reads the viewport, touch or device scale factor.                                                                                         | `planning.spec.ts:265` in desktop Chromium; Planning at phone width in `planning.spec.ts`'s 390 px describe; touch placement in `androidPlanningTouchPlacement`. | Consolidate (low value)            |
-| C2  | `androidCspEnforcement.spec.ts` (0.6 s)                                                                                    | Its assertions are those of `csp.smoke.spec.ts`'s "blocks and reports a forbidden inline script", which runs in Chromium and WebKit; only the device preset differs.                                                                                                                          | The same test in both desktop engines.                                                                                                                           | Consolidate (low value)            |
-| C3  | `e2e/support/csp.spec.ts`, `e2e/support/localMapStyle.spec.ts` (14 cases, about 0.01 s)                                    | Pure logic; no test requests a page. They test the harness, not the product.                                                                                                                                                                                                                  | Unchanged, if moved to Vitest; or left as they are, since they cost nothing.                                                                                     | Retain, or move for tidiness only  |
-| C4  | **Landscape assertions** in 12 specs (steps inside cases that together take about 38 s; not the landscape steps' own cost) | Short landscape is retired as an acceptance requirement, but not deliberately broken. In `ridingNextManoeuvre.spec.ts` the compaction of the untrusted-GPX warning at 200 % text is asserted only after the resize to 844×390 (line 880); portrait at 200 % asserts only horizontal overflow. | If landscape blocks are retired, the 200 % compaction must first be asserted in portrait, or it is lost.                                                         | Investigate — the rider's decision |
-| C5  | Five specs use `installLocalMapStyle` without the `serviceWorkers: "block"` its documentation says callers must add        | `androidFreeRoam`, `ridingLauncher`, `ridingOutAndBackTurnaround`, `ridingShortTurnaroundWalkingPace` and `settings`. Item 32 measured that adding it halved one flake's rate, without removing the flake.                                                                                    | All coverage unchanged; the harness contract would hold everywhere.                                                                                              | Repair (small)                     |
-| C6  | German × English pairs where language changes only the locator copy                                                        | For example `editCopyBusyState`'s navigation pairs, `ridingPauseAfterResume`, `coldStartPausedRoute`'s state tests, and `screenScrollRestoration.smoke`'s first test (the switcher geometry does depend on German).                                                                           | German's wrapping and geometry cases stay wherever geometry is asserted.                                                                                         | Investigate per family (section 7) |
-| C7  | `germanRidingHeader.spec.ts` English cases                                                                                 | English `ride.endRideCompact` equals `ride.endRide` ("End ride"), so English cases cannot tell the compact label from the full name. They still measure English header fit.                                                                                                                   | Unchanged if kept; this is a statement of what they prove.                                                                                                       | Retain, with the limit noted       |
-| C8  | Comments and titles that no longer match the code                                                                          | See finding F9.                                                                                                                                                                                                                                                                               | Unchanged.                                                                                                                                                       | Repair (documentation-level)       |
+| #   | Candidate                                                                                                                  | Evidence                                                                                                                                                                                                                                                                                      | Coverage that would remain                                                                                                                                       | Disposition                              |
+| --- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| C1  | `androidPlanning.spec.ts` (7.9 s)                                                                                          | Same title, clicks (100,100 / 200,150) and captured-URL check as `planning.spec.ts:265`, which also asserts the surface rows and more. No assertion reads the viewport, touch or device scale factor.                                                                                         | `planning.spec.ts:265` in desktop Chromium; Planning at phone width in `planning.spec.ts`'s 390 px describe; touch placement in `androidPlanningTouchPlacement`. | Consolidate (low value)                  |
+| C2  | `androidCspEnforcement.spec.ts` (0.6 s)                                                                                    | Its assertions are those of `csp.smoke.spec.ts`'s "blocks and reports a forbidden inline script", which runs in Chromium and WebKit; only the device preset differs.                                                                                                                          | The same test in both desktop engines.                                                                                                                           | Consolidate (low value)                  |
+| C3  | `e2e/support/csp.spec.ts`, `e2e/support/localMapStyle.spec.ts` (14 cases, about 0.01 s)                                    | Pure logic; no test requests a page. They test the harness, not the product.                                                                                                                                                                                                                  | Unchanged, if moved to Vitest; or left as they are, since they cost nothing.                                                                                     | Retain, or move for tidiness only        |
+| C4  | **Landscape assertions** in 12 specs (steps inside cases that together take about 38 s; not the landscape steps' own cost) | Short landscape is retired as an acceptance requirement, but not deliberately broken. In `ridingNextManoeuvre.spec.ts` the compaction of the untrusted-GPX warning at 200 % text is asserted only after the resize to 844×390 (line 880); portrait at 200 % asserts only horizontal overflow. | If landscape blocks are retired, the 200 % compaction must first be asserted in portrait, or it is lost.                                                         | Retained for now — rider, 7 October 2026 |
+| C5  | Five specs use `installLocalMapStyle` without the `serviceWorkers: "block"` its documentation says callers must add        | `androidFreeRoam`, `ridingLauncher`, `ridingOutAndBackTurnaround`, `ridingShortTurnaroundWalkingPace` and `settings`. Item 32 measured that adding it halved one flake's rate, without removing the flake.                                                                                    | All coverage unchanged; the harness contract would hold everywhere.                                                                                              | Repair (small)                           |
+| C6  | German × English pairs where language changes only the locator copy                                                        | For example `editCopyBusyState`'s navigation pairs, `ridingPauseAfterResume`, `coldStartPausedRoute`'s state tests, and `screenScrollRestoration.smoke`'s first test (the switcher geometry does depend on German).                                                                           | German's wrapping and geometry cases stay wherever geometry is asserted.                                                                                         | Investigate per family (section 7)       |
+| C7  | `germanRidingHeader.spec.ts` English cases                                                                                 | English `ride.endRideCompact` equals `ride.endRide` ("End ride"), so English cases cannot tell the compact label from the full name. They still measure English header fit.                                                                                                                   | Unchanged if kept; this is a statement of what they prove.                                                                                                       | Retain, with the limit noted             |
+| C8  | Comments and titles that no longer match the code                                                                          | See finding F9.                                                                                                                                                                                                                                                                               | Unchanged.                                                                                                                                                       | Repair (documentation-level)             |
 
 **Not candidates, although similar-looking.** These were examined and are not interchangeable:
 
@@ -387,13 +387,13 @@ Completed observations; each disposition is a candidate, not a decision.
 
 **The change**, to `.github/workflows/deploy-pages.yml`'s E2E job only:
 
-- Run Playwright's **built-in** `json` reporter alongside the existing `list` reporter: `--reporter=list,json`, with `PLAYWRIGHT_JSON_OUTPUT_NAME` set to a per-shard file outside `test-results/`.
-- Upload that file on **every** run, success included, as its own per-shard artefact with 7-day retention. Use the already-pinned `actions/upload-artifact` and a name distinct from the failure-evidence artefact.
+- Run Playwright's **built-in** `json` reporter alongside the existing `list` reporter: `--reporter=list,json`, writing a per-shard file outside `test-results/` through the installed version's supported output setting.
+- Upload that file when the test step passed or failed in the ordinary way — **not** on every run: a cancelled or timed-out job, or an earlier step's failure, uploads nothing. Each shard gets its own artefact, kept for 7 days, using the already-pinned `actions/upload-artifact` and a name distinct from the failure-evidence artefact.
 
 **Why it is first.**
 
 - It measures before anything is optimised.
-- It removes the dependence on authenticated log retrieval.
+- It gives consistent, machine-readable evidence without parsing console logs. _(Corrected 7 October 2026: an earlier draft said it removed the dependence on authenticated retrieval. It does not — downloading a CI artefact also needs authenticated GitHub access.)_
 - It gives every later slice — a consolidation pilot, a wait replacement, item 147's repair — a before/after comparison over more than two runs.
 - It is the smallest change that does so.
 
@@ -444,6 +444,44 @@ None is part of the first slice.
 - **Item 147's uninstrumented 60-repeat failures** are not shown to have the same form as the instrumented ones.
 - **Item 148's first occurrence** (artefacts overwritten) is not shown to have the same form as the later ones, and whether WebKit's scroll would have arrived after the settle window is not known.
 - **The coverage summaries** were agent-assisted. Only the claims named in this report were checked by hand; the appendix's one-line descriptions are summaries, not audits.
+
+### Decisions of 7 October 2026
+
+The rider's decisions on the questions above, recorded as made:
+
+1. **Proposal 1 is approved**, with its upload conditions as corrected above:
+   - the built-in JSON reporter alongside `list`;
+   - separate per-shard artefacts, uploaded on successful runs and ordinary test failures, with 7-day retention;
+   - selected baseline reports kept in the external audit folder for longer comparisons.
+
+   Retrieving the artefacts still needs authenticated GitHub access. The benefit is consistent, machine-readable evidence without parsing console logs.
+
+2. **Item 147's focused assertion repair** is scheduled after timing capture:
+   - compare actual element identity rather than the changing label text;
+   - keep the test's allowed focus behaviour when the button is disabled;
+   - show that unexpected movement to another control still fails.
+
+   The instrumented failures justify repairing what the assertion measures. They do not explain the WebKit timing or every earlier failure. There is no product focus-policy change and no expansion into item 135.
+
+3. **Item 148's bounded investigation** is scheduled after item 147:
+   - establish whether wheel input is part of the behaviour those cases protect, or merely prepares their scroll position;
+   - deliver a bounded proposal before changing their setup or assertions.
+
+   High concurrency is not required for reproduction; any load contribution remains unestablished. This scheduling authorises investigation and a proposal, not implementation.
+
+4. **The landscape end-to-end checks are kept for now** (C4).
+   - Portrait remains the only supported and acceptance-tested orientation.
+   - The roughly 38 s is whole cases, not the landscape steps' removable cost.
+   - Any later retirement must first preserve unique coverage in portrait, including the 200 % warning-compaction assertion.
+   - No landscape test changes in this slice.
+
+**The sequence:** item 146's timing capture → item 147's assertion repair → item 148's bounded investigation and proposal → item 146's concluding review and dispositions → item 103 → item 120.
+
+- **Item 145** stays unscheduled, with its rider-review checkpoint before item 103 starts.
+- **Persistence across app closure** stays deferred.
+- **The other candidates** in [section 11](#11-proposals) stay candidates, not additional prerequisites for item 103.
+
+**Closure.** Item 146 can conclude with each finding explicitly retained, deferred or tracked separately. Completing every proposed optimisation is not its closure condition, and unresolved reliability findings stay accurately recorded.
 
 ---
 
@@ -512,6 +550,16 @@ Because the race never reproduced locally, these runs show only that the change 
 ### The wider pattern, a candidate only
 
 A `map-loading` `toBeHidden()` check directly after a click appears at **142 sites in 50 files**. Many have a positive check before or after it, or may render synchronously. Which of them can race is not established, and this repair was deliberately not extended to them.
+
+### Deployment of the repair
+
+Run [37622132469](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37622132469), for `49547aa`, passed every job on its first attempt:
+
+- Verify and build: 249 s;
+- shards 1 to 4: 633, 893, 561 and 763 s;
+- Deploy: 10 s.
+
+The live site then served `0.4.69` / `49547aa`. The longest shard job, 893 s (shard 2), was 307 s under the limit. One run: no trend is claimed. `677a03e` remains the accepted phone build.
 
 ---
 
