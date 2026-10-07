@@ -17,7 +17,8 @@ Contents:
 11. [Proposals](#11-proposals)
 12. [Decisions for the rider, and evidence gaps](#12-decisions-for-the-rider-and-evidence-gaps)
 13. [Follow-up: CI run 37614828755 and its repair](#13-follow-up-ci-run-37614828755-and-its-repair)
-14. [Appendix: per-spec inventory](#14-appendix-per-spec-inventory)
+14. [Timing capture: the implementation (7 October 2026)](#14-timing-capture-the-implementation-7-october-2026)
+15. [Appendix: per-spec inventory](#15-appendix-per-spec-inventory)
 
 ---
 
@@ -82,7 +83,7 @@ Contents:
 - **Parameterisation.** 62 loops generate tests in 28 files, in four idioms: full `LANGUAGES × TEXT_SIZES` cross products; hand-picked case tables (for example `SCROLLED_CASES`); width × language grids; and loops inside a single test. Their dimensions are reviewed in [section 7](#7-matrix-review).
 - **Origin.** 23 specs first added on or after 1 October 2026 hold 568 of the cases; 27 added in September hold 318; 43 older specs hold 306. A spec counts by its first commit, so cases added later to an older spec count with that spec.
 
-The per-spec table is in [the appendix](#14-appendix-per-spec-inventory).
+The per-spec table is in [the appendix](#15-appendix-per-spec-inventory).
 
 ---
 
@@ -563,7 +564,85 @@ The live site then served `0.4.69` / `49547aa`. The longest shard job, 893 s (sh
 
 ---
 
-## 14. Appendix: per-spec inventory
+## 14. Timing capture: the implementation (7 October 2026)
+
+**Status: configured in the workflow; its first CI run is pending** at the time of writing. A commit cannot name itself, so the commit, its first run and that run's artefacts are recorded in the next documentation update.
+
+### The change
+
+Only the E2E job in `.github/workflows/deploy-pages.yml` changes.
+
+- **The test step** sets `PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/e2e-timing-shard-N.json` and runs `npm run e2e -- --shard=N/4 --reporter=list,json`.
+  - The command-line reporter overrides the configuration's `list` in CI only, so local runs are unchanged, and `list` still writes the job log.
+  - `PLAYWRIGHT_JSON_OUTPUT_FILE` is the output setting the installed Playwright 1.61.1 supports, resolved from the working directory. Without it the JSON would go to stdout, mixed into the list output. It should be rechecked whenever `@playwright/test` is upgraded.
+  - The file is outside `test-results/`, and `playwright-report/` is already ignored by git.
+- **A new step, "Upload Playwright JSON timing report",** follows the unchanged failure-evidence upload. It:
+  - runs if `!cancelled() && (steps.e2e.conclusion == 'success' || steps.e2e.conclusion == 'failure')`;
+  - has `continue-on-error: true`;
+  - uses the already-pinned `actions/upload-artifact@043fb46d…` (v7.0.1), with `if-no-files-found: warn` and `retention-days: 7`.
+- **Unchanged:** the failure-evidence upload, traces, screenshots and error contexts; the test step's exit status; Deploy's `needs: [verify, e2e]`; the 20-minute limit, the matrix, the container image, workers, retries and timeouts; the dependencies; the application and the version.
+
+### The report and its artefact
+
+**Format.** Playwright's JSON reporter writes:
+
+- **`config`**, including `metadata.actualWorkers` (the worker count actually used), `shard`, `argv` and the projects;
+- **`suites`**, by file, then describe, then spec. Each spec carries `file`, `line`, `column` and `title`. Each test carries `projectName`, `status` and `results`.
+- **each result's** `status`, `duration` in milliseconds, `startTime`, `workerIndex`, `parallelIndex`, `retry`, `errors`, `stdout`, `stderr`, `annotations` and `attachments`. For a failure, `attachments` are paths to the trace, screenshot and error context — not their contents;
+- **`errors`**, for global errors;
+- **`stats`**: start time, duration, and expected, unexpected, flaky and skipped counts.
+
+The durations are milliseconds, finer than the list reporter's tenths of a second. Error messages keep Playwright's ANSI colour codes.
+
+**Naming.** Each shard's artefact is `playwright-timing-<run_id>-<run_attempt>-shard-<n>`, holding one file, `e2e-timing-shard-<n>.json`. It is distinct from item 116's `playwright-failures-…`.
+
+**Retrieval needs authenticated GitHub access:**
+
+- the run's page while signed in;
+- `gh run download <run_id> -n <name>`;
+- or the REST API with a token.
+
+The artefact listing — names and sizes — is readable without a token; the contents are not. Selected baseline reports are to be downloaded that way and kept outside the repository, in the audit folder's `ci-timing/` directory, for comparisons beyond seven days.
+
+### When it uploads
+
+| The test step                                     | The upload step                          | Why                                                                                     |
+| ------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------- |
+| passed                                            | runs                                     | its conclusion is `success`                                                             |
+| failed with ordinary test failures                | runs, after the failure-evidence upload  | its conclusion is `failure`, and the run was not cancelled                              |
+| never ran, because an earlier step failed         | skipped                                  | its conclusion is `skipped`                                                             |
+| was cancelled, or the job hit its 20-minute limit | skipped                                  | `cancelled()`; the report is written only when a run ends, so it would not exist anyway |
+| ended without Playwright writing a report         | runs, finds no file, and warns           | `if-no-files-found: warn`; **no artefact is promised for every early termination**      |
+| (any case where it runs) the upload itself fails  | fails, without changing the job's result | `continue-on-error: true`: the report is evidence, not part of the deployment gate      |
+
+### Verification — local only
+
+All of this ran in the CI image by digest, with outputs kept outside the repository.
+
+1. **Workflow structure.** The workflow was parsed with PyYAML and compared with its parent. Only the test step's `env` and command changed, plus the one new step. The failure-evidence step, Deploy's `needs`, the matrix, the limit and the container are identical, and the new step's condition, `continue-on-error`, pinned action, name, path, retention and `if-no-files-found` are as approved. Two negative controls each failed the check: the condition replaced by `always()`, and `retention-days` removed. `actionlint` is not available here and was not run; Prettier passed.
+2. **A small existing selection, run the CI way** — `CI=1`, the exact relative output variable and `--reporter=list,json` — on `e2e/smoke.spec.ts` (Chromium and WebKit) and `e2e/climbSelectorFit.spec.ts` (Chromium). 10 passed on 10 workers.
+   - The list output was in the log, and `playwright-report/e2e-timing-shard-1.json` was valid JSON of 23,708 bytes.
+   - It carried every test's project, file, line, title, status and millisecond duration, the specs' measurement annotations, and `actualWorkers: 10`.
+   - It contained no synthetic key, token, `Authorization` header or host home path; its absolute paths were container paths.
+3. **The failure path, using a temporary probe outside the committed suite.** The probe used the repository's own configuration, with its test directory and project narrowed, and held one passing case and one deliberately failing case, both opening the real app.
+   - The run exited with status 1, so failure stayed failure.
+   - The JSON marked the failing case `failed` (test status `unexpected`), with its error and the paths of its screenshot, error context and trace.
+   - The output directory held `trace.zip`, `test-failed-1.png` and `error-context.md` as before, with the JSON outside it.
+4. **The upload conditions** were reasoned through as the table above. They have not been exercised in CI.
+
+**Size.** The selection came to about 2.4 KB per test. The audit's annotation-heavy local runs came to about 4.4 KB per test. A 298-test shard is therefore expected at roughly 0.7–1.3 MB — an estimate, to be checked against the first run's artefact sizes.
+
+### Remaining gaps and monitoring
+
+- **The first CI run's artefacts.** Their existence and sizes can be confirmed from the listing; their contents stay unverified until downloaded with authenticated access.
+- **An upload from a failing CI run** has not been observed. That waits for a suitable ordinary failure; none is to be manufactured.
+- **No artefact on early termination** — cancellation, a timeout, an earlier step's failure, or the process ending before the report is written.
+- **The JSON reporter's own cost** is not measured. A second ordinary run's comparison is a follow-up, not a blocker. No extra CI run is to be triggered for it, and no run-to-run change is to be attributed to the reporter without evidence.
+- **Baselines** need an authenticated download into the audit folder.
+
+---
+
+## 15. Appendix: per-spec inventory
 
 Cases are listed Chromium/WebKit/Android, from `--list` at `7cc9e55`; WebKit counts include the 5 skipped cases. "CI Σ s" is the summed reported duration in run 37602138083, excluding skipped cases; it is a concurrent sum, not wall-clock. "CI max s" is the slowest case. "Fixed waits" counts `page.waitForTimeout` calls in the source. "Added" is the spec's first commit.
 

@@ -141,9 +141,21 @@ jobs:
           APP_BUILD_SHA: ${{ github.sha }}
         run: npm run build
 
+      # Backlog item 146: the list output in this log as before, plus
+      # Playwright's built-in JSON report — per-test status, duration,
+      # annotations and errors, and the worker count actually used. The
+      # command-line --reporter overrides the config's `list` in CI only, so
+      # local runs are unchanged. PLAYWRIGHT_JSON_OUTPUT_FILE is the output
+      # setting the installed Playwright (1.61.1) supports; recheck it when
+      # @playwright/test is upgraded. Without it the JSON would go to stdout,
+      # mixed with the list output. The file is written outside test-results/,
+      # so the failure evidence below is unchanged, and only when the run
+      # ends: a run killed before then leaves no report.
       - name: End-to-end test suite
         id: e2e
-        run: npm run e2e -- --shard=${{ matrix.shard }}/4
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/e2e-timing-shard-${{ matrix.shard }}.json
+        run: npm run e2e -- --shard=${{ matrix.shard }}/4 --reporter=list,json
 
       # Backlog item 116. Playwright writes a trace, a screenshot and an
       # error context for a failed test only (see playwright.config.ts), and
@@ -164,6 +176,25 @@ jobs:
           name: playwright-failures-${{ github.run_id }}-${{ github.run_attempt }}-shard-${{ matrix.shard }}
           path: test-results/
           if-no-files-found: ignore
+          retention-days: 7
+
+      # Backlog item 146: this shard's JSON report, kept for timing and status
+      # comparisons. Uploaded when the test step itself finished, passed or
+      # failed. Not on cancellation, a job timeout or an earlier step's
+      # failure, since the report would be missing or meaningless; no artefact
+      # is promised for every early termination, and if-no-files-found: warn
+      # records a missing report instead of failing. continue-on-error keeps
+      # an upload problem from changing the job's result or blocking Deploy:
+      # the report is evidence, not part of the gate. Retrieving it, like the
+      # failure evidence, needs an authenticated GitHub account.
+      - name: Upload Playwright JSON timing report
+        if: ${{ !cancelled() && (steps.e2e.conclusion == 'success' || steps.e2e.conclusion == 'failure') }}
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-timing-${{ github.run_id }}-${{ github.run_attempt }}-shard-${{ matrix.shard }}
+          path: playwright-report/e2e-timing-shard-${{ matrix.shard }}.json
+          if-no-files-found: warn
           retention-days: 7
 
   deploy:

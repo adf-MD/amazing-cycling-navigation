@@ -670,6 +670,16 @@ _Category: End-to-end test suite_
        4. **The landscape end-to-end checks are kept for now.** Portrait remains the only supported and acceptance-tested orientation. The audit's roughly 38 s covers whole cases, not removable landscape cost. Any later retirement must first move unique coverage, including the 200 % warning-compaction assertion, to portrait. No landscape test changes in this slice.
      - **The sequence:** item 146's timing capture → item 147's assertion repair → item 148's bounded investigation and proposal → item 146's concluding review and dispositions → item 103 → item 120. Item 145 stays unscheduled, with its rider-review checkpoint before item 103 starts. Persistence across app closure stays deferred. The other audit candidates stay candidates, not prerequisites for item 103.
      - **How this item concludes:** with each finding explicitly retained, deferred or tracked separately. Completing every proposed optimisation is not its closure condition, and unresolved reliability findings stay accurately recorded.
+     - **Timing capture, implemented 7 October 2026 — configured; first CI run pending** ([record](e2e-coverage-runtime-audit.md#14-timing-capture-the-implementation-7-october-2026)).
+       - **The change:** the E2E job now runs `--reporter=list,json`, with `PLAYWRIGHT_JSON_OUTPUT_FILE=playwright-report/e2e-timing-shard-N.json`.
+       - **The upload:** each shard uploads `playwright-timing-<run_id>-<run_attempt>-shard-<n>` when the test step passed or failed in the ordinary way, kept for 7 days, with `continue-on-error` so that it cannot change the deployment gate.
+       - **Unchanged:** failure evidence, the exit status and Deploy's `needs`.
+       - **Retrieval** needs authenticated GitHub access.
+       - **Verified locally only:**
+         - the workflow's structure against its parent, with two negative controls;
+         - a small selection in the CI image, giving valid JSON with identities, statuses, millisecond durations, annotations and `actualWorkers`;
+         - a failure probe outside the suite: failure stays failure, and the trace, screenshot and error context are kept.
+       - **Gaps:** the first CI artefacts' contents, until downloaded; a failing run's upload, not yet observed; no artefact on early termination; the reporter's cost, to be compared over a later ordinary run; baselines, still to be downloaded into the audit folder.
 
 ---
 
