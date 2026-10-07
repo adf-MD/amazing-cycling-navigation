@@ -648,6 +648,12 @@ _Category: End-to-end test suite_
      - **Output:** a linked audit report — the coverage inventory, the available runtime measurements and their limits, prioritised findings, a small proposed first implementation slice with the coverage and CI guarantees it preserves, and whether additional shards are warranted. **The item stays open** while further evidence or approved implementation is needed, and completed investigation is kept distinct from proposed change.
      - **Context:** [item 133](history/items-132-NN.md#item-133)'s four shards; the shard durations under "Monitored, corroborating only" in [`current-status.md`](current-status.md). [Item 130](#item-130), [item 147](#item-147) and [item 148](#item-148) are separate investigations: the audit may prioritise diagnostics for 147 and 148, but neither absorbs nor fixes them.
      - **Related standard, from the same decision:** a new browser test states briefly its distinct purpose, why it needs browser execution and any relevant overlap with existing coverage (the root [`CLAUDE.md`](../../CLAUDE.md)'s Engineering standards).
+     - **First investigation slice, 7 October 2026 — reported; nothing implemented** ([report](e2e-coverage-runtime-audit.md)). Measured from per-test durations in the rider-supplied logs of CI runs 37602138083 and 37499907118, cross-checked row by row against the raw logs, and from focused diagnostics in the CI image by digest. Its findings, each a candidate rather than a decision:
+       - **No shard change is warranted now.** The longest shard job at head took 806 s, 394 s under the limit; the longest recorded took 963 s. Each shard spends about 50–60 s before its tests start. Count-based sharding leaves the mixed shard 3 shorter than the others.
+       - **Cost is concentrated in the two-engine smoke specs**, about 59 % of summed durations. Their geometry needs the language × size combinations; their state and storage assertions repeat per combination.
+       - **Items 147 and 148 now have characterised failure patterns**, still without a cause; see each entry.
+       - **Smaller items:** five specs omit the `serviceWorkers: "block"` their map-style helper requires; landscape assertions remain in 12 specs, one holding the only 200 % compaction check; a few Android duplicates; fixed waits mostly evidential; some stale comments.
+     - **Proposed first implementation slice, awaiting the rider's review:** keep per-test durations from every CI run, using Playwright's built-in JSON reporter beside `list` and an always-run upload per shard with 7-day retention. Test, timeout, retry, worker, shard, failure-evidence and gate behaviour are all unchanged. Later candidates are listed in the report. **The item stays open and first in the order.**
 
 ---
 
@@ -667,6 +673,10 @@ _Category: End-to-end test reliability_
      - **CI:** no CI failure of this case is recorded.
      - **Not [item 130](#item-130)**, which concerns a different spec and assertion.
      - **Related:** [item 135](#item-135) records the product question — **Test routing connection** is disabled while it runs, so it loses focus. This item concerns what the test's assertion measures and imports nothing from item 135.
+     - **Diagnostics from item 146's first slice, 7 October 2026** ([report](e2e-coverage-runtime-audit.md#8-focused-diagnostics-items-147-and-148)). The 60-repeat rates were reused, not re-measured. An instrumented copy, outside the repository, recorded the focused element's node identity, focus events and the button's disabled and text changes:
+       - **30 repeats (30 tests on 30 workers): 3 failed.** In all three, the focused element at both snapshots was the same button node, no `focusout` was logged, and the button had been re-enabled and relabelled — so the text comparison failed while focus stayed where it was. In passes, a `focusout` from the disabled button, Linux WebKit's deferred fix-up, landed before the re-enable, or focus was already on `body`.
+       - **A controlled comparison, not CI-equivalent (2 workers, `--cpus=4`, trace off): 0 of 30 failed.**
+       - **The case passed in both supplied CI runs.** Not established: that the uninstrumented 60-repeat failures had the same form, or why the fix-up sometimes lands after the re-enable. No change is approved.
 
 **The observation as recorded in `current-status.md`, moved here unchanged on 7 October 2026:**
 
@@ -692,6 +702,12 @@ _Category: End-to-end test reliability_
      - **Reruns and baselines, kept on record and not treated as resolution:** after the first, an identical combined run passed 164 of 164, the case passed 12 of 12 in isolation on that build and on the baseline, and a combined baseline run showed no such failure; after the second, the next identical combined run passed that case, as did a combined run of the same specs on a build source-equivalent to `0.4.68`.
      - **Not assumed:** that the two occurrences — different cases, on different builds, in different runs — share a cause, or that either is attributable to item 125 or item 139. **No cause is established.**
      - **Not [item 130](#item-130)**, which concerns a different spec and assertion.
+     - **Diagnostics from item 146's first slice, 7 October 2026** ([report](e2e-coverage-runtime-audit.md#8-focused-diagnostics-items-147-and-148)). They started with the eight WebKit scrolled cases and the kept artefacts; the broader 230-case selection was not reconstructed.
+       - **The unmodified cases × 5, with a JSON reporter (40 tests on 36 workers): 3 failed**, in three different cases. The spec's own placement note shows every pass exactly on target and every failure exactly where the confirmation was before the wheel.
+       - **An instrumented copy × 5, recording wheel and scroll events without requesting frames (40 tests on 36 workers): 2 failed.** In both, the document received one cancelable, not default-prevented `wheel` and the page could scroll, but no `scroll` event followed and `scrollY` never changed within the settle window, at least 300 ms. In passes the first scroll followed within 5–107 ms.
+       - **The same at 2 workers with `--cpus=4`, a controlled comparison, not CI-equivalent: 6 of 40 failed, all in that pattern** — so it is not specific to high concurrency.
+       - **All eight cases passed in both supplied CI runs.**
+       - **Not established:** a cause; whether WebKit would have scrolled after the settle window; whether the first occurrence had the same form. Nothing is attributed to item 125 or 139, and no change is approved.
 
 **The observation as recorded in `current-status.md`, moved here unchanged on 7 October 2026:**
 
