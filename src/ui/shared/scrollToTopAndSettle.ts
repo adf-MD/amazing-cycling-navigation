@@ -23,6 +23,22 @@ const REASSERT_SAFETY_CAP_MS = 1000;
  * fire and would be self-defeating to listen for. */
 const GENUINE_SCROLL_INPUT_EVENTS = ["touchstart", "pointerdown", "wheel"] as const;
 
+/** The furthest the document can scroll down, never negative. */
+function maxScrollTop(): number {
+  const scroller = document.scrollingElement ?? document.documentElement;
+  return Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+}
+
+export interface ScrollSettleOptions {
+  /** Checked on every frame: true ends the loop without another scroll.
+   * Backlog item 125's restoration passes "the rider has moved on". */
+  shouldStop?: () => boolean;
+  /** Called exactly once, however the loop ends — settled, capped,
+   * stopped by genuine input or by `shouldStop`, or by the returned stop
+   * function. */
+  onEnd?: () => void;
+}
+
 /**
  * Scrolls the document to the top immediately, then keeps it there until
  * it has genuinely settled, and returns a function that stops the loop
@@ -39,16 +55,35 @@ const GENUINE_SCROLL_INPUT_EVENTS = ["touchstart", "pointerdown", "wheel"] as co
  * abandoned immediately if real user input arrives (item 95 follow-up).
  *
  * Extracted unchanged from useResetScrollForNewRideContent.ts (backlog
- * item 121), whose own tests still guard this exact behaviour, so that
- * the Settings/Status section's interim top reset reuses the proven loop
- * rather than a second, weaker copy of it.
+ * item 121). Since backlog item 125 it is the top case of
+ * scrollToAndSettle below, with identical behaviour, applied by
+ * screenScrollMemory.ts's top requests; that hook's tests, ported from the
+ * old one's, still guard the loop's drift, settle and safety-cap
+ * behaviour.
  */
 export function scrollToTopAndSettle(): () => void {
-  window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  return scrollToAndSettle(0);
+}
+
+/**
+ * Backlog item 125: the same loop for any target, used to restore a
+ * screen's own scroll position. One instant, unclamped scrollTo (the
+ * browser clamps it), then on every frame the target is `top` clamped to
+ * how far the document can scroll at that moment, so content that grows
+ * or shrinks during the loop is followed rather than fought, and a page
+ * shorter than `top` settles at its bottom. Completion, the safety cap and
+ * the genuine-input events are exactly the top reset's.
+ */
+export function scrollToAndSettle(
+  top: number,
+  options: ScrollSettleOptions = {},
+): () => void {
+  window.scrollTo({ top, left: 0, behavior: "auto" });
 
   let rafId: number | null = null;
   let startTimestamp: number | null = null;
   let consecutiveStableFrames = 0;
+  let ended = false;
 
   const stopReasserting = () => {
     if (rafId !== null) {
@@ -58,12 +93,22 @@ export function scrollToTopAndSettle(): () => void {
     for (const eventName of GENUINE_SCROLL_INPUT_EVENTS) {
       window.removeEventListener(eventName, stopReasserting);
     }
+    if (!ended) {
+      ended = true;
+      options.onEnd?.();
+    }
   };
 
   const tick = (timestamp: number) => {
+    rafId = null;
+    if (options.shouldStop?.()) {
+      stopReasserting();
+      return;
+    }
     startTimestamp ??= timestamp;
-    if (Math.abs(window.scrollY) > TOP_TOLERANCE_PX) {
-      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    const target = Math.min(top, maxScrollTop());
+    if (Math.abs(window.scrollY - target) > TOP_TOLERANCE_PX) {
+      window.scrollTo({ top: target, left: 0, behavior: "auto" });
       consecutiveStableFrames = 0;
     } else {
       consecutiveStableFrames += 1;

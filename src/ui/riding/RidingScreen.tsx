@@ -71,6 +71,7 @@ import type { PlanningPreferences, StoredCameraState } from "../../storage/mappi
 import { ClimbCategoriesDisclosure } from "../shared/ClimbCategoriesDisclosure.tsx";
 import { ClimbLocalGradientDisclosure } from "../shared/ClimbLocalGradientDisclosure.tsx";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
+import { useScreenScrollRestoration } from "../shared/screenScrollMemory.ts";
 import { applyConfirmationReveal } from "../shared/confirmationRevealScroll.ts";
 import { CrosshairIcon } from "../shared/CrosshairIcon.tsx";
 import { NorthArrowIcon } from "../shared/NorthArrowIcon.tsx";
@@ -160,6 +161,12 @@ export interface RidingScreenProps {
    * Back to Ride options, End ride, Start riding — never pulls them into
    * Planning, where its draft is waiting for them instead. */
   onNavigateToPlanning?: () => void;
+  /** Called once Edit copy has written its draft, whether or not the rider
+   * is still here to be taken to Planning (backlog item 125): Planning's
+   * remembered scroll position belonged to the draft just replaced. It
+   * must never scroll anything — a copy completing after the rider has left
+   * leaves the screen they are on alone. */
+  onEditCopyDraftSaved?: () => void;
   /** Called once a successful End ride or Finish ride has fully completed —
    * after nav.finish()'s own storage-clear-then-reset lifecycle has already
    * resolved AND this screen's own runtime cleanup (camera.resetCamera(),
@@ -305,6 +312,7 @@ export function RidingScreen({
   wakeLockSource,
   onRidingActiveChange,
   onNavigateToPlanning,
+  onEditCopyDraftSaved,
   onRideFinalized,
   onSessionGone,
   onReturnToRideLauncher,
@@ -1291,6 +1299,7 @@ export function RidingScreen({
         editCopyOperation: "forward",
       });
       setIsEditCopyConfirmOpen(false);
+      onEditCopyDraftSaved?.();
       if (attempt.context === editCopyContextRef.current) onNavigateToPlanning?.();
     } catch (error) {
       logError("riding-edit-copy-in-planning", error);
@@ -2278,6 +2287,19 @@ export function RidingScreen({
         );
       })()}
     </>
+  );
+
+  // Backlog item 125: Ride's scroll position comes back once this screen
+  // shows its real content — never against the "Restoring…"/"Resuming…"
+  // line that stands in for the much taller paused panel. A failed read's
+  // alert, with its Retry, counts as content. Last among this screen's
+  // hooks, so its decision follows every other layout effect here.
+  useScreenScrollRestoration(
+    !(
+      nav.geolocationStatus === "idle" &&
+      (isConsumingResumeIntent || isAwaitingRestoredSession) &&
+      nav.restorationStatus !== "error"
+    ),
   );
 
   return (

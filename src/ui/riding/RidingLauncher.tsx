@@ -13,6 +13,7 @@ import {
 } from "../../storage/rideStateRepository.ts";
 import { getRoute } from "../../storage/routesRepository.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
+import { useScreenScrollRestoration } from "../shared/screenScrollMemory.ts";
 import { formatAscent, formatDistanceKm } from "../shared/routeSummary.ts";
 
 export interface RidingLauncherProps {
@@ -455,6 +456,10 @@ export function RidingLauncher({
       </>
     );
   }
+
+  // Backlog item 125: Ride's scroll position comes back once this check of
+  // the stored session has finished, never against its "Checking…" line.
+  useScreenScrollRestoration(hydrationStatus !== "loading");
 
   return (
     <section className="screen" aria-label={t("launcher.landmarkLabel")}>

@@ -27,6 +27,7 @@ import type { Coordinate, PlannedRoute, RoutePoint } from "../../domain/types.ts
 import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry.ts";
 import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
 import { buildFakeWakeLockSource } from "../../test/fixtures/wakeLockSource.ts";
+import { createReadinessRecorder } from "../../test/screenScrollReadiness.tsx";
 import { OFF_ROUTE_BASE_METRES } from "../../navigation/offRoute.ts";
 import {
   MICRO_DETAIL_COLOURS,
@@ -4958,6 +4959,60 @@ describe("RidingScreen", () => {
       expect(onRestoredSessionMissing).not.toHaveBeenCalled();
     });
 
+    it("reports its content ready for scroll restoration only once the paused panel replaces the Restoring line, and a failed read's alert counts as content (backlog item 125)", async () => {
+      let resolveRead!: (value: IdentifiedStoredRideState | undefined) => void;
+      vi.spyOn(
+        rideStateRepository,
+        "getActiveRideStateWithSessionId",
+      ).mockReturnValueOnce(
+        new Promise<IdentifiedStoredRideState | undefined>((resolve) => {
+          resolveRead = resolve;
+        }),
+      );
+      const recorder = createReadinessRecorder("riding");
+      const pending = render(
+        <RidingScreen
+          route={route}
+          restoreIntentToken={1}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+        { wrapper: recorder.wrapper },
+      );
+
+      expect(screen.getByText("Restoring your unfinished ride…")).toBeInTheDocument();
+      expect(recorder.reports).toEqual([false]);
+      await act(async () => {
+        resolveRead({ ...STORED_ROW, sessionId: "session-1" });
+        await Promise.resolve();
+      });
+      await screen.findByRole("button", { name: "Resume ride" });
+      await waitFor(() => {
+        expect(recorder.latest()).toBe(true);
+      });
+      pending.unmount();
+
+      vi.spyOn(
+        rideStateRepository,
+        "getActiveRideStateWithSessionId",
+      ).mockRejectedValueOnce(new Error("boom"));
+      const failing = createReadinessRecorder("riding");
+      render(
+        <RidingScreen
+          route={route}
+          restoreIntentToken={1}
+          geolocationSource={buildStubGeolocationSource().source}
+          mapFactory={buildStubMapFactory().factory}
+        />,
+        { wrapper: failing.wrapper },
+      );
+      expect(failing.reports).toEqual([false]);
+      await screen.findByRole("alert");
+      await waitFor(() => {
+        expect(failing.latest()).toBe(true);
+      });
+    });
+
     it("a failed restoration shows the restore alert with Retry and Back to Ride options, and a passive Retry restores without starting a watch", async () => {
       await setActiveRideState(STORED_ROW);
       vi.spyOn(
@@ -8553,9 +8608,30 @@ describe("RidingScreen", () => {
       expect(draft?.editCopySourceRouteId).toBe("route-1");
     });
 
+    it("reports the written draft through onEditCopyDraftSaved before navigating (backlog item 125)", async () => {
+      const user = userEvent.setup();
+      const order: string[] = [];
+      const stub = buildStubGeolocationSource();
+      render(
+        <RidingScreen
+          route={route}
+          geolocationSource={stub.source}
+          mapFactory={buildStubMapFactory().factory}
+          onEditCopyDraftSaved={() => order.push("saved")}
+          onNavigateToPlanning={() => order.push("navigated")}
+        />,
+      );
+
+      await user.click(await screen.findByRole("button", { name: "Edit copy" }));
+      await waitFor(() => {
+        expect(order).toEqual(["saved", "navigated"]);
+      });
+    });
+
     it("shows an inline error and does not navigate when saving the draft fails", async () => {
       const user = userEvent.setup();
       const onNavigateToPlanning = vi.fn();
+      const onEditCopyDraftSaved = vi.fn();
       const saveDraftSpy = vi
         .spyOn(planningDraftRepository, "saveDraft")
         .mockRejectedValueOnce(new Error("boom"));
@@ -8566,6 +8642,7 @@ describe("RidingScreen", () => {
           geolocationSource={stub.source}
           mapFactory={buildStubMapFactory().factory}
           onNavigateToPlanning={onNavigateToPlanning}
+          onEditCopyDraftSaved={onEditCopyDraftSaved}
         />,
       );
 
@@ -8575,6 +8652,9 @@ describe("RidingScreen", () => {
         expect(screen.getByRole("alert")).toBeInTheDocument();
       });
       expect(onNavigateToPlanning).not.toHaveBeenCalled();
+      // Nothing was written, so Planning's remembered position stands
+      // (backlog item 125).
+      expect(onEditCopyDraftSaved).not.toHaveBeenCalled();
 
       saveDraftSpy.mockRestore();
     });

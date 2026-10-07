@@ -38,6 +38,7 @@ import {
   expectNoEditCopyNotice,
   getEditCopyAnnouncement,
 } from "../../test/editCopyNotice.ts";
+import { createReadinessRecorder } from "../../test/screenScrollReadiness.tsx";
 
 const mockedGetDraft = vi.mocked(getDraft);
 const mockedSaveDraft = vi.mocked(saveDraft);
@@ -209,6 +210,50 @@ afterEach(() => {
 });
 
 describe("PlanningScreen draft hydration lifecycle", () => {
+  it("reports its content ready for scroll restoration only once the draft has been read, never while Loading your draft shows (backlog item 125)", async () => {
+    const { promise, resolve } = createControlledPromise<
+      PlanningDraftContent | undefined
+    >();
+    mockedGetDraft.mockReturnValue(promise);
+    const map = createMockMapFactory();
+    const { provider } = createStubRoutingProvider();
+    const recorder = createReadinessRecorder("planning");
+
+    render(
+      <PlanningScreen
+        onNavigateToSettings={vi.fn()}
+        mapFactory={map.factory}
+        routingProvider={provider}
+      />,
+      { wrapper: recorder.wrapper },
+    );
+    map.triggerLoad();
+    // The key and verification reads answer (Dexie's live queries run on
+    // short timers here); the draft read is still held.
+    for (let turn = 0; turn < 20; turn += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+    }
+    expect(screen.getByText("Loading your draft…")).toBeInTheDocument();
+    expect(recorder.reports).not.toContain(true);
+
+    await act(async () => {
+      resolve(buildDraftContent());
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    for (let turn = 0; turn < 50 && recorder.latest() !== true; turn += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+    }
+
+    expect(screen.queryByText("Loading your draft…")).toBeNull();
+    expect(recorder.latest()).toBe(true);
+    expect(recorder.reports.filter((ready) => ready)).toHaveLength(1);
+  });
+
   it("does not write while an existing-draft read is pending, and restores every field once it resolves", async () => {
     const { promise, resolve } = createControlledPromise<
       PlanningDraftContent | undefined

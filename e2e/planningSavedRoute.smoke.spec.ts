@@ -921,11 +921,38 @@ test("Open saved route with nothing unfinished opens its pre-ride screen from th
     language: "en",
     ride: "none",
   });
+  // A library long enough to hold Planning's offset (backlog item 125),
+  // left at its top.
+  await page.getByRole("button", { name: "Routes", exact: true }).click();
+  for (let index = 0; index < 10; index += 1) {
+    await page.getByLabel("Import GPX file").setInputFiles({
+      name: `Library ${String(index)}.gpx`,
+      mimeType: "application/gpx+xml",
+      buffer: Buffer.from(buildRouteGpx()),
+    });
+    await expect(page.locator(".route-list > li")).toHaveCount(index + 1);
+  }
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+  });
+  await page.getByRole("button", { name: COPY.en.plan, exact: true }).click();
+  await expect(page.getByTestId("map-container")).toHaveAttribute(
+    "data-map-ready",
+    "true",
+    {
+      timeout: 20_000,
+    },
+  );
   const name = "Nothing unfinished";
   await planRoute(page, "en", name);
   await placeTop(page, SAVE_BUTTON, (await snapshot(page)).bandTop + 16);
   expectFeedbackShown("Save", await pressSave(page));
 
+  const planningY = await page.evaluate(() => window.scrollY);
+  expect(
+    planningY,
+    "Planning is scrolled when Open saved route is pressed",
+  ).toBeGreaterThan(0);
   await pointerPress(page, OPEN_BUTTON);
   await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
   await expect(page.getByRole("button", { name: COPY.en.startRiding })).toBeVisible();
@@ -933,6 +960,20 @@ test("Open saved route with nothing unfinished opens its pre-ride screen from th
   expect(await page.locator('[role="dialog"]').count()).toBe(0);
   expect(await readActiveRideStateRow(page)).toBeNull();
   expect(await readWatchPositionCallCount(page)).toBe(0);
+
+  // Backlog item 125: Routes comes back where Routes was left — at its top
+  // here — never at Planning's offset, which Routes received before.
+  await page.getByRole("button", { name: "Routes", exact: true }).click();
+  await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  const routesMax = await page.evaluate(
+    () => document.documentElement.scrollHeight - window.innerHeight,
+  );
+  expect(routesMax, "Routes could hold Planning's offset").toBeGreaterThanOrEqual(
+    planningY,
+  );
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await settle(page);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
   expect(consoleErrors).toEqual([]);
 });
 

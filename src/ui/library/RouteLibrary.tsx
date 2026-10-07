@@ -82,6 +82,7 @@ import {
 } from "./RouteListItem.tsx";
 import { isRouteDeletionBusy } from "./routeDeletion.ts";
 import { useRouteDeletion, type RouteDeletionController } from "./useRouteDeletion.ts";
+import { useScreenScrollRestoration } from "../shared/screenScrollMemory.ts";
 
 /** The inline switch-guard prompt (backlog item 73 follow-up), owned and
  * fully computed by App.tsx — this is the single, complete, discriminated
@@ -99,22 +100,16 @@ export interface PendingRouteSwitch extends RouteSwitchPrompt {
 
 export interface RouteLibraryProps {
   onOpenRoute: (route: PlannedRoute) => void;
-  /** A ref (never a dereferenced value — reading `.current` during render
-   * would both trip react-hooks/refs and not pick up a later mutation)
-   * holding the document scrollY to restore once, the first time real
-   * route cards render after this component mounts. Consumed and nulled
-   * out after that one attempt, whether or not it actually scrolled. */
-  restoreScrollYRef?: RefObject<number | null>;
   /** A ref holding the current session's search query, continuously
-   * synced on every keystroke — unlike restoreScrollYRef this is never
-   * one-shot-nulled, because every navigate-away-and-back path to Routes
-   * needs it restored, not only the route-open path (there is no single
-   * "about to navigate away from Routes" call site the way handleOpenRoute
-   * is for scroll). Owned by App (never unmounts), so it survives this
-   * component's own unmount/remount on every screen switch; resets only
+   * synced on every keystroke, because every navigate-away-and-back path to
+   * Routes needs it restored. Owned by App (never unmounts), so it survives
+   * this component's own unmount/remount on every screen switch; resets only
    * when App itself remounts (a full reload). Hydrated once per mount via
-   * an effect below, never a lazy useState initializer, for the same
-   * react-hooks/refs reason as restoreScrollYRef. */
+   * an effect below, never a lazy useState initializer — reading `.current`
+   * during render would both trip react-hooks/refs and not pick up a later
+   * mutation. The scroll position is no longer one of these refs: since
+   * backlog item 125 App's screen scroll memory restores it, once this
+   * screen reports its list loaded. */
   restoreSearchQueryRef?: RefObject<string>;
   /** A ref holding the current session's selected tag-filter identity keys
    * (tagIdentityKey outputs, not display spellings) — mirrors
@@ -134,8 +129,8 @@ export interface RouteLibraryProps {
    * complete PendingRouteSwitch bundle — see that type's own doc comment. */
   pendingRouteSwitch?: PendingRouteSwitch | null;
   /** App's own sticky top-navigation element, threaded straight through to
-   * every RouteListItem row unchanged (a single shared ref, not per-row) —
-   * mirrors restoreScrollYRef's own shape. Lets a card measure the sticky
+   * every RouteListItem row unchanged (a single shared ref, not per-row).
+   * Lets a card measure the sticky
    * header's live rendered height when deciding whether its route-switch
    * guard prompt needs to scroll into view (backlog item 95). */
   stickyHeaderRef?: RefObject<HTMLElement | null>;
@@ -151,7 +146,6 @@ export interface RouteLibraryProps {
 
 export function RouteLibrary({
   onOpenRoute,
-  restoreScrollYRef,
   restoreSearchQueryRef,
   restoreTagFilterKeysRef,
   clock = systemClock,
@@ -269,7 +263,6 @@ export function RouteLibrary({
   const pinButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const headingRef = useRef<HTMLHeadingElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const hasAppliedScrollRestoreRef = useRef(false);
   const lastRenamedIdRef = useRef<string | null>(null);
   // The name handleRename actually wrote for lastRenamedIdRef, so the
   // consuming effect below can tell "routes hasn't reflected this rename
@@ -423,11 +416,12 @@ export function RouteLibrary({
   // Hydrates the selected tag filters from the session-lifetime ref
   // exactly once per mount (backlog item 100 stage 3), mirroring the
   // search-query hydration effect above — but, unlike search, also sets
-  // an explicit tagFiltersHydrated completion flag. Scroll restoration
-  // and the restoration-ref sync effect below both gate on this flag
-  // directly, rather than relying on their declaration order relative to
-  // this effect, so their correctness doesn't depend on an implicit
-  // ordering assumption.
+  // an explicit tagFiltersHydrated completion flag. Scroll restoration's
+  // readiness (backlog item 125, at the end of this component) and the
+  // restoration-ref sync effect below both gate on this flag directly,
+  // rather than relying on their declaration order relative to this
+  // effect, so their correctness doesn't depend on an implicit ordering
+  // assumption.
   useLayoutEffect(() => {
     if (restoreTagFilterKeysRef?.current && restoreTagFilterKeysRef.current.length > 0) {
       setSelectedTagFilters(new Set(restoreTagFilterKeysRef.current));
@@ -449,20 +443,6 @@ export function RouteLibrary({
       restoreTagFilterKeysRef.current = [...selectedTagFilters];
     }
   }, [selectedTagFilters, restoreTagFilterKeysRef, tagFiltersHydrated]);
-
-  useLayoutEffect(() => {
-    if (hasAppliedScrollRestoreRef.current) return;
-    if (!tagFiltersHydrated) return;
-    if (routes === undefined || preferences === undefined) return; // still "Loading routes…"
-    hasAppliedScrollRestoreRef.current = true;
-    const restoreScrollY = restoreScrollYRef?.current ?? null;
-    if (restoreScrollY != null && viewRoutes.length > 0) {
-      window.scrollTo({ top: restoreScrollY, left: 0, behavior: "auto" });
-    }
-    if (restoreScrollYRef) {
-      restoreScrollYRef.current = null;
-    }
-  }, [routes, preferences, viewRoutes, restoreScrollYRef, tagFiltersHydrated]);
 
   // If a rename causes the renamed route to drop out of the active search
   // filter, its row (and any focus within it) unmounts — move focus to
@@ -1457,6 +1437,14 @@ export function RouteLibrary({
       dismissInlineEditorsToken={dismissInlineEditorsToken}
       requestInlineEditorOpen={requestInlineEditorOpen}
     />
+  );
+
+  // Backlog item 125: Routes' own scroll position comes back only once the
+  // list, its preferences and the restored tag filters are in place — never
+  // against "Loading routes…". Last among this component's hooks, so its
+  // decision follows every other layout effect here.
+  useScreenScrollRestoration(
+    tagFiltersHydrated && routes !== undefined && preferences !== undefined,
   );
 
   return (

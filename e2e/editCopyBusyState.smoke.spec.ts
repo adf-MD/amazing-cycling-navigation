@@ -680,6 +680,57 @@ test("(en) leaving Ride and returning before the replacement completes keeps the
   });
 });
 
+// Backlog item 125: Planning's remembered scroll position belongs to the
+// draft Edit copy replaces, but a copy completing after the rider has moved
+// on must leave the screen they are using alone — it only stops that old
+// position being restored later.
+test("(en) a replacement completing after the rider moved on to Plan and scrolled it makes no scroll call, and Plan's next arrival starts at the top (backlog item 125)", async ({
+  page,
+}) => {
+  const language = "en";
+  const routeId = await openPreRide(page, language, { withDraft: true });
+  await pointerClick(page, navButton(page, COPY[language].plan));
+  await expect.poll(() => currentDestination(page)).toBe(COPY[language].plan);
+  await settle(page);
+  await wheelBy(page, 400);
+  expect(
+    await page.evaluate(() => scrollY),
+    "Planning has a position to remember",
+  ).toBeGreaterThan(100);
+  await pointerClick(page, navButton(page, COPY[language].ride));
+  await expect(editCopyButton(page, language)).toBeVisible();
+  await settle(page);
+
+  const dialog = await openConfirmation(page, language);
+  await startHold(page, "planningDrafts");
+  await pressReplaceAndEdit(page, language, dialog);
+  await pointerClick(page, navButton(page, COPY[language].plan));
+  await expect.poll(() => currentDestination(page)).toBe(COPY[language].plan);
+  await settle(page);
+  await wheelBy(page, 200);
+  await resetRecords(page);
+
+  await releaseHold(page, false);
+  await expect
+    .poll(() => storedDraft(page))
+    .toMatchObject({
+      routeName: ROUTE_NAME,
+      editCopySourceRouteId: routeId,
+    });
+  await expectToHold("Plan stays the current screen", async () => {
+    return (await currentDestination(page)) === COPY[language].plan;
+  });
+  expect(await appScrolls(page), "the app made no scroll call").toEqual([]);
+
+  await pointerClick(page, navButton(page, COPY[language].routes));
+  await expect.poll(() => currentDestination(page)).toBe(COPY[language].routes);
+  await settle(page);
+  await pointerClick(page, navButton(page, COPY[language].plan));
+  await expectPlanningShowsCopy(page, language);
+  await settle(page);
+  expect(await page.evaluate(() => scrollY), "the new draft starts at the top").toBe(0);
+});
+
 // ---------------------------------------------------------------- failure
 
 for (const language of LANGUAGES) {

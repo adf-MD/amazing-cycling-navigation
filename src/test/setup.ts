@@ -35,3 +35,10 @@ globalThis.ResizeObserver = NoopResizeObserver;
 window.scrollBy = () => {
   // no-op: jsdom has no layout engine to scroll.
 };
+
+// The same for window.scrollTo, which App's screen scroll memory (backlog
+// item 125) calls on any screen change. Tests that observe it spy on it
+// themselves, as before.
+window.scrollTo = () => {
+  // no-op: jsdom has no layout engine to scroll.
+};

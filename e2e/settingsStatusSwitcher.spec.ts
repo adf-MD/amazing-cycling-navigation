@@ -149,9 +149,10 @@ async function importManyRoutes(page: Page, count: number) {
 }
 
 /**
- * The section's top reset keeps re-flattening the scroll for a few frames
- * after arriving (scrollToTopAndSettle.ts, item 95's reassertion loop), and
- * a rider's own touch or wheel ends it at once — but a test's programmatic
+ * An arrival's scroll restore (backlog item 125; item 121's top reset
+ * before it) keeps re-asserting its position for a few frames after
+ * arriving (scrollToTopAndSettle.ts, item 95's reassertion loop), and a
+ * rider's own touch or wheel ends it at once — but a test's programmatic
  * scroll is neither, so it must wait for the loop to settle first. Measured:
  * headless WebKit defers those frames until the next pointer activity, so
  * without this a scroll taken straight after arriving was reset to 0 by the
@@ -418,8 +419,10 @@ for (const lang of ["en", "de"] as const) {
         const condition = `${lang} ${String(vp.width)}×${String(vp.height)} ${font}`;
         await setRootFontSize(page, font);
 
-        // U1: arriving at either view, its first visible heading sits fully
-        // below the sticky rows and within the viewport.
+        // U1: at either view's top, its first visible heading sits fully
+        // below the sticky rows and within the viewport. Since backlog item
+        // 125 a view comes back where the rider left it — here, after U2
+        // and U3 have scrolled Settings — so the top is reached explicitly.
         for (const [view, headingName] of [
           ["status", COPY[lang].firstStatusHeading],
           ["settings", COPY[lang].firstSettingsHeading],
@@ -430,6 +433,11 @@ for (const lang of ["en", "de"] as const) {
           } else {
             await switchTo(page, lang, "settings");
           }
+          await settleArrival(page);
+          await page.evaluate(() => {
+            window.scrollTo(0, 0);
+          });
+          await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
           const heading = page.getByRole("heading", { level: 2, name: headingName });
           const box = await heading.evaluate((element) =>
             element.getBoundingClientRect(),
@@ -508,7 +516,9 @@ for (const lang of ["en", "de"] as const) {
 }
 
 // ---------------------------------------------------------------------------
-// The interim top reset
+// Scroll positions (backlog item 125, which replaced item 121's interim top
+// reset): each view comes back where the rider left it in this app session,
+// and a first visit starts at the top.
 // ---------------------------------------------------------------------------
 
 async function expectAtTopWithHeadingVisible(page: Page, headingName: string) {
@@ -520,7 +530,13 @@ async function expectAtTopWithHeadingVisible(page: Page, headingName: string) {
   expect(box.bottom).toBeLessThanOrEqual(page.viewportSize()?.height ?? 0);
 }
 
-test("entering the Settings section after scrolling deep into Routes starts at the top", async ({
+async function expectBackAt(page: Page, position: number) {
+  await expect
+    .poll(async () => Math.abs((await page.evaluate(() => window.scrollY)) - position))
+    .toBeLessThanOrEqual(1);
+}
+
+test("a first visit to the Settings section, after scrolling deep into Routes, starts at the top", async ({
   page,
 }) => {
   await start(page, "en");
@@ -531,24 +547,31 @@ test("entering the Settings section after scrolling deep into Routes starts at t
   await expectAtTopWithHeadingVisible(page, "Preferences");
 });
 
-test("switching views and tapping the Settings tab from Status each start at the top", async ({
+test("switching views and tapping the Settings tab from Status each come back where that view was left", async ({
   page,
 }) => {
   await start(page, "en");
   await tab(page, "en", "Settings");
+  const settingsAt = await scrollDeep(page);
 
-  await scrollDeep(page);
   await switchTo(page, "en", "status");
-  await expectAtTopWithHeadingVisible(page, "System status");
+  await expectAtTopWithHeadingVisible(page, "System status"); // a first visit
+  await settleArrival(page);
+  await page.evaluate(() => {
+    window.scrollTo(0, 300);
+  });
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(300);
 
-  await scrollDeep(page);
   await switchTo(page, "en", "settings");
-  await expectAtTopWithHeadingVisible(page, "Preferences");
+  await expectBackAt(page, settingsAt);
 
   await switchTo(page, "en", "status");
-  await scrollDeep(page);
+  await expectBackAt(page, 300);
   await tab(page, "en", "Settings");
-  await expectAtTopWithHeadingVisible(page, "Preferences");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Settings", exact: true }),
+  ).toBeAttached();
+  await expectBackAt(page, settingsAt);
 });
 
 test("updates within a view, and tapping the Settings tab on Settings, leave the scroll position alone", async ({
@@ -578,26 +601,20 @@ test("updates within a view, and tapping the Settings tab on Settings, leave the
   expect(await page.evaluate(() => window.scrollY)).toBe(whileTyping);
 });
 
-test("no other screen changes its scroll behaviour: leaving Settings for Plan keeps today's carried-over offset", async ({
+test("leaving Settings for a first visit to Plan starts Plan at the top, never at Settings' offset", async ({
   page,
 }) => {
   await installLocalMapStyle(page);
   await start(page, "en");
   await tab(page, "en", "Settings");
   const leftAt = await scrollDeep(page);
+  expect(leftAt).toBeGreaterThan(200);
 
   await tab(page, "en", "Plan");
   await expect(
     page.getByRole("heading", { level: 1, name: "Plan a route" }),
   ).toBeVisible();
-  const planMaxScroll = await page.evaluate(
-    () => document.documentElement.scrollHeight - window.innerHeight,
-  );
-  const expected = Math.min(leftAt, planMaxScroll);
-  expect(expected).toBeGreaterThan(0);
-  expect(
-    Math.abs((await page.evaluate(() => window.scrollY)) - expected),
-  ).toBeLessThanOrEqual(1);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
 });
 
 // ---------------------------------------------------------------------------

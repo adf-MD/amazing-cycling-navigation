@@ -97,3 +97,29 @@ test("opening the topmost, just-imported route stays at the top with no scrollin
   expect(unexpectedOpenFreeMapRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
+
+// Backlog item 125: Routes keeps its own position across an ordinary tab
+// round trip too, not only after a route was opened — where before it
+// arrived at the top, because its first render is the short "Loading
+// routes…" placeholder.
+test("a plain tab round trip away from a scrolled library and back restores its position", async ({
+  page,
+}) => {
+  const { unexpectedOpenFreeMapRequests } = await installLocalMapStyle(page);
+
+  await page.goto("/");
+  await importManyRoutes(page, ROUTE_COUNT);
+  await page.locator(".route-list > li").nth(12).scrollIntoViewIfNeeded();
+  const scrollYBeforeLeaving = await page.evaluate(() => window.scrollY);
+  expect(scrollYBeforeLeaving).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeAttached();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+
+  await page.getByRole("button", { name: "Routes" }).click();
+  await expect(page.getByRole("heading", { name: "Routes" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollYBeforeLeaving);
+
+  expect(unexpectedOpenFreeMapRequests).toEqual([]);
+});

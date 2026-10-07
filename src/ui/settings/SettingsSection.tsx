@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef, type RefObject } from "react";
 import { DiagnosticsScreen } from "../diagnostics/DiagnosticsScreen.tsx";
 import type { SettingsSectionView } from "../shared/screenTypes.ts";
-import { scrollToTopAndSettle } from "../shared/scrollToTopAndSettle.ts";
 import { SettingsScreen } from "./SettingsScreen.tsx";
 import { SettingsStatusSwitcher } from "./SettingsStatusSwitcher.tsx";
 import { useProviderKeyDraft } from "./useProviderKeyDraft.ts";
@@ -25,22 +24,25 @@ export interface SettingsSectionProps {
  * App renders this component in a single slot whenever either view is
  * showing, so it stays mounted across a Settings ↔ Status switch and
  * unmounts when the rider leaves for another tab. That lifetime is what
- * three things here hang on:
+ * two things here hang on:
  *
  * - **The unfinished key edit** (useProviderKeyDraft) lives here, so typing
  *   a key, checking Status and coming back does not lose it. It is memory
  *   only, and leaving the section discards it, as before.
  * - **The switcher's DOM node** is the first child whichever view is
- *   showing, so a switch keeps focus on the button just pressed.
- * - **The interim top reset.** Whenever navigation changes the rendered view
- *   — on entry from another tab (mount), on a switch, or when the Settings
- *   tab is tapped while Status is showing — the page starts at the top.
- *   Nothing else resets it: the effect depends on `view` alone, so a
- *   disclosure, a preference change or a live-query refresh leaves the
- *   scroll position where it is, and so does tapping the Settings tab while
- *   Settings is already showing. Backlog item 125 is to replace this with a
- *   restored position for each view; this rule is deliberately interim, and
- *   no other screen's scroll behaviour changes.
+ *   showing, so a switch keeps focus on the button just pressed — which is
+ *   also why that focus never counts as a new focus that would stop the
+ *   arriving view's scroll position being restored.
+ *
+ * Scroll position: item 121's interim rule, which started the page at the
+ * top whenever navigation changed the rendered view, was replaced by
+ * backlog item 125. Settings and Status are separate screens to App's
+ * screen scroll memory, so each view comes back where the rider left it in
+ * this app session, on a switch and on entry from another tab alike;
+ * SettingsScreen and DiagnosticsScreen each report when their content has
+ * loaded. A view's first visit, and Planning's Open Settings, start at the
+ * top. The switcher's natural position is its stuck position — the section
+ * is the first thing in `<main>` — so it stays put whatever is restored.
  *
  * The switcher is sticky beneath the primary navigation, except while focus
  * is inside the key form (index.css), when it scrolls with the page. Stage 0
@@ -54,10 +56,6 @@ export function SettingsSection({
 }: SettingsSectionProps) {
   const keyDraft = useProviderKeyDraft();
   const switcherRef = useRef<HTMLElement>(null);
-
-  // useLayoutEffect, so the reset lands before the new view is painted and
-  // never flashes the previous screen's offset. `view` is the whole trigger.
-  useLayoutEffect(() => scrollToTopAndSettle(), [view]);
 
   // Publishes both sticky heights for index.css: the switcher's `top` and the
   // section's scroll margin, which keeps a keyboard-focused control from

@@ -38,16 +38,21 @@ afterEach(() => {
   Element.prototype.scrollIntoView = originalScrollIntoView;
 });
 
-// jsdom doesn't implement window.scrollTo either (see
-// useResetScrollForNewRideContent.ts, which App wires up for every
-// screen, not only Riding-specific describe blocks below) — global for
-// the same reason as scrollIntoView above: any test that navigates to
-// Riding can trigger the real, unmocked call otherwise. restoreMocks in
-// vite.config.ts's test config auto-restores this vi.spyOn between
-// tests, so no matching afterEach is needed here (unlike scrollIntoView's
-// manual reassignment above, which restoreMocks doesn't cover).
+// jsdom doesn't implement window.scrollTo either (App's screen scroll
+// memory, backlog item 125, scrolls on every screen, not only in the
+// Riding-specific describe blocks below) — global for the same reason as
+// scrollIntoView above: any test that navigates can trigger the real,
+// unmocked call otherwise. restoreMocks in vite.config.ts's test config
+// auto-restores this vi.spyOn between tests; the document height it stubs
+// is removed below.
 beforeEach(() => {
   installScrollToSpy();
+});
+
+afterEach(() => {
+  const root = document.documentElement as unknown as Record<string, unknown>;
+  delete root.scrollHeight;
+  delete root.clientHeight;
 });
 
 describe("App", () => {
@@ -178,15 +183,38 @@ function switcherButton(name: "Settings" | "Status") {
   ).getByRole("button", { name });
 }
 
+/** jsdom has no layout: the document is stubbed as 20,000 px tall in an
+ * 800 px viewport, so scroll restoration (backlog item 125) can reach the
+ * offsets these tests use, and scrollTo clamps as a browser would. */
+const STUB_DOCUMENT_HEIGHT = 20_000;
+const STUB_VIEWPORT_HEIGHT = 800;
+
+/** A rider's own scroll: genuine input first, as on a device, so a settle
+ * loop still running from an arrival stops rather than undoing it. */
+function riderScrollsTo(y: number) {
+  window.dispatchEvent(new Event("wheel"));
+  window.scrollY = y;
+}
+
 function installScrollToSpy() {
   window.scrollY = 0;
+  const root = document.documentElement;
+  Object.defineProperty(root, "scrollHeight", {
+    configurable: true,
+    value: STUB_DOCUMENT_HEIGHT,
+  });
+  Object.defineProperty(root, "clientHeight", {
+    configurable: true,
+    value: STUB_VIEWPORT_HEIGHT,
+  });
+  const maxScroll = STUB_DOCUMENT_HEIGHT - STUB_VIEWPORT_HEIGHT;
   return vi.spyOn(window, "scrollTo").mockImplementation((...args: unknown[]) => {
     const [a, b] = args;
     if (typeof a === "object" && a !== null && "top" in a) {
       const top = (a as ScrollToOptions).top;
-      if (typeof top === "number") window.scrollY = top;
+      if (typeof top === "number") window.scrollY = Math.min(top, maxScroll);
     } else if (typeof b === "number") {
-      window.scrollY = b;
+      window.scrollY = Math.min(b, maxScroll);
     }
   });
 }
@@ -4254,28 +4282,83 @@ describe("App — Settings section (backlog item 121)", () => {
     ).toBeInTheDocument();
   });
 
-  it("starts each newly shown view at the top, but a tap on the Settings tab while Settings is showing changes nothing", async () => {
+  // Backlog item 125 replaced item 121's interim top reset: Settings and
+  // Status each come back where the rider left them in this app session.
+  it("keeps Settings' and Status's own positions apart, in both directions, and a tap on the Settings tab while Settings is showing changes nothing", async () => {
     const user = userEvent.setup();
     const scrollToSpy = installScrollToSpy();
     render(<App />);
     expect(scrollToSpy).not.toHaveBeenCalled();
 
+    await user.click(navButton("Settings")); // first visit, already at the top
+    expect(scrollToSpy).not.toHaveBeenCalled();
+    riderScrollsTo(1500);
+    await user.click(switcherButton("Status")); // first visit: the top
+    expect(window.scrollY).toBe(0);
+    riderScrollsTo(600);
+
     await user.click(navButton("Settings"));
-    expect(scrollToSpy).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Settings" }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(window.scrollY).toBe(1500);
+    });
+
+    const callsBeforeRetap = scrollToSpy.mock.calls.length;
+    await user.click(navButton("Settings"));
+    expect(scrollToSpy).toHaveBeenCalledTimes(callsBeforeRetap);
+    expect(window.scrollY).toBe(1500);
+
     await user.click(switcherButton("Status"));
-    expect(scrollToSpy).toHaveBeenCalledTimes(2);
-    await user.click(navButton("Settings"));
-    expect(scrollToSpy).toHaveBeenCalledTimes(3);
-    expect(
-      screen.getByRole("heading", { level: 1, name: "Settings" }),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(window.scrollY).toBe(600);
+    });
+    await user.click(switcherButton("Settings"));
+    await waitFor(() => {
+      expect(window.scrollY).toBe(1500);
+    });
+  });
+
+  it("returns from another tab to the last-viewed view at its own position", async () => {
+    const user = userEvent.setup();
+    installScrollToSpy();
+    render(<App />);
+    await importFixture(user, "Route A.gpx");
 
     await user.click(navButton("Settings"));
+    await user.click(switcherButton("Status"));
+    riderScrollsTo(900);
+    await user.click(navButton("Routes"));
+    await user.click(navButton("Settings"));
 
-    expect(scrollToSpy).toHaveBeenCalledTimes(3);
     expect(
-      screen.getByRole("heading", { level: 1, name: "Settings" }),
+      await screen.findByRole("heading", { level: 1, name: "Status" }),
     ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(window.scrollY).toBe(900);
+    });
+  });
+
+  it("remembers nothing across a fresh App mount: every view's first visit starts at the top", async () => {
+    const user = userEvent.setup();
+    const scrollToSpy = installScrollToSpy();
+    const first = render(<App />);
+    await user.click(navButton("Settings"));
+    riderScrollsTo(1200);
+    await user.click(switcherButton("Status"));
+    first.unmount();
+
+    window.scrollY = 0; // a reloaded page, with the browser's restoration off
+    scrollToSpy.mockClear();
+    render(<App />);
+    await user.click(navButton("Settings"));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Settings" }),
+    ).toBeInTheDocument();
+    expect(scrollToSpy).not.toHaveBeenCalled();
+    expect(window.scrollY).toBe(0);
   });
 
   it("leaves an open route session exactly where it was across a visit to Settings and Status", async () => {

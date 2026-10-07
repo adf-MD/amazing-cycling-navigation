@@ -9,6 +9,7 @@ import * as routeLibraryPreferencesRepository from "../../storage/routeLibraryPr
 import * as routesRepository from "../../storage/routesRepository.ts";
 import { multiTrackGpx, trackWithElevationGpx } from "../../test/fixtures/gpx.ts";
 import { holdIdbStore, releaseAllIdbHolds, type IdbHold } from "../../test/idbHold.ts";
+import { createReadinessRecorder } from "../../test/screenScrollReadiness.tsx";
 
 function getVisibleRouteNames(): string[] {
   return Array.from(document.querySelectorAll(".route-card-title")).map(
@@ -2605,32 +2606,33 @@ function installScrollToSpy() {
   });
 }
 
-describe("RouteLibrary — scroll restoration", () => {
-  it("restores the given scrollY only once real route cards have rendered, never the Loading placeholder, and a later reactive update (rename) does not reapply it", async () => {
+// Backlog item 125: Routes no longer restores its own scroll position. App's
+// screen scroll memory does, once this screen reports its content loaded;
+// these tests pin that report.
+describe("RouteLibrary — scroll restoration readiness (backlog item 125)", () => {
+  it("reports ready only once real route cards have rendered, never with the Loading placeholder, and a later reactive update (rename) reports nothing new", async () => {
     const user = userEvent.setup();
-    const scrollToSpy = installScrollToSpy();
 
     // Seed a route through a throwaway mount first (real UI import, per this
     // file's own convention), then unmount and remount — mirroring the real
-    // "return to an already-populated Routes" scenario a restoration is for,
-    // rather than importing after the restoring instance is already mounted
-    // (which would make the very first, real, non-"Loading" liveQuery
-    // emission be a genuinely empty array before the import lands).
+    // "return to an already-populated Routes" scenario a restoration is for.
     const seeding = render(<RouteLibrary onOpenRoute={vi.fn()} />);
     await importFixture(user);
     seeding.unmount();
-    expect(scrollToSpy).not.toHaveBeenCalled();
 
-    const restoreScrollYRef = { current: 1500 };
-    render(<RouteLibrary onOpenRoute={vi.fn()} restoreScrollYRef={restoreScrollYRef} />);
+    const recorder = createReadinessRecorder("library");
+    render(<RouteLibrary onOpenRoute={vi.fn()} />, { wrapper: recorder.wrapper });
+
+    expect(screen.getByText("Loading routes…")).toBeInTheDocument();
+    expect(recorder.reports).toEqual([false]);
 
     await waitFor(() => {
-      expect(scrollToSpy).toHaveBeenCalledTimes(1);
+      expect(recorder.latest()).toBe(true);
     });
-    expect(scrollToSpy).toHaveBeenCalledWith({ top: 1500, left: 0, behavior: "auto" });
-    expect(restoreScrollYRef.current).toBeNull();
+    expect(screen.getByRole("button", { name: "Evening Ride" })).toBeInTheDocument();
+    expect(recorder.reports).toEqual([false, true]);
 
-    // A genuine new useLiveQuery emission (rename) must not reapply it.
+    // A genuine new useLiveQuery emission (rename) reports nothing new.
     await user.click(screen.getByRole("button", { name: "Rename" }));
     const input = screen.getByLabelText("Route name");
     await user.clear(input);
@@ -2640,14 +2642,15 @@ describe("RouteLibrary — scroll restoration", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Renamed loop" })).toBeInTheDocument();
     });
-    expect(scrollToSpy).toHaveBeenCalledTimes(1);
+    expect(recorder.reports).toEqual([false, true]);
   });
 
-  it("does not scroll when there is nothing to restore", async () => {
+  it("never scrolls the page itself, with or without a scroll memory", async () => {
     const user = userEvent.setup();
     const scrollToSpy = installScrollToSpy();
 
-    render(<RouteLibrary onOpenRoute={vi.fn()} restoreScrollYRef={{ current: null }} />);
+    const recorder = createReadinessRecorder("library");
+    render(<RouteLibrary onOpenRoute={vi.fn()} />, { wrapper: recorder.wrapper });
     await importFixture(user);
 
     expect(scrollToSpy).not.toHaveBeenCalled();
@@ -3371,8 +3374,7 @@ describe("RouteLibrary — tag filtering", () => {
       expect(restoreTagFilterKeysRef.current).toEqual(["gravel"]);
     });
 
-    it("does not restore scroll position until both tag-filter hydration and the loaded/filtered route list are established", async () => {
-      const scrollToSpy = installScrollToSpy();
+    it("reports ready for scroll restoration only once both tag-filter hydration and the loaded/filtered route list are established", async () => {
       const user = userEvent.setup();
       const seed = render(<RouteLibrary onOpenRoute={vi.fn()} />);
       await importFixture(user, "Alpine Climb.gpx");
@@ -3389,22 +3391,25 @@ describe("RouteLibrary — tag filtering", () => {
         return originalListRoutes();
       });
 
+      const recorder = createReadinessRecorder("library");
       render(
         <RouteLibrary
           onOpenRoute={vi.fn()}
-          restoreScrollYRef={{ current: 400 }}
           restoreTagFilterKeysRef={{ current: ["gravel"] }}
         />,
+        { wrapper: recorder.wrapper },
       );
 
       expect(screen.getByText("Loading routes…")).toBeInTheDocument();
-      expect(scrollToSpy).not.toHaveBeenCalled();
+      expect(recorder.latest()).toBe(false);
 
       releaseRoutes?.();
 
       await waitFor(() => {
-        expect(scrollToSpy).toHaveBeenCalledTimes(1);
+        expect(recorder.latest()).toBe(true);
       });
+      expect(screen.getByRole("button", { name: "Alpine Climb" })).toBeInTheDocument();
+      expect(recorder.reports.filter((ready) => ready)).toHaveLength(1);
     });
   });
 

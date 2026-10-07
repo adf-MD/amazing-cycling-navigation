@@ -44,7 +44,8 @@ import { CLIMB_CATEGORY_NAME_KEYS } from "../../navigation/routeFeaturePalette.t
 import { ClimbGradientBandLegend } from "../shared/ClimbGradientBandLegend.tsx";
 import { DescentLocalLegend } from "../shared/DescentLocalLegend.tsx";
 import { formatMetres, formatWholeNumber } from "../shared/routeSummary.ts";
-import { useLiveQuery } from "../shared/useLiveQuery.ts";
+import { useLiveQuery, useLiveQueryState } from "../shared/useLiveQuery.ts";
+import { useScreenScrollRestoration } from "../shared/screenScrollMemory.ts";
 import { ConfirmDialog } from "../shared/ConfirmDialog.tsx";
 import { applyConfirmationReveal } from "../shared/confirmationRevealScroll.ts";
 import { describeProviderKeyStatus } from "./providerKeyStatus.ts";
@@ -98,9 +99,12 @@ export function SettingsScreen({
   // `useTranslate` already makes.
   const languageContext = useLanguageContext();
   const keyQuery = useCallback(() => getProviderKey(), []);
-  const key = useLiveQuery(keyQuery);
+  // `settled` (backlog item 125) only tells scroll restoration that each
+  // read has answered; the values are used exactly as before.
+  const { value: key, settled: keySettled } = useLiveQueryState(keyQuery);
   const verificationQuery = useCallback(() => getProviderKeyVerification(), []);
-  const verification = useLiveQuery(verificationQuery);
+  const { value: verification, settled: verificationSettled } =
+    useLiveQueryState(verificationQuery);
   const preferencesQuery = useCallback(() => getPlanningPreferences(), []);
   const preferences = useLiveQuery(preferencesQuery);
 
@@ -325,6 +329,12 @@ export function SettingsScreen({
       ),
     );
   }, [pendingDelete, stickyHeaderRef, stickySubheaderRef]);
+
+  // Backlog item 125: Settings' own scroll position comes back once the key
+  // and verification reads have answered, since the key form and the saved
+  // key's row differ in height and sit above most of the page. Last among
+  // this screen's hooks, so its decision follows every other layout effect.
+  useScreenScrollRestoration(keySettled && verificationSettled);
 
   return (
     <section className="screen" aria-label={t("settings.landmarkLabel")}>

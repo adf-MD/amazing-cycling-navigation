@@ -31,7 +31,8 @@ import {
   describeActiveSession,
   type ResolvedActiveRoute,
 } from "./activeSessionSummary.ts";
-import { useLiveQuery } from "../shared/useLiveQuery.ts";
+import { useLiveQueryState } from "../shared/useLiveQuery.ts";
+import { useScreenScrollRestoration } from "../shared/screenScrollMemory.ts";
 import type { OperationInteractionGuard } from "../shared/operationInteractionGuard.ts";
 import {
   armConnectionTestWaitGuard,
@@ -156,7 +157,10 @@ export function DiagnosticsScreen({
   const now = useNow(clock);
 
   const rideStateQuery = useCallback(() => getActiveRideState(), []);
-  const rideState = useLiveQuery(rideStateQuery);
+  // `settled` (backlog item 125) only tells scroll restoration that each
+  // read has answered; the values are used exactly as before.
+  const { value: rideState, settled: rideStateSettled } =
+    useLiveQueryState(rideStateQuery);
 
   // Backlog item 117. The stored session carries only a routeId, so the
   // name is resolved here rather than duplicated into ride-state
@@ -173,10 +177,11 @@ export function DiagnosticsScreen({
     const route = await getRoute(activeRouteId);
     return { routeId: activeRouteId, name: route?.name ?? null };
   }, [activeRouteId]);
-  const resolvedActiveRoute = useLiveQuery(activeRouteQuery);
+  const { value: resolvedActiveRoute, settled: activeRouteSettled } =
+    useLiveQueryState(activeRouteQuery);
 
   const keyQuery = useCallback(() => getProviderKey(), []);
-  const key = useLiveQuery(keyQuery);
+  const { value: key, settled: keySettled } = useLiveQueryState(keyQuery);
   const hasKey = key !== undefined;
 
   // Created once, mirroring PlanningScreen's own treatment of an
@@ -263,6 +268,19 @@ export function DiagnosticsScreen({
   }, [connectionTestResult]);
 
   const fixAgeMs = rideState?.lastFix ? now - rideState.lastFix.timestampMs : null;
+
+  // Backlog item 125: Status's own scroll position comes back once the
+  // storage check and its estimate, and the session and key reads, have
+  // answered — each changes the height of rows near the top. The active
+  // route's read is the one for the current session: it resubscribes when
+  // the session changes. Last among this screen's hooks.
+  useScreenScrollRestoration(
+    (storageHealth.status === "error" ||
+      (storageHealth.status === "ok" && storageHealth.estimate.status !== "checking")) &&
+      rideStateSettled &&
+      activeRouteSettled &&
+      keySettled,
+  );
 
   return (
     <section className="screen diagnostics-screen" aria-label={t("status.landmarkLabel")}>

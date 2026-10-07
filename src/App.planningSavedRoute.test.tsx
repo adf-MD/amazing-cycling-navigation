@@ -15,6 +15,8 @@ import type { MapFactory, MapLibreLike } from "./map/mapAdapter.ts";
 import { db } from "./storage/db.ts";
 import { getActiveRideState, setActiveRideState } from "./storage/rideStateRepository.ts";
 import * as rideStateRepository from "./storage/rideStateRepository.ts";
+import * as planningDraftRepository from "./storage/planningDraftRepository.ts";
+import * as routesRepository from "./storage/routesRepository.ts";
 import { trackWithElevationGpx } from "./test/fixtures/gpx.ts";
 import type { SavedRouteSwitchPrompt } from "./ui/planning/PlanningScreen.tsx";
 
@@ -27,7 +29,9 @@ import type { SavedRouteSwitchPrompt } from "./ui/planning/PlanningScreen.tsx";
 // anchor, and — like the real screen after a remount — reports a prompt
 // it has no anchor for. The real screen's own presentation, reveal and
 // focus behaviour are covered by PlanningScreen.savedRoute.test.tsx and
-// e2e/planningSavedRoute.smoke.spec.ts.
+// e2e/planningSavedRoute.smoke.spec.ts. Like the real screen, it also
+// reports its content ready to App's screen scroll memory and offers the
+// missing-key notice's Open Settings (backlog item 125).
 interface PlanningStubState {
   hasAnchor: boolean;
   savedRoute: PlannedRoute | null;
@@ -45,8 +49,11 @@ vi.mock("./platform/mapSupport.ts", () => ({
 
 vi.mock("./ui/planning/PlanningScreen.tsx", async () => {
   const { useEffect } = await import("react");
+  const { useScreenScrollRestoration } =
+    await import("./ui/shared/screenScrollMemory.ts");
   function PlanningScreen(props: {
     onOpenSavedRoute?: (route: PlannedRoute) => void;
+    onNavigateToSettings?: () => void;
     savedRouteSwitchPrompt?: SavedRouteSwitchPrompt | null;
   }) {
     const prompt = props.savedRouteSwitchPrompt ?? null;
@@ -54,8 +61,12 @@ vi.mock("./ui/planning/PlanningScreen.tsx", async () => {
     useEffect(() => {
       if (prompt && !stub.hasAnchor) prompt.onAnchorMissing(prompt.requestId);
     }, [prompt]);
+    useScreenScrollRestoration(true);
     return (
       <section aria-label="Planning stub">
+        <button type="button" onClick={() => props.onNavigateToSettings?.()}>
+          Open Settings
+        </button>
         <button
           type="button"
           onClick={() => {
@@ -561,5 +572,235 @@ describe("App — Planning's Open saved route (item 124, slice 3)", () => {
     expect(screen.queryByRole("button", { name: "Start riding" })).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(watchPositionSpy).not.toHaveBeenCalled();
+  });
+});
+
+// Backlog item 125, at App's boundary with Planning (the stub above, which
+// reports its content ready as the real screen does once its draft has
+// loaded). jsdom has no layout, so the document is stubbed as 20,000 px tall
+// and scrollTo clamps as a browser would.
+describe("App — per-screen scroll restoration around Planning (backlog item 125)", () => {
+  function spyOnScrollTo() {
+    return vi.spyOn(window, "scrollTo").mockImplementation((...args: unknown[]) => {
+      const [options] = args;
+      const top = (options as ScrollToOptions).top;
+      if (typeof top === "number") window.scrollY = Math.min(top, 19_200);
+    });
+  }
+  let scrollToSpy: ReturnType<typeof spyOnScrollTo>;
+
+  beforeEach(async () => {
+    await db.routes.clear();
+    await db.rideState.clear();
+    await db.routeLibraryPreferences.clear();
+    await db.planningDrafts.clear();
+    stub.hasAnchor = true;
+    stub.savedRoute = null;
+    stub.prompts = [];
+    window.scrollY = 0;
+    Element.prototype.scrollIntoView = vi.fn();
+    vi.stubGlobal("navigator", {
+      onLine: navigator.onLine,
+      geolocation: {
+        watchPosition: vi.fn(),
+        getCurrentPosition: vi.fn(),
+        clearWatch: vi.fn(),
+      },
+    });
+    const root = document.documentElement;
+    Object.defineProperty(root, "scrollHeight", { configurable: true, value: 20_000 });
+    Object.defineProperty(root, "clientHeight", { configurable: true, value: 800 });
+    scrollToSpy = spyOnScrollTo();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    const root = document.documentElement as unknown as Record<string, unknown>;
+    delete root.scrollHeight;
+    delete root.clientHeight;
+  });
+
+  /** A rider's own scroll: genuine input first, as on a device, so a settle
+   * loop still running from an arrival stops rather than undoing it. */
+  function riderScrollsTo(y: number) {
+    window.dispatchEvent(new Event("wheel"));
+    window.scrollY = y;
+  }
+
+  function scrolledTo(): number[] {
+    return scrollToSpy.mock.calls.map(
+      (args: unknown[]) => (args[0] as ScrollToOptions | undefined)?.top ?? 0,
+    );
+  }
+
+  async function setUpLibrary(user: ReturnType<typeof userEvent.setup>) {
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    await importFixture(user, "Route A.gpx");
+    await importFixture(user, "Route B.gpx");
+    const routes = await db.routes.toArray();
+    stub.savedRoute = routes.find((route) => route.name === "Route B") ?? null;
+    return routes.find((route) => route.name === "Route A");
+  }
+
+  it("Planning's Open saved route never hands Routes Planning's offset: Routes comes back where Routes was left", async () => {
+    const user = userEvent.setup();
+    await setUpLibrary(user);
+    riderScrollsTo(1000);
+    await user.click(navButton("Plan"));
+    riderScrollsTo(3000);
+    scrollToSpy.mockClear();
+
+    await user.click(screen.getByRole("button", { name: "Open saved route" }));
+    expect(await screen.findByRole("heading", { name: "Route B" })).toBeInTheDocument();
+    expect(window.scrollY).toBe(0);
+    await user.click(navButton("Routes"));
+    await waitFor(() => {
+      expect(window.scrollY).toBe(1000);
+    });
+
+    expect(scrolledTo()).not.toContain(3000);
+  });
+
+  it("Edit copy opens Planning at the top: the replaced draft's position is discarded", async () => {
+    const user = userEvent.setup();
+    await setUpLibrary(user);
+    await user.click(navButton("Plan"));
+    riderScrollsTo(2500);
+    await user.click(navButton("Routes"));
+    await user.click(await screen.findByRole("button", { name: "Route A" }));
+    riderScrollsTo(700);
+    scrollToSpy.mockClear();
+
+    await user.click(await screen.findByRole("button", { name: "Edit copy" }));
+
+    expect(
+      await screen.findByRole("region", { name: "Planning stub" }),
+    ).toBeInTheDocument();
+    expect(window.scrollY).toBe(0);
+    expect(scrolledTo()).not.toContain(2500);
+  });
+
+  it("an Edit copy that completes after the rider has left Ride for Planning never moves Planning, and Planning's next arrival starts at the top", async () => {
+    const user = userEvent.setup();
+    await setUpLibrary(user);
+    await user.click(navButton("Plan"));
+    riderScrollsTo(2500);
+    await user.click(navButton("Routes"));
+    await user.click(await screen.findByRole("button", { name: "Route A" }));
+
+    const write = controlledPromise<undefined>();
+    const originalSaveDraft = planningDraftRepository.saveDraft;
+    const saveDraftSpy = vi
+      .spyOn(planningDraftRepository, "saveDraft")
+      .mockImplementation(async (draft) => {
+        await write.promise;
+        await originalSaveDraft(draft);
+      });
+    await user.click(await screen.findByRole("button", { name: "Edit copy" }));
+    await waitFor(() => {
+      expect(saveDraftSpy).toHaveBeenCalledTimes(1);
+    });
+
+    await user.click(navButton("Plan"));
+    await waitFor(() => {
+      expect(window.scrollY).toBe(2500); // Planning's own position, restored
+    });
+    riderScrollsTo(2650); // and the rider scrolls on
+    scrollToSpy.mockClear();
+
+    write.resolve(undefined);
+    await waitFor(async () => {
+      expect(
+        (await planningDraftRepository.getDraft())?.editCopySourceRouteId,
+      ).toBeDefined();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(scrollToSpy).not.toHaveBeenCalled();
+    expect(window.scrollY).toBe(2650);
+    expect(screen.getByRole("region", { name: "Planning stub" })).toBeInTheDocument();
+
+    await user.click(navButton("Routes"));
+    riderScrollsTo(400);
+    await user.click(navButton("Plan"));
+    expect(window.scrollY).toBe(0);
+  });
+
+  it("a page-level switch dialog that takes focus on arrival wins over Routes' restore", async () => {
+    const user = userEvent.setup();
+    const routeA = await setUpLibrary(user);
+    if (!routeA) throw new Error("expected Route A");
+    riderScrollsTo(1000);
+    await user.click(navButton("Plan"));
+    await setActiveRideState({
+      id: "active",
+      routeId: routeA.id,
+      startedAt: "2026-01-01T08:00:00.000Z",
+      sessionId: "session-seeded",
+      lastFix: { coordinate: [0, 51], accuracyMetres: 6, timestampMs: 1000 },
+      lastMatchedPointIndex: 0,
+      matchedDistanceFromStartMetres: 0,
+      offRouteMachineState: { level: "on-route", candidateLevel: null, streak: 0 },
+    });
+    await user.click(screen.getByRole("button", { name: "Open saved route" }));
+    await waitFor(() => {
+      expect(inlinePrompt()).not.toBeNull();
+    });
+    riderScrollsTo(300);
+    scrollToSpy.mockClear();
+
+    await user.click(navButton("Routes"));
+
+    const dialog = await screen.findByRole("dialog", { name: 'Switch to "Route B"?' });
+    expect(await screen.findByRole("button", { name: "Route A" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(scrolledTo()).not.toContain(1000);
+  });
+
+  it("leaving Routes before its list has loaded keeps Routes' position for the next arrival", async () => {
+    const user = userEvent.setup();
+    await setUpLibrary(user);
+    riderScrollsTo(1500);
+    await user.click(navButton("Plan"));
+
+    const list = controlledPromise<undefined>();
+    const originalListRoutes = routesRepository.listRoutes;
+    const listSpy = vi
+      .spyOn(routesRepository, "listRoutes")
+      .mockImplementation(async () => {
+        await list.promise;
+        return originalListRoutes();
+      });
+    await user.click(navButton("Routes"));
+    expect(screen.getByText("Loading routes…")).toBeInTheDocument();
+    await user.click(navButton("Plan"));
+    list.resolve(undefined);
+    listSpy.mockRestore();
+
+    await user.click(navButton("Routes"));
+    await waitFor(() => {
+      expect(window.scrollY).toBe(1500);
+    });
+  });
+
+  it("Planning's Open Settings opens Settings at the top, discarding Settings' own position", async () => {
+    const user = userEvent.setup();
+    render(<App mapFactory={buildNoopMapFactory()} />);
+    await user.click(navButton("Settings"));
+    riderScrollsTo(1800);
+    await user.click(navButton("Plan"));
+    riderScrollsTo(600);
+    scrollToSpy.mockClear();
+
+    await user.click(screen.getByRole("button", { name: "Open Settings" }));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Settings" }),
+    ).toBeInTheDocument();
+    expect(window.scrollY).toBe(0);
+    expect(scrolledTo()).not.toContain(1800);
   });
 });

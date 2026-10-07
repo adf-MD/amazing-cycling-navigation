@@ -83,7 +83,8 @@ import {
   armOperationInteractionGuard,
   type OperationInteractionGuard,
 } from "../shared/operationInteractionGuard.ts";
-import { useLiveQuery } from "../shared/useLiveQuery.ts";
+import { useLiveQueryState } from "../shared/useLiveQuery.ts";
+import { useScreenScrollRestoration } from "../shared/screenScrollMemory.ts";
 import { describeProviderKeyStatus } from "../settings/providerKeyStatus.ts";
 import { canSaveOrExportPlan } from "./canSaveOrExportPlan.ts";
 import { describeStaleRouteStatus } from "./describeStaleRouteStatus.ts";
@@ -610,7 +611,9 @@ export function PlanningScreen({
   } | null>(null);
 
   const keyQuery = useCallback(() => getProviderKey(), []);
-  const key = useLiveQuery(keyQuery);
+  // `settled` (backlog item 125) only tells scroll restoration that the
+  // read has answered; `key` itself is used exactly as before.
+  const { value: key, settled: keySettled } = useLiveQueryState(keyQuery);
   // Ambiguous while the live query is still loading versus genuinely
   // unset — the same brief, imperceptible flash-on-load already accepted
   // by every other useLiveQuery consumer in this codebase (e.g.
@@ -622,7 +625,8 @@ export function PlanningScreen({
   // without having to leave Planning — updated automatically after every
   // calculation attempt via recordProviderKeyVerification.
   const verificationQuery = useCallback(() => getProviderKeyVerification(), []);
-  const verification = useLiveQuery(verificationQuery);
+  const { value: verification, settled: verificationSettled } =
+    useLiveQueryState(verificationQuery);
   const now = useNow(clock);
 
   const routing = usePlanningRoute({
@@ -2205,6 +2209,15 @@ export function PlanningScreen({
   const editCopyNotice = editCopyMeta
     ? describeEditCopyNotice(translator, editCopyMeta)
     : null;
+
+  // Backlog item 125: Planning's own scroll position comes back once its
+  // draft has been read (or failed to be) and the key and verification
+  // reads behind the missing-key notice and the key status line — both
+  // above most of the page — have answered. Last among this screen's
+  // hooks, so its decision follows every other layout effect here.
+  useScreenScrollRestoration(
+    hydrationStatus !== "loading" && keySettled && verificationSettled,
+  );
 
   return (
     <section aria-label={t("planning.landmarkLabel")} className="screen planning-screen">

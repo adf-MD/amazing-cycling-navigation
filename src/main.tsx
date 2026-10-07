@@ -9,12 +9,19 @@ import {
   resolveLanguage,
 } from "./i18n/language.ts";
 import { getAppPreferences } from "./storage/appPreferencesRepository.ts";
+import { disableBrowserScrollRestoration } from "./ui/shared/screenScrollMemory.ts";
 import "./index.css";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
   throw new Error("Root element not found");
 }
+
+// Backlog item 125. A fresh App mount remembers no scroll offsets and every
+// view's first visit starts at the top, so the browser's own restoration of
+// a reloaded page's offset is turned off — before the first await, so that
+// it is in place before the browser could apply one.
+disableBrowserScrollRestoration();
 
 // Backlog item 113. The stored language preference is read BEFORE the
 // first render, not after it. Reading it afterwards would paint English

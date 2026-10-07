@@ -13,6 +13,7 @@ import type { PlannedRoute } from "../../domain/types.ts";
 import type { StoredRouteRideState } from "../../storage/db.ts";
 import type { IdentifiedStoredRideState } from "../../storage/rideStateRepository.ts";
 import { LanguageProvider } from "../../i18n/LanguageProvider.tsx";
+import { createReadinessRecorder } from "../../test/screenScrollReadiness.tsx";
 
 const route: PlannedRoute = {
   id: "route-1",
@@ -89,6 +90,35 @@ describe("RidingLauncher", () => {
     expect(
       await screen.findByRole("button", { name: "Choose a route" }),
     ).toBeInTheDocument();
+    readSpy.mockRestore();
+  });
+
+  it("reports its content ready for scroll restoration only once the check has finished, never with the Checking line (backlog item 125)", async () => {
+    let resolveRead: ((value: IdentifiedStoredRideState | undefined) => void) | undefined;
+    const readSpy = vi
+      .spyOn(rideStateRepository, "getActiveRideStateWithSessionId")
+      .mockReturnValue(
+        new Promise((resolve) => {
+          resolveRead = resolve;
+        }),
+      );
+    const recorder = createReadinessRecorder("riding");
+
+    render(
+      <RidingLauncher
+        onResumeRoute={vi.fn()}
+        onChooseRoute={vi.fn()}
+        onStartFreeRoam={vi.fn()}
+        onResumeFreeRoam={vi.fn()}
+      />,
+      { wrapper: recorder.wrapper },
+    );
+
+    expect(screen.getByText(/Checking for an unfinished ride/)).toBeInTheDocument();
+    expect(recorder.reports).toEqual([false]);
+    resolveRead?.(undefined);
+    await screen.findByRole("button", { name: "Choose a route" });
+    expect(recorder.reports).toEqual([false, true]);
     readSpy.mockRestore();
   });
 

@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PlannedRoute } from "./domain/types.ts";
 import type { MapFactory } from "./map/mapAdapter.ts";
 import { systemClock, type Clock } from "./platform/clock.ts";
@@ -40,7 +40,11 @@ import {
 import { useTranslate } from "./i18n/useTranslate.ts";
 import type { Translator } from "./i18n/translate.ts";
 import { isImmersiveRidingShell } from "./ui/shared/immersiveRidingShell.ts";
-import { useResetScrollForNewRideContent } from "./ui/shared/useResetScrollForNewRideContent.ts";
+import {
+  createScreenScrollMemory,
+  ScreenScrollContext,
+  useScreenTopRequests,
+} from "./ui/shared/screenScrollMemory.ts";
 
 export interface AppProps {
   /** Injectable for tests, so opening a route into RidingScreen doesn't
@@ -336,6 +340,19 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   const translator = useTranslate();
   const { t } = translator;
   const [screen, setScreen] = useState<Screen>("library");
+  // Backlog item 125: each primary view's own scroll position, for this app
+  // session only. Created once, with the screen App starts on; see
+  // screenScrollMemory.ts.
+  const [scrollMemory] = useState(() => createScreenScrollMemory("library"));
+  useLayoutEffect(() => {
+    scrollMemory.noteRendered(screen);
+  }, [scrollMemory, screen]);
+  useLayoutEffect(
+    () => () => {
+      scrollMemory.dispose();
+    },
+    [scrollMemory],
+  );
   // Backlog item 121: which of the Settings section's two views the rider
   // last saw, so returning to the Settings tab from another tab reopens it.
   // Memory only, so a reload starts at Settings. Recorded by showScreen
@@ -345,13 +362,12 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   const [ridingContent, setRidingContent] = useState<RidingContent>(NONE_RIDING_CONTENT);
   const [isRidingActive, setIsRidingActive] = useState(false);
   const { needRefresh, updateNow, dismiss } = usePwaUpdate();
-  const routesScrollYRef = useRef<number | null>(null);
   // Read-only handle onto the sticky top navigation's own rendered box, so
   // RouteListItem (several levels below, not a DOM ancestor of this
   // element) can measure the header's live rendered height when deciding
   // whether the route-switch guard prompt needs to scroll into view
-  // (backlog item 95) — mirrors routesScrollYRef's own "App owns a page-
-  // chrome fact a screen component needs" shape above.
+  // (backlog item 95) — App owns a page-chrome fact a screen component
+  // needs.
   const stickyHeaderRef = useRef<HTMLElement>(null);
   const routesSearchQueryRef = useRef<string>("");
   // Selected tag-filter identity keys (tagIdentityKey outputs), mirroring
@@ -384,7 +400,13 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   useLayoutEffect(() => {
     ridingContentRef.current = ridingContent;
   }, [ridingContent]);
-  const notifyNewRideContent = useResetScrollForNewRideContent(screen);
+  // Backlog item 125. A top request discards a view's saved position and
+  // starts it at the top, now or on its next arrival. New ride content is
+  // one — the role useResetScrollForNewRideContent played before it.
+  const requestTop = useScreenTopRequests(screen, scrollMemory);
+  const notifyNewRideContent = useCallback(() => {
+    requestTop("riding");
+  }, [requestTop]);
   // Whether the app shell is in immersive-Riding mode (backlog item 55):
   // MainNavigation and its wrapping <header> render at all only when this
   // is false — while true, RidingScreen's/FreeRoamScreen's own compact
@@ -618,7 +640,6 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
   ) {
     coldStartAutoOpenArmedRef.current = false;
     if (target.kind === "route") {
-      routesScrollYRef.current = window.scrollY;
       setRidingContent({
         kind: "route",
         route: target.route,
@@ -627,7 +648,7 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     } else {
       setRidingContent({ kind: "free-roam", sessionId: target.sessionId });
     }
-    setScreen("riding");
+    changeScreen("riding");
     notifyNewRideContent();
   }
 
@@ -1276,9 +1297,9 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
 
   // Shared two-line body behind every non-finalising reset back to the
   // empty/resumable Ride launcher while staying on screen === "riding":
-  // resets the in-memory ridingContent pointer to "none" and notifies
-  // useResetScrollForNewRideContent so the view scrolls back to the top,
-  // exactly as opening any other new Ride content already does.
+  // resets the in-memory ridingContent pointer to "none" and requests a top
+  // start for Ride (backlog item 125's top request) so the view scrolls
+  // back to the top, exactly as opening any other new Ride content does.
   //
   // ridingContent can be reset to "none" by four distinct paths, each with
   // its own storage contract:
@@ -1381,22 +1402,43 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
     resetRidingContentToLauncher();
   };
 
+  // Every change of screen goes through here (backlog item 125), so the
+  // view being left records its own scroll position first, while the page
+  // still shows it.
+  function changeScreen(nextScreen: Screen) {
+    scrollMemory.leave(nextScreen);
+    setScreen(nextScreen);
+  }
+
   // Every navigation into the Settings section goes through here, so the
   // last-viewed sibling is recorded in exactly one place (backlog item 121).
   const showScreen = (nextScreen: Screen) => {
     if (isSettingsSectionView(nextScreen)) setLastSettingsView(nextScreen);
-    setScreen(nextScreen);
+    changeScreen(nextScreen);
   };
 
   // Planning's missing-key notice. Always Settings, whichever sibling view
-  // was last shown: the notice exists to get a key entered.
+  // was last shown: the notice exists to get a key entered, so it opens at
+  // the top, as before backlog item 125.
   const handleNavigateToSettings = () => {
+    requestTop("settings");
     showScreen("settings");
   };
 
+  // Edit copy opening Planning with the draft it has just written: a new
+  // draft, so Planning starts at the top (backlog item 125).
   const handleNavigateToPlanning = () => {
-    setScreen("planning");
+    requestTop("planning");
+    changeScreen("planning");
   };
+
+  // Edit copy's draft written, whether or not the rider is still on Ride to
+  // be taken to Planning (backlog item 125). Never scrolls anything: it
+  // only stops Planning's saved position — the old draft's — from being
+  // restored over the new one. Stable identity, like the reports above.
+  const handleEditCopyDraftSaved = useCallback(() => {
+    scrollMemory.invalidate("planning");
+  }, [scrollMemory]);
 
   // Wraps MainNavigation's plain screen setter with one free-roam-specific
   // rule: leaving the Ride screen while it was showing an active free-roam
@@ -1439,6 +1481,11 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         : destination,
     );
   };
+
+  const scrollContext = useMemo(
+    () => ({ memory: scrollMemory, view: screen }),
+    [scrollMemory, screen],
+  );
 
   const pendingSwitchCopy = pendingRideSwitch
     ? describePendingRideSwitch(translator, pendingRideSwitch)
@@ -1558,101 +1605,103 @@ function App({ mapFactory, clock = systemClock }: AppProps) {
         </div>
       ) : null}
 
-      <main>
-        {screen === "library" && (
-          <RouteLibrary
-            onOpenRoute={handleOpenRoute}
-            restoreScrollYRef={routesScrollYRef}
-            restoreSearchQueryRef={routesSearchQueryRef}
-            restoreTagFilterKeysRef={routesTagFilterKeysRef}
-            pendingRouteSwitch={routeSwitchPrompt}
-            stickyHeaderRef={stickyHeaderRef}
-            routeDeletion={routeDeletion}
-          />
-        )}
-        {screen === "riding" &&
-          (ridingContent.kind === "route" ? (
-            // Keyed by route id (item 119 follow-up): a RidingScreen and its
-            // navigation hook hold one route's session, so a different
-            // route — e.g. End and switch confirmed from Ride while a
-            // paused route's screen is still mounted — must be a fresh
-            // instance, never the old one with its fix and progress.
-            <RidingScreen
-              key={ridingContent.route.id}
-              route={ridingContent.route}
-              resumeIntentToken={
-                ridingContent.intent?.kind === "resume"
-                  ? ridingContent.intent.token
-                  : undefined
-              }
-              onResumeIntentHandled={handleResumeIntentHandled}
-              restoreIntentToken={
-                ridingContent.intent?.kind === "restore"
-                  ? ridingContent.intent.token
-                  : undefined
-              }
-              onRestoredSessionMissing={handleRestoredSessionMissing}
-              onStoredSessionKnown={handleStoredSessionKnown}
-              mapFactory={mapFactory}
-              onRidingActiveChange={handleRidingActiveChange}
-              onNavigateToPlanning={handleNavigateToPlanning}
-              onRideFinalized={handleRideFinalized}
-              onSessionGone={() => {
-                handleSessionGone(ridingContent);
-              }}
-              onReturnToRideLauncher={handleReturnToRideLauncher}
-              onRidePaused={handleRidePaused}
+      <ScreenScrollContext.Provider value={scrollContext}>
+        <main>
+          {screen === "library" && (
+            <RouteLibrary
+              onOpenRoute={handleOpenRoute}
+              restoreSearchQueryRef={routesSearchQueryRef}
+              restoreTagFilterKeysRef={routesTagFilterKeysRef}
+              pendingRouteSwitch={routeSwitchPrompt}
+              stickyHeaderRef={stickyHeaderRef}
+              routeDeletion={routeDeletion}
+            />
+          )}
+          {screen === "riding" &&
+            (ridingContent.kind === "route" ? (
+              // Keyed by route id (item 119 follow-up): a RidingScreen and its
+              // navigation hook hold one route's session, so a different
+              // route — e.g. End and switch confirmed from Ride while a
+              // paused route's screen is still mounted — must be a fresh
+              // instance, never the old one with its fix and progress.
+              <RidingScreen
+                key={ridingContent.route.id}
+                route={ridingContent.route}
+                resumeIntentToken={
+                  ridingContent.intent?.kind === "resume"
+                    ? ridingContent.intent.token
+                    : undefined
+                }
+                onResumeIntentHandled={handleResumeIntentHandled}
+                restoreIntentToken={
+                  ridingContent.intent?.kind === "restore"
+                    ? ridingContent.intent.token
+                    : undefined
+                }
+                onRestoredSessionMissing={handleRestoredSessionMissing}
+                onStoredSessionKnown={handleStoredSessionKnown}
+                mapFactory={mapFactory}
+                onRidingActiveChange={handleRidingActiveChange}
+                onNavigateToPlanning={handleNavigateToPlanning}
+                onEditCopyDraftSaved={handleEditCopyDraftSaved}
+                onRideFinalized={handleRideFinalized}
+                onSessionGone={() => {
+                  handleSessionGone(ridingContent);
+                }}
+                onReturnToRideLauncher={handleReturnToRideLauncher}
+                onRidePaused={handleRidePaused}
+                stickyHeaderRef={stickyHeaderRef}
+              />
+            ) : ridingContent.kind === "free-roam" ? (
+              <FreeRoamScreen
+                key={ridingContent.sessionId}
+                sessionId={ridingContent.sessionId}
+                mapFactory={mapFactory}
+                onRidingActiveChange={handleRidingActiveChange}
+                onRideFinalized={handleRideFinalized}
+                onSessionGone={() => {
+                  handleSessionGone(ridingContent);
+                }}
+                onRidePaused={handleRidePaused}
+              />
+            ) : (
+              <RidingLauncher
+                onResumeRoute={handleResumeRoute}
+                onChooseRoute={() => {
+                  handleNavigate("library");
+                }}
+                onStartFreeRoam={handleStartFreeRoam}
+                onResumeFreeRoam={handleResumeFreeRoam}
+                isFreeRoamPending={freeRoamTransitionPending}
+                freeRoamError={freeRoamTransitionError}
+                sessionRefreshToken={launcherSessionRefreshToken}
+                onSessionChecked={handleLauncherSessionChecked}
+                staleNoticeRequested={launcherStaleNoticeRequested}
+                onStaleNoticeRequestHandled={handleLauncherStaleNoticeRequestHandled}
+              />
+            ))}
+          {screen === "planning" && (
+            <PlanningScreen
+              onNavigateToSettings={handleNavigateToSettings}
+              onOpenSavedRoute={handleOpenSavedRoute}
+              savedRouteSwitchPrompt={savedRouteSwitchPrompt}
               stickyHeaderRef={stickyHeaderRef}
             />
-          ) : ridingContent.kind === "free-roam" ? (
-            <FreeRoamScreen
-              key={ridingContent.sessionId}
-              sessionId={ridingContent.sessionId}
-              mapFactory={mapFactory}
-              onRidingActiveChange={handleRidingActiveChange}
-              onRideFinalized={handleRideFinalized}
-              onSessionGone={() => {
-                handleSessionGone(ridingContent);
-              }}
-              onRidePaused={handleRidePaused}
-            />
-          ) : (
-            <RidingLauncher
-              onResumeRoute={handleResumeRoute}
-              onChooseRoute={() => {
-                handleNavigate("library");
-              }}
-              onStartFreeRoam={handleStartFreeRoam}
-              onResumeFreeRoam={handleResumeFreeRoam}
-              isFreeRoamPending={freeRoamTransitionPending}
-              freeRoamError={freeRoamTransitionError}
-              sessionRefreshToken={launcherSessionRefreshToken}
-              onSessionChecked={handleLauncherSessionChecked}
-              staleNoticeRequested={launcherStaleNoticeRequested}
-              onStaleNoticeRequestHandled={handleLauncherStaleNoticeRequestHandled}
-            />
-          ))}
-        {screen === "planning" && (
-          <PlanningScreen
-            onNavigateToSettings={handleNavigateToSettings}
-            onOpenSavedRoute={handleOpenSavedRoute}
-            savedRouteSwitchPrompt={savedRouteSwitchPrompt}
-            stickyHeaderRef={stickyHeaderRef}
-          />
-        )}
-        {/* Backlog item 121: ONE slot for both of the Settings section's
+          )}
+          {/* Backlog item 121: ONE slot for both of the Settings section's
             views, so SettingsSection stays mounted across a Settings ↔
             Status switch — which is what keeps an unfinished key edit and
             the switcher's focus — and unmounts on any other tab. Two
             separate slots would remount it on every switch. */}
-        {isSettingsSectionView(screen) && (
-          <SettingsSection
-            view={screen}
-            onSelectView={handleNavigate}
-            stickyHeaderRef={stickyHeaderRef}
-          />
-        )}
-      </main>
+          {isSettingsSectionView(screen) && (
+            <SettingsSection
+              view={screen}
+              onSelectView={handleNavigate}
+              stickyHeaderRef={stickyHeaderRef}
+            />
+          )}
+        </main>
+      </ScreenScrollContext.Provider>
     </div>
   );
 }

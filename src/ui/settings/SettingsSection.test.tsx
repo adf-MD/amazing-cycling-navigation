@@ -1,19 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsSection } from "./SettingsSection.tsx";
 import { db } from "../../storage/db.ts";
 import { getProviderKey, saveProviderKey } from "../../storage/providerKeyRepository.ts";
 import * as providerKeyRepository from "../../storage/providerKeyRepository.ts";
-import type { SettingsSectionView } from "../shared/screenTypes.ts";
+import type { Screen, SettingsSectionView } from "../shared/screenTypes.ts";
+import {
+  createScreenScrollMemory,
+  ScreenScrollContext,
+} from "../shared/screenScrollMemory.ts";
 
 // Backlog item 121. SettingsSection is what keeps an unfinished
-// OpenRouteService key edit across a switch to Status and back, what keeps
-// the switcher's focus across that switch, and what applies the section's
-// interim top reset. This harness stands in for App: it owns the view the
-// way App owns `screen`, and it can take the rider out of the section and
-// back, as another tab would.
+// OpenRouteService key edit across a switch to Status and back, and what
+// keeps the switcher's focus across that switch. Since backlog item 125 it
+// no longer resets the scroll position (see the last describe). This
+// harness stands in for App: it owns the view the way App owns `screen`,
+// and it can take the rider out of the section and back, as another tab
+// would.
 
 const TYPED_KEY = "test-dummy-typed-but-unsaved-0000";
 const STORED_KEY = "test-dummy-stored-key-1111";
@@ -240,33 +245,19 @@ describe("SettingsSection: the switcher and focus", () => {
   });
 });
 
-describe("SettingsSection: the interim top reset", () => {
-  function spyOnScrollTo() {
-    return vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
-  }
-  const TOP = { top: 0, left: 0, behavior: "auto" };
-
-  it("starts at the top on entry, and again on every switch", async () => {
-    const scrollSpy = spyOnScrollTo();
-    const user = userEvent.setup();
-    render(<Harness />);
-    expect(scrollSpy).toHaveBeenCalledTimes(1);
-    expect(scrollSpy).toHaveBeenLastCalledWith(TOP);
-
-    await switchTo(user, "Status");
-    expect(scrollSpy).toHaveBeenCalledTimes(2);
-
-    await switchTo(user, "Settings");
-    expect(scrollSpy).toHaveBeenCalledTimes(3);
-  });
-
-  it("leaves the scroll position alone for updates within a view", async () => {
-    const scrollSpy = spyOnScrollTo();
+// Backlog item 125 replaced item 121's interim top reset: App's screen
+// scroll memory restores each view's own position, and the section itself
+// never scrolls the page. These tests pin both halves: no scrolling here,
+// and each view's report that its content has loaded.
+describe("SettingsSection: scroll position (backlog item 125)", () => {
+  it("never scrolls the page itself — on entry, on a switch, or for updates within a view", async () => {
+    const scrollSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
     const user = userEvent.setup();
     render(<Harness />);
     await waitFor(() => screen.getByText("No key configured"));
-    const callsOnEntry = scrollSpy.mock.calls.length;
 
+    await switchTo(user, "Status");
+    await switchTo(user, "Settings");
     // A disclosure, a preference change (which also re-emits a live query)
     // and typing — none of them changes the rendered view.
     await user.click(screen.getByText("How the key and route data are used"));
@@ -278,6 +269,43 @@ describe("SettingsSection: the interim top reset", () => {
     // Pressing the switcher button of the view already shown.
     await user.click(switcherButton("Settings"));
 
-    expect(scrollSpy).toHaveBeenCalledTimes(callsOnEntry);
+    expect(scrollSpy).not.toHaveBeenCalled();
+  });
+
+  it("reports each view's content as loaded, under that view, once its reads have answered", async () => {
+    const reports: [Screen, boolean][] = [];
+    const memory = {
+      ...createScreenScrollMemory("settings"),
+      arrive: (view: Screen, ready: boolean) => {
+        reports.push([view, ready]);
+      },
+    };
+    function ProvidedHarness() {
+      const [view, setView] = useState<SettingsSectionView>("settings");
+      const headerRef = useRef<HTMLElement>(null);
+      return (
+        <ScreenScrollContext.Provider value={useMemo(() => ({ memory, view }), [view])}>
+          <header ref={headerRef} />
+          <SettingsSection
+            view={view}
+            onSelectView={setView}
+            stickyHeaderRef={headerRef}
+          />
+        </ScreenScrollContext.Provider>
+      );
+    }
+    const user = userEvent.setup();
+    render(<ProvidedHarness />);
+
+    expect(reports[0]).toEqual(["settings", false]);
+    await waitFor(() => {
+      expect(reports.at(-1)).toEqual(["settings", true]);
+    });
+
+    await switchTo(user, "Status");
+    await waitFor(() => {
+      expect(reports.at(-1)).toEqual(["diagnostics", true]);
+    });
+    expect(reports).toContainEqual(["diagnostics", false]);
   });
 });

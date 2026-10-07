@@ -3,8 +3,8 @@ import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { ParameterlessMessageKey } from "../../i18n/translate.ts";
 import { navCurrentState, type PrimaryDestination, type Screen } from "./screenTypes.ts";
 
-// Re-exported so existing consumers (App.tsx, immersiveRidingShell.ts,
-// useResetScrollForNewRideContent.ts and their tests) don't need an
+// Re-exported so existing consumers (App.tsx, immersiveRidingShell.ts and
+// their tests) don't need an
 // import-path change — NavIcon.tsx imports from screenTypes.ts directly,
 // since importing from here would recreate the type-only cycle this
 // module's own runtime import of NavIcon forms.
