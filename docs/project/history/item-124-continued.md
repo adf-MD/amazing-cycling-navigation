@@ -706,7 +706,7 @@ After slice 9's acceptance, every inventory entry was given an explicit disposit
 
 ## Decisions recorded on 4 October 2026
 
-**Approved by the rider on 4 October 2026, after the [reconciliation](../../design/reveal-inventory/closure-reconciliation.md).** These are product decisions, **not device acceptance**. The same report carried an installed-iPhone observation of P-01, recorded only in [`current-status.md`](../current-status.md#installed-iphone-observation-of-p-01-rename-on-the-last-route-card-item-124-inventory-reported-4-october-2026).
+**Approved by the rider on 4 October 2026, after the [reconciliation](../../design/reveal-inventory/closure-reconciliation.md).** These are product decisions, **not device acceptance**. The same report carried an installed-iPhone observation of P-01, recorded only in [`current-status-archive.md`](../current-status-archive.md#installed-iphone-observation-of-p-01-rename-on-the-last-route-card-item-124-inventory-reported-4-october-2026).
 
 1. **P-18 — the correction is approved, as slice 10.** A warning selected on the Planning map brings its row and its explanatory details into view together.
 2. **Where it comes to rest:** below the sticky navigation and clear of the bottom safe area, with a small margin consistent with the app's existing reveal behaviour.
@@ -900,7 +900,7 @@ This accepts slice 10's ordinary-flow checks only.
 - **The accepted build stays `ae76f98`** after later deployments.
 - **Automated evidence, separate from the device acceptance:** the synthetic provider, the stand-in viewports and the [repair note](#slice-10-repair-note--the-end-to-end-test-that-failed-ci-4-october-2026-test-only)'s corrected timing evidence.
 
-The dated record, with the rider's words, is in [`current-status.md`](../current-status.md#installed-iphone-acceptance-of-0461-build-ae76f98-item-124-slice-10-p-18-reported-4-october-2026).
+The dated record, with the rider's words, is in [`current-status-archive.md`](../current-status-archive.md#installed-iphone-acceptance-of-0461-build-ae76f98-item-124-slice-10-p-18-reported-4-october-2026).
 
 **CI and deployment.** Run [37215419294](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37215419294), for commit `ae76f98`: **Verify and build, all four End-to-end shards and Deploy succeeded, each on its first attempt.** The durations come from the run's own job and step start and completion times, read once after the run and kept locally as saved job data. Verify and build's test step is its unit and component tests; each shard's is its end-to-end suite.
 
@@ -917,7 +917,7 @@ The longest job, shard 4, left 343 s below the E2E jobs' 1,200-second timeout. T
 
 **The rider's dispositions, 4 October 2026.** These were given with the acceptance ("I agree with you recommendations otherwise"), together with the rider's further directions and two answers the same day. They are product decisions, **not device acceptance**, and continue the numbering of the [decisions recorded earlier that day](#decisions-recorded-on-4-october-2026).
 
-10. **P-01 — deferred to [item 135](../backlog.md#item-135).** The rider's [device observation](../current-status.md#installed-iphone-observation-of-p-01-rename-on-the-last-route-card-item-124-inventory-reported-4-october-2026) stays recorded: on the last route card, Rename's focused field did not come into view, though scrolling brought it into view and Save and Cancel stayed reachable. So does its [desktop non-reproduction](../../design/reveal-inventory/closure-reconciliation.md#p-01--rename-on-the-last-route-card): there, the last card's field is on screen, with 0 px of scroll room below, against a middle card's 990 px. The keyboard mechanism is unresolved. **Deferral is neither acceptance nor a fix.**
+10. **P-01 — deferred to [item 135](../backlog.md#item-135).** The rider's [device observation](../current-status-archive.md#installed-iphone-observation-of-p-01-rename-on-the-last-route-card-item-124-inventory-reported-4-october-2026) stays recorded: on the last route card, Rename's focused field did not come into view, though scrolling brought it into view and Save and Cancel stayed reachable. So does its [desktop non-reproduction](../../design/reveal-inventory/closure-reconciliation.md#p-01--rename-on-the-last-route-card): there, the last card's field is on screen, with 0 px of scroll room below, against a middle card's 990 px. The keyboard mechanism is unresolved. **Deferral is neither acceptance nor a fix.**
 11. **P-01's desktop action-row clipping — deferred with it, as a separate finding**, by the rider's answer the same day.
     - **The finding:** on a middle card, the opened editor's Save and Cancel row ends 21 px below the usable band, about 13 px beyond the viewport's edge. It was measured on 1 October and reproduced on 4 October, in desktop engines only, with no software keyboard.
     - **Kept distinct:** it concerns partly clipped actions, whereas the device observation concerns the last card's focused field.

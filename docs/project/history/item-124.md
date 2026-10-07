@@ -62,7 +62,7 @@ _Category: Interface and accessibility consistency_
 
 ### Closure (4 October 2026)
 
-**Slice 11's installed-iPhone acceptance, reported 4 October 2026.** The rider reported that slice 11's ordinary-flow checks pass on the installed iPhone, version `0.4.62`, build `a71ca2f`, in English and German: routing-test results are readable, are revealed only when needed and settle without repeated movement, and later manual scrolling is respected. The rider's words, and exactly what they do and do not establish, are recorded only in [`current-status.md`](../current-status.md#installed-iphone-acceptance-of-0462-build-a71ca2f-item-124-slice-11-p-15-reported-4-october-2026). In short:
+**Slice 11's installed-iPhone acceptance, reported 4 October 2026.** The rider reported that slice 11's ordinary-flow checks pass on the installed iPhone, version `0.4.62`, build `a71ca2f`, in English and German: routing-test results are readable, are revealed only when needed and settle without repeated movement, and later manual scrolling is respected. The rider's words, and exactly what they do and do not establish, are recorded only in [`current-status-archive.md`](../current-status-archive.md#installed-iphone-acceptance-of-0462-build-a71ca2f-item-124-slice-11-p-15-reported-4-october-2026). In short:
 
 - **Accepted:** the reported ordinary flows, on build `a71ca2f`, which stays the accepted build after later documentation deployments.
 - **Not claimed:** the conditional check of scrolling while a test is still pending, which the report neither confirms nor marks unavailable; Reduce Motion; any particular provider outcome; and any VoiceOver, keyboard, enlarged-text, landscape or Android result.

@@ -1,6 +1,6 @@
-# Current status — archive: dated records from 3 October back to 10 September 2026
+# Current status — archive: dated records from 4 October back to 10 September 2026
 
-This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order — on 1 October 2026 those from 25 September 2026 back, on 4 October 2026 the four of 28 and 29 September 2026, on 5 October 2026 the seven of 30 September and 1 October 2026, and on 6 October 2026 the six of 2 October 2026 and, later that day, the six of 3 October 2026 that now open it — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
+This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order — on 1 October 2026 those from 25 September 2026 back, on 4 October 2026 the four of 28 and 29 September 2026, on 5 October 2026 the seven of 30 September and 1 October 2026, on 6 October 2026 the six of 2 October 2026 and, later that day, the six of 3 October 2026, and on 7 October 2026 the four of 4 October 2026 that now open it — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
 
 **Where the moved text's positional references now point.** These records stood in `current-status.md` after its newer dated records and before its per-item entries from item 114 onwards, and their wording is kept exactly as written. Read them like this:
 
@@ -9,12 +9,129 @@ This file is **the continuation of [`current-status.md`](current-status.md)'s da
 - **Item 121's "the dated `0.4.44` record above"**, under "Dated evidence, closures and limitations, by item" — that record stayed in `current-status.md` on 1 October 2026 and moved here on 4 October 2026, so it is again [above, in this file](#installed-iphone-acceptance-of-0444-build-8027c6a-item-121-reported-29-september-2026).
 - **In the seven records of 30 September and 1 October 2026, moved on 5 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist above" means `current-status.md`'s open checklist; "the item 102 entry below" means `current-status.md`'s per-item entry for item 102; and "the mouse double-click observation above" means the observation from automated testing in `current-status.md`'s checklist section. Their references to one another, such as "the `0.4.47` finding below", still point within this file.
 - **In the six records of 2 October 2026, moved on 6 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist" means `current-status.md`'s open checklist; and "the item 132 checks above" means that Session 5's checks, listed in the same record. Their references to one another, such as the `0.4.53` record's "that observation is kept below", still point within this file.
+- **In the four records of 4 October 2026, moved on 7 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist" means `current-status.md`'s open checklist; "the next checklist", in the `0.4.61` record, means the session written for the following slice, since completed and removed. The P-01 observation's "the slice 9 acceptance below" still points within this file, to the record that follows it.
 - **In the six records of 3 October 2026, moved later on 6 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist" means `current-status.md`'s open checklist. Their references to one another, such as "the C-09 report above" and "D-02's acceptance below", still point within this file.
 - **"Item 115's installed-iPhone presentation checklist below"**, in the 12 September 2026 bicycle field test — the per-item checklists of that time, since consolidated into `current-status.md`'s Sessions 2 and 3.
 
 Links in these records are relative to `docs/project/`, as they were, and still resolve.
 
 ---
+
+### Installed-iPhone acceptance of `0.4.62` (build `a71ca2f`, item 124 slice 11, P-15, reported 4 October 2026)
+
+**Device and build.** The installed Home Screen PWA, in English and German. The report names version `0.4.62` and build `a71ca2f`; it does not say how they were read. The context is item 124 slice 11's installed-iPhone checklist, Session 5, written for `0.4.62`, which specified stationary use in portrait at ordinary text size with the OpenRouteService key already saved on the phone; the report does not restate those conditions. The accepted build is `a71ca2f`, and it stays so when later documentation deployments change the deployed build ID.
+
+**The rider's report, verbatim:**
+
+> On the installed iPhone, version 0.4.62, build a71ca2f, item 124 slice 11’s ordinary-flow checks pass in English and German. Routing-test results are readable, reveal only when needed, settle without repeated movement, and subsequent manual scrolling is respected.
+
+That is slice 11's Session 5, so that session is complete for this device and has been removed from the checklist. As written, its checks were:
+
+- **the result comes into view:** with **Test routing connection** low on Status and the screen left untouched while it reads **Testing…**, the result line ends fully visible above the home indicator — no movement when it already fits, otherwise a glide only as far as needed;
+- **it then stays put**, with no further or repeated repositioning;
+- **with the button higher on the screen**, the same: no movement when the line fits, otherwise only as far as needed;
+- **your own scrolling is left alone** once a reveal has finished;
+- **only if it happens to be possible: scrolling while the test runs**, to be recorded as unavailable rather than passed if the test finished first;
+- optional, not required: Reduce Motion. An ordinary failure, if one happened, would exercise the same reveal on a failure line.
+
+This **accepts slice 11's ordinary-flow checks on build `a71ca2f`**, at product level, in English and German:
+
+- routing-test results are readable;
+- they are revealed only when needed;
+- they settle without repeated movement;
+- the rider's later manual scrolling is respected.
+
+**Not claimed:**
+
+- **Scrolling while the test runs.** That check was conditional, and the report does not say whether it was exercised or was unavailable, so it is **not claimed** either way.
+- **Reduce Motion.** It was optional and the report does not mention it, so it is **not accepted**.
+- **A particular provider outcome.** The report does not say whether the tests succeeded or failed, so neither a success line nor a failure line is claimed.
+- Any measured geometry; VoiceOver; a physical keyboard; enlarged text or iOS Larger Text; landscape; physical Android.
+
+**Separate, automated evidence only.** The delayed completions, the provider failures, leaving Status, a hidden app and the synthetic focus changes — with the 34 px inset, the short stand-in viewport and the 200% text cases — stay as recorded in item 124's [slice 11](history/item-124-continued.md#slice-11--the-routing-connection-result-revealed-p-15-shipped-0462-4-october-2026). Session 5 did not induce them on the phone, and **this report is not physical-device acceptance of them**. CI run 37225237414, which deployed `a71ca2f`, is recorded with item 124's [closure](history/item-124.md#closure-4-october-2026), which followed this acceptance the same day.
+
+### Installed-iPhone acceptance of `0.4.61` (build `ae76f98`, item 124 slice 10, P-18, reported 4 October 2026)
+
+**Device and build.** Installed Home Screen PWA, in English and German, stationary, in portrait and at ordinary text size, as the session specified. The context is item 124 slice 10's installed-iPhone checklist, Session 5, written for version `0.4.61`, build `ae76f98`. The report itself names neither, and no separate reading of the version or build from Status is recorded. The accepted build is `ae76f98`, and it stays so when later deployments change the deployed build ID.
+
+**The rider's report, verbatim:**
+
+> All the checks pass in English and German, movement is how I would expect it - I am not sure about optional "reduced motion"; what do you mean? What should I see?
+> I agree with you recommendations otherwise. How to proceed now? More physical checks from my side? Or should we tell Claude what to do next?
+
+The two questions are recorded as questions, not as results. The optional Reduce Motion step is explained in the next checklist: with iOS's Reduce Motion switched on, a reveal should jump straight to its place instead of gliding. The agreement with the recommendations, and what comes next, are the rider's [dispositions of the same day](history/item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice).
+
+That is slice 10's Session 5, so that session is complete for this device and has been removed from the checklist. As written, its checks were:
+
+- **a warning tapped on the map:** from the page's top, the page scrolls smoothly until the selected row and both of its lines, "Surface: …" and "Route position: …", are fully visible above the home indicator, and then stays still;
+- **it stops at the details, not beyond;**
+- **a selection from the list does not scroll;**
+- **a second warning on the map** — conditional, only if the route had two surface warnings;
+- **your own scrolling is left alone** once a reveal has settled;
+- **placement still works** after **Clear warning selection**;
+- optional, not required: Reduce Motion, and touching the screen while the page is still moving.
+
+This **accepts slice 10's ordinary tested flows on build `ae76f98`**, at product level, in English and German:
+
+- a warning selected on Planning's map brings its information into view as expected, with movement as the rider expected;
+- a selection from the list behaves normally;
+- the rider's own scrolling afterwards is respected;
+- clearing the selection permits normal waypoint placement.
+
+**Not claimed:**
+
+- **Reduced Motion.** It was optional, and the report asks what it means rather than reporting a result, so it is **not accepted** by this report.
+- **The second warning on the map.** That check applied only if the route had two surface warnings, and the report does not say whether that setup was available, so it is **not claimed separately**.
+- A separate Status reading of the version or build; any measured geometry; a finger scrolling while the page is still moving; enlarged text or iOS Larger Text; VoiceOver; a physical keyboard; landscape; physical Android.
+
+**Separate, automated evidence only.** The synthetic provider route, the synthetic 34 px inset, the short and tall stand-in viewports, the 200% text cases and the repaired end-to-end timing evidence stay as recorded in item 124's [slice 10](history/item-124-continued.md#slice-10--a-warning-selected-on-plannings-map-revealed-with-its-details-p-18-shipped-0461-4-october-2026) and its [repair note](history/item-124-continued.md#slice-10-repair-note--the-end-to-end-test-that-failed-ci-4-october-2026-test-only). Session 5 did not induce them on the phone, and **this report is not physical-device acceptance of them**. CI run 37215419294, which deployed `ae76f98`, is recorded in the [continuation](history/item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice).
+
+### Installed-iPhone observation of P-01, Rename on the last route card (item 124 inventory, reported 4 October 2026)
+
+**Device and build.** The installed iPhone. **No version, build or language was reported with this observation**, so none is recorded, and none is borrowed from the slice 9 acceptance below.
+
+**The rider's words, verbatim:** "Renaming puts focus on the field in general and both cancel and save are reachable. For the last item in the routes list, the field doesn't show automatically, but I can scroll downwards to see it. Both buttons remain reachable (after scroll). For the rest I follow your recommendations."
+
+**What it establishes**, for [P-01](../design/reveal-inventory/README.md#p-01--rename-route-card), at product level:
+
+- opening **Rename** puts focus on the name field;
+- **Save** and **Cancel** were reachable, including after scrolling;
+- on the **last** route card, the focused field did not come into view automatically; scrolling down brought it into view.
+
+**What it is not.** It is **not acceptance of P-01**: the field out of view on the last card is unresolved. It is also a different finding from the 1 October desktop measurement, in which the opened editor ended 21 px below the usable band, so that at most a strip of its Save and Cancel row was cut off ([reconciliation](../design/reveal-inventory/closure-reconciliation.md#the-closure-table)). That measurement concerned the action row, in desktop engines with no software keyboard, and is automated evidence only; this observation concerns the field itself, on the phone. Neither is taken as explaining the other. "For the rest I follow your recommendations" is recorded with the rider's [decisions of the same day](history/item-124-continued.md#decisions-recorded-on-4-october-2026), not here.
+
+**Not claimed:** a language, version or build; whether the software keyboard covered the field; a middle card's behaviour; enlarged text; VoiceOver; a physical keyboard; landscape; physical Android.
+
+### Installed-iPhone acceptance of `0.4.60` (build `e2ba7cf`, item 124 slice 9, transition dismissal, reported 4 October 2026)
+
+**Device and build.** Installed Home Screen PWA, in English and German, stationary, in portrait and at ordinary text size, as the session specified. The context is item 124 slice 9's installed-iPhone checklist, Session 5, written for version `0.4.60`, build `e2ba7cf`. The report itself names neither, and no separate reading of the version or build from Status is recorded. The accepted build is `e2ba7cf`, and it stays so when later documentation deployments change the deployed build ID.
+
+**The rider's report, verbatim:**
+
+> All tests pass, both in English and German.
+
+That is slice 9's Session 5, so that session is complete for this device and has been removed from the checklist. Its checks were:
+
+- **End ride in the riding header, then Pause:** with "End this ride?" open and unanswered below the header, **Pause** showed the paused screen with **End ride** as an ordinary button, no confirmation reappearing and no page jump;
+- **End ride on the paused screen, then Resume ride:** with it open and unanswered, **Resume ride** resumed riding with no confirmation below the header, and none after a further **Pause**;
+- **Edit copy, then Start riding or Resume ride:** with "Replace your current draft?" open and unanswered, **Start riding** from a route's screen before riding, or **Resume ride** from the paused screen, then **Pause**, left **Edit copy** as an ordinary button with no confirmation;
+- **opening them on purpose:** on the paused screen, End ride's confirmation opened fully visible and **Cancel** kept the ride paused; Edit copy's opened, and **Cancel** kept the earlier draft in **Plan**; while riding, the header's End ride opened its confirmation and **Cancel** returned to riding;
+- **after fully closing and reopening the PWA** with the ride paused, End ride opened on the paused route screen that **Ride** shows, and **Resume ride**, with it unanswered, left no confirmation, nor did a further **Pause**;
+- **the ride preserved:** each **Resume ride** continued the ride with its position and progress.
+
+This **accepts slice 9's ordinary-flow checks on build `e2ba7cf`**, at product level, in English and German:
+
+- an unanswered End ride confirmation closes after a successful **Pause** or **Resume ride** and stays closed on the return transition;
+- an unanswered Edit copy replacement confirmation closes on the ride transition tried and stays closed after **Pause**. The checklist offered **Start riding** from the pre-ride screen **or** **Resume ride** from the paused screen, and the report does not say which was used, so **neither path is claimed separately as physically checked**; both have automated evidence;
+- deliberately opening either confirmation again, and **Cancel**, still work;
+- the paused route screen after a cold start behaves the same way;
+- the ride and its progress are preserved, and the Planning draft remains unchanged.
+
+The position-and-progress result is the rider's own observation: no progress value, camera value or location-watch count was measured on the phone.
+
+**Separate, automated evidence only.** A Pause still being saved or one that fails, an End ride or Edit copy write already confirmed and still running when a transition happens, and a location error immediately after **Start riding** or **Resume ride** are proved in component tests and, for the held and failed Pause, in Chromium and WebKit in the pinned container; that record is item 124's [slice 9](history/item-124-continued.md#slice-9--confirmations-closed-by-a-ride-transition-c-10-c-11-c-12-shipped-0460-3-october-2026). Session 5 deliberately did not induce them on the phone, and **this report is not physical-device acceptance of them**.
+
+**Not claimed:** VoiceOver; a physical keyboard, Escape included; enlarged text or iOS Larger Text; landscape; physical Android.
 
 ### Installed-iPhone acceptance of `0.4.59` (build `bc4fb11`, item 124 slice 8, C-11, reported 3 October 2026)
 
