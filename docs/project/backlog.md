@@ -649,11 +649,17 @@ _Category: End-to-end test suite_
      - **Context:** [item 133](history/items-132-NN.md#item-133)'s four shards; the shard durations under "Monitored, corroborating only" in [`current-status.md`](current-status.md). [Item 130](#item-130), [item 147](#item-147) and [item 148](#item-148) are separate investigations: the audit may prioritise diagnostics for 147 and 148, but neither absorbs nor fixes them.
      - **Related standard, from the same decision:** a new browser test states briefly its distinct purpose, why it needs browser execution and any relevant overlap with existing coverage (the root [`CLAUDE.md`](../../CLAUDE.md)'s Engineering standards).
      - **First investigation slice, 7 October 2026 — reported; nothing implemented** ([report](e2e-coverage-runtime-audit.md)). Measured from per-test durations in the rider-supplied logs of CI runs 37602138083 and 37499907118, cross-checked row by row against the raw logs, and from focused diagnostics in the CI image by digest. Its findings, each a candidate rather than a decision:
-       - **No shard change is warranted now.** The longest shard job at head took 806 s, 394 s under the limit; the longest recorded took 963 s. Each shard spends about 50–60 s before its tests start. Count-based sharding leaves the mixed shard 3 shorter than the others.
+       - **No shard change is warranted now.** The longest shard job at head took 806 s, 394 s under the limit; the longest recorded took 967 s (shard 4 of run 37614828755). Each shard spends about 50–60 s before its tests start. Count-based sharding leaves the mixed shard 3 shorter than the others.
        - **Cost is concentrated in the two-engine smoke specs**, about 59 % of summed durations. Their geometry needs the language × size combinations; their state and storage assertions repeat per combination.
        - **Items 147 and 148 now have characterised failure patterns**, still without a cause; see each entry.
        - **Smaller items:** five specs omit the `serviceWorkers: "block"` their map-style helper requires; landscape assertions remain in 12 specs, one holding the only 200 % compaction check; a few Android duplicates; fixed waits mostly evidential; some stale comments.
      - **Proposed first implementation slice, awaiting the rider's review:** keep per-test durations from every CI run, using Playwright's built-in JSON reporter beside `list` and an always-run upload per shard with 7-day retention. Test, timeout, retry, worker, shard, failure-evidence and gate behaviour are all unchanged. Later candidates are listed in the report. **The item stays open and first in the order.**
+     - **Follow-up, 7 October 2026 — CI run 37614828755's failure repaired, test-only** ([report](e2e-coverage-runtime-audit.md#13-follow-up-ci-run-37614828755-and-its-repair)).
+       - **The failure:** the run on the documentation commit `892a59a` failed one Chromium case, `gradientColouring.spec.ts:1026`, and deployed nothing.
+       - **The cause, from its CI trace:** the test helper treated `map-loading` being hidden as readiness while Routes was still showing.
+       - **The repair:** the helper now waits for the opened route's `h1` first, with every assertion unchanged.
+       - **Its shard 4 took 967 s,** 233 s under the limit, the longest shard job recorded.
+       - The JSON timing proposal stays separate and unapproved.
 
 ---
 
@@ -705,7 +711,7 @@ _Category: End-to-end test reliability_
      - **Diagnostics from item 146's first slice, 7 October 2026** ([report](e2e-coverage-runtime-audit.md#8-focused-diagnostics-items-147-and-148)). They started with the eight WebKit scrolled cases and the kept artefacts; the broader 230-case selection was not reconstructed.
        - **The unmodified cases × 5, with a JSON reporter (40 tests on 36 workers): 3 failed**, in three different cases. The spec's own placement note shows every pass exactly on target and every failure exactly where the confirmation was before the wheel.
        - **An instrumented copy × 5, recording wheel and scroll events without requesting frames (40 tests on 36 workers): 2 failed.** In both, the document received one cancelable, not default-prevented `wheel` and the page could scroll, but no `scroll` event followed and `scrollY` never changed within the settle window, at least 300 ms. In passes the first scroll followed within 5–107 ms.
-       - **The same at 2 workers with `--cpus=4`, a controlled comparison, not CI-equivalent: 6 of 40 failed, all in that pattern** — so it is not specific to high concurrency.
+       - **The same at 2 workers with `--cpus=4`, a controlled comparison, not CI-equivalent: 6 of 40 failed, all in that pattern** — so high concurrency is not required for reproduction; a load contribution remains unestablished.
        - **All eight cases passed in both supplied CI runs.**
        - **Not established:** a cause; whether WebKit would have scrolled after the settle window; whether the first occurrence had the same form. Nothing is attributed to item 125 or 139, and no change is approved.
 

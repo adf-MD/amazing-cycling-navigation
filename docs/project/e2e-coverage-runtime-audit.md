@@ -16,7 +16,8 @@ Contents:
 10. [Are more shards warranted?](#10-are-more-shards-warranted)
 11. [Proposals](#11-proposals)
 12. [Decisions for the rider, and evidence gaps](#12-decisions-for-the-rider-and-evidence-gaps)
-13. [Appendix: per-spec inventory](#13-appendix-per-spec-inventory)
+13. [Follow-up: CI run 37614828755 and its repair](#13-follow-up-ci-run-37614828755-and-its-repair)
+14. [Appendix: per-spec inventory](#14-appendix-per-spec-inventory)
 
 ---
 
@@ -81,7 +82,7 @@ Contents:
 - **Parameterisation.** 62 loops generate tests in 28 files, in four idioms: full `LANGUAGES × TEXT_SIZES` cross products; hand-picked case tables (for example `SCROLLED_CASES`); width × language grids; and loops inside a single test. Their dimensions are reviewed in [section 7](#7-matrix-review).
 - **Origin.** 23 specs first added on or after 1 October 2026 hold 568 of the cases; 27 added in September hold 318; 43 older specs hold 306. A spec counts by its first commit, so cases added later to an older spec count with that spec.
 
-The per-spec table is in [the appendix](#13-appendix-per-spec-inventory).
+The per-spec table is in [the appendix](#14-appendix-per-spec-inventory).
 
 ---
 
@@ -192,6 +193,7 @@ Whole jobs, in seconds; no trend is drawn from them.
 | 37491370472 | `9f73242`          | 692 / 765 / 525 / 719 |     765 |                        435 |
 | 37499907118 | `9334b25`          | 542 / 753 / 484 / 954 |     954 |                        246 |
 | 37602138083 | `677a03e`          | 714 / 806 / 520 / 742 |     806 |                        394 |
+| 37614828755 | `892a59a` (failed) | 525 / 802 / 550 / 967 |     967 |                        233 |
 
 ### Configuration
 
@@ -321,7 +323,7 @@ Its timing differs from the original by one extra page evaluation before Enter, 
 
   In every pass, the first `scroll` event followed the wheel within 5–107 ms (2–180 ms in D2c), and an animated scroll reached the target over about 200 ms.
 
-- **This is not specific to high concurrency.** The controlled comparison at 2 workers failed more often (6 of 40) than the 36-worker batches (3 and 2 of 40).
+- **High concurrency is not required for reproduction; a load contribution remains unestablished.** The controlled comparison at 2 workers failed 6 of 40, against 3 and 2 of 40 in the 36-worker batches. Those batches differ in more than worker count, so the rates are not compared as a load effect.
 
 **What this establishes.** In the observed failures, headless WebKit delivered the wheel to the page but performed no scroll within the test's settle window. Nothing in the app prevented the default, and the page did not move and then move back.
 
@@ -341,7 +343,7 @@ Its timing differs from the original by one extra page evaluation before Enter, 
 
 Completed observations; each disposition is a candidate, not a decision.
 
-- **F1. Runtime has headroom; no sharding change is warranted now.** The longest shard job at head was 806 s (394 s under the limit); the longest recorded was 963 s (237 s under). Overhead is about 50–60 s per shard. See [section 10](#10-are-more-shards-warranted).
+- **F1. Runtime has headroom; no sharding change is warranted now.** The longest shard job at head was 806 s (394 s under the limit); the longest recorded is 967 s, shard 4 of run 37614828755 (233 s under). Overhead is about 50–60 s per shard. See [section 10](#10-are-more-shards-warranted).
 - **F2. Cost is concentrated in the two-engine smoke matrices.** They make up 59 % of summed duration. Their geometric assertions need the combinations; their state and storage assertions repeat per combination ([section 7](#7-matrix-review)). _Candidate: a measured, per-family consolidation pilot, later._
 - **F3. Two WebKit-only reliability problems now have characterised mechanisms** ([section 8](#8-focused-diagnostics-items-147-and-148)).
   - Item 147's failures, under instrumentation, were a text-identity artefact with focus unmoved.
@@ -368,7 +370,7 @@ Completed observations; each disposition is a candidate, not a decision.
 
 **Not on these measurements.**
 
-- **Headroom.** The longest shard job was 806 s at head; the longest ever recorded, 963 s, still had 237 s to spare.
+- **Headroom.** The longest shard job was 806 s at head; the longest ever recorded, 967 s (shard 4 of run 37614828755, on documentation-only `892a59a`), still had 233 s to spare.
 - **Fixed cost per shard.** Each extra shard adds about 50–60 s of start-up, install and build, plus a runner. It does not reduce the summed test time; item 133 measured that four shards "bought parallelism, not speed".
 - **Imbalance, not capacity.** Count-based sharding leaves shard 3, the mixed one, about 290 s shorter than shard 2 at head. A supported way to rebalance by cost does not exist in Playwright 1.61.1.
 - **Variation.** The same shard varied by roughly ±25 % between two runs. That alone could move a 950 s shard towards the limit, which is why per-run durations should be observed (proposal 1) rather than inferred.
@@ -445,7 +447,75 @@ None is part of the first slice.
 
 ---
 
-## 13. Appendix: per-spec inventory
+## 13. Follow-up: CI run 37614828755 and its repair
+
+Run [37614828755](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37614828755), "Deploy to GitHub Pages" for `892a59a` — this report's own documentation commit — on 7 October 2026. Its job and step metadata were read once, after it completed:
+
+| Job              | Result                                  | Whole job |                        Test step |
+| ---------------- | --------------------------------------- | --------: | -------------------------------: |
+| Verify and build | passed                                  |     310 s | 178 s (unit and component tests) |
+| E2E shard 1      | **failed**: one case failed, 297 passed |     525 s |                            465 s |
+| E2E shard 2      | passed                                  |     802 s |                            734 s |
+| E2E shard 3      | passed                                  |     550 s |                            489 s |
+| E2E shard 4      | passed                                  | **967 s** |                            903 s |
+| Deploy           | skipped                                 |         — |                                — |
+
+- **Shard 4's 967 s is the longest shard job recorded**, 233 s under the 1,200 s limit. It is one run, so no trend or cause is claimed.
+- **Deploy was skipped**, so the live site stayed `0.4.69` / `677a03e`. `677a03e` remains the phone-accepted build.
+
+### The failure
+
+- **The case:** `[chromium] e2e/gradientColouring.spec.ts:1026` › "Riding: pre-ride full profile (item 77) › 390x844 phone viewport › the expanded Climb categories disclosure introduces no horizontal overflow, and the pre-ride reading order is unchanged".
+- **The assertion:** it expected the headings `["climb-then-descent-route", "Route profile", "Recognised climbs"]` and received `["Routes"]`.
+
+**The evidence is the CI trace, inspected before anything was rerun.** The rider supplied the shard's failure artefact — trace, screenshot and error context — which is kept outside the repository.
+
+- **The trace's sources are the failed head's.** It embeds `e2e/gradientColouring.spec.ts` and `e2e/support/localMapStyle.ts`, and both are byte-identical to `892a59a`. No test or application source changed between `677a03e` and `892a59a`.
+- **The sequence, in the trace's own timestamps:**
+
+  | Time (ms)       | Step                                              | What the trace shows                                                                              |
+  | --------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+  | 455,987         | The click on the route card completed             | —                                                                                                 |
+  | 455,988–455,990 | `expect(getByTestId("map-loading")).toBeHidden()` | Passed in 2 ms. The DOM snapshots show no `map-loading` element yet, with Routes still displayed. |
+  | 455,990–456,007 | `locator("h1, h2").allTextContents()`             | Returned `["Routes"]`                                                                             |
+  | 456,029         | The next DOM snapshot                             | Already holds the pre-ride `h1`, both `h2` sections and `map-loading`                             |
+
+  The failure screenshot, taken afterwards, shows the pre-ride screen.
+
+- **The cause is a readiness race in the test helper.** `importClimbThenDescentRoute` used a negative check, on an element that did not yet exist, as its barrier. So it could pass before the pre-ride screen rendered. That is the same trap item 32 recorded for `toBeHidden()`.
+
+### The repair, test-only
+
+**The change.** The helper now waits for the opened route's own level-1 heading, a positive end state, and then keeps its existing `map-loading` check.
+
+**Why one check is enough.** `RidingScreen.tsx` renders the route's `h1` (`route.name`) and both `h2` sections in the same pass while it is idle. "Route profile" comes from `RidingScreen.tsx` itself, and "Recognised climbs" from `RidingClimbSelector`, which renders even when there are no climbs. The climbs come from a synchronous `useMemo`.
+
+**What is unchanged.**
+
+- Every reading-order assertion — the exact three-item list and its order — and every overflow, disclosure, swatch and selected-feature assertion.
+- There is no sleep, retry or timeout change, and the new check uses the default expect timeout.
+- No application change and no version change.
+
+Eight tests use the helper. The one at line 1281 makes the same immediate heading read, and is covered by the same change.
+
+### Verification
+
+In the CI image by digest, with outputs kept in the audit folder:
+
+- **The filter** selected exactly this case, before and after the change.
+- **Before the repair:** 10 repetitions at 2 workers (the banner reads "Running 10 tests using 2 workers") all passed. The race did not reproduce locally.
+- **After the repair:** the same, 10 passed.
+- **The complete spec in Chromium, once:** 16 passed, at 16 workers by the banner.
+
+Because the race never reproduced locally, these runs show only that the change causes no regression, not its effect. The evidence for the defect is the CI trace.
+
+### The wider pattern, a candidate only
+
+A `map-loading` `toBeHidden()` check directly after a click appears at **142 sites in 50 files**. Many have a positive check before or after it, or may render synchronously. Which of them can race is not established, and this repair was deliberately not extended to them.
+
+---
+
+## 14. Appendix: per-spec inventory
 
 Cases are listed Chromium/WebKit/Android, from `--list` at `7cc9e55`; WebKit counts include the 5 skipped cases. "CI Σ s" is the summed reported duration in run 37602138083, excluding skipped cases; it is a concurrent sum, not wall-clock. "CI max s" is the slowest case. "Fixed waits" counts `page.waitForTimeout` calls in the source. "Added" is the spec's first commit.
 

@@ -937,6 +937,17 @@ ${trkpts}
     });
     await expect(routeButton).toBeVisible();
     await routeButton.click();
+    // A positive end state first: until the pre-ride screen exists,
+    // map-loading is absent and toBeHidden passes at once while Routes is
+    // still showing (CI run 37614828755). Its h1 and both h2 sections render
+    // together, so the heading-order reads below see the whole screen.
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: "climb-then-descent-route",
+        exact: true,
+      }),
+    ).toBeVisible();
     await expect(page.getByTestId("map-loading")).toBeHidden({ timeout: 15_000 });
   }
 
