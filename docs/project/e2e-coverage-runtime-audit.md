@@ -1,6 +1,6 @@
 # E2E coverage and runtime audit — item 146
 
-**Status: open.** This is the record of the audit's **first investigation slice**, carried out on 7 October 2026. It changes no test, no CI configuration and no production code; everything under "Proposals" is proposed only and awaits the rider's review. [Section 16](#16-item-148-investigation-and-proposal-8-october-2026) records item 148's investigation and proposal (8 October 2026) and, since the rider's approval that day, its fixture repair. The item's specification is [`backlog.md#item-146`](backlog.md#item-146); the two WebKit investigations it prioritised are [item 147](history/items-132-NN.md#item-147) and [item 148](backlog.md#item-148).
+**Status: closed on 8 October 2026.** Item 146's concluding review ([section 17](#17-concluding-review-8-october-2026)) gave every finding a disposition, recorded in [`history/item-146.md`](history/item-146.md#conclusion-8-october-2026); this report stays the evidence source. What follows was first the record of the audit's **first investigation slice**, carried out on 7 October 2026. It changes no test, no CI configuration and no production code; everything under "Proposals" is proposed only and awaits the rider's review. [Section 16](#16-item-148-investigation-and-proposal-8-october-2026) records item 148's investigation and proposal (8 October 2026) and, since the rider's approval that day, its fixture repair. The item's specification is [`history/item-146.md`](history/item-146.md#item-146); the two WebKit investigations it prioritised are [item 147](history/items-132-147.md#item-147) and [item 148](history/items-148-NN.md#item-148).
 
 Contents:
 
@@ -20,7 +20,8 @@ Contents:
 14. [Timing capture: the implementation (7 October 2026)](#14-timing-capture-the-implementation-7-october-2026)
 15. [Follow-up: CI run 37748819780 and its repair](#15-follow-up-ci-run-37748819780-and-its-repair)
 16. [Item 148: investigation and proposal (8 October 2026)](#16-item-148-investigation-and-proposal-8-october-2026)
-17. [Appendix: per-spec inventory](#17-appendix-per-spec-inventory)
+17. [Concluding review (8 October 2026)](#17-concluding-review-8-october-2026)
+18. [Appendix: per-spec inventory](#18-appendix-per-spec-inventory)
 
 ---
 
@@ -85,7 +86,7 @@ Contents:
 - **Parameterisation.** 62 loops generate tests in 28 files, in four idioms: full `LANGUAGES × TEXT_SIZES` cross products; hand-picked case tables (for example `SCROLLED_CASES`); width × language grids; and loops inside a single test. Their dimensions are reviewed in [section 7](#7-matrix-review).
 - **Origin.** 23 specs first added on or after 1 October 2026 hold 568 of the cases; 27 added in September hold 318; 43 older specs hold 306. A spec counts by its first commit, so cases added later to an older spec count with that spec.
 
-The per-spec table is in [the appendix](#17-appendix-per-spec-inventory).
+The per-spec table is in [the appendix](#18-appendix-per-spec-inventory).
 
 ---
 
@@ -304,7 +305,7 @@ Its timing differs from the original by one extra page evaluation before Enter, 
 - Why the fix-up is sometimes later than re-enabling.
 - That a product change is needed. Item 135 holds the product question of a disabled control's focus. This item concerns what the assertion measures.
 
-**The repair, 8 October 2026:** focus is now compared by node identity at both comparison sites, as recorded in [item 147's entry](history/items-132-NN.md#item-147).
+**The repair, 8 October 2026:** focus is now compared by node identity at both comparison sites, as recorded in [item 147's entry](history/items-132-147.md#item-147).
 
 ### Item 148 — the paused-End confirmation scroll preconditions
 
@@ -744,7 +745,7 @@ A new `twoFingerTap` sends the same genuine two-contact CDP `touchStart`, the un
 
 - **CI's DOM contact span** is inferred, as above.
 - **`doubleTap` (`:460`)** depends on the same recogniser and is unchanged.
-- **[Item 134](history/items-132-NN.md#item-134)'s earlier observation** recorded `:460` and `:482` failing only under a harsher-than-CI local load, as an inference. It is not assumed to share this cause; this is `:482`'s first CI occurrence.
+- **[Item 134](history/items-132-147.md#item-134)'s earlier observation** recorded `:460` and `:482` failing only under a harsher-than-CI local load, as an inference. It is not assumed to share this cause; this is `:482`'s first CI occurrence.
 - **No runtime difference is attributed to the JSON reporter,** which both runs used.
 
 ### Deployment of the repair
@@ -760,14 +761,14 @@ What it shows, and what it does not:
 - **The live site** then served `0.4.69` / `5c27a37`. `677a03e` remains the accepted phone build; these test-only changes need no device check.
 - **Every executed test passed, with expected skips permitted.** The run's per-test counts, and the repaired case's own result, stay unverified until its four timing reports, which exist, are inspected with authenticated access.
 - **Shard 4's 981 s is the longest shard job recorded,** 219 s under the limit; the previous longest was 967 s (§13). It is one run: neither a trend nor a cause is claimed.
-- **It completed item 147** within its approved scope ([record](history/items-132-NN.md#item-147)). Item 147's repair, `827b362`, had not deployed on its own, because run 37748819780 failed on the case above.
+- **It completed item 147** within its approved scope ([record](history/items-132-147.md#item-147)). Item 147's repair, `827b362`, had not deployed on its own, because run 37748819780 failed on the case above.
 - **The distinction above stands.** The contact-span mechanism is confirmed locally; that CI's contact exceeded 500 ms is inferred.
 
 ---
 
 ## 16. Item 148: investigation and proposal (8 October 2026)
 
-**Status: investigation and proposal only.** The rider's decision of 7 October 2026 ([decision 3](#decisions-of-7-october-2026)) authorised them, and nothing more. No test, assertion, application code or CI configuration changed. The item's entry is [`backlog.md#item-148`](backlog.md#item-148), and its earlier diagnostics are in [section 8](#item-148--the-paused-end-confirmation-scroll-preconditions).
+**Status: investigation and proposal only.** The rider's decision of 7 October 2026 ([decision 3](#decisions-of-7-october-2026)) authorised them, and nothing more. No test, assertion, application code or CI configuration changed. The item's entry is [`history/items-148-NN.md`](history/items-148-NN.md#item-148), and its earlier diagnostics are in [section 8](#item-148--the-paused-end-confirmation-scroll-preconditions).
 
 **The question:** in `e2e/endRidePausedConfirmationReveal.smoke.spec.ts`, is wheel input part of the behaviour the cases protect, or does it only set up the scroll position they need?
 
@@ -1025,11 +1026,97 @@ In V1, every prepared position matched the one the genuine wheel produced in CI 
 - the first occurrence's form;
 - other specs' wheel input, unexamined here.
 
-**CI:** pending when this was written. The rider's decision is that this commit's CI run is recorded, and item 148 closed and moved to history, in the next scheduled documentation commit, alongside item 146's concluding review.
+**CI:** pending when this was written. The rider's decision is that this commit's CI run is recorded, and item 148 closed and moved to history, in the next scheduled documentation commit, alongside item 146's concluding review. **Update, 8 October 2026:** CI run 37791383314, for `0198b2b`, passed every job — Verify and build 236 s; shards 619, 784, 496 and 971 s; Deploy 13 s — and the live site served `0.4.69` / `0198b2b`. Item 148 is closed within its fixture-repair scope ([record](history/items-148-NN.md#item-148)).
 
 ---
 
-## 17. Appendix: per-spec inventory
+## 17. Concluding review (8 October 2026)
+
+**The evidence for item 146's conclusion.** The dispositions themselves, the sharding recommendation and the closure are in [`history/item-146.md`](history/item-146.md#conclusion-8-october-2026). This review uses existing evidence only: no benchmark, no full-shard run and no new diagnostics.
+
+### The second JSON timing sample
+
+**The sample.** These are the four timing reports of run 37791383314, for `0198b2b`. They were retrieved through authenticated GitHub access in a ChatGPT session and supplied by the rider into the external audit folder's `ci-timing/ci-timing-37791383314/`, with the original archives, a manifest, a README and a validation summary. A read-only check here found:
+
+- each report's size and SHA-256 equal to the manifest, and each archive's single inner file identical to the extracted report;
+- 298 cases per shard, 1,192 overall, one result each: 1,187 passed and 5 skipped (WebKit);
+- `actualWorkers` 2 in every shard, and no top-level errors.
+
+**Three quantities, kept apart.**
+
+- The **job duration** comes from the run's job metadata.
+- The **test step** comes from the job's step metadata, and Playwright's own **elapsed duration** is each report's `stats.duration`.
+- **Summed test durations** add each case's reported duration. Under two parallel workers, that is a measure of test work, not wall-clock time.
+
+| Shard | Cases                               | Job (s), 37638928929 → 37791383314 | Test step (s) | `stats.duration` (s) | Σ test durations (s), and ÷ 2 |
+| ----: | ----------------------------------- | ---------------------------------- | ------------- | -------------------- | ----------------------------- |
+|     1 | 298 Chromium                        | 623 → 619                          | 556 → 551     | 555.6 → 550.4        | 1,095 → 1,085 (548 → 542)     |
+|     2 | 298 Chromium                        | 887 → 784                          | 824 → 716     | 823.1 → 716.3        | 1,627 → 1,415 (814 → 708)     |
+|     3 | 233 Chromium, 46 Android, 19 WebKit | 444 → 496                          | 380 → 428     | 380.2 → 426.8        | 745 → 835 (372 → 418)         |
+|     4 | 298 WebKit                          | 965 → 971                          | 903 → 910     | 902.6 → 908.7        | 1,785 → 1,795 (893 → 898)     |
+
+- **Outside the test step**, each job spent 61–68 s: container start, checkout, `npm ci` and the build.
+- **The test step and `stats.duration` agree within about 1.3 s** in every shard. The step's own times have a resolution of one second.
+- **Summed durations ÷ 2** fall 8–11 s below `stats.duration` in the second run. That is a consistency check, not proof that both workers were busy throughout.
+- **Summed test work over the whole suite:** 5,252 s in 37638928929 and 5,130 s in 37791383314. The list-reporter logs of run 37602138083 (section 5) gave 4,968 s for the same 1,192 scheduled cases.
+
+**Matching identities.** Cases were keyed by project, file and title path.
+
+- **The two samples hold the same 1,192 identities, except one.** [Item 148](history/items-148-NN.md#item-148) renamed "(en, 200%) reopening after Cancel and a wheel scroll is measured afresh" to "(en, 200%) reopening after Cancel and a scroll is measured afresh". The rename maps one-to-one in both Chromium and WebKit, and is not treated as an addition and a removal.
+- **No case changed shard.** The shard compositions are identical, and identical to the inventory at `7cc9e55`.
+- **Matched results:** 1,187 cases passed in both samples.
+
+**Per-case differences.** These are medians of new ÷ old, over cases of at least 1 s.
+
+| Project          | Shard | Cases | Median | Interquartile range |
+| ---------------- | ----: | ----: | -----: | ------------------: |
+| `chromium`       |     1 |   266 |   1.00 |           0.96–1.03 |
+| `chromium`       |     2 |   293 |   0.86 |           0.81–0.92 |
+| `chromium`       |     3 |   141 |   1.07 |           1.03–1.13 |
+| `android-chrome` |     3 |    38 |   1.21 |           1.11–1.27 |
+| `webkit-smoke`   |     3 |    19 |   1.12 |           1.06–1.15 |
+| `webkit-smoke`   |     4 |   291 |   1.01 |           0.98–1.05 |
+
+- **Observed differences, causes unestablished.** These are run-to-run differences in observed durations, of the same tests, between two runs.
+  - Shard 2's Chromium cases took about 14 % less time, while shard 3's took longer in every project.
+  - That pattern is consistent with job-to-job differences, but it does not demonstrate ordinary runner variation, and no cause is established for either direction.
+  - Two samples establish no trend.
+- **The ten paused-End cases** that [item 148](history/items-148-NN.md#item-148) changed summed 97.9 s across both engines before, and 102.7 s after. No saving was intended, and none is claimed.
+- **Where the cost sits.** In the second sample, smoke specs make up 63 % of summed test durations. The costliest spec–project pairs are:
+  - `planningEnlargedTextLayout.smoke` in WebKit, 241.5 s;
+  - `endRidePausedConfirmationReveal.smoke`, 175.0 s in WebKit and 143.4 s in Chromium;
+  - `clearDraftFailure.smoke` in WebKit, 134.2 s.
+
+  The slowest single case is still `planningEnlargedTextScrollbar.spec.ts`'s sweep, at 48.7 s.
+
+**The reporter-overhead gap stays open.**
+
+- **The JSON samples cannot measure it.** Both used the JSON reporter, so comparing them says nothing about its overhead.
+- **The run history does not separate it either.** With the reporter, shard 4 took 958–985 s in all five runs. Without it, shard 4 ranged from 719 to 967 s, and run 37499907118 — also without it — had WebKit cases taking about 1.3 times as long, by median, as run 37602138083 (section 5). The figures since the reporter are consistent with a reporter cost, with run-to-run differences, or with both; nothing distinguishes them, and nothing is attributed to the reporter.
+- **Still unobserved:** an artefact on early termination.
+
+### Shard jobs since the first slice
+
+Whole jobs, in seconds, from each run's job metadata. Completed shard jobs of failed workflows are included. No job in these runs was cancelled or left incomplete.
+
+| Run         | Build     | Outcome                                   | Shards 1–4            | Longest | Under the 1,200 s limit by |
+| ----------- | --------- | ----------------------------------------- | --------------------- | ------: | -------------------------: |
+| 37602138083 | `677a03e` | deployed                                  | 714 / 806 / 520 / 742 | 806 (2) |                        394 |
+| 37614828755 | `892a59a` | failed: one Chromium case, Deploy skipped | 525 / 802 / 550 / 967 | 967 (4) |                        233 |
+| 37622132469 | `49547aa` | deployed                                  | 633 / 893 / 561 / 763 | 893 (2) |                        307 |
+| 37638928929 | `51f1069` | deployed; first JSON timing reports       | 623 / 887 / 444 / 965 | 965 (4) |                        235 |
+| 37748819780 | `827b362` | failed: one Android case, Deploy skipped  | 682 / 856 / 559 / 958 | 958 (4) |                        242 |
+| 37758419670 | `5c27a37` | deployed                                  | 689 / 782 / 428 / 981 | 981 (4) |                        219 |
+| 37767874728 | `6967c02` | deployed                                  | 691 / 888 / 496 / 985 | 985 (4) |                        215 |
+| 37791383314 | `0198b2b` | deployed                                  | 619 / 784 / 496 / 971 | 971 (4) |                        229 |
+
+- **The longest shard.** Shard 4, which runs WebKit only, was the longest in six of the last seven runs. **985 s remains the longest shard job recorded, 215 s under the limit.** Neither a trend nor a cause is claimed.
+- **The imbalance is structural.** Count-based sharding gives shard 4 the last 298 cases, all WebKit. Shard 3, which mixes all three projects, was the shortest in seven of the eight runs, at 428–561 s.
+- **What the imbalance means for headroom:** a new smoke spec's WebKit cases land mostly in shard 4.
+
+---
+
+## 18. Appendix: per-spec inventory
 
 Cases are listed Chromium/WebKit/Android, from `--list` at `7cc9e55`; WebKit counts include the 5 skipped cases. "CI Σ s" is the summed reported duration in run 37602138083, excluding skipped cases; it is a concurrent sum, not wall-clock. "CI max s" is the slowest case. "Fixed waits" counts `page.waitForTimeout` calls in the source. "Added" is the spec's first commit.
 

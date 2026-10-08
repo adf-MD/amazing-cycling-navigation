@@ -243,7 +243,7 @@ This **accepts D-01's ordinary-flow regression checks on build `439e578`**, at p
 
 This **accepts item 132's ordinary installed-iPhone flows and their visible behaviour**, at product level, in English and German.
 
-**Separate, automated evidence only.** A failed storage read, a session removed between reads, a ride paused before its first fix and a departure from Ride without Pause are proved in component, App and browser tests with synthetic faults and stand-ins; that record is [`history/items-132-NN.md`](history/items-132-NN.md#item-132). Session 5 deliberately did not induce them on the phone, and **this report is not physical-device acceptance of them**.
+**Separate, automated evidence only.** A failed storage read, a session removed between reads, a ride paused before its first fix and a departure from Ride without Pause are proved in component, App and browser tests with synthetic faults and stand-ins; that record is [`history/items-132-147.md`](history/items-132-147.md#item-132). Session 5 deliberately did not induce them on the phone, and **this report is not physical-device acceptance of them**.
 
 **Not established by this report:** a GPS-watch count; induced storage failures; the no-first-fix lifecycle; and a separately measured Follow-zoom persistence result — the checks covered Resume continuing with Follow, but whether the rider's own Follow zoom survived the restore was not measured.
 

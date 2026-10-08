@@ -234,15 +234,15 @@ Each keeps its own evidence level. **Recording or deferring one does not mean it
 | C-14's confirm action is always `btn-danger`, even for **Retry**, **Check again** and **Try again**               | [S], present                                  | Deferred                                                                             | [Item 103](../../project/backlog.md#item-103), an input note                       |
 | C-02 orders its actions End and switch, Return, Cancel, unlike the inventory's general statement                  | [S]                                           | Approved retention (item 95, protected)                                              | The inventory's correction note stands                                             |
 
-[item-134-history]: ../../project/history/items-132-NN.md#item-134
-[item-140-history]: ../../project/history/items-132-NN.md#item-140
-[item-139-moved-to-items-132-NN-md]: ../../project/history/items-132-NN.md#item-139
+[item-134-history]: ../../project/history/items-132-147.md#item-134
+[item-140-history]: ../../project/history/items-132-147.md#item-140
+[item-139-moved-to-items-132-NN-md]: ../../project/history/items-132-147.md#item-139
 
 ## Follow-up destinations
 
 Each new item was checked against every pending backlog entry and found distinct. Items 125, 127 and 103 are the nearest, and each is coordinated rather than duplicated. All five new items are **unscheduled**, with specifications in [`backlog.md`](../../project/backlog.md):
 
-- **[Item 134](../../project/history/items-132-NN.md#item-134)** — Resume ride offered while a confirmed End ride is still finishing: a defect investigation.
+- **[Item 134](../../project/history/items-132-147.md#item-134)** — Resume ride offered while a confirmed End ride is still finishing: a defect investigation.
 - **[Item 135](../../project/backlog.md#item-135)** — Focus continuity when a control disappears or an operation ends: an accessibility investigation that includes VoiceOver, and any scrolling or software-keyboard effect of a focus target.
 - **[Item 136](../../project/backlog.md#item-136)** — Showing where map- and chart-selected details appear (P-21, P-26): a design candidate.
 - **[Item 137](../../project/backlog.md#item-137)** — A route's export failure shown beside its card (P-06): a design candidate.
@@ -256,8 +256,8 @@ Each new item was checked against every pending backlog entry and found distinct
 
 **Added on 4 October 2026, after slice 10's acceptance** ([decisions 10–14](../../project/history/item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice)), both unscheduled, with specifications in [`backlog.md`](../../project/backlog.md):
 
-- **[Item 139](../../project/history/items-132-NN.md#item-139)** — A failed End ride's message clipped in the riding header: a presentation defect.
-- **[Item 140](../../project/history/items-132-NN.md#item-140)** — A stale Ride-launcher confirmation clearing a newer session: a correctness investigation.
+- **[Item 139](../../project/history/items-132-147.md#item-139)** — A failed End ride's message clipped in the riding header: a presentation defect.
+- **[Item 140](../../project/history/items-132-147.md#item-140)** — A stale Ride-launcher confirmation clearing a newer session: a correctness investigation.
 
 [Item 135](../../project/backlog.md#item-135) also receives P-01 and, as a separate finding, its desktop action-row clipping.
 
@@ -337,7 +337,7 @@ Asked for by the rider with slice 10: P-01 after the device observation, P-15 un
   - **The paused panel (C-11):** the same message wraps under its button, 324 px wide, wholly on screen.
 - **What this establishes.** A demonstrated presentation defect in the riding header, reached here only through a synthetic failure; a genuine failure would render the same way. How often a clear fails on the phone is unknown. Focus returned to **End ride** in every run; its scrolling question stays with item 135.
 - **Disposition: investigated, awaiting the rider's decision.** It is not a reveal question, and no existing item covers it: item 134 concerns a finishing End ride, item 135 focus only, item 137 the export failure beside a route card, and item 103 control styling. **Recommended: a new unscheduled item**, numbered only if the rider agrees — a design candidate that shows the failure on its own wrapping line below the header row, leaving **Pause** and **End ride** where they are.
-- **Decided 4 October 2026:** filed as unscheduled [item 139](../../project/history/items-132-NN.md#item-139) ([decision 13](../../project/history/item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice)). Not fixed.
+- **Decided 4 October 2026:** filed as unscheduled [item 139](../../project/history/items-132-147.md#item-139) ([decision 13](../../project/history/item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice)). Not fixed.
 
 ### The launcher confirmation after a re-read
 
@@ -349,7 +349,7 @@ Asked for by the rider with slice 10: P-01 after the device observation, P-15 un
   - **The ordinary re-read path does not reach an open confirmation.** **Resume ride** stays enabled with the confirmation open; it raised the page-level switch prompt, "Switch to "…"? You have an unfinished free roam session…", above it. **End and switch** then cleared page B's session and replaced the launcher with the route's screen, so the confirmation went with it; focus fell to `<body>`.
 - **What this establishes.** The concern as worded — an open confirmation surviving a re-read — was not reached through the ordinary re-read. The re-reads after **Retry** or a failed free-roam write need synthetic faults and were **not exercised**. A related hazard **is** demonstrated, in a two-tab browser setup only: a stale launcher confirmation ends another tab's newer session.
 - **Disposition: investigated, awaiting the rider's decision.** No existing item covers it: item 119's guard protects **Resume**, not the launcher's End or Discard; item 134 concerns a finishing End ride; and focus after **End and switch** belongs to item 135. **Recommended: a new unscheduled, low-priority item**, numbered only if the rider agrees — a candidate that has the launcher's End and Discard confirm the stored session is still the one it showed before clearing, as **Resume** already does through the switch guard.
-- **Decided 4 October 2026:** filed as unscheduled [item 140](../../project/history/items-132-NN.md#item-140) ([decision 14](../../project/history/item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice)), with no priority assigned and the execution order unchanged. Its investigation must consider atomicity — a clear conditioned on the session's identity within one transaction — not merely a fresher preliminary read. Not fixed.
+- **Decided 4 October 2026:** filed as unscheduled [item 140](../../project/history/items-132-147.md#item-140) ([decision 14](../../project/history/item-124-continued.md#slice-10s-acceptance-and-ci-and-the-close-out-dispositions-4-october-2026-documentation-only--not-a-slice)), with no priority assigned and the execution order unchanged. Its investigation must consider atomicity — a clear conditioned on the session's identity within one transaction — not merely a fresher preliminary read. Not fixed.
 
 ## Where every entry stands after slice 10
 
