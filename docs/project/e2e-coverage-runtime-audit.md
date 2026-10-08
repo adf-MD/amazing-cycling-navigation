@@ -18,7 +18,8 @@ Contents:
 12. [Decisions for the rider, and evidence gaps](#12-decisions-for-the-rider-and-evidence-gaps)
 13. [Follow-up: CI run 37614828755 and its repair](#13-follow-up-ci-run-37614828755-and-its-repair)
 14. [Timing capture: the implementation (7 October 2026)](#14-timing-capture-the-implementation-7-october-2026)
-15. [Appendix: per-spec inventory](#15-appendix-per-spec-inventory)
+15. [Follow-up: CI run 37748819780 and its repair](#15-follow-up-ci-run-37748819780-and-its-repair)
+16. [Appendix: per-spec inventory](#16-appendix-per-spec-inventory)
 
 ---
 
@@ -83,7 +84,7 @@ Contents:
 - **Parameterisation.** 62 loops generate tests in 28 files, in four idioms: full `LANGUAGES × TEXT_SIZES` cross products; hand-picked case tables (for example `SCROLLED_CASES`); width × language grids; and loops inside a single test. Their dimensions are reviewed in [section 7](#7-matrix-review).
 - **Origin.** 23 specs first added on or after 1 October 2026 hold 568 of the cases; 27 added in September hold 318; 43 older specs hold 306. A spec counts by its first commit, so cases added later to an older spec count with that spec.
 
-The per-spec table is in [the appendix](#15-appendix-per-spec-inventory).
+The per-spec table is in [the appendix](#16-appendix-per-spec-inventory).
 
 ---
 
@@ -665,12 +666,87 @@ The reports also carry the bodies of in-memory attachments, such as `statusConne
 **The gaps, now:**
 
 - The first-run content gap is closed.
-- Still open: the reporter's own cost, an upload from a failing CI run, and no artefact on early termination.
+- Still open: the reporter's own cost, an upload from a failing CI run, and no artefact on early termination. **Update, 8 October 2026:** a failing run's upload is now observed and verified from its contents ([§15](#15-follow-up-ci-run-37748819780-and-its-repair)).
 - The second sample comes from the next ordinary run, with no run triggered for it. Comparing its contents needs another authenticated download.
 
 ---
 
-## 15. Appendix: per-spec inventory
+## 15. Follow-up: CI run 37748819780 and its repair
+
+### The failure
+
+- **The run.** Run 37748819780, for `827b362` (item 147's repair):
+  - Verify and build (321 s) and shards 1, 2 and 4 (682, 856 and 958 s) passed;
+  - shard 3 (559 s, its test step 493 s) failed 1 of its 298 tests, so Deploy was skipped and the live site stayed `0.4.69` / `51f1069`.
+- **The test.** `android-chrome`, `androidPlanningTouchPlacement.spec.ts:482`, "a two-finger pinch and a two-finger tap change the zoom and place nothing (regression guard)".
+  - At line 508, the 5 s poll found no zoom change after the two-finger tap; the zoom stayed at 9.695835338271694.
+  - The test took 14,381 ms, within its budget. The pinch's zoom, touch and zero-waypoint checks had passed.
+- **Unchanged between `51f1069` and `827b362`:** that spec, the application, the dependencies, the Playwright configuration and the workflow. Item 147's 24 Chromium cases in the same shard all passed, Enter included.
+- **The evidence.** The rider retrieved the failure and timing artefacts through authenticated GitHub access in a ChatGPT session. Their digests match GitHub's published ones, and they are kept outside the repository.
+- **The failing run's timing capture is verified from its contents:**
+  - 2 workers; 297 passed and 1 failed;
+  - the failure's error, its location and the paths of its screenshot, error context and trace.
+
+### What the trace measured
+
+These are Playwright command times, not DOM event timestamps:
+
+- the tap's `touchStart` command took 447.4 ms to return;
+- the 40 ms wait took 49.6 ms;
+- `touchEnd` started **500.873 ms** after `touchStart` started;
+- the pinch's own commands had started about 370–670 ms apart.
+
+MapLibre 6.6.0's `SingleTapRecognizer` aborts a contact whose `touchend` `timeStamp` is more than 500 ms after its first `touchstart`. The two-finger zoom-out needs one such tap.
+
+### Local diagnosis
+
+**Conditions:** the CI image by digest, `CI=1`, `--workers=2`, a fresh build of the failed head, outputs outside the repository. The filter selected exactly one test.
+
+**The probe's limits.** It is an _instrumented baseline-timing probe_: a replacement helper with a capture-phase recorder on `window`, not an unmodified run. Single-test runs used one worker.
+
+| Run                                      | Contact span (`timeStamp`) | Result                                                                                |
+| ---------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------- |
+| Baseline timing ×5, no timestamps        | 54.6–72.9 ms               | recognised, 5/5                                                                       |
+| 300 ms hold, no timestamps               | 314.2 ms                   | recognised                                                                            |
+| 600 ms hold, no timestamps               | 631.6 ms                   | **not recognised**: failed at the same assertion, zoom unchanged at 9.695835338271694 |
+| Timestamps 40 ms apart, 40 ms hold       | 40.0 ms                    | recognised                                                                            |
+| Timestamps 40 ms apart, 613 ms real hold | 40.0 ms                    | recognised                                                                            |
+
+- **In every run:** both contacts reached the map; every event was trusted; there was no `touchmove` or `touchcancel`; identities and coordinates were unchanged.
+- **Without timestamps,** each event's `timeStamp` followed its command's send within 1.4–3.6 ms, and the span matched the send interval to within about 1 ms.
+- **With timestamps,** the first `touchstart` matched the timestamp sent to within 0.1 ms, which is the timestamps' resolution.
+- **What is confirmed locally:** a contact's DOM span follows command arrival, so a slow `touchStart` acknowledgement can stretch a tap past MapLibre's 500 ms limit, and explicit CDP timestamps fix the span independently of real delay. The 600 ms run is a controlled reproduction, not the CI failure.
+- **What stays inferred:** that CI's contact exceeded 500 ms. This comes from its 500.873 ms command interval; its DOM timestamps were not recorded, and the natural failure did not reproduce here.
+
+### The repair, test-only
+
+A new `twoFingerTap` sends the same genuine two-contact CDP `touchStart`, the unchanged 40 ms hold and `touchEnd`, with explicit timestamps 40 ms apart. The end timestamp is never in the future, since the real hold precedes it. Only the two-finger tap uses it.
+
+**Unchanged:**
+
+- `touchGesture` and every pan and pinch;
+- `touchTap` and `doubleTap`;
+- both zoom polls, the touch-pointer counts and the zero-waypoint checks;
+- timeouts, retries, workers, shards and the application.
+
+### Verification
+
+- **The repaired case:** ×5, all passed.
+- **The complete spec, once:** 8 of 8 passed.
+- **Controls,** from a copy of the repaired spec with the recorder, once each:
+  - **Overlong contact:** a real 600 ms hold with the end timestamp 600 ms after the start. The span was 600.0 ms, and the test failed at the second zoom poll. **This proves** that the repair leaves MapLibre's duration rule in force.
+  - **Zoom prevented:** the helper unchanged, with a capture-phase `touchend` blocker on `window`, registered after the recorder and armed only for the tap. The recorder logged both `touchend` events (span 40.0 ms), but MapLibre's listener on its container received none, and the test failed at the second zoom poll after the pinch's assertions had passed. **This proves** that the assertion detects a missing two-finger zoom.
+
+### What remains
+
+- **CI's DOM contact span** is inferred, as above.
+- **`doubleTap` (`:460`)** depends on the same recogniser and is unchanged.
+- **[Item 134](history/items-132-NN.md#item-134)'s earlier observation** recorded `:460` and `:482` failing only under a harsher-than-CI local load, as an inference. It is not assumed to share this cause; this is `:482`'s first CI occurrence.
+- **No runtime difference is attributed to the JSON reporter,** which both runs used.
+
+---
+
+## 16. Appendix: per-spec inventory
 
 Cases are listed Chromium/WebKit/Android, from `--list` at `7cc9e55`; WebKit counts include the 5 skipped cases. "CI Σ s" is the summed reported duration in run 37602138083, excluding skipped cases; it is a concurrent sum, not wall-clock. "CI max s" is the slowest case. "Fixed waits" counts `page.waitForTimeout` calls in the source. "Added" is the spec's first commit.
 

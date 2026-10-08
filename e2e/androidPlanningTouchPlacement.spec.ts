@@ -242,6 +242,39 @@ async function touchTap(page: Page, point: Point): Promise<void> {
   await touchGesture(page, [[point]]);
 }
 
+/** A stationary two-finger tap: both contacts down, a TOUCH_STEP_MS hold,
+ * both up — still genuine CDP touch, paced as before. Both events carry
+ * explicit CDP timestamps TOUCH_STEP_MS apart, which Chromium gives the DOM
+ * touch events as their timeStamp; without them, each event's timeStamp
+ * follows its own command's arrival, so a slow touchStart acknowledgement
+ * stretches the contact. MapLibre 6.6.0's tap recogniser rejects a contact
+ * longer than 500 ms by timeStamp. In CI run 37748819780 the two commands
+ * started 500.9 ms apart (a 447 ms touchStart acknowledgement) and the tap
+ * was not recognised; that its DOM contact exceeded 500 ms is inferred from
+ * those command times, not recorded. The end timestamp is never in the
+ * future: the real hold precedes it. */
+async function twoFingerTap(page: Page, points: readonly [Point, Point]): Promise<void> {
+  const cdp = await page.context().newCDPSession(page);
+  const touchPoints = points.map((point, finger) => ({
+    x: point.x,
+    y: point.y,
+    id: finger + 1,
+  }));
+  const startedAt = Date.now() / 1000;
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints,
+    timestamp: startedAt,
+  });
+  await page.waitForTimeout(TOUCH_STEP_MS);
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+    timestamp: startedAt + TOUCH_STEP_MS / 1000,
+  });
+  await cdp.detach();
+}
+
 /** Two taps at one point, through one CDP session and paced like a
  * finger (40ms contacts, a 100ms gap). A separate session per tap once
  * drifted outside MapLibre's 500ms double-tap window under a full parallel
@@ -499,9 +532,9 @@ test.describe("Planning touch placement under genuine touch (item 123)", () => {
     await expect(markers(page)).toHaveCount(0);
 
     const zoomBeforeTwoFingerTap = await fixture.map.getAttribute("data-camera-zoom");
-    await touchGesture(page, [
-      [{ x: point.x - 30, y: point.y }],
-      [{ x: point.x + 30, y: point.y }],
+    await twoFingerTap(page, [
+      { x: point.x - 30, y: point.y },
+      { x: point.x + 30, y: point.y },
     ]);
     await expect
       .poll(() => fixture.map.getAttribute("data-camera-zoom"))

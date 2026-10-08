@@ -695,6 +695,12 @@ _Category: End-to-end test suite_
          - no artefact on early termination.
        - **The second timing sample** comes from the next ordinary CI run. No run is triggered for it, and comparing its contents needs another authenticated download.
        - **Landscape checks** are unchanged.
+     - **Follow-up, 8 October 2026 — CI run 37748819780's Android failure repaired, test-only** ([record](e2e-coverage-runtime-audit.md#15-follow-up-ci-run-37748819780-and-its-repair)).
+       - **The failure:** run 37748819780, on `827b362`, failed `android-chrome`'s two-finger tap in `androidPlanningTouchPlacement.spec.ts:482`. Shard 3 failed, the other jobs passed, and Deploy was skipped.
+       - **The mechanism, confirmed locally:** a contact's `TouchEvent.timeStamp` span follows CDP command arrival, so a slow `touchStart` acknowledgement can stretch a tap past MapLibre's 500 ms limit. That CI's contact exceeded the limit is inferred from its 500.873 ms command interval.
+       - **The repair:** explicit CDP timestamps, 40 ms apart, for the two-finger tap only.
+       - **Verification:** the case ×5 and the complete spec passed; the overlong-contact and zoom-prevented controls both failed at the second zoom poll.
+       - **The failing run's timing upload is now observed and verified from its contents,** which closes that gap. Still open: the reporter's own cost and early termination.
 
 ---
 
@@ -737,6 +743,7 @@ _Category: End-to-end test reliability_
        - **Not exercised here:** the same-node acceptance, a button → `<body>` transition, and a different node matching an element's before-text. `<body>` was already focused at every before-snapshot, and repetitions were not increased to reach them.
        - **Supported only by the preserved instrumentation:** the same button node focused at both snapshots with its label changed (the three failures above), and the button → `<body>` transition.
        - **Not established:** WebKit's focus fix-up timing, and the form of the uninstrumented 60-repeat failures. No product focus policy is decided, and nothing from [item 135](#item-135) is imported.
+       - **CI run 37748819780, on `827b362`:** all 24 Chromium cases of this spec passed, Enter included. The run failed on an Android gesture case outside the changed spec, whose test-side mechanism was confirmed locally and repaired test-only ([record](e2e-coverage-runtime-audit.md#15-follow-up-ci-run-37748819780-and-its-repair)). Delivery stays pending until a green run.
 
 **The observation as recorded in `current-status.md`, moved here unchanged on 7 October 2026:**
 
