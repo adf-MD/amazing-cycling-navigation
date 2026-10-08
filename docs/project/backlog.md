@@ -710,7 +710,7 @@ _Category: End-to-end test suite_
 
 <a id="item-148"></a>
 
-## Item 148 — Paused-End confirmation scroll preconditions (first in the order — investigated; proposal awaiting the rider's review)
+## Item 148 — Paused-End confirmation scroll preconditions (first in the order — fixture repair implemented; CI verification pending)
 
 _Category: End-to-end test reliability_
 
@@ -749,6 +749,23 @@ _Category: End-to-end test reliability_
          - Waiting positively for the wheel's target (A) is not recommended unless a further diagnostic shows the late scroll arrives with no capture.
          - The report gives the focused verification and three negative controls for a later implementation.
        - **Awaiting the rider's decision;** nothing of it is implemented.
+     - **Documentation commit `6967c02`, CI run 37767874728, 8 October 2026:** every job passed — Verify and build 307 s; shards 691, 888, 496 and 985 s; Deploy 12 s. The live site served `0.4.69` / `6967c02`, and `677a03e` remains the accepted phone build. Shard 4's 985 s is the longest shard job recorded, 215 s under the limit. One run: neither a trend nor a cause is claimed.
+     - **Approved, 8 October 2026, by the rider:** proposal B. The cause of WebKit's late wheel scrolling remains unresolved; the approval covers correcting the fixture's preparation only.
+     - **Fixture repair, 8 October 2026 — implemented, test-only; CI verification pending** ([record](e2e-coverage-runtime-audit.md#approval-and-implementation-8-october-2026)). No application, CI, version, retry or timeout change.
+       - **The change, in both engines.** In the ten setup-only cases, `wheelBy` is replaced by `positionPageBy`, which is labelled synthetic. It sets `document.scrollingElement.scrollTop` from the current position plus the delta, clamped to the reachable range, then runs the unchanged `settle()`. `wheelBy` is removed.
+       - **One narrow setup precondition,** in the reopening case only: "the prepared position put End ride 120 px below the band's top". Its target is reachable: −37 px, from 535 to 498, within 0–1,545 px.
+       - **Unchanged:** the held-Pause wheel, every click and key press, every behaviour assertion and every other precondition.
+       - **The reopening title** changed from "… after Cancel and a wheel scroll …" to "… after Cancel and a scroll …", so its identity in timing comparisons changes.
+       - **The trade-off:** these ten cases no longer exercise browser wheel scrolling, or focus preservation specifically during wheel input. Their application geometry, focus-return and ride-state checks remain.
+       - **Verification,** in the CI image by digest, `CI=1`, 2 workers, `--cpus=4`, not CI-equivalent; typecheck and lint passed:
+         - V1, the ten cases ×5 in WebKit with trace off — the condition that reproduced the failure: 50 passed, every prepared position matching the genuine wheel's in CI;
+         - V2, the complete spec once in both engines with CI's normal tracing: 64 passed, 32 per engine.
+       - **Negative controls,** once each in WebKit, all failing where intended:
+         - **Positioning made a no-op** failed at the scrolled cases' "the prepared position put End ride's slot partly above the viewport" and the Edit copy case's "the same starting position as the control". The reopening case **passed** until its narrow precondition was added, and then failed at it.
+         - **A return focus that scrolls back to the pre-opening position** failed at "[behaviour] … moved -465.0 px after the collapse; revealing End ride warrants -103.0 px", and at two implementation checks.
+         - **The held-Pause case without its wheel** failed at "[behaviour] End ride did not take focus" and "[behaviour] no focus call returned to End ride".
+       - **Still unresolved:** the cause of WebKit's late wheel scrolling, and the first occurrence's form.
+       - **Closure, by the rider's decision:** this commit's CI run is recorded, and the item closed and moved to history, in the next scheduled documentation commit, alongside item 146's concluding review.
 
 **The observation as recorded in `current-status.md`, moved here unchanged on 7 October 2026:**
 

@@ -1,6 +1,6 @@
 # E2E coverage and runtime audit — item 146
 
-**Status: open.** This is the record of the audit's **first investigation slice**, carried out on 7 October 2026. It changes no test, no CI configuration and no production code; everything under "Proposals" is proposed only and awaits the rider's review. [Section 16](#16-item-148-investigation-and-proposal-8-october-2026) records item 148's investigation and proposal (8 October 2026), likewise proposed only. The item's specification is [`backlog.md#item-146`](backlog.md#item-146); the two WebKit investigations it prioritised are [item 147](history/items-132-NN.md#item-147) and [item 148](backlog.md#item-148).
+**Status: open.** This is the record of the audit's **first investigation slice**, carried out on 7 October 2026. It changes no test, no CI configuration and no production code; everything under "Proposals" is proposed only and awaits the rider's review. [Section 16](#16-item-148-investigation-and-proposal-8-october-2026) records item 148's investigation and proposal (8 October 2026) and, since the rider's approval that day, its fixture repair. The item's specification is [`backlog.md#item-146`](backlog.md#item-146); the two WebKit investigations it prioritised are [item 147](history/items-132-NN.md#item-147) and [item 148](backlog.md#item-148).
 
 Contents:
 
@@ -952,6 +952,80 @@ Other specs' wheel input is outside this item: 16 files use `mouse.wheel`. It is
 
 1. Approve, amend or decline (B) as item 148's implementation slice.
 2. If (A) is preferred instead, a bounded diagnostic would come first. It would repeat I2 with failure screenshots off, to see whether the late scroll arrives with no capture.
+
+### The investigation commit's CI run
+
+Run [37767874728](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37767874728), for `6967c02`, passed every job:
+
+- Verify and build: 307 s;
+- shards 1 to 4: 691, 888, 496 and 985 s;
+- Deploy: 12 s.
+
+The live site then served `0.4.69` / `6967c02`, and `677a03e` remains the accepted phone build. **Shard 4's 985 s is the longest shard job recorded**, 215 s under the limit; the previous longest was 981 s, in run 37758419670. It is one run: neither a trend nor a cause is claimed.
+
+### Approval and implementation (8 October 2026)
+
+**The rider approved proposal B on 8 October 2026.** The cause of WebKit's late wheel scrolling remains unresolved; this implementation corrects fixture preparation only. It is test-only: no application, CI, version, retry or timeout change.
+
+**The change**, in `e2e/endRidePausedConfirmationReveal.smoke.spec.ts` only:
+
+- **`wheelBy` is replaced by `positionPageBy(page, dy)`,** and removed.
+  - It makes one in-page write of `document.scrollingElement.scrollTop`: the current position plus `dy`, clamped to `[0, scrollHeight − clientHeight]`.
+  - The unchanged `settle()` follows.
+  - It is labelled synthetic, in its own comment and in the spec header.
+  - It is not one of the application scroll calls the fixture records; those wrap only `scrollBy`, `scrollTo` and `scrollIntoView`.
+- **Where it is used:** at its three call sites, in both engines — the eight scrolled cases, the reopening case and the Edit copy case.
+- **One narrow setup precondition, in the reopening case only:** "the prepared position put End ride 120 px below the band's top".
+  - Control C1 below shows why it is needed.
+  - Its target is reachable. Cancel leaves the page at `scrollY` 535, with End ride at 174 px and the band's top at 91 px. That needs −37 px, to 498, inside the page's 0–1,545 px range — the position the investigation's I1 and I2 runs measured.
+- **Wording:**
+  - the spec header;
+  - the scrolled cases' section comment;
+  - the precondition's message, now "the prepared position put End ride's slot …" (formerly "wheel input put End ride's slot …");
+  - the reopening case's comment and title.
+- **Unchanged:** `settle()`; every behaviour and implementation assertion and every other precondition; the held-Pause case's `page.mouse.wheel(0, 120)`; and every pointer click and key press.
+
+**The title change, for timing comparisons:** "(en, 200%) reopening after Cancel and a wheel scroll is measured afresh" is now "(en, 200%) reopening after Cancel and a scroll is measured afresh", in both engines. Timing reports from before and after this change identify the case differently.
+
+**The coverage trade-off.** These ten cases no longer exercise the browser's wheel scrolling, or focus preservation specifically during wheel input. Their application geometry, focus-return and ride-state checks remain, and the held-Pause case keeps its genuine wheel.
+
+**Verification** ran in the CI image by digest:
+
+- `CI=1`, `--workers=2`, and the documented local cap of `--cpus=4`, so none of it is CI-equivalent;
+- outputs in the external audit folder's `item148-impl/`, each run in its own directory;
+- the existing build, bundle `index-Df45j2uq.js`, with the application unchanged.
+
+The selection was listed first: exactly the ten changed cases in each engine.
+
+| Run | Selection                                      | Trace                                                     | Effective workers (banner and report) | Result                    |
+| --- | ---------------------------------------------- | --------------------------------------------------------- | ------------------------------------- | ------------------------- |
+| V1  | the ten changed cases ×5, WebKit               | off — the condition under which I2 reproduced the failure | 2                                     | 50 passed                 |
+| V2  | the complete spec once, in Chromium and WebKit | CI's normal `retain-on-failure`                           | 2                                     | 64 passed (32 per engine) |
+
+In V1, every prepared position matched the one the genuine wheel produced in CI run 37638928929: 35, 35, 51, 82, −20, −20, −84 and −102 px, and "first moved 535.0 px, second 37.0 px". Passing runs are regression evidence, not proof. The reliability rests on a position set by script taking effect at once (finding 5 above).
+
+**Negative controls.** These are copies of the repaired spec, made outside the repository, and each was run once in WebKit. The single-test runs used 1 worker; the first C1 run, of four tests, used 2.
+
+| Control                                                                                              | Case                                                                                                    | The exact failing assertions                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1: positioning made a no-op                                                                         | (en, 100%) and (de, 200%) partly above the viewport, where movement is required (0 → 465 and 566 → 732) | "the prepared position put End ride's slot partly above the viewport"                                                                                                                                                                                                                                                                                       |
+|                                                                                                      | Edit copy (27 → 0)                                                                                      | "Resume ride with both open: the same starting position as the control"                                                                                                                                                                                                                                                                                     |
+|                                                                                                      | reopening, **before** the narrow precondition                                                           | **none — it passed.** "first moved 535.0 px, second 0.0 px" satisfies its comparison                                                                                                                                                                                                                                                                        |
+|                                                                                                      | reopening, with it                                                                                      | "the prepared position put End ride 120 px below the band's top"                                                                                                                                                                                                                                                                                            |
+| C2: on End ride's return focus, the page scrolls back to where it was before the confirmation opened | (en, 100%) partly above the viewport                                                                    | "[behaviour] partly above the viewport, pointer: moved -465.0 px after the collapse; revealing End ride warrants -103.0 px"; "[implementation] … at most one deliberate scroll: scrollBy [{"top":-103,"left":0,"behavior":"auto"}]; scrollTo [0,0]"; "[implementation] … the app's own scroll (-103.0 px) accounts for all the movement after the collapse" |
+| C3: the held-Pause case without its wheel                                                            | (de, 200%) "Cancel during a held Pause, then the rider moves on with wheel"                             | "[behaviour] End ride did not take focus"; "[behaviour] no focus call returned to End ride"                                                                                                                                                                                                                                                                 |
+
+- **C1 shows the setup is checked in every changed case.** The scrolled cases and the Edit copy case already guarded it; the reopening case did not until its narrow precondition.
+- **C2 shows the cases still catch a lost position after a script-made one.** "End ride is in the band" passed, so it is the movement assertions that detect it.
+- **C3 shows the retained wheel is load-bearing.**
+
+**Remaining uncertainty:**
+
+- why headless WebKit sometimes applies a wheel's scroll late, whether it would arrive without Playwright's failure capture, and whether tracing affects it — all unresolved, and outside this fixture repair;
+- the first occurrence's form;
+- other specs' wheel input, unexamined here.
+
+**CI:** pending when this was written. The rider's decision is that this commit's CI run is recorded, and item 148 closed and moved to history, in the next scheduled documentation commit, alongside item 146's concluding review.
 
 ---
 

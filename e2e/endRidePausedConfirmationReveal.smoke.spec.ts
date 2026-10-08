@@ -39,9 +39,11 @@ import {
 // bottom (or the visual viewport's top) plus 8 px, to the visual viewport's
 // bottom less the safe-area inset and 8 px.
 //
-// Input is real — pointer clicks at measured centres, key presses and wheel
-// input — except where a step is labelled synthetic: a Pause write held
-// open, or failed, by the app's own e2e seam. The app's own scroll
+// Input is real — pointer clicks at measured centres, key presses and, in
+// the held-Pause case, wheel input — except where a step is labelled
+// synthetic: a Pause write held open, or failed, by the app's own e2e seam,
+// and a starting position prepared by script (positionPageBy, backlog item
+// 148). The app's own scroll
 // calls are recorded, and so are focus calls made by script that actually
 // moved focus, with the page's geometry just before them, so the same
 // assertion judges an unchanged build's browser focus scroll and the repair's
@@ -485,19 +487,25 @@ async function pointerClick(page: Page, locator: Locator): Promise<void> {
   await page.mouse.click(x, y);
 }
 
-/** Wheel input over ordinary page content, never the map or the header. */
-async function wheelBy(page: Page, dy: number): Promise<void> {
-  const point = await page.evaluate(() => {
-    for (let y = innerHeight - 30; y > 100; y -= 20) {
-      const hit = document.elementFromPoint(6, y);
-      if (hit && !hit.closest(".maplibregl-map, [data-testid='map-container'], header")) {
-        return { x: 6, y };
-      }
-    }
-    throw new Error("no wheel point outside the map");
-  });
-  await page.mouse.move(point.x, point.y);
-  await page.mouse.wheel(0, dy);
+/** Synthetic (backlog item 148): prepares a case's starting position by
+ * script — the document's scrollTop set from the current position plus
+ * `dy`, clamped to the reachable range — then the usual settle. It only
+ * prepares a position: the app never observes how the page got there, each
+ * case's own precondition checks the position it needs, and the write is
+ * not one of the app's scroll calls the fixture records (those wrap only
+ * scrollBy, scrollTo and scrollIntoView). Wheel input used to do this, but
+ * headless WebKit sometimes applied a wheel's scroll only after the settle
+ * had resolved; a position set by script takes effect at once. The cost:
+ * the cases that use this no longer exercise the browser's wheel scrolling,
+ * or focus kept specifically during wheel input. Their geometry,
+ * focus-return and ride-state checks are unchanged, and the held-Pause
+ * case keeps its real wheel. */
+async function positionPageBy(page: Page, dy: number): Promise<void> {
+  await page.evaluate((dy) => {
+    const scroller = document.scrollingElement ?? document.documentElement;
+    const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    scroller.scrollTop = Math.min(Math.max(scroller.scrollTop + dy, 0), max);
+  }, dy);
   await settle(page);
 }
 
@@ -982,9 +990,9 @@ for (const [language, size] of COLD_START_CASES) {
 }
 
 // ---------------------------------------------------------------------------
-// Reopening after Cancel and a wheel scroll is measured afresh.
+// Reopening after Cancel and a scroll is measured afresh.
 
-test("(en, 200%) reopening after Cancel and a wheel scroll is measured afresh", async ({
+test("(en, 200%) reopening after Cancel and a scroll is measured afresh", async ({
   page,
   context,
 }) => {
@@ -992,11 +1000,19 @@ test("(en, 200%) reopening after Cancel and a wheel scroll is measured afresh", 
   const first = await openEndRide(page, "en");
   expectOpening("first opening", "en", first);
   await cancelEndRide(page, "en", "pointer");
-  // Put End ride in a clearly different place, by real wheel input, while
-  // keeping it clickable inside the band.
+  // Put End ride in a clearly different place, positioned by script
+  // (synthetic), while keeping it clickable inside the band. The comparison
+  // below cannot show the position was reached — a first opening that moved
+  // and a second that moved nothing satisfy it from where Cancel left the
+  // page — so the setup is checked on its own.
   const placed = await snapshot(page, "en");
   if (!placed.trigger) throw new Error("expected End ride to lay out");
-  await wheelBy(page, placed.trigger.top - (placed.band.top + 120));
+  await positionPageBy(page, placed.trigger.top - (placed.band.top + 120));
+  const repositioned = await snapshot(page, "en");
+  expect(
+    Math.abs((repositioned.trigger?.top ?? Number.NaN) - (repositioned.band.top + 120)),
+    "the prepared position put End ride 120 px below the band's top",
+  ).toBeLessThanOrEqual(TOLERANCE_PX);
   const second = await openEndRide(page, "en");
   expectOpening("second opening", "en", second);
   const firstMoved = first.after.scrollY - first.before.scrollY;
@@ -1016,11 +1032,12 @@ test("(en, 200%) reopening after Cancel and a wheel scroll is measured afresh", 
 });
 
 // ---------------------------------------------------------------------------
-// Cancellation after the rider has scrolled the open confirmation, by wheel:
-// End ride's slot — the confirmation's own top, where End ride comes back —
-// under the sticky navigation, partly above the viewport, or wholly above
-// it. The first two keep Cancel tappable; the third is reachable from a
-// keyboard only, so it is cancelled with Escape (desktop keyboard).
+// Cancellation after the open confirmation has been scrolled — the position
+// prepared by script (synthetic, positionPageBy) — with End ride's slot —
+// the confirmation's own top, where End ride comes back — under the sticky
+// navigation, partly above the viewport, or wholly above it. The first two
+// keep Cancel tappable; the third is reachable from a keyboard only, so it
+// is cancelled with Escape (desktop keyboard).
 
 type Placement =
   "under the navigation" | "partly above the viewport" | "wholly above the viewport";
@@ -1060,7 +1077,7 @@ for (const [language, size, placement] of SCROLLED_CASES) {
         : placement === "partly above the viewport"
           ? -20
           : -(triggerHeight + 40);
-    await wheelBy(page, open.dialog.top - slotTop);
+    await positionPageBy(page, open.dialog.top - slotTop);
     const placed = await snapshot(page, language);
     if (!placed.dialog) throw new Error("expected the confirmation to lay out");
     note(
@@ -1078,7 +1095,7 @@ for (const [language, size, placement] of SCROLLED_CASES) {
         : placement === "partly above the viewport"
           ? placed.dialog.top < 0 && placed.dialog.top + triggerHeight > 0
           : placed.dialog.top + triggerHeight < 0;
-    expect(reached, `wheel input put End ride's slot ${placement}`).toBe(true);
+    expect(reached, `the prepared position put End ride's slot ${placement}`).toBe(true);
     expect(placed.cancelFocused, "Cancel kept focus while the page scrolled").toBe(true);
 
     const result = await cancelEndRide(page, language, how);
@@ -1288,8 +1305,9 @@ test("(en, 100%) with Edit copy's confirmation open too, both close quietly when
   await settle(page);
   await openEndRide(page, "en");
   await expect(page.getByRole("dialog")).toHaveCount(2);
-  // Back to the top, where the control's Resume ride was pressed.
-  await wheelBy(page, -5_000);
+  // Back to the top, where the control's Resume ride was pressed —
+  // positioned by script (synthetic).
+  await positionPageBy(page, -5_000);
   const affected = await resumeTransition(page, "en");
   expectQuietTransition(
     "Resume ride with both open",
